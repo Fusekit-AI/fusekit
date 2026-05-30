@@ -1401,24 +1401,36 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
     job.mark("app.upload", "running", "uploading app without excluded secret paths")
     job.mark("setup.execute", "running", "remote FuseKit launch starting")
     job.save(args.job_state)
-    artifacts = execute_remote_setup(
-        workspace=workspace,
-        vault=vault,
-        app_path=app_path,
-        local_output_dir=app_path / ".fusekit" / "remote-artifacts",
-        passphrase=passphrase,
-        launch_args=_remote_launch_args(args),
-    )
+    remote_deleted: dict[str, str] = {}
+    try:
+        artifacts = execute_remote_setup(
+            workspace=workspace,
+            vault=vault,
+            app_path=app_path,
+            local_output_dir=app_path / ".fusekit" / "remote-artifacts",
+            passphrase=passphrase,
+            launch_args=_remote_launch_args(args),
+        )
+    except FuseKitError:
+        job.mark("remote.bootstrap", "failed", "remote setup did not complete")
+        job.mark("setup.execute", "failed", "remote FuseKit launch failed")
+        if not args.no_detonate:
+            remote_deleted = _detonate_oci_workspace(args, workspace, vault)
+            job.mark("detonate.workspace", "done", "workspace detonation attempted after failure")
+        else:
+            job.mark("detonate.workspace", "skipped", "workspace retained by --no-detonate")
+        job.save(args.job_state)
+        raise
     job.mark("remote.bootstrap", "done", "remote setup completed")
     job.mark("app.upload", "done", "app uploaded without excluded secret paths")
     job.mark("setup.execute", "done", "remote FuseKit launch completed")
     job.mark("verify.live", "done", "verification delegated to setup receipt")
     job.mark("artifacts.retrieve", "done", artifacts["output_dir"])
-    detonate_remote_worker(workspace=workspace, vault=vault)
-    remote_deleted = OciProvisioner(
-        load_oci_auth_from_vault_or_config(vault, config_file=args.oci_config_file)
-    ).detonate(workspace)
-    job.mark("detonate.workspace", "done", "remote worker and OCI workspace detonated")
+    if args.no_detonate:
+        job.mark("detonate.workspace", "skipped", "workspace retained by --no-detonate")
+    else:
+        remote_deleted = _detonate_oci_workspace(args, workspace, vault)
+        job.mark("detonate.workspace", "done", "remote worker and OCI workspace detonated")
     job.save(args.job_state)
     _detonate_openclaw_state_if_requested(args)
     print(
@@ -1434,6 +1446,27 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
         )
     )
     return 0
+
+
+def _detonate_oci_workspace(
+    args: argparse.Namespace,
+    workspace: OciWorkspace,
+    vault: Vault,
+) -> dict[str, str]:
+    remote_deleted: dict[str, str] = {}
+    try:
+        detonate_remote_worker(workspace=workspace, vault=vault)
+    except FuseKitError as exc:
+        remote_deleted["failed.remote_worker"] = str(exc)
+    try:
+        remote_deleted.update(
+            OciProvisioner(
+                load_oci_auth_from_vault_or_config(vault, config_file=args.oci_config_file)
+            ).detonate(workspace)
+        )
+    except FuseKitError as exc:
+        remote_deleted["failed.workspace"] = str(exc)
+    return remote_deleted
 
 
 def _cmd_cloud_shell_runner_launch(

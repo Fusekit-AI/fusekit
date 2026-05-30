@@ -37,6 +37,7 @@
 - [x] P2 North Star audit fixes: service gates have durable persisted state, provider-pack rollback intent can be planned directly, verification retry knobs are exposed in CLI/remote launch, and OpenClaw bootstrap supports version/hash pinning.
 - [x] Post-audit bug pass: OCI VM bootstrap now installs OpenClaw on the executable PATH, OpenClaw wait snapshots use the correct command shape, provider verification treats pending live checks as incomplete unless explicitly allowed, and launch-readiness artifacts use product language while preserving compatibility aliases.
 - [x] Product-surface hardening pass: public code/docs now use launch-ready capability wording, provider intelligence refuses silent vault downgrade, capability packs no longer duplicate schema fields, and OCI detonation reports provider delete failures instead of swallowing them.
+- [x] Live-run readiness bug pass: remote uploads exclude additional secret-bearing config/key files, artifact retrieval fails loudly on missing/invalid archives, failed OCI remote launches still attempt workspace detonation, runner env overrides reject unknown lanes, and job status preserves failed state after cleanup.
 
 ## Milestone 1: Repo Skeleton And CLI
 

@@ -6,6 +6,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from fusekit.errors import FuseKitError
+
 RUNNERS = ("auto", "local", "oci-cloud-shell", "oci-free", "oci-existing")
 
 
@@ -39,7 +41,7 @@ def resolve_runner(
     env_runner = os.environ.get("FUSEKIT_RUNNER", "").strip()
     effective = env_runner or requested
     if effective not in RUNNERS:
-        return RunnerResolution(effective, "local", "unknown runner requested; using local")
+        raise FuseKitError(f"Unknown runner requested: {effective}")
     if effective == "local":
         return RunnerResolution(requested, "local", "local runner explicitly selected")
     if effective in {"oci-cloud-shell", "oci-free", "oci-existing"}:

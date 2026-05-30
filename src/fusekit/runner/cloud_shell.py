@@ -274,7 +274,7 @@ def render_cloud_shell_launcher(plan: CloudShellLaunchPlan) -> str:
     function buildCommand(appSource) {{
       const quotedSource = shellQuote(appSource.trim());
       return initial.bootstrap_command.replace(
-        /app_source='[^']*'/,
+        /^app_source=.*$/m,
         `app_source=${{quotedSource}}`
       );
     }}

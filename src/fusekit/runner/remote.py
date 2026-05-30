@@ -19,6 +19,12 @@ EXCLUDED_APP_PATHS = (
     ".git",
     ".env",
     ".env.local",
+    ".env.development",
+    ".env.production",
+    ".env.preview",
+    ".npmrc",
+    ".pypirc",
+    ".vercel",
     ".fusekit",
     "node_modules",
     "__pycache__",
@@ -48,9 +54,16 @@ def should_include_app_path(path: Path) -> bool:
     if any(excluded in parts for excluded in EXCLUDED_APP_PATHS):
         return False
     name = path.name
-    if name.endswith((".vault", ".vault.json", ".pem", ".key")):
+    lower_name = name.lower()
+    if lower_name.startswith(".env."):
         return False
-    if "secret" in name.lower() and name.endswith((".json", ".txt", ".env")):
+    if lower_name in {"id_rsa", "id_ed25519", "id_ecdsa", "credentials.json"}:
+        return False
+    if lower_name.endswith((".vault", ".vault.json", ".pem", ".key", ".p12", ".pfx")):
+        return False
+    if any(marker in lower_name for marker in ("secret", "credential", "private_key")) and (
+        lower_name.endswith((".json", ".txt", ".env", ".yaml", ".yml"))
+    ):
         return False
     return True
 
@@ -181,9 +194,12 @@ def execute_remote_setup(
         artifacts = local_output_dir / "fusekit-artifacts.tar.gz"
         fetch = (
             "cd /var/lib/fusekit-runner/app && "
-            "tar -czf - .fusekit/fusekit.vault.json "
-            ".fusekit/audit.jsonl .fusekit/setup_receipt.json "
-            ".fusekit/setup_receipt.md .fusekit/job.json 2>/dev/null || true"
+            "set -- .fusekit/fusekit.vault.json .fusekit/audit.jsonl "
+            ".fusekit/setup_receipt.json .fusekit/setup_receipt.md .fusekit/job.json; "
+            "existing=''; "
+            "for path in \"$@\"; do [ -f \"$path\" ] && existing=\"$existing $path\"; done; "
+            "[ -n \"$existing\" ] || exit 44; "
+            "tar -czf - $existing"
         )
         _run_checked(run, [*ssh, remote, fetch], stdout_path=artifacts)
         _extract_artifacts(artifacts, local_output_dir)
@@ -234,12 +250,14 @@ def _extract_artifacts(archive: Path, output_dir: Path) -> None:
             safe_members = []
             for member in tar.getmembers():
                 target = (output_dir / member.name).resolve()
-                if not str(target).startswith(str(output_dir.resolve())):
+                try:
+                    target.relative_to(output_dir.resolve())
+                except ValueError:
                     continue
                 safe_members.append(member)
             tar.extractall(output_dir, members=safe_members)
-    except tarfile.TarError:
-        return
+    except tarfile.TarError as exc:
+        raise FuseKitError("Remote artifact archive could not be read.") from exc
 
 
 def _workspace_ssh_private_key(vault: Vault, run_id: str) -> str:

@@ -13,7 +13,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from fusekit.audit import redact
-from fusekit.errors import ProviderError
+from fusekit.errors import FuseKitError, ProviderError
 from fusekit.providers.capability_pack import ProviderCapabilityPack, VerificationRecipe
 from fusekit.vault import Vault
 
@@ -305,7 +305,7 @@ def _secret_value(vault: Vault, provider: str, name: str) -> str:
     for record_id in candidates:
         try:
             return vault.require(record_id).value
-        except Exception:
+        except FuseKitError:
             continue
     raise ProviderError(f"Required secret is not available: {name}")
 

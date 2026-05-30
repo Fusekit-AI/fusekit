@@ -5,6 +5,9 @@ import subprocess
 import tarfile
 from pathlib import Path
 
+import pytest
+
+from fusekit.errors import FuseKitError
 from fusekit.rollback import execute_native_rollback, plan_rollback, start_over
 from fusekit.runner.broker import resolve_runner
 from fusekit.runner.cloud_shell import (
@@ -45,6 +48,23 @@ def test_runner_auto_selects_cloud_shell_when_no_config(tmp_path, monkeypatch) -
     resolution = resolve_runner("auto", oci_config_file=tmp_path / "missing")
 
     assert resolution.selected == "oci-cloud-shell"
+
+
+def test_runner_env_override_rejects_unknown_runner(monkeypatch) -> None:
+    monkeypatch.setenv("FUSEKIT_RUNNER", "surprise-runner")
+
+    with pytest.raises(FuseKitError, match="Unknown runner"):
+        resolve_runner("auto")
+
+
+def test_job_status_preserves_failure_after_cleanup_step(tmp_path) -> None:
+    from fusekit.runner.job import JobState
+
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job.mark("setup.execute", "failed", "remote setup failed")
+    job.mark("detonate.workspace", "done", "cleanup attempted")
+
+    assert job.status == "failed"
 
 
 def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
@@ -129,6 +149,11 @@ def test_remote_bootstrap_artifacts_are_self_contained() -> None:
     assert "/opt/fusekit-openclaw/openclaw/bin" not in cloud_init
     assert should_include_app_path(Path("src/index.js"))
     assert not should_include_app_path(Path(".env"))
+    assert not should_include_app_path(Path(".env.production"))
+    assert not should_include_app_path(Path(".npmrc"))
+    assert not should_include_app_path(Path(".vercel/project.json"))
+    assert not should_include_app_path(Path("id_ed25519"))
+    assert not should_include_app_path(Path("service.credentials.json"))
     assert not should_include_app_path(Path(".fusekit/fusekit.vault.json"))
 
 
@@ -245,6 +270,9 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         assert input_text != "secret-passphrase" or "cat >" in command[-1]
         if stdout_path is not None:
             archive = tarfile.open(stdout_path, "w:gz")
+            payload = tmp_path / "job.json"
+            payload.write_text("{}", encoding="utf-8")
+            archive.add(payload, arcname=".fusekit/job.json")
             archive.close()
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
@@ -270,6 +298,22 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         "trap 'rm -f /var/lib/fusekit-runner/passphrase' EXIT" in command[-1]
         for command in calls
     )
+    assert any("[ -n \"$existing\" ] || exit 44" in command[-1] for command in calls)
+
+
+def test_remote_artifact_extraction_rejects_invalid_archive(tmp_path) -> None:
+    from fusekit.errors import FuseKitError
+    from fusekit.runner.remote import _extract_artifacts
+
+    archive = tmp_path / "bad.tar.gz"
+    archive.write_text("not a tarball", encoding="utf-8")
+
+    try:
+        _extract_artifacts(archive, tmp_path / "out")
+    except FuseKitError as exc:
+        assert "archive could not be read" in str(exc)
+    else:
+        raise AssertionError("invalid remote artifact archive should fail")
 
 
 def test_cloud_shell_style_oci_config_uses_delegation_token_signer(

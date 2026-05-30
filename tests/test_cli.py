@@ -5,6 +5,7 @@ from urllib.error import URLError
 
 from fusekit.audit import assert_no_secret_text
 from fusekit.cli import main
+from fusekit.errors import FuseKitError
 from fusekit.runner.oci_live import OciWorkspace
 from fusekit.vault import Vault
 
@@ -593,6 +594,103 @@ def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch)
     job = json.loads((app / ".fusekit" / "job.json").read_text(encoding="utf-8"))
     assert job["status"] == "done"
     assert job["steps"][1]["status"] == "done"
+
+
+def test_launch_detonates_oci_workspace_after_remote_failure(tmp_path, monkeypatch) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "index.js").write_text("console.log('launch')", encoding="utf-8")
+    passphrase = tmp_path / "passphrase.txt"
+    passphrase.write_text("passphrase\n", encoding="utf-8")
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("OCI_CONFIG_FILE", raising=False)
+
+    def local_oci_auth(**kwargs) -> None:
+        config_file = kwargs["config_file"]
+        profile = kwargs["profile"]
+        token = tmp_path / "security-token"
+        key = tmp_path / "session.pem"
+        token.write_text("security-token", encoding="utf-8")
+        key.write_text("session-private-key", encoding="utf-8")
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        config_file.write_text(
+            (
+                f"[{profile}]\n"
+                "tenancy=ocid1.tenancy.oc1..example\n"
+                "user=ocid1.user.oc1..example\n"
+                "fingerprint=aa:bb:cc\n"
+                f"key_file={key}\n"
+                f"security_token_file={token}\n"
+                "region=us-ashburn-1\n"
+            ),
+            encoding="utf-8",
+        )
+
+    workspace = OciWorkspace(
+        id="fusekit-test",
+        compartment_id="ocid1.tenancy.oc1..example",
+        availability_domain="ad-1",
+        shape="VM.Standard.E2.1.Micro",
+        public_ip="203.0.113.10",
+        resource_ids={"instance": "ocid1.instance.oc1..example"},
+    )
+    detonated: list[str] = []
+    monkeypatch.setattr("fusekit.cli.authorize_oci_browser_session", local_oci_auth)
+    monkeypatch.setattr("fusekit.cli._provision_oci_workspace", lambda args, vault, plan: workspace)
+
+    def fail_remote_setup(**kwargs):  # type: ignore[no-untyped-def]
+        raise FuseKitError("remote setup failed")
+
+    monkeypatch.setattr("fusekit.cli.execute_remote_setup", fail_remote_setup)
+    monkeypatch.setattr(
+        "fusekit.cli.detonate_remote_worker",
+        lambda **kwargs: detonated.append("worker"),
+    )
+    monkeypatch.setattr(
+        "fusekit.cli.load_oci_auth_from_vault_or_config",
+        lambda *args, **kwargs: object(),
+    )
+
+    class LocalProvisioner:
+        def __init__(self, auth) -> None:
+            self.auth = auth
+
+        def detonate(self, workspace) -> dict[str, str]:
+            detonated.append("workspace")
+            return {"instance": "deleted"}
+
+    monkeypatch.setattr("fusekit.cli.OciProvisioner", LocalProvisioner)
+
+    assert (
+        main(
+            [
+                "launch",
+                str(app),
+                "--passphrase-file",
+                str(passphrase),
+                "--no-bootstrap",
+                "--runner",
+                "oci-free",
+                "--yes",
+                "--spine",
+                "system",
+            ]
+        )
+        == 2
+    )
+
+    assert detonated == ["worker", "workspace"]
+    job = json.loads((app / ".fusekit" / "job.json").read_text(encoding="utf-8"))
+    assert job["status"] == "failed"
+    assert any(
+        step["id"] == "setup.execute" and step["status"] == "failed"
+        for step in job["steps"]
+    )
+    assert any(
+        step["id"] == "detonate.workspace" and step["status"] == "done"
+        for step in job["steps"]
+    )
 
 
 def test_runner_authorize_oci_prepares_public_key(monkeypatch, tmp_path, capsys) -> None:

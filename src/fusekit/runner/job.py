@@ -115,8 +115,11 @@ class JobState:
             updated.append(JobStep(step_id, step_id, status, detail))
         self.steps = updated
         self.updated_at = time.time()
-        if status in {"waiting", "failed"}:
-            self.status = status
+        statuses = {step.status for step in self.steps}
+        if "failed" in statuses:
+            self.status = "failed"
+        elif "waiting" in statuses:
+            self.status = "waiting"
         elif all(step.status in {"done", "skipped"} for step in self.steps):
             self.status = "done"
         else:
