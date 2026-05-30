@@ -144,7 +144,12 @@ def _vercel_project(recipe: SetupRecipe, context: ProviderSetupContext) -> dict[
     project_name = _required_input(context, "vercel_project", recipe.target)
     token = _provider_token(context.vault, "vercel", "VERCEL_TOKEN")
     provider = VercelProvider(token)
-    project = provider.ensure_project(project_name, context.inputs.get("vercel_framework") or None)
+    project = provider.ensure_project(
+        project_name,
+        context.inputs.get("vercel_framework") or None,
+        git_repository=_github_repo_slug_from_context(context),
+        root_directory=context.inputs.get("vercel_root_directory") or None,
+    )
     context.inputs["vercel_project_id"] = str(project["id"])
     context.audit.record("provider_pack.vercel.project", project)
     context.receipt.add_action("vercel.project", "ok", project)
@@ -168,19 +173,62 @@ def _vercel_env(recipe: SetupRecipe, context: ProviderSetupContext) -> dict[str,
 
 def _vercel_git_deployment(recipe: SetupRecipe, context: ProviderSetupContext) -> dict[str, Any]:
     project_name = _required_input(context, "vercel_project", recipe.target)
-    git_repo_id = _required_input(context, "vercel_git_repo_id")
+    git_repo_id = context.inputs.get("vercel_git_repo_id") or None
+    github_repo = _github_repo_slug_from_context(context)
+    if not git_repo_id and not github_repo:
+        result = {
+            "kind": recipe.kind,
+            "status": "skipped",
+            "reason": "missing GitHub repo source",
+        }
+        context.audit.record("provider_pack.vercel.deployment", result)
+        context.receipt.add_action("vercel.deployment", "skipped", result)
+        return result
     token = _provider_token(context.vault, "vercel", "VERCEL_TOKEN")
     provider = VercelProvider(token)
+    org, repo = _split_repo_slug(github_repo) if github_repo else ("", "")
     deployment = provider.create_git_deployment(
         project_name,
-        git_repo_id,
+        git_repo_id=git_repo_id,
         ref=context.inputs.get("vercel_git_ref", "main"),
+        org=org or None,
+        repo=repo or None,
     )
     if deployment.get("url"):
         context.receipt.live_url = str(deployment["url"])
     context.audit.record("provider_pack.vercel.deployment", deployment)
     context.receipt.add_action("vercel.deployment", "ok", deployment)
     return {"kind": recipe.kind, "status": "ok", **deployment}
+
+
+def _github_repo_slug_from_context(context: ProviderSetupContext) -> str:
+    for key in ("github_repo", "app_source"):
+        value = context.inputs.get(key, "")
+        slug = _normalize_github_repo_slug(value)
+        if slug:
+            return slug
+    return ""
+
+
+def _normalize_github_repo_slug(value: str) -> str:
+    raw = value.strip()
+    if not raw:
+        return ""
+    raw = raw.removesuffix(".git")
+    if raw.startswith("git@github.com:"):
+        raw = raw.removeprefix("git@github.com:")
+    elif "github.com/" in raw:
+        raw = raw.split("github.com/", 1)[1]
+    raw = raw.strip("/")
+    parts = raw.split("/")
+    if len(parts) >= 2 and all(parts[:2]):
+        return f"{parts[0]}/{parts[1]}"
+    return ""
+
+
+def _split_repo_slug(slug: str) -> tuple[str, str]:
+    owner, repo = slug.split("/", 1)
+    return owner, repo
 
 
 def _cloudflare_dns_recipe(recipe: SetupRecipe, context: ProviderSetupContext) -> dict[str, Any]:

@@ -21,7 +21,13 @@ class VercelProvider:
     def _client(self) -> JsonHttpClient:
         return JsonHttpClient(self.api_base, self.token, auth_header="Bearer")
 
-    def ensure_project(self, name: str, framework: str | None = None) -> dict[str, Any]:
+    def ensure_project(
+        self,
+        name: str,
+        framework: str | None = None,
+        git_repository: str | None = None,
+        root_directory: str | None = None,
+    ) -> dict[str, Any]:
         """Get or create a Vercel project."""
 
         try:
@@ -30,16 +36,22 @@ class VercelProvider:
                 "id": str(project["id"]),
                 "name": str(project.get("name", name)),
                 "created": False,
+                "git_connected": bool(project.get("link") or project.get("gitRepository")),
             }
         except ProviderError:
             payload: dict[str, Any] = {"name": name}
             if framework:
                 payload["framework"] = framework
-            created = self._client().request("POST", "/v9/projects", payload)
+            if git_repository:
+                payload["gitRepository"] = {"type": "github", "repo": git_repository}
+            if root_directory:
+                payload["rootDirectory"] = root_directory
+            created = self._client().request("POST", "/v11/projects", payload)
             return {
                 "id": str(created["id"]),
                 "name": str(created.get("name", name)),
                 "created": True,
+                "git_connected": bool(git_repository),
             }
 
     def put_env(
@@ -58,22 +70,33 @@ class VercelProvider:
     def create_git_deployment(
         self,
         project_name: str,
-        git_repo_id: str,
+        git_repo_id: str | None = None,
         ref: str = "main",
         repo_type: str = "github",
+        org: str | None = None,
+        repo: str | None = None,
     ) -> dict[str, Any]:
         """Trigger a Vercel deployment from a connected git source."""
 
+        if git_repo_id:
+            git_source = {"type": repo_type, "repoId": git_repo_id, "ref": ref}
+            source = {"repo_id": git_repo_id}
+        elif org and repo:
+            git_source = {"type": repo_type, "org": org, "repo": repo, "ref": ref}
+            source = {"org": org, "repo": repo}
+        else:
+            raise ProviderError("Vercel git deployment requires a repo id or GitHub owner/repo.")
         payload = {
             "name": project_name,
             "target": "production",
-            "gitSource": {"type": repo_type, "repoId": git_repo_id, "ref": ref},
+            "gitSource": git_source,
         }
         response = self._client().request("POST", "/v13/deployments", payload)
         url = str(response.get("url", ""))
         return {
             "deployment_id": str(response.get("id", "")),
             "url": f"https://{url}" if url else "",
+            "source": source,
         }
 
     def delete_project(self, project_id_or_name: str) -> dict[str, Any]:

@@ -59,3 +59,131 @@ def test_github_pack_setup_runs_through_capability_executor(monkeypatch, tmp_pat
     assert any(record.kind == "ssh_private_key" for record in vault.records.values())
     public = json.dumps(result) + json.dumps(receipt.to_dict())
     assert_no_secret_text(public, ["webhook-secret-value", "test-github-token-hidden"])
+
+
+def test_vercel_pack_connects_project_and_deploys_from_github_repo(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    calls: list[tuple[str, dict[str, str]]] = []
+
+    class FakeVercelProvider:
+        def __init__(self, token: str) -> None:
+            self.token = token
+
+        def ensure_project(
+            self,
+            name: str,
+            framework: str | None = None,
+            git_repository: str | None = None,
+            root_directory: str | None = None,
+        ) -> dict[str, object]:
+            calls.append(
+                (
+                    "project",
+                    {
+                        "name": name,
+                        "framework": framework or "",
+                        "git_repository": git_repository or "",
+                        "root_directory": root_directory or "",
+                    },
+                )
+            )
+            return {"id": "prj_123", "name": name, "created": True, "git_connected": True}
+
+        def put_env(
+            self,
+            project_id_or_name: str,
+            key: str,
+            value: str,
+            target: tuple[str, ...],
+        ) -> dict[str, object]:
+            calls.append(
+                (
+                    "env",
+                    {
+                        "project": project_id_or_name,
+                        "key": key,
+                        "value": value,
+                        "target": ",".join(target),
+                    },
+                )
+            )
+            return {"project": project_id_or_name, "env": key}
+
+        def create_git_deployment(
+            self,
+            project_name: str,
+            git_repo_id: str | None = None,
+            ref: str = "main",
+            repo_type: str = "github",
+            org: str | None = None,
+            repo: str | None = None,
+        ) -> dict[str, object]:
+            calls.append(
+                (
+                    "deployment",
+                    {
+                        "project": project_name,
+                        "git_repo_id": git_repo_id or "",
+                        "ref": ref,
+                        "repo_type": repo_type,
+                        "org": org or "",
+                        "repo": repo or "",
+                    },
+                )
+            )
+            return {
+                "deployment_id": "dpl_123",
+                "url": "https://moonlite-rsvp.vercel.app",
+                "source": {"org": org, "repo": repo},
+            }
+
+    monkeypatch.setattr("fusekit.providers.automation.VercelProvider", FakeVercelProvider)
+    vault = Vault.empty()
+    vault.put(
+        "provider.vercel.token",
+        "provider_token",
+        "vercel",
+        "Vercel token",
+        "test-vercel-token-hidden",
+    )
+    receipt = Receipt(app_name="app")
+    context = ProviderSetupContext(
+        manifest=SetupManifest(app_name="app"),
+        vault=vault,
+        audit=AuditLog(tmp_path / "audit.jsonl"),
+        receipt=receipt,
+        secrets={
+            "WEBHOOK_SECRET": "webhook-secret-value",
+            "VERCEL_TOKEN": "must-not-be-routed",
+        },
+        provider_names={"vercel"},
+        inputs={
+            "github_repo": "owner/moonlite-rsvp",
+            "vercel_project": "moonlite-rsvp",
+            "vercel_framework": "nextjs",
+            "vercel_git_ref": "main",
+        },
+    )
+    pack = synthesize_provider_pack("vercel", tmp_path)
+
+    result = run_provider_pack_setup(pack, context)
+
+    assert ("project", {
+        "name": "moonlite-rsvp",
+        "framework": "nextjs",
+        "git_repository": "owner/moonlite-rsvp",
+        "root_directory": "",
+    }) in calls
+    assert ("deployment", {
+        "project": "moonlite-rsvp",
+        "git_repo_id": "",
+        "ref": "main",
+        "repo_type": "github",
+        "org": "owner",
+        "repo": "moonlite-rsvp",
+    }) in calls
+    assert context.receipt.live_url == "https://moonlite-rsvp.vercel.app"
+    public = json.dumps(result) + json.dumps(receipt.to_dict())
+    assert_no_secret_text(public, ["webhook-secret-value", "test-vercel-token-hidden"])

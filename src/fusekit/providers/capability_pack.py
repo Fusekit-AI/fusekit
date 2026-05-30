@@ -732,7 +732,7 @@ def _vercel_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
             SetupRecipe(
                 kind="vercel-git-deployment",
                 target="${input:vercel_project}",
-                when="vercel_git_repo_id",
+                when="vercel_project",
             ),
         ),
         setup_goals=(

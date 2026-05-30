@@ -38,6 +38,7 @@
 - [x] Post-audit bug pass: OCI VM bootstrap now installs OpenClaw on the executable PATH, OpenClaw wait snapshots use the correct command shape, provider verification treats pending live checks as incomplete unless explicitly allowed, and launch-readiness artifacts use product language while preserving compatibility aliases.
 - [x] Product-surface hardening pass: public code/docs now use launch-ready capability wording, provider intelligence refuses silent vault downgrade, capability packs no longer duplicate schema fields, and OCI detonation reports provider delete failures instead of swallowing them.
 - [x] Live-run readiness bug pass: remote uploads exclude additional secret-bearing config/key files, artifact retrieval fails loudly on missing/invalid archives, failed OCI remote launches still attempt workspace detonation, runner env overrides reject unknown lanes, and job status preserves failed state after cleanup.
+- [x] Vercel deployment hardening: project creation can connect the GitHub repository from normal `owner/repo` input, and production deployments can trigger from GitHub org/repo when Vercel's internal repo id is not available.
 
 ## Milestone 1: Repo Skeleton And CLI
 
@@ -126,8 +127,8 @@
 - [x] Scan app and generate setup manifest.
 - [x] Provide one-command setup orchestration for scan, plan, authorization, apply, verify, receipt, and detonation.
 - [ ] Connect GitHub repo.
-- [ ] Connect deployment target.
-- [ ] Configure environment variables.
+- [x] Connect deployment target adapter path. Live proof still depends on supervised provider authorization.
+- [x] Configure environment variables through provider-pack setup. Live proof still depends on supervised provider authorization.
 - [ ] Propose and optionally apply DNS.
 - [ ] Verify deployed website health.
 - [x] Store all sensitive setup material in encrypted vault bundle.

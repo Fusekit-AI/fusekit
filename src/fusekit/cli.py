@@ -1995,6 +1995,7 @@ def _ensure_provider_packs(app_path: Path, manifest: SetupManifest) -> list[Path
 
 def _provider_setup_inputs(args: argparse.Namespace) -> dict[str, str]:
     return {
+        "app_source": str(getattr(args, "app_source", "")),
         "github_repo": str(getattr(args, "github_repo", "")),
         "vercel_project": str(getattr(args, "vercel_project", "")),
         "vercel_framework": str(getattr(args, "vercel_framework", "")),
