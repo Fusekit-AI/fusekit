@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from urllib.error import URLError
 
 from fusekit.audit import assert_no_secret_text
 from fusekit.cli import main
@@ -188,6 +189,51 @@ def test_cli_provider_verify_runs_pack_recipes(tmp_path, capsys) -> None:
     output = capsys.readouterr().out
     assert '"status": "ok"' in output
     assert_no_secret_text(output, ["re_hidden_secret"])
+
+
+def test_cli_provider_verify_pending_is_not_success(monkeypatch, tmp_path, capsys) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    vault_path = tmp_path / "vault.json"
+    passphrase = tmp_path / "passphrase.txt"
+    passphrase.write_text("passphrase\n", encoding="utf-8")
+    Vault.empty().save(vault_path, "passphrase")
+
+    assert main(["provider", "synthesize", "resend", "--app", str(app)]) == 0
+    pack = app / ".fusekit" / "provider-packs" / "resend.json"
+    data = json.loads(pack.read_text(encoding="utf-8"))
+    data["verification"] = [
+        {
+            "kind": "http-json",
+            "target": "https://api.resend.com/domains",
+            "inputs": {"purpose": "verify-resource"},
+        }
+    ]
+    pack.write_text(json.dumps(data), encoding="utf-8")
+    monkeypatch.setattr(
+        "fusekit.providers.verification.urlopen",
+        lambda *args, **kwargs: (_ for _ in ()).throw(URLError("offline")),
+    )
+
+    assert (
+        main(
+            [
+                "provider",
+                "verify",
+                str(pack),
+                "--vault",
+                str(vault_path),
+                "--passphrase-file",
+                str(passphrase),
+                "--verify-attempts",
+                "2",
+                "--json",
+            ]
+        )
+        == 1
+    )
+    output = capsys.readouterr().out
+    assert '"status": "pending"' in output
 
 
 def test_cli_refuses_raw_secret_argument(tmp_path) -> None:

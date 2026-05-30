@@ -285,7 +285,7 @@ Acceptance evidence to preserve after a live run:
 - `.fusekit/fusekit.vault.json` opens only with the passphrase; wrong passphrase fails.
 - `.fusekit/setup_receipt.json` and `.fusekit/setup_receipt.md` contain no raw secrets.
 - `.fusekit/audit.jsonl` contains only redacted provider actions.
-- `.fusekit/acceptance/report.json` has `"demo_ready": true` from `fusekit acceptance run --mode live`.
+- `.fusekit/acceptance/report.json` has `"launch_ready": true` from `fusekit acceptance run --mode live`.
 - `.fusekit/acceptance/ledger.jsonl` records scan, plan, pack, vault, receipt, leak-scan, and detonation proof events.
 - `fusekit leak-scan /path/to/generated-app` reports no plaintext setup secrets.
 - `fusekit provider verify ... --verify-attempts 10` confirms provider/API/live checks or reports pending rather than pretending success.

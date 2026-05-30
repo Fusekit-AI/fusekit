@@ -52,10 +52,12 @@ def test_openclaw_spine_supports_inferred_action_surface() -> None:
     assert spine.click_text("ref-1").status == "ok"
     assert spine.fill_label("ref-2", "redacted").status == "ok"
     assert spine.press("Enter").status == "ok"
+    assert spine.wait_for_text("Ready").status == "ok"
 
     assert calls[0][-2:] == ["click", "ref-1"]
     assert calls[1][-3:] == ["type", "ref-2", "redacted"]
     assert calls[2][-2:] == ["press", "Enter"]
+    assert calls[3][-1:] == ["snapshot"]
 
 
 def test_provider_playbook_uses_openclaw_spine_without_secrets() -> None:

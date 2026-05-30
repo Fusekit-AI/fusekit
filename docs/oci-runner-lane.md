@@ -23,10 +23,9 @@ Explicit lanes:
 fusekit launch /path/to/app --runner local
 fusekit launch /path/to/app --runner oci-free
 fusekit launch /path/to/app --runner oci-existing
-fusekit launch /path/to/app --runner byoc
 ```
 
-V1 should implement `local`, `oci-free`, and `oci-existing`. `byoc` is the future provider plugin lane.
+V1 implements `local`, `oci-cloud-shell`, `oci-free`, and `oci-existing`. BYOC is the future provider plugin lane and is intentionally not exposed as a selectable runner until it has a real SSH/bootstrap/detonation adapter.
 
 ## OCI Auth Modes
 

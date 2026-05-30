@@ -34,7 +34,7 @@ The run is launch-ready only when `.fusekit/acceptance/report.json` contains:
 
 ```json
 {
-  "demo_ready": true,
+  "launch_ready": true,
   "mode": "live"
 }
 ```

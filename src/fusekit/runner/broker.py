@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-RUNNERS = ("auto", "local", "oci-cloud-shell", "oci-free", "oci-existing", "byoc")
+RUNNERS = ("auto", "local", "oci-cloud-shell", "oci-free", "oci-existing")
 
 
 @dataclass(frozen=True)
@@ -42,7 +42,7 @@ def resolve_runner(
         return RunnerResolution(effective, "local", "unknown runner requested; using local")
     if effective == "local":
         return RunnerResolution(requested, "local", "local runner explicitly selected")
-    if effective in {"oci-cloud-shell", "oci-free", "oci-existing", "byoc"}:
+    if effective in {"oci-cloud-shell", "oci-free", "oci-existing"}:
         return RunnerResolution(requested, effective, f"{effective} explicitly selected")
     if allow_incomplete:
         return RunnerResolution(requested, "local", "explicit local rehearsal")

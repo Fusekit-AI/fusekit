@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -63,13 +64,72 @@ class PlaywrightBrowserSpine:
         return SpineResult("open", ("playwright", "goto", url), "ok")
 
     def snapshot(self) -> SpineResult:
-        """Capture a non-secret page title/url snapshot."""
+        """Capture a sanitized page snapshot without input values or secrets."""
 
         if self.dry_run:
             return SpineResult("snapshot", ("playwright", "snapshot"), "dry-run")
         page = self._ensure_page()
-        payload = {"url": page.url, "title": page.title()}
-        return SpineResult("snapshot", ("playwright", "snapshot"), "ok", stdout=str(payload))
+        payload = page.evaluate(
+            """
+            () => {
+              const visible = (element) => {
+                const style = window.getComputedStyle(element);
+                const rect = element.getBoundingClientRect();
+                return style.visibility !== "hidden"
+                  && style.display !== "none"
+                  && rect.width > 0
+                  && rect.height > 0;
+              };
+              const labelFor = (element) => {
+                if (element.id) {
+                  const label = document.querySelector(`label[for="${CSS.escape(element.id)}"]`);
+                  if (label && label.textContent) return label.textContent.trim();
+                }
+                const wrapping = element.closest("label");
+                return wrapping && wrapping.textContent ? wrapping.textContent.trim() : "";
+              };
+              const textOf = (element) =>
+                (element.innerText || element.textContent || "")
+                  .replace(/\\s+/g, " ")
+                  .trim()
+                  .slice(0, 160);
+              const selector = [
+                "button",
+                "a[href]",
+                "input",
+                "textarea",
+                "select",
+                "[role=button]",
+                "[role=link]",
+                "[aria-label]",
+              ].join(",");
+              const elements = Array.from(document.querySelectorAll(selector))
+                .filter(visible)
+                .slice(0, 80)
+                .map((element, index) => ({
+                  ref: String(index + 1),
+                  tag: element.tagName.toLowerCase(),
+                  role: element.getAttribute("role") || "",
+                  text: textOf(element),
+                  label: labelFor(element),
+                  aria: element.getAttribute("aria-label") || "",
+                  placeholder: element.getAttribute("placeholder") || "",
+                  type: element.getAttribute("type") || "",
+                  href: element instanceof HTMLAnchorElement ? element.href : "",
+                  disabled: Boolean(
+                    element.disabled || element.getAttribute("aria-disabled") === "true"
+                  ),
+                }));
+              return { url: location.href, title: document.title, elements };
+            }
+            """
+        )
+        return SpineResult(
+            "snapshot",
+            ("playwright", "snapshot"),
+            "ok",
+            stdout=json.dumps(payload, sort_keys=True),
+        )
 
     def click_text(self, text: str) -> SpineResult:
         """Click visible text or a button by accessible name."""

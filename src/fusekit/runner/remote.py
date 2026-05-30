@@ -66,7 +66,7 @@ def render_cloud_init(*, fusekit_wheel_url: str = "", openclaw_install_url: str)
         "--prefix /opt/fusekit-openclaw --version latest --no-onboard"
     )
     verify_openclaw = (
-        "export PATH=/opt/fusekit-openclaw/openclaw/bin:$PATH && "
+        "export PATH=/opt/fusekit-openclaw/bin:$PATH && "
         "OPENCLAW_HOME=/var/lib/fusekit-runner/openclaw-state fusekit-runner-verify"
     )
     runner_loop = (

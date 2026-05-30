@@ -50,12 +50,18 @@ class AcceptanceReport:
 
     mode: str
     app_path: str
-    demo_ready: bool
+    launch_ready: bool
     checks: tuple[AcceptanceCheck, ...]
     ledger_path: str
     report_path: str
     missing: tuple[str, ...] = ()
     created_at: float = field(default_factory=time.time)
+
+    @property
+    def demo_ready(self) -> bool:
+        """Deprecated compatibility alias for older proof reports."""
+
+        return self.launch_ready
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the report."""
@@ -63,7 +69,8 @@ class AcceptanceReport:
         return {
             "mode": self.mode,
             "app_path": self.app_path,
-            "demo_ready": self.demo_ready,
+            "launch_ready": self.launch_ready,
+            "demo_ready": self.launch_ready,
             "checks": [check.to_dict() for check in self.checks],
             "missing": list(self.missing),
             "ledger_path": self.ledger_path,
@@ -137,21 +144,21 @@ def run_acceptance(
     _check_detonation(fusekit_dir, mode, checks, missing)
     _check_leaks(app_path, checks, missing, ledger)
 
-    demo_ready = all(check.status == "ok" for check in checks) and not missing
+    launch_ready = all(check.status == "ok" for check in checks) and not missing
     if mode == "rehearsal":
-        demo_ready = all(check.status in {"ok", "skipped"} for check in checks)
+        launch_ready = all(check.status in {"ok", "skipped"} for check in checks)
     report_path = output_dir / "report.json"
     report = AcceptanceReport(
         mode=mode,
         app_path=str(app_path),
-        demo_ready=demo_ready,
+        launch_ready=launch_ready,
         checks=tuple(checks),
         ledger_path=str(output_dir / "ledger.jsonl"),
         report_path=str(report_path),
         missing=tuple(missing),
     )
     report_path.write_text(json.dumps(report.to_dict(), indent=2, sort_keys=True) + "\n", "utf-8")
-    ledger.record("acceptance.finished", {"demo_ready": demo_ready, "missing": missing})
+    ledger.record("acceptance.finished", {"launch_ready": launch_ready, "missing": missing})
     return report
 
 

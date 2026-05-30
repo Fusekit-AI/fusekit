@@ -1,1 +1,1 @@
-"""Schema package placeholder for packaged JSON schemas."""
+"""Packaged schema resources for FuseKit manifests and proof artifacts."""

@@ -105,7 +105,8 @@ class OpenClawBrowserSpine:
     def wait_for_text(self, text: str) -> SpineResult:
         """Capture a snapshot while waiting logic is handled by the inference loop."""
 
-        return self._run("wait_for_text", ["snapshot", text])
+        del text
+        return self._run("wait_for_text", ["snapshot"])
 
     def _run(self, action: str, args: list[str]) -> SpineResult:
         command = [

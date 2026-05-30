@@ -427,7 +427,7 @@ def _launch_args(parser: argparse.ArgumentParser) -> None:
     _provider_apply_args(parser)
     parser.add_argument(
         "--runner",
-        choices=("auto", "local", "oci-cloud-shell", "oci-free", "oci-existing", "byoc"),
+        choices=("auto", "local", "oci-cloud-shell", "oci-free", "oci-existing"),
         default="auto",
     )
     parser.add_argument("--app-source", default="")
@@ -635,7 +635,7 @@ def _cmd_provider_verify(args: argparse.Namespace) -> int:
     else:
         for result in results:
             print(f"{result.status:8} {result.kind:12} {result.target}")
-    return 0 if all(result.status in {"ok", "skipped", "pending"} for result in results) else 1
+    return 0 if all(result.status in {"ok", "skipped"} for result in results) else 1
 
 
 def _cmd_provider_list(args: argparse.Namespace) -> int:
@@ -674,7 +674,7 @@ def _cmd_acceptance_run(args: argparse.Namespace) -> int:
         print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
     else:
         print(f"Acceptance mode: {report.mode}")
-        print(f"Demo ready: {str(report.demo_ready).lower()}")
+        print(f"Launch ready: {str(report.launch_ready).lower()}")
         print(f"Report: {report.report_path}")
         print(f"Ledger: {report.ledger_path}")
         for check in report.checks:
@@ -683,7 +683,7 @@ def _cmd_acceptance_run(args: argparse.Namespace) -> int:
             print("Missing:")
             for item in report.missing:
                 print(f"- {item}")
-    return 0 if report.demo_ready else 1
+    return 0 if report.launch_ready else 1
 
 
 def _cmd_install(args: argparse.Namespace) -> int:
@@ -2071,8 +2071,9 @@ def _verify_provider_packs(
         )
         payload = {"provider": pack.provider, "results": [result.to_dict() for result in results]}
         audit.record("provider_pack.verify", payload)
-        all_ok = all(result.status in {"ok", "skipped", "pending"} for result in results)
-        overall = "ok" if all_ok else "failed"
+        all_ok = all(result.status in {"ok", "skipped"} for result in results)
+        any_pending = any(result.status == "pending" for result in results)
+        overall = "ok" if all_ok else "pending" if any_pending else "failed"
         receipt.add_action("provider_pack.verify", overall, payload)
         if overall != "ok" and not args.allow_incomplete:
             raise FuseKitError(

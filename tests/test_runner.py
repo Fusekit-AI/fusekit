@@ -124,6 +124,8 @@ def test_remote_bootstrap_artifacts_are_self_contained() -> None:
     assert "python3 -m playwright install --with-deps chromium" in cloud_init
     assert "openclaw browser status" in cloud_init
     assert "fusekit-runner-verify" in cloud_init
+    assert "export PATH=/opt/fusekit-openclaw/bin:$PATH" in cloud_init
+    assert "/opt/fusekit-openclaw/openclaw/bin" not in cloud_init
     assert should_include_app_path(Path("src/index.js"))
     assert not should_include_app_path(Path(".env"))
     assert not should_include_app_path(Path(".fusekit/fusekit.vault.json"))

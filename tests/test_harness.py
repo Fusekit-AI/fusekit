@@ -18,6 +18,7 @@ def test_acceptance_rehearsal_writes_ledger_and_report(tmp_path) -> None:
     assert (app / "fusekit.yaml").exists()
     assert (app / ".fusekit" / "acceptance" / "ledger.jsonl").exists()
     report_json = json.loads((app / ".fusekit" / "acceptance" / "report.json").read_text())
+    assert report_json["launch_ready"] is True
     assert report_json["demo_ready"] is True
     assert any(check["id"] == "manifest.scanned" for check in report_json["checks"])
 

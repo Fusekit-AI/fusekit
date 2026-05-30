@@ -24,7 +24,7 @@ and detonation.
 11. Show wrong passphrase fails.
 12. Show redacted receipt and audit log.
 13. Run `fusekit acceptance run --mode live`.
-14. Show `"demo_ready": true`.
+14. Show `"launch_ready": true`.
 15. Show detonation proof.
 
 ## Real Launch Command Shape
@@ -61,7 +61,7 @@ fusekit acceptance run /path/to/moonlite-rsvp \
 
 Do not publish the public walkthrough until:
 
-- the live acceptance report says `demo_ready: true`
+- the live acceptance report says `launch_ready: true`
 - the custom domain resolves
 - Resend API/domain verification passes
 - Vercel deployment is live

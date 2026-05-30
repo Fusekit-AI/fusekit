@@ -35,6 +35,7 @@
 - [x] P0 North Star audit fixes: pack secret fan-out is route-limited, explicit app-env secret routes reject provider/runner/LLM auth material, secret-bearing HTTP verification targets are provider-domain constrained, and provider pack synthesis now has an LLM-capable intelligence loop with validation/repair/cache.
 - [x] P1 North Star audit fixes: provider-pack setup execution uses a handler registry, unknown required verification/setup recipes fail instead of silently skipping, OCI remote launches replay non-secret launch/app context, and verification polling can return pending.
 - [x] P2 North Star audit fixes: service gates have durable persisted state, provider-pack rollback intent can be planned directly, verification retry knobs are exposed in CLI/remote launch, and OpenClaw bootstrap supports version/hash pinning.
+- [x] Post-audit bug pass: OCI VM bootstrap now installs OpenClaw on the executable PATH, OpenClaw wait snapshots use the correct command shape, provider verification treats pending live checks as incomplete unless explicitly allowed, and launch-readiness artifacts use product language while preserving compatibility aliases.
 
 ## Milestone 1: Repo Skeleton And CLI
 
@@ -160,7 +161,7 @@
 ## Milestone 11: OCI Clean-Room Runner
 
 - [x] Design the OCI runner lane in `docs/oci-runner-lane.md`.
-- [x] Add runner selection to `launch`: `--runner auto|local|oci-cloud-shell|oci-free|oci-existing|byoc`.
+- [x] Add runner selection to `launch`: `--runner auto|local|oci-cloud-shell|oci-free|oci-existing`.
 - [x] Add `fusekit runner` command group.
 - [x] Add OCI auth planner with modes: `auto`, `existing-config`, `browser-session`, and `api-key-upload`.
 - [x] Add supervised OCI signup/login/API-key handoff through OpenClaw.
