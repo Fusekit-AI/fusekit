@@ -94,7 +94,18 @@ def build_cloud_shell_bootstrap_command(
                     "work=\"$HOME/fusekit-cloud-shell\"",
                     "rm -rf \"$work\"",
                     "mkdir -p \"$work\"",
-                    f"python3 -m pip install --user --upgrade {package}",
+                    (
+                        "if command -v python3 >/dev/null 2>&1; then python_cmd=python3; "
+                        "elif command -v python >/dev/null 2>&1; then python_cmd=python; "
+                        "else printf '%s\\n' 'Python is required in OCI Cloud Shell.' >&2; "
+                        "exit 43; fi"
+                    ),
+                    (
+                        "if ! command -v git >/dev/null 2>&1; then "
+                        "printf '%s\\n' 'Git is required in OCI Cloud Shell.' >&2; "
+                        "exit 43; fi"
+                    ),
+                    f"\"$python_cmd\" -m pip install --user --upgrade {package}",
                     f"app_source={source}",
                     "if [ -n \"$app_source\" ]; then",
                     "  git clone --depth=1 \"$app_source\" \"$work/app\"",

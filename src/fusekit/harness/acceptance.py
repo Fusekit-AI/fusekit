@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from fusekit.errors import FuseKitError
+from fusekit.errors import FuseKitError, VaultError
 from fusekit.harness.ledger import HarnessLedger
 from fusekit.manifest import SetupManifest, load_manifest, write_manifest
 from fusekit.planner import build_plan
@@ -277,6 +277,26 @@ def _check_vault(
             str(snapshot),
         )
     )
+    wrong_passphrase = passphrase + "\n-fusekit-wrong-passphrase-proof"
+    try:
+        Vault.open(vault_path, wrong_passphrase)
+    except VaultError:
+        checks.append(
+            AcceptanceCheck(
+                "vault.wrong_passphrase",
+                "ok",
+                "Wrong-passphrase proof failed as expected.",
+            )
+        )
+    else:
+        checks.append(
+            AcceptanceCheck(
+                "vault.wrong_passphrase",
+                "failed",
+                "Vault opened with an incorrect passphrase.",
+            )
+        )
+        missing.append("wrong-passphrase rejection")
 
 
 def _check_receipt(

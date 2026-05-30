@@ -70,6 +70,7 @@ def test_acceptance_cli_checks_vault_without_leaking_secret(tmp_path, capsys) ->
 
     output = capsys.readouterr().out
     assert "vault.unlock" in output
+    assert "vault.wrong_passphrase" in output
     assert secret not in output
     assert secret not in (app / ".fusekit" / "acceptance" / "ledger.jsonl").read_text(
         encoding="utf-8"

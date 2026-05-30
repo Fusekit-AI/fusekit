@@ -83,6 +83,8 @@ def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
 
     assert "cloud.oracle.com" in plan.deeplink_url
     assert "fusekit launch" in plan.bootstrap_command
+    assert "python_cmd=python3" in plan.bootstrap_command
+    assert "Git is required in OCI Cloud Shell" in plan.bootstrap_command
     assert "https://github.com/example/app.git" in plan.bootstrap_command
     assert "git+https://github.com/example/fusekit.git" in plan.bootstrap_command
     assert "--github-repo example/app" in plan.bootstrap_command
