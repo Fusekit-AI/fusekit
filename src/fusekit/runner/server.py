@@ -67,15 +67,4 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
 
 
 def _live_html(job: JobState) -> str:
-    base = render_control_room(job)
-    script = """
-<script>
-async function refreshJob() {
-  const response = await fetch('/api/job', { cache: 'no-store' });
-  const job = await response.json();
-  document.querySelector('.pill').textContent = `${job.runner} · ${job.status}`;
-}
-setInterval(refreshJob, 2000);
-</script>
-"""
-    return base.replace("</body>", f"{script}</body>")
+    return render_control_room(job)
