@@ -22,6 +22,7 @@
 - [x] Runner broker, resumable job state, and local control-room artifact exist.
 - [x] Live control-room server, leak scanner, rollback/start-over, and remote runner loop exist.
 - [x] Control-room UI is polished with progress, current/next focus, human-gate emphasis, live refresh, and artifact copy actions.
+- [x] SnowmanAI branding and state-specific snowman mascot animations are applied to the control room.
 - [x] `launch --runner auto` enters OCI authorization inline instead of requiring a separate runner authorization command.
 - [x] `launch --runner auto` now defaults to OCI Cloud Shell deeplink when no local OCI profile/config exists.
 - [x] FuseKit prompt gates are opt-in through `--fusekit-gates explicit`; default launch uses service-created gates only.

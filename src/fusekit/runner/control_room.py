@@ -21,7 +21,6 @@ STATUS_LABELS = {
 }
 
 TERMINAL_STEP_STATUSES = {"done", "skipped"}
-ACTIVE_STEP_STATUSES = {"running", "waiting", "failed"}
 
 
 def render_control_room(job: JobState) -> str:
@@ -66,7 +65,7 @@ def _render_header(job: JobState) -> str:
     return f"""
     <header class="hero">
       <div>
-        <div class="eyebrow">FuseKit control room</div>
+        {_render_brand_lockup("control room")}
         <h1>{html.escape(_headline(job))}</h1>
         <p>
           Job <code>{html.escape(job.id)}</code> is wiring
@@ -112,6 +111,7 @@ def _render_focus(job: JobState) -> str:
     current = _current_step(job)
     next_step = _next_step(job, current)
     gate_class = " gate" if current and current.status == "waiting" else ""
+    mascot_state = _mascot_state(current, job)
     focus_label = html.escape(_focus_kicker(current))
     focus_status = html.escape(current.status if current else job.status)
     current_label = html.escape(current.label if current else "Launch complete")
@@ -122,6 +122,7 @@ def _render_focus(job: JobState) -> str:
           <span class="section-kicker" data-focus-kicker>{focus_label}</span>
           <span class="mini-dot {focus_status}" data-focus-dot></span>
         </div>
+        {_render_snowman_scene(mascot_state)}
         <h2 data-current-title>{current_label}</h2>
         <p data-current-detail>{html.escape(_step_detail(current))}</p>
         <div class="next-line">
@@ -194,7 +195,50 @@ def _render_artifacts(job: JobState) -> str:
           This room should show only encrypted vaults, redacted receipts, audit logs,
           and rollback metadata. Raw secrets do not belong here.
         </p>
-      </aside>
+</aside>
+"""
+
+
+def _render_brand_lockup(surface: str) -> str:
+    return f"""
+        <div class="brand-lockup" aria-label="Snowman AI FuseKit {html.escape(surface)}">
+          <span class="brand-mark" aria-hidden="true">
+            <span class="mark-hat"></span>
+            <span class="mark-head"></span>
+            <span class="mark-node mark-node-a"></span>
+            <span class="mark-node mark-node-b"></span>
+            <span class="mark-node mark-node-c"></span>
+          </span>
+          <span class="brand-copy">
+            <strong>Snowman AI</strong>
+            <span>FuseKit {html.escape(surface)}</span>
+          </span>
+        </div>
+"""
+
+
+def _render_snowman_scene(state: str) -> str:
+    return f"""
+        <div class="snow-scene state-{html.escape(state)}" data-snow-scene>
+          <div class="snowman" aria-hidden="true">
+            <span class="snow-hat"></span>
+            <span class="snow-head">
+              <span class="eye left"></span>
+              <span class="eye right"></span>
+              <span class="nose"></span>
+            </span>
+            <span class="snow-body">
+              <span class="button one"></span>
+              <span class="button two"></span>
+            </span>
+            <span class="arm left"></span>
+            <span class="arm right"></span>
+            <span class="puddle"></span>
+            <span class="steam one"></span>
+            <span class="steam two"></span>
+          </div>
+          <div class="snow-prop" data-snow-caption>{html.escape(_mascot_caption(state))}</div>
+        </div>
 """
 
 
@@ -208,10 +252,40 @@ def _headline(job: JobState) -> str:
     return "Launch in progress"
 
 
+def _mascot_state(step: JobStep | None, job: JobState) -> str:
+    if step and step.id == "detonate.workspace":
+        return "detonate"
+    if job.status == "done":
+        return "done"
+    if step and step.status == "waiting":
+        return "gate"
+    if step and step.status == "failed":
+        return "repair"
+    if step and "verify" in step.id:
+        return "verify"
+    if step and any(part in step.id for part in ["provision", "bootstrap", "upload", "setup"]):
+        return "working"
+    return "launch"
+
+
+def _mascot_caption(state: str) -> str:
+    captions = {
+        "launch": "packing the clean-room suitcase",
+        "working": "tightening the little launch bolts",
+        "gate": "waiting politely with a tiny access badge",
+        "verify": "checking the live app with a frosty magnifier",
+        "repair": "opening the repair kit",
+        "detonate": "melting away the worker state",
+        "done": "saving only the encrypted survivors",
+    }
+    return captions.get(state, captions["launch"])
+
+
 def _current_step(job: JobState) -> JobStep | None:
-    for step in job.steps:
-        if step.status in ACTIVE_STEP_STATUSES:
-            return step
+    for status in ("failed", "waiting", "running"):
+        for step in job.steps:
+            if step.status == status:
+                return step
     for step in job.steps:
         if step.status == "pending":
             return step
@@ -290,8 +364,17 @@ _STYLE = r"""
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", sans-serif;
-  background: #efeee7;
-  color: #111615;
+  --snow-navy: #00152a;
+  --snow-deep: #020b18;
+  --snow-blue: #0097ff;
+  --snow-blue-dark: #0067d9;
+  --snow-ice: #eef8ff;
+  --snow-panel: rgba(255, 255, 255, 0.82);
+  --snow-line: rgba(0, 151, 255, 0.18);
+  --snow-ink: #071525;
+  --snow-muted: #60738a;
+  background: var(--snow-ice);
+  color: var(--snow-ink);
 }
 
 * {
@@ -307,10 +390,12 @@ body {
   margin: 0;
   overflow-x: hidden;
   background:
-    linear-gradient(90deg, rgba(18, 22, 20, 0.05) 1px, transparent 1px),
-    linear-gradient(180deg, rgba(18, 22, 20, 0.05) 1px, transparent 1px),
-    #efeee7;
-  background-size: 42px 42px;
+    radial-gradient(circle at 76% 4%, rgba(0, 151, 255, 0.22), transparent 28%),
+    radial-gradient(circle at 10% 22%, rgba(0, 103, 217, 0.12), transparent 26%),
+    linear-gradient(90deg, rgba(0, 21, 42, 0.04) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(0, 21, 42, 0.04) 1px, transparent 1px),
+    var(--snow-ice);
+  background-size: 100% 100%, 100% 100%, 42px 42px, 42px 42px;
 }
 
 .shell {
@@ -328,12 +413,123 @@ body {
   align-items: flex-start;
   gap: 28px;
   padding-bottom: 28px;
-  border-bottom: 2px solid #111615;
+  border-bottom: 2px solid var(--snow-navy);
+}
+
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+}
+
+.brand-mark {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--snow-navy);
+  box-shadow: inset 0 0 0 1px rgba(0, 151, 255, 0.22);
+}
+
+.mark-hat,
+.mark-head,
+.mark-node {
+  position: absolute;
+  background: var(--snow-blue);
+  box-shadow: 0 0 16px rgba(0, 151, 255, 0.38);
+}
+
+.mark-hat {
+  width: 20px;
+  height: 14px;
+  top: 5px;
+  left: 12px;
+  border-radius: 4px 4px 2px 2px;
+}
+
+.mark-hat::after {
+  content: "";
+  position: absolute;
+  width: 28px;
+  height: 5px;
+  left: -4px;
+  top: 12px;
+  border-radius: 999px;
+  background: inherit;
+}
+
+.mark-head {
+  width: 18px;
+  height: 18px;
+  top: 21px;
+  left: 14px;
+  border-radius: 50%;
+  background: transparent;
+  border: 4px solid var(--snow-blue);
+}
+
+.mark-node {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.mark-node::before {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 3px;
+  left: -14px;
+  top: 2px;
+  border-radius: 999px;
+  background: var(--snow-blue);
+  transform-origin: right center;
+}
+
+.mark-node-a {
+  left: 7px;
+  top: 26px;
+}
+
+.mark-node-a::before {
+  transform: rotate(34deg);
+}
+
+.mark-node-b {
+  left: 9px;
+  top: 36px;
+}
+
+.mark-node-b::before {
+  transform: rotate(-36deg);
+}
+
+.mark-node-c {
+  right: 6px;
+  bottom: 5px;
+}
+
+.brand-copy {
+  display: grid;
+  gap: 1px;
+}
+
+.brand-copy strong {
+  color: var(--snow-navy);
+  font-size: 17px;
+}
+
+.brand-copy span {
+  color: var(--snow-muted);
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
 }
 
 .eyebrow,
 .section-kicker {
-  color: #5b625f;
+  color: var(--snow-muted);
   font-size: 12px;
   font-weight: 850;
   letter-spacing: 0;
@@ -358,18 +554,18 @@ h1 {
 .hero p {
   max-width: 820px;
   margin-top: 14px;
-  color: #38413d;
+  color: #31465c;
   font-size: 16px;
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
 
 code {
-  border: 1px solid rgba(17, 22, 21, 0.12);
+  border: 1px solid rgba(0, 21, 42, 0.12);
   border-radius: 6px;
   padding: 2px 6px;
   background: rgba(255, 255, 255, 0.72);
-  color: #111615;
+  color: var(--snow-ink);
   font: 0.94em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   overflow-wrap: anywhere;
 }
@@ -390,11 +586,11 @@ button {
   align-items: center;
   justify-content: center;
   min-height: 32px;
-  border: 1px solid rgba(17, 22, 21, 0.14);
+  border: 1px solid rgba(0, 21, 42, 0.14);
   border-radius: 999px;
   padding: 7px 11px;
   background: rgba(255, 255, 255, 0.72);
-  color: #25302d;
+  color: #15304c;
   font-size: 12px;
   font-weight: 850;
   white-space: nowrap;
@@ -402,12 +598,12 @@ button {
 
 .pill.status {
   border-color: transparent;
-  color: #111615;
+  color: var(--snow-ink);
 }
 
 .pill.muted,
 .live-pill {
-  color: #5b625f;
+  color: var(--snow-muted);
 }
 
 .overview {
@@ -423,10 +619,10 @@ button {
 .timeline,
 .artifact-panel {
   min-width: 0;
-  border: 1px solid rgba(17, 22, 21, 0.13);
+  border: 1px solid rgba(0, 151, 255, 0.14);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.66);
-  box-shadow: 0 28px 70px rgba(17, 22, 21, 0.08);
+  background: var(--snow-panel);
+  box-shadow: 0 28px 70px rgba(0, 21, 42, 0.1);
 }
 
 .progress-panel,
@@ -451,14 +647,14 @@ button {
   margin: 28px 0 14px;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(17, 22, 21, 0.1);
+  background: rgba(0, 21, 42, 0.09);
 }
 
 .meter span {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: #1b6b57;
+  background: linear-gradient(90deg, var(--snow-blue), #6fd7ff);
   transition: width 220ms ease;
 }
 
@@ -470,10 +666,10 @@ button {
 
 .stats span {
   min-height: 54px;
-  border: 1px solid rgba(17, 22, 21, 0.1);
+  border: 1px solid rgba(0, 151, 255, 0.14);
   border-radius: 10px;
   padding: 10px;
-  color: #4d5652;
+  color: #536b82;
   background: rgba(255, 255, 255, 0.52);
   font-size: 12px;
   font-weight: 800;
@@ -481,24 +677,323 @@ button {
 
 .stats strong {
   display: block;
-  color: #111615;
+  color: var(--snow-navy);
   font-size: 22px;
   line-height: 1;
 }
 
 .focus-panel {
-  background: #111615;
-  color: #f5f3ea;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 84% 12%, rgba(0, 151, 255, 0.28), transparent 30%),
+    linear-gradient(135deg, var(--snow-navy), var(--snow-deep));
+  color: #f7fbff;
 }
 
 .focus-panel.gate {
-  background: #261905;
+  background:
+    radial-gradient(circle at 82% 10%, rgba(0, 151, 255, 0.32), transparent 32%),
+    linear-gradient(135deg, #001f3f, #04101e);
 }
 
 .focus-panel .section-kicker,
 .focus-panel p,
 .next-line span {
   color: #bfc7c1;
+}
+
+.snow-scene {
+  position: relative;
+  min-height: 136px;
+  margin: 18px 0 4px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background:
+    linear-gradient(120deg, rgba(255, 255, 255, 0.08), transparent),
+    radial-gradient(circle at 74% 25%, rgba(0, 151, 255, 0.22), transparent 34%);
+}
+
+.snow-scene::before {
+  content: "";
+  position: absolute;
+  inset: auto 18px 20px 108px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(111, 215, 255, 0.82), transparent);
+  animation: data-wave 2.8s ease-in-out infinite;
+}
+
+.snowman {
+  position: absolute;
+  left: 26px;
+  bottom: 18px;
+  width: 86px;
+  height: 94px;
+  animation: snow-bob 2.4s ease-in-out infinite;
+}
+
+.snow-head,
+.snow-body,
+.snow-hat,
+.arm,
+.puddle,
+.steam {
+  position: absolute;
+}
+
+.snow-head {
+  width: 39px;
+  height: 39px;
+  left: 24px;
+  top: 14px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: inset -6px -7px 0 #d9efff;
+}
+
+.snow-body {
+  width: 60px;
+  height: 54px;
+  left: 13px;
+  bottom: 0;
+  border-radius: 48% 48% 42% 42%;
+  background: #ffffff;
+  box-shadow: inset -8px -9px 0 #d9efff;
+}
+
+.snow-hat {
+  width: 34px;
+  height: 20px;
+  left: 26px;
+  top: 1px;
+  border-radius: 6px 6px 2px 2px;
+  background: var(--snow-blue);
+  box-shadow: 0 0 18px rgba(0, 151, 255, 0.4);
+}
+
+.snow-hat::after {
+  content: "";
+  position: absolute;
+  width: 44px;
+  height: 7px;
+  left: -5px;
+  top: 17px;
+  border-radius: 999px;
+  background: var(--snow-blue);
+}
+
+.eye {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  top: 14px;
+  border-radius: 50%;
+  background: var(--snow-navy);
+}
+
+.eye.left {
+  left: 12px;
+}
+
+.eye.right {
+  right: 12px;
+}
+
+.nose {
+  position: absolute;
+  width: 13px;
+  height: 5px;
+  left: 19px;
+  top: 21px;
+  border-radius: 999px;
+  background: #ff9f2e;
+}
+
+.button {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  left: 27px;
+  border-radius: 50%;
+  background: var(--snow-blue-dark);
+}
+
+.button.one {
+  top: 18px;
+}
+
+.button.two {
+  top: 32px;
+}
+
+.arm {
+  width: 32px;
+  height: 4px;
+  top: 49px;
+  border-radius: 999px;
+  background: #7e5a38;
+}
+
+.arm.left {
+  left: 1px;
+  transform: rotate(-22deg);
+}
+
+.arm.right {
+  right: 0;
+  transform: rotate(24deg);
+  transform-origin: left center;
+}
+
+.snow-prop {
+  position: absolute;
+  left: 124px;
+  right: 18px;
+  bottom: 22px;
+  color: #d5ecff;
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.snow-prop::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--snow-blue);
+  box-shadow: 0 0 14px rgba(0, 151, 255, 0.65);
+}
+
+.state-gate .arm.right {
+  animation: snow-wave 1.1s ease-in-out infinite;
+}
+
+.state-gate .snow-prop::after {
+  content: "  Tap the provider prompt, then I keep going.";
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.state-working .snow-hat,
+.state-launch .snow-hat {
+  animation: hat-tap 1.4s ease-in-out infinite;
+}
+
+.state-verify .snowman::after {
+  content: "";
+  position: absolute;
+  width: 25px;
+  height: 25px;
+  right: -14px;
+  top: 35px;
+  border: 4px solid #bfe8ff;
+  border-radius: 50%;
+  box-shadow: 0 0 14px rgba(0, 151, 255, 0.35);
+}
+
+.state-verify .snowman::before {
+  content: "";
+  position: absolute;
+  width: 20px;
+  height: 4px;
+  right: -24px;
+  top: 62px;
+  border-radius: 999px;
+  background: #bfe8ff;
+  transform: rotate(42deg);
+}
+
+.state-repair .arm.left {
+  animation: snow-fix 0.9s ease-in-out infinite;
+}
+
+.state-detonate .snow-head,
+.state-detonate .snow-body {
+  animation: snow-melt 2.2s ease-in-out infinite;
+}
+
+.state-detonate .puddle {
+  width: 76px;
+  height: 16px;
+  left: 5px;
+  bottom: -2px;
+  border-radius: 50%;
+  background: rgba(157, 222, 255, 0.52);
+  animation: puddle-grow 2.2s ease-in-out infinite;
+}
+
+.state-detonate .steam {
+  width: 3px;
+  height: 24px;
+  bottom: 52px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.74);
+  opacity: 0;
+}
+
+.state-detonate .steam.one {
+  left: 34px;
+  animation: steam-rise 1.8s ease-in-out infinite;
+}
+
+.state-detonate .steam.two {
+  left: 50px;
+  animation: steam-rise 1.8s ease-in-out 0.4s infinite;
+}
+
+.state-done .snowman {
+  animation: snow-celebrate 0.9s ease-in-out infinite;
+}
+
+@keyframes data-wave {
+  0%, 100% { transform: translateX(-16px); opacity: 0.42; }
+  50% { transform: translateX(18px); opacity: 1; }
+}
+
+@keyframes snow-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+@keyframes snow-wave {
+  0%, 100% { transform: rotate(18deg); }
+  50% { transform: rotate(-30deg); }
+}
+
+@keyframes hat-tap {
+  0%, 100% { transform: rotate(0); }
+  50% { transform: rotate(-5deg) translateY(-2px); }
+}
+
+@keyframes snow-fix {
+  0%, 100% { transform: rotate(-22deg); }
+  50% { transform: rotate(14deg); }
+}
+
+@keyframes snow-melt {
+  0%, 100% { transform: scaleY(1); opacity: 1; }
+  50% { transform: scaleY(0.7) translateY(16px); opacity: 0.72; }
+}
+
+@keyframes puddle-grow {
+  0%, 100% { transform: scaleX(0.7); opacity: 0.3; }
+  50% { transform: scaleX(1); opacity: 0.75; }
+}
+
+@keyframes steam-rise {
+  0% { transform: translateY(12px); opacity: 0; }
+  40% { opacity: 0.8; }
+  100% { transform: translateY(-22px); opacity: 0; }
+}
+
+@keyframes snow-celebrate {
+  0%, 100% { transform: rotate(-2deg) translateY(0); }
+  50% { transform: rotate(3deg) translateY(-5px); }
 }
 
 .focus-panel h2 {
@@ -743,6 +1238,7 @@ button {
   .focus-panel h2 {
     font-size: 20px;
     max-width: 100%;
+    overflow-wrap: anywhere;
     word-break: break-word;
   }
 
@@ -751,7 +1247,30 @@ button {
   .next-line strong {
     font-size: 14px;
     max-width: 310px;
+    overflow-wrap: anywhere;
     word-break: break-word;
+  }
+
+  .snow-scene {
+    min-height: 170px;
+  }
+
+  .snow-scene::before {
+    inset: auto 14px 18px 112px;
+  }
+
+  .snowman {
+    left: 20px;
+    transform: scale(0.9);
+    transform-origin: left bottom;
+  }
+
+  .snow-prop {
+    left: 108px;
+    right: 14px;
+    bottom: 28px;
+    max-width: 218px;
+    font-size: 12px;
   }
 
   .step-card,
@@ -805,10 +1324,10 @@ function progress(job) {
 }
 
 function currentStep(job) {
-  const active = (job.steps || []).find((step) =>
-    ["running", "waiting", "failed"].includes(step.status)
-  );
-  if (active) return active;
+  for (const status of ["failed", "waiting", "running"]) {
+    const active = (job.steps || []).find((step) => step.status === status);
+    if (active) return active;
+  }
   return (job.steps || []).find((step) => step.status === "pending") || (job.steps || []).at(-1);
 }
 
@@ -825,6 +1344,30 @@ function focusKicker(step) {
   if (step.status === "failed") return "Repair needed";
   if (step.status === "running") return "Now running";
   return "Up next";
+}
+
+function mascotState(step, job) {
+  if (step?.id === "detonate.workspace") return "detonate";
+  if (job.status === "done") return "done";
+  if (step?.status === "waiting") return "gate";
+  if (step?.status === "failed") return "repair";
+  if (step?.id?.includes("verify")) return "verify";
+  if (["provision", "bootstrap", "upload", "setup"].some((part) => step?.id?.includes(part))) {
+    return "working";
+  }
+  return "launch";
+}
+
+function mascotCaption(state) {
+  return {
+    launch: "packing the clean-room suitcase",
+    working: "tightening the little launch bolts",
+    gate: "waiting politely with a tiny access badge",
+    verify: "checking the live app with a frosty magnifier",
+    repair: "opening the repair kit",
+    detonate: "melting away the worker state",
+    done: "saving only the encrypted survivors",
+  }[state] || "packing the clean-room suitcase";
 }
 
 function escapeHtml(value) {
@@ -890,6 +1433,10 @@ function render(job) {
   const focus = document.querySelector("[data-focus-panel]");
   focus.classList.toggle("gate", current?.status === "waiting");
   document.querySelector("[data-focus-kicker]").textContent = focusKicker(current);
+  const state = mascotState(current, job);
+  const scene = document.querySelector("[data-snow-scene]");
+  scene.className = `snow-scene state-${state}`;
+  document.querySelector("[data-snow-caption]").textContent = mascotCaption(state);
   const dot = document.querySelector("[data-focus-dot]");
   dot.className = `mini-dot ${current?.status || job.status}`;
   document.querySelector("[data-current-title]").textContent = current?.label || "Launch complete";
