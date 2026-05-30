@@ -1,0 +1,1100 @@
+"""Provider capability packs synthesized from app evidence."""
+
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
+
+from fusekit.errors import ProviderError
+from fusekit.providers.handoff import ProviderHandoff
+from fusekit.providers.secret_routing import classify_secret_name
+
+PROVIDER_ID_RE = re.compile(r"^[a-z][a-z0-9-]{1,62}$")
+ENV_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,127}$")
+RAW_SECRET_RE = re.compile(
+    r"(?:"
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----|"
+    r"gh[pousr]_[A-Za-z0-9_]{20,}|"
+    r"sk_(?:live|test)_[A-Za-z0-9]{12,}|"
+    r"(?:key|token|secret|password)\s*[:=]\s*['\"]?[A-Za-z0-9_\-]{24,}"
+    r")",
+    re.IGNORECASE,
+)
+BANNED_PHRASES = (
+    "bypass captcha",
+    "solve captcha automatically",
+    "bypass mfa",
+    "disable mfa",
+    "bypass passkey",
+    "skip fraud",
+    "bypass fraud",
+    "export password manager",
+    "scrape password manager",
+    "harvest credentials",
+    "steal credentials",
+    "skip consent",
+    "accept consent without user",
+)
+SERVICE_GATE_WORDS = (
+    "captcha",
+    "mfa",
+    "passkey",
+    "payment",
+    "billing",
+    "fraud",
+    "consent",
+    "identity",
+    "verification",
+)
+BUILT_IN_PROVIDERS = {"github", "vercel", "cloudflare", "dns"}
+FRAMEWORK_ENV_PREFIXES = {
+    "astro",
+    "next",
+    "nuxt",
+    "public",
+    "react",
+    "remix",
+    "svelte",
+    "vite",
+}
+APP_ENV_SETUP_KINDS = {"github-repo-secrets", "vercel-env"}
+HTTP_JSON_PURPOSES = {
+    "verify-auth",
+    "verify-resource",
+    "verify-domain",
+    "verify-webhook",
+    "verify-health",
+}
+
+
+@dataclass(frozen=True)
+class ProviderDetection:
+    """How FuseKit recognizes a provider in an app."""
+
+    dependencies: tuple[str, ...] = ()
+    env_names: tuple[str, ...] = ()
+    env_prefixes: tuple[str, ...] = ()
+    imports: tuple[str, ...] = ()
+    docs_urls: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, list[str]]:
+        """Serialize detection hints."""
+
+        return {
+            "dependencies": list(self.dependencies),
+            "env_names": list(self.env_names),
+            "env_prefixes": list(self.env_prefixes),
+            "imports": list(self.imports),
+            "docs_urls": list(self.docs_urls),
+        }
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> ProviderDetection:
+        """Deserialize detection hints."""
+
+        return cls(
+            dependencies=_tuple(raw.get("dependencies", ()), "detection.dependencies"),
+            env_names=_tuple(raw.get("env_names", ()), "detection.env_names"),
+            env_prefixes=_tuple(raw.get("env_prefixes", ()), "detection.env_prefixes"),
+            imports=_tuple(raw.get("imports", ()), "detection.imports"),
+            docs_urls=_tuple(raw.get("docs_urls", ()), "detection.docs_urls"),
+        )
+
+
+@dataclass(frozen=True)
+class PackHandoff:
+    """Provider URLs and human gates needed for supervised setup."""
+
+    signup_url: str
+    token_url: str
+    project_url: str = ""
+    login_url: str = ""
+    token_env: str = ""
+    token_record_id: str = ""
+    token_label: str = ""
+    required_scopes: tuple[str, ...] = ()
+    account_steps: tuple[str, ...] = ()
+    secret_steps: tuple[str, ...] = ()
+    service_gates: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, object]:
+        """Serialize handoff metadata."""
+
+        return {
+            "signup_url": self.signup_url,
+            "login_url": self.login_url,
+            "token_url": self.token_url,
+            "project_url": self.project_url,
+            "token_env": self.token_env,
+            "token_record_id": self.token_record_id,
+            "token_label": self.token_label,
+            "required_scopes": list(self.required_scopes),
+            "account_steps": list(self.account_steps),
+            "secret_steps": list(self.secret_steps),
+            "service_gates": list(self.service_gates),
+        }
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> PackHandoff:
+        """Deserialize handoff metadata."""
+
+        return cls(
+            signup_url=_string(raw, "signup_url"),
+            login_url=str(raw.get("login_url", "")),
+            token_url=_string(raw, "token_url"),
+            project_url=str(raw.get("project_url", "")),
+            token_env=str(raw.get("token_env", "")),
+            token_record_id=str(raw.get("token_record_id", "")),
+            token_label=str(raw.get("token_label", "")),
+            required_scopes=_tuple(raw.get("required_scopes", ()), "handoff.required_scopes"),
+            account_steps=_tuple(raw.get("account_steps", ()), "handoff.account_steps"),
+            secret_steps=_tuple(raw.get("secret_steps", ()), "handoff.secret_steps"),
+            service_gates=_tuple(raw.get("service_gates", ()), "handoff.service_gates"),
+        )
+
+
+@dataclass(frozen=True)
+class VerificationRecipe:
+    """A non-secret check FuseKit can run after setup."""
+
+    kind: str
+    target: str
+    expected: str = ""
+    secret_refs: tuple[str, ...] = ()
+    inputs: dict[str, str] = field(default_factory=dict)
+    optional: bool = False
+
+    def to_dict(self) -> dict[str, object]:
+        """Serialize the recipe."""
+
+        return {
+            "kind": self.kind,
+            "target": self.target,
+            "expected": self.expected,
+            "secret_refs": list(self.secret_refs),
+            "inputs": dict(self.inputs),
+            "optional": self.optional,
+        }
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> VerificationRecipe:
+        """Deserialize the recipe."""
+
+        return cls(
+            kind=_string(raw, "kind"),
+            target=_string(raw, "target"),
+            expected=str(raw.get("expected", "")),
+            secret_refs=_tuple(raw.get("secret_refs", ()), "verification.secret_refs"),
+            inputs=_string_mapping(raw.get("inputs", {}), "verification.inputs"),
+            optional=bool(raw.get("optional", False)),
+        )
+
+
+@dataclass(frozen=True)
+class SetupRecipe:
+    """A provider setup operation executed by the generic pack runtime."""
+
+    kind: str
+    target: str
+    secret_refs: tuple[str, ...] = ()
+    inputs: dict[str, str] = field(default_factory=dict)
+    when: str = ""
+    optional: bool = False
+
+    def to_dict(self) -> dict[str, object]:
+        """Serialize the setup recipe."""
+
+        return {
+            "kind": self.kind,
+            "target": self.target,
+            "secret_refs": list(self.secret_refs),
+            "inputs": dict(self.inputs),
+            "when": self.when,
+            "optional": self.optional,
+        }
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> SetupRecipe:
+        """Deserialize the setup recipe."""
+
+        return cls(
+            kind=_string(raw, "kind"),
+            target=_string(raw, "target"),
+            secret_refs=_tuple(raw.get("secret_refs", ()), "setup.secret_refs"),
+            inputs=_string_mapping(raw.get("inputs", {}), "setup.inputs"),
+            when=str(raw.get("when", "")),
+            optional=bool(raw.get("optional", False)),
+        )
+
+
+@dataclass(frozen=True)
+class ProviderCapabilityPack:
+    """Validated provider setup pack for computer-use and API setup."""
+
+    schema_version: str
+    provider: str
+    display_name: str
+    category: str
+    confidence: str
+    evidence: tuple[str, ...]
+    detection: ProviderDetection
+    handoff: PackHandoff
+    required_secrets: tuple[str, ...]
+    env_vars: tuple[str, ...]
+    setup: tuple[SetupRecipe, ...]
+    setup_goals: tuple[str, ...]
+    verification: tuple[VerificationRecipe, ...]
+    rollback: tuple[str, ...]
+    provenance: tuple[str, ...] = ()
+    tool_permissions: tuple[str, ...] = ()
+    prohibited_actions: tuple[str, ...] = (
+        "Do not bypass CAPTCHA, MFA, passkeys, provider fraud controls, or consent screens.",
+        "Do not export browser password managers or harvest credentials.",
+        "Do not expose raw secrets in app files, logs, receipts, prompts, or terminal output.",
+    )
+
+    def __post_init__(self) -> None:
+        """Derive non-secret provenance and recipe permission bindings when omitted."""
+
+        if not self.provenance:
+            provenance = tuple(f"app-evidence:{line}" for line in self.evidence)
+            object.__setattr__(self, "provenance", provenance or ("app-evidence:unavailable",))
+        if not self.tool_permissions:
+            permissions = [
+                *(f"setup:{recipe.kind}" for recipe in self.setup),
+                *(f"verify:{recipe.kind}" for recipe in self.verification),
+            ]
+            object.__setattr__(self, "tool_permissions", tuple(sorted(set(permissions))))
+
+    def to_dict(self) -> dict[str, object]:
+        """Serialize the pack."""
+
+        return {
+            "schema_version": self.schema_version,
+            "provider": self.provider,
+            "display_name": self.display_name,
+            "category": self.category,
+            "confidence": self.confidence,
+            "evidence": list(self.evidence),
+            "detection": self.detection.to_dict(),
+            "handoff": self.handoff.to_dict(),
+            "required_secrets": list(self.required_secrets),
+            "env_vars": list(self.env_vars),
+            "setup": [recipe.to_dict() for recipe in self.setup],
+            "setup_goals": list(self.setup_goals),
+            "verification": [recipe.to_dict() for recipe in self.verification],
+            "rollback": list(self.rollback),
+            "provenance": list(self.provenance),
+            "tool_permissions": list(self.tool_permissions),
+            "prohibited_actions": list(self.prohibited_actions),
+        }
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> ProviderCapabilityPack:
+        """Deserialize a provider pack."""
+
+        detection = raw.get("detection", {})
+        handoff = raw.get("handoff", {})
+        verification = raw.get("verification", ())
+        setup = raw.get("setup", ())
+        if not isinstance(detection, dict):
+            raise ProviderError("provider pack detection must be a mapping.")
+        if not isinstance(handoff, dict):
+            raise ProviderError("provider pack handoff must be a mapping.")
+        if not isinstance(verification, list):
+            raise ProviderError("provider pack verification must be a list.")
+        if not isinstance(setup, list):
+            raise ProviderError("provider pack setup must be a list.")
+        return cls(
+            schema_version=str(raw.get("schema_version", "fusekit.provider-pack.v1")),
+            provider=_string(raw, "provider"),
+            display_name=_string(raw, "display_name"),
+            category=str(raw.get("category", "service")),
+            confidence=str(raw.get("confidence", "medium")),
+            evidence=_tuple(raw.get("evidence", ()), "evidence"),
+            detection=ProviderDetection.from_dict(detection),
+            handoff=PackHandoff.from_dict(handoff),
+            required_secrets=_tuple(raw.get("required_secrets", ()), "required_secrets"),
+            env_vars=_tuple(raw.get("env_vars", ()), "env_vars"),
+            setup=tuple(SetupRecipe.from_dict(item) for item in setup),
+            setup_goals=_tuple(raw.get("setup_goals", ()), "setup_goals"),
+            verification=tuple(VerificationRecipe.from_dict(item) for item in verification),
+            rollback=_tuple(raw.get("rollback", ()), "rollback"),
+            provenance=_tuple(raw.get("provenance", ()), "provenance"),
+            tool_permissions=_tuple(raw.get("tool_permissions", ()), "tool_permissions"),
+            prohibited_actions=_tuple(raw.get("prohibited_actions", ()), "prohibited_actions"),
+        )
+
+
+@dataclass(frozen=True)
+class ProviderEvidence:
+    """App evidence available to the capability-pack synthesizer."""
+
+    dependencies: tuple[str, ...] = ()
+    env_names: tuple[str, ...] = ()
+    imports: tuple[str, ...] = ()
+
+
+def load_provider_pack(path: Path) -> ProviderCapabilityPack:
+    """Load and validate a provider pack from JSON."""
+
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ProviderError(f"Cannot read provider capability pack: {path}") from exc
+    if not isinstance(raw, dict):
+        raise ProviderError("Provider capability pack must be a JSON object.")
+    pack = ProviderCapabilityPack.from_dict(raw)
+    validate_provider_pack(pack)
+    return pack
+
+
+def write_provider_pack(pack: ProviderCapabilityPack, path: Path) -> None:
+    """Write a provider pack as stable JSON."""
+
+    validate_provider_pack(pack)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(pack.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def validate_provider_pack(pack: ProviderCapabilityPack) -> None:
+    """Reject unsafe or underspecified provider packs."""
+
+    if pack.schema_version != "fusekit.provider-pack.v1":
+        raise ProviderError("Unsupported provider capability pack schema_version.")
+    if not PROVIDER_ID_RE.match(pack.provider):
+        raise ProviderError("Provider id must be lowercase kebab-case.")
+    if pack.confidence not in {"low", "medium", "high"}:
+        raise ProviderError("Provider pack confidence must be low, medium, or high.")
+    if not pack.required_secrets:
+        raise ProviderError("Provider pack must name at least one required secret.")
+    if not pack.verification:
+        raise ProviderError("Provider pack must include at least one verification recipe.")
+    if not pack.provenance:
+        raise ProviderError("Provider pack must include non-secret provenance.")
+    if not pack.tool_permissions:
+        raise ProviderError(
+            "Provider pack must bind setup/verification recipes to tool permissions."
+        )
+    _validate_tool_permissions(pack)
+    _validate_url(pack.handoff.signup_url, "handoff.signup_url")
+    _validate_url(pack.handoff.token_url, "handoff.token_url")
+    for field_name, url in (
+        ("handoff.login_url", pack.handoff.login_url),
+        ("handoff.project_url", pack.handoff.project_url),
+    ):
+        if url:
+            _validate_url(url, field_name)
+    env_names = set(pack.required_secrets) | set(pack.env_vars) | set(pack.detection.env_names)
+    for env_name in env_names:
+        if not ENV_NAME_RE.match(env_name):
+            raise ProviderError(f"Invalid env/secret name in provider pack: {env_name}")
+    if pack.handoff.token_env and not ENV_NAME_RE.match(pack.handoff.token_env):
+        raise ProviderError(f"Invalid handoff token env: {pack.handoff.token_env}")
+    if pack.handoff.token_record_id and not pack.handoff.token_record_id.startswith(
+        f"provider.{pack.provider}."
+    ):
+        raise ProviderError("handoff.token_record_id must be provider-scoped.")
+    for setup_recipe in pack.setup:
+        _validate_setup_secret_routes(pack, setup_recipe)
+    for verification_recipe in pack.verification:
+        _validate_verification_recipe_destination(pack, verification_recipe)
+    scan_payload = pack.to_dict()
+    scan_payload["prohibited_actions"] = []
+    text = json.dumps(scan_payload, sort_keys=True)
+    lowered = text.lower()
+    for phrase in BANNED_PHRASES:
+        if phrase in lowered:
+            raise ProviderError(f"Provider pack contains prohibited instruction: {phrase}")
+    if RAW_SECRET_RE.search(text):
+        raise ProviderError("Provider pack appears to contain raw secret material.")
+    gates = " ".join(pack.handoff.service_gates).lower()
+    for word in SERVICE_GATE_WORDS:
+        if word in lowered and word not in gates and word not in " ".join(
+            pack.prohibited_actions
+        ).lower():
+            raise ProviderError(f"Provider pack references {word} without a service gate.")
+
+
+def handoff_from_provider_pack(pack: ProviderCapabilityPack) -> ProviderHandoff:
+    """Convert a validated provider pack into handoff metadata."""
+
+    validate_provider_pack(pack)
+    return ProviderHandoff(
+        provider=pack.provider,
+        signup_url=pack.handoff.signup_url,
+        token_url=pack.handoff.token_url,
+        project_url=pack.handoff.project_url or pack.handoff.token_url,
+        token_env=pack.handoff.token_env or next(iter(pack.required_secrets)),
+        token_record_id=pack.handoff.token_record_id or f"provider.{pack.provider}.token",
+        token_label=pack.handoff.token_label or f"{pack.display_name} API token",
+        required_scopes=pack.handoff.required_scopes,
+        account_steps=pack.handoff.account_steps,
+        secret_steps=pack.handoff.secret_steps,
+    )
+
+
+def synthesize_provider_pack(
+    provider: str,
+    app_path: Path,
+    *,
+    evidence: ProviderEvidence | None = None,
+) -> ProviderCapabilityPack:
+    """Synthesize a deterministic capability pack from app evidence."""
+
+    normalized = provider.lower().strip()
+    if not PROVIDER_ID_RE.match(normalized):
+        raise ProviderError("Provider id must be lowercase kebab-case.")
+    evidence = evidence or collect_provider_evidence(app_path)
+    if normalized == "github":
+        return _github_pack(evidence)
+    if normalized == "vercel":
+        return _vercel_pack(evidence)
+    if normalized in {"cloudflare", "dns"}:
+        return _cloudflare_pack(evidence)
+    if normalized == "plaid":
+        return _plaid_pack(evidence)
+    if normalized == "resend":
+        return _resend_pack(evidence)
+    return _generic_pack(normalized, evidence)
+
+
+def collect_provider_evidence(app_path: Path) -> ProviderEvidence:
+    """Collect package/env/import evidence without persisting secrets."""
+
+    package = app_path / "package.json"
+    dependencies: set[str] = set()
+    if package.exists():
+        try:
+            raw = json.loads(package.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                for key in ("dependencies", "devDependencies"):
+                    deps = raw.get(key, {})
+                    if isinstance(deps, dict):
+                        dependencies.update(str(name) for name in deps)
+        except (OSError, json.JSONDecodeError):
+            pass
+    env_names: set[str] = set()
+    imports: set[str] = set()
+    skip_dirs = {".git", ".fusekit", "node_modules", ".venv", "dist", "build"}
+    env_pattern = r"(?:process\.env\.|import\.meta\.env\.|os\.environ\[)([A-Z][A-Z0-9_]+)"
+    for path in app_path.rglob("*"):
+        if any(part in skip_dirs for part in path.parts):
+            continue
+        if not path.is_file() or path.suffix not in {".js", ".jsx", ".ts", ".tsx", ".py", ".env"}:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        env_names.update(re.findall(env_pattern, text))
+        imports.update(re.findall(r"(?:from|import)\s+['\"]?(@?[A-Za-z0-9_\-/]+)", text))
+    return ProviderEvidence(
+        dependencies=tuple(sorted(dependencies)),
+        env_names=tuple(sorted(env_names)),
+        imports=tuple(sorted(imports)),
+    )
+
+
+def infer_provider_candidates(evidence: ProviderEvidence) -> tuple[str, ...]:
+    """Infer service providers that should use capability packs."""
+
+    deps = set(evidence.dependencies)
+    envs = set(evidence.env_names)
+    candidates: set[str] = set()
+    if {"plaid", "plaid-node"} & deps or any(name.startswith("PLAID_") for name in envs):
+        candidates.add("plaid")
+    if "resend" in deps or any(name.startswith("RESEND_") for name in envs):
+        candidates.add("resend")
+    for env_name in envs:
+        prefix = env_name.split("_", 1)[0].lower()
+        if prefix in FRAMEWORK_ENV_PREFIXES:
+            continue
+        if prefix in {"github", "vercel", "cloudflare", "webhook"}:
+            continue
+        if any(prefix in dep.lower() for dep in deps):
+            candidates.add(prefix)
+    return tuple(sorted(candidates - BUILT_IN_PROVIDERS))
+
+
+def pack_default_path(app_path: Path, provider: str) -> Path:
+    """Return the default on-disk path for a synthesized provider pack."""
+
+    return app_path / ".fusekit" / "provider-packs" / f"{provider}.json"
+
+
+def _plaid_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
+    env_names = tuple(
+        name
+        for name in ("PLAID_CLIENT_ID", "PLAID_SECRET", "PLAID_ENV", "PLAID_PRODUCTS")
+        if name in evidence.env_names or name != "PLAID_PRODUCTS"
+    )
+    return ProviderCapabilityPack(
+        schema_version="fusekit.provider-pack.v1",
+        provider="plaid",
+        display_name="Plaid",
+        category="financial-data",
+        confidence="high",
+        evidence=_evidence_lines("plaid", evidence),
+        detection=ProviderDetection(
+            dependencies=tuple(dep for dep in evidence.dependencies if "plaid" in dep.lower()),
+            env_names=env_names,
+            env_prefixes=("PLAID_",),
+            imports=tuple(item for item in evidence.imports if "plaid" in item.lower()),
+            docs_urls=("https://plaid.com/docs/",),
+        ),
+        handoff=PackHandoff(
+            signup_url="https://dashboard.plaid.com/signup",
+            login_url="https://dashboard.plaid.com/signin",
+            token_url="https://dashboard.plaid.com/developers/keys",
+            project_url="https://dashboard.plaid.com/team/api",
+            token_env="PLAID_SECRET",
+            token_record_id="provider.plaid.token",
+            token_label="Plaid secret key",
+            required_scopes=("sandbox/development API keys", "allowed products used by the app"),
+            account_steps=(
+                "Create or sign in to a Plaid developer account.",
+                (
+                    "Complete Plaid email, MFA, CAPTCHA, business, billing, consent, "
+                    "or identity gates if shown."
+                ),
+                "Choose Sandbox or Development mode based on the app environment.",
+            ),
+            secret_steps=(
+                "Open Developers > Keys and reveal the approved Sandbox or Development secret.",
+                "Capture PLAID_CLIENT_ID, PLAID_SECRET, and PLAID_ENV into the encrypted vault.",
+                "Configure allowed products and redirect/webhook settings required by the app.",
+            ),
+            service_gates=(
+                "email verification",
+                "MFA",
+                "CAPTCHA",
+                "business verification",
+                "billing/payment verification",
+                "identity verification",
+                "consent",
+            ),
+        ),
+        required_secrets=("PLAID_CLIENT_ID", "PLAID_SECRET"),
+        env_vars=env_names,
+        setup=(
+            SetupRecipe(
+                kind="vault-capture-env",
+                target="PLAID_CLIENT_ID,PLAID_SECRET,PLAID_ENV",
+                secret_refs=("PLAID_CLIENT_ID", "PLAID_SECRET"),
+            ),
+        ),
+        setup_goals=(
+            "Create or connect the Plaid developer app.",
+            "Collect only user-approved Plaid API credentials into the encrypted vault.",
+            (
+                "Configure products, webhook URL, redirect URI, and environment settings "
+                "inferred from the app."
+            ),
+        ),
+        verification=(
+            VerificationRecipe(
+                kind="env-present",
+                target="PLAID_CLIENT_ID,PLAID_SECRET,PLAID_ENV",
+                expected=(
+                    "all required Plaid env vars are stored in the encrypted "
+                    "vault/provider env store"
+                ),
+                secret_refs=("PLAID_CLIENT_ID", "PLAID_SECRET"),
+            ),
+            VerificationRecipe(
+                kind="http-json",
+                target="https://sandbox.plaid.com/institutions/get",
+                expected="HTTP 200 with a Plaid request_id",
+                secret_refs=("PLAID_CLIENT_ID", "PLAID_SECRET"),
+                inputs={
+                    "method": "POST",
+                    "expected_status": "200",
+                    "purpose": "verify-auth",
+                    "body_json": (
+                        '{"client_id":"${secret:PLAID_CLIENT_ID}",'
+                        '"secret":"${secret:PLAID_SECRET}",'
+                        '"count":1,"offset":0,"country_codes":["US"]}'
+                    ),
+                    "response_path": "request_id",
+                },
+            ),
+        ),
+        rollback=(
+            "Rotate or revoke the Plaid secret in Dashboard > Developers > Keys.",
+            "Remove Plaid env vars from provider-native deployment secret stores.",
+            "Remove configured webhook or redirect URLs if the app is torn down.",
+        ),
+    )
+
+
+def _github_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
+    return ProviderCapabilityPack(
+        schema_version="fusekit.provider-pack.v1",
+        provider="github",
+        display_name="GitHub",
+        category="source-control",
+        confidence="high",
+        evidence=_evidence_lines("github", evidence),
+        detection=ProviderDetection(env_names=("GITHUB_TOKEN",), env_prefixes=("GITHUB_",)),
+        handoff=PackHandoff(
+            signup_url="https://github.com/signup",
+            token_url="https://github.com/settings/tokens?type=beta",
+            project_url="https://github.com/new",
+            token_env="GITHUB_TOKEN",
+            token_record_id="provider.github.token",
+            token_label="GitHub API token",
+            required_scopes=("target repo access", "Actions secrets", "deploy keys"),
+            account_steps=(
+                "Create or sign in to a GitHub account.",
+                "Complete email verification, passkey, MFA, CAPTCHA, or consent gates if shown.",
+                "Create or choose the repository that will receive secrets and deploy keys.",
+            ),
+            secret_steps=(
+                "Create a fine-grained token for the target repository.",
+                "Grant only permissions needed for Actions secrets and deploy keys.",
+                "Capture the token into the encrypted vault.",
+            ),
+            service_gates=("email verification", "passkey", "MFA", "CAPTCHA", "consent"),
+        ),
+        required_secrets=("GITHUB_TOKEN",),
+        env_vars=("GITHUB_TOKEN",),
+        setup=(
+            SetupRecipe(kind="github-deploy-key", target="${input:github_repo}"),
+            SetupRecipe(
+                kind="github-repo-secrets",
+                target="${input:github_repo}",
+                secret_refs=("*",),
+            ),
+        ),
+        setup_goals=(
+            "Connect the target GitHub repo.",
+            "Create a FuseKit deploy key and store the private key only in the vault.",
+            "Push app secrets to GitHub Actions secrets without exposing raw values.",
+        ),
+        verification=(
+            VerificationRecipe(
+                kind="env-present",
+                target="GITHUB_TOKEN",
+                expected="GitHub authorization exists in the encrypted vault or env source",
+                secret_refs=("GITHUB_TOKEN",),
+            ),
+        ),
+        rollback=(
+            "Remove the FuseKit deploy key from the repository.",
+            "Delete or rotate GitHub Actions secrets created by FuseKit.",
+            "Revoke the GitHub token.",
+        ),
+    )
+
+
+def _vercel_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
+    return ProviderCapabilityPack(
+        schema_version="fusekit.provider-pack.v1",
+        provider="vercel",
+        display_name="Vercel",
+        category="deployment",
+        confidence="high",
+        evidence=_evidence_lines("vercel", evidence),
+        detection=ProviderDetection(env_names=("VERCEL_TOKEN",), env_prefixes=("VERCEL_",)),
+        handoff=PackHandoff(
+            signup_url="https://vercel.com/signup",
+            token_url="https://vercel.com/account/tokens",
+            project_url="https://vercel.com/new",
+            token_env="VERCEL_TOKEN",
+            token_record_id="provider.vercel.token",
+            token_label="Vercel API token",
+            required_scopes=("project access", "environment variables", "deployments"),
+            account_steps=(
+                "Create or sign in to a Vercel account.",
+                "Complete SSO, MFA, CAPTCHA, billing, payment, or consent gates if shown.",
+                "Connect the Git provider or choose an existing project if required.",
+            ),
+            secret_steps=(
+                "Create an account token with access to the target team or project.",
+                "Capture the token into the encrypted vault.",
+            ),
+            service_gates=("SSO", "MFA", "CAPTCHA", "billing/payment verification", "consent"),
+        ),
+        required_secrets=("VERCEL_TOKEN",),
+        env_vars=("VERCEL_TOKEN",),
+        setup=(
+            SetupRecipe(kind="vercel-project", target="${input:vercel_project}"),
+            SetupRecipe(
+                kind="vercel-env",
+                target="${input:vercel_project}",
+                secret_refs=("*",),
+            ),
+            SetupRecipe(
+                kind="vercel-git-deployment",
+                target="${input:vercel_project}",
+                when="vercel_git_repo_id",
+            ),
+        ),
+        setup_goals=(
+            "Create or connect the Vercel project.",
+            "Push required env vars into Vercel's encrypted env store.",
+            "Trigger and verify deployment when a connected Git source is supplied.",
+        ),
+        verification=(
+            VerificationRecipe(
+                kind="env-present",
+                target="VERCEL_TOKEN",
+                expected="Vercel authorization exists in the encrypted vault or env source",
+                secret_refs=("VERCEL_TOKEN",),
+            ),
+            VerificationRecipe(kind="url-health", target="$live_url", expected="2xx/3xx"),
+        ),
+        rollback=(
+            "Remove FuseKit-created Vercel env vars.",
+            "Delete the Vercel project if FuseKit created it and rollback is requested.",
+            "Revoke the Vercel token.",
+        ),
+    )
+
+
+def _cloudflare_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
+    return ProviderCapabilityPack(
+        schema_version="fusekit.provider-pack.v1",
+        provider="cloudflare",
+        display_name="Cloudflare",
+        category="dns",
+        confidence="high",
+        evidence=_evidence_lines("cloudflare", evidence),
+        detection=ProviderDetection(
+            env_names=("CLOUDFLARE_API_TOKEN",),
+            env_prefixes=("CLOUDFLARE_",),
+        ),
+        handoff=PackHandoff(
+            signup_url="https://dash.cloudflare.com/sign-up",
+            token_url="https://dash.cloudflare.com/profile/api-tokens",
+            project_url="https://dash.cloudflare.com/",
+            token_env="CLOUDFLARE_API_TOKEN",
+            token_record_id="provider.cloudflare.token",
+            token_label="Cloudflare API token",
+            required_scopes=("zone read", "DNS edit for the target zone"),
+            account_steps=(
+                "Create or sign in to a Cloudflare account.",
+                "Add or choose the DNS zone that owns the target domain.",
+                (
+                    "Complete nameserver, domain ownership, MFA, CAPTCHA, billing, "
+                    "or consent gates if shown."
+                ),
+            ),
+            secret_steps=(
+                "Create a scoped API token limited to DNS edit on the target zone.",
+                "Capture the token into the encrypted vault.",
+            ),
+            service_gates=(
+                "domain ownership verification",
+                "MFA",
+                "CAPTCHA",
+                "billing/payment verification",
+                "consent",
+            ),
+        ),
+        required_secrets=("CLOUDFLARE_API_TOKEN",),
+        env_vars=("CLOUDFLARE_API_TOKEN",),
+        setup=(SetupRecipe(kind="cloudflare-dns", target="${manifest:domains}"),),
+        setup_goals=(
+            "Resolve target DNS zones.",
+            "Propose DNS changes with rollback metadata.",
+            "Apply records only when DNS execution scope is granted.",
+        ),
+        verification=(
+            VerificationRecipe(
+                kind="env-present",
+                target="CLOUDFLARE_API_TOKEN",
+                expected="Cloudflare authorization exists in the encrypted vault or env source",
+                secret_refs=("CLOUDFLARE_API_TOKEN",),
+            ),
+        ),
+        rollback=(
+            "Use receipt rollback metadata to restore or delete DNS records.",
+            "Revoke the Cloudflare API token.",
+        ),
+    )
+
+
+def _resend_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
+    env_names = tuple(name for name in ("RESEND_API_KEY",) if name in evidence.env_names) or (
+        "RESEND_API_KEY",
+    )
+    return ProviderCapabilityPack(
+        schema_version="fusekit.provider-pack.v1",
+        provider="resend",
+        display_name="Resend",
+        category="email",
+        confidence="high",
+        evidence=_evidence_lines("resend", evidence),
+        detection=ProviderDetection(
+            dependencies=tuple(dep for dep in evidence.dependencies if "resend" in dep.lower()),
+            env_names=env_names,
+            env_prefixes=("RESEND_",),
+            imports=tuple(item for item in evidence.imports if "resend" in item.lower()),
+            docs_urls=("https://www.resend.com/docs/api-reference/introduction",),
+        ),
+        handoff=PackHandoff(
+            signup_url="https://resend.com/signup",
+            login_url="https://resend.com/login",
+            token_url="https://resend.com/api-keys",
+            project_url="https://resend.com/domains",
+            token_env="RESEND_API_KEY",
+            token_record_id="provider.resend.token",
+            token_label="Resend API key",
+            required_scopes=("email send", "domain read/verification"),
+            account_steps=(
+                "Create or sign in to a Resend account.",
+                (
+                    "Complete email verification, MFA, CAPTCHA, billing, consent, or "
+                    "domain ownership gates if shown."
+                ),
+                "Add the sending domain when the app uses a custom From address.",
+            ),
+            secret_steps=(
+                "Create a scoped Resend API key.",
+                "Capture RESEND_API_KEY into the encrypted vault.",
+                "Use returned domain verification records as DNS proposals.",
+            ),
+            service_gates=(
+                "email verification",
+                "MFA",
+                "CAPTCHA",
+                "billing/payment verification",
+                "consent",
+                "domain ownership verification",
+            ),
+        ),
+        required_secrets=("RESEND_API_KEY",),
+        env_vars=env_names,
+        setup=(
+            SetupRecipe(
+                kind="vault-capture-env",
+                target="RESEND_API_KEY",
+                secret_refs=("RESEND_API_KEY",),
+            ),
+        ),
+        setup_goals=(
+            "Create or connect the Resend account.",
+            "Create or capture a scoped Resend API key into the encrypted vault.",
+            "Add the sending domain and feed verification records into DNS proposals.",
+        ),
+        verification=(
+            VerificationRecipe(
+                kind="env-present",
+                target="RESEND_API_KEY",
+                expected="Resend API key is stored in the encrypted vault/provider env store",
+                secret_refs=("RESEND_API_KEY",),
+            ),
+            VerificationRecipe(
+                kind="http-json",
+                target="https://api.resend.com/domains",
+                expected="HTTP 200 from Resend Domains API",
+                secret_refs=("RESEND_API_KEY",),
+                inputs={
+                    "method": "GET",
+                    "expected_status": "200",
+                    "purpose": "verify-resource",
+                    "auth_secret": "RESEND_API_KEY",
+                    "auth_scheme": "Bearer",
+                    "response_path": "data",
+                },
+            ),
+        ),
+        rollback=(
+            "Revoke or rotate the Resend API key.",
+            "Remove Resend env vars from provider-native deployment secret stores.",
+            "Delete the Resend sending domain if the app is torn down.",
+        ),
+    )
+
+
+def _generic_pack(provider: str, evidence: ProviderEvidence) -> ProviderCapabilityPack:
+    prefix = provider.replace("-", "_").upper()
+    env_names = tuple(name for name in evidence.env_names if name.startswith(f"{prefix}_"))
+    required = env_names or (f"{prefix}_API_KEY",)
+    base_url = f"https://{provider}.com"
+    return ProviderCapabilityPack(
+        schema_version="fusekit.provider-pack.v1",
+        provider=provider,
+        display_name=provider.replace("-", " ").title(),
+        category="service",
+        confidence="medium" if env_names else "low",
+        evidence=_evidence_lines(provider, evidence),
+        detection=ProviderDetection(
+            dependencies=tuple(dep for dep in evidence.dependencies if provider in dep.lower()),
+            env_names=env_names,
+            env_prefixes=(f"{prefix}_",),
+            imports=tuple(item for item in evidence.imports if provider in item.lower()),
+            docs_urls=(base_url,),
+        ),
+        handoff=PackHandoff(
+            signup_url=base_url,
+            token_url=base_url,
+            project_url=base_url,
+            token_env=required[0],
+            token_record_id=f"provider.{provider}.token",
+            token_label=f"{provider} API token",
+            required_scopes=("least-privilege access required by the detected app integration",),
+            account_steps=(
+                f"Create or sign in to {provider}.",
+                (
+                    "Complete provider login, MFA, CAPTCHA, billing, fraud, consent, "
+                    "or verification gates if shown."
+                ),
+            ),
+            secret_steps=(
+                "Navigate to the provider developer/API key settings.",
+                (
+                    "Create or reveal the approved token/API key and capture it into "
+                    "the encrypted vault."
+                ),
+            ),
+            service_gates=(
+                "login/MFA/CAPTCHA/billing/payment/fraud/consent/verification",
+            ),
+        ),
+        required_secrets=required,
+        env_vars=env_names or required,
+        setup=(
+            SetupRecipe(
+                kind="vault-capture-env",
+                target=",".join(required),
+                secret_refs=required,
+            ),
+        ),
+        setup_goals=(
+            f"Use OpenClaw to navigate {provider} setup pages.",
+            "Stop at provider-imposed human gates and resume after the user passes them.",
+            "Capture only approved secrets into the encrypted vault.",
+        ),
+        verification=(
+            VerificationRecipe(
+                kind="env-present",
+                target=",".join(required),
+                expected="required provider credentials are stored in vault/provider env store",
+                secret_refs=required,
+            ),
+        ),
+        rollback=(
+            "Rotate or revoke provider API credentials.",
+            "Remove provider env vars from deployment secret stores.",
+        ),
+    )
+
+
+def _evidence_lines(provider: str, evidence: ProviderEvidence) -> tuple[str, ...]:
+    lines: list[str] = []
+    for dep in evidence.dependencies:
+        if provider in dep.lower():
+            lines.append(f"dependency:{dep}")
+    prefix = provider.replace("-", "_").upper()
+    for env_name in evidence.env_names:
+        if env_name.startswith(f"{prefix}_"):
+            lines.append(f"env:{env_name}")
+    for import_name in evidence.imports:
+        if provider in import_name.lower():
+            lines.append(f"import:{import_name}")
+    return tuple(lines or (f"provider:{provider}",))
+
+
+def _validate_url(url: str, label: str) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ProviderError(f"{label} must be an https URL.")
+
+
+def _validate_verification_recipe_destination(
+    pack: ProviderCapabilityPack,
+    recipe: VerificationRecipe,
+) -> None:
+    if recipe.kind != "http-json":
+        return
+    parsed = urlparse(recipe.target)
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ProviderError("http-json verification targets must be https URLs.")
+    if not recipe.secret_refs and "${secret:" not in json.dumps(recipe.inputs):
+        return
+    host = parsed.netloc.lower()
+    allowed_hosts = set()
+    for url in (
+        pack.handoff.signup_url,
+        pack.handoff.login_url,
+        pack.handoff.token_url,
+        pack.handoff.project_url,
+        *pack.detection.docs_urls,
+    ):
+        if url:
+            parsed_allowed = urlparse(url)
+            if parsed_allowed.netloc:
+                allowed_hosts.add(parsed_allowed.netloc.lower())
+    configured = recipe.inputs.get("allowed_hosts", "")
+    allowed_hosts.update(host.strip().lower() for host in configured.split(",") if host.strip())
+    if not any(host == allowed or host.endswith(f".{allowed}") for allowed in allowed_hosts):
+        raise ProviderError(
+            "http-json recipes that use secrets must target the provider's documented domains."
+        )
+    purpose = recipe.inputs.get("purpose", "")
+    if purpose not in HTTP_JSON_PURPOSES:
+        raise ProviderError(
+            "http-json recipes must declare a valid endpoint purpose before using secrets."
+        )
+
+
+def _validate_tool_permissions(pack: ProviderCapabilityPack) -> None:
+    permissions = set(pack.tool_permissions)
+    for permission in permissions:
+        if not re.match(r"^(setup|verify):[a-z0-9-]+$", permission):
+            raise ProviderError(f"Invalid provider pack tool permission: {permission}")
+    for setup_recipe in pack.setup:
+        permission = f"setup:{setup_recipe.kind}"
+        if permission not in permissions:
+            raise ProviderError(f"Setup recipe is not bound to tool permission: {permission}")
+    for verification_recipe in pack.verification:
+        permission = f"verify:{verification_recipe.kind}"
+        if permission not in permissions:
+            raise ProviderError(
+                f"Verification recipe is not bound to tool permission: {permission}"
+            )
+
+
+def _validate_setup_secret_routes(pack: ProviderCapabilityPack, recipe: SetupRecipe) -> None:
+    if recipe.kind not in APP_ENV_SETUP_KINDS:
+        return
+    for ref in recipe.secret_refs:
+        if ref == "*":
+            continue
+        route = classify_secret_name(ref, {pack.provider}).route
+        if route not in {"app_env", "webhook_secret"}:
+            raise ProviderError(
+                f"{recipe.kind} cannot route {route} secret {ref} into app env stores."
+            )
+
+
+def _string(raw: dict[str, Any], key: str) -> str:
+    value = raw.get(key)
+    if not isinstance(value, str) or not value:
+        raise ProviderError(f"{key} must be a non-empty string.")
+    return value
+
+
+def _tuple(value: Any, label: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, tuple) and all(isinstance(item, str) for item in value):
+        return value
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ProviderError(f"{label} must be a list of strings.")
+    return tuple(value)
+
+
+def _string_mapping(value: Any, label: str) -> dict[str, str]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ProviderError(f"{label} must be a mapping.")
+    return {str(key): str(item) for key, item in value.items()}

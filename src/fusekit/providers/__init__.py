@@ -1,0 +1,1 @@
+"""Real-capable provider adapters."""

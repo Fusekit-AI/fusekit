@@ -1,0 +1,4 @@
+{
+  "framework": "vite",
+  "domains": ["moonlite.rsvp"]
+}

@@ -1,0 +1,1 @@
+"""Plaintext worker-state detonation."""

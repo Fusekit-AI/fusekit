@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fusekit"
+version = "0.1.0"
+description = "Detonated setup worker and encrypted capability vault for AI-built apps."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+  { name = "FuseKit Contributors" }
+]
+dependencies = [
+  "cryptography>=42",
+  "dnspython>=2.6",
+  "oci>=2.160",
+  "oci-cli>=3.60",
+  "playwright>=1.49",
+  "PyNaCl>=1.5",
+  "PyYAML>=6",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.10",
+  "pytest>=8.0",
+  "ruff>=0.5",
+  "types-PyYAML>=6",
+]
+
+[project.scripts]
+fusekit = "fusekit.cli:main"
+fusekit-runner-loop = "fusekit.runner.loop:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.9"
+strict = true
+packages = ["fusekit"]
+
+[[tool.mypy.overrides]]
+module = ["dns", "dns.*", "oci", "oci.*", "playwright", "playwright.*"]
+ignore_missing_imports = true

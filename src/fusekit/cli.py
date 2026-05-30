@@ -1,0 +1,2286 @@
+"""Command line entry point for FuseKit."""
+
+from __future__ import annotations
+
+import argparse
+import getpass
+import json
+import os
+import sys
+import time
+import uuid
+import webbrowser
+from pathlib import Path
+
+from fusekit import __version__
+from fusekit.audit import AuditLog, Receipt
+from fusekit.capabilities.runtime import CapabilityBroker
+from fusekit.detonation.cleanup import detonate as detonate_paths
+from fusekit.errors import ApprovalRequired, FuseKitError
+from fusekit.harness import run_acceptance
+from fusekit.llm import LlmConfig, authorize_openclaw_llm, capture_llm_config
+from fusekit.manifest import ServiceRequirement, SetupManifest, load_manifest, write_manifest
+from fusekit.planner import build_plan
+from fusekit.providers.automation import (
+    ProviderSetupContext,
+    ensure_webhook_secrets,
+    run_provider_pack_setup,
+)
+from fusekit.providers.capability_pack import (
+    handoff_from_provider_pack,
+    load_provider_pack,
+    pack_default_path,
+    synthesize_provider_pack,
+    validate_provider_pack,
+    write_provider_pack,
+)
+from fusekit.providers.handoff import ProviderHandoff, handoff_for
+from fusekit.providers.intelligence import (
+    IntelligenceLoopResult,
+    OpenAiPackDraftSource,
+    OpenClawProviderResearch,
+    ProviderIntelligenceLoop,
+    ProviderResearchSource,
+)
+from fusekit.providers.vercel import verify_live_url
+from fusekit.providers.verification import verify_provider_pack
+from fusekit.rollback import execute_native_rollback, plan_pack_rollback, plan_rollback, start_over
+from fusekit.runner import JobState, RunnerResolution, resolve_runner
+from fusekit.runner.cloud_shell import build_cloud_shell_launch_plan, write_cloud_shell_launcher
+from fusekit.runner.control_room import write_control_room
+from fusekit.runner.gates import GateService
+from fusekit.runner.oci import (
+    OCI_API_KEYS_URL,
+    OCI_CONSOLE_URL,
+    OCI_SIGNUP_URL,
+    OciRunnerPlan,
+    authorize_oci_browser_session,
+    build_oci_runner_plan,
+    capture_oci_api_key_profile,
+    capture_oci_session_profile,
+    has_vault_oci_profile,
+    oci_runtime_status,
+    prepare_oci_api_signing_key,
+)
+from fusekit.runner.oci_live import (
+    OciProvisioner,
+    OciWorkspace,
+    latest_workspace_from_vault,
+    load_oci_auth_from_vault_or_config,
+)
+from fusekit.runner.remote import detonate_remote_worker, execute_remote_setup
+from fusekit.runner.server import serve_control_room
+from fusekit.runtime import bootstrap_runtime, doctor
+from fusekit.runtime.bootstrap import openclaw_state_home
+from fusekit.scanner import scan_repo
+from fusekit.security import scan_for_secret_leaks
+from fusekit.spine import (
+    OpenAiUiNavigator,
+    OpenClawBrowserSpine,
+    PlaywrightBrowserSpine,
+    execute_provider_ui_playbook,
+    provider_authorization_playbook,
+    provider_handoff_playbook,
+    provider_ui_playbook,
+    run_inferred_navigation,
+)
+from fusekit.vault.bundle import Vault, open_or_create
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run the FuseKit command line interface."""
+
+    parser = _parser()
+    args = parser.parse_args(argv)
+    if not hasattr(args, "handler"):
+        parser.print_help()
+        return 0
+    try:
+        return int(args.handler(args))
+    except FuseKitError as exc:
+        print(f"fusekit: {exc}", file=sys.stderr)
+        return 2
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="fusekit", description="FuseKit setup worker")
+    parser.add_argument("--version", action="version", version=f"FuseKit {__version__}")
+    sub = parser.add_subparsers(dest="command")
+
+    scan = sub.add_parser("scan", help="scan an app repo and write a setup manifest")
+    scan.add_argument("path", type=Path)
+    scan.add_argument("-o", "--output", type=Path, default=Path("fusekit.yaml"))
+    scan.set_defaults(handler=_cmd_scan)
+
+    validate = sub.add_parser("validate", help="validate a setup manifest")
+    validate.add_argument("manifest", type=Path)
+    validate.set_defaults(handler=_cmd_validate)
+
+    install = sub.add_parser("install", help="install FuseKit setup entrypoint into an app")
+    install.add_argument("path", type=Path)
+    install.add_argument("-o", "--manifest", type=Path, default=None)
+    install.add_argument("--web-launcher", action="store_true")
+    install.add_argument("--app-source", default="")
+    install.add_argument("--fusekit-package", default="fusekit")
+    install.set_defaults(handler=_cmd_install)
+
+    bootstrap = sub.add_parser("bootstrap", help="install FuseKit runtime components")
+    bootstrap.add_argument("--check-only", action="store_true")
+    bootstrap.add_argument("--openclaw-bin", default="")
+    _vault_args(bootstrap)
+    _llm_args(bootstrap)
+    bootstrap.set_defaults(handler=_cmd_bootstrap)
+
+    doctor_cmd = sub.add_parser("doctor", help="check FuseKit runtime readiness")
+    doctor_cmd.add_argument("--openclaw-bin", default="")
+    doctor_cmd.set_defaults(handler=_cmd_doctor)
+
+    plan = sub.add_parser("plan", help="print a setup plan")
+    plan.add_argument("manifest", type=Path)
+    plan.add_argument("--json", action="store_true", dest="as_json")
+    plan.set_defaults(handler=_cmd_plan)
+
+    authorize = sub.add_parser(
+        "authorize",
+        help="capture an approved provider token into the vault",
+    )
+    authorize.add_argument("provider")
+    _vault_args(authorize)
+    authorize.add_argument("--app", type=Path, default=Path("."))
+    authorize.add_argument("--capability-pack", type=Path, default=None)
+    authorize.add_argument("--token-env", default="")
+    authorize.add_argument(
+        "--handoff",
+        action="store_true",
+        help="open provider signup/token pages for supervised account setup",
+    )
+    authorize.add_argument(
+        "--open-browser",
+        action="store_true",
+        help="open handoff URLs in the default browser",
+    )
+    authorize.add_argument(
+        "--spine",
+        choices=("system", "openclaw", "playwright"),
+        default="openclaw",
+        help="computer-use spine; OpenClaw is the default, Playwright is an internal fallback",
+    )
+    authorize.add_argument("--headless-browser", action="store_true")
+    authorize.add_argument("--infer-ui", action="store_true")
+    authorize.add_argument("--openclaw-profile", default="openclaw")
+    authorize.add_argument(
+        "--dry-run-spine",
+        action="store_true",
+        help="show OpenClaw browser actions without running them",
+    )
+    authorize.add_argument(
+        "--capture-stdin",
+        action="store_true",
+        help="capture the approved provider token from a hidden prompt",
+    )
+    authorize.add_argument(
+        "--include-project-page",
+        action="store_true",
+        help="include the provider project creation/import page in the handoff",
+    )
+    _gate_args(authorize)
+    authorize.set_defaults(handler=_cmd_authorize)
+
+    provider = sub.add_parser("provider", help="manage provider capability packs")
+    provider_sub = provider.add_subparsers(dest="provider_command")
+    provider_synthesize = provider_sub.add_parser(
+        "synthesize",
+        help="synthesize a provider capability pack from app evidence",
+    )
+    provider_synthesize.add_argument("provider")
+    provider_synthesize.add_argument("--app", type=Path, default=Path("."))
+    provider_synthesize.add_argument("-o", "--output", type=Path, default=None)
+    provider_synthesize.add_argument("--json", action="store_true", dest="as_json")
+    provider_synthesize.add_argument(
+        "--intelligence",
+        choices=("auto", "heuristic", "llm"),
+        default="auto",
+        help="compile pack with LLM intelligence when available, otherwise heuristic fallback",
+    )
+    provider_synthesize.add_argument(
+        "--research-spine",
+        choices=("openclaw", "none"),
+        default="openclaw",
+        help="browse provider docs/UI through OpenClaw before drafting the pack",
+    )
+    provider_synthesize.add_argument("--openclaw-profile", default="openclaw")
+    provider_synthesize.add_argument("--dry-run-spine", action="store_true")
+    _vault_args(provider_synthesize)
+    _llm_args(provider_synthesize)
+    provider_synthesize.set_defaults(handler=_cmd_provider_synthesize)
+    provider_validate = provider_sub.add_parser("validate", help="validate a provider pack")
+    provider_validate.add_argument("pack", type=Path)
+    provider_validate.set_defaults(handler=_cmd_provider_validate)
+    provider_verify = provider_sub.add_parser(
+        "verify",
+        help="run executable verification recipes from a provider pack",
+    )
+    provider_verify.add_argument("pack", type=Path)
+    _vault_args(provider_verify)
+    provider_verify.add_argument("--live-url", default="")
+    _verify_retry_args(provider_verify)
+    provider_verify.add_argument("--json", action="store_true", dest="as_json")
+    provider_verify.set_defaults(handler=_cmd_provider_verify)
+    provider_list = provider_sub.add_parser("list", help="list providers inferred for an app")
+    provider_list.add_argument("--app", type=Path, default=Path("."))
+    provider_list.add_argument("--json", action="store_true", dest="as_json")
+    provider_list.set_defaults(handler=_cmd_provider_list)
+
+    acceptance = sub.add_parser("acceptance", help="run launch-readiness acceptance harness")
+    acceptance_sub = acceptance.add_subparsers(dest="acceptance_command")
+    acceptance_run = acceptance_sub.add_parser(
+        "run",
+        help="write a redacted acceptance ledger and launch-readiness report",
+    )
+    acceptance_run.add_argument("path", type=Path)
+    acceptance_run.add_argument("--mode", choices=("rehearsal", "live"), default="rehearsal")
+    acceptance_run.add_argument("--manifest", type=Path, default=None)
+    _vault_args(acceptance_run)
+    acceptance_run.add_argument("--receipt", type=Path, default=None)
+    acceptance_run.add_argument("--audit-log", type=Path, default=None)
+    acceptance_run.add_argument("--output-dir", type=Path, default=None)
+    acceptance_run.add_argument("--json", action="store_true", dest="as_json")
+    acceptance_run.set_defaults(handler=_cmd_acceptance_run)
+
+    apply = sub.add_parser("apply", help="configure real providers from a manifest")
+    apply.add_argument("manifest", type=Path)
+    _vault_args(apply)
+    apply.add_argument("--github-repo", default="")
+    apply.add_argument("--vercel-project", default="")
+    apply.add_argument("--vercel-framework", default="")
+    apply.add_argument("--vercel-git-repo-id", default="")
+    apply.add_argument("--vercel-git-ref", default="main")
+    apply.add_argument("--live-url", default="")
+    apply.add_argument("--dns-zone", default="")
+    apply.add_argument("--approve-dns", action="store_true")
+    apply.add_argument(
+        "--allow-incomplete",
+        action="store_true",
+        help="permit explicit local rehearsals that skip missing real-provider targets",
+    )
+    apply.add_argument("--secret", action="append", default=[], help="NAME=env:ENV_VAR")
+    _verify_retry_args(apply)
+    apply.add_argument("--audit-log", type=Path, default=Path(".fusekit/audit.jsonl"))
+    apply.add_argument("--receipt-json", type=Path, default=Path(".fusekit/setup_receipt.json"))
+    apply.add_argument("--receipt-md", type=Path, default=Path(".fusekit/setup_receipt.md"))
+    apply.set_defaults(handler=_cmd_apply)
+
+    setup = sub.add_parser("setup", help="one-command guided real setup for an app")
+    _launch_args(setup)
+    setup.set_defaults(handler=_cmd_setup)
+
+    launch = sub.add_parser("launch", help="launch a vibe-coded app with FuseKit")
+    _launch_args(launch)
+    launch.set_defaults(handler=_cmd_setup)
+
+    verify = sub.add_parser("verify", help="verify a live app URL")
+    verify.add_argument("url")
+    verify.set_defaults(handler=_cmd_verify)
+
+    receipt = sub.add_parser("receipt", help="write a redacted receipt from a manifest and vault")
+    receipt.add_argument("manifest", type=Path)
+    _vault_args(receipt)
+    receipt.add_argument("-o", "--output", type=Path, default=Path(".fusekit/setup_receipt.json"))
+    receipt.set_defaults(handler=_cmd_receipt)
+
+    detonate = sub.add_parser("detonate", help="remove plaintext worker state")
+    detonate.add_argument(
+        "paths",
+        nargs="*",
+        type=Path,
+        default=[Path(".fusekit/worker"), Path(".fusekit/tmp")],
+    )
+    detonate.add_argument("--preserve", action="append", type=Path, default=[])
+    detonate.set_defaults(handler=_cmd_detonate)
+
+    unlock = sub.add_parser("unlock", help="unlock a vault and print non-secret metadata")
+    _vault_args(unlock)
+    unlock.set_defaults(handler=_cmd_unlock)
+
+    request = sub.add_parser("request", help="make a safe capability request")
+    _vault_args(request)
+    request.add_argument("capability")
+    request.set_defaults(handler=_cmd_request)
+
+    control = sub.add_parser("control-room", help="render a local FuseKit control-room UI")
+    control.add_argument("--job-state", type=Path, default=Path(".fusekit/job.json"))
+    control.add_argument("--output", type=Path, default=Path(".fusekit/control-room.html"))
+    control.add_argument("--serve", action="store_true")
+    control.add_argument("--host", default="127.0.0.1")
+    control.add_argument("--port", type=int, default=8765)
+    control.set_defaults(handler=_cmd_control_room)
+
+    launcher = sub.add_parser("launcher", help="write a local OCI Cloud Shell web launcher")
+    launcher.add_argument("path", type=Path)
+    launcher.add_argument("-o", "--output", type=Path, default=None)
+    launcher.add_argument("--app-source", default="")
+    launcher.add_argument("--fusekit-package", default="fusekit")
+    launcher.add_argument("--open-browser", action="store_true")
+    launcher.set_defaults(handler=_cmd_launcher)
+
+    leak_scan = sub.add_parser("leak-scan", help="scan a tree for secret-looking plaintext")
+    leak_scan.add_argument("path", type=Path)
+    leak_scan.add_argument("--json", action="store_true", dest="as_json")
+    leak_scan.set_defaults(handler=_cmd_leak_scan)
+
+    rollback = sub.add_parser("rollback", help="plan or execute rollback")
+    rollback.add_argument("--receipt", type=Path, default=Path(".fusekit/setup_receipt.json"))
+    rollback.add_argument("--pack", type=Path, default=None)
+    rollback.add_argument("--execute", action="store_true")
+    _vault_args(rollback)
+    rollback.set_defaults(handler=_cmd_rollback)
+
+    start = sub.add_parser("start-over", help="remove restartable FuseKit state")
+    start.add_argument("path", type=Path, default=Path("."), nargs="?")
+    start.set_defaults(handler=_cmd_start_over)
+
+    runner = sub.add_parser("runner", help="manage execution runner lanes")
+    runner_sub = runner.add_subparsers(dest="runner_command")
+    runner_doctor = runner_sub.add_parser("doctor", help="check runner readiness")
+    runner_doctor.add_argument("--oci-config-file", type=Path, default=None)
+    runner_doctor.set_defaults(handler=_cmd_runner_doctor)
+    runner_authorize = runner_sub.add_parser("authorize", help="authorize a runner lane")
+    runner_authorize.add_argument("runner", choices=("oci",))
+    _vault_args(runner_authorize)
+    _runner_oci_args(runner_authorize)
+    runner_authorize.add_argument("--capture-config-stdin", action="store_true")
+    runner_authorize.add_argument("--open-browser", action="store_true")
+    runner_authorize.add_argument(
+        "--spine",
+        choices=("system", "openclaw", "playwright"),
+        default="openclaw",
+    )
+    runner_authorize.add_argument("--openclaw-profile", default="openclaw")
+    runner_authorize.add_argument("--headless-browser", action="store_true")
+    runner_authorize.add_argument("--dry-run-spine", action="store_true")
+    runner_authorize.set_defaults(handler=_cmd_runner_authorize)
+    runner_plan = runner_sub.add_parser("plan", help="print a runner provisioning plan")
+    runner_plan.add_argument("runner", choices=("oci", "oci-cloud-shell"))
+    _runner_oci_args(runner_plan)
+    runner_plan.add_argument("--json", action="store_true", dest="as_json")
+    runner_plan.set_defaults(handler=_cmd_runner_plan)
+    runner_provision = runner_sub.add_parser("provision", help="provision a runner workspace")
+    runner_provision.add_argument("runner", choices=("oci",))
+    _vault_args(runner_provision)
+    _runner_oci_args(runner_provision)
+    runner_provision.set_defaults(handler=_cmd_runner_provision)
+    runner_exec = runner_sub.add_parser("exec", help="execute setup on a runner workspace")
+    runner_exec.add_argument("runner", choices=("oci",))
+    runner_exec.add_argument("path", type=Path)
+    _vault_args(runner_exec)
+    _runner_oci_args(runner_exec)
+    runner_exec.set_defaults(handler=_cmd_runner_exec)
+    runner_receipt = runner_sub.add_parser("receipt", help="show runner job status")
+    runner_receipt.add_argument("--job-state", type=Path, default=Path(".fusekit/job.json"))
+    runner_receipt.set_defaults(handler=_cmd_runner_receipt)
+    runner_detonate = runner_sub.add_parser("detonate", help="detonate a runner workspace")
+    runner_detonate.add_argument("--runner", choices=("oci",), default="oci")
+    runner_detonate.add_argument("--scope", choices=("run", "workspace"), default="workspace")
+    runner_detonate.add_argument("--job-state", type=Path, default=Path(".fusekit/job.json"))
+    _vault_args(runner_detonate)
+    runner_detonate.set_defaults(handler=_cmd_runner_detonate)
+    return parser
+
+
+def _vault_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--vault", type=Path, default=Path(".fusekit/fusekit.vault.json"))
+    parser.add_argument("--passphrase-file", type=Path, default=None)
+
+
+def _provider_apply_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--github-repo", default="")
+    parser.add_argument("--vercel-project", default="")
+    parser.add_argument("--vercel-framework", default="")
+    parser.add_argument("--vercel-git-repo-id", default="")
+    parser.add_argument("--vercel-git-ref", default="main")
+    parser.add_argument("--live-url", default="")
+    parser.add_argument("--dns-zone", default="")
+    parser.add_argument("--approve-dns", action="store_true")
+    parser.add_argument(
+        "--allow-incomplete",
+        action="store_true",
+        help="permit explicit local rehearsals that skip missing real-provider targets",
+    )
+    parser.add_argument("--secret", action="append", default=[], help="NAME=env:ENV_VAR")
+    _verify_retry_args(parser)
+    parser.add_argument("--audit-log", type=Path, default=Path(".fusekit/audit.jsonl"))
+    parser.add_argument("--receipt-json", type=Path, default=Path(".fusekit/setup_receipt.json"))
+    parser.add_argument("--receipt-md", type=Path, default=Path(".fusekit/setup_receipt.md"))
+    _fusekit_gate_arg(parser)
+    _gate_args(parser)
+
+
+def _verify_retry_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--verify-attempts", type=int, default=1)
+    parser.add_argument("--verify-retry-seconds", type=float, default=0.0)
+
+
+def _launch_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("path", type=Path)
+    parser.add_argument("--manifest", type=Path, default=None)
+    _vault_args(parser)
+    _provider_apply_args(parser)
+    parser.add_argument(
+        "--runner",
+        choices=("auto", "local", "oci-cloud-shell", "oci-free", "oci-existing", "byoc"),
+        default="auto",
+    )
+    parser.add_argument("--app-source", default="")
+    parser.add_argument("--fusekit-package", default="fusekit")
+    parser.add_argument("--job-state", type=Path, default=Path(".fusekit/job.json"))
+    parser.add_argument("--control-room", action="store_true")
+    parser.add_argument("--no-open-launcher", action="store_true")
+    _runner_oci_args(parser)
+    parser.add_argument("--capture-stdin", action="store_true")
+    parser.add_argument(
+        "--spine",
+        choices=("system", "openclaw", "playwright"),
+        default="openclaw",
+    )
+    parser.add_argument("--openclaw-profile", default="openclaw")
+    parser.add_argument("--headless-browser", action="store_true")
+    parser.add_argument("--infer-ui", action="store_true")
+    parser.add_argument("--dry-run-spine", action="store_true")
+    parser.add_argument("--open-browser", action="store_true")
+    parser.add_argument(
+        "--no-bootstrap",
+        action="store_true",
+        help="do not install/check FuseKit runtime components before launch",
+    )
+    parser.add_argument("--yes", action="store_true", help="approve the displayed setup plan")
+    parser.add_argument("--plan-json", type=Path, default=Path(".fusekit/setup_plan.json"))
+    _llm_args(parser)
+    parser.add_argument(
+        "--no-detonate",
+        action="store_true",
+        help="leave worker scratch state for debugging",
+    )
+
+
+def _llm_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--llm-provider", default="openai")
+    parser.add_argument("--llm-model", default="gpt-5.5")
+    parser.add_argument("--llm-base-url", default="https://api.openai.com/v1")
+    parser.add_argument("--llm-api-key-env", default="OPENAI_API_KEY")
+    parser.add_argument(
+        "--llm-auth-mode",
+        choices=("auto", "api-key", "openclaw"),
+        default="auto",
+        help="LLM authorization lane; auto falls back to OpenClaw OpenAI auth",
+    )
+    parser.add_argument(
+        "--llm-openclaw-device-code",
+        action="store_true",
+        help="use OpenClaw's device-code flow for OpenAI auth instead of browser callback",
+    )
+    parser.add_argument(
+        "--capture-llm-key",
+        action="store_true",
+        help="capture the LLM API key from a hidden prompt when it is not in env",
+    )
+
+
+def _runner_oci_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--oci-account-mode",
+        choices=("auto", "signup", "existing"),
+        default="auto",
+    )
+    parser.add_argument(
+        "--oci-auth-mode",
+        choices=("auto", "existing-config", "browser-session", "api-key-upload"),
+        default="auto",
+    )
+    parser.add_argument("--oci-region", default="auto")
+    parser.add_argument("--oci-shape", default="auto")
+    parser.add_argument("--oci-config-file", type=Path, default=None)
+    parser.add_argument("--oci-profile", default="FUSEKIT")
+
+
+def _gate_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--gate-retry-seconds",
+        type=float,
+        default=300.0,
+        help="seconds to wait before retrying a human-gate step",
+    )
+    parser.add_argument(
+        "--gate-max-attempts",
+        type=int,
+        default=0,
+        help="maximum human-gate attempts; 0 means wait forever",
+    )
+
+
+def _fusekit_gate_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--fusekit-gates",
+        choices=("service-only", "explicit"),
+        default="service-only",
+        help="service-only avoids FuseKit prompt gates; explicit restores plan/DNS prompts",
+    )
+
+
+def _cmd_scan(args: argparse.Namespace) -> int:
+    manifest = scan_repo(args.path)
+    write_manifest(manifest, args.output)
+    pack_paths = _ensure_provider_packs(args.path.resolve(), manifest)
+    print(f"Wrote setup manifest: {args.output}")
+    for pack_path in pack_paths:
+        print(f"Wrote provider capability pack: {pack_path}")
+    return 0
+
+
+def _cmd_validate(args: argparse.Namespace) -> int:
+    manifest = load_manifest(args.manifest)
+    print(f"Valid manifest for {manifest.app_name}")
+    return 0
+
+
+def _cmd_provider_synthesize(args: argparse.Namespace) -> int:
+    app_path = args.app.resolve()
+    if not app_path.exists():
+        raise FuseKitError(f"App path does not exist: {app_path}")
+    pack = synthesize_provider_pack(args.provider, app_path)
+    output = args.output or pack_default_path(app_path, pack.provider)
+    if args.intelligence == "heuristic":
+        write_provider_pack(pack, output)
+        result = None
+    else:
+        result = _run_provider_intelligence(args, app_path, output)
+        pack = result.pack
+    if args.as_json:
+        print(json.dumps(pack.to_dict(), indent=2, sort_keys=True))
+    else:
+        print(f"Wrote provider capability pack: {output}")
+    return 0
+
+
+def _run_provider_intelligence(
+    args: argparse.Namespace,
+    app_path: Path,
+    output: Path,
+) -> IntelligenceLoopResult:
+    if args.intelligence == "llm":
+        vault = Vault.open(args.vault, _passphrase(args))
+        source = OpenAiPackDraftSource(_llm_config_from_args(args), vault)
+        return ProviderIntelligenceLoop(
+            source,
+            research_sources=_provider_research_sources(args),
+        ).run(
+            provider=args.provider,
+            app_path=app_path,
+            output_path=output,
+        )
+    try:
+        if args.vault.exists():
+            vault = Vault.open(args.vault, _passphrase(args))
+            source = OpenAiPackDraftSource(_llm_config_from_args(args), vault)
+            return ProviderIntelligenceLoop(
+                source,
+                research_sources=_provider_research_sources(args),
+            ).run(
+                provider=args.provider,
+                app_path=app_path,
+                output_path=output,
+            )
+    except FuseKitError:
+        pass
+    return ProviderIntelligenceLoop(
+        research_sources=_provider_research_sources(args),
+    ).run(
+        provider=args.provider,
+        app_path=app_path,
+        output_path=output,
+    )
+
+
+def _provider_research_sources(args: argparse.Namespace) -> tuple[ProviderResearchSource, ...]:
+    if getattr(args, "research_spine", "openclaw") == "none":
+        return ()
+    return (
+        OpenClawProviderResearch(
+            OpenClawBrowserSpine(
+                profile=getattr(args, "openclaw_profile", "openclaw"),
+                dry_run=bool(getattr(args, "dry_run_spine", False)),
+            )
+        ),
+    )
+
+
+def _cmd_provider_validate(args: argparse.Namespace) -> int:
+    pack = load_provider_pack(args.pack)
+    print(f"Valid provider capability pack for {pack.provider}")
+    return 0
+
+
+def _cmd_provider_verify(args: argparse.Namespace) -> int:
+    pack = load_provider_pack(args.pack)
+    vault = Vault.open(args.vault, _passphrase(args))
+    results = verify_provider_pack(
+        pack,
+        vault,
+        live_url=args.live_url,
+        attempts=int(getattr(args, "verify_attempts", 1)),
+        retry_seconds=float(getattr(args, "verify_retry_seconds", 0.0)),
+    )
+    payload = {"provider": pack.provider, "results": [result.to_dict() for result in results]}
+    if args.as_json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        for result in results:
+            print(f"{result.status:8} {result.kind:12} {result.target}")
+    return 0 if all(result.status in {"ok", "skipped", "pending"} for result in results) else 1
+
+
+def _cmd_provider_list(args: argparse.Namespace) -> int:
+    manifest = scan_repo(args.app)
+    providers = []
+    for service in manifest.services:
+        providers.append(
+            {
+                "provider": service.provider,
+                "kind": service.kind,
+                "capabilities": list(service.capabilities),
+                "capability_pack": service.settings.get("capability_pack", ""),
+            }
+        )
+    if args.as_json:
+        print(json.dumps({"providers": providers}, indent=2, sort_keys=True))
+    else:
+        for provider in providers:
+            pack = f" pack={provider['capability_pack']}" if provider["capability_pack"] else ""
+            print(f"{provider['provider']:16} {provider['kind']}{pack}")
+    return 0
+
+
+def _cmd_acceptance_run(args: argparse.Namespace) -> int:
+    report = run_acceptance(
+        args.path,
+        mode=args.mode,
+        manifest_path=args.manifest,
+        vault_path=args.vault,
+        passphrase=_optional_passphrase(args),
+        receipt_path=args.receipt,
+        audit_log_path=args.audit_log,
+        output_dir=args.output_dir,
+    )
+    if args.as_json:
+        print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
+    else:
+        print(f"Acceptance mode: {report.mode}")
+        print(f"Demo ready: {str(report.demo_ready).lower()}")
+        print(f"Report: {report.report_path}")
+        print(f"Ledger: {report.ledger_path}")
+        for check in report.checks:
+            print(f"{check.status:8} {check.id:28} {check.detail}")
+        if report.missing:
+            print("Missing:")
+            for item in report.missing:
+                print(f"- {item}")
+    return 0 if report.demo_ready else 1
+
+
+def _cmd_install(args: argparse.Namespace) -> int:
+    app_path = args.path.resolve()
+    if not app_path.exists():
+        raise FuseKitError(f"App path does not exist: {app_path}")
+    manifest = scan_repo(app_path)
+    manifest_path = (args.manifest or (app_path / "fusekit.yaml")).resolve()
+    write_manifest(manifest, manifest_path)
+    pack_paths = _ensure_provider_packs(app_path, manifest)
+    fusekit_dir = app_path / ".fusekit"
+    fusekit_dir.mkdir(parents=True, exist_ok=True)
+    setup_script = fusekit_dir / "setup.sh"
+    setup_script.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        "cd \"$(dirname \"$0\")/..\"\n"
+        "exec fusekit launch . --manifest fusekit.yaml \"$@\"\n",
+        encoding="utf-8",
+    )
+    setup_script.chmod(0o700)
+    if args.web_launcher:
+        launcher_path = fusekit_dir / "launcher.html"
+        plan = build_cloud_shell_launch_plan(
+            app_source=args.app_source,
+            fusekit_package=args.fusekit_package,
+        )
+        write_cloud_shell_launcher(plan, launcher_path)
+    _append_gitignore(app_path / ".gitignore")
+    print(f"Wrote manifest: {manifest_path}")
+    for pack_path in pack_paths:
+        print(f"Wrote provider capability pack: {pack_path}")
+    print(f"Wrote one-click setup entrypoint: {setup_script}")
+    if args.web_launcher:
+        print(f"Wrote local OCI Cloud Shell launcher: {launcher_path}")
+    return 0
+
+
+def _cmd_launcher(args: argparse.Namespace) -> int:
+    app_path = args.path.resolve()
+    if not app_path.exists():
+        raise FuseKitError(f"App path does not exist: {app_path}")
+    fusekit_dir = app_path / ".fusekit"
+    output = args.output or (fusekit_dir / "launcher.html")
+    plan = build_cloud_shell_launch_plan(
+        app_source=args.app_source,
+        fusekit_package=args.fusekit_package,
+    )
+    write_cloud_shell_launcher(plan, output)
+    print(json.dumps({"cloud_shell": plan.to_dict(), "launcher": str(output)}, indent=2))
+    if args.open_browser:
+        webbrowser.open(output.resolve().as_uri())
+    return 0
+
+
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    result = doctor(args.openclaw_bin or None)
+    print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+    return 0 if result.ok else 1
+
+
+def _cmd_bootstrap(args: argparse.Namespace) -> int:
+    result = bootstrap_runtime(
+        install=not args.check_only,
+        openclaw_bin=args.openclaw_bin or None,
+    )
+    if args.check_only:
+        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+        return 0 if result.ok else 1
+    passphrase = _passphrase(args)
+    vault = open_or_create(args.vault, passphrase)
+    _capture_llm(args, vault, require=not args.check_only)
+    vault.save(args.vault, passphrase)
+    print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+    return 0 if result.ok else 1
+
+
+def _cmd_plan(args: argparse.Namespace) -> int:
+    manifest = load_manifest(args.manifest)
+    plan = build_plan(manifest)
+    if args.as_json:
+        print(json.dumps(plan.to_dict(), indent=2, sort_keys=True))
+        return 0
+    for action in plan.actions:
+        print(f"{action.kind:17} {action.id:28} {action.summary}")
+    return 0
+
+
+def _cmd_authorize(args: argparse.Namespace) -> int:
+    handoff = _handoff_for_provider_args(args, args.provider)
+    _authorize_provider(
+        args,
+        args.provider,
+        include_project=args.include_project_page,
+        handoff=handoff,
+    )
+    return 0
+
+
+def _authorize_provider(
+    args: argparse.Namespace,
+    provider: str,
+    include_project: bool = False,
+    handoff: ProviderHandoff | None = None,
+) -> None:
+    handoff = handoff or handoff_for(provider)
+    if args.handoff:
+        _run_handoff(args, provider, handoff, include_project)
+
+    token, source = _await_provider_token(args, provider, handoff, include_project)
+    if len(token) < 8:
+        raise FuseKitError("Provider token is too short to capture.")
+    passphrase = _passphrase(args)
+    vault = open_or_create(args.vault, passphrase)
+    vault.put(
+        handoff.token_record_id,
+        "provider_token",
+        provider,
+        handoff.token_label,
+        token,
+        {"source": source},
+    )
+    vault.save(args.vault, passphrase)
+    print(f"Captured {provider} authorization into encrypted vault: {args.vault}")
+
+
+def _cmd_apply(args: argparse.Namespace) -> int:
+    manifest = load_manifest(args.manifest)
+    _apply_loaded_manifest(args, manifest)
+    return 0
+
+
+def _cmd_setup(args: argparse.Namespace) -> int:
+    app_path = args.path.resolve()
+    if not app_path.exists():
+        raise FuseKitError(f"App path does not exist: {app_path}")
+    _rebase_setup_artifacts(args, app_path)
+    runner_resolution = _resolve_launch_runner(args)
+    if runner_resolution.selected == "oci-cloud-shell":
+        return _cmd_cloud_shell_runner_launch(args, app_path, runner_resolution.selected)
+    if runner_resolution.selected != "local":
+        return _cmd_cloud_runner_launch(args, app_path, runner_resolution.selected)
+    args._cached_passphrase = _passphrase(args)
+    vault = open_or_create(args.vault, args._cached_passphrase)
+    if not args.no_bootstrap:
+        result = bootstrap_runtime(install=True)
+        print(json.dumps({"bootstrap": result.to_dict()}, indent=2, sort_keys=True))
+        if not result.ok:
+            raise FuseKitError("FuseKit runtime bootstrap did not complete.")
+    _capture_llm(args, vault, require=not args.allow_incomplete)
+    vault.save(args.vault, args._cached_passphrase)
+    manifest_path = (args.manifest or (app_path / "fusekit.yaml")).resolve()
+    manifest = scan_repo(app_path)
+    write_manifest(manifest, manifest_path)
+    pack_paths = _ensure_provider_packs(app_path, manifest)
+    print(f"Scanned app and wrote manifest: {manifest_path}")
+    for pack_path in pack_paths:
+        print(f"Prepared provider capability pack: {pack_path}")
+    plan = build_plan(manifest)
+    args.plan_json.parent.mkdir(parents=True, exist_ok=True)
+    args.plan_json.write_text(
+        json.dumps(plan.to_dict(), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    print("Setup plan:")
+    for action in plan.actions:
+        print(f"{action.kind:17} {action.id:28} {action.summary}")
+    print(f"Setup plan artifact: {args.plan_json}")
+    if args.fusekit_gates == "explicit" and not args.yes:
+        _await_plan_approval(args)
+    if not args.allow_incomplete:
+        _authorize_required_providers(args, manifest)
+    args.manifest = manifest_path
+    _apply_loaded_manifest(args, manifest)
+    if not args.no_detonate:
+        detonation_targets = [app_path / ".fusekit" / "worker", app_path / ".fusekit" / "tmp"]
+        if bool(getattr(args, "_detonate_openclaw_state", False)):
+            detonation_targets.append(openclaw_state_home())
+        removed = detonate_paths(
+            detonation_targets,
+            preserve=[args.vault, args.audit_log, args.receipt_json, args.receipt_md],
+        )
+        print(json.dumps({"detonated": removed}, indent=2, sort_keys=True))
+    return 0
+
+
+def _apply_loaded_manifest(args: argparse.Namespace, manifest: SetupManifest) -> None:
+    passphrase = _passphrase(args)
+    vault = open_or_create(args.vault, passphrase)
+    audit = AuditLog(args.audit_log)
+    receipt = Receipt(app_name=manifest.app_name, vault_path=str(args.vault))
+    secrets = _collect_secrets(args.secret)
+    secrets.update(_collect_manifest_env_secrets(manifest))
+
+    _capture_provider_tokens(vault)
+    _capture_manifest_provider_env(vault, manifest)
+    context = ProviderSetupContext(
+        manifest=manifest,
+        vault=vault,
+        audit=audit,
+        receipt=receipt,
+        secrets=secrets,
+        provider_names=_required_providers(manifest),
+        inputs=_provider_setup_inputs(args),
+        approve_dns=bool(args.approve_dns),
+        allow_incomplete=bool(args.allow_incomplete),
+        fusekit_gates=str(getattr(args, "fusekit_gates", "service-only")),
+    )
+    ensure_webhook_secrets(manifest, context)
+    _run_manifest_provider_pack_setup(args, manifest, context)
+
+    if args.live_url:
+        result = verify_live_url(args.live_url)
+        receipt.live_url = args.live_url
+        audit.record("verify.live_url", result)
+        receipt.add_action("verify.live_url", "ok" if result["ok"] else "failed", result)
+
+    _verify_provider_packs(args, manifest, vault, audit, receipt)
+
+    vault.save(args.vault, passphrase)
+    receipt.write_json(args.receipt_json)
+    receipt.write_markdown(args.receipt_md)
+    print(f"Apply finished. Redacted receipt: {args.receipt_json}")
+    print(f"Encrypted vault: {args.vault}")
+
+
+def _cmd_verify(args: argparse.Namespace) -> int:
+    result = verify_live_url(args.url)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0 if result["ok"] else 1
+
+
+def _cmd_receipt(args: argparse.Namespace) -> int:
+    manifest = load_manifest(args.manifest)
+    vault = Vault.open(args.vault, _passphrase(args))
+    receipt = Receipt(app_name=manifest.app_name, vault_path=str(args.vault))
+    receipt.add_action("vault.index", "ok", {"records": vault.public_index()})
+    receipt.write_json(args.output)
+    print(f"Wrote redacted receipt: {args.output}")
+    return 0
+
+
+def _cmd_detonate(args: argparse.Namespace) -> int:
+    removed = detonate_paths(args.paths, preserve=args.preserve)
+    print(json.dumps({"removed": removed}, indent=2, sort_keys=True))
+    return 0
+
+
+def _cmd_unlock(args: argparse.Namespace) -> int:
+    vault = Vault.open(args.vault, _passphrase(args))
+    print(json.dumps({"records": vault.public_index()}, indent=2, sort_keys=True))
+    return 0
+
+
+def _cmd_request(args: argparse.Namespace) -> int:
+    vault = Vault.open(args.vault, _passphrase(args))
+    response = CapabilityBroker(vault).request(args.capability)
+    print(json.dumps(response, indent=2, sort_keys=True))
+    return 0
+
+
+def _cmd_control_room(args: argparse.Namespace) -> int:
+    if args.serve:
+        print(f"Serving FuseKit control room at http://{args.host}:{args.port}")
+        serve_control_room(args.job_state, host=args.host, port=args.port)
+        return 0
+    job = JobState.load(args.job_state)
+    write_control_room(job, args.output)
+    print(f"Wrote FuseKit control room: {args.output}")
+    return 0
+
+
+def _cmd_leak_scan(args: argparse.Namespace) -> int:
+    findings = scan_for_secret_leaks(args.path)
+    payload = {"findings": [finding.to_dict() for finding in findings]}
+    if args.as_json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        for finding in findings:
+            print(f"{finding.path}:{finding.line}: {finding.kind}")
+    return 1 if findings else 0
+
+
+def _cmd_rollback(args: argparse.Namespace) -> int:
+    if args.execute:
+        vault = Vault.open(args.vault, _passphrase(args))
+        actions = execute_native_rollback(args.receipt, vault)
+    else:
+        actions = plan_pack_rollback(args.pack) if args.pack else plan_rollback(args.receipt)
+    print(json.dumps({"rollback": [action.to_dict() for action in actions]}, indent=2))
+    return 0
+
+
+def _cmd_start_over(args: argparse.Namespace) -> int:
+    result = start_over(args.path.resolve())
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+def _cmd_runner_doctor(args: argparse.Namespace) -> int:
+    status = {
+        "oci": oci_runtime_status(args.oci_config_file),
+        "local": {"available": True},
+    }
+    print(json.dumps(status, indent=2, sort_keys=True))
+    return 0
+
+
+def _cmd_runner_authorize(args: argparse.Namespace) -> int:
+    if args.runner != "oci":
+        raise FuseKitError(f"Unsupported runner authorization: {args.runner}")
+    _run_oci_handoff(args)
+    if args.oci_auth_mode in {"auto", "browser-session"} and not args.capture_config_stdin:
+        config_file = _oci_config_file(args)
+        region = _oci_region(args)
+        authorize_oci_browser_session(
+            config_file=config_file,
+            profile=_oci_profile(args),
+            region=region,
+        )
+        passphrase = _passphrase(args)
+        vault = open_or_create(args.vault, passphrase)
+        capture_oci_session_profile(vault, config_file=config_file, profile=_oci_profile(args))
+        vault.save(args.vault, passphrase)
+        print(f"Captured OCI browser-session profile into encrypted vault: {args.vault}")
+        return 0
+    if not args.capture_config_stdin and not args.oci_config_file:
+        passphrase = _passphrase(args)
+        vault = open_or_create(args.vault, passphrase)
+        public_key = prepare_oci_api_signing_key(vault)
+        vault.save(args.vault, passphrase)
+        print("OCI handoff URLs:")
+        for url in (OCI_SIGNUP_URL, OCI_CONSOLE_URL, OCI_API_KEYS_URL):
+            print(f"- {url}")
+        print("Upload or paste this public OCI API signing key:")
+        print(public_key)
+        raise ApprovalRequired(
+            "OCI authorization requires an approved OCI config snippet. "
+            "Rerun with --oci-config-file or --capture-config-stdin after uploading "
+            "FuseKit's public API key in OCI."
+        )
+    config_snippet = _read_oci_config_snippet(args)
+    passphrase = _passphrase(args)
+    vault = open_or_create(args.vault, passphrase)
+    public_key = capture_oci_api_key_profile(vault, config_snippet=config_snippet)
+    vault.save(args.vault, passphrase)
+    print("Upload or paste this public OCI API signing key if it is not already approved:")
+    print(public_key)
+    print(f"Captured OCI runner profile into encrypted vault: {args.vault}")
+    return 0
+
+
+def _cmd_runner_plan(args: argparse.Namespace) -> int:
+    plan = build_oci_runner_plan(
+        runner=args.runner,
+        auth_mode=args.oci_auth_mode,
+        account_mode=args.oci_account_mode,
+        region=args.oci_region,
+        shape=args.oci_shape,
+    )
+    if args.as_json:
+        print(json.dumps(plan.to_dict(), indent=2, sort_keys=True))
+        return 0
+    print(f"Runner: {plan.runner}")
+    print(f"Shape: {plan.shape} ({plan.ocpus} OCPU, {plan.memory_gb} GB)")
+    print("Resources:")
+    for resource in plan.resources:
+        print(f"- {resource}")
+    print("Human gates:")
+    for gate in plan.gates:
+        print(f"- {gate}")
+    return 0
+
+
+def _cmd_runner_provision(args: argparse.Namespace) -> int:
+    passphrase = _passphrase(args)
+    vault = open_or_create(args.vault, passphrase)
+    has_oci_config = bool(oci_runtime_status(args.oci_config_file)["oci_config"])
+    if not has_vault_oci_profile(vault) and not has_oci_config:
+        raise ApprovalRequired(
+            "OCI provisioning requires an existing OCI config or encrypted OCI runner profile. "
+            "Run `fusekit runner authorize oci` first."
+        )
+    plan = build_oci_runner_plan(
+        runner=args.runner,
+        auth_mode=args.oci_auth_mode,
+        account_mode=args.oci_account_mode,
+        region=args.oci_region,
+        shape=args.oci_shape,
+    )
+    workspace = _provision_oci_workspace(args, vault, plan)
+    vault.save(args.vault, passphrase)
+    print(
+        json.dumps(
+            {
+                "oci_runner_plan": plan.to_dict(),
+                "workspace": workspace.to_dict(),
+                "status": "provisioned",
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _cmd_runner_exec(args: argparse.Namespace) -> int:
+    app_path = args.path.resolve()
+    if not app_path.exists():
+        raise FuseKitError(f"App path does not exist: {app_path}")
+    passphrase = _passphrase(args)
+    vault = open_or_create(args.vault, passphrase)
+    workspace = latest_workspace_from_vault(vault)
+    job = JobState.create(f"fk-{uuid.uuid4().hex[:12]}", app_path, f"runner:{args.runner}")
+    job.mark("runner.resolve", "done", f"{args.runner} selected")
+    job.mark("oci.authorize", "done", "OCI profile available")
+    job.mark("oci.provision", "done", f"workspace {workspace.id} at {workspace.public_ip}")
+    job.mark("remote.bootstrap", "running", "uploading app and running remote setup")
+    job.save(app_path / ".fusekit" / "job.json")
+    artifacts = execute_remote_setup(
+        workspace=workspace,
+        vault=vault,
+        app_path=app_path,
+        local_output_dir=app_path / ".fusekit" / "remote-artifacts",
+        passphrase=passphrase,
+        launch_args=_remote_launch_args(args),
+    )
+    job.mark("remote.bootstrap", "done", "remote setup completed")
+    job.mark("artifacts.retrieve", "done", artifacts["output_dir"])
+    job.save(app_path / ".fusekit" / "job.json")
+    print(json.dumps({"workspace": workspace.to_dict(), "artifacts": artifacts}, indent=2))
+    return 0
+
+
+def _cmd_runner_receipt(args: argparse.Namespace) -> int:
+    job = JobState.load(args.job_state)
+    print(json.dumps(job.to_dict(), indent=2, sort_keys=True))
+    return 0
+
+
+def _cmd_runner_detonate(args: argparse.Namespace) -> int:
+    job = JobState.load(args.job_state) if args.job_state.exists() else None
+    remote_deleted: dict[str, str] = {}
+    if args.runner == "oci" and args.vault.exists():
+        passphrase = _passphrase(args)
+        vault = open_or_create(args.vault, passphrase)
+        try:
+            workspace = latest_workspace_from_vault(vault)
+            detonate_remote_worker(workspace=workspace, vault=vault)
+            auth = load_oci_auth_from_vault_or_config(vault, config_file=None)
+            remote_deleted = OciProvisioner(auth).detonate(workspace)
+        except FuseKitError:
+            remote_deleted = {}
+    removed = detonate_paths(
+        [Path(".fusekit/worker"), Path(".fusekit/tmp")],
+        preserve=[Path(".fusekit/fusekit.vault.json"), args.job_state],
+    )
+    if job is not None:
+        job.mark("detonate.workspace", "done", f"{args.scope} detonation requested")
+        job.save(args.job_state)
+    print(
+        json.dumps(
+            {
+                "runner": args.runner,
+                "scope": args.scope,
+                "removed": removed,
+                "remote_deleted": remote_deleted,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _resolve_launch_runner(args: argparse.Namespace) -> RunnerResolution:
+    vault_has_profile = False
+    if args.vault.exists():
+        try:
+            vault_has_profile = has_vault_oci_profile(Vault.open(args.vault, _passphrase(args)))
+        except FuseKitError:
+            vault_has_profile = False
+    resolution = resolve_runner(
+        args.runner,
+        allow_incomplete=bool(args.allow_incomplete),
+        oci_config_file=args.oci_config_file,
+        vault_has_oci_profile=vault_has_profile,
+    )
+    print(json.dumps({"runner": resolution.to_dict()}, indent=2, sort_keys=True))
+    return resolution
+
+
+def _ensure_oci_authorized_for_launch(
+    args: argparse.Namespace,
+    vault: Vault,
+    passphrase: str,
+    job: JobState,
+) -> None:
+    """Inline the OCI service authorization gate into one-command launch."""
+
+    if has_vault_oci_profile(vault):
+        job.mark("oci.authorize", "done", "encrypted OCI profile found")
+        job.save(args.job_state)
+        return
+    status = oci_runtime_status(args.oci_config_file)
+    if status["oci_config"] and args.oci_auth_mode in {"auto", "existing-config"}:
+        job.mark("oci.authorize", "done", "existing OCI config detected")
+        job.save(args.job_state)
+        return
+    if args.oci_auth_mode == "api-key-upload":
+        _await_oci_api_key_upload(args, vault, passphrase, job)
+        return
+    _await_oci_browser_session(args, vault, passphrase, job)
+
+
+def _await_oci_browser_session(
+    args: argparse.Namespace,
+    vault: Vault,
+    passphrase: str,
+    job: JobState,
+) -> None:
+    config_file = _oci_config_file(args)
+    profile = _oci_profile(args)
+    region = _oci_region(args)
+    attempt = 0
+    while True:
+        attempt += 1
+        gate_id = "oci.browser-session"
+        _record_gate_waiting(
+            args,
+            gate_id,
+            provider="oci",
+            reason="OCI signup/login/MFA/account verification",
+            resume_url=OCI_CONSOLE_URL,
+        )
+        job.mark(
+            "oci.authorize",
+            "waiting",
+            "OCI signup/login/MFA/account verification gate is open",
+        )
+        job.save(args.job_state)
+        _run_oci_handoff(args)
+        try:
+            authorize_oci_browser_session(
+                config_file=config_file,
+                profile=profile,
+                region=region,
+            )
+            capture_oci_session_profile(vault, config_file=config_file, profile=profile)
+            vault.save(args.vault, passphrase)
+            job.mark("oci.authorize", "done", "OCI browser-session profile captured")
+            job.save(args.job_state)
+            _record_gate_passed(
+                args,
+                gate_id,
+                provider="oci",
+                reason="OCI signup/login/MFA/account verification",
+                resume_url=OCI_CONSOLE_URL,
+            )
+            print(f"Captured OCI browser-session profile into encrypted vault: {args.vault}")
+            return
+        except FuseKitError as exc:
+            _ensure_gate_attempt_allowed(args, attempt, "OCI browser-session authorization")
+            print(
+                "Waiting for OCI service authorization. Complete Oracle signup/login/MFA/"
+                "account verification, then FuseKit will reopen the handoff and retry. "
+                f"Last result: {exc}"
+            )
+            _sleep_for_gate(args)
+
+
+def _await_oci_api_key_upload(
+    args: argparse.Namespace,
+    vault: Vault,
+    passphrase: str,
+    job: JobState,
+) -> None:
+    public_key = prepare_oci_api_signing_key(vault)
+    vault.save(args.vault, passphrase)
+    attempt = 0
+    while True:
+        attempt += 1
+        gate_id = "oci.api-key-upload"
+        _record_gate_waiting(
+            args,
+            gate_id,
+            provider="oci",
+            reason="OCI API public-key upload/config-snippet",
+            resume_url=OCI_API_KEYS_URL,
+        )
+        job.mark(
+            "oci.authorize",
+            "waiting",
+            "OCI API public-key upload/config-snippet gate is open",
+        )
+        job.save(args.job_state)
+        _run_oci_handoff(args)
+        print("Upload or paste this public OCI API signing key:")
+        print(public_key)
+        if args.capture_config_stdin or args.oci_config_file:
+            config_snippet = _read_oci_config_snippet(args)
+            capture_oci_api_key_profile(vault, config_snippet=config_snippet)
+            vault.save(args.vault, passphrase)
+            job.mark("oci.authorize", "done", "OCI API key profile captured")
+            job.save(args.job_state)
+            _record_gate_passed(
+                args,
+                gate_id,
+                provider="oci",
+                reason="OCI API public-key upload/config-snippet",
+                resume_url=OCI_API_KEYS_URL,
+            )
+            return
+        _ensure_gate_attempt_allowed(args, attempt, "OCI API key authorization")
+        print(
+            "Waiting for OCI API key authorization. Complete Oracle's API key gate, "
+            "then provide a config snippet when prompted or rerun with an OCI config file."
+        )
+        _sleep_for_gate(args)
+
+
+def _run_oci_handoff(args: argparse.Namespace) -> None:
+    if getattr(args, "open_browser", False):
+        for url in (OCI_SIGNUP_URL, OCI_CONSOLE_URL, OCI_API_KEYS_URL):
+            webbrowser.open(url)
+    if getattr(args, "spine", "system") == "playwright":
+        playwright_spine = PlaywrightBrowserSpine(
+            headless=getattr(args, "headless_browser", False),
+            dry_run=getattr(args, "dry_run_spine", False),
+        )
+        print("Playwright spine events:")
+        try:
+            playwright_spine.start()
+            for url in (OCI_SIGNUP_URL, OCI_CONSOLE_URL, OCI_API_KEYS_URL):
+                event = playwright_spine.open(url)
+                print(json.dumps(event.to_dict(), sort_keys=True))
+                print(json.dumps(playwright_spine.snapshot().to_dict(), sort_keys=True))
+        finally:
+            playwright_spine.close()
+    elif getattr(args, "spine", "system") == "openclaw":
+        if not getattr(args, "dry_run_spine", False):
+            args._detonate_openclaw_state = True
+        openclaw_spine = OpenClawBrowserSpine(
+            profile=getattr(args, "openclaw_profile", "openclaw"),
+            dry_run=getattr(args, "dry_run_spine", False),
+        )
+        print("OpenClaw spine events:")
+        for url in (OCI_SIGNUP_URL, OCI_CONSOLE_URL, OCI_API_KEYS_URL):
+            event = openclaw_spine.open(url)
+            print(json.dumps(event.to_dict(), sort_keys=True))
+
+
+def _oci_config_file(args: argparse.Namespace) -> Path:
+    default = Path.home() / ".oci/config"
+    return args.oci_config_file or Path(os.environ.get("OCI_CONFIG_FILE", default))
+
+
+def _oci_region(args: argparse.Namespace) -> str:
+    return args.oci_region if args.oci_region != "auto" else "us-ashburn-1"
+
+
+def _oci_profile(args: argparse.Namespace) -> str:
+    return getattr(args, "oci_profile", "FUSEKIT")
+
+
+def _detonate_openclaw_state_if_requested(args: argparse.Namespace) -> None:
+    if getattr(args, "no_detonate", False):
+        return
+    if not bool(getattr(args, "_detonate_openclaw_state", False)):
+        return
+    removed = detonate_paths([openclaw_state_home()], preserve=[])
+    print(json.dumps({"detonated_openclaw_state": removed}, indent=2, sort_keys=True))
+
+
+def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_name: str) -> int:
+    job = JobState.create(f"fk-{uuid.uuid4().hex[:12]}", app_path, runner_name)
+    job.mark("runner.resolve", "done", f"{runner_name} selected")
+    if not args.no_bootstrap:
+        result = bootstrap_runtime(install=True)
+        print(json.dumps({"bootstrap": result.to_dict()}, indent=2, sort_keys=True))
+        if not result.ok:
+            raise FuseKitError("FuseKit runtime bootstrap did not complete.")
+    plan = build_oci_runner_plan(
+        runner=runner_name,
+        auth_mode=args.oci_auth_mode,
+        account_mode=args.oci_account_mode,
+        region=args.oci_region,
+        shape=args.oci_shape,
+        fusekit_package=args.fusekit_package,
+    )
+    args.job_state.parent.mkdir(parents=True, exist_ok=True)
+    plan_path = args.job_state.parent / "runner_plan.json"
+    plan_path.write_text(json.dumps(plan.to_dict(), indent=2, sort_keys=True) + "\n", "utf-8")
+    job.add_artifact("runner_plan", plan_path)
+    if args.control_room:
+        control_path = args.job_state.parent / "control-room.html"
+        write_control_room(job, control_path)
+        job.add_artifact("control_room", control_path)
+    passphrase = _passphrase(args)
+    vault = open_or_create(args.vault, passphrase)
+    _ensure_oci_authorized_for_launch(args, vault, passphrase, job)
+    workspace = _provision_oci_workspace(args, vault, plan)
+    vault.save(args.vault, passphrase)
+    workspace_path = args.job_state.parent / "oci_workspace.json"
+    workspace_path.write_text(
+        json.dumps(workspace.to_dict(), indent=2, sort_keys=True) + "\n",
+        "utf-8",
+    )
+    job.mark("oci.provision", "done", f"workspace {workspace.id} at {workspace.public_ip}")
+    job.add_artifact("oci_workspace", workspace_path)
+    job.mark("remote.bootstrap", "running", "uploading app and running remote setup")
+    job.mark("app.upload", "running", "uploading app without excluded secret paths")
+    job.mark("setup.execute", "running", "remote FuseKit launch starting")
+    job.save(args.job_state)
+    artifacts = execute_remote_setup(
+        workspace=workspace,
+        vault=vault,
+        app_path=app_path,
+        local_output_dir=app_path / ".fusekit" / "remote-artifacts",
+        passphrase=passphrase,
+        launch_args=_remote_launch_args(args),
+    )
+    job.mark("remote.bootstrap", "done", "remote setup completed")
+    job.mark("app.upload", "done", "app uploaded without excluded secret paths")
+    job.mark("setup.execute", "done", "remote FuseKit launch completed")
+    job.mark("verify.live", "done", "verification delegated to setup receipt")
+    job.mark("artifacts.retrieve", "done", artifacts["output_dir"])
+    detonate_remote_worker(workspace=workspace, vault=vault)
+    remote_deleted = OciProvisioner(
+        load_oci_auth_from_vault_or_config(vault, config_file=args.oci_config_file)
+    ).detonate(workspace)
+    job.mark("detonate.workspace", "done", "remote worker and OCI workspace detonated")
+    job.save(args.job_state)
+    _detonate_openclaw_state_if_requested(args)
+    print(
+        json.dumps(
+            {
+                "workspace": workspace.to_dict(),
+                "artifacts": artifacts,
+                "remote_deleted": remote_deleted,
+                "job_state": str(args.job_state),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _cmd_cloud_shell_runner_launch(
+    args: argparse.Namespace,
+    app_path: Path,
+    runner_name: str,
+) -> int:
+    job = JobState.create(f"fk-{uuid.uuid4().hex[:12]}", app_path, runner_name)
+    job.mark("runner.resolve", "done", f"{runner_name} selected")
+    args.job_state.parent.mkdir(parents=True, exist_ok=True)
+    app_source = args.app_source or _infer_app_source(app_path)
+    plan = build_cloud_shell_launch_plan(
+        app_source=app_source,
+        fusekit_package=args.fusekit_package,
+        fusekit_gates=args.fusekit_gates,
+        launch_args=_drop_forwarded_option(_remote_launch_args(args), "--fusekit-gates", True),
+    )
+    launcher_path = args.job_state.parent / "launcher.html"
+    plan_path = args.job_state.parent / "cloud_shell_plan.json"
+    plan_path.write_text(json.dumps(plan.to_dict(), indent=2, sort_keys=True) + "\n", "utf-8")
+    write_cloud_shell_launcher(plan, launcher_path)
+    job.mark("oci.authorize", "waiting", "OCI Cloud Shell service gate is open")
+    job.add_artifact("cloud_shell_plan", plan_path)
+    job.add_artifact("launcher", launcher_path)
+    job.save(args.job_state)
+    if args.open_browser or not getattr(args, "no_open_launcher", False):
+        webbrowser.open(plan.deeplink_url)
+    print(
+        json.dumps(
+            {
+                "cloud_shell": plan.to_dict(),
+                "job_state": str(args.job_state),
+                "launcher": str(launcher_path),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _infer_app_source(app_path: Path) -> str:
+    git_config = app_path / ".git" / "config"
+    if not git_config.exists():
+        return ""
+    try:
+        for line in git_config.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped.startswith("url = "):
+                return stripped.removeprefix("url = ").strip()
+    except OSError:
+        return ""
+    return ""
+
+
+def _remote_launch_args(args: argparse.Namespace) -> tuple[str, ...]:
+    forwarded: list[str] = []
+    pairs = (
+        ("--github-repo", "github_repo"),
+        ("--vercel-project", "vercel_project"),
+        ("--vercel-framework", "vercel_framework"),
+        ("--vercel-git-repo-id", "vercel_git_repo_id"),
+        ("--vercel-git-ref", "vercel_git_ref"),
+        ("--live-url", "live_url"),
+        ("--dns-zone", "dns_zone"),
+        ("--llm-provider", "llm_provider"),
+        ("--llm-model", "llm_model"),
+        ("--llm-base-url", "llm_base_url"),
+        ("--llm-api-key-env", "llm_api_key_env"),
+        ("--llm-auth-mode", "llm_auth_mode"),
+        ("--spine", "spine"),
+        ("--openclaw-profile", "openclaw_profile"),
+        ("--fusekit-gates", "fusekit_gates"),
+        ("--gate-retry-seconds", "gate_retry_seconds"),
+        ("--gate-max-attempts", "gate_max_attempts"),
+        ("--verify-attempts", "verify_attempts"),
+        ("--verify-retry-seconds", "verify_retry_seconds"),
+        ("--fusekit-package", "fusekit_package"),
+    )
+    for flag, attr in pairs:
+        value = getattr(args, attr, "")
+        if value not in {"", None}:
+            forwarded.extend([flag, str(value)])
+    for item in getattr(args, "secret", []):
+        forwarded.extend(["--secret", str(item)])
+    for flag in (
+        "approve_dns",
+        "allow_incomplete",
+        "capture_stdin",
+        "infer_ui",
+        "headless_browser",
+        "dry_run_spine",
+        "open_browser",
+        "no_bootstrap",
+        "no_detonate",
+    ):
+        if bool(getattr(args, flag, False)):
+            forwarded.append("--" + flag.replace("_", "-"))
+    return tuple(forwarded)
+
+
+def _drop_forwarded_option(
+    args: tuple[str, ...],
+    flag: str,
+    takes_value: bool,
+) -> tuple[str, ...]:
+    filtered: list[str] = []
+    skip_next = False
+    for arg in args:
+        if skip_next:
+            skip_next = False
+            continue
+        if arg == flag:
+            skip_next = takes_value
+            continue
+        filtered.append(arg)
+    return tuple(filtered)
+
+
+def _read_oci_config_snippet(args: argparse.Namespace) -> str:
+    config_file: Path | None = args.oci_config_file
+    if config_file:
+        return config_file.read_text(encoding="utf-8").strip()
+    if args.capture_config_stdin:
+        data = sys.stdin.read().strip()
+        if data:
+            return data
+    raise FuseKitError("No OCI config snippet was provided.")
+
+
+def _provision_oci_workspace(
+    args: argparse.Namespace,
+    vault: Vault,
+    plan: OciRunnerPlan,
+) -> OciWorkspace:
+    auth = load_oci_auth_from_vault_or_config(vault, config_file=args.oci_config_file)
+    return OciProvisioner(auth).provision(plan, vault)
+
+
+def _collect_secrets(items: list[str]) -> dict[str, str]:
+    secrets: dict[str, str] = {}
+    for item in items:
+        if "=" not in item:
+            raise FuseKitError("--secret must be NAME=env:ENV_VAR")
+        name, source = item.split("=", 1)
+        if not source.startswith("env:"):
+            raise FuseKitError("--secret values must be env references, not raw plaintext.")
+        env_name = source.removeprefix("env:")
+        value = os.environ.get(env_name)
+        if not value:
+            raise FuseKitError(f"{env_name} is not set for secret {name}.")
+        secrets[name] = value
+    return secrets
+
+
+def _collect_manifest_env_secrets(manifest: SetupManifest) -> dict[str, str]:
+    """Collect detected env secrets from the current environment without printing values."""
+
+    secrets: dict[str, str] = {}
+    for service in manifest.services:
+        for name in service.secrets:
+            value = os.environ.get(name)
+            if value:
+                secrets[name] = value
+    return secrets
+
+
+def _required_providers(manifest: SetupManifest) -> set[str]:
+    providers = {service.provider.lower() for service in manifest.services}
+    if manifest.domains:
+        providers.update(domain.provider.lower() for domain in manifest.domains)
+    return providers
+
+
+def _authorize_required_providers(args: argparse.Namespace, manifest: SetupManifest) -> None:
+    seen: set[str] = set()
+    services_by_provider = {service.provider.lower(): service for service in manifest.services}
+    for provider in sorted(_required_providers(manifest)):
+        if provider in seen:
+            continue
+        seen.add(provider)
+        service = services_by_provider.get(provider)
+        handoff = _handoff_for_service(args, provider, service, Path(manifest.app_path))
+        if handoff is None:
+            continue
+        if _has_provider_token(args.vault, args, handoff):
+            continue
+        auth_args = argparse.Namespace(**vars(args))
+        auth_args.handoff = True
+        auth_args.provider = provider
+        auth_args.token_env = ""
+        auth_args.include_project_page = provider in {"github", "vercel"}
+        _authorize_provider(
+            auth_args,
+            provider,
+            include_project=auth_args.include_project_page,
+            handoff=handoff,
+        )
+
+
+def _run_handoff(
+    args: argparse.Namespace,
+    provider: str,
+    handoff: ProviderHandoff,
+    include_project: bool,
+) -> None:
+    _print_handoff(handoff, include_project=include_project)
+    if args.spine == "playwright":
+        playwright_spine = PlaywrightBrowserSpine(
+            headless=getattr(args, "headless_browser", False),
+            dry_run=args.dry_run_spine,
+        )
+        try:
+            if getattr(args, "infer_ui", False):
+                vault = open_or_create(args.vault, _passphrase(args))
+                events = run_inferred_navigation(
+                    provider=provider,
+                    goal=_provider_ui_goal(provider, include_project),
+                    start_url=handoff.signup_url,
+                    spine=playwright_spine,
+                    navigator=OpenAiUiNavigator(_llm_config_from_args(args), vault),
+                    gate_retry_seconds=float(getattr(args, "gate_retry_seconds", 300.0)),
+                    max_gate_attempts=int(getattr(args, "gate_max_attempts", 0)),
+                )
+            else:
+                try:
+                    events = execute_provider_ui_playbook(
+                        provider_ui_playbook(provider, include_project=include_project),
+                        playwright_spine,
+                    )
+                except FuseKitError:
+                    events = provider_handoff_playbook(
+                        handoff,
+                        playwright_spine,
+                        include_project=include_project,
+                    )
+        finally:
+            playwright_spine.close()
+        print("Playwright UI events:")
+        for event in events:
+            print(json.dumps(event.to_dict(), sort_keys=True))
+    elif args.spine == "openclaw":
+        if not args.dry_run_spine:
+            args._detonate_openclaw_state = True
+        openclaw_spine = OpenClawBrowserSpine(
+            profile=args.openclaw_profile,
+            dry_run=args.dry_run_spine,
+        )
+        if getattr(args, "infer_ui", False):
+            vault = open_or_create(args.vault, _passphrase(args))
+            events = run_inferred_navigation(
+                provider=provider,
+                goal=_provider_ui_goal(provider, include_project),
+                start_url=handoff.signup_url,
+                spine=openclaw_spine,
+                navigator=OpenAiUiNavigator(_llm_config_from_args(args), vault),
+                gate_retry_seconds=float(getattr(args, "gate_retry_seconds", 300.0)),
+                max_gate_attempts=int(getattr(args, "gate_max_attempts", 0)),
+            )
+        else:
+            try:
+                events = provider_authorization_playbook(
+                    provider,
+                    openclaw_spine,
+                    include_project=include_project,
+                )
+            except FuseKitError:
+                events = provider_handoff_playbook(
+                    handoff,
+                    openclaw_spine,
+                    include_project=include_project,
+                )
+        print("OpenClaw spine events:")
+        for event in events:
+            print(json.dumps(event.to_dict(), sort_keys=True))
+    elif args.open_browser:
+        for url in handoff.urls(include_project=include_project):
+            webbrowser.open(url)
+
+
+def _gate_state_path(args: argparse.Namespace) -> Path:
+    for attr in ("path", "app"):
+        value = getattr(args, attr, None)
+        if isinstance(value, Path):
+            return value.resolve() / ".fusekit" / "gates.json"
+    job_state = getattr(args, "job_state", None)
+    if isinstance(job_state, Path):
+        return job_state.parent / "gates.json"
+    vault = getattr(args, "vault", None)
+    if isinstance(vault, Path):
+        return vault.parent / "gates.json"
+    return Path(".fusekit/gates.json")
+
+
+def _record_gate_waiting(
+    args: argparse.Namespace,
+    gate_id: str,
+    *,
+    provider: str,
+    reason: str,
+    resume_url: str = "",
+) -> None:
+    GateService.load(_gate_state_path(args)).wait(
+        gate_id,
+        provider=provider,
+        reason=reason,
+        resume_url=resume_url,
+    )
+
+
+def _record_gate_passed(
+    args: argparse.Namespace,
+    gate_id: str,
+    *,
+    provider: str,
+    reason: str,
+    resume_url: str = "",
+) -> None:
+    service = GateService.load(_gate_state_path(args))
+    if gate_id not in service.records:
+        service.wait(gate_id, provider=provider, reason=reason, resume_url=resume_url)
+    service.pass_gate(gate_id)
+
+
+def _provider_ui_goal(provider: str, include_project: bool) -> str:
+    goal = (
+        f"Create or sign in to {provider}, reach the token/API key setup page, "
+        "configure only non-sensitive project/domain settings, and stop at provider "
+        "login/MFA/CAPTCHA/payment/consent or secret reveal gates."
+    )
+    if include_project:
+        goal += " Include project/resource creation when it is offered."
+    return goal
+
+
+def _await_provider_token(
+    args: argparse.Namespace,
+    provider: str,
+    handoff: ProviderHandoff,
+    include_project: bool,
+) -> tuple[str, str]:
+    token_env = args.token_env or handoff.token_env
+    gate_id = f"provider.{provider}.authorization"
+    resume_url = handoff.token_url or handoff.signup_url
+    attempt = 0
+    while True:
+        attempt += 1
+        token = os.environ.get(token_env)
+        source = f"env:{token_env}"
+        if not token and args.capture_stdin:
+            try:
+                token = getpass.getpass(f"Paste approved {provider} token: ").strip()
+                source = "supervised-hidden-prompt"
+            except (EOFError, OSError):
+                token = ""
+        if token:
+            _record_gate_passed(
+                args,
+                gate_id,
+                provider=provider,
+                reason=f"{provider} login/MFA/CAPTCHA/billing/consent/token creation",
+                resume_url=resume_url,
+            )
+            return token, source
+        _record_gate_waiting(
+            args,
+            gate_id,
+            provider=provider,
+            reason=f"{provider} login/MFA/CAPTCHA/billing/consent/token creation",
+            resume_url=resume_url,
+        )
+        _ensure_gate_attempt_allowed(args, attempt, f"{provider} authorization")
+        print(
+            f"Waiting for {provider} human gate. Complete login/MFA/CAPTCHA/billing/"
+            f"consent/token creation, then provide {token_env}. Retrying handoff..."
+        )
+        _sleep_for_gate(args)
+        _run_handoff(args, provider, handoff, include_project)
+
+
+def _await_plan_approval(args: argparse.Namespace) -> None:
+    gate_id = "fusekit.plan-approval"
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            answer = input("Approve this setup plan and continue? [y/N] ").strip().lower()
+        except (EOFError, OSError):
+            answer = ""
+        if answer in {"y", "yes"}:
+            _record_gate_passed(
+                args,
+                gate_id,
+                provider="fusekit",
+                reason="explicit FuseKit setup-plan approval",
+            )
+            return
+        _record_gate_waiting(
+            args,
+            gate_id,
+            provider="fusekit",
+            reason="explicit FuseKit setup-plan approval",
+        )
+        _ensure_gate_attempt_allowed(args, attempt, "setup plan approval")
+        print("Waiting for setup plan approval. FuseKit will keep this launch alive.")
+        _sleep_for_gate(args)
+
+
+def _await_dns_approval(args: argparse.Namespace, domain: str) -> None:
+    gate_id = f"dns.{domain}.approval"
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            answer = input(f"Approve DNS apply for {domain}? [y/N] ").strip().lower()
+        except (EOFError, OSError):
+            answer = ""
+        if answer in {"y", "yes"}:
+            args.approve_dns = True
+            _record_gate_passed(
+                args,
+                gate_id,
+                provider="dns",
+                reason=f"explicit DNS apply approval for {domain}",
+            )
+            return
+        _record_gate_waiting(
+            args,
+            gate_id,
+            provider="dns",
+            reason=f"explicit DNS apply approval for {domain}",
+        )
+        _ensure_gate_attempt_allowed(args, attempt, f"DNS approval for {domain}")
+        print(f"Waiting for DNS approval for {domain}. FuseKit will retry this gate.")
+        _sleep_for_gate(args)
+
+
+def _ensure_gate_attempt_allowed(args: argparse.Namespace, attempt: int, label: str) -> None:
+    max_attempts = int(getattr(args, "gate_max_attempts", 0))
+    if max_attempts and attempt >= max_attempts:
+        raise ApprovalRequired(f"{label} was not passed after {attempt} attempt(s).")
+
+
+def _sleep_for_gate(args: argparse.Namespace) -> None:
+    retry_seconds = float(getattr(args, "gate_retry_seconds", 300.0))
+    if retry_seconds > 0:
+        time.sleep(retry_seconds)
+
+
+def _has_provider_token(
+    vault_path: Path,
+    args: argparse.Namespace,
+    handoff: ProviderHandoff,
+) -> bool:
+    if os.environ.get(handoff.token_env):
+        return True
+    if not vault_path.exists():
+        return False
+    try:
+        vault = Vault.open(vault_path, _passphrase(args))
+        vault.require(handoff.token_record_id)
+    except FuseKitError:
+        return False
+    return True
+
+
+def _handoff_for_provider_args(args: argparse.Namespace, provider: str) -> ProviderHandoff:
+    if args.capability_pack:
+        return handoff_from_provider_pack(load_provider_pack(args.capability_pack))
+    try:
+        return handoff_for(provider)
+    except FuseKitError:
+        app_path = args.app.resolve()
+        pack_path = pack_default_path(app_path, provider)
+        if not pack_path.exists():
+            pack = synthesize_provider_pack(provider, app_path)
+            write_provider_pack(pack, pack_path)
+        return handoff_from_provider_pack(load_provider_pack(pack_path))
+
+
+def _handoff_for_service(
+    args: argparse.Namespace,
+    provider: str,
+    service: ServiceRequirement | None,
+    app_path: Path,
+) -> ProviderHandoff | None:
+    if service is None:
+        try:
+            return handoff_for(provider)
+        except FuseKitError:
+            return None
+    provider = service.provider.lower()
+    try:
+        return handoff_for(provider)
+    except FuseKitError:
+        pack_hint = str(service.settings.get("capability_pack", ""))
+        if not pack_hint:
+            return None
+        pack_path = Path(pack_hint)
+        if not pack_path.is_absolute():
+            pack_path = app_path / pack_path
+        if not pack_path.exists():
+            pack = synthesize_provider_pack(provider, app_path)
+            write_provider_pack(pack, pack_path)
+        return handoff_from_provider_pack(load_provider_pack(pack_path))
+
+
+def _ensure_provider_packs(app_path: Path, manifest: SetupManifest) -> list[Path]:
+    written: list[Path] = []
+    for service in manifest.services:
+        provider = service.provider.lower()
+        pack_path = _provider_pack_path(app_path, provider, service)
+        if pack_path.exists():
+            validate_provider_pack(load_provider_pack(pack_path))
+            continue
+        pack = synthesize_provider_pack(provider, app_path)
+        write_provider_pack(pack, pack_path)
+        written.append(pack_path)
+    if manifest.domains:
+        pack_path = pack_default_path(app_path, "cloudflare")
+        if not pack_path.exists():
+            write_provider_pack(synthesize_provider_pack("cloudflare", app_path), pack_path)
+            written.append(pack_path)
+    return written
+
+
+def _provider_setup_inputs(args: argparse.Namespace) -> dict[str, str]:
+    return {
+        "github_repo": str(getattr(args, "github_repo", "")),
+        "vercel_project": str(getattr(args, "vercel_project", "")),
+        "vercel_framework": str(getattr(args, "vercel_framework", "")),
+        "vercel_git_repo_id": str(getattr(args, "vercel_git_repo_id", "")),
+        "vercel_git_ref": str(getattr(args, "vercel_git_ref", "main")),
+        "dns_zone": str(getattr(args, "dns_zone", "")),
+    }
+
+
+def _run_manifest_provider_pack_setup(
+    args: argparse.Namespace,
+    manifest: SetupManifest,
+    context: ProviderSetupContext,
+) -> None:
+    app_path = Path(manifest.app_path)
+    providers = {service.provider.lower(): service for service in manifest.services}
+    if manifest.domains and not any(provider in providers for provider in {"cloudflare", "dns"}):
+        providers["cloudflare"] = ServiceRequirement(
+            provider="cloudflare",
+            kind="dns",
+            name="dns",
+            capabilities=("capability_pack", "dns"),
+            secrets=("CLOUDFLARE_API_TOKEN",),
+            settings={"capability_pack": str(pack_default_path(app_path, "cloudflare"))},
+        )
+    for provider, service in sorted(providers.items()):
+        pack_path = _provider_pack_path(app_path, provider, service)
+        if not pack_path.exists():
+            write_provider_pack(synthesize_provider_pack(provider, app_path), pack_path)
+        pack = load_provider_pack(pack_path)
+        required_input = _missing_required_pack_input(provider, args, manifest)
+        if required_input:
+            if not args.allow_incomplete:
+                raise FuseKitError(required_input)
+            context.receipt.add_action(
+                f"{provider}.setup", "skipped", {"reason": required_input}
+            )
+            continue
+        result = run_provider_pack_setup(pack, context)
+        context.audit.record("provider_pack.setup", result)
+        context.receipt.add_action("provider_pack.setup", "ok", result)
+
+
+def _provider_pack_path(app_path: Path, provider: str, service: ServiceRequirement) -> Path:
+    pack_hint = service.settings.get("capability_pack", "")
+    pack_path = Path(pack_hint) if pack_hint else pack_default_path(app_path, provider)
+    if not pack_path.is_absolute():
+        pack_path = app_path / pack_path
+    return pack_path
+
+
+def _missing_required_pack_input(
+    provider: str,
+    args: argparse.Namespace,
+    manifest: SetupManifest,
+) -> str:
+    if provider == "github" and not args.github_repo:
+        return (
+            "Real GitHub setup is required by the manifest. Provide --github-repo, "
+            "or use --allow-incomplete for an explicit local rehearsal."
+        )
+    if provider == "vercel" and not args.vercel_project:
+        return (
+            "Real Vercel setup is required by the manifest. Provide --vercel-project, "
+            "or use --allow-incomplete for an explicit local rehearsal."
+        )
+    if provider in {"cloudflare", "dns"} and manifest.domains:
+        has_cloudflare = bool(os.environ.get("CLOUDFLARE_API_TOKEN"))
+        if not has_cloudflare and not args.vault.exists():
+            return (
+                "Real Cloudflare DNS setup is required by the manifest. Authorize "
+                "Cloudflare first, or use --allow-incomplete for an explicit local rehearsal."
+            )
+    return ""
+
+
+def _verify_provider_packs(
+    args: argparse.Namespace,
+    manifest: SetupManifest,
+    vault: Vault,
+    audit: AuditLog,
+    receipt: Receipt,
+) -> None:
+    app_path = Path(manifest.app_path)
+    services = list(manifest.services)
+    has_dns_service = any(service.provider in {"cloudflare", "dns"} for service in services)
+    if manifest.domains and not has_dns_service:
+        services.append(
+            ServiceRequirement(
+                provider="cloudflare",
+                kind="dns",
+                name="dns",
+                capabilities=("capability_pack", "dns"),
+                settings={"capability_pack": str(pack_default_path(app_path, "cloudflare"))},
+            )
+        )
+    for service in services:
+        provider = service.provider.lower()
+        pack_path = _provider_pack_path(app_path, provider, service)
+        if not pack_path.exists():
+            pack = synthesize_provider_pack(provider, app_path)
+            write_provider_pack(pack, pack_path)
+        pack = load_provider_pack(pack_path)
+        results = verify_provider_pack(
+            pack,
+            vault,
+            live_url=getattr(args, "live_url", ""),
+            attempts=int(getattr(args, "verify_attempts", 1)),
+            retry_seconds=float(getattr(args, "verify_retry_seconds", 0.0)),
+        )
+        payload = {"provider": pack.provider, "results": [result.to_dict() for result in results]}
+        audit.record("provider_pack.verify", payload)
+        all_ok = all(result.status in {"ok", "skipped", "pending"} for result in results)
+        overall = "ok" if all_ok else "failed"
+        receipt.add_action("provider_pack.verify", overall, payload)
+        if overall != "ok" and not args.allow_incomplete:
+            raise FuseKitError(
+                f"Provider verification failed for {pack.provider}. See redacted receipt/audit."
+            )
+
+
+def _append_gitignore(path: Path) -> None:
+    entries = [
+        ".fusekit/*.vault.json",
+        ".fusekit/*.vault",
+        ".fusekit/audit*.jsonl",
+        ".fusekit/*receipt*.json",
+        ".fusekit/*receipt*.md",
+        ".fusekit/worker/",
+        ".fusekit/tmp/",
+    ]
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    additions = [entry for entry in entries if entry not in existing]
+    if additions:
+        with path.open("a", encoding="utf-8") as handle:
+            if existing and not existing.endswith("\n"):
+                handle.write("\n")
+            handle.write("\n# FuseKit secret artifacts and worker state\n")
+            for entry in additions:
+                handle.write(f"{entry}\n")
+
+
+def _rebase_setup_artifacts(args: argparse.Namespace, app_path: Path) -> None:
+    fusekit_dir = app_path / ".fusekit"
+    if args.vault == Path(".fusekit/fusekit.vault.json"):
+        args.vault = fusekit_dir / "fusekit.vault.json"
+    if args.audit_log == Path(".fusekit/audit.jsonl"):
+        args.audit_log = fusekit_dir / "audit.jsonl"
+    if args.receipt_json == Path(".fusekit/setup_receipt.json"):
+        args.receipt_json = fusekit_dir / "setup_receipt.json"
+    if args.receipt_md == Path(".fusekit/setup_receipt.md"):
+        args.receipt_md = fusekit_dir / "setup_receipt.md"
+    if getattr(args, "plan_json", None) == Path(".fusekit/setup_plan.json"):
+        args.plan_json = fusekit_dir / "setup_plan.json"
+    if getattr(args, "job_state", None) == Path(".fusekit/job.json"):
+        args.job_state = fusekit_dir / "job.json"
+
+
+def _capture_provider_tokens(vault: Vault) -> None:
+    for provider, env_name in (
+        ("github", "GITHUB_TOKEN"),
+        ("vercel", "VERCEL_TOKEN"),
+        ("cloudflare", "CLOUDFLARE_API_TOKEN"),
+        ("resend", "RESEND_API_KEY"),
+    ):
+        value = os.environ.get(env_name)
+        if value:
+            vault.put(
+                f"provider.{provider}.token",
+                "provider_token",
+                provider,
+                f"{provider} API token",
+                value,
+                {"source": f"env:{env_name}"},
+            )
+
+
+def _capture_manifest_provider_env(vault: Vault, manifest: SetupManifest) -> None:
+    for service in manifest.services:
+        provider = service.provider.lower()
+        for env_name in service.secrets:
+            value = os.environ.get(env_name)
+            if value:
+                vault.put(
+                    f"provider.{provider}.{env_name.lower()}",
+                    "provider_secret",
+                    provider,
+                    env_name,
+                    value,
+                    {"source": f"env:{env_name}", "service": service.name},
+                )
+
+
+def _capture_llm(args: argparse.Namespace, vault: Vault, require: bool) -> None:
+    config = _llm_config_from_args(args)
+    api_key = None
+    if not os.environ.get(config.api_key_env) and args.capture_llm_key:
+        api_key = getpass.getpass(f"Paste {config.provider} LLM API key: ").strip()
+    captured = capture_llm_config(vault, config, api_key=api_key)
+    if captured:
+        return
+    mode = getattr(args, "llm_auth_mode", "auto")
+    if mode in {"auto", "openclaw"} and require:
+        _await_openclaw_llm_authorization(args, vault, config)
+        return
+    if require:
+        raise FuseKitError(
+            f"LLM authorization is required. Set {config.api_key_env}, rerun with "
+            "--capture-llm-key, or use --llm-auth-mode openclaw for the default "
+            "OpenAI/OpenClaw human-gated authorization lane. OpenAI is the default, "
+            "but --llm-provider, --llm-model, --llm-base-url, and --llm-api-key-env "
+            "can target another LLM."
+        )
+
+
+def _llm_config_from_args(args: argparse.Namespace) -> LlmConfig:
+    return LlmConfig(
+        provider=args.llm_provider,
+        model=args.llm_model,
+        base_url=args.llm_base_url,
+        api_key_env=args.llm_api_key_env,
+    )
+
+
+def _await_openclaw_llm_authorization(
+    args: argparse.Namespace,
+    vault: Vault,
+    config: LlmConfig,
+) -> None:
+    gate_id = "llm.openclaw-authorization"
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            result = authorize_openclaw_llm(
+                vault,
+                config,
+                device_code=bool(getattr(args, "llm_openclaw_device_code", False)),
+            )
+        except FuseKitError:
+            _record_gate_waiting(
+                args,
+                gate_id,
+                provider=config.provider,
+                reason="OpenAI/OpenClaw browser or device-code authorization",
+                resume_url=config.base_url,
+            )
+            _ensure_gate_attempt_allowed(args, attempt, "OpenAI/OpenClaw LLM authorization")
+            print(
+                "Waiting for OpenAI/OpenClaw LLM authorization. Complete the OpenClaw "
+                "browser/device-code login gate, then FuseKit will retry."
+            )
+            _sleep_for_gate(args)
+            continue
+        _record_gate_passed(
+            args,
+            gate_id,
+            provider=config.provider,
+            reason="OpenAI/OpenClaw browser or device-code authorization",
+            resume_url=config.base_url,
+        )
+        print(
+            "Captured OpenAI/OpenClaw LLM authorization into encrypted vault "
+            f"({len(result.captured_state_files)} auth-state file(s))."
+        )
+        args._detonate_openclaw_state = True
+        return
+
+
+def _provider_token(vault: Vault, provider: str, env_name: str) -> str:
+    env_value = os.environ.get(env_name)
+    if env_value:
+        return env_value
+    return vault.require(f"provider.{provider}.token").value
+
+
+def _passphrase(args: argparse.Namespace) -> str:
+    cached = getattr(args, "_cached_passphrase", "")
+    if cached:
+        return str(cached)
+    path = getattr(args, "passphrase_file", None)
+    if path:
+        return str(Path(path).read_text(encoding="utf-8")).strip()
+    env = os.environ.get("FUSEKIT_PASSPHRASE")
+    if env:
+        return env
+    return getpass.getpass("FuseKit vault passphrase: ")
+
+
+def _optional_passphrase(args: argparse.Namespace) -> str | None:
+    path = getattr(args, "passphrase_file", None)
+    if path:
+        return str(Path(path).read_text(encoding="utf-8")).strip()
+    env = os.environ.get("FUSEKIT_PASSPHRASE")
+    if env:
+        return env
+    return None
+
+
+def _default_token_env(provider: str) -> str:
+    return {
+        "github": "GITHUB_TOKEN",
+        "vercel": "VERCEL_TOKEN",
+        "cloudflare": "CLOUDFLARE_API_TOKEN",
+    }[provider]
+
+
+def _print_handoff(handoff: ProviderHandoff, include_project: bool = False) -> None:
+    print(f"Supervised {handoff.provider} handoff")
+    print("Account setup:")
+    for step in handoff.account_steps:
+        print(f"- {step}")
+    print("Secret capture:")
+    for step in handoff.secret_steps:
+        print(f"- {step}")
+    print("Required access:")
+    for scope in handoff.required_scopes:
+        print(f"- {scope}")
+    print("URLs:")
+    for url in handoff.urls(include_project=include_project):
+        print(f"- {url}")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

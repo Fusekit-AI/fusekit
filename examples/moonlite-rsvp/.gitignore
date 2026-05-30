@@ -1,0 +1,13 @@
+node_modules
+dist
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.fusekit/*.vault.json
+.fusekit/audit*.jsonl
+.fusekit/*receipt*.json
+.fusekit/*receipt*.md
+.fusekit/tmp/
+.fusekit/worker/
+.fusekit/remote-artifacts/

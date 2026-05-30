@@ -1,0 +1,149 @@
+"""Checkpointed runner job state."""
+
+from __future__ import annotations
+
+import json
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+
+@dataclass(frozen=True)
+class JobStep:
+    """One visible runner step."""
+
+    id: str
+    label: str
+    status: str = "pending"
+    detail: str = ""
+    updated_at: float = field(default_factory=time.time)
+
+    def to_dict(self) -> dict[str, str | float]:
+        """Serialize the step."""
+
+        return {
+            "id": self.id,
+            "label": self.label,
+            "status": self.status,
+            "detail": self.detail,
+            "updated_at": self.updated_at,
+        }
+
+
+@dataclass
+class JobState:
+    """Resumable runner job state with no raw secrets."""
+
+    id: str
+    app_path: str
+    runner: str
+    status: str = "created"
+    steps: list[JobStep] = field(default_factory=list)
+    artifacts: dict[str, str] = field(default_factory=dict)
+    created_at: float = field(default_factory=time.time)
+    updated_at: float = field(default_factory=time.time)
+
+    @classmethod
+    def create(cls, job_id: str, app_path: Path, runner: str) -> JobState:
+        """Create a new job with the standard one-click control-room steps."""
+
+        return cls(
+            id=job_id,
+            app_path=str(app_path),
+            runner=runner,
+            steps=[
+                JobStep("runner.resolve", "Select execution runner", "pending"),
+                JobStep("oci.authorize", "Authorize OCI runner", "pending"),
+                JobStep("oci.provision", "Provision disposable VM workspace", "pending"),
+                JobStep("remote.bootstrap", "Bootstrap FuseKit and OpenClaw remotely", "pending"),
+                JobStep("app.upload", "Upload app without secret files", "pending"),
+                JobStep("setup.execute", "Run setup worker", "pending"),
+                JobStep("verify.live", "Verify live app", "pending"),
+                JobStep("artifacts.retrieve", "Retrieve encrypted/redacted artifacts", "pending"),
+                JobStep("detonate.workspace", "Detonate runner workspace", "pending"),
+            ],
+        )
+
+    @classmethod
+    def load(cls, path: Path) -> JobState:
+        """Load a job state file."""
+
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return cls.from_dict(data)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> JobState:
+        """Deserialize a job state."""
+
+        steps = [
+            JobStep(
+                id=str(item["id"]),
+                label=str(item["label"]),
+                status=str(item.get("status", "pending")),
+                detail=str(item.get("detail", "")),
+                updated_at=float(item.get("updated_at", time.time())),
+            )
+            for item in list(data.get("steps", []))
+            if isinstance(item, dict)
+        ]
+        return cls(
+            id=str(data["id"]),
+            app_path=str(data["app_path"]),
+            runner=str(data["runner"]),
+            status=str(data.get("status", "created")),
+            steps=steps,
+            artifacts={str(k): str(v) for k, v in dict(data.get("artifacts", {})).items()},
+            created_at=float(data.get("created_at", time.time())),
+            updated_at=float(data.get("updated_at", time.time())),
+        )
+
+    def mark(self, step_id: str, status: str, detail: str = "") -> None:
+        """Mark a step status."""
+
+        updated: list[JobStep] = []
+        found = False
+        for step in self.steps:
+            if step.id == step_id:
+                updated.append(
+                    JobStep(step.id, step.label, status, detail or step.detail, time.time())
+                )
+                found = True
+            else:
+                updated.append(step)
+        if not found:
+            updated.append(JobStep(step_id, step_id, status, detail))
+        self.steps = updated
+        self.updated_at = time.time()
+        if status in {"waiting", "failed"}:
+            self.status = status
+        elif all(step.status in {"done", "skipped"} for step in self.steps):
+            self.status = "done"
+        else:
+            self.status = "running"
+
+    def add_artifact(self, name: str, path: Path) -> None:
+        """Record a non-secret artifact path."""
+
+        self.artifacts[name] = str(path)
+        self.updated_at = time.time()
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the job state."""
+
+        return {
+            "id": self.id,
+            "app_path": self.app_path,
+            "runner": self.runner,
+            "status": self.status,
+            "steps": [step.to_dict() for step in self.steps],
+            "artifacts": self.artifacts,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+
+    def save(self, path: Path) -> None:
+        """Write the job state file."""
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n", "utf-8")
