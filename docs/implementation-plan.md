@@ -29,6 +29,7 @@
 - [x] Provider capability packs now carry setup recipes, with GitHub, Vercel, and Cloudflare routed through the generic pack setup runtime.
 - [x] Acceptance harness exists: redacted ledger, content-addressed artifact snapshots, and rehearsal/live launch-readiness reports.
 - [x] Public acceptance target exists: `examples/moonlite-rsvp` is a party RSVP app that activates GitHub, Vercel, Cloudflare DNS, Resend, webhook secret, vault, verification, and detonation proof.
+- [x] Public acceptance target has a polished RSVP surface for launch-recording use across desktop and mobile.
 - [x] P0 North Star audit fixes: pack secret fan-out is route-limited, explicit app-env secret routes reject provider/runner/LLM auth material, secret-bearing HTTP verification targets are provider-domain constrained, and provider pack synthesis now has an LLM-capable intelligence loop with validation/repair/cache.
 - [x] P1 North Star audit fixes: provider-pack setup execution uses a handler registry, unknown required verification/setup recipes fail instead of silently skipping, OCI remote launches replay non-secret launch/app context, and verification polling can return pending.
 - [x] P2 North Star audit fixes: service gates have durable persisted state, provider-pack rollback intent can be planned directly, verification retry knobs are exposed in CLI/remote launch, and OpenClaw bootstrap supports version/hash pinning.
@@ -193,6 +194,7 @@
 - [x] Add acceptance harness for scan/plan/pack/vault/receipt/leak-scan/detonation proof artifacts.
 - [ ] Add provider capability catalog for common AI-built app services. Plaid pack synthesis exists; broader catalog remains.
 - [x] Add stronger provider-pack provenance, endpoint-purpose validation, and tool-permission binding. Generic provider-pack verification covers env, HTTP JSON, DNS records, and URL health; deeper TLS/deploy-key/webhook recipes still need expansion.
+- [x] Polish the public Moonlite RSVP acceptance surface so the live setup path looks credible in recordings.
 - [ ] Complete supervised public real acceptance run. README now documents the exact supervised run protocol and current status.
 
 ## North Star Audit Remediation

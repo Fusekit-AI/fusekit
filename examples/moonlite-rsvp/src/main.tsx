@@ -8,9 +8,18 @@ function App() {
   if (isThanks) {
     return (
       <main className="screen">
-        <section className="hero">
+        <section className="hero hero-thanks">
+          <img
+            className="hero-photo"
+            alt=""
+            src="https://images.unsplash.com/photo-1519671482749-fd09be7ccebf?auto=format&fit=crop&w=1800&q=80"
+          />
+          <nav className="nav" aria-label="Event">
+            <a href="/">Moonlite</a>
+            <span>Private rooftop RSVP</span>
+          </nav>
           <div className="status">RSVP received</div>
-          <h1>You are on the list</h1>
+          <h1>You are on the list.</h1>
           <p>
             If this page is live on moonlite.rsvp and the confirmation email
             was sent, your RSVP is confirmed.
@@ -26,6 +35,15 @@ function App() {
   return (
     <main className="screen">
       <section className="hero">
+        <img
+          className="hero-photo"
+          alt=""
+          src="https://images.unsplash.com/photo-1519671482749-fd09be7ccebf?auto=format&fit=crop&w=1800&q=80"
+        />
+        <nav className="nav" aria-label="Event">
+          <a href="/">Moonlite</a>
+          <span>Private rooftop RSVP</span>
+        </nav>
         <div className="status">Friday, 8 PM · Rooftop RSVP</div>
         <h1>Moonlite RSVP</h1>
         <p>
@@ -33,16 +51,21 @@ function App() {
           city lights.
         </p>
         <form className="signup" action="/api/rsvp" method="post">
-          <input aria-label="Name" name="name" placeholder="Ada Lovelace" required />
+          <input aria-label="Name" name="name" placeholder="Full name" required />
           <input
             aria-label="Email address"
             name="email"
-            placeholder="guest@example.com"
+            placeholder="Email address"
             type="email"
             required
           />
           <button type="submit">RSVP</button>
         </form>
+        <div className="event-line" aria-label="Event details">
+          <span>Moonlite.RSVP</span>
+          <span>8 PM</span>
+          <span>Rooftop after dark</span>
+        </div>
       </section>
       <section className="proof">
         <article>
