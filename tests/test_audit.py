@@ -13,7 +13,7 @@ def test_audit_and_receipt_redact_secret_fields(tmp_path) -> None:
     audit = AuditLog(audit_path)
     audit.record("provider.token", {"provider": "github", "token": secret})
 
-    receipt = Receipt(app_name="demo", vault_path="vault.json")
+    receipt = Receipt(app_name="app", vault_path="vault.json")
     receipt.add_action("github.secret", "ok", {"secret": secret, "name": "API_KEY"})
     receipt.write_json(receipt_path)
 

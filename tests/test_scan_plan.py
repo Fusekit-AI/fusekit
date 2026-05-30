@@ -8,7 +8,7 @@ from fusekit.scanner import scan_repo
 
 def test_scanner_detects_env_and_core_services(tmp_path) -> None:
     (tmp_path / "package.json").write_text(
-        json.dumps({"name": "demo-app", "dependencies": {"@supabase/supabase-js": "latest"}}),
+        json.dumps({"name": "rsvp-app", "dependencies": {"@supabase/supabase-js": "latest"}}),
         encoding="utf-8",
     )
     (tmp_path / "src").mkdir()
@@ -19,7 +19,7 @@ def test_scanner_detects_env_and_core_services(tmp_path) -> None:
 
     manifest = scan_repo(tmp_path)
 
-    assert manifest.app_name == "demo-app"
+    assert manifest.app_name == "rsvp-app"
     assert "SUPABASE_URL" in manifest.required_env
     assert any(service.provider == "github" for service in manifest.services)
     assert any(service.provider == "vercel" for service in manifest.services)
@@ -139,18 +139,20 @@ def test_scanner_infers_routes_domains_webhooks_and_oauth(tmp_path) -> None:
 def test_scanner_uses_vercel_apex_dns_records(tmp_path) -> None:
     (tmp_path / "package.json").write_text(json.dumps({"name": "apex-app"}), encoding="utf-8")
     (tmp_path / "vercel.json").write_text(
-        json.dumps({"domains": ["moonlite.rsvp", "demo.moonlite.rsvp"]}),
+        json.dumps({"domains": ["moonlite.rsvp", "invite.moonlite.rsvp"]}),
         encoding="utf-8",
     )
 
     manifest = scan_repo(tmp_path)
 
     apex = next(domain for domain in manifest.domains if domain.domain == "moonlite.rsvp")
-    subdomain = next(domain for domain in manifest.domains if domain.domain == "demo.moonlite.rsvp")
+    subdomain = next(
+        domain for domain in manifest.domains if domain.domain == "invite.moonlite.rsvp"
+    )
     apex_records = {(record.type, record.name, record.value) for record in apex.records}
     subdomain_records = {
         (record.type, record.name, record.value) for record in subdomain.records
     }
     assert ("A", "moonlite.rsvp", "76.76.21.21") in apex_records
     assert ("CNAME", "www.moonlite.rsvp", "cname.vercel-dns.com") in apex_records
-    assert subdomain_records == {("CNAME", "demo.moonlite.rsvp", "cname.vercel-dns.com")}
+    assert subdomain_records == {("CNAME", "invite.moonlite.rsvp", "cname.vercel-dns.com")}

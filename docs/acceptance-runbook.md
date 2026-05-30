@@ -1,4 +1,4 @@
-# FuseKit Acceptance Demo Runbook
+# FuseKit Acceptance Runbook
 
 Use the checked-in `examples/moonlite-rsvp` app as a controlled public
 acceptance target. The point of the run is not the app itself; the point is to

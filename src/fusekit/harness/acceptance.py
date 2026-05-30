@@ -57,12 +57,6 @@ class AcceptanceReport:
     missing: tuple[str, ...] = ()
     created_at: float = field(default_factory=time.time)
 
-    @property
-    def demo_ready(self) -> bool:
-        """Deprecated compatibility alias for older proof reports."""
-
-        return self.launch_ready
-
     def to_dict(self) -> dict[str, Any]:
         """Serialize the report."""
 
@@ -70,7 +64,6 @@ class AcceptanceReport:
             "mode": self.mode,
             "app_path": self.app_path,
             "launch_ready": self.launch_ready,
-            "demo_ready": self.launch_ready,
             "checks": [check.to_dict() for check in self.checks],
             "missing": list(self.missing),
             "ledger_path": self.ledger_path,
@@ -129,7 +122,7 @@ def run_acceptance(
             AcceptanceCheck(
                 "provider_packs.validated",
                 "missing",
-                "Live demo needs at least one validated provider capability pack.",
+                "Live launch needs at least one validated provider capability pack.",
             )
         )
 
@@ -327,7 +320,7 @@ def _check_receipt(
             AcceptanceCheck(
                 "receipt.live_url",
                 "missing",
-                "Live demo requires a verified live URL.",
+                "Live launch requires a verified live URL.",
             )
         )
         missing.append("verified live URL")

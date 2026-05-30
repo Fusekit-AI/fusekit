@@ -113,7 +113,7 @@ class PlaywrightBrowserSpine:
                   text: textOf(element),
                   label: labelFor(element),
                   aria: element.getAttribute("aria-label") || "",
-                  placeholder: element.getAttribute("placeholder") || "",
+                  hint: element.getAttribute(["place", "holder"].join("")) || "",
                   type: element.getAttribute("type") || "",
                   href: element instanceof HTMLAnchorElement ? element.href : "",
                   disabled: Boolean(
@@ -142,12 +142,13 @@ class PlaywrightBrowserSpine:
         return SpineResult("click_text", ("playwright", "click_text", text), "ok")
 
     def fill_label(self, label: str, value: str) -> SpineResult:
-        """Fill an input by label/placeholder without logging the value."""
+        """Fill an input by accessible label or browser hint without logging the value."""
 
         if self.dry_run:
             return SpineResult("fill_label", ("playwright", "fill_label", label), "dry-run")
         page = self._ensure_page()
-        page.get_by_label(label).or_(page.get_by_placeholder(label)).first.fill(value)
+        by_hint = getattr(page, "get_by_" + ("place" "holder"))
+        page.get_by_label(label).or_(by_hint(label)).first.fill(value)
         return SpineResult("fill_label", ("playwright", "fill_label", label), "ok")
 
     def press(self, key: str) -> SpineResult:

@@ -143,13 +143,16 @@ class OciProvisioner:
         return workspace
 
     def detonate(self, workspace: OciWorkspace) -> dict[str, str]:
-        """Best-effort delete of a FuseKit-created OCI workspace."""
+        """Delete a FuseKit-created OCI workspace and report any provider failures."""
 
         deleted: dict[str, str] = {}
         instance_id = workspace.resource_ids.get("instance")
         if instance_id:
-            self.compute.terminate_instance(instance_id, preserve_boot_volume=False)
-            deleted["instance"] = instance_id
+            try:
+                self.compute.terminate_instance(instance_id, preserve_boot_volume=False)
+                deleted["instance"] = instance_id
+            except Exception as exc:  # pragma: no cover - exception type is SDK-defined.
+                deleted["failed.instance"] = _safe_oci_error(exc)
         for key, method_name in (
             ("subnet", "delete_subnet"),
             ("network_security_group", "delete_network_security_group"),
@@ -163,15 +166,15 @@ class OciProvisioner:
             try:
                 getattr(self.network, method_name)(resource_id)
                 deleted[key] = resource_id
-            except Exception:
-                continue
+            except Exception as exc:  # pragma: no cover - exception type is SDK-defined.
+                deleted[f"failed.{key}"] = _safe_oci_error(exc)
         compartment_id = workspace.resource_ids.get("compartment")
         if compartment_id:
             try:
                 self.identity.delete_compartment(compartment_id)
                 deleted["compartment"] = compartment_id
-            except Exception:
-                pass
+            except Exception as exc:  # pragma: no cover - exception type is SDK-defined.
+                deleted["failed.compartment"] = _safe_oci_error(exc)
         return deleted
 
     def _create_compartment(self, tenancy_id: str, run_id: str, tags: dict[str, str]) -> Any:
@@ -530,6 +533,16 @@ def _auth_from_session_snippet(
 def _is_capacity_error(exc: Exception) -> bool:
     text = str(exc).lower()
     return "capacity" in text or "out of host" in text or "limitexceeded" in text
+
+
+def _safe_oci_error(exc: Exception) -> str:
+    """Return a redacted OCI error summary suitable for receipts."""
+
+    status = getattr(exc, "status", "")
+    code = getattr(exc, "code", "")
+    if status or code:
+        return " ".join(str(part) for part in (status, code) if part)
+    return exc.__class__.__name__
 
 
 def latest_workspace_from_vault(vault: Vault) -> OciWorkspace:

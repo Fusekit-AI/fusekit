@@ -14,12 +14,11 @@ def test_acceptance_rehearsal_writes_ledger_and_report(tmp_path) -> None:
 
     report = run_acceptance(app, mode="rehearsal")
 
-    assert report.demo_ready is True
+    assert report.launch_ready is True
     assert (app / "fusekit.yaml").exists()
     assert (app / ".fusekit" / "acceptance" / "ledger.jsonl").exists()
     report_json = json.loads((app / ".fusekit" / "acceptance" / "report.json").read_text())
     assert report_json["launch_ready"] is True
-    assert report_json["demo_ready"] is True
     assert any(check["id"] == "manifest.scanned" for check in report_json["checks"])
 
 
@@ -30,7 +29,7 @@ def test_acceptance_live_requires_real_provider_evidence(tmp_path) -> None:
 
     report = run_acceptance(app, mode="live")
 
-    assert report.demo_ready is False
+    assert report.launch_ready is False
     assert "encrypted vault" in report.missing
     assert "redacted setup receipt" in report.missing
 

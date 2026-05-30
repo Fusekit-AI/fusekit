@@ -16,6 +16,7 @@ from fusekit.runner.job import JobState
 from fusekit.runner.loop import run_remote_loop
 from fusekit.runner.oci import capture_oci_api_key_profile, prepare_oci_api_signing_key
 from fusekit.runner.oci_live import (
+    OciProvisioner,
     OciWorkspace,
     _load_oci_config_file,
     latest_workspace_from_vault,
@@ -155,6 +156,63 @@ def test_latest_workspace_round_trips_from_vault() -> None:
     assert loaded.public_ip == "203.0.113.10"
 
 
+def test_oci_detonation_reports_provider_delete_failures() -> None:
+    class FailedDelete(Exception):
+        status = 409
+        code = "Conflict"
+
+    class FakeCompute:
+        def terminate_instance(self, instance_id: str, *, preserve_boot_volume: bool) -> None:
+            assert instance_id == "ocid1.instance.oc1..example"
+            assert preserve_boot_volume is False
+
+    class FakeNetwork:
+        def delete_subnet(self, resource_id: str) -> None:
+            raise FailedDelete(resource_id)
+
+        def delete_network_security_group(self, resource_id: str) -> None:
+            return None
+
+        def delete_route_table(self, resource_id: str) -> None:
+            return None
+
+        def delete_internet_gateway(self, resource_id: str) -> None:
+            return None
+
+        def delete_vcn(self, resource_id: str) -> None:
+            return None
+
+    class FakeIdentity:
+        def delete_compartment(self, resource_id: str) -> None:
+            raise FailedDelete(resource_id)
+
+    provisioner = object.__new__(OciProvisioner)
+    provisioner.compute = FakeCompute()
+    provisioner.network = FakeNetwork()
+    provisioner.identity = FakeIdentity()
+    workspace = OciWorkspace(
+        id="fusekit-test",
+        compartment_id="ocid1.tenancy.oc1..example",
+        availability_domain="AD-1",
+        shape="VM.Standard3.Flex",
+        resource_ids={
+            "instance": "ocid1.instance.oc1..example",
+            "subnet": "ocid1.subnet.oc1..example",
+            "network_security_group": "ocid1.nsg.oc1..example",
+            "route_table": "ocid1.routetable.oc1..example",
+            "internet_gateway": "ocid1.ig.oc1..example",
+            "vcn": "ocid1.vcn.oc1..example",
+            "compartment": "ocid1.compartment.oc1..example",
+        },
+    )
+
+    deleted = provisioner.detonate(workspace)
+
+    assert deleted["instance"] == "ocid1.instance.oc1..example"
+    assert deleted["failed.subnet"] == "409 Conflict"
+    assert deleted["failed.compartment"] == "409 Conflict"
+
+
 def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()
@@ -186,8 +244,8 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         calls.append(command)
         assert input_text != "secret-passphrase" or "cat >" in command[-1]
         if stdout_path is not None:
-            with tarfile.open(stdout_path, "w:gz"):
-                pass
+            archive = tarfile.open(stdout_path, "w:gz")
+            archive.close()
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
     result = execute_remote_setup(
@@ -224,7 +282,7 @@ def test_cloud_shell_style_oci_config_uses_delegation_token_signer(
         tenancy_id = "ocid1.tenancy.oc1..cloudshell"
         region = "us-ashburn-1"
 
-    def fake_from_file(path: str) -> dict[str, str]:
+    def local_from_file(path: str) -> dict[str, str]:
         assert path == str(tmp_path / "config")
         return {
             "authentication_type": "instance_principal",
@@ -232,15 +290,15 @@ def test_cloud_shell_style_oci_config_uses_delegation_token_signer(
             "region": "us-ashburn-1",
         }
 
-    def fake_get_signer_from_authentication_type(config: dict[str, str]) -> FakeSigner:
+    def local_get_signer_from_authentication_type(config: dict[str, str]) -> FakeSigner:
         assert config["authentication_type"] == "instance_principal"
         return FakeSigner()
 
-    monkeypatch.setattr(oci.config, "from_file", fake_from_file)
+    monkeypatch.setattr(oci.config, "from_file", local_from_file)
     monkeypatch.setattr(
         oci.util,
         "get_signer_from_authentication_type",
-        fake_get_signer_from_authentication_type,
+        local_get_signer_from_authentication_type,
     )
 
     auth = _load_oci_config_file(tmp_path / "config")
@@ -295,7 +353,7 @@ def test_remote_loop_marks_job_done(monkeypatch, tmp_path) -> None:
     passphrase.write_text("passphrase", encoding="utf-8")
     job_path = tmp_path / "job.json"
 
-    def fake_run(
+    def local_run(
         command: list[str],
         *,
         capture_output: bool,
@@ -305,7 +363,7 @@ def test_remote_loop_marks_job_done(monkeypatch, tmp_path) -> None:
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
-    monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setattr("subprocess.run", local_run)
 
     assert run_remote_loop(app_path=app, job_state=job_path, passphrase_file=passphrase) == 0
     job = JobState.load(job_path)

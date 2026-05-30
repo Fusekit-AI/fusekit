@@ -39,7 +39,7 @@ The run is launch-ready only when `.fusekit/acceptance/report.json` contains:
 }
 ```
 
-Live mode does not fake provider success. It requires the real encrypted vault,
+Live mode does not claim provider success without proof. It requires the real encrypted vault,
 passphrase unlock proof, redacted setup receipt, redacted audit log, live URL in
 the receipt, validated provider packs, clean leak scan, and detonated worker
 state.
@@ -69,4 +69,4 @@ FuseKit has a native proof layer:
 - receipt/audit/detonation/leak-scan gates
 
 The harness only reports whether the run is public-launch ready. It does not
-grant provider access, bypass human gates, or make fake provider-success claims.
+grant provider access, bypass human gates, or make unverified provider-success claims.

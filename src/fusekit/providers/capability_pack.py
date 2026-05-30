@@ -196,7 +196,7 @@ class VerificationRecipe:
 
 @dataclass(frozen=True)
 class SetupRecipe:
-    """A provider setup operation executed by the generic pack runtime."""
+    """A provider setup operation executed by the capability recipe runtime."""
 
     kind: str
     target: str
@@ -460,7 +460,7 @@ def synthesize_provider_pack(
         return _plaid_pack(evidence)
     if normalized == "resend":
         return _resend_pack(evidence)
-    return _generic_pack(normalized, evidence)
+    return _inferred_pack(normalized, evidence)
 
 
 def collect_provider_evidence(app_path: Path) -> ProviderEvidence:
@@ -477,7 +477,7 @@ def collect_provider_evidence(app_path: Path) -> ProviderEvidence:
                     if isinstance(deps, dict):
                         dependencies.update(str(name) for name in deps)
         except (OSError, json.JSONDecodeError):
-            pass
+            dependencies.clear()
     env_names: set[str] = set()
     imports: set[str] = set()
     skip_dirs = {".git", ".fusekit", "node_modules", ".venv", "dist", "build"}
@@ -913,7 +913,7 @@ def _resend_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
     )
 
 
-def _generic_pack(provider: str, evidence: ProviderEvidence) -> ProviderCapabilityPack:
+def _inferred_pack(provider: str, evidence: ProviderEvidence) -> ProviderCapabilityPack:
     prefix = provider.replace("-", "_").upper()
     env_names = tuple(name for name in evidence.env_names if name.startswith(f"{prefix}_"))
     required = env_names or (f"{prefix}_API_KEY",)

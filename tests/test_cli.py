@@ -149,6 +149,46 @@ def test_cli_provider_synthesize_validate_and_authorize_pack(monkeypatch, tmp_pa
     assert opened.require("provider.plaid.token").value == token
 
 
+def test_provider_synthesize_refuses_silent_vault_downgrade(tmp_path, capsys) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    vault_path = tmp_path / "vault.json"
+    passphrase = tmp_path / "passphrase.txt"
+    wrong_passphrase = tmp_path / "wrong-passphrase.txt"
+    passphrase.write_text("correct-passphrase\n", encoding="utf-8")
+    wrong_passphrase.write_text("wrong-passphrase\n", encoding="utf-8")
+    vault = Vault.empty()
+    vault.put(
+        "llm.openai.api_key",
+        "api_key",
+        "openai",
+        "OpenAI API key",
+        "test-openai-key",
+    )
+    vault.save(vault_path, "correct-passphrase")
+
+    assert (
+        main(
+            [
+                "provider",
+                "synthesize",
+                "resend",
+                "--app",
+                str(app),
+                "--vault",
+                str(vault_path),
+                "--passphrase-file",
+                str(wrong_passphrase),
+            ]
+        )
+        == 2
+    )
+
+    err = capsys.readouterr().err
+    assert "refusing to downgrade" in err
+    assert not (app / ".fusekit" / "provider-packs" / "resend.json").exists()
+
+
 def test_cli_provider_verify_runs_pack_recipes(tmp_path, capsys) -> None:
     app = tmp_path / "app"
     app.mkdir()
@@ -239,7 +279,7 @@ def test_cli_provider_verify_pending_is_not_success(monkeypatch, tmp_path, capsy
 def test_cli_refuses_raw_secret_argument(tmp_path) -> None:
     manifest = tmp_path / "fusekit.yaml"
     manifest.write_text(
-        json.dumps({"app_name": "demo", "services": [], "webhooks": [], "domains": []}),
+        json.dumps({"app_name": "app", "services": [], "webhooks": [], "domains": []}),
         encoding="utf-8",
     )
     passphrase = tmp_path / "passphrase.txt"
@@ -480,7 +520,7 @@ def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch)
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.delenv("OCI_CONFIG_FILE", raising=False)
 
-    def fake_oci_auth(**kwargs) -> None:
+    def local_oci_auth(**kwargs) -> None:
         config_file = kwargs["config_file"]
         profile = kwargs["profile"]
         token = tmp_path / "security-token"
@@ -509,7 +549,7 @@ def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch)
         public_ip="203.0.113.10",
         resource_ids={"instance": "ocid1.instance.oc1..example"},
     )
-    monkeypatch.setattr("fusekit.cli.authorize_oci_browser_session", fake_oci_auth)
+    monkeypatch.setattr("fusekit.cli.authorize_oci_browser_session", local_oci_auth)
     monkeypatch.setattr("fusekit.cli._provision_oci_workspace", lambda args, vault, plan: workspace)
     monkeypatch.setattr(
         "fusekit.cli.execute_remote_setup",

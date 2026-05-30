@@ -9,7 +9,7 @@ from fusekit.providers.capability_pack import synthesize_provider_pack
 from fusekit.vault import Vault
 
 
-def test_github_pack_setup_runs_through_generic_executor(monkeypatch, tmp_path) -> None:
+def test_github_pack_setup_runs_through_capability_executor(monkeypatch, tmp_path) -> None:
     calls: list[tuple[str, str]] = []
 
     class FakeGitHubProvider:
@@ -34,9 +34,9 @@ def test_github_pack_setup_runs_through_generic_executor(monkeypatch, tmp_path) 
         "GitHub token",
         "test-github-token-hidden",
     )
-    receipt = Receipt(app_name="demo")
+    receipt = Receipt(app_name="app")
     context = ProviderSetupContext(
-        manifest=SetupManifest(app_name="demo"),
+        manifest=SetupManifest(app_name="app"),
         vault=vault,
         audit=AuditLog(tmp_path / "audit.jsonl"),
         receipt=receipt,

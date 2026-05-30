@@ -14,7 +14,7 @@ trust the security boundary:
 - redacted audit logs and receipts
 - detonation cleanup
 - provider capability pack schema and validators
-- generic setup and verification engines
+- provider-neutral setup and verification engines
 - starter provider packs and reusable provider primitives
 - local and OCI runner client code
 - acceptance harness and public proof artifacts
@@ -38,7 +38,7 @@ decision:
 - launch strategy, financing notes, partnership notes, and sales material
 - live acceptance-run vaults, tokens, account metadata, and provider logs
 
-Reference implementations can be open-sourced later, but the initial public
+Reference implementations can be open-sourced after live proof, but the initial public
 repository should make the trust core credible while leaving the managed product
 boundary intact.
 

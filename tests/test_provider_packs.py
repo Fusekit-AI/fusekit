@@ -217,7 +217,7 @@ def test_synthesized_pack_declares_provenance_tool_permissions_and_http_purpose(
     assert http.inputs["purpose"] == "verify-auth"
 
 
-def test_generic_pack_billing_language_has_matching_service_gate(tmp_path) -> None:
+def test_inferred_pack_billing_language_has_matching_service_gate(tmp_path) -> None:
     pack = synthesize_provider_pack(
         "exampleapi",
         tmp_path,

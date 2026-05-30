@@ -577,20 +577,23 @@ def _run_provider_intelligence(
             app_path=app_path,
             output_path=output,
         )
-    try:
-        if args.vault.exists():
+    if args.vault.exists():
+        try:
             vault = Vault.open(args.vault, _passphrase(args))
-            source = OpenAiPackDraftSource(_llm_config_from_args(args), vault)
-            return ProviderIntelligenceLoop(
-                source,
-                research_sources=_provider_research_sources(args),
-            ).run(
-                provider=args.provider,
-                app_path=app_path,
-                output_path=output,
-            )
-    except FuseKitError:
-        pass
+        except FuseKitError as exc:
+            raise FuseKitError(
+                "Provider intelligence could not unlock the configured vault; "
+                "refusing to downgrade to heuristic synthesis."
+            ) from exc
+        source = OpenAiPackDraftSource(_llm_config_from_args(args), vault)
+        return ProviderIntelligenceLoop(
+            source,
+            research_sources=_provider_research_sources(args),
+        ).run(
+            provider=args.provider,
+            app_path=app_path,
+            output_path=output,
+        )
     return ProviderIntelligenceLoop(
         research_sources=_provider_research_sources(args),
     ).run(
@@ -1135,8 +1138,8 @@ def _cmd_runner_detonate(args: argparse.Namespace) -> int:
             detonate_remote_worker(workspace=workspace, vault=vault)
             auth = load_oci_auth_from_vault_or_config(vault, config_file=None)
             remote_deleted = OciProvisioner(auth).detonate(workspace)
-        except FuseKitError:
-            remote_deleted = {}
+        except FuseKitError as exc:
+            remote_deleted = {"failed.workspace": str(exc)}
     removed = detonate_paths(
         [Path(".fusekit/worker"), Path(".fusekit/tmp")],
         preserve=[Path(".fusekit/fusekit.vault.json"), args.job_state],

@@ -17,7 +17,7 @@ from fusekit.errors import ProviderError
 from fusekit.providers.capability_pack import ProviderCapabilityPack, VerificationRecipe
 from fusekit.vault import Vault
 
-PLACEHOLDER_RE = re.compile(r"\$\{(secret|env):([A-Z][A-Z0-9_]+)\}")
+TEMPLATE_REF_RE = re.compile(r"\$\{(secret|env):([A-Z][A-Z0-9_]+)\}")
 
 
 @dataclass(frozen=True)
@@ -128,7 +128,7 @@ def verify_recipe(
         kind=recipe.kind,
         target=recipe.target,
         status="skipped" if recipe.optional else "failed",
-        details={"reason": "recipe kind is not executable yet", "expected": recipe.expected},
+        details={"reason": "unsupported recipe kind", "expected": recipe.expected},
     )
 
 
@@ -172,7 +172,7 @@ def _verify_http_json(
         headers["Authorization"] = f"{scheme} {token}"
     body: bytes | None = None
     if "body_json" in recipe.inputs:
-        resolved = _resolve_placeholders(recipe.inputs["body_json"], vault, pack.provider)
+        resolved = _resolve_template_refs(recipe.inputs["body_json"], vault, pack.provider)
         body = resolved.encode("utf-8")
         headers.setdefault("Content-Type", "application/json")
     headers.setdefault("Accept", "application/json")
@@ -310,7 +310,7 @@ def _secret_value(vault: Vault, provider: str, name: str) -> str:
     raise ProviderError(f"Required secret is not available: {name}")
 
 
-def _resolve_placeholders(text: str, vault: Vault, provider: str) -> str:
+def _resolve_template_refs(text: str, vault: Vault, provider: str) -> str:
     def replace(match: re.Match[str]) -> str:
         source, name = match.groups()
         if source == "env":
@@ -320,7 +320,7 @@ def _resolve_placeholders(text: str, vault: Vault, provider: str) -> str:
             return value
         return _secret_value(vault, provider, name)
 
-    return PLACEHOLDER_RE.sub(replace, text)
+    return TEMPLATE_REF_RE.sub(replace, text)
 
 
 def _json_mapping(text: str) -> dict[str, str]:

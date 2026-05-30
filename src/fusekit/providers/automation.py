@@ -1,4 +1,4 @@
-"""Generic provider-pack setup executor."""
+"""Provider-pack setup executor."""
 
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ def run_provider_pack_setup(
 
 
 def setup_handler_registry() -> dict[str, SetupHandler]:
-    """Return generic setup recipe handlers."""
+    """Return capability recipe handlers."""
 
     return {
         "vault-capture-env": _vault_capture_env,

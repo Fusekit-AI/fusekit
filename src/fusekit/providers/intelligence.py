@@ -201,7 +201,7 @@ class OpenAiPackDraftSource:
                         "object matching schema_version fusekit.provider-pack.v1. Do not "
                         "include raw secrets. Do not include bypass instructions for CAPTCHA, "
                         "MFA, passkeys, payment, fraud checks, consent, or password managers. "
-                        "Prefer setup/verification recipes that use generic FuseKit handlers."
+                        "Prefer setup/verification recipes that use FuseKit capability handlers."
                     ),
                 },
                 {

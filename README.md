@@ -47,7 +47,7 @@ This explicit rehearsal uses no provider tokens and makes no external changes. R
 tmpdir="$(mktemp -d)"
 mkdir -p "$tmpdir/app/src"
 cat > "$tmpdir/app/package.json" <<'JSON'
-{"name":"fusekit-demo","dependencies":{"@supabase/supabase-js":"latest"}}
+{"name":"fusekit-app","dependencies":{"@supabase/supabase-js":"latest"}}
 JSON
 cat > "$tmpdir/app/src/app.ts" <<'TS'
 export const secret = process.env.WEBHOOK_SECRET;
@@ -122,11 +122,11 @@ When FuseKit detects a service without a built-in API adapter, it now creates a 
 Verification is pack-driven and broad by design. Supported executable recipe kinds include:
 
 - `env-present`: confirm required secrets exist in the encrypted vault or provider env source.
-- `http-json`: call a provider API with templated secret placeholders resolved only in memory.
+- `http-json`: call a provider API with secret template refs resolved only in memory.
 - `dns-record`: verify `A`, `CNAME`, `TXT`, `MX`, and other DNS records through `dnspython`.
 - `url-health`: verify a live app URL returns a healthy HTTP status.
 
-Setup is pack-driven too. Bundled GitHub, Vercel, and Cloudflare behavior is now represented as provider-pack setup recipes and executed by the generic pack runtime. The low-level Python provider modules remain as reusable primitives for API details such as GitHub secret encryption, Vercel env writes, and Cloudflare DNS mutation; the product flow no longer depends on hardcoded CLI branches for those providers.
+Setup is pack-driven too. Bundled GitHub, Vercel, and Cloudflare behavior is now represented as provider-pack setup recipes and executed by the capability recipe runtime. The low-level Python provider modules remain as reusable primitives for API details such as GitHub secret encryption, Vercel env writes, and Cloudflare DNS mutation; the product flow no longer depends on provider-specific CLI branches for those providers.
 
 Example Plaid path:
 

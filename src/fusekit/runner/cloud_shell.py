@@ -246,8 +246,9 @@ def render_cloud_shell_launcher(plan: CloudShellLaunchPlan) -> str:
     </p>
     <label>
       App source
-      <input id="source" value="{escaped_source}" placeholder="https://github.com/owner/repo.git">
+      <input id="source" value="{escaped_source}" aria-describedby="source-example">
     </label>
+    <div id="source-example">Example: https://github.com/owner/repo.git</div>
     <textarea id="command" spellcheck="false">{escaped_command}</textarea>
     <div class="actions">
       <a class="button" id="open" href="{escaped_url}" target="_blank" rel="noreferrer">

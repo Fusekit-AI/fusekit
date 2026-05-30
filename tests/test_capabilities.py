@@ -9,7 +9,7 @@ from fusekit.vault import Vault
 
 def test_capability_broker_denies_raw_secret_export() -> None:
     vault = Vault.empty()
-    vault.put("api.key", "api_key", "demo", "API key", "secret-value")
+    vault.put("api.key", "api_key", "test", "API key", "secret-value")
     broker = CapabilityBroker(vault)
 
     with pytest.raises(PolicyError):

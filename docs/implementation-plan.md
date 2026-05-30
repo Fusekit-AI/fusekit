@@ -2,7 +2,7 @@
 
 ## Current Status
 
-- [x] Local Python project scaffold exists.
+- [x] Local Python project base exists.
 - [x] Dev tooling exists: pytest, Ruff, MyPy.
 - [x] Product goal has been reframed around a real-capable detonated setup worker and capability vault.
 - [x] MVP architecture modules exist.
@@ -28,7 +28,7 @@
 - [x] FuseKit prompt gates are opt-in through `--fusekit-gates explicit`; default launch uses service-created gates only.
 - [x] Provider capability packs can be synthesized, validated, authorized, and planned for detected services without built-in adapters.
 - [x] Provider capability packs now carry executable verification recipes for env, HTTP JSON, DNS, and live URL health checks.
-- [x] Provider capability packs now carry setup recipes, with GitHub, Vercel, and Cloudflare routed through the generic pack setup runtime.
+- [x] Provider capability packs now carry setup recipes, with GitHub, Vercel, and Cloudflare routed through the capability recipe runtime.
 - [x] Acceptance harness exists: redacted ledger, content-addressed artifact snapshots, and rehearsal/live launch-readiness reports.
 - [x] Public acceptance target exists: `examples/moonlite-rsvp` is a party RSVP app that activates GitHub, Vercel, Cloudflare DNS, Resend, webhook secret, vault, verification, and detonation proof.
 - [x] Public acceptance target has a polished RSVP surface for launch-recording use across desktop and mobile.
@@ -36,6 +36,7 @@
 - [x] P1 North Star audit fixes: provider-pack setup execution uses a handler registry, unknown required verification/setup recipes fail instead of silently skipping, OCI remote launches replay non-secret launch/app context, and verification polling can return pending.
 - [x] P2 North Star audit fixes: service gates have durable persisted state, provider-pack rollback intent can be planned directly, verification retry knobs are exposed in CLI/remote launch, and OpenClaw bootstrap supports version/hash pinning.
 - [x] Post-audit bug pass: OCI VM bootstrap now installs OpenClaw on the executable PATH, OpenClaw wait snapshots use the correct command shape, provider verification treats pending live checks as incomplete unless explicitly allowed, and launch-readiness artifacts use product language while preserving compatibility aliases.
+- [x] Product-surface hardening pass: public code/docs now use launch-ready capability wording, provider intelligence refuses silent vault downgrade, capability packs no longer duplicate schema fields, and OCI detonation reports provider delete failures instead of swallowing them.
 
 ## Milestone 1: Repo Skeleton And CLI
 
@@ -110,7 +111,7 @@
 - [x] Add OpenClaw OpenAI auth fallback that records OpenClaw auth-profile state into the encrypted vault when present.
 - [x] Add validated provider capability-pack synthesis with a real-capable Plaid setup recipe.
 - [x] Add `fusekit provider synthesize`, `provider validate`, and `provider list`.
-- [x] Add `fusekit provider verify` and generic pack verification integrated into `apply`.
+- [x] Add `fusekit provider verify` and capability-pack verification integrated into `apply`.
 - [x] Add Resend and Plaid executable pack verification recipes.
 - [x] Move `apply` off provider-specific CLI branches and onto provider-pack setup execution.
 - [x] Add secret-routing safeguards so wildcard setup recipes only route app/runtime env secrets, not provider auth tokens or runner/LLM credentials.

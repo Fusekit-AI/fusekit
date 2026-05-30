@@ -32,7 +32,7 @@ def test_verifies_env_present_from_vault_without_revealing_secret() -> None:
     assert "re_hidden_secret" not in json.dumps([result.to_dict() for result in results])
 
 
-def test_http_json_recipe_uses_secret_placeholders_without_leaking(monkeypatch) -> None:
+def test_http_json_recipe_uses_secret_template_refs_without_leaking(monkeypatch) -> None:
     vault = Vault.empty()
     vault.put(
         "provider.plaid.plaid_client_id",
@@ -62,13 +62,13 @@ def test_http_json_recipe_uses_secret_placeholders_without_leaking(monkeypatch) 
         def read(self) -> bytes:
             return b'{"request_id":"redacted-request"}'
 
-    def fake_urlopen(request, timeout=30):  # type: ignore[no-untyped-def]
+    def local_urlopen(request, timeout=30):  # type: ignore[no-untyped-def]
         captured["body"] = request.data.decode("utf-8")
         captured["headers"] = dict(request.headers)
         captured["timeout"] = timeout
         return FakeResponse()
 
-    monkeypatch.setattr("fusekit.providers.verification.urlopen", fake_urlopen)
+    monkeypatch.setattr("fusekit.providers.verification.urlopen", local_urlopen)
     pack = synthesize_provider_pack("plaid", _NoPath())
 
     results = verify_provider_pack(pack, vault)
@@ -85,25 +85,25 @@ def test_url_health_recipe_reports_status(monkeypatch) -> None:
     vault = Vault.empty()
     pack = ProviderCapabilityPack(
         schema_version="fusekit.provider-pack.v1",
-        provider="demo",
-        display_name="Demo",
+        provider="test-provider",
+        display_name="Test Provider",
         category="service",
         confidence="medium",
         evidence=("test",),
         detection=ProviderDetection(env_names=("DEMO_API_KEY",)),
         handoff=PackHandoff(
-            signup_url="https://demo.example",
-            token_url="https://demo.example/tokens",
-            token_env="DEMO_API_KEY",
-            token_record_id="provider.demo.token",
-            token_label="Demo key",
+            signup_url="https://test-provider.example",
+            token_url="https://test-provider.example/tokens",
+            token_env="TEST_PROVIDER_API_KEY",
+            token_record_id="provider.test-provider.token",
+            token_label="Test provider key",
             required_scopes=("api",),
             account_steps=("Create account.",),
             secret_steps=("Create token.",),
             service_gates=("MFA",),
         ),
-        required_secrets=("DEMO_API_KEY",),
-        env_vars=("DEMO_API_KEY",),
+        required_secrets=("TEST_PROVIDER_API_KEY",),
+        env_vars=("TEST_PROVIDER_API_KEY",),
         setup=(),
         setup_goals=("Verify app.",),
         verification=(
