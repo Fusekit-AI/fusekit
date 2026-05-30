@@ -427,7 +427,7 @@ body {
   position: relative;
   width: 44px;
   height: 44px;
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--snow-navy);
   box-shadow: inset 0 0 0 1px rgba(0, 151, 255, 0.22);
 }
@@ -620,7 +620,7 @@ button {
 .artifact-panel {
   min-width: 0;
   border: 1px solid rgba(0, 151, 255, 0.14);
-  border-radius: 16px;
+  border-radius: 8px;
   background: var(--snow-panel);
   box-shadow: 0 28px 70px rgba(0, 21, 42, 0.1);
 }
@@ -667,7 +667,7 @@ button {
 .stats span {
   min-height: 54px;
   border: 1px solid rgba(0, 151, 255, 0.14);
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 10px;
   color: #536b82;
   background: rgba(255, 255, 255, 0.52);
@@ -708,7 +708,7 @@ button {
   margin: 18px 0 4px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 14px;
+  border-radius: 8px;
   background:
     linear-gradient(120deg, rgba(255, 255, 255, 0.08), transparent),
     radial-gradient(circle at 74% 25%, rgba(0, 151, 255, 0.22), transparent 34%);
@@ -875,7 +875,7 @@ button {
 }
 
 .state-gate .snow-prop::after {
-  content: "  Tap the provider prompt, then I keep going.";
+  content: "  · Tap the provider prompt, then I keep going.";
   color: rgba(255, 255, 255, 0.68);
 }
 
@@ -1072,7 +1072,7 @@ button {
   align-items: center;
   min-height: 74px;
   border: 1px solid rgba(17, 22, 21, 0.11);
-  border-radius: 12px;
+  border-radius: 8px;
   padding: 12px;
   background: rgba(255, 255, 255, 0.72);
 }
@@ -1224,7 +1224,12 @@ button {
 
   h1 {
     font-size: 31px;
-    max-width: 340px;
+    max-width: 100%;
+  }
+
+  code {
+    white-space: normal;
+    word-break: break-word;
   }
 
   .stats {
