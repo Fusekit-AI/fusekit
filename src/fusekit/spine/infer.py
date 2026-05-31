@@ -52,6 +52,9 @@ class InferenceSpine(Protocol):
     def wait_for_text(self, text: str) -> SpineResult:
         """Wait for visible text."""
 
+    def highlight(self, target: str) -> SpineResult:
+        """Highlight a target for human attention."""
+
     def trace_start(self) -> SpineResult:
         """Start a browser trace if supported."""
 
@@ -262,6 +265,20 @@ def run_inferred_navigation(
             break
         if action.action == "gate":
             gate_attempts += 1
+            attention = _highlight_attention(spine, action.target)
+            if attention is not None:
+                events.append(
+                    BrowserPlaybookEvent(
+                        provider=provider,
+                        action="attention.highlight",
+                        status=attention.status,
+                        url=action.url,
+                        note=(
+                            "Highlighted the provider screen area that appears to need "
+                            "human attention."
+                        ),
+                    )
+                )
             events.append(
                 BrowserPlaybookEvent(
                     provider=provider,
@@ -445,6 +462,20 @@ def _resurface_gate(spine: InferenceSpine, url: str) -> None:
         spine.snapshot()
     except Exception:
         return
+
+
+def _highlight_attention(spine: InferenceSpine, target: str) -> SpineResult | None:
+    target = target.strip()
+    if not target:
+        return None
+    candidate = getattr(spine, "highlight", None)
+    if not callable(candidate):
+        return None
+    try:
+        result = candidate(target)
+        return result if isinstance(result, SpineResult) else None
+    except Exception:
+        return None
 
 
 def _diagnostic_events(

@@ -53,11 +53,13 @@ def test_openclaw_spine_supports_inferred_action_surface() -> None:
     assert spine.fill_label("ref-2", "redacted").status == "ok"
     assert spine.press("Enter").status == "ok"
     assert spine.wait_for_text("Ready").status == "ok"
+    assert spine.highlight("ref-3").status == "ok"
 
     assert calls[0][-2:] == ["click", "ref-1"]
     assert calls[1][-3:] == ["type", "ref-2", "redacted"]
     assert calls[2][-2:] == ["press", "Enter"]
     assert calls[3][-3:] == ["wait", "--text", "Ready"]
+    assert calls[4][-2:] == ["highlight", "ref-3"]
 
 
 def test_openclaw_spine_uses_interactive_json_snapshots_and_trace() -> None:
@@ -100,6 +102,7 @@ def test_playwright_spine_dry_run_does_not_need_local_browser() -> None:
     assert spine.start().status == "dry-run"
     assert spine.open("https://resend.com/api-keys").status == "dry-run"
     assert spine.click_text("Create API Key").command[-1] == "Create API Key"
+    assert spine.highlight("ref=1").status == "dry-run"
 
 
 def test_resend_ui_playbook_uses_computer_actions_without_secrets() -> None:
@@ -166,6 +169,28 @@ def test_inferred_navigation_gate_attempt_limit_is_for_ci() -> None:
 
     assert events[-1].action == "gate"
     assert events[-1].status == "max-attempts"
+
+
+def test_inferred_navigation_highlights_gate_target() -> None:
+    spine = PlaywrightBrowserSpine(dry_run=True)
+    navigator = StaticUiNavigator(
+        [
+            InferredUiAction("gate", target="ref=7", reason="MFA required"),
+            InferredUiAction("stop", reason="done"),
+        ]
+    )
+
+    events = run_inferred_navigation(
+        provider="github",
+        goal="create a token",
+        start_url="https://github.com/settings/tokens",
+        spine=spine,
+        navigator=navigator,
+        gate_retry_seconds=0,
+        max_gate_attempts=2,
+    )
+
+    assert any(event.action == "attention.highlight" for event in events)
 
 
 def test_inferred_navigation_rejects_non_https_navigation() -> None:

@@ -170,6 +170,25 @@ class PlaywrightBrowserSpine:
         self._ensure_page().get_by_text(text).first.wait_for()
         return SpineResult("wait_for_text", ("playwright", "wait_for_text", text), "ok")
 
+    def highlight(self, target: str) -> SpineResult:
+        """Visually highlight a ref or visible text target for human attention."""
+
+        if self.dry_run:
+            return SpineResult("highlight", ("playwright", "highlight", target), "dry-run")
+        page = self._ensure_page()
+        locator = self._ref_locator(target).or_(page.get_by_text(target)).first
+        locator.evaluate(
+            """
+            (element) => {
+              element.scrollIntoView({ block: "center", inline: "center" });
+              element.style.outline = "4px solid #ffbf00";
+              element.style.boxShadow = "0 0 0 8px rgba(255,191,0,0.35)";
+              element.style.transition = "outline 120ms ease, box-shadow 120ms ease";
+            }
+            """
+        )
+        return SpineResult("highlight", ("playwright", "highlight", target), "ok")
+
     def trace_start(self) -> SpineResult:
         """Start Playwright tracing for failure recovery evidence."""
 

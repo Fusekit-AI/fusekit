@@ -158,6 +158,32 @@ def test_control_room_payload_includes_active_gate_records(tmp_path) -> None:
     assert "token" in str(payload["gates"][0]["reason"])
 
 
+def test_control_room_gate_help_includes_resume_link_and_attempts(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job.mark("setup.execute", "running", "remote setup is running")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    service = GateService.load(tmp_path / "gates.json")
+    service.wait(
+        "provider.vercel.authorization",
+        provider="vercel",
+        reason="vercel login/MFA/CAPTCHA/billing/consent/token creation",
+        resume_url="https://vercel.com/account/tokens",
+    )
+    service.wait(
+        "provider.vercel.authorization",
+        provider="vercel",
+        reason="vercel login/MFA/CAPTCHA/billing/consent/token creation",
+        resume_url="https://vercel.com/account/tokens",
+    )
+
+    html = render_control_room(JobState.load(job_path))
+
+    assert "Open provider gate" in html
+    assert "gate-attempts" in html
+    assert "resume_url" in html
+
+
 def test_control_room_payload_reports_corrupt_gate_state(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job_path = tmp_path / "job.json"

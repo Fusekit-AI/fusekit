@@ -782,6 +782,30 @@ button {
   font-weight: 850;
 }
 
+.gate-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gate-link,
+.gate-attempts {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #f7fbff;
+  font-size: 12px;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.gate-link {
+  border: 1px solid rgba(111, 215, 255, 0.34);
+}
+
 .snow-scene {
   position: relative;
   min-height: 136px;
@@ -1422,6 +1446,9 @@ function gateStep(gate) {
     label: `${gate.provider || "Provider"} needs your approval`,
     status: "waiting",
     detail: gate.reason || "A provider-created human gate is waiting.",
+    provider: gate.provider || "",
+    resume_url: gate.resume_url || "",
+    attempts: gate.attempts || 0,
     updated_at: gate.updated_at,
   };
 }
@@ -1577,11 +1604,27 @@ function gateGuidance(provider) {
 function renderGateHelp(step) {
   if (step?.status !== "waiting") return "";
   const guidance = gateGuidance(inferGateProvider(`${step.id} ${step.label} ${step.detail}`));
+  const resumeLink = step.resume_url
+    ? [
+        `<a class="gate-link" href="${escapeAttr(step.resume_url)}"`,
+        ` target="_blank" rel="noreferrer">Open provider gate</a>`,
+      ].join("")
+    : "";
+  const attempts = step.attempts
+    ? [
+        `<span class="gate-attempts">Resurfaced ${escapeHtml(String(step.attempts))}`,
+        ` time${step.attempts === 1 ? "" : "s"}</span>`,
+      ].join("")
+    : "";
+  const meta = resumeLink || attempts
+    ? `<div class="gate-meta">${resumeLink}${attempts}</div>`
+    : "";
   return `
     <div class="gate-help">
       <span>What you need to do</span>
       <strong>${escapeHtml(guidance.title)}</strong>
       <p>${escapeHtml(guidance.body)}</p>
+      ${meta}
       <ol>${guidance.actions.map((action) => `<li>${escapeHtml(action)}</li>`).join("")}</ol>
       <em>${escapeHtml(guidance.reassurance)}</em>
     </div>
@@ -1592,6 +1635,10 @@ function escapeHtml(value) {
   const div = document.createElement("div");
   div.textContent = value || "";
   return div.innerHTML;
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value).replaceAll('"', "&quot;");
 }
 
 function renderSteps(job) {

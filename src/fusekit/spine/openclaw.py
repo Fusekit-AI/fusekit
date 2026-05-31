@@ -120,6 +120,11 @@ class OpenClawBrowserSpine:
 
         return self._run("click", ["click", ref])
 
+    def highlight(self, ref: str) -> SpineResult:
+        """Highlight a snapshot ref for human attention."""
+
+        return self._run("highlight", ["highlight", ref])
+
     def click_text(self, text_or_ref: str) -> SpineResult:
         """Click a snapshot ref or text target supplied by an inferred playbook."""
 
