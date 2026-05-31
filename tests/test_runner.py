@@ -177,11 +177,12 @@ def test_control_room_gate_help_includes_resume_link_and_attempts(tmp_path) -> N
         resume_url="https://vercel.com/account/tokens",
     )
 
-    html = render_control_room(JobState.load(job_path))
+    html = render_control_room(JobState.load(job_path), gate_path=tmp_path / "gates.json")
 
     assert "Open provider gate" in html
     assert "gate-attempts" in html
-    assert "resume_url" in html
+    assert "https://vercel.com/account/tokens" in html
+    assert '"attempts":2' in html or '"attempts": 2' in html
 
 
 def test_control_room_payload_reports_corrupt_gate_state(tmp_path) -> None:

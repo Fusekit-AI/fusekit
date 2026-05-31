@@ -47,6 +47,7 @@
 - [x] Computer-use action-plane hardening: OpenClaw now uses interactive compact JSON snapshots and real wait commands, inferred navigation records before/after observations, starts/stops traces when supported, rejects unsafe navigation/key presses, resurfaces provider gates, and writes redacted recovery events instead of failing silently.
 - [x] Verification repair loop: failed or pending provider-pack verification can now trigger a bounded inferred UI repair pass, feed redacted verification errors into the computer-use goal, rerun verification afterward, and record repair evidence in audit/receipt artifacts.
 - [x] Human-attention guidance: inferred service gates can now highlight the provider-screen target that needs human attention, and the control room surfaces provider resume links plus resurfacing counts for waiting gates.
+- [x] Static control-room hardening: saved control-room HTML now embeds durable gate state and corrupt-gate errors just like the live server, so provider waits remain visible even when opened as a file artifact.
 
 ## Milestone 1: Repo Skeleton And CLI
 
@@ -233,6 +234,6 @@
 - [x] Fixed gap 3: generated packs now carry non-secret provenance, endpoint purpose declarations, and setup/verify tool-permission bindings.
 - [x] Fixed gap 4: rollback can execute provider-native delete/revoke/restore paths for GitHub repo secrets/deploy keys, Vercel env/project resources, and Cloudflare DNS proposal metadata.
 - [x] Fixed gap 5: README documents the supervised real-provider acceptance run protocol and marks live execution as pending provider account handoff.
-- [ ] Remaining: live repair after failed verification should feed provider errors back into the intelligence loop and rerun setup.
+- [x] Fixed gap 6: failed/pending provider verification now feeds redacted errors into a bounded inferred UI repair pass and reruns verification.
 - [ ] Remaining: full public acceptance run still requires supervised GitHub/Vercel/Cloudflare authorization and a disposable test domain.
 - [ ] Remaining: acceptance harness should ingest provider verification results directly from remote OCI artifacts once the first live run is completed.

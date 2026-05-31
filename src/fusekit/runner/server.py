@@ -7,8 +7,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from fusekit.runner.control_room import render_control_room
-from fusekit.runner.gates import GateRecord
+from fusekit.runner.control_room import (
+    control_room_payload as build_control_room_payload,
+)
+from fusekit.runner.control_room import (
+    render_control_room,
+)
 from fusekit.runner.job import JobState
 
 
@@ -29,28 +33,7 @@ def control_room_payload(job_state: Path) -> dict[str, Any]:
     """Return the live control-room payload."""
 
     job = JobState.load(job_state)
-    payload = job.to_dict()
-    gates, error = _gate_records(job_state)
-    payload["gates"] = gates
-    if error:
-        payload["gate_state_error"] = error
-    return payload
-
-
-def _gate_records(job_state: Path) -> tuple[list[dict[str, str | int | float]], str]:
-    gate_path = job_state.parent / "gates.json"
-    if not gate_path.exists():
-        return [], ""
-    try:
-        raw = json.loads(gate_path.read_text(encoding="utf-8"))
-        records = [
-            GateRecord.from_dict(item).to_dict()
-            for item in raw.get("gates", [])
-            if isinstance(item, dict)
-        ]
-    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
-        return [], f"Gate state could not be read from {gate_path.name}: {type(exc).__name__}"
-    return records, ""
+    return build_control_room_payload(job, gate_path=job_state.parent / "gates.json")
 
 
 def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
@@ -61,7 +44,7 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                 return
             if self.path in {"/", "/index.html"}:
                 job = JobState.load(job_state)
-                self._write_html(_live_html(job))
+                self._write_html(_live_html(job, job_state))
                 return
             self.send_response(404)
             self.end_headers()
@@ -88,5 +71,5 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
     return ControlRoomHandler
 
 
-def _live_html(job: JobState) -> str:
-    return render_control_room(job)
+def _live_html(job: JobState, job_state: Path) -> str:
+    return render_control_room(job, gate_path=job_state.parent / "gates.json")

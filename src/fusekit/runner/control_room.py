@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from fusekit.runner.gate_guidance import GateGuidance, infer_gate_provider, provider_gate_guidance
+from fusekit.runner.gates import GateRecord
 from fusekit.runner.job import JobState, JobStep
 
 STATUS_LABELS = {
@@ -24,10 +25,10 @@ STATUS_LABELS = {
 TERMINAL_STEP_STATUSES = {"done", "skipped"}
 
 
-def render_control_room(job: JobState) -> str:
+def render_control_room(job: JobState, *, gate_path: Path | None = None) -> str:
     """Render a standalone HTML control-room page."""
 
-    payload = _safe_json(job.to_dict())
+    payload = _safe_json(control_room_payload(job, gate_path=gate_path))
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -59,7 +60,37 @@ def write_control_room(job: JobState, path: Path) -> None:
     """Write the control-room HTML file."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(render_control_room(job), encoding="utf-8")
+    html = render_control_room(job, gate_path=path.parent / "gates.json")
+    path.write_text(html, encoding="utf-8")
+
+
+def control_room_payload(job: JobState, *, gate_path: Path | None = None) -> dict[str, Any]:
+    """Build the embedded control-room payload with durable gate state."""
+
+    payload = job.to_dict()
+    if gate_path is None:
+        payload.setdefault("gates", [])
+        return payload
+    gates, error = _read_gate_records(gate_path)
+    payload["gates"] = gates
+    if error:
+        payload["gate_state_error"] = error
+    return payload
+
+
+def _read_gate_records(gate_path: Path) -> tuple[list[dict[str, str | int | float]], str]:
+    if not gate_path.exists():
+        return [], ""
+    try:
+        raw = json.loads(gate_path.read_text(encoding="utf-8"))
+        records = [
+            GateRecord.from_dict(item).to_dict()
+            for item in raw.get("gates", [])
+            if isinstance(item, dict)
+        ]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        return [], f"Gate state could not be read from {gate_path.name}: {type(exc).__name__}"
+    return records, ""
 
 
 def _render_header(job: JobState) -> str:
