@@ -268,7 +268,7 @@ def render_cloud_shell_launcher(plan: CloudShellLaunchPlan) -> str:
       <button id="copy" type="button" class="secondary">Copy Bootstrap Command</button>
       <button id="refresh" type="button" class="secondary">Update From Source</button>
     </div>
-    <div id="status" class="status"></div>
+    <div id="status" class="status" role="status" aria-live="polite"></div>
   </main>
   <script type="application/json" id="payload">{html.escape(payload)}</script>
   <script>
@@ -299,8 +299,15 @@ def render_cloud_shell_launcher(plan: CloudShellLaunchPlan) -> str:
 
     document.querySelector('#refresh').addEventListener('click', refresh);
     document.querySelector('#copy').addEventListener('click', async () => {{
-      await navigator.clipboard.writeText(command.value);
-      status.textContent = 'Bootstrap command copied.';
+      try {{
+        await navigator.clipboard.writeText(command.value);
+        status.textContent = 'Bootstrap command copied.';
+      }} catch (error) {{
+        command.focus();
+        command.select();
+        status.textContent =
+          'Copy was blocked. The command is selected so you can copy it manually.';
+      }}
     }});
   </script>
 </body>
