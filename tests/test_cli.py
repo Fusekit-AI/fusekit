@@ -437,6 +437,134 @@ def test_authorize_handoff_captures_hidden_token(monkeypatch, tmp_path, capsys) 
     assert opened_vault.require("provider.github.token").value == token
 
 
+def test_source_fetch_private_repo_stores_env_token_in_vault(
+    monkeypatch,
+    tmp_path,
+    capsys,
+) -> None:
+    vault = tmp_path / "vault.json"
+    passphrase = tmp_path / "passphrase.txt"
+    passphrase.write_text("passphrase\n", encoding="utf-8")
+    token = "github-private-source-token"
+    calls: list[str] = []
+
+    def fake_fetch(source: str, dest: object, *, token: str = "", **kwargs: object) -> object:
+        calls.append(token)
+        if not token:
+            raise FuseKitError("private")
+        (tmp_path / "app").mkdir(exist_ok=True)
+
+        class Result:
+            def to_dict(self) -> dict[str, object]:
+                return {
+                    "source": source,
+                    "dest": str(dest),
+                    "provider": "github",
+                    "repo": "owner/private",
+                    "default_branch": "main",
+                    "auth_source": "github-token",
+                    "private": True,
+                }
+
+        return Result()
+
+    monkeypatch.setenv("GITHUB_TOKEN", token)
+    monkeypatch.setattr("fusekit.cli.fetch_github_source_archive", fake_fetch)
+
+    assert (
+        main(
+            [
+                "source",
+                "fetch",
+                "https://github.com/owner/private.git",
+                "--dest",
+                str(tmp_path / "app"),
+                "--vault",
+                str(vault),
+                "--passphrase-file",
+                str(passphrase),
+                "--github-auth",
+                "auto",
+                "--spine",
+                "system",
+            ]
+        )
+        == 0
+    )
+
+    output = capsys.readouterr().out
+    assert calls == ["", token]
+    assert_no_secret_text(output, [token])
+    assert_no_secret_text(vault.read_text(encoding="utf-8"), [token])
+    assert Vault.open(vault, "passphrase").require("provider.github.token").value == token
+
+
+def test_source_fetch_guides_private_repo_with_inferred_github_goal(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    vault = tmp_path / "vault.json"
+    passphrase = tmp_path / "passphrase.txt"
+    passphrase.write_text("passphrase\n", encoding="utf-8")
+    goals: list[str] = []
+
+    def fake_fetch(source: str, dest: object, *, token: str = "", **kwargs: object) -> object:
+        if not token:
+            raise FuseKitError("private")
+
+        class Result:
+            def to_dict(self) -> dict[str, object]:
+                return {
+                    "source": source,
+                    "dest": str(dest),
+                    "provider": "github",
+                    "repo": "owner/private",
+                    "default_branch": "main",
+                    "auth_source": "github-token",
+                    "private": True,
+                }
+
+        return Result()
+
+    def fake_handoff(*args: object, **kwargs: object) -> None:
+        goals.append(str(kwargs.get("goal", "")))
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.setattr("fusekit.cli.fetch_github_source_archive", fake_fetch)
+    monkeypatch.setattr("fusekit.cli._run_handoff", fake_handoff)
+    monkeypatch.setattr(
+        "fusekit.cli._await_provider_token",
+        lambda *args, **kwargs: ("github-private-token", "supervised-hidden-prompt"),
+    )
+
+    assert (
+        main(
+            [
+                "source",
+                "fetch",
+                "https://github.com/owner/private.git",
+                "--dest",
+                str(tmp_path / "app"),
+                "--vault",
+                str(vault),
+                "--passphrase-file",
+                str(passphrase),
+                "--handoff",
+                "--capture-stdin",
+                "--infer-ui",
+                "--spine",
+                "openclaw",
+            ]
+        )
+        == 0
+    )
+
+    assert goals
+    assert "owner/private" in goals[0]
+    assert "Highlight each provider-screen element" in goals[0]
+    assert "Use the gate action with a target" in goals[0]
+
+
 def test_authorize_can_use_openclaw_spine_dry_run(monkeypatch, tmp_path, capsys) -> None:
     vault = tmp_path / "vault.json"
     passphrase = tmp_path / "passphrase.txt"

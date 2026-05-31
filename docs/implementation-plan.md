@@ -52,6 +52,7 @@
 - [x] OCI/runtime bootstrap hardening: `doctor` now verifies OpenClaw version, doctor, and browser status instead of accepting a merely present binary; Cloud Shell bootstrap retries transient installs and can download public GitHub app sources without Git; OCI VMs use a dedicated Python venv, persistent FuseKit/OpenClaw PATH exports, and clearer remote command failures.
 - [x] OpenClaw capability hardening: browser snapshots now use efficient JSON payloads by default, optional label overlays are available for human targeting, diagnostics use fresh cleared errors/requests, inferred UI navigation can use rich wait conditions, provider gates scroll targets into view before highlighting, and FuseKit-owned OpenClaw state disables page evaluate by default.
 - [x] Privacy reassurance UX: the control-room Snowman now switches into an eyes-covered privacy pose for secret-bearing gates and running steps involving passphrases, tokens, API keys, private keys, payment/MFA checks, hidden prompts, or vault operations.
+- [x] Private GitHub source lane: Cloud Shell bootstrap now prompts for the vault passphrase before app retrieval, uses `fusekit source fetch` to download public or private GitHub repos through HTTPS archives, captures approved GitHub App/PAT tokens into the encrypted vault, avoids SSH setup or token-in-URL cloning, and runs a GitHub-specific OpenClaw guidance/highlight goal for private repo approval.
 
 ## Milestone 1: Repo Skeleton And CLI
 
@@ -142,7 +143,7 @@
 - [x] Pick one initial website stack.
 - [x] Scan app and generate setup manifest.
 - [x] Provide one-command setup orchestration for scan, plan, authorization, apply, verify, receipt, and detonation.
-- [ ] Connect GitHub repo.
+- [x] Connect GitHub repo, including private source retrieval through supervised GitHub App/PAT authorization without local SSH setup.
 - [x] Connect deployment target adapter path. Live proof still depends on supervised provider authorization.
 - [x] Configure environment variables through provider-pack setup. Live proof still depends on supervised provider authorization.
 - [ ] Propose and optionally apply DNS.

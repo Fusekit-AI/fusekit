@@ -78,6 +78,11 @@ from fusekit.runtime import bootstrap_runtime, doctor
 from fusekit.runtime.bootstrap import openclaw_state_home
 from fusekit.scanner import scan_repo
 from fusekit.security import scan_for_secret_leaks
+from fusekit.source import (
+    fetch_github_source_archive,
+    is_github_https_source,
+    token_from_env,
+)
 from fusekit.spine import (
     BrowserPlaybookEvent,
     OpenAiUiNavigator,
@@ -235,6 +240,34 @@ def _parser() -> argparse.ArgumentParser:
     provider_list.add_argument("--app", type=Path, default=Path("."))
     provider_list.add_argument("--json", action="store_true", dest="as_json")
     provider_list.set_defaults(handler=_cmd_provider_list)
+
+    source = sub.add_parser("source", help="fetch public or private app source")
+    source_sub = source.add_subparsers(dest="source_command")
+    source_fetch = source_sub.add_parser(
+        "fetch",
+        help="download an app repo into the clean-room workspace",
+    )
+    source_fetch.add_argument("source")
+    source_fetch.add_argument("--dest", type=Path, required=True)
+    source_fetch.add_argument(
+        "--github-auth",
+        choices=("auto", "public", "token", "app"),
+        default="auto",
+        help="private GitHub source lane; auto tries public, then app/PAT authorization",
+    )
+    source_fetch.add_argument("--github-token-env", default="GITHUB_TOKEN")
+    source_fetch.add_argument(
+        "--github-app-install-url",
+        default="",
+        help="FuseKit GitHub App install URL; defaults to FUSEKIT_GITHUB_APP_INSTALL_URL",
+    )
+    source_fetch.add_argument("--handoff", action="store_true")
+    source_fetch.add_argument("--capture-stdin", action="store_true")
+    _vault_args(source_fetch)
+    _computer_use_args(source_fetch)
+    _gate_args(source_fetch)
+    _llm_args(source_fetch)
+    source_fetch.set_defaults(handler=_cmd_source_fetch)
 
     acceptance = sub.add_parser("acceptance", help="run launch-readiness acceptance harness")
     acceptance_sub = acceptance.add_subparsers(dest="acceptance_command")
@@ -671,6 +704,130 @@ def _cmd_provider_list(args: argparse.Namespace) -> int:
             pack = f" pack={provider['capability_pack']}" if provider["capability_pack"] else ""
             print(f"{provider['provider']:16} {provider['kind']}{pack}")
     return 0
+
+
+def _cmd_source_fetch(args: argparse.Namespace) -> int:
+    if not is_github_https_source(args.source):
+        raise FuseKitError("Private source fetch currently supports GitHub HTTPS repo URLs.")
+
+    if args.github_auth in {"auto", "public"}:
+        try:
+            result = fetch_github_source_archive(args.source, args.dest)
+            print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+            return 0
+        except FuseKitError:
+            if args.github_auth == "public":
+                raise
+
+    passphrase = _passphrase(args)
+    vault = open_or_create(args.vault, passphrase)
+    if getattr(args, "infer_ui", False):
+        _capture_llm(args, vault, require=True)
+        vault.save(args.vault, passphrase)
+    token, token_source = _github_source_token(args, vault)
+    token_label = "GitHub API token"
+    token_record_id = "provider.github.token"
+    source_goal = _github_source_auth_goal(args.source, args.github_auth)
+    if not token:
+        handoff = _github_source_handoff(args)
+        if args.handoff or args.open_browser or args.spine in {"openclaw", "playwright"}:
+            _run_handoff(args, "github", handoff, include_project=False, goal=source_goal)
+        token, token_source = _await_provider_token(
+            args,
+            "github",
+            handoff,
+            include_project=False,
+            goal=source_goal,
+        )
+        token_label = handoff.token_label
+        token_record_id = handoff.token_record_id
+
+    result = fetch_github_source_archive(args.source, args.dest, token=token)
+    if not token_source.startswith("vault:"):
+        vault.put(
+            token_record_id,
+            "provider_token",
+            "github",
+            token_label,
+            token,
+            {"source": token_source, "purpose": "source-and-provider-setup"},
+        )
+        vault.save(args.vault, passphrase)
+    print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+    return 0
+
+
+def _github_source_token(args: argparse.Namespace, vault: Vault) -> tuple[str, str]:
+    env_token, env_source = token_from_env(
+        args.github_token_env,
+        "GITHUB_APP_INSTALLATION_TOKEN",
+        "GH_TOKEN",
+    )
+    if env_token:
+        return env_token, env_source
+    for record_id in (
+        "provider.github.token",
+        "provider.github.installation_token",
+        "provider.github.source_token",
+    ):
+        try:
+            record = vault.require(record_id)
+            return record.value, f"vault:{record_id}"
+        except FuseKitError:
+            continue
+    return "", ""
+
+
+def _github_source_handoff(args: argparse.Namespace) -> ProviderHandoff:
+    install_url = args.github_app_install_url or os.environ.get(
+        "FUSEKIT_GITHUB_APP_INSTALL_URL",
+        "",
+    )
+    if args.github_auth == "app" and not install_url:
+        raise FuseKitError(
+            "GitHub App source auth requires --github-app-install-url or "
+            "FUSEKIT_GITHUB_APP_INSTALL_URL."
+        )
+    if install_url:
+        return ProviderHandoff(
+            provider="github",
+            signup_url="https://github.com/login",
+            token_url=install_url,
+            project_url=install_url,
+            token_env="GITHUB_APP_INSTALLATION_TOKEN",
+            token_record_id="provider.github.token",
+            token_label="GitHub App installation token",
+            required_scopes=(
+                "Contents read for the selected repository",
+                "Actions secrets and deploy keys when setup will configure GitHub",
+            ),
+            account_steps=(
+                "Sign in to GitHub.",
+                "Install or authorize the FuseKit GitHub App for only the selected repository.",
+                "Complete GitHub passkey, MFA, CAPTCHA, organization, or consent gates if shown.",
+            ),
+            secret_steps=(
+                "Return the app-issued installation token or approved access token to FuseKit.",
+                "FuseKit captures it through a hidden prompt or environment variable.",
+            ),
+        )
+    return handoff_for("github")
+
+
+def _github_source_auth_goal(source: str, auth_mode: str) -> str:
+    return (
+        "Guide a non-technical user through GitHub approval for FuseKit to read the "
+        f"private app repository {source}. Prefer the FuseKit GitHub App installation "
+        "flow when the page is available; otherwise guide fine-grained personal access "
+        "token creation. Highlight each provider-screen element the human must touch. "
+        "The user should only sign in, choose the exact repository, approve GitHub "
+        "permissions, pass passkey/MFA/CAPTCHA/org-consent gates, and copy the final "
+        "approved token if GitHub reveals one. Do not enter passwords, passkeys, MFA, "
+        "CAPTCHA, payment details, or raw tokens into page fields. Use the gate action "
+        "with a target when GitHub needs human attention so FuseKit can spotlight it. "
+        "Stop once the app/token approval page is complete or the token reveal/copy step "
+        f"is waiting. Requested source auth mode: {auth_mode}."
+    )
 
 
 def _cmd_acceptance_run(args: argparse.Namespace) -> int:
@@ -1688,6 +1845,7 @@ def _run_handoff(
     provider: str,
     handoff: ProviderHandoff,
     include_project: bool,
+    goal: str = "",
 ) -> None:
     _print_handoff(handoff, include_project=include_project)
     if args.spine == "playwright":
@@ -1700,7 +1858,7 @@ def _run_handoff(
                 vault = open_or_create(args.vault, _passphrase(args))
                 events = run_inferred_navigation(
                     provider=provider,
-                    goal=_provider_ui_goal(provider, include_project),
+                    goal=goal or _provider_ui_goal(provider, include_project),
                     start_url=handoff.signup_url,
                     spine=playwright_spine,
                     navigator=OpenAiUiNavigator(_llm_config_from_args(args), vault),
@@ -1735,7 +1893,7 @@ def _run_handoff(
             vault = open_or_create(args.vault, _passphrase(args))
             events = run_inferred_navigation(
                 provider=provider,
-                goal=_provider_ui_goal(provider, include_project),
+                goal=goal or _provider_ui_goal(provider, include_project),
                 start_url=handoff.signup_url,
                 spine=openclaw_spine,
                 navigator=OpenAiUiNavigator(_llm_config_from_args(args), vault),
@@ -1823,6 +1981,7 @@ def _await_provider_token(
     provider: str,
     handoff: ProviderHandoff,
     include_project: bool,
+    goal: str = "",
 ) -> tuple[str, str]:
     token_env = args.token_env or handoff.token_env
     gate_id = f"provider.{provider}.authorization"
@@ -1862,7 +2021,7 @@ def _await_provider_token(
             "Retrying handoff..."
         )
         _sleep_for_gate(args)
-        _run_handoff(args, provider, handoff, include_project)
+        _run_handoff(args, provider, handoff, include_project, goal=goal)
 
 
 def _await_plan_approval(args: argparse.Namespace) -> None:

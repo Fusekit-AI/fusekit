@@ -84,6 +84,8 @@ def build_cloud_shell_bootstrap_command(
     gates_arg = shlex.quote(fusekit_gates)
     extra_args = " ".join(shlex.quote(arg) for arg in launch_args)
     launch_suffix = f" {extra_args}" if extra_args else ""
+    source_fetch_args = " ".join(shlex.quote(arg) for arg in _source_fetch_args(launch_args))
+    source_fetch_suffix = f" {source_fetch_args}" if source_fetch_args else ""
     return (
         "bash -lc "
         + shlex.quote(
@@ -124,70 +126,6 @@ def build_cloud_shell_bootstrap_command(
                     "retry \"$python_cmd\" -m pip install --user --upgrade \"$fusekit_package\"",
                     "fusekit --version",
                     f"app_source={source}",
-                    "if [ -n \"$app_source\" ]; then",
-                    "  if command -v git >/dev/null 2>&1; then",
-                    "    retry git clone --depth=1 \"$app_source\" \"$work/app\"",
-                    "  else",
-                    "    case \"$app_source\" in",
-                    "      https://github.com/*)",
-                    (
-                        "        APP_SOURCE=\"$app_source\" APP_DEST=\"$work/app\" "
-                        "\"$python_cmd\" - <<'PY'"
-                    ),
-                    "import pathlib, shutil, urllib.error, urllib.parse, urllib.request, zipfile",
-                    "import os, tempfile",
-                    "source = os.environ['APP_SOURCE']",
-                    "dest = pathlib.Path(os.environ['APP_DEST'])",
-                    "parsed = urllib.parse.urlparse(source)",
-                    "parts = parsed.path.strip('/').removesuffix('.git').split('/')",
-                    "if len(parts) < 2:",
-                    "    raise SystemExit('GitHub app source must be owner/repo')",
-                    "owner, repo = parts[0], parts[1]",
-                    "urls = [",
-                    "    f'https://codeload.github.com/{owner}/{repo}/zip/refs/heads/main',",
-                    "    f'https://codeload.github.com/{owner}/{repo}/zip/refs/heads/master',",
-                    "]",
-                    "with tempfile.TemporaryDirectory(prefix='fusekit-app-') as tmp:",
-                    "    archive = pathlib.Path(tmp) / 'app.zip'",
-                    "    last_error = None",
-                    "    for url in urls:",
-                    "        try:",
-                    (
-                        "            data = urllib.request.urlopen(url, timeout=90).read()"
-                    ),
-                    "            archive.write_bytes(data)",
-                    "            break",
-                    "        except urllib.error.URLError as exc:",
-                    "            last_error = exc",
-                    "    else:",
-                    (
-                        "        raise SystemExit("
-                        "f'Could not download GitHub app source: {last_error}')"
-                    ),
-                    "    extract = pathlib.Path(tmp) / 'extract'",
-                    "    with zipfile.ZipFile(archive) as zf:",
-                    "        zf.extractall(extract)",
-                    "    roots = [path for path in extract.iterdir() if path.is_dir()]",
-                    "    if not roots:",
-                    "        raise SystemExit('GitHub source archive was empty')",
-                    "    if dest.exists():",
-                    "        shutil.rmtree(dest)",
-                    "    shutil.copytree(roots[0], dest)",
-                    "PY",
-                    "        ;;",
-                    "      *)",
-                    "        printf '%s\\n' 'Git is unavailable and app_source is not a "
-                    "GitHub HTTPS repo.' >&2",
-                    "        exit 43",
-                    "        ;;",
-                    "    esac",
-                    "  fi",
-                    "else",
-                    "  mkdir -p \"$work/app\"",
-                    "  printf '%s\\n' 'No app_source was supplied. Upload or clone the app into:'",
-                    "  printf '%s\\n' \"$work/app\"",
-                    "  printf '%s\\n' 'Then rerun the fusekit launch command printed below.'",
-                    "fi",
                     "printf '%s\\n' 'Enter a vault passphrase for FuseKit.'",
                     "stty -echo",
                     "printf 'Passphrase: '",
@@ -197,6 +135,22 @@ def build_cloud_shell_bootstrap_command(
                     "umask 077",
                     "passfile=\"$work/passphrase\"",
                     "printf '%s\\n' \"$passphrase\" > \"$passfile\"",
+                    "vaultfile=\"$work/fusekit.vault.json\"",
+                    "if [ -n \"$app_source\" ]; then",
+                    (
+                        "  fusekit source fetch \"$app_source\" --dest \"$work/app\" "
+                        "--vault \"$vaultfile\" --passphrase-file \"$passfile\" "
+                        "--github-auth auto --handoff --open-browser --capture-stdin "
+                        "--spine openclaw --openclaw-profile openclaw --infer-ui "
+                        "--gate-retry-seconds 300 --gate-max-attempts 0"
+                        f"{source_fetch_suffix}"
+                    ),
+                    "else",
+                    "  mkdir -p \"$work/app\"",
+                    "  printf '%s\\n' 'No app_source was supplied. Upload or clone the app into:'",
+                    "  printf '%s\\n' \"$work/app\"",
+                    "  printf '%s\\n' 'Then rerun the fusekit launch command printed below.'",
+                    "fi",
                     (
                         "if [ -f \"$work/app/fusekit.yaml\" ] || "
                         "[ -f \"$work/app/package.json\" ] || "
@@ -207,6 +161,7 @@ def build_cloud_shell_bootstrap_command(
                         f"--runner {runner_arg} "
                         f"--fusekit-gates {gates_arg} "
                         "--control-room "
+                        "--vault \"$vaultfile\" "
                         f"--passphrase-file \"$passfile\"{launch_suffix}"
                     ),
                     "else",
@@ -214,7 +169,8 @@ def build_cloud_shell_bootstrap_command(
                         "  printf '%s\\n' "
                         "'fusekit launch $HOME/fusekit-cloud-shell/app "
                         f"--runner {runner_arg} --fusekit-gates {gates_arg} "
-                        "--control-room --passphrase-file "
+                        "--control-room --vault "
+                        "$HOME/fusekit-cloud-shell/fusekit.vault.json --passphrase-file "
                         f"$HOME/fusekit-cloud-shell/passphrase{launch_suffix}'"
                     ),
                     "fi",
@@ -222,6 +178,32 @@ def build_cloud_shell_bootstrap_command(
             )
         )
     )
+
+
+def _source_fetch_args(launch_args: tuple[str, ...]) -> tuple[str, ...]:
+    """Forward only safe source-fetch options from the later launch command."""
+
+    forwarded: list[str] = []
+    value_flags = {
+        "--llm-provider",
+        "--llm-model",
+        "--llm-base-url",
+        "--llm-api-key-env",
+        "--llm-auth-mode",
+        "--openclaw-profile",
+    }
+    bool_flags = {"--capture-llm-key", "--llm-openclaw-device-code", "--dry-run-spine"}
+    index = 0
+    while index < len(launch_args):
+        item = launch_args[index]
+        if item in value_flags and index + 1 < len(launch_args):
+            forwarded.extend([item, launch_args[index + 1]])
+            index += 2
+            continue
+        if item in bool_flags:
+            forwarded.append(item)
+        index += 1
+    return tuple(forwarded)
 
 
 def cloud_shell_deeplink(command: str) -> str:

@@ -89,7 +89,11 @@ def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
     assert "retry \"$python_cmd\" -m pip install --user --upgrade" in plan.bootstrap_command
     assert "fusekit --version" in plan.bootstrap_command
     assert "Git is required in OCI Cloud Shell for git+ FuseKit packages" in plan.bootstrap_command
-    assert "codeload.github.com" in plan.bootstrap_command
+    assert "fusekit source fetch" in plan.bootstrap_command
+    assert "--github-auth auto" in plan.bootstrap_command
+    assert "--capture-stdin" in plan.bootstrap_command
+    assert "--infer-ui" in plan.bootstrap_command
+    assert "--vault \"$vaultfile\"" in plan.bootstrap_command
     assert "https://github.com/example/app.git" in plan.bootstrap_command
     assert "git+https://github.com/example/fusekit.git" in plan.bootstrap_command
     assert "--github-repo example/app" in plan.bootstrap_command
