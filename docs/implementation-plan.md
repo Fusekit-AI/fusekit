@@ -43,6 +43,7 @@
 - [x] Human-gate UX hardening: terminal handoff and control-room waiting states now show plain-language provider gate cards with exact human actions, reassurance that FuseKit keeps waiting, and no raw secret material.
 - [x] Live control-room gate hardening: served control-room payload now includes durable `gates.json` records so active provider gates surface even when the broader setup step is still running.
 - [x] Gate-state loss hardening: corrupt gate state now surfaces as a repairable control-room error, and remote artifact retrieval preserves `.fusekit/gates.json` alongside receipts, vault, audit, and job state.
+- [x] Comfort/noise hardening: control-room refresh and clipboard failures now surface as calm, repairable UI states instead of silent no-ops, and the launcher validates public GitHub HTTPS app sources while using Git-free package/app download fallbacks where possible.
 
 ## Milestone 1: Repo Skeleton And CLI
 

@@ -81,6 +81,9 @@ def _render_header(job: JobState) -> str:
         <span class="pill muted" data-updated-at>
           Updated {_format_time(job.updated_at)}
         </span>
+        <span class="pill refresh-ok" data-refresh-status>
+          Live when served
+        </span>
       </div>
     </header>
 """
@@ -627,6 +630,17 @@ button {
 .pill.muted,
 .live-pill {
   color: var(--snow-muted);
+}
+
+.pill.refresh-ok {
+  border-color: rgba(54, 127, 54, 0.24);
+  color: #1f5e28;
+}
+
+.pill.refresh-stale {
+  border-color: rgba(172, 92, 18, 0.26);
+  background: #fff0cf;
+  color: #74420f;
 }
 
 .overview {
@@ -1658,20 +1672,41 @@ function render(job) {
 document.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-copy]");
   if (!button) return;
-  await navigator.clipboard.writeText(button.dataset.copy);
-  button.textContent = "Copied";
-  setTimeout(() => {
-    button.textContent = "Copy path";
-  }, 1200);
+  try {
+    await navigator.clipboard.writeText(button.dataset.copy);
+    button.textContent = "Copied";
+    setTimeout(() => {
+      button.textContent = "Copy path";
+    }, 1200);
+  } catch {
+    button.textContent = "Copy blocked";
+    setRefreshStatus("Copy was blocked by the browser. Select the path text manually.", "stale");
+  }
 });
+
+function setRefreshStatus(text, tone = "ok") {
+  const node = document.querySelector("[data-refresh-status]");
+  if (!node) return;
+  node.textContent = text;
+  node.className = `pill ${tone === "stale" ? "refresh-stale" : "refresh-ok"}`;
+}
 
 async function refreshJob() {
   try {
     const response = await fetch("/api/job", { cache: "no-store" });
-    if (!response.ok) return;
+    if (!response.ok) {
+      setRefreshStatus(`Live refresh paused (${response.status})`, "stale");
+      return;
+    }
     render(await response.json());
+    setRefreshStatus("Live refresh connected");
   } catch {
-    // Static files opened from disk simply keep their embedded state.
+    setRefreshStatus(
+      location.protocol.startsWith("http")
+        ? "Live refresh paused. Reopen or restart the control-room server."
+        : "Snapshot view. Serve the control room for live updates.",
+      "stale",
+    );
   }
 }
 
