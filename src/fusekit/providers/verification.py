@@ -15,6 +15,7 @@ from urllib.request import Request, urlopen
 from fusekit.audit import redact
 from fusekit.errors import FuseKitError, ProviderError
 from fusekit.providers.capability_pack import ProviderCapabilityPack, VerificationRecipe
+from fusekit.security.url import require_safe_url
 from fusekit.vault import Vault
 
 TEMPLATE_REF_RE = re.compile(r"\$\{(secret|env):([A-Z][A-Z0-9_]+)\}")
@@ -176,11 +177,12 @@ def _verify_http_json(
         body = resolved.encode("utf-8")
         headers.setdefault("Content-Type", "application/json")
     headers.setdefault("Accept", "application/json")
-    request = Request(recipe.target, data=body, method=method, headers=headers)
+    target = require_safe_url(recipe.target, label="HTTP verification target")
+    request = Request(target, data=body, method=method, headers=headers)
     status_code = 0
     text = ""
     try:
-        with urlopen(request, timeout=30) as response:
+        with urlopen(request, timeout=30) as response:  # nosec B310
             status_code = int(response.status)
             text = response.read().decode("utf-8")
     except HTTPError as exc:
@@ -234,8 +236,9 @@ def _verify_url_health(
             status="skipped",
             details={"reason": "no live URL supplied"},
         )
+    url = require_safe_url(url, label="URL health target", allow_http_loopback=True)
     try:
-        with urlopen(Request(url, method="GET"), timeout=30) as response:
+        with urlopen(Request(url, method="GET"), timeout=30) as response:  # nosec B310
             status_code = int(response.status)
     except HTTPError as exc:
         status_code = int(exc.code)

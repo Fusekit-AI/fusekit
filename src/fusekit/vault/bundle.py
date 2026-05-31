@@ -174,7 +174,7 @@ class Vault:
             "ciphertext": _b64encode(ciphertext),
         }
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        _atomic_write_private(path, json.dumps(bundle, indent=2, sort_keys=True) + "\n")
 
 
 def open_or_create(path: Path, passphrase: str) -> Vault:
@@ -203,3 +203,22 @@ def _b64encode(value: bytes) -> str:
 
 def _b64decode(value: str) -> bytes:
     return base64.urlsafe_b64decode(value.encode("ascii"))
+
+
+def _atomic_write_private(path: Path, content: str) -> None:
+    temp = path.with_name(f".{path.name}.tmp-{os.getpid()}")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    fd = os.open(temp, flags, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp, path)
+        path.chmod(0o600)
+    except Exception:
+        try:
+            temp.unlink()
+        except OSError:
+            pass
+        raise

@@ -9,6 +9,7 @@ from urllib.request import Request, urlopen
 
 from fusekit.errors import ProviderError
 from fusekit.providers.http import JsonHttpClient
+from fusekit.security.url import require_safe_url
 
 
 @dataclass(frozen=True)
@@ -126,9 +127,10 @@ class VercelProvider:
 def verify_live_url(url: str, expected_status: int = 200) -> dict[str, Any]:
     """Verify a live URL returns an acceptable HTTP status."""
 
+    url = require_safe_url(url, label="Live URL", allow_http_loopback=True)
     request = Request(url, headers={"User-Agent": "FuseKit/0.1"})
     try:
-        with urlopen(request, timeout=30) as response:
+        with urlopen(request, timeout=30) as response:  # nosec B310
             status = int(response.status)
     except URLError as exc:
         raise ProviderError(f"Live URL verification failed: {url}") from exc

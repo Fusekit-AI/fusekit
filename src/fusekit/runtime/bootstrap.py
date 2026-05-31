@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Protocol
 
 from fusekit.errors import FuseKitError
+from fusekit.security.url import require_safe_url
 
 OPENCLAW_INSTALL_URL = "https://openclaw.ai/install-cli.sh"
 
@@ -275,8 +276,9 @@ def _ensure_browser_plugin_config() -> None:
 
 
 def _download_file(url: str, destination: Path) -> None:
+    url = require_safe_url(url, label="Runtime component installer URL")
     try:
-        with urllib.request.urlopen(url, timeout=60) as response:
+        with urllib.request.urlopen(url, timeout=60) as response:  # nosec B310
             data = response.read()
     except OSError as exc:
         raise FuseKitError(f"Could not download runtime component installer: {url}") from exc

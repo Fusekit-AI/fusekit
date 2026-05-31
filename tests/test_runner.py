@@ -4,7 +4,10 @@ import json
 import shlex
 import subprocess
 import tarfile
+import threading
+from http.server import ThreadingHTTPServer
 from pathlib import Path
+from urllib.request import urlopen
 
 import pytest
 
@@ -35,7 +38,7 @@ from fusekit.runner.remote import (
     render_cloud_init,
     should_include_app_path,
 )
-from fusekit.runner.server import control_room_payload
+from fusekit.runner.server import _handler, _is_loopback, control_room_payload
 from fusekit.security import scan_for_secret_leaks
 from fusekit.vault import Vault
 
@@ -90,6 +93,7 @@ def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
     assert "cloud.oracle.com" in plan.deeplink_url
     assert "fusekit launch" in plan.bootstrap_command
     assert "python_cmd=python3" in plan.bootstrap_command
+    assert "sys.version_info >= (3, 10)" in plan.bootstrap_command
     assert "retry \"$python_cmd\" -m pip install --user --upgrade" in plan.bootstrap_command
     assert "fusekit --version" in plan.bootstrap_command
     assert "Git is required in OCI Cloud Shell for git+ FuseKit packages" in plan.bootstrap_command
@@ -247,6 +251,31 @@ def test_control_room_payload_reports_corrupt_gate_state(tmp_path) -> None:
 
     assert payload["gates"] == []
     assert "Gate state could not be read" in str(payload["gate_state_error"])
+
+
+def test_control_room_server_uses_local_only_and_security_headers(tmp_path) -> None:
+    assert _is_loopback("127.0.0.1")
+    assert _is_loopback("localhost")
+    assert not _is_loopback("0.0.0.0")
+
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with urlopen(f"http://127.0.0.1:{server.server_port}/", timeout=5) as response:
+            headers = {key.lower(): value for key, value in response.headers.items()}
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert headers["cache-control"] == "no-store"
+    assert headers["x-content-type-options"] == "nosniff"
+    assert headers["x-frame-options"] == "DENY"
+    assert "frame-ancestors 'none'" in headers["content-security-policy"]
 
 
 def test_remote_bootstrap_artifacts_are_self_contained() -> None:

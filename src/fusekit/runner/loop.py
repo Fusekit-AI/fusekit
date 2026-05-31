@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -31,6 +32,8 @@ def run_remote_loop(
         job.save(job_state)
         completed = subprocess.run(
             [
+                sys.executable,
+                "-m",
                 "fusekit",
                 "launch",
                 str(app_path),

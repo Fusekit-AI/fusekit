@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import stat
 
 import pytest
 
@@ -27,6 +28,17 @@ def test_vault_encrypts_and_rejects_wrong_passphrase(tmp_path) -> None:
 
     with pytest.raises(VaultError):
         Vault.open(vault_path, "wrong passphrase")
+
+
+def test_vault_writes_owner_only_permissions(tmp_path) -> None:
+    vault_path = tmp_path / "fusekit.vault.json"
+    vault = Vault.empty()
+    vault.put("provider.token", "provider_token", "test", "token", "secret-value")
+
+    vault.save(vault_path, "passphrase")
+
+    mode = stat.S_IMODE(vault_path.stat().st_mode)
+    assert mode == 0o600
 
 
 def test_public_index_contains_no_values(tmp_path) -> None:

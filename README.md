@@ -213,7 +213,7 @@ FuseKit expects the OpenClaw CLI browser surface documented as `openclaw browser
 
 Bootstrap uses OpenClaw's documented local-prefix installer (`https://openclaw.ai/install-cli.sh`) rather than assuming OpenClaw is already on the machine. After download/install, FuseKit verifies the OpenClaw binary with `openclaw --version`, `openclaw doctor --non-interactive`, and `openclaw browser status --json` before launch continues, so a partial runtime install fails immediately instead of becoming a later setup blocker. FuseKit runs OpenClaw with a FuseKit-owned `OPENCLAW_HOME`, writes a private OpenClaw config if needed, disables page evaluate by default, and self-heals the browser plugin allowlist in that private runtime state. `--no-bootstrap` is available only when you intentionally want to manage the runtime yourself or run an explicit local rehearsal.
 
-FuseKit's bootstrap downloads the OpenClaw installer using Python itself, so it does not require `curl` to already exist. The remaining unavoidable starting point is a working Python 3.9+ interpreter to run FuseKit. Provider-created gates such as CAPTCHA, MFA, billing verification, consent screens, domain ownership verification, and production DNS approval are not bypassed; FuseKit pauses there, guides the human, then resumes.
+FuseKit's bootstrap downloads the OpenClaw installer using Python itself, so it does not require `curl` to already exist. The remaining unavoidable starting point is a working Python 3.10+ interpreter to run FuseKit. Provider-created gates such as CAPTCHA, MFA, billing verification, consent screens, domain ownership verification, and production DNS approval are not bypassed; FuseKit pauses there, guides the human, then resumes.
 
 ## OCI Runner Lane
 

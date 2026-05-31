@@ -118,6 +118,28 @@ def test_openclaw_spine_can_request_labelled_snapshots_and_fresh_diagnostics() -
     assert calls[2][-5:] == ["requests", "--filter", "api", "--clear", "--json"]
 
 
+def test_openclaw_spine_public_serialization_redacts_browser_output_and_typed_text() -> None:
+    def runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+        if command[-1] == "secret-token-value":
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout='{"text":"secret-token-value"}',
+            stderr="",
+        )
+
+    spine = OpenClawBrowserSpine(profile="work", runner=runner)
+
+    typed = spine.fill_label("ref-2", "secret-token-value").to_dict()
+    snapshot = spine.snapshot().to_dict()
+
+    assert "secret-token-value" not in str(typed)
+    assert typed["command"][-1] == "[REDACTED]"
+    assert "secret-token-value" not in str(snapshot)
+    assert str(snapshot["stdout"]).startswith("[REDACTED_BROWSER_OUTPUT")
+
+
 def test_provider_playbook_uses_openclaw_spine_without_secrets() -> None:
     spine = OpenClawBrowserSpine(profile="openclaw", dry_run=True)
 

@@ -114,6 +114,12 @@ def build_cloud_shell_bootstrap_command(
                         "else printf '%s\\n' 'Python is required in OCI Cloud Shell.' >&2; "
                         "exit 43; fi"
                     ),
+                    (
+                        "\"$python_cmd\" - <<'PY'\n"
+                        "import sys\n"
+                        "raise SystemExit(0 if sys.version_info >= (3, 10) else 43)\n"
+                        "PY"
+                    ),
                     f"fusekit_package={package}",
                     (
                         "if [ \"${fusekit_package#git+}\" != \"$fusekit_package\" ] && "

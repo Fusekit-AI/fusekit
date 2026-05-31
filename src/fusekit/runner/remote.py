@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import tarfile
 import tempfile
@@ -289,15 +290,23 @@ def _create_app_archive(app_path: Path, archive: Path) -> None:
 def _extract_artifacts(archive: Path, output_dir: Path) -> None:
     try:
         with tarfile.open(archive, "r:gz") as tar:
-            safe_members = []
             for member in tar.getmembers():
                 target = (output_dir / member.name).resolve()
                 try:
                     target.relative_to(output_dir.resolve())
                 except ValueError:
                     continue
-                safe_members.append(member)
-            tar.extractall(output_dir, members=safe_members)
+                if member.isdir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                if not member.isfile():
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                source = tar.extractfile(member)
+                if source is None:
+                    continue
+                with source, target.open("wb") as destination:
+                    shutil.copyfileobj(source, destination)
     except tarfile.TarError as exc:
         raise FuseKitError("Remote artifact archive could not be read.") from exc
 

@@ -7,7 +7,7 @@ name = "fusekit"
 version = "0.1.0"
 description = "Detonated setup worker and encrypted capability vault for AI-built apps."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
   { name = "FuseKit Contributors" }
@@ -42,13 +42,13 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 strict = true
 packages = ["fusekit"]
 

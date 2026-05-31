@@ -35,10 +35,10 @@ class SpineResult:
 
         return {
             "action": self.action,
-            "command": list(self.command),
+            "command": _safe_command(self.action, self.command),
             "status": self.status,
-            "stdout": self.stdout,
-            "stderr": self.stderr,
+            "stdout": _safe_output(self.action, self.stdout),
+            "stderr": _safe_output(self.action, self.stderr),
         }
 
 
@@ -213,3 +213,27 @@ class OpenClawBrowserSpine:
 
 def _default_runner(command: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, capture_output=True, check=False, text=True, timeout=60)
+
+
+_BROWSER_OUTPUT_ACTIONS = {
+    "console_errors",
+    "network_requests",
+    "screenshot",
+    "snapshot",
+    "trace_stop",
+}
+
+
+def _safe_command(action: str, command: tuple[str, ...]) -> list[str]:
+    safe = list(command)
+    if action == "type" and safe:
+        safe[-1] = "[REDACTED]"
+    return safe
+
+
+def _safe_output(action: str, value: str) -> str:
+    if not value:
+        return ""
+    if action in _BROWSER_OUTPUT_ACTIONS:
+        return f"[REDACTED_BROWSER_OUTPUT bytes={len(value.encode('utf-8'))}]"
+    return value

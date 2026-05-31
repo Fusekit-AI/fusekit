@@ -20,6 +20,7 @@ from fusekit.providers.capability_pack import (
     validate_provider_pack,
     write_provider_pack,
 )
+from fusekit.security.url import require_safe_url
 from fusekit.vault import Vault
 
 PROVIDER_DOC_HINTS = {
@@ -227,20 +228,22 @@ class OpenAiPackDraftSource:
             ],
             "response_format": {"type": "json_object"},
         }
+        base_url = require_safe_url(
+            self.config.base_url,
+            label="Provider intelligence LLM base URL",
+            allow_http_loopback=True,
+        )
         request = Request(
-            self.config.base_url.rstrip("/") + "/chat/completions",
+            base_url.rstrip("/") + "/chat/completions",
             data=json.dumps(payload).encode("utf-8"),
             method="POST",
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
         )
         try:
-            with urlopen(request, timeout=90) as response:
+            with urlopen(request, timeout=90) as response:  # nosec B310
                 data = json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            raise ProviderError(
-                f"Provider intelligence LLM failed HTTP {exc.code}: {detail}"
-            ) from exc
+            raise ProviderError(f"Provider intelligence LLM failed HTTP {exc.code}.") from exc
         except (URLError, json.JSONDecodeError, KeyError) as exc:
             raise ProviderError(f"Provider intelligence LLM failed: {exc}") from exc
         content = str(data["choices"][0]["message"]["content"])

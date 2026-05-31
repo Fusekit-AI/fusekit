@@ -24,7 +24,7 @@ if [ -z "$PYTHON_BIN" ]; then
   elif command -v python >/dev/null 2>&1; then
     PYTHON_BIN="python"
   else
-    echo "FuseKit needs Python 3.9+ to start. Install Python, then rerun this script." >&2
+    echo "FuseKit needs Python 3.10+ to start. Install Python, then rerun this script." >&2
     exit 1
   fi
 fi
@@ -32,8 +32,8 @@ fi
 "$PYTHON_BIN" - <<'PY'
 import sys
 
-if sys.version_info < (3, 9):
-    raise SystemExit("FuseKit needs Python 3.9+ to start.")
+if sys.version_info < (3, 10):
+    raise SystemExit("FuseKit needs Python 3.10+ to start.")
 PY
 
 "$PYTHON_BIN" -m venv "$VENV_DIR"

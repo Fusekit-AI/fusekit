@@ -1792,17 +1792,21 @@ function escapeAttr(value) {
   return escapeHtml(value).replaceAll('"', "&quot;");
 }
 
+function classToken(value) {
+  return String(value || "").replace(/[^a-zA-Z0-9_-]/g, "");
+}
+
 function renderSteps(job) {
   const root = document.querySelector("[data-steps]");
   root.innerHTML = (job.steps || [])
     .map((step, index) => `
-      <li class="step-card ${escapeHtml(step.status)}" data-step-id="${escapeHtml(step.id)}">
+      <li class="step-card ${classToken(step.status)}" data-step-id="${escapeAttr(step.id)}">
         <span class="step-number">${String(index + 1).padStart(2, "0")}</span>
         <div class="step-copy">
           <strong>${escapeHtml(step.label)}</strong>
           <span>${escapeHtml(stepDetail(step))}</span>
         </div>
-        <span class="badge ${escapeHtml(step.status)}">${escapeHtml(label(step.status))}</span>
+        <span class="badge ${classToken(step.status)}">${escapeHtml(label(step.status))}</span>
       </li>
     `)
     .join("");
@@ -1824,7 +1828,7 @@ function renderArtifacts(job) {
           <strong>${escapeHtml(name)}</strong>
           <code>${escapeHtml(path)}</code>
         </div>
-        <button type="button" data-copy="${escapeHtml(path)}">Copy path</button>
+        <button type="button" data-copy="${escapeAttr(path)}">Copy path</button>
       </li>
     `)
     .join("");
@@ -1839,7 +1843,7 @@ function render(job) {
   const next = nextStep(job, current);
   const statusPill = document.querySelector("[data-job-status]");
   statusPill.textContent = label(job.status);
-  statusPill.className = `pill status ${job.status}`;
+  statusPill.className = `pill status ${classToken(job.status)}`;
   document.querySelector("[data-updated-at]").textContent = "Updated just now";
   document.querySelector("[data-progress-label]").textContent = `${prog.done}/${prog.total} steps`;
   document.querySelector("[data-progress-bar]").style.width = `${prog.percent}%`;
@@ -1856,7 +1860,7 @@ function render(job) {
   scene.className = `snow-scene state-${state}`;
   document.querySelector("[data-snow-caption]").textContent = mascotCaption(state);
   const dot = document.querySelector("[data-focus-dot]");
-  dot.className = `mini-dot ${current?.status || job.status}`;
+  dot.className = `mini-dot ${classToken(current?.status || job.status)}`;
   document.querySelector("[data-current-title]").textContent = current?.label || "Launch complete";
   document.querySelector("[data-current-detail]").textContent =
     current ? stepDetail(current) : "FuseKit is preserving encrypted and redacted artifacts.";

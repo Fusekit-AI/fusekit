@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+from fusekit.errors import FuseKitError
 from fusekit.runner.control_room import (
     control_room_payload as build_control_room_payload,
 )
@@ -19,6 +21,11 @@ from fusekit.runner.job import JobState
 def serve_control_room(job_state: Path, host: str = "127.0.0.1", port: int = 8765) -> str:
     """Serve a live control room until interrupted."""
 
+    if not _is_loopback(host) and os.environ.get("FUSEKIT_ALLOW_REMOTE_CONTROL_ROOM") != "1":
+        raise FuseKitError(
+            "Control room serves local job metadata and is local-only by default. "
+            "Set FUSEKIT_ALLOW_REMOTE_CONTROL_ROOM=1 to bind a non-loopback host."
+        )
     handler = _handler(job_state)
     server = ThreadingHTTPServer((host, port), handler)
     url = f"http://{host}:{server.server_port}"
@@ -57,6 +64,7 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
             self.send_response(200)
             self.send_header("content-type", "application/json")
             self.send_header("content-length", str(len(data)))
+            self._write_security_headers()
             self.end_headers()
             self.wfile.write(data)
 
@@ -65,11 +73,34 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
             self.send_response(200)
             self.send_header("content-type", "text/html; charset=utf-8")
             self.send_header("content-length", str(len(data)))
+            self._write_security_headers()
             self.end_headers()
             self.wfile.write(data)
+
+        def _write_security_headers(self) -> None:
+            self.send_header("cache-control", "no-store")
+            self.send_header("x-content-type-options", "nosniff")
+            self.send_header("referrer-policy", "no-referrer")
+            self.send_header("x-frame-options", "DENY")
+            self.send_header(
+                "content-security-policy",
+                "default-src 'self'; "
+                "connect-src 'self'; "
+                "img-src 'self' data:; "
+                "style-src 'unsafe-inline'; "
+                "script-src 'unsafe-inline'; "
+                "base-uri 'none'; "
+                "form-action 'none'; "
+                "frame-ancestors 'none'",
+            )
 
     return ControlRoomHandler
 
 
 def _live_html(job: JobState, job_state: Path) -> str:
     return render_control_room(job, gate_path=job_state.parent / "gates.json")
+
+
+def _is_loopback(host: str) -> bool:
+    normalized = host.strip().lower().strip("[]")
+    return normalized in {"127.0.0.1", "localhost", "::1"}

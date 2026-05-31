@@ -5,14 +5,16 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Protocol
+from typing import Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from fusekit.errors import ProviderError
 from fusekit.llm import LlmConfig
+from fusekit.security.url import require_safe_url
 from fusekit.spine.openclaw import SpineResult
 from fusekit.spine.playbooks import BrowserPlaybookEvent
 from fusekit.vault import Vault
@@ -181,8 +183,13 @@ class OpenAiUiNavigator:
             ],
             "response_format": {"type": "json_object"},
         }
+        base_url = require_safe_url(
+            self.config.base_url,
+            label="UI inference LLM base URL",
+            allow_http_loopback=True,
+        )
         request = Request(
-            self.config.base_url.rstrip("/") + "/chat/completions",
+            base_url.rstrip("/") + "/chat/completions",
             data=json.dumps(payload).encode("utf-8"),
             method="POST",
             headers={
@@ -191,11 +198,10 @@ class OpenAiUiNavigator:
             },
         )
         try:
-            with urlopen(request, timeout=60) as response:
+            with urlopen(request, timeout=60) as response:  # nosec B310
                 data = json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            raise ProviderError(f"UI inference failed with HTTP {exc.code}: {detail}") from exc
+            raise ProviderError(f"UI inference failed with HTTP {exc.code}.") from exc
         except (URLError, json.JSONDecodeError, KeyError) as exc:
             raise ProviderError(f"UI inference failed: {exc}") from exc
         content = str(data["choices"][0]["message"]["content"])

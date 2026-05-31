@@ -9,6 +9,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from fusekit.errors import ProviderError
+from fusekit.security.url import require_relative_api_path, require_safe_url
 
 
 @dataclass(frozen=True)
@@ -28,9 +29,11 @@ class JsonHttpClient:
     ) -> dict[str, Any]:
         """Send a JSON request and return a JSON mapping."""
 
+        base_url = require_safe_url(self.base_url, label="Provider API base URL")
+        path = require_relative_api_path(path)
         body = json.dumps(payload).encode("utf-8") if payload is not None else None
         request = Request(
-            self.base_url.rstrip("/") + path,
+            base_url.rstrip("/") + path,
             data=body,
             method=method,
             headers={
@@ -41,11 +44,10 @@ class JsonHttpClient:
             },
         )
         try:
-            with urlopen(request, timeout=30) as response:
+            with urlopen(request, timeout=30) as response:  # nosec B310
                 text = response.read().decode("utf-8")
         except HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            raise ProviderError(f"{method} {path} failed with HTTP {exc.code}: {detail}") from exc
+            raise ProviderError(f"{method} {path} failed with HTTP {exc.code}.") from exc
         except URLError as exc:
             raise ProviderError(f"{method} {path} failed: {exc.reason}") from exc
         if not text:
