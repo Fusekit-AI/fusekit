@@ -443,6 +443,20 @@ def _diagnostic_events(
                 note=_redact_error(trace.stdout.strip()[:400]),
             )
         )
+    for method, action in (
+        ("console_errors", "console.errors"),
+        ("network_requests", "network.requests"),
+    ):
+        result = _try_spine(spine, method)
+        if result and result.stdout:
+            events.append(
+                BrowserPlaybookEvent(
+                    provider=provider,
+                    action=action,
+                    status="captured",
+                    note=_redact_error(result.stdout.strip()[:400]),
+                )
+            )
     snapshot = _safe_snapshot(spine)
     if snapshot:
         events.append(
