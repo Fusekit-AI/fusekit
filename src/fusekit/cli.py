@@ -29,6 +29,7 @@ from fusekit.providers.automation import (
     run_provider_pack_setup,
 )
 from fusekit.providers.capability_pack import (
+    ProviderCapabilityPack,
     handoff_from_provider_pack,
     load_provider_pack,
     pack_default_path,
@@ -45,7 +46,7 @@ from fusekit.providers.intelligence import (
     ProviderResearchSource,
 )
 from fusekit.providers.vercel import verify_live_url
-from fusekit.providers.verification import verify_provider_pack
+from fusekit.providers.verification import VerificationResult, verify_provider_pack
 from fusekit.rollback import execute_native_rollback, plan_pack_rollback, plan_rollback, start_over
 from fusekit.runner import JobState, RunnerResolution, resolve_runner
 from fusekit.runner.cloud_shell import build_cloud_shell_launch_plan, write_cloud_shell_launcher
@@ -78,6 +79,7 @@ from fusekit.runtime.bootstrap import openclaw_state_home
 from fusekit.scanner import scan_repo
 from fusekit.security import scan_for_secret_leaks
 from fusekit.spine import (
+    BrowserPlaybookEvent,
     OpenAiUiNavigator,
     OpenClawBrowserSpine,
     PlaywrightBrowserSpine,
@@ -268,6 +270,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     apply.add_argument("--secret", action="append", default=[], help="NAME=env:ENV_VAR")
     _verify_retry_args(apply)
+    _computer_use_args(apply)
     apply.add_argument("--audit-log", type=Path, default=Path(".fusekit/audit.jsonl"))
     apply.add_argument("--receipt-json", type=Path, default=Path(".fusekit/setup_receipt.json"))
     apply.add_argument("--receipt-md", type=Path, default=Path(".fusekit/setup_receipt.md"))
@@ -418,6 +421,20 @@ def _provider_apply_args(parser: argparse.ArgumentParser) -> None:
     _gate_args(parser)
 
 
+def _computer_use_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--spine",
+        choices=("system", "openclaw", "playwright"),
+        default="openclaw",
+    )
+    parser.add_argument("--openclaw-profile", default="openclaw")
+    parser.add_argument("--headless-browser", action="store_true")
+    parser.add_argument("--infer-ui", action="store_true")
+    parser.add_argument("--dry-run-spine", action="store_true")
+    parser.add_argument("--open-browser", action="store_true")
+    parser.add_argument("--repair-ui-steps", type=int, default=12)
+
+
 def _verify_retry_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--verify-attempts", type=int, default=1)
     parser.add_argument("--verify-retry-seconds", type=float, default=0.0)
@@ -440,16 +457,7 @@ def _launch_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--no-open-launcher", action="store_true")
     _runner_oci_args(parser)
     parser.add_argument("--capture-stdin", action="store_true")
-    parser.add_argument(
-        "--spine",
-        choices=("system", "openclaw", "playwright"),
-        default="openclaw",
-    )
-    parser.add_argument("--openclaw-profile", default="openclaw")
-    parser.add_argument("--headless-browser", action="store_true")
-    parser.add_argument("--infer-ui", action="store_true")
-    parser.add_argument("--dry-run-spine", action="store_true")
-    parser.add_argument("--open-browser", action="store_true")
+    _computer_use_args(parser)
     parser.add_argument(
         "--no-bootstrap",
         action="store_true",
@@ -2195,11 +2203,166 @@ def _verify_provider_packs(
         all_ok = all(result.status in {"ok", "skipped"} for result in results)
         any_pending = any(result.status == "pending" for result in results)
         overall = "ok" if all_ok else "pending" if any_pending else "failed"
+        if overall != "ok" and _attempt_provider_verification_repair(
+            args,
+            pack,
+            results,
+            vault,
+            audit,
+            receipt,
+        ):
+            results = verify_provider_pack(
+                pack,
+                vault,
+                live_url=getattr(args, "live_url", ""),
+                attempts=int(getattr(args, "verify_attempts", 1)),
+                retry_seconds=float(getattr(args, "verify_retry_seconds", 0.0)),
+            )
+            payload = {
+                "provider": pack.provider,
+                "results": [result.to_dict() for result in results],
+            }
+            audit.record("provider_pack.verify_after_repair", payload)
+            all_ok = all(result.status in {"ok", "skipped"} for result in results)
+            any_pending = any(result.status == "pending" for result in results)
+            overall = "ok" if all_ok else "pending" if any_pending else "failed"
         receipt.add_action("provider_pack.verify", overall, payload)
         if overall != "ok" and not args.allow_incomplete:
             raise FuseKitError(
                 f"Provider verification failed for {pack.provider}. See redacted receipt/audit."
             )
+
+
+def _attempt_provider_verification_repair(
+    args: argparse.Namespace,
+    pack: ProviderCapabilityPack,
+    results: list[VerificationResult],
+    vault: Vault,
+    audit: AuditLog,
+    receipt: Receipt,
+) -> bool:
+    """Run a bounded UI repair pass when provider verification fails."""
+
+    if not bool(getattr(args, "infer_ui", False)):
+        return False
+    if getattr(args, "spine", "openclaw") == "system":
+        receipt.add_action(
+            "provider_pack.repair",
+            "skipped",
+            {"provider": pack.provider, "reason": "computer-use spine is system-only"},
+        )
+        return False
+    failed = [result for result in results if result.status not in {"ok", "skipped"}]
+    if not failed:
+        return False
+    start_url = _provider_repair_start_url(pack)
+    if not start_url:
+        receipt.add_action(
+            "provider_pack.repair",
+            "skipped",
+            {"provider": pack.provider, "reason": "no provider repair URL"},
+        )
+        return False
+    goal = _provider_repair_goal(pack, failed)
+    try:
+        events = _run_provider_repair_navigation(args, pack, vault, start_url, goal)
+    except FuseKitError as exc:
+        blocked_payload = {"provider": pack.provider, "status": "blocked", "error": str(exc)}
+        audit.record("provider_pack.repair", blocked_payload)
+        receipt.add_action("provider_pack.repair", "blocked", blocked_payload)
+        return False
+    payload: dict[str, object] = {
+        "provider": pack.provider,
+        "status": "attempted",
+        "start_url": start_url,
+        "events": [event.to_dict() for event in events],
+    }
+    audit.record("provider_pack.repair", payload)
+    repair_ok = not any(event.status == "blocked" for event in events)
+    receipt.add_action("provider_pack.repair", "attempted" if repair_ok else "blocked", payload)
+    return repair_ok
+
+
+def _run_provider_repair_navigation(
+    args: argparse.Namespace,
+    pack: ProviderCapabilityPack,
+    vault: Vault,
+    start_url: str,
+    goal: str,
+) -> list[BrowserPlaybookEvent]:
+    max_steps = max(1, int(getattr(args, "repair_ui_steps", 12)))
+    if getattr(args, "spine", "openclaw") == "playwright":
+        spine = PlaywrightBrowserSpine(
+            headless=getattr(args, "headless_browser", False),
+            dry_run=bool(getattr(args, "dry_run_spine", False)),
+        )
+        try:
+            return run_inferred_navigation(
+                provider=pack.provider,
+                goal=goal,
+                start_url=start_url,
+                spine=spine,
+                navigator=OpenAiUiNavigator(_llm_config_from_args(args), vault),
+                max_steps=max_steps,
+                gate_retry_seconds=float(getattr(args, "gate_retry_seconds", 300.0)),
+                max_gate_attempts=int(getattr(args, "gate_max_attempts", 0)),
+            )
+        finally:
+            spine.close()
+    openclaw_spine = OpenClawBrowserSpine(
+        profile=getattr(args, "openclaw_profile", "openclaw"),
+        dry_run=bool(getattr(args, "dry_run_spine", False)),
+    )
+    return run_inferred_navigation(
+        provider=pack.provider,
+        goal=goal,
+        start_url=start_url,
+        spine=openclaw_spine,
+        navigator=OpenAiUiNavigator(_llm_config_from_args(args), vault),
+        max_steps=max_steps,
+        gate_retry_seconds=float(getattr(args, "gate_retry_seconds", 300.0)),
+        max_gate_attempts=int(getattr(args, "gate_max_attempts", 0)),
+    )
+
+
+def _provider_repair_start_url(pack: ProviderCapabilityPack) -> str:
+    return (
+        pack.handoff.project_url
+        or pack.handoff.token_url
+        or pack.handoff.login_url
+        or pack.handoff.signup_url
+    )
+
+
+def _provider_repair_goal(
+    pack: ProviderCapabilityPack,
+    failed: list[VerificationResult],
+) -> str:
+    failures = [
+        {
+            "kind": result.kind,
+            "target": result.target,
+            "status": result.status,
+            "details": result.to_dict().get("details", {}),
+        }
+        for result in failed
+    ]
+    return json.dumps(
+        {
+            "task": (
+                "Repair only the missing provider setup needed for verification to pass. "
+                "Use provider UI controls when safe, stop at service-created human gates, "
+                "do not bypass MFA/CAPTCHA/passkeys/payment/fraud/consent, and do not type "
+                "raw secrets except through approved hidden capture flows."
+            ),
+            "provider": pack.provider,
+            "setup_goals": list(pack.setup_goals),
+            "required_secrets": list(pack.required_secrets),
+            "failed_verification": failures,
+            "service_gates": list(pack.handoff.service_gates),
+        },
+        sort_keys=True,
+    )
 
 
 def _append_gitignore(path: Path) -> None:

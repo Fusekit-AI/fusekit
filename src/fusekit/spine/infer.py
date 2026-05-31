@@ -203,6 +203,7 @@ def run_inferred_navigation(
     gate_retry_seconds: float = 300.0,
     max_gate_attempts: int = 0,
     sleeper: Callable[[float], None] = time.sleep,
+    allowed_domains: tuple[str, ...] = (),
 ) -> list[BrowserPlaybookEvent]:
     """Observe, infer, act, and wait durably at provider gates."""
 
@@ -222,6 +223,7 @@ def run_inferred_navigation(
     action_steps = 0
     trace_running = _try_spine(spine, "trace_start") is not None
     spine.open(start_url)
+    navigation_domains = allowed_domains or (_root_domain(start_url),)
     while action_steps < max_steps:
         snapshot_result = spine.snapshot()
         snapshot = snapshot_result.stdout
@@ -241,7 +243,7 @@ def run_inferred_navigation(
             history=history,
         )
         try:
-            action = _validate_action(proposed)
+            action = _validate_action(proposed, allowed_domains=navigation_domains)
         except ProviderError as exc:
             trace = _stop_trace_if_needed(spine, trace_running)
             events.extend(_diagnostic_events(provider, spine, exc, trace))
@@ -353,12 +355,18 @@ def _coerce_action(raw: object) -> InferredUiAction:
     )
 
 
-def _validate_action(action: InferredUiAction) -> InferredUiAction:
+def _validate_action(
+    action: InferredUiAction,
+    *,
+    allowed_domains: tuple[str, ...] = (),
+) -> InferredUiAction:
     if action.action not in ALLOWED_ACTIONS:
         raise ProviderError(f"UI inference proposed unsupported action: {action.action}")
     sensitive_blob = " ".join([action.target, action.value, action.reason]).lower()
     if action.action == "open" and not _safe_https_url(action.url):
         raise ProviderError("UI inference proposed a non-HTTPS or unsupported navigation URL.")
+    if action.action == "open" and not _allowed_navigation_url(action.url, allowed_domains):
+        raise ProviderError("UI inference proposed navigation outside the provider domain.")
     if action.action in {"click_text", "fill_label", "wait_for_text"} and not action.target.strip():
         raise ProviderError(f"UI inference proposed {action.action} without a target.")
     if action.action == "fill_label" and not action.value:
@@ -387,6 +395,25 @@ def _looks_like_sensitive_value(value: str) -> bool:
 def _safe_https_url(url: str) -> bool:
     parsed = urlparse(url)
     return parsed.scheme == "https" and bool(parsed.netloc)
+
+
+def _allowed_navigation_url(url: str, allowed_domains: tuple[str, ...]) -> bool:
+    if not allowed_domains:
+        return True
+    host = (urlparse(url).hostname or "").lower()
+    return any(
+        host == domain or host.endswith(f".{domain}")
+        for domain in allowed_domains
+        if domain
+    )
+
+
+def _root_domain(url: str) -> str:
+    host = (urlparse(url).hostname or "").lower().strip(".")
+    labels = [part for part in host.split(".") if part]
+    if len(labels) <= 2:
+        return host
+    return ".".join(labels[-2:])
 
 
 def _try_spine(spine: InferenceSpine, method: str) -> SpineResult | None:

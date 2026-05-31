@@ -190,6 +190,28 @@ def test_inferred_navigation_rejects_non_https_navigation() -> None:
     assert "non-HTTPS" in recovery[0].note
 
 
+def test_inferred_navigation_rejects_cross_provider_navigation() -> None:
+    spine = PlaywrightBrowserSpine(dry_run=True)
+    navigator = StaticUiNavigator(
+        [
+            InferredUiAction("open", url="https://evil.example/phish", reason="leave provider"),
+        ]
+    )
+
+    events = run_inferred_navigation(
+        provider="github",
+        goal="create a token",
+        start_url="https://github.com/settings/tokens",
+        spine=spine,
+        navigator=navigator,
+        gate_retry_seconds=0,
+    )
+
+    recovery = [event for event in events if event.action == "recover"]
+    assert recovery
+    assert "outside the provider domain" in recovery[0].note
+
+
 def test_inferred_navigation_captures_recovery_event_on_action_failure() -> None:
     class FailingSpine(PlaywrightBrowserSpine):
         def click_text(self, text: str):  # type: ignore[no-untyped-def]

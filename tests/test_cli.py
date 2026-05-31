@@ -6,7 +6,14 @@ from urllib.error import URLError
 from fusekit.audit import assert_no_secret_text
 from fusekit.cli import main
 from fusekit.errors import FuseKitError
+from fusekit.manifest import ServiceRequirement, SetupManifest, write_manifest
+from fusekit.providers.capability_pack import (
+    VerificationRecipe,
+    synthesize_provider_pack,
+    write_provider_pack,
+)
 from fusekit.runner.oci_live import OciWorkspace
+from fusekit.spine.playbooks import BrowserPlaybookEvent
 from fusekit.vault import Vault
 
 
@@ -275,6 +282,96 @@ def test_cli_provider_verify_pending_is_not_success(monkeypatch, tmp_path, capsy
     )
     output = capsys.readouterr().out
     assert '"status": "pending"' in output
+
+
+def test_apply_repairs_failed_provider_verification_with_inferred_ui(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    pack_dir = app / ".fusekit" / "provider-packs"
+    pack_dir.mkdir(parents=True)
+    pack_path = pack_dir / "resend.json"
+    repaired_pack = synthesize_provider_pack(
+        "resend",
+        app,
+    )
+    object.__setattr__(repaired_pack, "setup", ())
+    object.__setattr__(
+        repaired_pack,
+        "verification",
+        (VerificationRecipe("env-present", "RESEND_API_KEY"),),
+    )
+    write_provider_pack(repaired_pack, pack_path)
+    manifest = SetupManifest(
+        app_name="app",
+        app_path=str(app),
+        services=(
+            ServiceRequirement(
+                provider="resend",
+                kind="email",
+                name="email",
+                capabilities=("capability_pack",),
+                secrets=("RESEND_API_KEY",),
+                settings={"capability_pack": str(pack_path.relative_to(app))},
+            ),
+        ),
+    )
+    manifest_path = tmp_path / "fusekit.yaml"
+    write_manifest(manifest, manifest_path)
+    passphrase = tmp_path / "passphrase.txt"
+    vault_path = tmp_path / "vault.json"
+    passphrase.write_text("passphrase\n", encoding="utf-8")
+
+    def fake_repair(args, pack, vault, start_url, goal):  # type: ignore[no-untyped-def]
+        del args, start_url, goal
+        vault.put(
+            "provider.resend.resend_api_key",
+            "provider_secret",
+            pack.provider,
+            "RESEND_API_KEY",
+            "repaired-secret-value",
+        )
+        return [
+            BrowserPlaybookEvent(
+                provider=pack.provider,
+                action="repair",
+                status="ok",
+                note="dry repair",
+            )
+        ]
+
+    monkeypatch.setattr("fusekit.cli._run_provider_repair_navigation", fake_repair)
+
+    assert (
+        main(
+            [
+                "apply",
+                str(manifest_path),
+                "--vault",
+                str(vault_path),
+                "--passphrase-file",
+                str(passphrase),
+                "--infer-ui",
+                "--dry-run-spine",
+                "--receipt-json",
+                str(app / ".fusekit" / "setup_receipt.json"),
+                "--receipt-md",
+                str(app / ".fusekit" / "setup_receipt.md"),
+                "--audit-log",
+                str(app / ".fusekit" / "audit.jsonl"),
+            ]
+        )
+        == 0
+    )
+
+    receipt = json.loads((app / ".fusekit" / "setup_receipt.json").read_text("utf-8"))
+    actions = receipt["actions"]
+    assert any(action["action"] == "provider_pack.repair" for action in actions)
+    assert actions[-1]["action"] == "provider_pack.verify"
+    assert actions[-1]["status"] == "ok"
+    assert "repaired-secret-value" not in json.dumps(receipt)
 
 
 def test_cli_refuses_raw_secret_argument(tmp_path) -> None:
