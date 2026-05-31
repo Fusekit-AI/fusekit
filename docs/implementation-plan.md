@@ -51,6 +51,7 @@
 - [x] OCI launcher copy hardening: Cloud Shell launcher clipboard failures now select the bootstrap command and explain the manual copy fallback instead of failing silently.
 - [x] OCI/runtime bootstrap hardening: `doctor` now verifies OpenClaw version, doctor, and browser status instead of accepting a merely present binary; Cloud Shell bootstrap retries transient installs and can download public GitHub app sources without Git; OCI VMs use a dedicated Python venv, persistent FuseKit/OpenClaw PATH exports, and clearer remote command failures.
 - [x] OpenClaw capability hardening: browser snapshots now use efficient JSON payloads by default, optional label overlays are available for human targeting, diagnostics use fresh cleared errors/requests, inferred UI navigation can use rich wait conditions, provider gates scroll targets into view before highlighting, and FuseKit-owned OpenClaw state disables page evaluate by default.
+- [x] Privacy reassurance UX: the control-room Snowman now switches into an eyes-covered privacy pose for secret-bearing gates and running steps involving passphrases, tokens, API keys, private keys, payment/MFA checks, hidden prompts, or vault operations.
 
 ## Milestone 1: Repo Skeleton And CLI
 

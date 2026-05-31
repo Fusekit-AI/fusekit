@@ -262,6 +262,8 @@ def _render_snowman_scene(state: str) -> str:
               <span class="eye left"></span>
               <span class="eye right"></span>
               <span class="nose"></span>
+              <span class="privacy-mitten left"></span>
+              <span class="privacy-mitten right"></span>
             </span>
             <span class="snow-body">
               <span class="button one"></span>
@@ -293,6 +295,8 @@ def _mascot_state(step: JobStep | None, job: JobState) -> str:
         return "detonate"
     if job.status == "done":
         return "done"
+    if step and _is_privacy_step(step):
+        return "privacy"
     if step and step.status == "waiting":
         return "gate"
     if step and step.status == "failed":
@@ -309,12 +313,38 @@ def _mascot_caption(state: str) -> str:
         "launch": "packing the clean-room suitcase",
         "working": "tightening the little launch bolts",
         "gate": "waiting politely with a tiny access badge",
+        "privacy": "covering his eyes while secrets stay private",
         "verify": "checking the live app with a frosty magnifier",
         "repair": "opening the repair kit",
         "detonate": "melting away the worker state",
         "done": "saving only the encrypted survivors",
     }
     return captions.get(state, captions["launch"])
+
+
+_PRIVACY_STEP_SIGNALS = (
+    "api key",
+    "api-key",
+    "captcha",
+    "credential",
+    "hidden prompt",
+    "mfa",
+    "passkey",
+    "passphrase",
+    "password",
+    "payment",
+    "private key",
+    "secret",
+    "token",
+    "vault",
+)
+
+
+def _is_privacy_step(step: JobStep) -> bool:
+    if step.status not in {"waiting", "running"}:
+        return False
+    text = f"{step.id} {step.label} {step.detail}".lower()
+    return any(signal in text for signal in _PRIVACY_STEP_SIGNALS)
 
 
 def _current_step(job: JobState) -> JobStep | None:
@@ -872,6 +902,7 @@ button {
 .snow-body,
 .snow-hat,
 .arm,
+.privacy-mitten,
 .puddle,
 .steam {
   position: absolute;
@@ -945,6 +976,33 @@ button {
   background: #ff9f2e;
 }
 
+.privacy-mitten {
+  z-index: 2;
+  width: 15px;
+  height: 12px;
+  top: 10px;
+  border-radius: 999px 999px 7px 7px;
+  background: var(--snow-blue);
+  box-shadow:
+    inset -3px -3px 0 rgba(0, 21, 42, 0.16),
+    0 0 12px rgba(111, 215, 255, 0.42);
+  opacity: 0;
+  transform: translateY(7px) scale(0.75);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.privacy-mitten.left {
+  left: 6px;
+  transform: rotate(-16deg) translateY(7px) scale(0.75);
+}
+
+.privacy-mitten.right {
+  right: 6px;
+  transform: rotate(16deg) translateY(7px) scale(0.75);
+}
+
 .button {
   position: absolute;
   width: 5px;
@@ -1012,6 +1070,33 @@ button {
 .state-gate .snow-prop::after {
   content: "  · Tap the provider prompt, then I keep going.";
   color: rgba(255, 255, 255, 0.68);
+}
+
+.state-privacy .privacy-mitten {
+  opacity: 1;
+}
+
+.state-privacy .privacy-mitten.left {
+  animation: privacy-peek-left 2.4s ease-in-out infinite;
+  transform: rotate(-16deg) translateY(0) scale(1);
+}
+
+.state-privacy .privacy-mitten.right {
+  animation: privacy-peek-right 2.4s ease-in-out infinite;
+  transform: rotate(16deg) translateY(0) scale(1);
+}
+
+.state-privacy .arm.left {
+  transform: rotate(-42deg) translate(18px, -12px);
+}
+
+.state-privacy .arm.right {
+  transform: rotate(42deg) translate(-18px, -12px);
+}
+
+.state-privacy .snow-prop::after {
+  content: "  · Hidden prompts and vault encryption keep secrets yours.";
+  color: rgba(255, 255, 255, 0.72);
 }
 
 .state-working .snow-hat,
@@ -1098,6 +1183,16 @@ button {
 @keyframes snow-wave {
   0%, 100% { transform: rotate(18deg); }
   50% { transform: rotate(-30deg); }
+}
+
+@keyframes privacy-peek-left {
+  0%, 100% { transform: rotate(-16deg) translateY(0) scale(1); }
+  55% { transform: rotate(-11deg) translateY(-1px) scale(1.02); }
+}
+
+@keyframes privacy-peek-right {
+  0%, 100% { transform: rotate(16deg) translateY(0) scale(1); }
+  55% { transform: rotate(11deg) translateY(-1px) scale(1.02); }
 }
 
 @keyframes hat-tap {
@@ -1521,6 +1616,7 @@ function focusKicker(step) {
 function mascotState(step, job) {
   if (step?.id === "detonate.workspace") return "detonate";
   if (job.status === "done") return "done";
+  if (isPrivacyStep(step)) return "privacy";
   if (step?.status === "waiting") return "gate";
   if (step?.status === "failed") return "repair";
   if (step?.id?.includes("verify")) return "verify";
@@ -1535,11 +1631,35 @@ function mascotCaption(state) {
     launch: "packing the clean-room suitcase",
     working: "tightening the little launch bolts",
     gate: "waiting politely with a tiny access badge",
+    privacy: "covering his eyes while secrets stay private",
     verify: "checking the live app with a frosty magnifier",
     repair: "opening the repair kit",
     detonate: "melting away the worker state",
     done: "saving only the encrypted survivors",
   }[state] || "packing the clean-room suitcase";
+}
+
+const privacyStepSignals = [
+  "api key",
+  "api-key",
+  "captcha",
+  "credential",
+  "hidden prompt",
+  "mfa",
+  "passkey",
+  "passphrase",
+  "password",
+  "payment",
+  "private key",
+  "secret",
+  "token",
+  "vault",
+];
+
+function isPrivacyStep(step) {
+  if (!step || !["waiting", "running"].includes(step.status)) return false;
+  const text = `${step.id || ""} ${step.label || ""} ${step.detail || ""}`.toLowerCase();
+  return privacyStepSignals.some((signal) => text.includes(signal));
 }
 
 function inferGateProvider(text) {

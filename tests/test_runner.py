@@ -212,6 +212,23 @@ def test_control_room_gate_help_includes_resume_link_and_attempts(tmp_path) -> N
     assert '"attempts":2' in html or '"attempts": 2' in html
 
 
+def test_control_room_uses_privacy_mascot_for_secret_gates(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job.mark(
+        "provider.resend.authorization",
+        "waiting",
+        "Resend API key token is ready; paste it into FuseKit's hidden prompt.",
+    )
+
+    html = render_control_room(job)
+
+    assert "state-privacy" in html
+    assert "privacy-mitten" in html
+    assert "covering his eyes while secrets stay private" in html
+    assert "isPrivacyStep" in html
+    assert "hidden prompt" in html
+
+
 def test_control_room_payload_reports_corrupt_gate_state(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job_path = tmp_path / "job.json"
