@@ -1387,6 +1387,21 @@ function statusCounts(steps) {
   return counts;
 }
 
+function activeGate(job) {
+  return (job.gates || []).find((gate) => ["waiting", "resurfaced"].includes(gate.status));
+}
+
+function gateStep(gate) {
+  if (!gate) return null;
+  return {
+    id: gate.id || "provider.gate",
+    label: `${gate.provider || "Provider"} needs your approval`,
+    status: "waiting",
+    detail: gate.reason || "A provider-created human gate is waiting.",
+    updated_at: gate.updated_at,
+  };
+}
+
 function progress(job) {
   const steps = job.steps || [];
   const total = Math.max(steps.length, 1);
@@ -1395,6 +1410,8 @@ function progress(job) {
 }
 
 function currentStep(job) {
+  const gate = gateStep(activeGate(job));
+  if (gate) return gate;
   for (const status of ["failed", "waiting", "running"]) {
     const active = (job.steps || []).find((step) => step.status === status);
     if (active) return active;
@@ -1592,6 +1609,7 @@ function renderArtifacts(job) {
 function render(job) {
   const prog = progress(job);
   const counts = statusCounts(job.steps);
+  if (activeGate(job)) counts.waiting += 1;
   const current = currentStep(job);
   const next = nextStep(job, current);
   const statusPill = document.querySelector("[data-job-status]");

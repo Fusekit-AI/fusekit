@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from fusekit.runner.control_room import render_control_room
+from fusekit.runner.gates import GateService
 from fusekit.runner.job import JobState
 
 
@@ -28,7 +29,15 @@ def control_room_payload(job_state: Path) -> dict[str, Any]:
     """Return the live control-room payload."""
 
     job = JobState.load(job_state)
-    return job.to_dict()
+    payload = job.to_dict()
+    payload["gates"] = _gate_records(job_state)
+    return payload
+
+
+def _gate_records(job_state: Path) -> list[dict[str, str | int | float]]:
+    gate_path = job_state.parent / "gates.json"
+    service = GateService.load(gate_path)
+    return [record.to_dict() for record in service.records.values()]
 
 
 def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:

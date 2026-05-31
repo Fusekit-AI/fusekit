@@ -15,6 +15,7 @@ from fusekit.runner.cloud_shell import (
     render_cloud_shell_launcher,
 )
 from fusekit.runner.control_room import render_control_room
+from fusekit.runner.gates import GateService
 from fusekit.runner.job import JobState
 from fusekit.runner.loop import run_remote_loop
 from fusekit.runner.oci import capture_oci_api_key_profile, prepare_oci_api_signing_key
@@ -132,6 +133,26 @@ def test_control_room_renders_job_without_secrets(tmp_path) -> None:
     assert "Oracle Cloud is opening the clean room" in html
     assert "fk-test" in html
     assert payload["id"] == "fk-test"
+
+
+def test_control_room_payload_includes_active_gate_records(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job.mark("setup.execute", "running", "remote setup is running")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.vercel.authorization",
+        provider="vercel",
+        reason="vercel login/MFA/CAPTCHA/billing/consent/token creation",
+        resume_url="https://vercel.com/account/tokens",
+    )
+
+    payload = control_room_payload(job_path)
+
+    assert payload["status"] == "running"
+    assert payload["gates"][0]["provider"] == "vercel"
+    assert payload["gates"][0]["status"] == "waiting"
+    assert "token" in str(payload["gates"][0]["reason"])
 
 
 def test_remote_bootstrap_artifacts_are_self_contained() -> None:

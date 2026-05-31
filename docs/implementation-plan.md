@@ -41,6 +41,7 @@
 - [x] Vercel deployment hardening: project creation can connect the GitHub repository from normal `owner/repo` input, and production deployments can trigger from GitHub org/repo when Vercel's internal repo id is not available.
 - [x] Zero-knowledge launch defaults: FuseKit derives GitHub repo slug, Vercel project name, live URL, and DNS zone from the app source, manifest, or git remote so users do not need provider-specific vocabulary.
 - [x] Human-gate UX hardening: terminal handoff and control-room waiting states now show plain-language provider gate cards with exact human actions, reassurance that FuseKit keeps waiting, and no raw secret material.
+- [x] Live control-room gate hardening: served control-room payload now includes durable `gates.json` records so active provider gates surface even when the broader setup step is still running.
 
 ## Milestone 1: Repo Skeleton And CLI
 
