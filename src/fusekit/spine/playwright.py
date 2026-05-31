@@ -24,6 +24,9 @@ class PlaywrightBrowserSpine:
         self._playwright: Any | None = None
         self._context: Any | None = None
         self._page: Any | None = None
+        self._interactive_selector = (
+            "button,a[href],input,textarea,select,[role=button],[role=link],[aria-label]"
+        )
 
     def start(self) -> SpineResult:
         """Start a persistent Chromium context."""
@@ -67,7 +70,13 @@ class PlaywrightBrowserSpine:
         """Capture a sanitized page snapshot without input values or secrets."""
 
         if self.dry_run:
-            return SpineResult("snapshot", ("playwright", "snapshot"), "dry-run")
+            payload = {"url": "dry-run://browser", "title": "Dry run", "elements": []}
+            return SpineResult(
+                "snapshot",
+                ("playwright", "snapshot"),
+                "dry-run",
+                stdout=json.dumps(payload, sort_keys=True),
+            )
         page = self._ensure_page()
         payload = page.evaluate(
             """
@@ -93,16 +102,7 @@ class PlaywrightBrowserSpine:
                   .replace(/\\s+/g, " ")
                   .trim()
                   .slice(0, 160);
-              const selector = [
-                "button",
-                "a[href]",
-                "input",
-                "textarea",
-                "select",
-                "[role=button]",
-                "[role=link]",
-                "[aria-label]",
-              ].join(",");
+              const selector = arguments[0];
               const elements = Array.from(document.querySelectorAll(selector))
                 .filter(visible)
                 .slice(0, 80)
@@ -122,7 +122,8 @@ class PlaywrightBrowserSpine:
                 }));
               return { url: location.href, title: document.title, elements };
             }
-            """
+            """,
+            self._interactive_selector,
         )
         return SpineResult(
             "snapshot",
@@ -137,7 +138,9 @@ class PlaywrightBrowserSpine:
         if self.dry_run:
             return SpineResult("click_text", ("playwright", "click_text", text), "dry-run")
         page = self._ensure_page()
-        locator = page.get_by_role("button", name=text).or_(page.get_by_text(text)).first
+        locator = self._ref_locator(text).or_(page.get_by_role("button", name=text)).or_(
+            page.get_by_text(text)
+        ).first
         locator.click()
         return SpineResult("click_text", ("playwright", "click_text", text), "ok")
 
@@ -148,7 +151,7 @@ class PlaywrightBrowserSpine:
             return SpineResult("fill_label", ("playwright", "fill_label", label), "dry-run")
         page = self._ensure_page()
         by_hint = getattr(page, "get_by_" + ("place" "holder"))
-        page.get_by_label(label).or_(by_hint(label)).first.fill(value)
+        self._ref_locator(label).or_(page.get_by_label(label)).or_(by_hint(label)).first.fill(value)
         return SpineResult("fill_label", ("playwright", "fill_label", label), "ok")
 
     def press(self, key: str) -> SpineResult:
@@ -166,6 +169,26 @@ class PlaywrightBrowserSpine:
             return SpineResult("wait_for_text", ("playwright", "wait_for_text", text), "dry-run")
         self._ensure_page().get_by_text(text).first.wait_for()
         return SpineResult("wait_for_text", ("playwright", "wait_for_text", text), "ok")
+
+    def trace_start(self) -> SpineResult:
+        """Start Playwright tracing for failure recovery evidence."""
+
+        if self.dry_run:
+            return SpineResult("trace_start", ("playwright", "trace", "start"), "dry-run")
+        context = self._ensure_page().context
+        context.tracing.start(screenshots=True, snapshots=True, sources=False)
+        return SpineResult("trace_start", ("playwright", "trace", "start"), "ok")
+
+    def trace_stop(self) -> SpineResult:
+        """Stop Playwright tracing and return the trace path."""
+
+        if self.dry_run:
+            return SpineResult("trace_stop", ("playwright", "trace", "stop"), "dry-run")
+        context = self._ensure_page().context
+        path = Path.home() / ".fusekit" / "playwright-traces" / "provider-ui-trace.zip"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        context.tracing.stop(path=str(path))
+        return SpineResult("trace_stop", ("playwright", "trace", "stop"), "ok", stdout=str(path))
 
     def clipboard_text(self) -> str:
         """Read clipboard text from the browser context."""
@@ -190,3 +213,10 @@ class PlaywrightBrowserSpine:
         if self._page is None:
             self.start()
         return self._page
+
+    def _ref_locator(self, target: str) -> Any:
+        page = self._ensure_page()
+        ref = str(target).removeprefix("ref=").strip()
+        if ref.isdigit():
+            return page.locator(self._interactive_selector).nth(int(ref) - 1)
+        return page.locator("__fusekit_no_ref_match__")

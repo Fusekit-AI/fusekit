@@ -57,7 +57,25 @@ def test_openclaw_spine_supports_inferred_action_surface() -> None:
     assert calls[0][-2:] == ["click", "ref-1"]
     assert calls[1][-3:] == ["type", "ref-2", "redacted"]
     assert calls[2][-2:] == ["press", "Enter"]
-    assert calls[3][-1:] == ["snapshot"]
+    assert calls[3][-3:] == ["wait", "--text", "Ready"]
+
+
+def test_openclaw_spine_uses_interactive_json_snapshots_and_trace() -> None:
+    calls: list[list[str]] = []
+
+    def runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout='{"stats":{"refs":2}}', stderr="")
+
+    spine = OpenClawBrowserSpine(profile="work", runner=runner)
+
+    assert spine.snapshot().status == "ok"
+    assert spine.trace_start().status == "ok"
+    assert spine.trace_stop().status == "ok"
+
+    assert calls[0][-6:] == ["snapshot", "--interactive", "--compact", "--depth", "6", "--json"]
+    assert calls[1][-2:] == ["trace", "start"]
+    assert calls[2][-2:] == ["trace", "stop"]
 
 
 def test_provider_playbook_uses_openclaw_spine_without_secrets() -> None:
@@ -121,6 +139,8 @@ def test_inferred_navigation_waits_at_gate_then_resumes() -> None:
     )
 
     assert any(event.action == "gate" and event.status == "waiting" for event in events)
+    assert any(event.action == "observe" for event in events)
+    assert any(event.action == "observe.after" for event in events)
     assert events[-1].action == "stop"
     assert events[-1].status == "done"
 
@@ -146,3 +166,52 @@ def test_inferred_navigation_gate_attempt_limit_is_for_ci() -> None:
 
     assert events[-1].action == "gate"
     assert events[-1].status == "max-attempts"
+
+
+def test_inferred_navigation_rejects_non_https_navigation() -> None:
+    spine = PlaywrightBrowserSpine(dry_run=True)
+    navigator = StaticUiNavigator(
+        [
+            InferredUiAction("open", url="javascript:alert(1)", reason="unsafe nav"),
+        ]
+    )
+
+    events = run_inferred_navigation(
+        provider="github",
+        goal="create a token",
+        start_url="https://github.com/settings/tokens",
+        spine=spine,
+        navigator=navigator,
+        gate_retry_seconds=0,
+    )
+
+    recovery = [event for event in events if event.action == "recover"]
+    assert recovery
+    assert "non-HTTPS" in recovery[0].note
+
+
+def test_inferred_navigation_captures_recovery_event_on_action_failure() -> None:
+    class FailingSpine(PlaywrightBrowserSpine):
+        def click_text(self, text: str):  # type: ignore[no-untyped-def]
+            raise RuntimeError("button vanished sk-testsecret123456789012")
+
+    spine = FailingSpine(dry_run=True)
+    navigator = StaticUiNavigator(
+        [
+            InferredUiAction("click_text", target="Create API Key", reason="open key form"),
+        ]
+    )
+
+    events = run_inferred_navigation(
+        provider="resend",
+        goal="create an API key",
+        start_url="https://resend.com/api-keys",
+        spine=spine,
+        navigator=navigator,
+        gate_retry_seconds=0,
+    )
+
+    recovery = [event for event in events if event.action == "recover"]
+    assert recovery
+    assert recovery[0].status == "blocked"
+    assert "sk-testsecret" not in recovery[0].note

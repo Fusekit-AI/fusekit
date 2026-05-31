@@ -44,6 +44,7 @@
 - [x] Live control-room gate hardening: served control-room payload now includes durable `gates.json` records so active provider gates surface even when the broader setup step is still running.
 - [x] Gate-state loss hardening: corrupt gate state now surfaces as a repairable control-room error, and remote artifact retrieval preserves `.fusekit/gates.json` alongside receipts, vault, audit, and job state.
 - [x] Comfort/noise hardening: control-room refresh and clipboard failures now surface as calm, repairable UI states instead of silent no-ops, and the launcher validates public GitHub HTTPS app sources while using Git-free package/app download fallbacks where possible.
+- [x] Computer-use action-plane hardening: OpenClaw now uses interactive compact JSON snapshots and real wait commands, inferred navigation records before/after observations, starts/stops traces when supported, rejects unsafe navigation/key presses, resurfaces provider gates, and writes redacted recovery events instead of failing silently.
 
 ## Milestone 1: Repo Skeleton And CLI
 
@@ -114,6 +115,7 @@
 - [x] Add bounded inferred UI navigation loop with LLM-planned actions and service-gate stops.
 - [x] Allow the inferred UI navigation loop to run through OpenClaw by default, with Playwright as a fallback adapter.
 - [x] Make inferred UI service gates durable waits that retry/resnapshot instead of terminal stops.
+- [x] Add action-plane evidence around inferred navigation: observation snapshots, trace hooks, after-action snapshots, safe-key/HTTPS validation, and redacted blocked-action recovery.
 - [x] Detect Resend email dependency and add Resend provider handoff metadata.
 - [x] Add OpenClaw OpenAI auth fallback that records OpenClaw auth-profile state into the encrypted vault when present.
 - [x] Add validated provider capability-pack synthesis with a real-capable Plaid setup recipe.

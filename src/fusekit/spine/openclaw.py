@@ -75,7 +75,45 @@ class OpenClawBrowserSpine:
     def snapshot(self) -> SpineResult:
         """Capture a stable OpenClaw browser snapshot."""
 
-        return self._run("snapshot", ["snapshot"])
+        return self._run(
+            "snapshot",
+            [
+                "snapshot",
+                "--interactive",
+                "--compact",
+                "--depth",
+                "6",
+                "--json",
+            ],
+        )
+
+    def screenshot(self, *, full_page: bool = False) -> SpineResult:
+        """Capture a screenshot for visual recovery/debugging."""
+
+        args = ["screenshot"]
+        if full_page:
+            args.append("--full-page")
+        return self._run("screenshot", args)
+
+    def console_errors(self) -> SpineResult:
+        """Read browser console errors for recovery evidence."""
+
+        return self._run("console_errors", ["console", "--level", "error", "--json"])
+
+    def network_requests(self, *, filter_text: str = "api") -> SpineResult:
+        """Read matching network requests for recovery evidence."""
+
+        return self._run("network_requests", ["requests", "--filter", filter_text, "--json"])
+
+    def trace_start(self) -> SpineResult:
+        """Start an OpenClaw browser trace."""
+
+        return self._run("trace_start", ["trace", "start"])
+
+    def trace_stop(self) -> SpineResult:
+        """Stop an OpenClaw browser trace."""
+
+        return self._run("trace_stop", ["trace", "stop"])
 
     def click(self, ref: str) -> SpineResult:
         """Click a snapshot ref."""
@@ -103,10 +141,9 @@ class OpenClawBrowserSpine:
         return self._run("press", ["press", key])
 
     def wait_for_text(self, text: str) -> SpineResult:
-        """Capture a snapshot while waiting logic is handled by the inference loop."""
+        """Wait for visible text through OpenClaw."""
 
-        del text
-        return self._run("wait_for_text", ["snapshot"])
+        return self._run("wait_for_text", ["wait", "--text", text])
 
     def _run(self, action: str, args: list[str]) -> SpineResult:
         command = [
