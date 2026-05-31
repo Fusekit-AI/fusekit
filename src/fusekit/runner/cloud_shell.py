@@ -141,7 +141,7 @@ def build_cloud_shell_bootstrap_command(
                         "  fusekit source fetch \"$app_source\" --dest \"$work/app\" "
                         "--vault \"$vaultfile\" --passphrase-file \"$passfile\" "
                         "--github-auth auto --handoff --open-browser --capture-stdin "
-                        "--spine openclaw --openclaw-profile openclaw --infer-ui "
+                        "--spine openclaw --infer-ui "
                         "--gate-retry-seconds 300 --gate-max-attempts 0"
                         f"{source_fetch_suffix}"
                     ),

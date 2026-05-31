@@ -64,6 +64,10 @@ def test_fetch_private_github_source_uses_token_without_putting_it_in_url(tmp_pa
 def test_fetch_public_github_source_tries_main_archive(tmp_path) -> None:
     def opener(request: Request | str, timeout: float | None = None) -> Response:
         url = request.full_url if isinstance(request, Request) else request
+        if url == "https://api.github.com/repos/owner/public":
+            assert isinstance(request, Request)
+            assert "Authorization" not in request.headers
+            return Response(json.dumps({"default_branch": "main"}).encode())
         assert url == "https://codeload.github.com/owner/public/zip/refs/heads/main"
         return Response(_zip_bytes(root="public-main"))
 
@@ -76,6 +80,24 @@ def test_fetch_public_github_source_tries_main_archive(tmp_path) -> None:
     assert result.private is False
     assert result.auth_source == "public-archive"
     assert (tmp_path / "app" / "package.json").exists()
+
+
+def test_fetch_public_github_source_uses_default_branch_from_api(tmp_path) -> None:
+    def opener(request: Request | str, timeout: float | None = None) -> Response:
+        url = request.full_url if isinstance(request, Request) else request
+        if url == "https://api.github.com/repos/owner/public":
+            return Response(json.dumps({"default_branch": "release"}).encode())
+        assert url == "https://codeload.github.com/owner/public/zip/refs/heads/release"
+        return Response(_zip_bytes(root="public-release", name="app.js"))
+
+    result = fetch_github_source_archive(
+        "https://github.com/owner/public.git",
+        tmp_path / "app",
+        opener=opener,
+    )
+
+    assert result.default_branch == "release"
+    assert (tmp_path / "app" / "app.js").exists()
 
 
 def test_fetch_github_source_rejects_unsafe_archive_paths(tmp_path) -> None:

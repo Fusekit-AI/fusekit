@@ -19,7 +19,11 @@ from fusekit.runner.control_room import render_control_room
 from fusekit.runner.gates import GateService
 from fusekit.runner.job import JobState
 from fusekit.runner.loop import run_remote_loop
-from fusekit.runner.oci import capture_oci_api_key_profile, prepare_oci_api_signing_key
+from fusekit.runner.oci import (
+    build_oci_runner_plan,
+    capture_oci_api_key_profile,
+    prepare_oci_api_signing_key,
+)
 from fusekit.runner.oci_live import (
     OciProvisioner,
     OciWorkspace,
@@ -253,15 +257,22 @@ def test_remote_bootstrap_artifacts_are_self_contained() -> None:
     )
 
     assert "python3-venv" in cloud_init
-    assert "/opt/fusekit-python/bin/python -m pip install --upgrade fusekit" in cloud_init
     assert (
-        "/opt/fusekit-python/bin/python -m pip install --upgrade "
+        "fusekit-retry /opt/fusekit-python/bin/python -m pip install --upgrade fusekit"
+        in cloud_init
+    )
+    assert (
+        "fusekit-retry /opt/fusekit-python/bin/python -m pip install --upgrade "
         "git+https://github.com/example/fusekit.git"
     ) in git_cloud_init
-    assert "/opt/fusekit-python/bin/python -m playwright install --with-deps chromium" in cloud_init
+    assert (
+        "fusekit-retry /opt/fusekit-python/bin/python -m playwright install --with-deps chromium"
+        in cloud_init
+    )
     assert "chromium-browser" not in cloud_init
     assert "openclaw browser status --json" in cloud_init
     assert "fusekit-runner-verify" in cloud_init
+    assert "fusekit-retry" in cloud_init
     assert "export PATH=/opt/fusekit-python/bin:/opt/fusekit-openclaw/bin:$PATH" in cloud_init
     assert "FUSEKIT_OPENCLAW_BIN=/opt/fusekit-openclaw/bin/openclaw" in cloud_init
     assert "ln -sf /opt/fusekit-python/bin/fusekit /usr/local/bin/fusekit" in cloud_init
@@ -359,6 +370,90 @@ def test_oci_detonation_reports_provider_delete_failures() -> None:
     assert deleted["failed.compartment"] == "409 Conflict"
 
 
+def test_oci_provision_cleans_partial_workspace_when_readiness_fails() -> None:
+    class Created:
+        def __init__(self, resource_id: str) -> None:
+            self.id = resource_id
+
+    class FakeProvisioner(OciProvisioner):
+        def __init__(self) -> None:
+            self.auth = type("Auth", (), {"config": {"tenancy": "ocid1.tenancy.example"}})()
+            self.deleted: OciWorkspace | None = None
+
+        def _create_compartment(
+            self,
+            tenancy_id: str,
+            run_id: str,
+            tags: dict[str, str],
+        ) -> Created:
+            return Created("ocid1.compartment.example")
+
+        def _availability_domain(self, compartment_id: str) -> str:
+            return "AD-1"
+
+        def _create_vcn(self, compartment_id: str, run_id: str, tags: dict[str, str]) -> Created:
+            return Created("ocid1.vcn.example")
+
+        def _create_internet_gateway(
+            self,
+            compartment_id: str,
+            vcn_id: str,
+            run_id: str,
+            tags: dict[str, str],
+        ) -> Created:
+            return Created("ocid1.ig.example")
+
+        def _create_route_table(
+            self,
+            compartment_id: str,
+            vcn_id: str,
+            gateway_id: str,
+            run_id: str,
+            tags: dict[str, str],
+        ) -> Created:
+            return Created("ocid1.route.example")
+
+        def _create_nsg(
+            self,
+            compartment_id: str,
+            vcn_id: str,
+            run_id: str,
+            tags: dict[str, str],
+        ) -> Created:
+            return Created("ocid1.nsg.example")
+
+        def _create_subnet(
+            self,
+            compartment_id: str,
+            vcn_id: str,
+            route_table_id: str,
+            run_id: str,
+            tags: dict[str, str],
+        ) -> Created:
+            return Created("ocid1.subnet.example")
+
+        def _launch_with_capacity_fallback(self, **kwargs: object) -> tuple[Created, object]:
+            return Created("ocid1.instance.example"), kwargs["base_plan"]
+
+        def _public_ip(self, compartment_id: str, instance_id: str) -> str:
+            return ""
+
+        def detonate(self, workspace: OciWorkspace) -> dict[str, str]:
+            self.deleted = workspace
+            return {"instance": workspace.resource_ids.get("instance", "")}
+
+    vault = Vault.empty()
+    plan = build_oci_runner_plan(runner="oci", fusekit_package="fusekit")
+    provisioner = FakeProvisioner()
+
+    with pytest.raises(FuseKitError, match="public IP"):
+        provisioner.provision(plan, vault)
+
+    assert provisioner.deleted is not None
+    assert provisioner.deleted.resource_ids["instance"] == "ocid1.instance.example"
+    assert provisioner.deleted.resource_ids["compartment"] == "ocid1.compartment.example"
+
+
 def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()
@@ -412,6 +507,12 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
 
     assert result["output_dir"] == str(tmp_path / "out")
     assert any(command[0] == "scp" for command in calls)
+    assert any(command[0] == "ssh" and command[-1] == "true" for command in calls)
+    assert any(
+        "cloud-init status --wait && fusekit-runner-verify" in command[-1]
+        for command in calls
+        if command[0] == "ssh"
+    )
     assert any(
         command[0] == "scp" and command[-1].endswith("/.fusekit/fusekit.vault.json")
         for command in calls

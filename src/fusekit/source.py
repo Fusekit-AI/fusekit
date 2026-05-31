@@ -137,8 +137,6 @@ def _github_default_branch(
     opener: UrlOpener,
     timeout: float,
 ) -> str:
-    if not token:
-        return "main"
     request = _request(f"{GITHUB_API_BASE}/repos/{repo}", token=token)
     try:
         with opener(request, timeout=timeout) as response:

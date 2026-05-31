@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 import tarfile
 import tempfile
+import time
 from pathlib import Path
 from shlex import quote
 from typing import TYPE_CHECKING, Protocol
@@ -101,6 +102,19 @@ packages:
   - ca-certificates
   - curl
 write_files:
+  - path: /usr/local/sbin/fusekit-retry
+    permissions: '0755'
+    content: |
+      #!/bin/sh
+      set -eu
+      attempts=0
+      until "$@"; do
+        attempts=$((attempts + 1))
+        if [ "$attempts" -ge 5 ]; then
+          exit 1
+        fi
+        sleep $((attempts * 10))
+      done
   - path: /usr/local/sbin/fusekit-runner-verify
     permissions: '0755'
     content: |
@@ -129,21 +143,28 @@ write_files:
 runcmd:
   - mkdir -p /var/lib/fusekit-runner
   - python3 -m venv /opt/fusekit-python
-  - /opt/fusekit-python/bin/python -m pip install --upgrade pip setuptools wheel
-  - {install_fusekit}
-  - /opt/fusekit-python/bin/python -m playwright install --with-deps chromium
+  - fusekit-retry /opt/fusekit-python/bin/python -m pip install --upgrade pip setuptools wheel
+  - fusekit-retry {install_fusekit}
+  - fusekit-retry /opt/fusekit-python/bin/python -m playwright install --with-deps chromium
   - ln -sf /opt/fusekit-python/bin/fusekit /usr/local/bin/fusekit
   - ln -sf /opt/fusekit-python/bin/fusekit-runner-loop /usr/local/bin/fusekit-runner-loop
   - mkdir -p /opt/fusekit-openclaw
   - |
     python3 - <<'PY'
-    import pathlib, urllib.request
+    import pathlib, time, urllib.request
     url = {openclaw_install_url!r}
     target = pathlib.Path('/opt/fusekit-openclaw/install-openclaw.sh')
-    target.write_bytes(urllib.request.urlopen(url, timeout=60).read())
+    for attempt in range(1, 6):
+        try:
+            target.write_bytes(urllib.request.urlopen(url, timeout=60).read())
+            break
+        except OSError as exc:
+            if attempt == 5:
+                raise
+            time.sleep(attempt * 10)
     target.chmod(0o755)
     PY
-  - {install_openclaw}
+  - fusekit-retry {install_openclaw}
   - ln -sf /opt/fusekit-openclaw/bin/openclaw /usr/local/bin/openclaw
   - {verify_openclaw}
 """
@@ -173,6 +194,7 @@ def execute_remote_setup(
         remote = f"opc@{workspace.public_ip}"
         ssh = _ssh_base(key_path)
         scp = _scp_base(key_path)
+        _wait_for_remote_ready(run, ssh, remote)
         _run_checked(run, [*ssh, remote, "mkdir -p /var/lib/fusekit-runner/app"])
         _run_checked(run, [*scp, str(archive), f"{remote}:/var/lib/fusekit-runner/app.tar.gz"])
         _run_checked(
@@ -289,6 +311,12 @@ def _ssh_base(key_path: Path) -> list[str]:
         "ssh",
         "-o",
         "StrictHostKeyChecking=accept-new",
+        "-o",
+        "ConnectTimeout=15",
+        "-o",
+        "ServerAliveInterval=15",
+        "-o",
+        "ServerAliveCountMax=4",
         "-i",
         str(key_path),
     ]
@@ -299,9 +327,43 @@ def _scp_base(key_path: Path) -> list[str]:
         "scp",
         "-o",
         "StrictHostKeyChecking=accept-new",
+        "-o",
+        "ConnectTimeout=15",
+        "-o",
+        "ServerAliveInterval=15",
+        "-o",
+        "ServerAliveCountMax=4",
         "-i",
         str(key_path),
     ]
+
+
+def _wait_for_remote_ready(
+    runner: CommandRunner,
+    ssh: list[str],
+    remote: str,
+    *,
+    attempts: int = 60,
+    delay_seconds: int = 10,
+) -> None:
+    last_error = ""
+    for attempt in range(1, attempts + 1):
+        completed = runner([*ssh, remote, "true"])
+        if completed.returncode == 0:
+            _run_checked(
+                runner,
+                [
+                    *ssh,
+                    remote,
+                    "cloud-init status --wait && fusekit-runner-verify",
+                ],
+            )
+            return
+        last_error = completed.stderr.strip() or completed.stdout.strip()
+        if attempt < attempts:
+            time.sleep(delay_seconds)
+    detail = f" Last SSH error: {last_error[:500]}" if last_error else ""
+    raise FuseKitError(f"OCI runner did not become reachable over SSH.{detail}")
 
 
 def _run_checked(
@@ -334,14 +396,14 @@ def _default_runner(
             capture_output=True,
             check=False,
             text=True,
-            timeout=1800,
+            timeout=3600,
         )
     stdout_path.parent.mkdir(parents=True, exist_ok=True)
     completed = subprocess.run(
         command,
         capture_output=True,
         check=False,
-        timeout=1800,
+        timeout=3600,
     )
     stdout_path.write_bytes(completed.stdout)
     return subprocess.CompletedProcess(

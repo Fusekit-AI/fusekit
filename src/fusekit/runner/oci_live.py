@@ -94,53 +94,62 @@ class OciProvisioner:
         )
         tenancy_id = _auth_tenancy_id(self.auth)
         tags = {"fusekit": "true", "fusekit_run": run_id}
-        compartment = self._create_compartment(tenancy_id, run_id, tags)
-        compartment_id = str(compartment.id)
-        availability_domain = self._availability_domain(tenancy_id)
-        workspace = OciWorkspace(
-            id=run_id,
-            compartment_id=compartment_id,
-            availability_domain=availability_domain,
-            shape=plan.shape,
-        )
-        workspace.resource_ids["compartment"] = compartment_id
-        vcn = self._create_vcn(compartment_id, run_id, tags)
-        workspace.resource_ids["vcn"] = vcn.id
-        gateway = self._create_internet_gateway(compartment_id, vcn.id, run_id, tags)
-        workspace.resource_ids["internet_gateway"] = gateway.id
-        route_table = self._create_route_table(compartment_id, vcn.id, gateway.id, run_id, tags)
-        workspace.resource_ids["route_table"] = route_table.id
-        nsg = self._create_nsg(compartment_id, vcn.id, run_id, tags)
-        workspace.resource_ids["network_security_group"] = nsg.id
-        subnet = self._create_subnet(compartment_id, vcn.id, route_table.id, run_id, tags)
-        workspace.resource_ids["subnet"] = subnet.id
-        cloud_init = render_cloud_init(
-            fusekit_wheel_url=plan.fusekit_package,
-            openclaw_install_url=OPENCLAW_INSTALL_URL,
-        )
-        instance, selected_plan = self._launch_with_capacity_fallback(
-            base_plan=plan,
-            compartment_id=compartment_id,
-            availability_domain=availability_domain,
-            subnet_id=subnet.id,
-            nsg_id=nsg.id,
-            run_id=run_id,
-            ssh_public_key=ssh_key.public_key,
-            cloud_init=cloud_init,
-            tags=tags,
-        )
-        workspace.shape = selected_plan.shape
-        workspace.resource_ids["instance"] = instance.id
-        workspace.public_ip = self._public_ip(compartment_id, instance.id)
-        vault.put(
-            f"runner.oci.{run_id}.workspace",
-            "runner_workspace",
-            "oci",
-            "OCI clean-room runner workspace",
-            json.dumps(workspace.to_dict(), sort_keys=True),
-            {"run_id": run_id, "shape": workspace.shape, "public_ip": workspace.public_ip},
-        )
-        return workspace
+        workspace: OciWorkspace | None = None
+        try:
+            compartment = self._create_compartment(tenancy_id, run_id, tags)
+            compartment_id = str(compartment.id)
+            workspace = OciWorkspace(
+                id=run_id,
+                compartment_id=compartment_id,
+                availability_domain="",
+                shape=plan.shape,
+            )
+            workspace.resource_ids["compartment"] = compartment_id
+            availability_domain = self._availability_domain(tenancy_id)
+            workspace.availability_domain = availability_domain
+            vcn = self._create_vcn(compartment_id, run_id, tags)
+            workspace.resource_ids["vcn"] = vcn.id
+            gateway = self._create_internet_gateway(compartment_id, vcn.id, run_id, tags)
+            workspace.resource_ids["internet_gateway"] = gateway.id
+            route_table = self._create_route_table(compartment_id, vcn.id, gateway.id, run_id, tags)
+            workspace.resource_ids["route_table"] = route_table.id
+            nsg = self._create_nsg(compartment_id, vcn.id, run_id, tags)
+            workspace.resource_ids["network_security_group"] = nsg.id
+            subnet = self._create_subnet(compartment_id, vcn.id, route_table.id, run_id, tags)
+            workspace.resource_ids["subnet"] = subnet.id
+            cloud_init = render_cloud_init(
+                fusekit_wheel_url=plan.fusekit_package,
+                openclaw_install_url=OPENCLAW_INSTALL_URL,
+            )
+            instance, selected_plan = self._launch_with_capacity_fallback(
+                base_plan=plan,
+                compartment_id=compartment_id,
+                availability_domain=availability_domain,
+                subnet_id=subnet.id,
+                nsg_id=nsg.id,
+                run_id=run_id,
+                ssh_public_key=ssh_key.public_key,
+                cloud_init=cloud_init,
+                tags=tags,
+            )
+            workspace.shape = selected_plan.shape
+            workspace.resource_ids["instance"] = instance.id
+            workspace.public_ip = self._public_ip(compartment_id, instance.id)
+            if not workspace.public_ip:
+                raise FuseKitError("OCI runner did not receive a public IP address.")
+            vault.put(
+                f"runner.oci.{run_id}.workspace",
+                "runner_workspace",
+                "oci",
+                "OCI clean-room runner workspace",
+                json.dumps(workspace.to_dict(), sort_keys=True),
+                {"run_id": run_id, "shape": workspace.shape, "public_ip": workspace.public_ip},
+            )
+            return workspace
+        except Exception:
+            if workspace is not None:
+                self.detonate(workspace)
+            raise
 
     def detonate(self, workspace: OciWorkspace) -> dict[str, str]:
         """Delete a FuseKit-created OCI workspace and report any provider failures."""
