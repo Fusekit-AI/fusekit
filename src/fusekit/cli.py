@@ -6,11 +6,13 @@ import argparse
 import getpass
 import json
 import os
+import re
 import sys
 import time
 import uuid
 import webbrowser
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fusekit import __version__
 from fusekit.audit import AuditLog, Receipt
@@ -840,6 +842,7 @@ def _cmd_setup(args: argparse.Namespace) -> int:
     vault.save(args.vault, args._cached_passphrase)
     manifest_path = (args.manifest or (app_path / "fusekit.yaml")).resolve()
     manifest = scan_repo(app_path)
+    _apply_magic_defaults(args, manifest, app_path)
     write_manifest(manifest, manifest_path)
     pack_paths = _ensure_provider_packs(app_path, manifest)
     print(f"Scanned app and wrote manifest: {manifest_path}")
@@ -874,6 +877,7 @@ def _cmd_setup(args: argparse.Namespace) -> int:
 
 
 def _apply_loaded_manifest(args: argparse.Namespace, manifest: SetupManifest) -> None:
+    _apply_magic_defaults(args, manifest, Path(manifest.app_path))
     passphrase = _passphrase(args)
     vault = open_or_create(args.vault, passphrase)
     audit = AuditLog(args.audit_log)
@@ -1362,6 +1366,7 @@ def _detonate_openclaw_state_if_requested(args: argparse.Namespace) -> None:
 
 
 def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_name: str) -> int:
+    _apply_magic_defaults(args, scan_repo(app_path), app_path)
     job = JobState.create(f"fk-{uuid.uuid4().hex[:12]}", app_path, runner_name)
     job.mark("runner.resolve", "done", f"{runner_name} selected")
     if not args.no_bootstrap:
@@ -1474,10 +1479,12 @@ def _cmd_cloud_shell_runner_launch(
     app_path: Path,
     runner_name: str,
 ) -> int:
+    _apply_magic_defaults(args, scan_repo(app_path), app_path)
     job = JobState.create(f"fk-{uuid.uuid4().hex[:12]}", app_path, runner_name)
     job.mark("runner.resolve", "done", f"{runner_name} selected")
     args.job_state.parent.mkdir(parents=True, exist_ok=True)
     app_source = args.app_source or _infer_app_source(app_path)
+    args.app_source = app_source
     plan = build_cloud_shell_launch_plan(
         app_source=app_source,
         fusekit_package=args.fusekit_package,
@@ -2047,6 +2054,77 @@ def _provider_pack_path(app_path: Path, provider: str, service: ServiceRequireme
     return pack_path
 
 
+def _apply_magic_defaults(
+    args: argparse.Namespace,
+    manifest: SetupManifest,
+    app_path: Path,
+) -> None:
+    """Fill launch inputs that a non-technical user should not need to know."""
+
+    if not getattr(args, "app_source", ""):
+        args.app_source = _infer_app_source(app_path)
+    repo_slug = _normalize_github_repo_slug(str(getattr(args, "github_repo", ""))) or (
+        _normalize_github_repo_slug(str(getattr(args, "app_source", "")))
+    )
+    if repo_slug and not getattr(args, "github_repo", ""):
+        args.github_repo = repo_slug
+    if not getattr(args, "vercel_project", ""):
+        args.vercel_project = _slugify_project_name(repo_slug.split("/", 1)[1] if repo_slug else "")
+    if not getattr(args, "vercel_project", ""):
+        args.vercel_project = _slugify_project_name(manifest.app_name)
+    default_domain = _default_manifest_domain(manifest)
+    if default_domain and not getattr(args, "live_url", ""):
+        args.live_url = f"https://{default_domain}"
+    if not getattr(args, "dns_zone", ""):
+        host = default_domain or _hostname_from_url(getattr(args, "live_url", ""))
+        args.dns_zone = _infer_dns_zone(host)
+
+
+def _normalize_github_repo_slug(value: str) -> str:
+    raw = value.strip()
+    if not raw:
+        return ""
+    raw = raw.removesuffix(".git")
+    if raw.startswith("git@github.com:"):
+        raw = raw.removeprefix("git@github.com:")
+    elif "github.com/" in raw:
+        raw = raw.split("github.com/", 1)[1]
+    raw = raw.strip("/")
+    parts = raw.split("/")
+    if len(parts) >= 2 and all(parts[:2]):
+        return f"{parts[0]}/{parts[1]}"
+    return ""
+
+
+def _slugify_project_name(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9-]+", "-", value.strip().lower())
+    slug = re.sub(r"-+", "-", slug).strip("-")
+    return slug[:100]
+
+
+def _default_manifest_domain(manifest: SetupManifest) -> str:
+    if manifest.domains:
+        return manifest.domains[0].domain.strip().lower().removeprefix("www.")
+    return ""
+
+
+def _hostname_from_url(value: str) -> str:
+    if not value:
+        return ""
+    parsed = urlparse(value if "://" in value else f"https://{value}")
+    return (parsed.hostname or "").strip().lower().removeprefix("www.")
+
+
+def _infer_dns_zone(hostname: str) -> str:
+    host = hostname.strip().lower().removeprefix("www.")
+    if not host:
+        return ""
+    labels = [part for part in host.split(".") if part]
+    if len(labels) <= 2:
+        return host
+    return ".".join(labels[-2:])
+
+
 def _missing_required_pack_input(
     provider: str,
     args: argparse.Namespace,
@@ -2054,13 +2132,16 @@ def _missing_required_pack_input(
 ) -> str:
     if provider == "github" and not args.github_repo:
         return (
-            "Real GitHub setup is required by the manifest. Provide --github-repo, "
-            "or use --allow-incomplete for an explicit local rehearsal."
+            "Real GitHub setup is required by the manifest. FuseKit could not infer the "
+            "GitHub repository from --app-source or the app git remote. Add the app repo URL, "
+            "push the app to GitHub first, or use --allow-incomplete for an explicit local "
+            "rehearsal."
         )
     if provider == "vercel" and not args.vercel_project:
         return (
-            "Real Vercel setup is required by the manifest. Provide --vercel-project, "
-            "or use --allow-incomplete for an explicit local rehearsal."
+            "Real Vercel setup is required by the manifest. FuseKit could not infer a project "
+            "name from the repo URL or app name. Add --app-source, ensure the manifest has an "
+            "app_name, or use --allow-incomplete for an explicit local rehearsal."
         )
     if provider in {"cloudflare", "dns"} and manifest.domains:
         has_cloudflare = bool(os.environ.get("CLOUDFLARE_API_TOKEN"))

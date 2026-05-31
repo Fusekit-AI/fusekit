@@ -179,11 +179,7 @@ fusekit authorize cloudflare \
 
 fusekit apply /path/to/generated-app/fusekit.yaml \
   --vault .fusekit/fusekit.vault.json \
-  --github-repo owner/repo \
-  --vercel-project generated-app \
-  --vercel-git-repo-id 123456789 \
-  --vercel-git-ref main \
-  --dns-zone example.com \
+  --app-source https://github.com/owner/repo.git \
   --approve-dns \
   --secret APP_API_KEY=env:APP_API_KEY
 ```
@@ -193,17 +189,13 @@ One-command version:
 ```zsh
 fusekit install /path/to/generated-app
 /path/to/generated-app/.fusekit/setup.sh \
-  --github-repo owner/repo \
-  --vercel-project generated-app \
-  --vercel-git-repo-id 123456789 \
-  --vercel-git-ref main \
-  --dns-zone example.com \
+  --app-source https://github.com/owner/repo.git \
   --approve-dns \
   --capture-stdin \
   --secret APP_API_KEY=env:APP_API_KEY
 ```
 
-That one flow scans the app, writes/updates `fusekit.yaml`, opens the provider account/token/project pages through OpenClaw, pauses for human verification gates, captures approved credentials into the vault, wires services together, verifies the live URL when supplied, writes redacted audit/receipt artifacts, and detonates worker scratch state.
+That one flow scans the app, writes/updates `fusekit.yaml`, derives the GitHub repo, Vercel project, DNS zone, and live URL where possible, opens the provider account/token/project pages through OpenClaw, pauses for human verification gates, captures approved credentials into the vault, wires services together, verifies the live URL when supplied or inferred, writes redacted audit/receipt artifacts, and detonates worker scratch state. Provider-specific flags such as `--github-repo`, `--vercel-project`, `--dns-zone`, and `--live-url` are advanced overrides for unusual repos, monorepos, or domains.
 
 By default, `launch` uses `--fusekit-gates service-only`: it writes `.fusekit/setup_plan.json` and continues without extra FuseKit approval prompts. Use `--fusekit-gates explicit` when you want the older interactive FuseKit plan/DNS prompt gates for audit rehearsals.
 
@@ -263,9 +255,7 @@ Acceptance target:
 ```zsh
 fusekit launch /path/to/generated-app \
   --runner auto \
-  --github-repo owner/generated-app \
-  --vercel-project generated-app \
-  --dns-zone example.com \
+  --app-source https://github.com/owner/generated-app.git \
   --infer-ui \
   --verify-attempts 10 \
   --verify-retry-seconds 30 \

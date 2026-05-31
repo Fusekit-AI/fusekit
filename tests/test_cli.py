@@ -511,6 +511,48 @@ def test_launch_auto_runner_creates_cloud_shell_launcher(tmp_path, monkeypatch) 
     assert opened and "cloud.oracle.com" in opened[0]
 
 
+def test_launch_cloud_shell_derives_provider_inputs_for_zero_knowledge_user(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    app = tmp_path / "moonlite"
+    app.mkdir()
+    (app / "index.js").write_text("console.log(process.env.WEBHOOK_SECRET)", encoding="utf-8")
+    (app / "vercel.json").write_text(
+        json.dumps({"domains": ["rsvp.moonlite.test"]}),
+        encoding="utf-8",
+    )
+    passphrase = tmp_path / "passphrase.txt"
+    passphrase.write_text("passphrase\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("OCI_CONFIG_FILE", raising=False)
+    monkeypatch.setattr("webbrowser.open", lambda url: None)
+
+    assert (
+        main(
+            [
+                "launch",
+                str(app),
+                "--passphrase-file",
+                str(passphrase),
+                "--no-bootstrap",
+                "--app-source",
+                "https://github.com/fusekitdemo/moonlite-rsvp-demo.git",
+                "--fusekit-package",
+                "git+https://github.com/example/fusekit.git",
+            ]
+        )
+        == 0
+    )
+
+    plan = json.loads((app / ".fusekit" / "cloud_shell_plan.json").read_text("utf-8"))
+    command = plan["bootstrap_command"]
+    assert "--github-repo fusekitdemo/moonlite-rsvp-demo" in command
+    assert "--vercel-project moonlite-rsvp-demo" in command
+    assert "--dns-zone moonlite.test" in command
+    assert "--live-url https://rsvp.moonlite.test" in command
+
+
 def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch) -> None:
     app = tmp_path / "app"
     app.mkdir()

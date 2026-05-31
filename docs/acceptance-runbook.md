@@ -29,18 +29,16 @@ and detonation.
 
 ## Real Launch Command Shape
 
-Replace the repo, project, domain, package source, and passphrase path with the
-resources used for the acceptance run.
+Replace the app source, package source, and passphrase path with the resources
+used for the acceptance run. FuseKit derives the GitHub repo, Vercel project,
+DNS zone, and live URL from the repo URL and scanned manifest unless advanced
+overrides are supplied.
 
 ```zsh
 fusekit launch /path/to/moonlite-rsvp \
   --runner auto \
   --app-source https://github.com/owner/moonlite-rsvp.git \
   --fusekit-package git+https://github.com/owner/fusekit.git \
-  --github-repo owner/moonlite-rsvp \
-  --vercel-project moonlite-rsvp \
-  --dns-zone example.rsvp \
-  --live-url https://example.rsvp \
   --infer-ui \
   --capture-stdin \
   --verify-attempts 10 \
