@@ -1391,6 +1391,16 @@ function activeGate(job) {
   return (job.gates || []).find((gate) => ["waiting", "resurfaced"].includes(gate.status));
 }
 
+function gateStateErrorStep(job) {
+  if (!job.gate_state_error) return null;
+  return {
+    id: "gate.state.error",
+    label: "Gate state needs repair",
+    status: "failed",
+    detail: job.gate_state_error,
+  };
+}
+
 function gateStep(gate) {
   if (!gate) return null;
   return {
@@ -1410,6 +1420,8 @@ function progress(job) {
 }
 
 function currentStep(job) {
+  const gateError = gateStateErrorStep(job);
+  if (gateError) return gateError;
   const gate = gateStep(activeGate(job));
   if (gate) return gate;
   for (const status of ["failed", "waiting", "running"]) {
@@ -1610,6 +1622,7 @@ function render(job) {
   const prog = progress(job);
   const counts = statusCounts(job.steps);
   if (activeGate(job)) counts.waiting += 1;
+  if (job.gate_state_error) counts.failed += 1;
   const current = currentStep(job);
   const next = nextStep(job, current);
   const statusPill = document.querySelector("[data-job-status]");

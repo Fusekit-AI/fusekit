@@ -155,6 +155,18 @@ def test_control_room_payload_includes_active_gate_records(tmp_path) -> None:
     assert "token" in str(payload["gates"][0]["reason"])
 
 
+def test_control_room_payload_reports_corrupt_gate_state(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    (tmp_path / "gates.json").write_text("{not json", encoding="utf-8")
+
+    payload = control_room_payload(job_path)
+
+    assert payload["gates"] == []
+    assert "Gate state could not be read" in str(payload["gate_state_error"])
+
+
 def test_remote_bootstrap_artifacts_are_self_contained() -> None:
     cloud_init = render_cloud_init(openclaw_install_url="https://openclaw.ai/install-cli.sh")
     git_cloud_init = render_cloud_init(
@@ -296,8 +308,11 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         if stdout_path is not None:
             archive = tarfile.open(stdout_path, "w:gz")
             payload = tmp_path / "job.json"
+            gates = tmp_path / "gates.json"
             payload.write_text("{}", encoding="utf-8")
+            gates.write_text('{"gates":[]}', encoding="utf-8")
             archive.add(payload, arcname=".fusekit/job.json")
+            archive.add(gates, arcname=".fusekit/gates.json")
             archive.close()
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
@@ -323,6 +338,8 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         "trap 'rm -f /var/lib/fusekit-runner/passphrase' EXIT" in command[-1]
         for command in calls
     )
+    assert (tmp_path / "out" / ".fusekit" / "gates.json").exists()
+    assert any(".fusekit/gates.json" in command[-1] for command in calls if command[0] == "ssh")
     assert any("[ -n \"$existing\" ] || exit 44" in command[-1] for command in calls)
 
 

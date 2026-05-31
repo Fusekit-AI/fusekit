@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from fusekit.runner.control_room import render_control_room
-from fusekit.runner.gates import GateService
+from fusekit.runner.gates import GateRecord
 from fusekit.runner.job import JobState
 
 
@@ -30,14 +30,27 @@ def control_room_payload(job_state: Path) -> dict[str, Any]:
 
     job = JobState.load(job_state)
     payload = job.to_dict()
-    payload["gates"] = _gate_records(job_state)
+    gates, error = _gate_records(job_state)
+    payload["gates"] = gates
+    if error:
+        payload["gate_state_error"] = error
     return payload
 
 
-def _gate_records(job_state: Path) -> list[dict[str, str | int | float]]:
+def _gate_records(job_state: Path) -> tuple[list[dict[str, str | int | float]], str]:
     gate_path = job_state.parent / "gates.json"
-    service = GateService.load(gate_path)
-    return [record.to_dict() for record in service.records.values()]
+    if not gate_path.exists():
+        return [], ""
+    try:
+        raw = json.loads(gate_path.read_text(encoding="utf-8"))
+        records = [
+            GateRecord.from_dict(item).to_dict()
+            for item in raw.get("gates", [])
+            if isinstance(item, dict)
+        ]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        return [], f"Gate state could not be read from {gate_path.name}: {type(exc).__name__}"
+    return records, ""
 
 
 def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:

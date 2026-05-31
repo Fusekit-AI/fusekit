@@ -42,6 +42,7 @@
 - [x] Zero-knowledge launch defaults: FuseKit derives GitHub repo slug, Vercel project name, live URL, and DNS zone from the app source, manifest, or git remote so users do not need provider-specific vocabulary.
 - [x] Human-gate UX hardening: terminal handoff and control-room waiting states now show plain-language provider gate cards with exact human actions, reassurance that FuseKit keeps waiting, and no raw secret material.
 - [x] Live control-room gate hardening: served control-room payload now includes durable `gates.json` records so active provider gates surface even when the broader setup step is still running.
+- [x] Gate-state loss hardening: corrupt gate state now surfaces as a repairable control-room error, and remote artifact retrieval preserves `.fusekit/gates.json` alongside receipts, vault, audit, and job state.
 
 ## Milestone 1: Repo Skeleton And CLI
 
