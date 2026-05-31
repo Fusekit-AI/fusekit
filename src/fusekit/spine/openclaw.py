@@ -49,6 +49,8 @@ class OpenClawBrowserSpine:
     profile: str = "openclaw"
     binary: str | None = None
     dry_run: bool = False
+    efficient_snapshots: bool = True
+    label_snapshots: bool = False
     runner: CommandRunner | None = None
 
     def available(self) -> bool:
@@ -75,17 +77,13 @@ class OpenClawBrowserSpine:
     def snapshot(self) -> SpineResult:
         """Capture a stable OpenClaw browser snapshot."""
 
-        return self._run(
-            "snapshot",
-            [
-                "snapshot",
-                "--interactive",
-                "--compact",
-                "--depth",
-                "6",
-                "--json",
-            ],
-        )
+        args = ["snapshot", "--interactive", "--compact", "--depth", "6"]
+        if self.efficient_snapshots:
+            args.append("--efficient")
+        if self.label_snapshots:
+            args.append("--labels")
+        args.append("--json")
+        return self._run("snapshot", args)
 
     def screenshot(self, *, full_page: bool = False) -> SpineResult:
         """Capture a screenshot for visual recovery/debugging."""
@@ -98,12 +96,15 @@ class OpenClawBrowserSpine:
     def console_errors(self) -> SpineResult:
         """Read browser console errors for recovery evidence."""
 
-        return self._run("console_errors", ["console", "--level", "error", "--json"])
+        return self._run("console_errors", ["errors", "--clear", "--json"])
 
     def network_requests(self, *, filter_text: str = "api") -> SpineResult:
         """Read matching network requests for recovery evidence."""
 
-        return self._run("network_requests", ["requests", "--filter", filter_text, "--json"])
+        return self._run(
+            "network_requests",
+            ["requests", "--filter", filter_text, "--clear", "--json"],
+        )
 
     def trace_start(self) -> SpineResult:
         """Start an OpenClaw browser trace."""
@@ -124,6 +125,11 @@ class OpenClawBrowserSpine:
         """Highlight a snapshot ref for human attention."""
 
         return self._run("highlight", ["highlight", ref])
+
+    def scroll_into_view(self, ref: str) -> SpineResult:
+        """Scroll a snapshot ref into view before human attention or automation."""
+
+        return self._run("scroll_into_view", ["scrollintoview", ref])
 
     def click_text(self, text_or_ref: str) -> SpineResult:
         """Click a snapshot ref or text target supplied by an inferred playbook."""
@@ -149,6 +155,26 @@ class OpenClawBrowserSpine:
         """Wait for visible text through OpenClaw."""
 
         return self._run("wait_for_text", ["wait", "--text", text])
+
+    def wait_for_state(
+        self,
+        *,
+        selector: str = "",
+        url: str = "",
+        load: str = "networkidle",
+        timeout_ms: int = 15000,
+    ) -> SpineResult:
+        """Wait for richer page readiness signals through OpenClaw."""
+
+        args = ["wait"]
+        if selector:
+            args.append(selector)
+        if url:
+            args.extend(["--url", url])
+        if load:
+            args.extend(["--load", load])
+        args.extend(["--timeout-ms", str(timeout_ms)])
+        return self._run("wait_for_state", args)
 
     def _run(self, action: str, args: list[str]) -> SpineResult:
         command = [

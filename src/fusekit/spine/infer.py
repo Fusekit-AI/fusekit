@@ -17,7 +17,16 @@ from fusekit.spine.openclaw import SpineResult
 from fusekit.spine.playbooks import BrowserPlaybookEvent
 from fusekit.vault import Vault
 
-ALLOWED_ACTIONS = {"open", "click_text", "fill_label", "press", "wait_for_text", "stop", "gate"}
+ALLOWED_ACTIONS = {
+    "open",
+    "click_text",
+    "fill_label",
+    "press",
+    "wait",
+    "wait_for_text",
+    "stop",
+    "gate",
+}
 SENSITIVE_WORDS = ("password", "passcode", "mfa", "captcha", "payment", "card", "passkey")
 SAFE_KEYS = {
     "Enter",
@@ -150,7 +159,9 @@ class OpenAiUiNavigator:
                     "content": (
                         "You are FuseKit's provider UI navigator. Return one JSON object "
                         "with action,target,value,url,reason. Allowed actions are open, "
-                        "click_text, fill_label, press, wait_for_text, gate, stop. Do not "
+                        "click_text, fill_label, press, wait, wait_for_text, gate, stop. "
+                        "For wait, use target for a selector, url for a URL glob, and value "
+                        "for a load state such as networkidle. Do not "
                         "enter passwords, payment cards, MFA codes, passkeys, CAPTCHA, or "
                         "unapproved secrets. Use gate when the human must pass a service gate."
                     ),
@@ -357,6 +368,20 @@ def _execute_action(spine: InferenceSpine, action: InferredUiAction) -> SpineRes
         return spine.press(action.target)
     if action.action == "wait_for_text":
         return spine.wait_for_text(action.target)
+    if action.action == "wait":
+        wait_for_state = getattr(spine, "wait_for_state", None)
+        if callable(wait_for_state):
+            result = wait_for_state(
+                selector=action.target,
+                url=action.url,
+                load=action.value or "networkidle",
+            )
+            if isinstance(result, SpineResult):
+                return result
+            raise ProviderError("Browser spine returned an invalid rich wait result.")
+        if action.target:
+            return spine.wait_for_text(action.target)
+        raise ProviderError("Browser spine does not support rich wait conditions.")
     raise ProviderError(f"Unsupported inferred UI action: {action.action}")
 
 
@@ -386,6 +411,16 @@ def _validate_action(
         raise ProviderError("UI inference proposed navigation outside the provider domain.")
     if action.action in {"click_text", "fill_label", "wait_for_text"} and not action.target.strip():
         raise ProviderError(f"UI inference proposed {action.action} without a target.")
+    if action.action == "wait" and not any(
+        part.strip() for part in (action.target, action.url, action.value)
+    ):
+        raise ProviderError("UI inference proposed wait without selector, URL, or load state.")
+    if (
+        action.action == "wait"
+        and action.url
+        and not _allowed_wait_url(action.url, allowed_domains)
+    ):
+        raise ProviderError("UI inference proposed waiting outside the provider domain.")
     if action.action == "fill_label" and not action.value:
         raise ProviderError("UI inference proposed fill_label without a value.")
     if action.action == "press" and action.target not in SAFE_KEYS:
@@ -419,6 +454,20 @@ def _allowed_navigation_url(url: str, allowed_domains: tuple[str, ...]) -> bool:
         return True
     host = (urlparse(url).hostname or "").lower()
     return any(
+        host == domain or host.endswith(f".{domain}")
+        for domain in allowed_domains
+        if domain
+    )
+
+
+def _allowed_wait_url(url: str, allowed_domains: tuple[str, ...]) -> bool:
+    if not allowed_domains:
+        return True
+    if not url:
+        return True
+    parsed = urlparse(url.replace("*", "placeholder"))
+    host = (parsed.hostname or "").lower()
+    return not host or any(
         host == domain or host.endswith(f".{domain}")
         for domain in allowed_domains
         if domain
@@ -468,6 +517,12 @@ def _highlight_attention(spine: InferenceSpine, target: str) -> SpineResult | No
     target = target.strip()
     if not target:
         return None
+    scroller = getattr(spine, "scroll_into_view", None)
+    if callable(scroller):
+        try:
+            scroller(target)
+        except Exception:
+            pass
     candidate = getattr(spine, "highlight", None)
     if not callable(candidate):
         return None

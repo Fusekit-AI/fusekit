@@ -54,12 +54,24 @@ def test_openclaw_spine_supports_inferred_action_surface() -> None:
     assert spine.press("Enter").status == "ok"
     assert spine.wait_for_text("Ready").status == "ok"
     assert spine.highlight("ref-3").status == "ok"
+    assert spine.scroll_into_view("ref-3").status == "ok"
+    assert spine.wait_for_state(selector="#main", url="**/dashboard").status == "ok"
 
     assert calls[0][-2:] == ["click", "ref-1"]
     assert calls[1][-3:] == ["type", "ref-2", "redacted"]
     assert calls[2][-2:] == ["press", "Enter"]
     assert calls[3][-3:] == ["wait", "--text", "Ready"]
     assert calls[4][-2:] == ["highlight", "ref-3"]
+    assert calls[5][-2:] == ["scrollintoview", "ref-3"]
+    assert calls[6][-7:] == [
+        "#main",
+        "--url",
+        "**/dashboard",
+        "--load",
+        "networkidle",
+        "--timeout-ms",
+        "15000",
+    ]
 
 
 def test_openclaw_spine_uses_interactive_json_snapshots_and_trace() -> None:
@@ -75,9 +87,35 @@ def test_openclaw_spine_uses_interactive_json_snapshots_and_trace() -> None:
     assert spine.trace_start().status == "ok"
     assert spine.trace_stop().status == "ok"
 
-    assert calls[0][-6:] == ["snapshot", "--interactive", "--compact", "--depth", "6", "--json"]
+    assert calls[0][-7:] == [
+        "snapshot",
+        "--interactive",
+        "--compact",
+        "--depth",
+        "6",
+        "--efficient",
+        "--json",
+    ]
     assert calls[1][-2:] == ["trace", "start"]
     assert calls[2][-2:] == ["trace", "stop"]
+
+
+def test_openclaw_spine_can_request_labelled_snapshots_and_fresh_diagnostics() -> None:
+    calls: list[list[str]] = []
+
+    def runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="{}", stderr="")
+
+    spine = OpenClawBrowserSpine(profile="work", label_snapshots=True, runner=runner)
+
+    assert spine.snapshot().status == "ok"
+    assert spine.console_errors().status == "ok"
+    assert spine.network_requests().status == "ok"
+
+    assert "--labels" in calls[0]
+    assert calls[1][-3:] == ["errors", "--clear", "--json"]
+    assert calls[2][-5:] == ["requests", "--filter", "api", "--clear", "--json"]
 
 
 def test_provider_playbook_uses_openclaw_spine_without_secrets() -> None:
@@ -191,6 +229,57 @@ def test_inferred_navigation_highlights_gate_target() -> None:
     )
 
     assert any(event.action == "attention.highlight" for event in events)
+
+
+def test_inferred_navigation_uses_openclaw_rich_wait_and_scrolls_gate_target() -> None:
+    calls: list[list[str]] = []
+
+    def runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="{}", stderr="")
+
+    spine = OpenClawBrowserSpine(profile="work", runner=runner)
+    navigator = StaticUiNavigator(
+        [
+            InferredUiAction(
+                "wait",
+                target="#ready",
+                url="**/settings",
+                value="networkidle",
+                reason="wait for account settings",
+            ),
+            InferredUiAction("gate", target="e12", reason="MFA required"),
+            InferredUiAction("stop", reason="done"),
+        ]
+    )
+
+    events = run_inferred_navigation(
+        provider="github",
+        goal="create a token",
+        start_url="https://github.com/settings/tokens",
+        spine=spine,
+        navigator=navigator,
+        gate_retry_seconds=0,
+        max_gate_attempts=2,
+    )
+
+    assert any(event.action == "wait" for event in events)
+    assert any(
+        command[-8:]
+        == [
+            "wait",
+            "#ready",
+            "--url",
+            "**/settings",
+            "--load",
+            "networkidle",
+            "--timeout-ms",
+            "15000",
+        ]
+        for command in calls
+    )
+    assert any(command[-2:] == ["scrollintoview", "e12"] for command in calls)
+    assert any(command[-2:] == ["highlight", "e12"] for command in calls)
 
 
 def test_inferred_navigation_rejects_non_https_navigation() -> None:

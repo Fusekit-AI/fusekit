@@ -50,6 +50,7 @@ def test_bootstrap_runs_openclaw_installer_when_missing(monkeypatch, tmp_path) -
             str(tmp_path / "openclaw" / "bin" / "openclaw"),
             "browser",
             "status",
+            "--json",
         ],
     ]
 
@@ -63,7 +64,7 @@ def test_doctor_verifies_openclaw_doctor_and_browser(monkeypatch, tmp_path) -> N
 
     def runner(command: list[str]) -> subprocess.CompletedProcess[str]:
         calls.append(command)
-        if command[-2:] == ["browser", "status"]:
+        if command[-3:] == ["browser", "status", "--json"]:
             return subprocess.CompletedProcess(command, 2, stdout="", stderr="browser missing")
         return subprocess.CompletedProcess(command, 0, stdout="ok", stderr="")
 
@@ -71,4 +72,13 @@ def test_doctor_verifies_openclaw_doctor_and_browser(monkeypatch, tmp_path) -> N
 
     assert not result.ok
     assert "browser missing" in result.statuses[-1].detail
-    assert calls[-1][-2:] == ["browser", "status"]
+    assert calls[-1][-3:] == ["browser", "status", "--json"]
+
+
+def test_bootstrap_config_disables_browser_evaluate_by_default(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("FUSEKIT_HOME", str(tmp_path))
+
+    bootstrap._ensure_browser_plugin_config()
+
+    config = (tmp_path / "openclaw-state" / "openclaw.json").read_text(encoding="utf-8")
+    assert '"evaluateEnabled": false' in config

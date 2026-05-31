@@ -115,7 +115,7 @@ write_files:
       fusekit --version
       openclaw --version
       openclaw doctor --non-interactive
-      openclaw browser status
+      openclaw browser status --json
   - path: /usr/local/sbin/fusekit-runner-loop-once
     permissions: '0755'
     content: |

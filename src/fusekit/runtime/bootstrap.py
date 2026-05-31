@@ -233,7 +233,7 @@ def _openclaw_verification_commands(binary: str) -> list[list[str]]:
     return [
         _openclaw_command(binary, ["--version"]),
         _openclaw_command(binary, ["doctor", "--non-interactive"]),
-        _openclaw_command(binary, ["browser", "status"]),
+        _openclaw_command(binary, ["browser", "status", "--json"]),
     ]
 
 
@@ -268,7 +268,9 @@ def _ensure_browser_plugin_config() -> None:
         plugins["allow"] = ["browser"]
     elif isinstance(allowed, list) and "browser" not in allowed:
         allowed.append("browser")
-    raw.setdefault("browser", {})
+    browser = raw.setdefault("browser", {})
+    if isinstance(browser, dict):
+        browser.setdefault("evaluateEnabled", False)
     config_path.write_text(json.dumps(raw, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
