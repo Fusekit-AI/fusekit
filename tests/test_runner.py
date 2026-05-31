@@ -128,6 +128,8 @@ def test_control_room_renders_job_without_secrets(tmp_path) -> None:
 
     assert "FuseKit Control Room" in html
     assert "OCI login required" in html
+    assert "What you need to do" in html
+    assert "Oracle Cloud is opening the clean room" in html
     assert "fk-test" in html
     assert payload["id"] == "fk-test"
 

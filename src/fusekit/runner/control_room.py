@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from fusekit.runner.gate_guidance import GateGuidance, infer_gate_provider, provider_gate_guidance
 from fusekit.runner.job import JobState, JobStep
 
 STATUS_LABELS = {
@@ -125,6 +126,7 @@ def _render_focus(job: JobState) -> str:
         {_render_snowman_scene(mascot_state)}
         <h2 data-current-title>{current_label}</h2>
         <p data-current-detail>{html.escape(_step_detail(current))}</p>
+        <div data-gate-help>{_render_gate_help(current)}</div>
         <div class="next-line">
           <span>Next</span>
           <strong data-next-title>{next_label}</strong>
@@ -336,6 +338,27 @@ def _step_detail(step: JobStep | None) -> str:
     if step is None:
         return "FuseKit is preserving encrypted and redacted artifacts."
     return step.detail or "Queued and ready for the worker."
+
+
+def _render_gate_help(step: JobStep | None) -> str:
+    if step is None or step.status != "waiting":
+        return ""
+    guidance = _guidance_for_step(step)
+    actions = "".join(f"<li>{html.escape(action)}</li>" for action in guidance.actions)
+    return f"""
+        <div class="gate-help">
+          <span>What you need to do</span>
+          <strong>{html.escape(guidance.title)}</strong>
+          <p>{html.escape(guidance.body)}</p>
+          <ol>{actions}</ol>
+          <em>{html.escape(guidance.reassurance)}</em>
+        </div>
+"""
+
+
+def _guidance_for_step(step: JobStep) -> GateGuidance:
+    provider = infer_gate_provider(f"{step.id} {step.label} {step.detail}")
+    return provider_gate_guidance(provider)
 
 
 def _status_label(status: str) -> str:
@@ -700,6 +723,49 @@ button {
 .focus-panel p,
 .next-line span {
   color: #bfc7c1;
+}
+
+.gate-help {
+  display: grid;
+  gap: 9px;
+  margin: 16px 0 0;
+  border: 1px solid rgba(111, 215, 255, 0.22);
+  border-radius: 8px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.gate-help span {
+  color: #9bdcff;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.gate-help strong {
+  color: #ffffff;
+  font-size: 15px;
+}
+
+.gate-help p,
+.gate-help em,
+.gate-help li {
+  color: #d7e7f2;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.gate-help ol {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.gate-help em {
+  color: #b7e8ff;
+  font-style: normal;
+  font-weight: 850;
 }
 
 .snow-scene {
@@ -1375,6 +1441,110 @@ function mascotCaption(state) {
   }[state] || "packing the clean-room suitcase";
 }
 
+function inferGateProvider(text) {
+  const lower = String(text || "").toLowerCase();
+  for (const provider of ["github", "vercel", "cloudflare", "resend", "oci", "openai"]) {
+    if (lower.includes(provider)) return provider;
+  }
+  if (lower.includes("oracle") || lower.includes("cloud shell")) return "oci";
+  return "generic";
+}
+
+function gateGuidance(provider) {
+  return {
+    github: {
+      title: "GitHub is asking for your approval",
+      body:
+        "FuseKit opened GitHub so the repo can receive deploy keys and encrypted secrets.",
+      actions: [
+        "Sign in or create the GitHub account when GitHub asks.",
+        "Pass email, passkey, MFA, CAPTCHA, or consent prompts yourself.",
+        "When GitHub reveals the approved token, paste it into FuseKit's hidden prompt.",
+      ],
+      reassurance: "FuseKit waits here, then resumes automatically after the token is captured.",
+    },
+    vercel: {
+      title: "Vercel is checking deploy permission",
+      body:
+        "FuseKit is connecting the app repo to Vercel and starting deployment.",
+      actions: [
+        "Sign in or create the Vercel account when prompted.",
+        "Approve GitHub connection, team, billing, MFA, CAPTCHA, or consent prompts if shown.",
+        "When Vercel reveals the approved token, paste it into FuseKit's hidden prompt.",
+      ],
+      reassurance: "FuseKit keeps the run alive and continues once Vercel accepts the gate.",
+    },
+    cloudflare: {
+      title: "Cloudflare is checking domain control",
+      body:
+        "FuseKit is preparing DNS records and waiting for Cloudflare approval.",
+      actions: [
+        "Sign in or create the Cloudflare account when prompted.",
+        "Pass nameserver, domain ownership, MFA, CAPTCHA, billing, or consent prompts yourself.",
+        "When Cloudflare reveals the approved DNS token, paste it into FuseKit's hidden prompt.",
+      ],
+      reassurance: "FuseKit will keep retrying DNS verification instead of giving up early.",
+    },
+    resend: {
+      title: "Resend is checking email sending access",
+      body:
+        "FuseKit is preparing email delivery credentials and domain verification records.",
+      actions: [
+        "Sign in or create the Resend account when prompted.",
+        "Pass email verification, MFA, CAPTCHA, billing, consent, or domain checks yourself.",
+        "When Resend reveals the API key, paste it into FuseKit's hidden prompt.",
+      ],
+      reassurance: "FuseKit stores the key only in the encrypted vault and then resumes setup.",
+    },
+    oci: {
+      title: "Oracle Cloud is opening the clean room",
+      body:
+        "FuseKit is starting the disposable OCI workspace that runs setup away from your computer.",
+      actions: [
+        "Sign in or create the OCI account when Oracle asks.",
+        "Pass MFA, CAPTCHA, payment verification, tenancy, or Cloud Shell prompts yourself.",
+        "Leave the Cloud Shell tab open; FuseKit will continue from there.",
+      ],
+      reassurance: "FuseKit treats this as a waiting state, not a failure.",
+    },
+    openai: {
+      title: "OpenAI is authorizing the brain lane",
+      body:
+        "FuseKit needs an LLM route when no API key is already available.",
+      actions: [
+        "Sign in to OpenAI when prompted.",
+        "Pass MFA, CAPTCHA, consent, or organization prompts yourself.",
+        "Return to FuseKit after the provider says authorization is complete.",
+      ],
+      reassurance: "FuseKit encrypts auth state and detonates plaintext worker state later.",
+    },
+  }[provider] || {
+    title: "A provider needs a human check",
+    body:
+      "FuseKit has done what it can safely automate. The provider needs account approval.",
+    actions: [
+      "Look at the browser or provider tab FuseKit opened.",
+      "Complete login, MFA, CAPTCHA, consent, payment, or ownership prompts yourself.",
+      "When the page says the action is done, return to FuseKit and it will continue.",
+    ],
+    reassurance: "The worker remains alive and will retry this gate until it passes.",
+  };
+}
+
+function renderGateHelp(step) {
+  if (step?.status !== "waiting") return "";
+  const guidance = gateGuidance(inferGateProvider(`${step.id} ${step.label} ${step.detail}`));
+  return `
+    <div class="gate-help">
+      <span>What you need to do</span>
+      <strong>${escapeHtml(guidance.title)}</strong>
+      <p>${escapeHtml(guidance.body)}</p>
+      <ol>${guidance.actions.map((action) => `<li>${escapeHtml(action)}</li>`).join("")}</ol>
+      <em>${escapeHtml(guidance.reassurance)}</em>
+    </div>
+  `;
+}
+
 function escapeHtml(value) {
   const div = document.createElement("div");
   div.textContent = value || "";
@@ -1447,6 +1617,7 @@ function render(job) {
   document.querySelector("[data-current-title]").textContent = current?.label || "Launch complete";
   document.querySelector("[data-current-detail]").textContent =
     current ? stepDetail(current) : "FuseKit is preserving encrypted and redacted artifacts.";
+  document.querySelector("[data-gate-help]").innerHTML = renderGateHelp(current);
   document.querySelector("[data-next-title]").textContent =
     next?.label || "Artifacts and audit review";
   renderSteps(job);

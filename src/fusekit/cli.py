@@ -50,6 +50,7 @@ from fusekit.rollback import execute_native_rollback, plan_pack_rollback, plan_r
 from fusekit.runner import JobState, RunnerResolution, resolve_runner
 from fusekit.runner.cloud_shell import build_cloud_shell_launch_plan, write_cloud_shell_launcher
 from fusekit.runner.control_room import write_control_room
+from fusekit.runner.gate_guidance import provider_gate_guidance
 from fusekit.runner.gates import GateService
 from fusekit.runner.oci import (
     OCI_API_KEYS_URL,
@@ -1846,9 +1847,11 @@ def _await_provider_token(
             resume_url=resume_url,
         )
         _ensure_gate_attempt_allowed(args, attempt, f"{provider} authorization")
+        guidance = provider_gate_guidance(provider)
         print(
-            f"Waiting for {provider} human gate. Complete login/MFA/CAPTCHA/billing/"
-            f"consent/token creation, then provide {token_env}. Retrying handoff..."
+            f"Waiting: {guidance.title}. {guidance.reassurance} "
+            f"When the provider reveals the approved key, provide {token_env}. "
+            "Retrying handoff..."
         )
         _sleep_for_gate(args)
         _run_handoff(args, provider, handoff, include_project)
@@ -2386,17 +2389,17 @@ def _default_token_env(provider: str) -> str:
 
 
 def _print_handoff(handoff: ProviderHandoff, include_project: bool = False) -> None:
-    print(f"Supervised {handoff.provider} handoff")
-    print("Account setup:")
-    for step in handoff.account_steps:
+    guidance = provider_gate_guidance(handoff.provider)
+    print(guidance.title)
+    print(guidance.body)
+    print("What you need to do:")
+    for step in guidance.actions:
         print(f"- {step}")
-    print("Secret capture:")
-    for step in handoff.secret_steps:
-        print(f"- {step}")
-    print("Required access:")
+    print(guidance.reassurance)
+    print("FuseKit is asking the provider for only this access:")
     for scope in handoff.required_scopes:
         print(f"- {scope}")
-    print("URLs:")
+    print("Provider pages FuseKit may open:")
     for url in handoff.urls(include_project=include_project):
         print(f"- {url}")
 
