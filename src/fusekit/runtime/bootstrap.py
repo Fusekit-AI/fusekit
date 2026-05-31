@@ -70,12 +70,15 @@ class BootstrapResult:
         }
 
 
-def doctor(openclaw_bin: str | None = None) -> BootstrapResult:
+def doctor(
+    openclaw_bin: str | None = None,
+    runner: CommandRunner | None = None,
+) -> BootstrapResult:
     """Check whether FuseKit runtime components are available."""
 
     statuses = [
         _python_status(),
-        _openclaw_status(openclaw_bin),
+        _openclaw_status(openclaw_bin, runner=runner),
     ]
     return BootstrapResult(statuses=tuple(statuses), installed=())
 
@@ -87,17 +90,18 @@ def bootstrap_runtime(
 ) -> BootstrapResult:
     """Ensure runtime components exist, installing missing components when requested."""
 
-    before = doctor(openclaw_bin)
+    command_runner = runner or _default_runner
+    before = doctor(openclaw_bin, runner=command_runner)
     if before.ok or not install:
         return before
     installed: list[str] = []
     configured: list[str] = []
-    if not _openclaw_status(openclaw_bin).ok:
-        _install_openclaw(runner or _default_runner)
+    if not _openclaw_binary_available(openclaw_bin):
+        _install_openclaw(command_runner)
         installed.append("openclaw")
-    _configure_openclaw(runner or _default_runner)
+    _configure_openclaw(command_runner)
     configured.append("openclaw")
-    after = doctor(openclaw_bin)
+    after = doctor(openclaw_bin, runner=command_runner)
     if not after.ok:
         details = "; ".join(status.detail for status in after.statuses if not status.ok)
         raise FuseKitError(f"Runtime bootstrap completed but verification failed: {details}")
@@ -134,16 +138,39 @@ def _python_status() -> RuntimeStatus:
     )
 
 
-def _openclaw_status(openclaw_bin: str | None = None) -> RuntimeStatus:
+def _openclaw_status(
+    openclaw_bin: str | None = None,
+    *,
+    runner: CommandRunner | None = None,
+) -> RuntimeStatus:
     binary = openclaw_bin or openclaw_binary()
-    if shutil.which(binary) or Path(binary).exists():
-        return RuntimeStatus(name="openclaw", ok=True, detail=binary)
-    return RuntimeStatus(
-        name="openclaw",
-        ok=False,
-        detail="not installed",
-        remedy=f"run FuseKit bootstrap or install from {OPENCLAW_INSTALL_URL}",
-    )
+    if not _openclaw_binary_available(openclaw_bin):
+        return RuntimeStatus(
+            name="openclaw",
+            ok=False,
+            detail="not installed",
+            remedy=f"run FuseKit bootstrap or install from {OPENCLAW_INSTALL_URL}",
+        )
+    command_runner = runner or _default_runner
+    for command in _openclaw_verification_commands(binary):
+        try:
+            completed = command_runner(command)
+        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            return RuntimeStatus(
+                name="openclaw",
+                ok=False,
+                detail=f"verification failed: {exc}",
+                remedy="rerun `fusekit bootstrap` so FuseKit can repair OpenClaw.",
+            )
+        if completed.returncode != 0:
+            detail = completed.stderr.strip() or completed.stdout.strip()
+            return RuntimeStatus(
+                name="openclaw",
+                ok=False,
+                detail=detail or f"verification failed: {' '.join(command)}",
+                remedy="rerun `fusekit bootstrap` so FuseKit can repair OpenClaw.",
+            )
+    return RuntimeStatus(name="openclaw", ok=True, detail=binary)
 
 
 def _install_openclaw(runner: CommandRunner) -> None:
@@ -172,12 +199,7 @@ def _install_openclaw(runner: CommandRunner) -> None:
 def _configure_openclaw(runner: CommandRunner) -> None:
     binary = openclaw_binary()
     _ensure_browser_plugin_config()
-    checks = [
-        _openclaw_command(binary, ["--version"]),
-        _openclaw_command(binary, ["doctor", "--non-interactive"]),
-        _openclaw_command(binary, ["browser", "status"]),
-    ]
-    for command in checks:
+    for command in _openclaw_verification_commands(binary):
         completed = runner(command)
         if completed.returncode != 0:
             raise FuseKitError(
@@ -205,6 +227,19 @@ def openclaw_state_home() -> Path:
 
 def _openclaw_command(binary: str, args: list[str]) -> list[str]:
     return ["env", f"OPENCLAW_HOME={openclaw_state_home()}", binary, *args]
+
+
+def _openclaw_verification_commands(binary: str) -> list[list[str]]:
+    return [
+        _openclaw_command(binary, ["--version"]),
+        _openclaw_command(binary, ["doctor", "--non-interactive"]),
+        _openclaw_command(binary, ["browser", "status"]),
+    ]
+
+
+def _openclaw_binary_available(openclaw_bin: str | None = None) -> bool:
+    binary = openclaw_bin or openclaw_binary()
+    return bool(shutil.which(binary) or Path(binary).exists())
 
 
 def _ensure_browser_plugin_config() -> None:

@@ -92,6 +92,18 @@ def build_cloud_shell_bootstrap_command(
                     "set -euo pipefail",
                     "export PATH=\"$HOME/.local/bin:$PATH\"",
                     "work=\"$HOME/fusekit-cloud-shell\"",
+                    "passfile=\"\"",
+                    (
+                        "cleanup() { stty echo >/dev/null 2>&1 || true; "
+                        "[ -n \"${passfile:-}\" ] && rm -f \"$passfile\"; }"
+                    ),
+                    "trap cleanup EXIT INT TERM",
+                    (
+                        "retry() { attempts=0; until \"$@\"; do attempts=$((attempts + 1)); "
+                        "if [ \"$attempts\" -ge 3 ]; then return 1; fi; "
+                        "printf '%s\\n' \"Retrying after transient setup failure: $*\" >&2; "
+                        "sleep $((attempts * 5)); done; }"
+                    ),
                     "rm -rf \"$work\"",
                     "mkdir -p \"$work\"",
                     (
@@ -100,15 +112,76 @@ def build_cloud_shell_bootstrap_command(
                         "else printf '%s\\n' 'Python is required in OCI Cloud Shell.' >&2; "
                         "exit 43; fi"
                     ),
+                    f"fusekit_package={package}",
                     (
-                        "if ! command -v git >/dev/null 2>&1; then "
-                        "printf '%s\\n' 'Git is required in OCI Cloud Shell.' >&2; "
-                        "exit 43; fi"
+                        "if [ \"${fusekit_package#git+}\" != \"$fusekit_package\" ] && "
+                        "! command -v git >/dev/null 2>&1; then "
+                        "printf '%s\\n' 'Git is required in OCI Cloud Shell for git+ "
+                        "FuseKit packages.' >&2; exit 43; fi"
                     ),
-                    f"\"$python_cmd\" -m pip install --user --upgrade {package}",
+                    "\"$python_cmd\" -m ensurepip --upgrade >/dev/null 2>&1 || true",
+                    "retry \"$python_cmd\" -m pip install --user --upgrade pip setuptools wheel",
+                    "retry \"$python_cmd\" -m pip install --user --upgrade \"$fusekit_package\"",
+                    "fusekit --version",
                     f"app_source={source}",
                     "if [ -n \"$app_source\" ]; then",
-                    "  git clone --depth=1 \"$app_source\" \"$work/app\"",
+                    "  if command -v git >/dev/null 2>&1; then",
+                    "    retry git clone --depth=1 \"$app_source\" \"$work/app\"",
+                    "  else",
+                    "    case \"$app_source\" in",
+                    "      https://github.com/*)",
+                    (
+                        "        APP_SOURCE=\"$app_source\" APP_DEST=\"$work/app\" "
+                        "\"$python_cmd\" - <<'PY'"
+                    ),
+                    "import pathlib, shutil, urllib.error, urllib.parse, urllib.request, zipfile",
+                    "import os, tempfile",
+                    "source = os.environ['APP_SOURCE']",
+                    "dest = pathlib.Path(os.environ['APP_DEST'])",
+                    "parsed = urllib.parse.urlparse(source)",
+                    "parts = parsed.path.strip('/').removesuffix('.git').split('/')",
+                    "if len(parts) < 2:",
+                    "    raise SystemExit('GitHub app source must be owner/repo')",
+                    "owner, repo = parts[0], parts[1]",
+                    "urls = [",
+                    "    f'https://codeload.github.com/{owner}/{repo}/zip/refs/heads/main',",
+                    "    f'https://codeload.github.com/{owner}/{repo}/zip/refs/heads/master',",
+                    "]",
+                    "with tempfile.TemporaryDirectory(prefix='fusekit-app-') as tmp:",
+                    "    archive = pathlib.Path(tmp) / 'app.zip'",
+                    "    last_error = None",
+                    "    for url in urls:",
+                    "        try:",
+                    (
+                        "            data = urllib.request.urlopen(url, timeout=90).read()"
+                    ),
+                    "            archive.write_bytes(data)",
+                    "            break",
+                    "        except urllib.error.URLError as exc:",
+                    "            last_error = exc",
+                    "    else:",
+                    (
+                        "        raise SystemExit("
+                        "f'Could not download GitHub app source: {last_error}')"
+                    ),
+                    "    extract = pathlib.Path(tmp) / 'extract'",
+                    "    with zipfile.ZipFile(archive) as zf:",
+                    "        zf.extractall(extract)",
+                    "    roots = [path for path in extract.iterdir() if path.is_dir()]",
+                    "    if not roots:",
+                    "        raise SystemExit('GitHub source archive was empty')",
+                    "    if dest.exists():",
+                    "        shutil.rmtree(dest)",
+                    "    shutil.copytree(roots[0], dest)",
+                    "PY",
+                    "        ;;",
+                    "      *)",
+                    "        printf '%s\\n' 'Git is unavailable and app_source is not a "
+                    "GitHub HTTPS repo.' >&2",
+                    "        exit 43",
+                    "        ;;",
+                    "    esac",
+                    "  fi",
                     "else",
                     "  mkdir -p \"$work/app\"",
                     "  printf '%s\\n' 'No app_source was supplied. Upload or clone the app into:'",
@@ -121,10 +194,9 @@ def build_cloud_shell_bootstrap_command(
                     "IFS= read -r passphrase",
                     "stty echo",
                     "printf '\\n'",
-                    "passfile=\"$work/passphrase\"",
                     "umask 077",
+                    "passfile=\"$work/passphrase\"",
                     "printf '%s\\n' \"$passphrase\" > \"$passfile\"",
-                    "trap 'rm -f \"$passfile\"' EXIT",
                     (
                         "if [ -f \"$work/app/fusekit.yaml\" ] || "
                         "[ -f \"$work/app/package.json\" ] || "

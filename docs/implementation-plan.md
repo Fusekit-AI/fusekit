@@ -49,6 +49,7 @@
 - [x] Human-attention guidance: inferred service gates can now highlight the provider-screen target that needs human attention, and the control room surfaces provider resume links plus resurfacing counts for waiting gates.
 - [x] Static control-room hardening: saved control-room HTML now embeds durable gate state and corrupt-gate errors just like the live server, so provider waits remain visible even when opened as a file artifact.
 - [x] OCI launcher copy hardening: Cloud Shell launcher clipboard failures now select the bootstrap command and explain the manual copy fallback instead of failing silently.
+- [x] OCI/runtime bootstrap hardening: `doctor` now verifies OpenClaw version, doctor, and browser status instead of accepting a merely present binary; Cloud Shell bootstrap retries transient installs and can download public GitHub app sources without Git; OCI VMs use a dedicated Python venv, persistent FuseKit/OpenClaw PATH exports, and clearer remote command failures.
 
 ## Milestone 1: Repo Skeleton And CLI
 

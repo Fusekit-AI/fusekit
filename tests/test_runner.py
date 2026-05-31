@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import subprocess
 import tarfile
 from pathlib import Path
@@ -85,7 +86,10 @@ def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
     assert "cloud.oracle.com" in plan.deeplink_url
     assert "fusekit launch" in plan.bootstrap_command
     assert "python_cmd=python3" in plan.bootstrap_command
-    assert "Git is required in OCI Cloud Shell" in plan.bootstrap_command
+    assert "retry \"$python_cmd\" -m pip install --user --upgrade" in plan.bootstrap_command
+    assert "fusekit --version" in plan.bootstrap_command
+    assert "Git is required in OCI Cloud Shell for git+ FuseKit packages" in plan.bootstrap_command
+    assert "codeload.github.com" in plan.bootstrap_command
     assert "https://github.com/example/app.git" in plan.bootstrap_command
     assert "git+https://github.com/example/fusekit.git" in plan.bootstrap_command
     assert "--github-repo example/app" in plan.bootstrap_command
@@ -98,6 +102,25 @@ def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
     assert "Copy was blocked" in html
     assert "command.select()" in html
     assert "Passphrase:" in plan.bootstrap_command
+
+
+def test_cloud_shell_bootstrap_command_is_valid_shell() -> None:
+    plan = build_cloud_shell_launch_plan(
+        app_source="https://github.com/example/app.git",
+        launch_args=("--infer-ui",),
+    )
+    command = shlex.split(plan.bootstrap_command)
+
+    result = subprocess.run(
+        ["bash", "-n"],
+        input=command[2],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert command[:2] == ["bash", "-lc"]
+    assert result.returncode == 0, result.stderr
 
 
 def test_oci_api_key_profile_is_encrypted_vault_material() -> None:
@@ -208,15 +231,21 @@ def test_remote_bootstrap_artifacts_are_self_contained() -> None:
         openclaw_install_url="https://openclaw.ai/install-cli.sh",
     )
 
-    assert "python3 -m pip install --upgrade fusekit" in cloud_init
+    assert "python3-venv" in cloud_init
+    assert "/opt/fusekit-python/bin/python -m pip install --upgrade fusekit" in cloud_init
     assert (
-        "python3 -m pip install --upgrade "
+        "/opt/fusekit-python/bin/python -m pip install --upgrade "
         "git+https://github.com/example/fusekit.git"
     ) in git_cloud_init
-    assert "python3 -m playwright install --with-deps chromium" in cloud_init
+    assert "/opt/fusekit-python/bin/python -m playwright install --with-deps chromium" in cloud_init
+    assert "chromium-browser" not in cloud_init
     assert "openclaw browser status" in cloud_init
     assert "fusekit-runner-verify" in cloud_init
-    assert "export PATH=/opt/fusekit-openclaw/bin:$PATH" in cloud_init
+    assert "export PATH=/opt/fusekit-python/bin:/opt/fusekit-openclaw/bin:$PATH" in cloud_init
+    assert "FUSEKIT_OPENCLAW_BIN=/opt/fusekit-openclaw/bin/openclaw" in cloud_init
+    assert "ln -sf /opt/fusekit-python/bin/fusekit /usr/local/bin/fusekit" in cloud_init
+    assert "ln -sf /opt/fusekit-openclaw/bin/openclaw /usr/local/bin/openclaw" in cloud_init
+    assert "  - |\n    python3 - <<'PY'" in cloud_init
     assert "/opt/fusekit-openclaw/openclaw/bin" not in cloud_init
     assert should_include_app_path(Path("src/index.js"))
     assert not should_include_app_path(Path(".env"))
@@ -371,6 +400,16 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
     assert any(
         "trap 'rm -f /var/lib/fusekit-runner/passphrase' EXIT" in command[-1]
         for command in calls
+    )
+    assert any(
+        "FUSEKIT_OPENCLAW_BIN=/opt/fusekit-openclaw/bin/openclaw" in command[-1]
+        for command in calls
+        if command[0] == "ssh"
+    )
+    assert any(
+        "FUSEKIT_HOME=/var/lib/fusekit-runner/fusekit-runtime" in command[-1]
+        for command in calls
+        if command[0] == "ssh"
     )
     assert (tmp_path / "out" / ".fusekit" / "gates.json").exists()
     assert any(".fusekit/gates.json" in command[-1] for command in calls if command[0] == "ssh")

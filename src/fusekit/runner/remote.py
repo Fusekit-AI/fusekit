@@ -72,7 +72,8 @@ def render_cloud_init(*, fusekit_wheel_url: str = "", openclaw_install_url: str)
     """Render cloud-init for a self-contained FuseKit runner VM."""
 
     fusekit_package = quote(fusekit_wheel_url or "fusekit")
-    install_fusekit = f"python3 -m pip install --upgrade {fusekit_package}"
+    python_bin = "/opt/fusekit-python/bin/python"
+    install_fusekit = f"{python_bin} -m pip install --upgrade {fusekit_package}"
     install_openclaw = (
         "OPENCLAW_HOME=/var/lib/fusekit-runner/openclaw-state "
         "bash /opt/fusekit-openclaw/install-openclaw.sh "
@@ -92,20 +93,25 @@ package_update: true
 packages:
   - python3
   - python3-pip
+  - python3-venv
   - git
   - openssh-client
   - unzip
   - jq
   - ca-certificates
   - curl
-  - chromium-browser
 write_files:
   - path: /usr/local/sbin/fusekit-runner-verify
     permissions: '0755'
     content: |
       #!/bin/sh
       set -eu
+      export PATH=/opt/fusekit-python/bin:/opt/fusekit-openclaw/bin:$PATH
+      export FUSEKIT_HOME=/var/lib/fusekit-runner/fusekit-runtime
+      export FUSEKIT_OPENCLAW_BIN=/opt/fusekit-openclaw/bin/openclaw
+      export OPENCLAW_HOME=/var/lib/fusekit-runner/openclaw-state
       python3 --version
+      /opt/fusekit-python/bin/python --version
       fusekit --version
       openclaw --version
       openclaw doctor --non-interactive
@@ -115,21 +121,30 @@ write_files:
     content: |
       #!/bin/sh
       set -eu
+      export PATH=/opt/fusekit-python/bin:/opt/fusekit-openclaw/bin:$PATH
+      export FUSEKIT_HOME=/var/lib/fusekit-runner/fusekit-runtime
+      export FUSEKIT_OPENCLAW_BIN=/opt/fusekit-openclaw/bin/openclaw
+      export OPENCLAW_HOME=/var/lib/fusekit-runner/openclaw-state
       {runner_loop}
 runcmd:
   - mkdir -p /var/lib/fusekit-runner
-  - python3 -m pip install --upgrade pip
+  - python3 -m venv /opt/fusekit-python
+  - /opt/fusekit-python/bin/python -m pip install --upgrade pip setuptools wheel
   - {install_fusekit}
-  - python3 -m playwright install --with-deps chromium
+  - /opt/fusekit-python/bin/python -m playwright install --with-deps chromium
+  - ln -sf /opt/fusekit-python/bin/fusekit /usr/local/bin/fusekit
+  - ln -sf /opt/fusekit-python/bin/fusekit-runner-loop /usr/local/bin/fusekit-runner-loop
   - mkdir -p /opt/fusekit-openclaw
-  - python3 - <<'PY'
-import pathlib, urllib.request
-url = {openclaw_install_url!r}
-target = pathlib.Path('/opt/fusekit-openclaw/install-openclaw.sh')
-target.write_bytes(urllib.request.urlopen(url, timeout=60).read())
-target.chmod(0o755)
-PY
+  - |
+    python3 - <<'PY'
+    import pathlib, urllib.request
+    url = {openclaw_install_url!r}
+    target = pathlib.Path('/opt/fusekit-openclaw/install-openclaw.sh')
+    target.write_bytes(urllib.request.urlopen(url, timeout=60).read())
+    target.chmod(0o755)
+    PY
   - {install_openclaw}
+  - ln -sf /opt/fusekit-openclaw/bin/openclaw /usr/local/bin/openclaw
   - {verify_openclaw}
 """
 
@@ -182,6 +197,10 @@ def execute_remote_setup(
         )
         launch = (
             "umask 077; "
+            "export PATH=/opt/fusekit-python/bin:/opt/fusekit-openclaw/bin:$PATH; "
+            "export FUSEKIT_HOME=/var/lib/fusekit-runner/fusekit-runtime; "
+            "export FUSEKIT_OPENCLAW_BIN=/opt/fusekit-openclaw/bin/openclaw; "
+            "export OPENCLAW_HOME=/var/lib/fusekit-runner/openclaw-state; "
             "trap 'rm -f /var/lib/fusekit-runner/passphrase' EXIT; "
             "cat > /var/lib/fusekit-runner/passphrase; "
             "cd /var/lib/fusekit-runner/app; "
@@ -294,7 +313,11 @@ def _run_checked(
 ) -> subprocess.CompletedProcess[str]:
     completed = runner(command, input_text=input_text, stdout_path=stdout_path)
     if completed.returncode != 0:
-        raise FuseKitError(completed.stderr or "Remote runner command failed.")
+        detail = completed.stderr.strip()
+        message = f"Remote runner command failed with exit {completed.returncode}."
+        if detail:
+            message = f"{message} {detail[:500]}"
+        raise FuseKitError(message)
     return completed
 
 
