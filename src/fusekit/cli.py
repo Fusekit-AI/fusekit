@@ -18,6 +18,7 @@ from fusekit import __version__
 from fusekit.audit import AuditLog, Receipt
 from fusekit.capabilities.runtime import CapabilityBroker
 from fusekit.detonation.cleanup import detonate as detonate_paths
+from fusekit.detonation.preflight import run_detonation_preflight
 from fusekit.errors import ApprovalRequired, FuseKitError
 from fusekit.harness import run_acceptance
 from fusekit.llm import LlmConfig, authorize_openclaw_llm, capture_llm_config
@@ -308,6 +309,7 @@ def _parser() -> argparse.ArgumentParser:
     apply.add_argument("--audit-log", type=Path, default=Path(".fusekit/audit.jsonl"))
     apply.add_argument("--receipt-json", type=Path, default=Path(".fusekit/setup_receipt.json"))
     apply.add_argument("--receipt-md", type=Path, default=Path(".fusekit/setup_receipt.md"))
+    apply.add_argument("--rollback-json", type=Path, default=Path(".fusekit/rollback_plan.json"))
     apply.add_argument(
         "--verification-report",
         type=Path,
@@ -456,6 +458,7 @@ def _provider_apply_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--audit-log", type=Path, default=Path(".fusekit/audit.jsonl"))
     parser.add_argument("--receipt-json", type=Path, default=Path(".fusekit/setup_receipt.json"))
     parser.add_argument("--receipt-md", type=Path, default=Path(".fusekit/setup_receipt.md"))
+    parser.add_argument("--rollback-json", type=Path, default=Path(".fusekit/rollback_plan.json"))
     parser.add_argument(
         "--verification-report",
         type=Path,
@@ -1042,12 +1045,20 @@ def _cmd_setup(args: argparse.Namespace) -> int:
     args.manifest = manifest_path
     _apply_loaded_manifest(args, manifest)
     if not args.no_detonate:
+        _run_local_detonation_preflight(args, app_path)
         detonation_targets = [app_path / ".fusekit" / "worker", app_path / ".fusekit" / "tmp"]
         if bool(getattr(args, "_detonate_openclaw_state", False)):
             detonation_targets.append(openclaw_state_home())
         removed = detonate_paths(
             detonation_targets,
-            preserve=[args.vault, args.audit_log, args.receipt_json, args.receipt_md],
+            preserve=[
+                args.vault,
+                args.audit_log,
+                args.receipt_json,
+                args.receipt_md,
+                args.verification_report,
+                args.rollback_json,
+            ],
         )
         print(json.dumps({"detonated": removed}, indent=2, sort_keys=True))
     return 0
@@ -1115,6 +1126,29 @@ def _write_apply_artifacts(
     audit.record("verification.report", verification_report.to_dict())
     receipt.write_json(args.receipt_json)
     receipt.write_markdown(args.receipt_md)
+    rollback_actions = [action.to_dict() for action in plan_rollback(args.receipt_json)]
+    args.rollback_json.parent.mkdir(parents=True, exist_ok=True)
+    args.rollback_json.write_text(
+        json.dumps({"rollback": rollback_actions}, indent=2, sort_keys=True) + "\n",
+        "utf-8",
+    )
+
+
+def _run_local_detonation_preflight(args: argparse.Namespace, app_path: Path) -> None:
+    if bool(getattr(args, "allow_incomplete", False)):
+        return
+    result = run_detonation_preflight(
+        root=app_path,
+        vault=args.vault,
+        audit=args.audit_log,
+        receipt=args.receipt_json,
+        verification_report=args.verification_report,
+        rollback_metadata=args.rollback_json,
+    )
+    if not result.ok:
+        raise FuseKitError(
+            "Detonation preflight failed: " + "; ".join(result.failures)
+        )
 
 
 def _cmd_verify(args: argparse.Namespace) -> int:
@@ -1650,9 +1684,13 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
     )
     if verification_report.exists():
         job.add_artifact("verification_report", verification_report)
+    rollback_plan = Path(artifacts["output_dir"]) / ".fusekit" / "rollback_plan.json"
+    if rollback_plan.exists():
+        job.add_artifact("rollback_plan", rollback_plan)
     if args.no_detonate:
         job.mark("detonate.workspace", "skipped", "workspace retained by --no-detonate")
     else:
+        _run_remote_detonation_preflight(args, Path(artifacts["output_dir"]))
         remote_deleted = _detonate_oci_workspace(args, workspace, vault)
         job.mark("detonate.workspace", "done", "remote worker and OCI workspace detonated")
     _save_launch_job(args, job)
@@ -1691,6 +1729,28 @@ def _detonate_oci_workspace(
     except FuseKitError as exc:
         remote_deleted["failed.workspace"] = str(exc)
     return remote_deleted
+
+
+def _run_remote_detonation_preflight(args: argparse.Namespace, output_dir: Path) -> None:
+    fusekit_dir = output_dir / ".fusekit"
+    result = run_detonation_preflight(
+        root=output_dir,
+        vault=fusekit_dir / "fusekit.vault.json",
+        audit=fusekit_dir / "audit.jsonl",
+        receipt=fusekit_dir / "setup_receipt.json",
+        verification_report=fusekit_dir / "verification_report.json",
+        rollback_metadata=fusekit_dir / "rollback_plan.json",
+    )
+    if not result.ok:
+        args.job_state.parent.mkdir(parents=True, exist_ok=True)
+        preflight_path = args.job_state.parent / "detonation_preflight.json"
+        preflight_path.write_text(
+            json.dumps(result.to_dict(), indent=2, sort_keys=True) + "\n",
+            "utf-8",
+        )
+        raise FuseKitError(
+            "Detonation preflight failed: " + "; ".join(result.failures)
+        )
 
 
 def _cmd_cloud_shell_runner_launch(
@@ -2408,6 +2468,7 @@ def _verify_provider_packs(
             pack,
             vault,
             live_url=getattr(args, "live_url", ""),
+            inputs=_verification_inputs(args, manifest),
             attempts=int(getattr(args, "verify_attempts", 1)),
             retry_seconds=float(getattr(args, "verify_retry_seconds", 0.0)),
         )
@@ -2428,6 +2489,7 @@ def _verify_provider_packs(
                 pack,
                 vault,
                 live_url=getattr(args, "live_url", ""),
+                inputs=_verification_inputs(args, manifest),
                 attempts=int(getattr(args, "verify_attempts", 1)),
                 retry_seconds=float(getattr(args, "verify_retry_seconds", 0.0)),
             )
@@ -2455,6 +2517,85 @@ def _verify_provider_packs(
             raise FuseKitError(
                 f"Provider verification failed for {pack.provider}. See redacted receipt/audit."
             )
+    _verify_webhook_secret_checks(manifest, vault, verification_report)
+
+
+def _verification_inputs(args: argparse.Namespace, manifest: SetupManifest) -> dict[str, str]:
+    inputs = _provider_setup_inputs(args)
+    provider_names = _required_providers(manifest)
+    app_env_names = _app_env_names_for_verification(manifest, provider_names)
+    default_domain = _default_manifest_domain(manifest)
+    records = [
+        {
+            "name": record.name,
+            "type": record.type,
+            "value": record.value,
+        }
+        for domain in manifest.domains
+        for record in domain.records
+    ]
+    inputs.update(
+        {
+            "app_env_names": ",".join(app_env_names),
+            "dns_records_json": json.dumps(records, sort_keys=True),
+            "resend_domain": default_domain,
+        }
+    )
+    return inputs
+
+
+def _app_env_names_for_verification(
+    manifest: SetupManifest,
+    provider_names: set[str],
+) -> tuple[str, ...]:
+    from fusekit.providers.secret_routing import classify_secret_name
+
+    names: set[str] = set(manifest.required_env)
+    for service in manifest.services:
+        names.update(service.secrets)
+        names.update(service.env)
+    for webhook in manifest.webhooks:
+        names.add(webhook.secret_name)
+    allowed = [
+        name
+        for name in names
+        if classify_secret_name(name, provider_names).route in {"app_env", "webhook_secret"}
+    ]
+    return tuple(sorted(allowed))
+
+
+def _verify_webhook_secret_checks(
+    manifest: SetupManifest,
+    vault: Vault,
+    verification_report: VerificationReport,
+) -> None:
+    if not manifest.webhooks:
+        return
+    results: list[VerificationResult] = []
+    for webhook in manifest.webhooks:
+        available = _webhook_secret_available(vault, webhook.secret_name)
+        results.append(
+            VerificationResult(
+                provider="webhook",
+                kind="webhook-secret",
+                target=webhook.secret_name,
+                status="ok" if available else "missing",
+                details={
+                    "webhook": webhook.name,
+                    "secret_name": webhook.secret_name,
+                },
+            )
+        )
+    verification_report.add_provider_results("webhook", results)
+
+
+def _webhook_secret_available(vault: Vault, name: str) -> bool:
+    if os.environ.get(name):
+        return True
+    for record in vault.public_index():
+        if record.get("label") == name or record.get("id") == name:
+            return True
+    return False
 
 
 def _attempt_provider_verification_repair(

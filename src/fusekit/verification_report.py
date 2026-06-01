@@ -95,6 +95,7 @@ class VerificationReport:
             "repairing": 0,
             "failed": 0,
             "skipped": 0,
+            "needs_human_gate": 0,
         }
         for check in self.checks:
             if check.status in counts:
@@ -104,6 +105,8 @@ class VerificationReport:
             overall = "failed"
         elif counts["repairing"]:
             overall = "repairing"
+        elif counts["needs_human_gate"]:
+            overall = "needs_human_gate"
         elif counts["pending"]:
             overall = "pending"
         return {
@@ -151,6 +154,8 @@ def _report_status(status: str, *, repaired: bool) -> str:
         return "skipped"
     if status == "pending":
         return "pending"
+    if status == "needs_human_gate":
+        return "needs_human_gate"
     if repaired:
         return "repairing"
     return "failed"
@@ -160,8 +165,17 @@ def _check_name(kind: str) -> str:
     return {
         "env-present": "configured",
         "http-json": "auth_valid",
-        "dns-record": "dns_verified",
+        "dns-record": "dns_propagated",
+        "dns-records": "dns_propagated",
         "url-health": "live_url_healthy",
+        "github-repo-secret": "repo_secret_exists",
+        "github-deploy-key": "deploy_key_exists",
+        "vercel-project": "project_exists",
+        "vercel-env": "env_vars_configured",
+        "vercel-deployment-url": "deployment_url_exists",
+        "cloudflare-dns-api": "dns_record_exists",
+        "resend-domain": "domain_verified",
+        "webhook-secret": "webhook_secret_present",
     }.get(kind, "resource_exists")
 
 
@@ -173,6 +187,8 @@ def _summary(provider: str, check: str, status: str) -> str:
         return f"{provider} {readable} is still pending."
     if status == "repairing":
         return f"{provider} {readable} needs a repair pass."
+    if status == "needs_human_gate":
+        return f"{provider} {readable} needs your provider verification step."
     if status == "skipped":
         return f"{provider} {readable} was skipped as optional."
     return f"{provider} {readable} failed."
@@ -185,6 +201,8 @@ def _repair(provider: str, check: str, status: str) -> str:
         return "No action needed unless this optional check matters for launch proof."
     if status == "pending":
         return _pending_repair(provider, check)
+    if status == "needs_human_gate":
+        return _human_gate_repair(provider, check)
     if status == "repairing":
         return (
             "FuseKit should reopen the provider page, repair the missing setup, "
@@ -194,22 +212,55 @@ def _repair(provider: str, check: str, status: str) -> str:
 
 
 def _pending_repair(provider: str, check: str) -> str:
-    if check == "dns_verified":
+    if check == "dns_record_exists":
+        return (
+            "Cloudflare DNS record exists in Cloudflare but has not propagated yet. "
+            "Keep waiting."
+        )
+    if check == "dns_propagated":
         return (
             "Keep waiting for DNS propagation; FuseKit should recheck until the "
             "provider confirms it."
         )
+    if provider == "resend" and check == "domain_verified":
+        return "Resend domain is pending. FuseKit will recheck DNS every 30 seconds."
+    if provider == "vercel" and check == "deployment_url_exists":
+        return "Vercel deployment is still warming up. FuseKit will keep checking."
     if check == "live_url_healthy":
         return "Wait for deployment warmup, then retry the live URL health check."
     return f"Keep the {provider} gate alive and rerun verification after the provider finishes."
 
 
+def _human_gate_repair(provider: str, check: str) -> str:
+    return (
+        f"Snowman is waiting for the {provider} screen that controls {check.replace('_', ' ')}. "
+        "Pass the provider gate when it appears; FuseKit will continue automatically."
+    )
+
+
 def _failed_repair(provider: str, check: str) -> str:
     if check == "configured":
         return f"Reapply {provider} environment variables/secrets and rerun verification."
+    if provider == "github" and check == "repo_secret_exists":
+        return "GitHub repo secret is missing. FuseKit will reapply the missing secret."
+    if provider == "github" and check == "deploy_key_exists":
+        return "GitHub deploy key is missing. FuseKit will create a new deploy key."
+    if provider == "vercel" and check == "env_vars_configured":
+        return (
+            "Vercel deploy succeeded, but env var is missing. FuseKit will reapply "
+            "env var and redeploy."
+        )
+    if provider == "vercel" and check == "project_exists":
+        return "Vercel project is missing. FuseKit will recreate or reconnect the project."
+    if provider == "cloudflare" and check == "dns_record_exists":
+        return "Cloudflare DNS record is missing. FuseKit will reapply the DNS record."
+    if provider == "resend" and check == "domain_verified":
+        return "Resend domain is missing. FuseKit will reopen Resend and add the domain."
+    if check == "webhook_secret_present":
+        return "Webhook signature secret is missing. FuseKit will regenerate and store it."
     if check == "auth_valid":
         return f"Create or recapture the approved {provider} token, then rerun verification."
-    if check == "dns_verified":
+    if check == "dns_propagated":
         return (
             "Compare expected DNS records to provider records, reapply missing "
             "records, then retry."

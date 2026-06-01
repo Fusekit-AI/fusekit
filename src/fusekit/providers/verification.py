@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from importlib import import_module
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 from fusekit.audit import redact
@@ -48,6 +49,7 @@ def verify_provider_pack(
     vault: Vault,
     *,
     live_url: str = "",
+    inputs: dict[str, str] | None = None,
     attempts: int = 1,
     retry_seconds: float = 0.0,
 ) -> list[VerificationResult]:
@@ -61,6 +63,7 @@ def verify_provider_pack(
                 recipe,
                 vault,
                 live_url=live_url,
+                inputs=inputs,
                 attempts=attempts,
                 retry_seconds=retry_seconds,
             )
@@ -74,19 +77,20 @@ def verify_recipe_with_retries(
     vault: Vault,
     *,
     live_url: str = "",
+    inputs: dict[str, str] | None = None,
     attempts: int = 1,
     retry_seconds: float = 0.0,
 ) -> VerificationResult:
     """Run a recipe with polling/retry semantics."""
 
     attempts = max(1, attempts)
-    last = verify_recipe(pack, recipe, vault, live_url=live_url)
+    last = verify_recipe(pack, recipe, vault, live_url=live_url, inputs=inputs)
     for _attempt in range(1, attempts):
         if last.status in {"ok", "skipped"}:
             return last
         if retry_seconds > 0:
             time.sleep(retry_seconds)
-        last = verify_recipe(pack, recipe, vault, live_url=live_url)
+        last = verify_recipe(pack, recipe, vault, live_url=live_url, inputs=inputs)
     if last.status == "failed" and attempts > 1:
         return VerificationResult(
             provider=last.provider,
@@ -104,6 +108,7 @@ def verify_recipe(
     vault: Vault,
     *,
     live_url: str = "",
+    inputs: dict[str, str] | None = None,
 ) -> VerificationResult:
     """Run one provider-pack verification recipe."""
 
@@ -116,6 +121,24 @@ def verify_recipe(
             return _verify_url_health(pack, recipe, vault, live_url=live_url)
         if recipe.kind == "dns-record":
             return _verify_dns_record(pack, recipe)
+        if recipe.kind == "dns-records":
+            return _verify_dns_records(pack, recipe, _resolved_inputs(recipe, inputs))
+        if recipe.kind == "github-repo-secret":
+            return _verify_github_repo_secret(pack, recipe, vault, inputs or {})
+        if recipe.kind == "github-deploy-key":
+            return _verify_github_deploy_key(pack, recipe, vault, inputs or {})
+        if recipe.kind == "vercel-project":
+            return _verify_vercel_project(pack, recipe, vault, inputs or {})
+        if recipe.kind == "vercel-env":
+            return _verify_vercel_env(pack, recipe, vault, inputs or {})
+        if recipe.kind == "vercel-deployment-url":
+            return _verify_vercel_deployment(pack, recipe, vault, live_url, inputs or {})
+        if recipe.kind == "cloudflare-dns-api":
+            return _verify_cloudflare_dns_api(pack, recipe, vault, inputs or {})
+        if recipe.kind == "resend-domain":
+            return _verify_resend_domain(pack, recipe, vault, inputs or {})
+        if recipe.kind == "webhook-secret":
+            return _verify_env_present(pack, recipe, vault)
     except ProviderError as exc:
         return VerificationResult(
             provider=pack.provider,
@@ -282,7 +305,324 @@ def _verify_dns_record(
             "type": record_type,
             "records": values,
             "expected_value_present": bool(expected_value and expected_value in values),
+            "pending_safe": True,
         },
+    )
+
+
+def _verify_dns_records(
+    pack: ProviderCapabilityPack,
+    recipe: VerificationRecipe,
+    inputs: dict[str, str],
+) -> VerificationResult:
+    records = _records_from_inputs(inputs.get("records_json", "[]"))
+    if not records:
+        return _skipped(pack, recipe, "no DNS records supplied")
+    try:
+        resolver = import_module("dns.resolver")
+    except ImportError as exc:
+        raise ProviderError("dnspython is required for DNS verification.") from exc
+    missing: list[dict[str, str]] = []
+    observed: list[dict[str, object]] = []
+    for record in records:
+        name = str(record.get("name", ""))
+        record_type = str(record.get("type", "A")).upper()
+        expected_value = str(record.get("value", ""))
+        try:
+            answers = resolver.resolve(name, record_type)
+            values = sorted(str(answer).strip('"') for answer in answers)
+        except Exception:
+            values = []
+        expected_present = bool(expected_value and expected_value in values)
+        observed.append(
+            {
+                "name": name,
+                "type": record_type,
+                "records": values,
+                "expected_value_present": expected_present,
+            }
+        )
+        if not values or (expected_value and not expected_present):
+            missing.append({"name": name, "type": record_type})
+    return VerificationResult(
+        provider=pack.provider,
+        kind=recipe.kind,
+        target=recipe.target,
+        status="ok" if not missing else "failed",
+        details={
+            "checked": observed,
+            "missing": missing,
+            "pending_safe": True,
+            "expected": recipe.expected,
+        },
+    )
+
+
+def _verify_github_repo_secret(
+    pack: ProviderCapabilityPack,
+    recipe: VerificationRecipe,
+    vault: Vault,
+    inputs: dict[str, str],
+) -> VerificationResult:
+    repo = _resolve_template(recipe.target, inputs)
+    names = _csv(_resolve_template(recipe.inputs.get("names", ""), inputs))
+    if not repo:
+        return _needs_gate(pack, recipe, "GitHub repository is not known yet.")
+    if not names:
+        return _skipped(pack, recipe, "no GitHub repo secret names supplied")
+    token = _token_or_gate(pack, recipe, vault, "GITHUB_TOKEN")
+    if isinstance(token, VerificationResult):
+        return token
+    missing: list[str] = []
+    for name in names:
+        status, _data = _api_json(
+            "https://api.github.com",
+            token,
+            f"/repos/{_repo_path(repo)}/actions/secrets/{quote(name)}",
+        )
+        if status == 404:
+            missing.append(name)
+        elif status >= 400:
+            raise ProviderError(f"GitHub secret verification returned HTTP {status}.")
+    return VerificationResult(
+        provider=pack.provider,
+        kind=recipe.kind,
+        target=repo,
+        status="ok" if not missing else "failed",
+        details={"repo": repo, "checked": names, "missing": missing},
+    )
+
+
+def _verify_github_deploy_key(
+    pack: ProviderCapabilityPack,
+    recipe: VerificationRecipe,
+    vault: Vault,
+    inputs: dict[str, str],
+) -> VerificationResult:
+    repo = _resolve_template(recipe.target, inputs)
+    title = recipe.inputs.get("title", "FuseKit deploy key")
+    if not repo:
+        return _needs_gate(pack, recipe, "GitHub repository is not known yet.")
+    token = _token_or_gate(pack, recipe, vault, "GITHUB_TOKEN")
+    if isinstance(token, VerificationResult):
+        return token
+    status, data = _api_json(
+        "https://api.github.com",
+        token,
+        f"/repos/{_repo_path(repo)}/keys?per_page=100",
+    )
+    if status >= 400:
+        raise ProviderError(f"GitHub deploy key verification returned HTTP {status}.")
+    keys = data if isinstance(data, list) else []
+    matched = [
+        str(item.get("id", ""))
+        for item in keys
+        if isinstance(item, dict) and str(item.get("title", "")) == title
+    ]
+    return VerificationResult(
+        provider=pack.provider,
+        kind=recipe.kind,
+        target=repo,
+        status="ok" if matched else "failed",
+        details={"repo": repo, "title": title, "matched_key_ids": matched},
+    )
+
+
+def _verify_vercel_project(
+    pack: ProviderCapabilityPack,
+    recipe: VerificationRecipe,
+    vault: Vault,
+    inputs: dict[str, str],
+) -> VerificationResult:
+    project = _resolve_template(recipe.target, inputs)
+    if not project:
+        return _needs_gate(pack, recipe, "Vercel project name is not known yet.")
+    token = _token_or_gate(pack, recipe, vault, "VERCEL_TOKEN")
+    if isinstance(token, VerificationResult):
+        return token
+    status, data = _api_json("https://api.vercel.com", token, f"/v9/projects/{quote(project)}")
+    ok = status == 200 and isinstance(data, dict)
+    return VerificationResult(
+        provider=pack.provider,
+        kind=recipe.kind,
+        target=project,
+        status="ok" if ok else "failed",
+        details={"project": project, "status_code": status},
+    )
+
+
+def _verify_vercel_env(
+    pack: ProviderCapabilityPack,
+    recipe: VerificationRecipe,
+    vault: Vault,
+    inputs: dict[str, str],
+) -> VerificationResult:
+    project = _resolve_template(recipe.target, inputs)
+    names = _csv(_resolve_template(recipe.inputs.get("names", ""), inputs))
+    if not project:
+        return _needs_gate(pack, recipe, "Vercel project name is not known yet.")
+    if not names:
+        return _skipped(pack, recipe, "no Vercel env var names supplied")
+    token = _token_or_gate(pack, recipe, vault, "VERCEL_TOKEN")
+    if isinstance(token, VerificationResult):
+        return token
+    status, data = _api_json("https://api.vercel.com", token, f"/v9/projects/{quote(project)}/env")
+    if status >= 400:
+        raise ProviderError(f"Vercel env verification returned HTTP {status}.")
+    envs_raw = data.get("envs", data.get("data", [])) if isinstance(data, dict) else []
+    envs = envs_raw if isinstance(envs_raw, list) else []
+    present = {
+        str(item.get("key", ""))
+        for item in envs
+        if isinstance(item, dict) and item.get("key")
+    }
+    missing = [name for name in names if name not in present]
+    return VerificationResult(
+        provider=pack.provider,
+        kind=recipe.kind,
+        target=project,
+        status="ok" if not missing else "failed",
+        details={"project": project, "checked": names, "missing": missing},
+    )
+
+
+def _verify_vercel_deployment(
+    pack: ProviderCapabilityPack,
+    recipe: VerificationRecipe,
+    vault: Vault,
+    live_url: str,
+    inputs: dict[str, str],
+) -> VerificationResult:
+    project = _resolve_template(recipe.target, inputs)
+    token = _token_or_gate(pack, recipe, vault, "VERCEL_TOKEN")
+    if isinstance(token, VerificationResult):
+        return token
+    query = (
+        urlencode({"projectId": project, "limit": "1"})
+        if project
+        else urlencode({"limit": "1"})
+    )
+    status, data = _api_json("https://api.vercel.com", token, f"/v6/deployments?{query}")
+    if status >= 400:
+        raise ProviderError(f"Vercel deployment verification returned HTTP {status}.")
+    deployments = data.get("deployments", []) if isinstance(data, dict) else []
+    latest = deployments[0] if deployments and isinstance(deployments[0], dict) else {}
+    deployment_url = str(latest.get("url", ""))
+    ready = str(latest.get("readyState", "")).upper() in {"READY", "ALIASED"}
+    ok = bool(live_url or deployment_url) and ready
+    return VerificationResult(
+        provider=pack.provider,
+        kind=recipe.kind,
+        target=project or live_url,
+        status="ok" if ok else "failed",
+        details={
+            "project": project,
+            "deployment_url_present": bool(live_url or deployment_url),
+            "ready": ready,
+            "pending_safe": True,
+        },
+    )
+
+
+def _verify_cloudflare_dns_api(
+    pack: ProviderCapabilityPack,
+    recipe: VerificationRecipe,
+    vault: Vault,
+    inputs: dict[str, str],
+) -> VerificationResult:
+    resolved = _resolved_inputs(recipe, inputs)
+    zone = _resolve_template(recipe.target, inputs) or resolved.get("zone", "")
+    records = _records_from_inputs(resolved.get("records_json", "[]"))
+    if not zone or not records:
+        return _skipped(pack, recipe, "no Cloudflare zone or DNS records supplied")
+    token = _token_or_gate(pack, recipe, vault, "CLOUDFLARE_API_TOKEN")
+    if isinstance(token, VerificationResult):
+        return token
+    zone_status, zone_data = _api_json(
+        "https://api.cloudflare.com/client/v4",
+        token,
+        f"/zones?{urlencode({'name': zone})}",
+    )
+    if zone_status >= 400:
+        raise ProviderError(f"Cloudflare zone lookup returned HTTP {zone_status}.")
+    zones = zone_data.get("result", []) if isinstance(zone_data, dict) else []
+    zone_id = str(zones[0].get("id", "")) if zones and isinstance(zones[0], dict) else ""
+    if not zone_id:
+        return VerificationResult(
+            provider=pack.provider,
+            kind=recipe.kind,
+            target=zone,
+            status="failed",
+            details={"zone": zone, "missing_zone": True},
+        )
+    missing: list[dict[str, str]] = []
+    for record in records:
+        name = str(record.get("name", ""))
+        record_type = str(record.get("type", "A")).upper()
+        value = str(record.get("value", ""))
+        params = urlencode({"type": record_type, "name": name})
+        status, data = _api_json(
+            "https://api.cloudflare.com/client/v4",
+            token,
+            f"/zones/{zone_id}/dns_records?{params}",
+        )
+        if status >= 400:
+            raise ProviderError(f"Cloudflare DNS lookup returned HTTP {status}.")
+        items = data.get("result", []) if isinstance(data, dict) else []
+        if not any(
+            isinstance(item, dict) and str(item.get("content", "")) == value
+            for item in items
+        ):
+            missing.append({"name": name, "type": record_type})
+    return VerificationResult(
+        provider=pack.provider,
+        kind=recipe.kind,
+        target=zone,
+        status="ok" if not missing else "failed",
+        details={"zone": zone, "checked": len(records), "missing": missing},
+    )
+
+
+def _verify_resend_domain(
+    pack: ProviderCapabilityPack,
+    recipe: VerificationRecipe,
+    vault: Vault,
+    inputs: dict[str, str],
+) -> VerificationResult:
+    domain = _resolve_template(recipe.target, inputs)
+    if not domain:
+        return _skipped(pack, recipe, "no Resend domain supplied")
+    token = _token_or_gate(pack, recipe, vault, "RESEND_API_KEY")
+    if isinstance(token, VerificationResult):
+        return token
+    status, data = _api_json("https://api.resend.com", token, "/domains")
+    if status >= 400:
+        raise ProviderError(f"Resend domain verification returned HTTP {status}.")
+    domains = data.get("data", []) if isinstance(data, dict) else []
+    match = next(
+        (
+            item
+            for item in domains
+            if isinstance(item, dict) and str(item.get("name", "")) == domain
+        ),
+        None,
+    )
+    if not match:
+        return VerificationResult(
+            provider=pack.provider,
+            kind=recipe.kind,
+            target=domain,
+            status="failed",
+            details={"domain": domain, "missing": True},
+        )
+    domain_status = str(match.get("status", "")).lower()
+    ok = domain_status in {"verified", "success", "active"}
+    return VerificationResult(
+        provider=pack.provider,
+        kind=recipe.kind,
+        target=domain,
+        status="ok" if ok else "pending",
+        details={"domain": domain, "domain_status": domain_status, "pending_safe": True},
     )
 
 
@@ -313,6 +653,22 @@ def _secret_value(vault: Vault, provider: str, name: str) -> str:
     raise ProviderError(f"Required secret is not available: {name}")
 
 
+def _token_or_gate(
+    pack: ProviderCapabilityPack,
+    recipe: VerificationRecipe,
+    vault: Vault,
+    name: str,
+) -> str | VerificationResult:
+    try:
+        return _secret_value(vault, pack.provider, name)
+    except ProviderError:
+        return _needs_gate(
+            pack,
+            recipe,
+            f"{pack.display_name} authorization is not available yet.",
+        )
+
+
 def _resolve_template_refs(text: str, vault: Vault, provider: str) -> str:
     def replace(match: re.Match[str]) -> str:
         source, name = match.groups()
@@ -331,6 +687,98 @@ def _json_mapping(text: str) -> dict[str, str]:
     if not isinstance(data, dict):
         raise ProviderError("headers_json must be a JSON object.")
     return {str(key): str(value) for key, value in data.items()}
+
+
+def _api_json(
+    api_base: str,
+    token: str,
+    path: str,
+) -> tuple[int, Any]:
+    request = Request(
+        f"{api_base}{path}",
+        headers={"Accept": "application/json", "Authorization": f"Bearer {token}"},
+        method="GET",
+    )
+    text = ""
+    try:
+        with urlopen(request, timeout=30) as response:  # nosec B310
+            status = int(response.status)
+            text = response.read().decode("utf-8")
+    except HTTPError as exc:
+        status = int(exc.code)
+        text = exc.read().decode("utf-8") if exc.fp else ""
+    except URLError as exc:
+        raise ProviderError(f"Provider API verification failed: {exc.reason}") from exc
+    if not text:
+        return status, {}
+    try:
+        return status, json.loads(text)
+    except json.JSONDecodeError:
+        return status, {}
+
+
+def _resolve_template(value: str, inputs: dict[str, str]) -> str:
+    resolved = value
+    for key, replacement in inputs.items():
+        resolved = resolved.replace(f"${{input:{key}}}", replacement)
+    return resolved if "${input:" not in resolved else ""
+
+
+def _resolved_inputs(
+    recipe: VerificationRecipe,
+    inputs: dict[str, str] | None,
+) -> dict[str, str]:
+    source = inputs or {}
+    return {key: _resolve_template(value, source) for key, value in recipe.inputs.items()}
+
+
+def _csv(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _records_from_inputs(value: str) -> list[dict[str, Any]]:
+    try:
+        data = json.loads(value or "[]")
+    except json.JSONDecodeError as exc:
+        raise ProviderError("records_json must be a JSON list.") from exc
+    if not isinstance(data, list):
+        raise ProviderError("records_json must be a JSON list.")
+    return [item for item in data if isinstance(item, dict)]
+
+
+def _repo_path(repo: str) -> str:
+    stripped = repo.strip().removeprefix("https://github.com/").removesuffix(".git")
+    if stripped.count("/") != 1:
+        raise ProviderError("GitHub repo must be owner/name.")
+    return "/".join(quote(part) for part in stripped.split("/", 1))
+
+
+def _needs_gate(
+    pack: ProviderCapabilityPack,
+    recipe: VerificationRecipe,
+    reason: str,
+) -> VerificationResult:
+    return VerificationResult(
+        provider=pack.provider,
+        kind=recipe.kind,
+        target=recipe.target,
+        status="needs_human_gate",
+        details={"reason": reason, "service_gate": True},
+    )
+
+
+def _skipped(
+    pack: ProviderCapabilityPack,
+    recipe: VerificationRecipe,
+    reason: str,
+) -> VerificationResult:
+    return VerificationResult(
+        provider=pack.provider,
+        kind=recipe.kind,
+        target=recipe.target,
+        status="skipped",
+        details={"reason": reason},
+    )
 
 
 def _path_exists(data: Any, dotted_path: str) -> bool:

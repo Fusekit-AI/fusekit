@@ -621,16 +621,22 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
             checkpoints = tmp_path / "checkpoints.json"
             vault_file = tmp_path / "fusekit.vault.json"
             verification = tmp_path / "verification_report.json"
+            rollback = tmp_path / "rollback_plan.json"
             payload.write_text("{}", encoding="utf-8")
             gates.write_text('{"gates":[]}', encoding="utf-8")
             checkpoints.write_text('{"checkpoints":[]}', encoding="utf-8")
             vault_file.write_text("encrypted", encoding="utf-8")
             verification.write_text('{"checks":[]}', encoding="utf-8")
+            rollback.write_text(
+                '{"rollback":[{"action":"rollback.test","status":"planned"}]}',
+                encoding="utf-8",
+            )
             archive.add(payload, arcname=".fusekit/job.json")
             archive.add(gates, arcname=".fusekit/gates.json")
             archive.add(checkpoints, arcname=".fusekit/checkpoints.json")
             archive.add(vault_file, arcname=".fusekit/fusekit.vault.json")
             archive.add(verification, arcname=".fusekit/verification_report.json")
+            archive.add(rollback, arcname=".fusekit/rollback_plan.json")
             archive.close()
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
@@ -677,6 +683,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
     assert (tmp_path / "out" / ".fusekit" / "checkpoints.json").exists()
     assert (tmp_path / "out" / ".fusekit" / "fusekit.vault.json").exists()
     assert (tmp_path / "out" / ".fusekit" / "verification_report.json").exists()
+    assert (tmp_path / "out" / ".fusekit" / "rollback_plan.json").exists()
     assert any(".fusekit/gates.json" in command[-1] for command in calls if command[0] == "ssh")
     assert any(
         ".fusekit/checkpoints.json" in command[-1]
@@ -685,6 +692,11 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
     )
     assert any(
         ".fusekit/verification_report.json" in command[-1]
+        for command in calls
+        if command[0] == "ssh"
+    )
+    assert any(
+        ".fusekit/rollback_plan.json" in command[-1]
         for command in calls
         if command[0] == "ssh"
     )

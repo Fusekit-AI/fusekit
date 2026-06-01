@@ -1,0 +1,106 @@
+"""Detonation preflight checks for survivor artifacts."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from fusekit.security import scan_for_secret_leaks
+
+PENDING_SAFE_CHECKS = {
+    "dns_propagated",
+    "dns_record_exists",
+    "domain_verified",
+    "deployment_url_exists",
+}
+
+
+@dataclass(frozen=True)
+class DetonationPreflightResult:
+    """Redacted detonation preflight outcome."""
+
+    ok: bool
+    failures: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {"ok": self.ok, "failures": list(self.failures)}
+
+
+def run_detonation_preflight(
+    *,
+    root: Path,
+    vault: Path,
+    audit: Path,
+    receipt: Path,
+    verification_report: Path,
+    rollback_metadata: Path,
+) -> DetonationPreflightResult:
+    """Verify survivor artifacts before plaintext worker state is destroyed."""
+
+    failures: list[str] = []
+    for label, path in (
+        ("encrypted vault", vault),
+        ("audit log", audit),
+        ("redacted receipt", receipt),
+        ("verification report", verification_report),
+        ("rollback metadata", rollback_metadata),
+    ):
+        if not path.is_file():
+            failures.append(f"missing {label}: {path}")
+
+    if verification_report.is_file():
+        failures.extend(_verification_failures(_read_json(verification_report)))
+    if rollback_metadata.is_file():
+        failures.extend(_rollback_failures(_read_json(rollback_metadata)))
+
+    leaks = scan_for_secret_leaks(root)
+    if leaks:
+        failures.append(f"secret leak scan found {len(leaks)} finding(s)")
+
+    return DetonationPreflightResult(ok=not failures, failures=tuple(failures))
+
+
+def _verification_failures(report: dict[str, Any]) -> list[str]:
+    checks = report.get("checks", [])
+    if not isinstance(checks, list) or not checks:
+        return ["verification report has no checks"]
+    failures: list[str] = []
+    for item in checks:
+        if not isinstance(item, dict):
+            failures.append("verification report contains an invalid check")
+            continue
+        provider = str(item.get("provider", "provider"))
+        check = str(item.get("check", "check"))
+        status = str(item.get("status", ""))
+        details = item.get("details", {})
+        pending_safe = bool(details.get("pending_safe")) if isinstance(details, dict) else False
+        if status in {"passed", "skipped"}:
+            continue
+        if status == "pending" and (pending_safe or check in PENDING_SAFE_CHECKS):
+            continue
+        failures.append(f"{provider}.{check} is {status or 'unknown'}")
+    return failures
+
+
+def _rollback_failures(payload: dict[str, Any]) -> list[str]:
+    actions = payload.get("rollback", payload.get("actions", []))
+    if not isinstance(actions, list) or not actions:
+        return ["rollback metadata has no actions"]
+    actionable = [
+        item
+        for item in actions
+        if isinstance(item, dict)
+        and str(item.get("action", "")).startswith("rollback.")
+        and str(item.get("status", "")) not in {"missing", "failed"}
+    ]
+    return [] if actionable else ["rollback metadata has no provider rollback actions"]
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return raw if isinstance(raw, dict) else {}

@@ -239,7 +239,7 @@ def execute_remote_setup(
             "set -- .fusekit/fusekit.vault.json .fusekit/audit.jsonl "
             ".fusekit/setup_receipt.json .fusekit/setup_receipt.md .fusekit/job.json "
             ".fusekit/checkpoints.json .fusekit/verification_report.json "
-            ".fusekit/gates.json; "
+            ".fusekit/rollback_plan.json .fusekit/gates.json; "
             "existing=''; "
             "for path in \"$@\"; do [ -f \"$path\" ] && existing=\"$existing $path\"; done; "
             "[ -n \"$existing\" ] || exit 44; "
@@ -329,6 +329,7 @@ def _validate_artifact_bundle(output_dir: Path) -> str:
         ".fusekit/job.json",
         ".fusekit/checkpoints.json",
         ".fusekit/verification_report.json",
+        ".fusekit/rollback_plan.json",
     )
     missing = [path for path in required if not (output_dir / path).is_file()]
     if missing:

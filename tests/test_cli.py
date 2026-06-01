@@ -922,10 +922,25 @@ def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch)
     )
     monkeypatch.setattr("fusekit.cli.authorize_oci_browser_session", local_oci_auth)
     monkeypatch.setattr("fusekit.cli._provision_oci_workspace", lambda args, vault, plan: workspace)
-    monkeypatch.setattr(
-        "fusekit.cli.execute_remote_setup",
-        lambda **kwargs: {"artifact_archive": "artifacts.tar.gz", "output_dir": "remote-artifacts"},
+    remote_artifacts = tmp_path / "remote-artifacts"
+    remote_fusekit = remote_artifacts / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    (remote_fusekit / "fusekit.vault.json").write_text("encrypted", encoding="utf-8")
+    (remote_fusekit / "audit.jsonl").write_text('{"event":"ok"}\n', encoding="utf-8")
+    (remote_fusekit / "setup_receipt.json").write_text('{"actions":[]}', encoding="utf-8")
+    (remote_fusekit / "verification_report.json").write_text(
+        '{"checks":[{"provider":"github","check":"repo_secret_exists","status":"passed"}]}',
+        encoding="utf-8",
     )
+    (remote_fusekit / "rollback_plan.json").write_text(
+        '{"rollback":[{"action":"rollback.github.secret","status":"planned"}]}',
+        encoding="utf-8",
+    )
+
+    def fake_remote_setup(**kwargs):  # type: ignore[no-untyped-def]
+        return {"artifact_archive": "artifacts.tar.gz", "output_dir": str(remote_artifacts)}
+
+    monkeypatch.setattr("fusekit.cli.execute_remote_setup", fake_remote_setup)
     monkeypatch.setattr("fusekit.cli.detonate_remote_worker", lambda **kwargs: None)
     monkeypatch.setattr(
         "fusekit.cli.load_oci_auth_from_vault_or_config",

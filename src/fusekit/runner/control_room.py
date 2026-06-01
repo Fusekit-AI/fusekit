@@ -22,6 +22,7 @@ STATUS_LABELS = {
     "skipped": "Skipped",
     "passed": "Passed",
     "repairing": "Repairing",
+    "needs_human_gate": "Needs human gate",
 }
 
 TERMINAL_STEP_STATUSES = {"done", "skipped"}
@@ -339,6 +340,7 @@ def _trust_snow_state(status: str) -> str:
         "pending": "checking",
         "repairing": "repairing",
         "failed": "failed",
+        "needs_human_gate": "checking",
         "skipped": "checking",
     }.get(status, "checking")
 
@@ -1594,8 +1596,13 @@ button {
 }
 
 .trust-card.pending,
-.trust-card.repairing {
+.trust-card.repairing,
+.trust-card.needs_human_gate {
   border-color: rgba(0, 151, 255, 0.22);
+}
+
+.trust-card.needs_human_gate {
+  background: #f2f8ff;
 }
 
 .trust-card.failed {
@@ -2312,6 +2319,7 @@ function trustSnowState(status) {
     pending: "checking",
     repairing: "repairing",
     failed: "failed",
+    needs_human_gate: "checking",
     skipped: "checking",
   }[status] || "checking";
 }

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from io import BytesIO
+from types import SimpleNamespace
 from urllib.error import HTTPError
 
 from fusekit.providers.capability_pack import (
@@ -30,6 +31,11 @@ def test_verifies_env_present_from_vault_without_revealing_secret() -> None:
         "re_hidden_secret",
     )
     pack = synthesize_provider_pack("resend", _NoPath())
+    object.__setattr__(
+        pack,
+        "verification",
+        (VerificationRecipe("env-present", "RESEND_API_KEY"),),
+    )
 
     results = verify_provider_pack(pack, vault)
 
@@ -236,6 +242,185 @@ def test_verification_report_summarizes_repair_without_secrets(tmp_path) -> None
     assert "[REDACTED" in public
     assert "Snowman" not in payload["checks"][0]["summary"]
     assert "repair" in payload["checks"][0]["repair"].lower()
+
+
+def test_dns_pending_then_passing(monkeypatch) -> None:
+    vault = Vault.empty()
+    pack = _pack("cloudflare")
+    recipe = VerificationRecipe(
+        kind="dns-records",
+        target="moonlite.rsvp",
+        inputs={
+            "records_json": json.dumps(
+                [{"name": "moonlite.rsvp", "type": "A", "value": "203.0.113.10"}]
+            )
+        },
+    )
+    calls = {"count": 0}
+
+    class Resolver:
+        def resolve(self, name: str, record_type: str):  # type: ignore[no-untyped-def]
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise RuntimeError("not propagated")
+            return ["203.0.113.10"]
+
+    monkeypatch.setattr(
+        "fusekit.providers.verification.import_module",
+        lambda name: Resolver() if name == "dns.resolver" else SimpleNamespace(),
+    )
+
+    result = verify_recipe_with_retries(pack, recipe, vault, attempts=2, retry_seconds=0)
+
+    assert result.status == "ok"
+    assert calls["count"] == 2
+
+
+def test_vercel_deploy_lag_reports_pending_then_ready(monkeypatch) -> None:
+    vault = Vault.empty()
+    vault.put("provider.vercel.token", "provider_secret", "vercel", "VERCEL_TOKEN", "token")
+    pack = _pack("vercel")
+    recipe = VerificationRecipe(
+        kind="vercel-deployment-url",
+        target="moonlite",
+    )
+    calls = {"count": 0}
+
+    def local_urlopen(request, timeout=30):  # type: ignore[no-untyped-def]
+        calls["count"] += 1
+        state = "BUILDING" if calls["count"] == 1 else "READY"
+        return _JsonResponse({"deployments": [{"url": "moonlite.vercel.app", "readyState": state}]})
+
+    monkeypatch.setattr("fusekit.providers.verification.urlopen", local_urlopen)
+
+    result = verify_recipe_with_retries(pack, recipe, vault, attempts=2, retry_seconds=0)
+
+    assert result.status == "ok"
+
+
+def test_resend_pending_domain_is_pending_safe(monkeypatch) -> None:
+    vault = Vault.empty()
+    vault.put(
+        "provider.resend.resend_api_key",
+        "provider_secret",
+        "resend",
+        "RESEND_API_KEY",
+        "token",
+    )
+    pack = _pack("resend")
+    recipe = VerificationRecipe(kind="resend-domain", target="moonlite.rsvp")
+
+    monkeypatch.setattr(
+        "fusekit.providers.verification.urlopen",
+        lambda *args, **kwargs: _JsonResponse(
+            {"data": [{"name": "moonlite.rsvp", "status": "pending"}]}
+        ),
+    )
+
+    result = verify_recipe_with_retries(pack, recipe, vault, attempts=2, retry_seconds=0)
+
+    assert result.status == "pending"
+    assert result.details["pending_safe"] is True
+
+
+def test_github_missing_secret_reports_failed(monkeypatch) -> None:
+    vault = Vault.empty()
+    vault.put("provider.github.token", "provider_secret", "github", "GITHUB_TOKEN", "token")
+    pack = _pack("github")
+    recipe = VerificationRecipe(
+        kind="github-repo-secret",
+        target="${input:github_repo}",
+        inputs={"names": "RESEND_API_KEY"},
+    )
+    object.__setattr__(pack, "verification", (recipe,))
+
+    def local_urlopen(request, timeout=30):  # type: ignore[no-untyped-def]
+        raise HTTPError(request.full_url, 404, "missing", {}, BytesIO())
+
+    monkeypatch.setattr("fusekit.providers.verification.urlopen", local_urlopen)
+
+    result = verify_provider_pack(
+        pack,
+        vault,
+        inputs={"github_repo": "fusekitdemo/moonlite"},
+    )[0]
+
+    assert result.status == "failed"
+    assert result.details["missing"] == ["RESEND_API_KEY"]
+
+
+def test_live_url_500_then_200(monkeypatch) -> None:
+    vault = Vault.empty()
+    pack = _pack("vercel")
+    recipe = VerificationRecipe(kind="url-health", target="$live_url")
+    calls = {"count": 0}
+
+    def local_urlopen(request, timeout=30):  # type: ignore[no-untyped-def]
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise HTTPError(request.full_url, 500, "server error", {}, BytesIO())
+        return _JsonResponse({}, status=200)
+
+    monkeypatch.setattr("fusekit.providers.verification.urlopen", local_urlopen)
+
+    result = verify_recipe_with_retries(
+        pack,
+        recipe,
+        vault,
+        live_url="https://moonlite.rsvp",
+        attempts=2,
+        retry_seconds=0,
+    )
+
+    assert result.status == "ok"
+
+
+def test_webhook_secret_mismatch_reports_failed() -> None:
+    vault = Vault.empty()
+    pack = _pack("webhook")
+    recipe = VerificationRecipe(kind="webhook-secret", target="WEBHOOK_SECRET")
+    object.__setattr__(pack, "verification", (recipe,))
+
+    result = verify_provider_pack(pack, vault)[0]
+
+    assert result.status == "missing"
+
+
+def _pack(provider: str) -> ProviderCapabilityPack:
+    return ProviderCapabilityPack(
+        schema_version="fusekit.provider-pack.v1",
+        provider=provider,
+        display_name=provider.title(),
+        category="service",
+        confidence="high",
+        evidence=("test",),
+        detection=ProviderDetection(),
+        handoff=PackHandoff(
+            signup_url=f"https://{provider}.example/signup",
+            token_url=f"https://{provider}.example/tokens",
+        ),
+        required_secrets=("TEST_TOKEN",),
+        env_vars=("TEST_TOKEN",),
+        setup=(),
+        setup_goals=(),
+        verification=(),
+        rollback=("Revoke token.",),
+    )
+
+
+class _JsonResponse:
+    def __init__(self, payload: object, status: int = 200) -> None:
+        self.payload = payload
+        self.status = status
+
+    def __enter__(self) -> _JsonResponse:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return json.dumps(self.payload).encode("utf-8")
 
 
 class _NoPath:

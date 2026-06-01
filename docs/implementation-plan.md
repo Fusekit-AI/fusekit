@@ -58,6 +58,7 @@
 - [x] Cross-repo bug pass: GitHub source URLs now reject non-root repo pages, failed app archive extraction preserves the previous destination, and remote artifact retrieval fails on empty or unsafe archives instead of silently continuing.
 - [x] Alive workflow hardening pass: runner jobs now write durable `checkpoints.json` recovery state with next actions/resume hints, the control room renders Snowman-backed recovery cards for active phases, static control-room artifacts refresh after launch state changes, and remote detonation is guarded by encrypted/redacted artifact completeness checks.
 - [x] Trust verification hardening pass: `apply` now writes a redacted `verification_report.json` even when verification needs repair, OCI artifact retrieval requires it before detonation can be trusted, and the control room renders Snowman-backed trust cards for passed, pending, repairing, and failed provider/live-app checks.
+- [x] Provider verification/deployment preflight hardening: GitHub, Vercel, Cloudflare/DNS, Resend, Plaid, webhook, and live-app checks now have provider-specific recipe/card semantics, redacted repair guidance, pending-safe DNS/domain/deploy handling, rollback metadata artifacts, and detonation preflight checks before worker destruction.
 
 ## Milestone 1: Repo Skeleton And CLI
 
@@ -222,7 +223,7 @@
 - [x] Add OpenClaw-backed provider docs/UI research before provider-pack drafting. Full ref-based provider action playbooks still need broader coverage.
 - [x] Add acceptance harness for scan/plan/pack/vault/receipt/leak-scan/detonation proof artifacts.
 - [ ] Add provider capability catalog for common AI-built app services. Plaid pack synthesis exists; broader catalog remains.
-- [x] Add stronger provider-pack provenance, endpoint-purpose validation, and tool-permission binding. Generic provider-pack verification covers env, HTTP JSON, DNS records, and URL health; deeper TLS/deploy-key/webhook recipes still need expansion.
+- [x] Add stronger provider-pack provenance, endpoint-purpose validation, and tool-permission binding. Generic provider-pack verification covers env, HTTP JSON, DNS records, and URL health; demo-path provider verification covers GitHub secrets/deploy keys, Vercel project/env/deployment URL, Cloudflare API records plus DNS propagation, Resend domain/API health, app health, and webhook signature secrets.
 - [x] Polish the public Moonlite RSVP acceptance surface so the live setup path looks credible in recordings.
 - [ ] Complete supervised public real acceptance run. README now documents the exact supervised run protocol and current status.
 

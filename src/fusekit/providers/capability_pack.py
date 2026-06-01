@@ -683,6 +683,18 @@ def _github_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                 expected="GitHub authorization exists in the encrypted vault or env source",
                 secret_refs=("GITHUB_TOKEN",),
             ),
+            VerificationRecipe(
+                kind="github-deploy-key",
+                target="${input:github_repo}",
+                expected="FuseKit deploy key exists on the target repo",
+                inputs={"title": "FuseKit deploy key"},
+            ),
+            VerificationRecipe(
+                kind="github-repo-secret",
+                target="${input:github_repo}",
+                expected="app runtime secrets exist in GitHub Actions secrets",
+                inputs={"names": "${input:app_env_names}"},
+            ),
         ),
         rollback=(
             "Remove the FuseKit deploy key from the repository.",
@@ -746,6 +758,22 @@ def _vercel_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                 target="VERCEL_TOKEN",
                 expected="Vercel authorization exists in the encrypted vault or env source",
                 secret_refs=("VERCEL_TOKEN",),
+            ),
+            VerificationRecipe(
+                kind="vercel-project",
+                target="${input:vercel_project}",
+                expected="Vercel project exists",
+            ),
+            VerificationRecipe(
+                kind="vercel-env",
+                target="${input:vercel_project}",
+                expected="app runtime env vars exist in Vercel",
+                inputs={"names": "${input:app_env_names}"},
+            ),
+            VerificationRecipe(
+                kind="vercel-deployment-url",
+                target="${input:vercel_project}",
+                expected="Vercel has a ready deployment URL",
             ),
             VerificationRecipe(kind="url-health", target="$live_url", expected="2xx/3xx"),
         ),
@@ -811,6 +839,18 @@ def _cloudflare_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                 target="CLOUDFLARE_API_TOKEN",
                 expected="Cloudflare authorization exists in the encrypted vault or env source",
                 secret_refs=("CLOUDFLARE_API_TOKEN",),
+            ),
+            VerificationRecipe(
+                kind="cloudflare-dns-api",
+                target="${input:dns_zone}",
+                expected="DNS records exist in Cloudflare",
+                inputs={"records_json": "${input:dns_records_json}"},
+            ),
+            VerificationRecipe(
+                kind="dns-records",
+                target="${input:dns_zone}",
+                expected="DNS records have propagated publicly",
+                inputs={"records_json": "${input:dns_records_json}"},
             ),
         ),
         rollback=(
@@ -903,6 +943,11 @@ def _resend_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                     "auth_scheme": "Bearer",
                     "response_path": "data",
                 },
+            ),
+            VerificationRecipe(
+                kind="resend-domain",
+                target="${input:resend_domain}",
+                expected="Resend sending domain is verified",
             ),
         ),
         rollback=(
