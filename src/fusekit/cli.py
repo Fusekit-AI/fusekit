@@ -379,6 +379,33 @@ def _parser() -> argparse.ArgumentParser:
     launcher.add_argument("-o", "--output", type=Path, default=None)
     launcher.add_argument("--app-source", default="")
     launcher.add_argument("--fusekit-package", default="fusekit")
+    launcher.add_argument("--github-repo", default="")
+    launcher.add_argument("--vercel-project", default="")
+    launcher.add_argument("--live-url", default="")
+    launcher.add_argument("--dns-zone", default="")
+    launcher.add_argument("--verify-attempts", type=int, default=10)
+    launcher.add_argument("--verify-retry-seconds", type=float, default=30.0)
+    launcher.add_argument("--gate-retry-seconds", type=float, default=300.0)
+    launcher.add_argument("--gate-max-attempts", type=int, default=0)
+    launcher.add_argument(
+        "--infer-ui",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="let FuseKit guide provider UI setup by default",
+    )
+    launcher.add_argument(
+        "--capture-stdin",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="capture approved provider secrets through hidden prompts by default",
+    )
+    launcher.add_argument(
+        "--spine",
+        choices=("system", "openclaw", "playwright"),
+        default="openclaw",
+    )
+    launcher.add_argument("--openclaw-profile", default="openclaw")
+    _llm_args(launcher)
     launcher.add_argument("--open-browser", action="store_true")
     launcher.set_defaults(handler=_cmd_launcher)
 
@@ -926,17 +953,50 @@ def _cmd_launcher(args: argparse.Namespace) -> int:
     app_path = args.path.resolve()
     if not app_path.exists():
         raise FuseKitError(f"App path does not exist: {app_path}")
+    _apply_magic_defaults(args, scan_repo(app_path), app_path)
     fusekit_dir = app_path / ".fusekit"
     output = args.output or (fusekit_dir / "launcher.html")
     plan = build_cloud_shell_launch_plan(
         app_source=args.app_source,
         fusekit_package=args.fusekit_package,
+        launch_args=_cloud_shell_launcher_launch_args(args),
     )
     write_cloud_shell_launcher(plan, output)
     print(json.dumps({"cloud_shell": plan.to_dict(), "launcher": str(output)}, indent=2))
     if args.open_browser:
         webbrowser.open(output.resolve().as_uri())
     return 0
+
+
+def _cloud_shell_launcher_launch_args(args: argparse.Namespace) -> tuple[str, ...]:
+    """Return launch args appropriate for the no-code Cloud Shell launcher."""
+
+    forwarded: list[str] = []
+    pairs = (
+        ("--github-repo", "github_repo"),
+        ("--vercel-project", "vercel_project"),
+        ("--live-url", "live_url"),
+        ("--dns-zone", "dns_zone"),
+        ("--verify-attempts", "verify_attempts"),
+        ("--verify-retry-seconds", "verify_retry_seconds"),
+        ("--gate-retry-seconds", "gate_retry_seconds"),
+        ("--gate-max-attempts", "gate_max_attempts"),
+        ("--llm-provider", "llm_provider"),
+        ("--llm-model", "llm_model"),
+        ("--llm-base-url", "llm_base_url"),
+        ("--llm-api-key-env", "llm_api_key_env"),
+        ("--llm-auth-mode", "llm_auth_mode"),
+        ("--spine", "spine"),
+        ("--openclaw-profile", "openclaw_profile"),
+    )
+    for flag, attr in pairs:
+        value = getattr(args, attr, "")
+        if value not in {"", None}:
+            forwarded.extend([flag, str(value)])
+    for flag in ("capture_stdin", "infer_ui", "capture_llm_key", "llm_openclaw_device_code"):
+        if bool(getattr(args, flag, False)):
+            forwarded.append("--" + flag.replace("_", "-"))
+    return tuple(forwarded)
 
 
 def _cmd_doctor(args: argparse.Namespace) -> int:

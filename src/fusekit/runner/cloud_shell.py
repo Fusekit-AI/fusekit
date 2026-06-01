@@ -248,45 +248,266 @@ def render_cloud_shell_launcher(plan: CloudShellLaunchPlan) -> str:
     escaped_command = html.escape(plan.bootstrap_command)
     escaped_url = html.escape(plan.deeplink_url, quote=True)
     escaped_source = html.escape(plan.app_source)
+    launch_summary = "\n".join(
+        f"<li>{html.escape(item)}</li>" for item in _launcher_summary_items(plan)
+    )
     return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FuseKit OCI Launcher</title>
+  <title>Snowman FuseKit Launcher</title>
   <style>
     :root {{
       color-scheme: light;
-      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+      font-family:
+        Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
         "Segoe UI", sans-serif;
-      background: #f7f7f4;
-      color: #181a1b;
+      --snow-navy: #00152a;
+      --snow-blue: #0097ff;
+      --snow-ice: #eef8ff;
+      --snow-ink: #071525;
+      --snow-muted: #60738a;
+      background: var(--snow-ice);
+      color: var(--snow-ink);
     }}
+    * {{ box-sizing: border-box; }}
     body {{
       margin: 0;
       min-height: 100vh;
-      display: grid;
-      place-items: center;
+      background:
+        radial-gradient(circle at 82% 8%, rgba(0, 151, 255, 0.20), transparent 30%),
+        linear-gradient(90deg, rgba(0, 21, 42, 0.04) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(0, 21, 42, 0.04) 1px, transparent 1px),
+        var(--snow-ice);
+      background-size: 100% 100%, 42px 42px, 42px 42px;
     }}
     main {{
-      width: min(920px, calc(100vw - 32px));
+      width: min(1120px, calc(100vw - 28px));
+      margin: 0 auto;
+      padding: 30px 0;
       display: grid;
-      gap: 18px;
+      gap: 22px;
+    }}
+    .hero {{
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 290px;
+      gap: 28px;
+      align-items: center;
+      border-bottom: 2px solid var(--snow-navy);
+      padding-bottom: 24px;
+    }}
+    .brand {{
+      display: inline-flex;
+      gap: 12px;
+      align-items: center;
+      font-weight: 900;
+      color: var(--snow-navy);
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: 0;
+    }}
+    .brand-mark {{
+      width: 38px;
+      height: 38px;
+      border-radius: 8px;
+      background: var(--snow-navy);
+      position: relative;
+      box-shadow: inset 0 0 0 1px rgba(0, 151, 255, 0.24);
+    }}
+    .brand-mark::before {{
+      content: "";
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      left: 10px;
+      top: 15px;
+      border: 4px solid var(--snow-blue);
+      border-radius: 50%;
+    }}
+    .brand-mark::after {{
+      content: "";
+      position: absolute;
+      width: 22px;
+      height: 6px;
+      left: 8px;
+      top: 9px;
+      border-radius: 999px;
+      background: var(--snow-blue);
+      box-shadow: 4px -7px 0 -1px var(--snow-blue);
+    }}
+    h1, h2, p {{
+      margin: 0;
     }}
     h1 {{
-      font-size: 28px;
-      line-height: 1.15;
-      margin: 0;
+      max-width: 780px;
+      margin-top: 12px;
+      font-size: clamp(38px, 6vw, 68px);
+      line-height: 0.98;
+      letter-spacing: 0;
+    }}
+    h2 {{
+      font-size: 18px;
+      line-height: 1.2;
     }}
     p {{
-      margin: 0;
       line-height: 1.5;
-      color: #3c4247;
+      color: #31465c;
+    }}
+    .lede {{
+      max-width: 760px;
+      margin-top: 14px;
+      font-size: 16px;
+    }}
+    .panel {{
+      border: 1px solid rgba(0, 21, 42, 0.14);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.78);
+      box-shadow: 0 24px 80px rgba(0, 21, 42, 0.08);
+      padding: 18px;
+    }}
+    .snowman-stage {{
+      min-height: 260px;
+      display: grid;
+      place-items: center;
+      position: relative;
+      overflow: hidden;
+    }}
+    .snowman {{
+      position: relative;
+      width: 150px;
+      height: 204px;
+      animation: bob 3s ease-in-out infinite;
+    }}
+    .hat, .head, .body, .base, .arm, .spark {{
+      position: absolute;
+    }}
+    .hat {{
+      width: 56px;
+      height: 28px;
+      left: 47px;
+      top: 4px;
+      border-radius: 8px 8px 3px 3px;
+      background: var(--snow-navy);
+    }}
+    .hat::after {{
+      content: "";
+      position: absolute;
+      width: 78px;
+      height: 8px;
+      left: -11px;
+      top: 24px;
+      border-radius: 999px;
+      background: var(--snow-navy);
+    }}
+    .head {{
+      width: 72px;
+      height: 72px;
+      left: 39px;
+      top: 34px;
+      border-radius: 50%;
+      background: white;
+      border: 2px solid rgba(0, 151, 255, 0.22);
+    }}
+    .head::before,
+    .head::after {{
+      content: "";
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      top: 27px;
+      border-radius: 50%;
+      background: var(--snow-navy);
+      transition: transform 160ms ease;
+    }}
+    .head::before {{ left: 22px; }}
+    .head::after {{ right: 22px; }}
+    .private .head::before,
+    .private .head::after {{
+      height: 3px;
+      transform: translateY(3px);
+    }}
+    .smile {{
+      position: absolute;
+      width: 26px;
+      height: 12px;
+      left: 23px;
+      top: 43px;
+      border-bottom: 3px solid var(--snow-blue);
+      border-radius: 0 0 999px 999px;
+    }}
+    .body {{
+      width: 106px;
+      height: 94px;
+      left: 22px;
+      top: 93px;
+      border-radius: 50%;
+      background: white;
+      border: 2px solid rgba(0, 151, 255, 0.18);
+    }}
+    .base {{
+      width: 138px;
+      height: 24px;
+      left: 6px;
+      top: 174px;
+      border-radius: 50%;
+      background: rgba(0, 151, 255, 0.16);
+    }}
+    .arm {{
+      width: 54px;
+      height: 4px;
+      top: 112px;
+      background: var(--snow-navy);
+      border-radius: 999px;
+    }}
+    .arm.left {{
+      left: 2px;
+      transform: rotate(-26deg);
+      transform-origin: right center;
+      animation: wave 2.8s ease-in-out infinite;
+    }}
+    .arm.right {{
+      right: 0;
+      transform: rotate(24deg);
+      transform-origin: left center;
+    }}
+    .spark {{
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--snow-blue);
+      box-shadow: 0 0 18px rgba(0, 151, 255, 0.7);
+      animation: sparkle 2.4s ease-in-out infinite;
+    }}
+    .spark.one {{ left: 26px; top: 48px; }}
+    .spark.two {{ right: 24px; top: 72px; animation-delay: 0.6s; }}
+    .spark.three {{ left: 68px; bottom: 18px; animation-delay: 1.1s; }}
+    .snow-caption {{
+      position: absolute;
+      left: 18px;
+      right: 18px;
+      bottom: 18px;
+      color: var(--snow-muted);
+      font-size: 13px;
+      text-align: center;
+    }}
+    .grid {{
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 18px;
+      align-items: start;
+    }}
+    .summary {{
+      display: grid;
+      gap: 10px;
+      padding-left: 18px;
+      margin: 14px 0 0;
+      color: #31465c;
     }}
     textarea, input {{
       width: 100%;
       box-sizing: border-box;
-      border: 1px solid #b9c0c7;
+      border: 1px solid rgba(0, 21, 42, 0.18);
       border-radius: 6px;
       padding: 12px;
       font: 14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -294,57 +515,129 @@ def render_cloud_shell_launcher(plan: CloudShellLaunchPlan) -> str:
       color: #111315;
     }}
     textarea {{
-      min-height: 230px;
+      min-height: 170px;
       resize: vertical;
     }}
     .actions {{
       display: flex;
       gap: 12px;
       flex-wrap: wrap;
+      margin-top: 14px;
     }}
     button, a.button {{
-      border: 1px solid #20262c;
+      border: 1px solid var(--snow-navy);
       border-radius: 6px;
-      background: #20262c;
+      background: var(--snow-navy);
       color: #ffffff;
-      padding: 10px 14px;
+      padding: 12px 15px;
       text-decoration: none;
-      font-weight: 650;
+      font-weight: 850;
       cursor: pointer;
+    }}
+    a.button.primary {{
+      background: var(--snow-blue);
+      border-color: var(--snow-blue);
+      color: white;
+      box-shadow: 0 12px 28px rgba(0, 151, 255, 0.28);
     }}
     button.secondary {{
       background: #ffffff;
-      color: #20262c;
+      color: var(--snow-navy);
     }}
     .status {{
       min-height: 22px;
       font-size: 14px;
       color: #38536b;
     }}
+    details {{
+      margin-top: 16px;
+    }}
+    summary {{
+      cursor: pointer;
+      color: var(--snow-navy);
+      font-weight: 850;
+    }}
+    @keyframes bob {{
+      0%, 100% {{ transform: translateY(0) rotate(-1deg); }}
+      50% {{ transform: translateY(-7px) rotate(1deg); }}
+    }}
+    @keyframes wave {{
+      0%, 100% {{ transform: rotate(-30deg); }}
+      50% {{ transform: rotate(-10deg); }}
+    }}
+    @keyframes sparkle {{
+      0%, 100% {{ opacity: 0.25; transform: scale(0.75); }}
+      50% {{ opacity: 1; transform: scale(1.2); }}
+    }}
+    @media (max-width: 860px) {{
+      .hero, .grid {{
+        grid-template-columns: 1fr;
+      }}
+      h1 {{
+        font-size: 42px;
+      }}
+    }}
   </style>
 </head>
 <body>
   <main>
-    <h1>FuseKit OCI Launcher</h1>
-    <p>
-      Open Oracle Cloud Shell, pass Oracle's own account gates, then let FuseKit
-      bootstrap the disposable runner. The passphrase is entered in Cloud Shell
-      and is not embedded in this page.
-    </p>
-    <label>
-      App source
-      <input id="source" value="{escaped_source}" aria-describedby="source-example">
-    </label>
-    <div id="source-example">Example: https://github.com/owner/repo.git</div>
-    <textarea id="command" spellcheck="false">{escaped_command}</textarea>
-    <div class="actions">
-      <a class="button" id="open" href="{escaped_url}" target="_blank" rel="noreferrer">
-        Open OCI Cloud Shell
-      </a>
-      <button id="copy" type="button" class="secondary">Copy Bootstrap Command</button>
-      <button id="refresh" type="button" class="secondary">Update From Source</button>
-    </div>
-    <div id="status" class="status" role="status" aria-live="polite"></div>
+    <section class="hero">
+      <div>
+        <div class="brand"><span class="brand-mark"></span><span>SnowmanAI / FuseKit</span></div>
+        <h1>Launch this app from a clean cloud room.</h1>
+        <p class="lede">
+          One click opens OCI Cloud Shell. Snowman waits at provider gates,
+          keeps secrets out of this page, and hands the setup to FuseKit inside
+          the disposable runner.
+        </p>
+      </div>
+      <div class="panel snowman-stage private" aria-label="Snowman privacy helper">
+        <div class="snowman">
+          <span class="base"></span>
+          <span class="hat"></span>
+          <span class="head"><span class="smile"></span></span>
+          <span class="body"></span>
+          <span class="arm left"></span>
+          <span class="arm right"></span>
+          <span class="spark one"></span>
+          <span class="spark two"></span>
+          <span class="spark three"></span>
+        </div>
+        <p class="snow-caption">Privacy mode: passphrases are entered in Cloud Shell, not here.</p>
+      </div>
+    </section>
+    <section class="grid">
+      <div class="panel">
+        <h2>Ready To Launch</h2>
+        <p>
+          Review the app source, then open OCI. If Oracle asks you to sign in
+          or confirm anything, complete that gate and FuseKit resumes.
+        </p>
+        <label>
+          App source
+          <input id="source" value="{escaped_source}" aria-describedby="source-example">
+        </label>
+        <div id="source-example">Example: https://github.com/owner/repo.git</div>
+        <div class="actions">
+          <a class="button primary" id="open" href="{escaped_url}" target="_blank" rel="noreferrer">
+            Open OCI Cloud Shell
+          </a>
+          <button id="copy" type="button" class="secondary">Copy Backup Command</button>
+          <button id="refresh" type="button" class="secondary">Update Source</button>
+        </div>
+        <div id="status" class="status" role="status" aria-live="polite"></div>
+        <details>
+          <summary>Backup command</summary>
+          <textarea id="command" spellcheck="false">{escaped_command}</textarea>
+        </details>
+      </div>
+      <div class="panel">
+        <h2>What Snowman Will Carry</h2>
+        <ul class="summary">
+          {launch_summary}
+        </ul>
+      </div>
+    </section>
   </main>
   <script type="application/json" id="payload">{html.escape(payload)}</script>
   <script>
@@ -389,6 +682,43 @@ def render_cloud_shell_launcher(plan: CloudShellLaunchPlan) -> str:
 </body>
 </html>
 """
+
+
+def _launcher_summary_items(plan: CloudShellLaunchPlan) -> tuple[str, ...]:
+    """Build friendly, non-secret launch summary lines for the launcher."""
+
+    args = list(plan.launch_args)
+
+    def value_after(flag: str) -> str:
+        try:
+            index = args.index(flag)
+        except ValueError:
+            return ""
+        if index + 1 >= len(args):
+            return ""
+        return args[index + 1]
+
+    items = [
+        f"App repo: {plan.app_source or 'provided after launch'}",
+        f"FuseKit package: {plan.fusekit_package}",
+    ]
+    github_repo = value_after("--github-repo")
+    vercel_project = value_after("--vercel-project")
+    dns_zone = value_after("--dns-zone")
+    live_url = value_after("--live-url")
+    if github_repo:
+        items.append(f"GitHub repo: {github_repo}")
+    if vercel_project:
+        items.append(f"Vercel project: {vercel_project}")
+    if dns_zone:
+        items.append(f"DNS zone: {dns_zone}")
+    if live_url:
+        items.append(f"Live URL check: {live_url}")
+    if "--infer-ui" in args:
+        items.append("Computer-use guidance: enabled")
+    if "--capture-stdin" in args:
+        items.append("Secret capture: hidden Cloud Shell prompts")
+    return tuple(items)
 
 
 def write_cloud_shell_launcher(plan: CloudShellLaunchPlan, path: Path) -> None:

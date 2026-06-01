@@ -56,8 +56,47 @@ def test_install_can_write_local_cloud_shell_launcher(tmp_path) -> None:
     launcher = app / ".fusekit" / "launcher.html"
     assert launcher.exists()
     text = launcher.read_text(encoding="utf-8")
-    assert "FuseKit OCI Launcher" in text
+    assert "Snowman FuseKit Launcher" in text
     assert "https://github.com/example/app.git" in text
+
+
+def test_launcher_derives_no_code_live_context_and_snowman_surface(tmp_path) -> None:
+    app = tmp_path / "moonlite"
+    app.mkdir()
+    (app / "index.js").write_text("console.log(process.env.WEBHOOK_SECRET)", encoding="utf-8")
+    (app / "vercel.json").write_text(
+        json.dumps({"domains": ["moonlite.rsvp"]}),
+        encoding="utf-8",
+    )
+
+    assert (
+        main(
+            [
+                "launcher",
+                str(app),
+                "--app-source",
+                "https://github.com/fusekitdemo/moonlight-rsvp-demo.git",
+                "--fusekit-package",
+                "git+https://github.com/xpxpxp-coder/fusekit.git",
+            ]
+        )
+        == 0
+    )
+
+    launcher = app / ".fusekit" / "launcher.html"
+    text = launcher.read_text(encoding="utf-8")
+    assert "SnowmanAI / FuseKit" in text
+    assert "Open OCI Cloud Shell" in text
+    assert "Privacy mode" in text
+    assert "--github-repo fusekitdemo/moonlight-rsvp-demo" in text
+    assert "--vercel-project moonlight-rsvp-demo" in text
+    assert "--dns-zone moonlite.rsvp" in text
+    assert "--live-url https://moonlite.rsvp" in text
+    assert "--verify-attempts 10" in text
+    assert "--verify-retry-seconds 30.0" in text
+    assert "--gate-max-attempts 0" in text
+    assert "--infer-ui" in text
+    assert "--capture-stdin" in text
 
 
 def test_cli_scan_validate_plan_unlock_request(tmp_path, capsys) -> None:
