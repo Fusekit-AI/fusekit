@@ -34,6 +34,7 @@ from fusekit.runner.oci_live import (
     latest_workspace_from_vault,
 )
 from fusekit.runner.remote import (
+    _extract_artifacts,
     execute_remote_setup,
     render_cloud_init,
     should_include_app_path,
@@ -321,6 +322,26 @@ def test_remote_bootstrap_artifacts_are_self_contained() -> None:
     assert not should_include_app_path(Path("id_ed25519"))
     assert not should_include_app_path(Path("service.credentials.json"))
     assert not should_include_app_path(Path(".fusekit/fusekit.vault.json"))
+
+
+def test_remote_artifact_extract_rejects_unsafe_paths(tmp_path) -> None:
+    archive = tmp_path / "artifacts.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        payload = tmp_path / "payload.txt"
+        payload.write_text("bad", encoding="utf-8")
+        tar.add(payload, arcname="../escape.txt")
+
+    with pytest.raises(FuseKitError, match="unsafe paths"):
+        _extract_artifacts(archive, tmp_path / "out")
+
+
+def test_remote_artifact_extract_rejects_empty_archives(tmp_path) -> None:
+    archive = tmp_path / "artifacts.tar.gz"
+    with tarfile.open(archive, "w:gz"):
+        pass
+
+    with pytest.raises(FuseKitError, match="did not contain files"):
+        _extract_artifacts(archive, tmp_path / "out")
 
 
 def test_latest_workspace_round_trips_from_vault() -> None:

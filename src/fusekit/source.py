@@ -18,6 +18,12 @@ from typing import Any, Protocol, cast
 from fusekit.errors import FuseKitError
 
 GITHUB_API_BASE = "https://api.github.com"
+GITHUB_REPO_SLUG_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+GITHUB_HTTPS_RE = re.compile(
+    r"^https://github\.com/"
+    r"(?P<owner>[A-Za-z0-9_.-]+)/"
+    r"(?P<repo>[A-Za-z0-9_.-]+?)(?:\.git)?/?(?:[?#].*)?$"
+)
 
 
 class UrlOpener(Protocol):
@@ -60,27 +66,25 @@ class SourceFetchResult:
 def normalize_github_repo_slug(value: str) -> str:
     """Return an owner/repo slug from common GitHub URL forms."""
 
-    raw = value.strip().removesuffix(".git")
+    raw = value.strip()
     if raw.startswith("git@github.com:"):
-        raw = raw.removeprefix("git@github.com:")
-    elif "github.com/" in raw:
-        raw = raw.split("github.com/", 1)[1]
-    raw = raw.split("?", 1)[0].split("#", 1)[0].strip("/")
-    parts = raw.split("/")
-    if len(parts) < 2 or not parts[0] or not parts[1]:
-        raise FuseKitError("GitHub app source must be an owner/repo HTTPS URL or slug.")
-    return f"{parts[0]}/{parts[1]}"
+        raw = raw.removeprefix("git@github.com:").removesuffix(".git").strip("/")
+        if GITHUB_REPO_SLUG_RE.match(raw):
+            return raw
+        raise FuseKitError("GitHub app source must be a root owner/repo URL or slug.")
+    match = GITHUB_HTTPS_RE.match(raw)
+    if match:
+        return f"{match.group('owner')}/{match.group('repo')}"
+    raw = raw.removesuffix(".git").strip("/")
+    if GITHUB_REPO_SLUG_RE.match(raw):
+        return raw
+    raise FuseKitError("GitHub app source must be a root owner/repo URL or slug.")
 
 
 def is_github_https_source(value: str) -> bool:
     """Return whether the value is a GitHub HTTPS repository URL."""
 
-    return bool(
-        re.match(
-            r"^https://github\.com/[^/\s]+/[^/\s]+(?:\.git)?(?:[/?#].*)?$",
-            value.strip(),
-        )
-    )
+    return bool(GITHUB_HTTPS_RE.match(value.strip()))
 
 
 def fetch_github_source_archive(
@@ -200,22 +204,24 @@ def _extract_single_root_zip(archive: Path, dest: Path) -> None:
         staging = dest.with_name(f"{dest.name}.download")
         if staging.exists():
             shutil.rmtree(staging)
-        if dest.exists():
-            shutil.rmtree(dest)
-        for member in zipped.infolist():
-            if member.is_dir():
-                continue
-            target = (staging / member.filename).resolve()
-            if not _within(target, staging.resolve()):
-                raise FuseKitError("GitHub source archive contains unsafe paths.")
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with zipped.open(member) as src, target.open("wb") as dst:
-                shutil.copyfileobj(src, dst)
-        extracted_root = staging / root
-        if not extracted_root.exists():
-            raise FuseKitError("GitHub source archive root was missing.")
-        shutil.move(str(extracted_root), str(dest))
-        shutil.rmtree(staging, ignore_errors=True)
+        try:
+            for member in zipped.infolist():
+                if member.is_dir():
+                    continue
+                target = (staging / member.filename).resolve()
+                if not _within(target, staging.resolve()):
+                    raise FuseKitError("GitHub source archive contains unsafe paths.")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with zipped.open(member) as src, target.open("wb") as dst:
+                    shutil.copyfileobj(src, dst)
+            extracted_root = staging / root
+            if not extracted_root.exists():
+                raise FuseKitError("GitHub source archive root was missing.")
+            if dest.exists():
+                shutil.rmtree(dest)
+            shutil.move(str(extracted_root), str(dest))
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
 
 
 def _within(path: Path, parent: Path) -> bool:

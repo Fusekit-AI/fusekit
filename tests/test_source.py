@@ -8,7 +8,11 @@ from urllib.request import Request
 import pytest
 
 from fusekit.errors import FuseKitError
-from fusekit.source import fetch_github_source_archive, normalize_github_repo_slug
+from fusekit.source import (
+    fetch_github_source_archive,
+    is_github_https_source,
+    normalize_github_repo_slug,
+)
 
 
 class Response(io.BytesIO):
@@ -117,7 +121,44 @@ def test_fetch_github_source_rejects_unsafe_archive_paths(tmp_path) -> None:
         )
 
 
+def test_failed_source_extract_preserves_existing_destination(tmp_path) -> None:
+    existing = tmp_path / "app"
+    existing.mkdir()
+    (existing / "keep.txt").write_text("do not delete", encoding="utf-8")
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, "w") as archive:
+        archive.writestr("repo-main/package.json", "{}")
+        archive.writestr("../escape.txt", "bad")
+
+    def opener(request: Request | str, timeout: float | None = None) -> Response:
+        url = request.full_url if isinstance(request, Request) else request
+        if url == "https://api.github.com/repos/owner/public":
+            return Response(json.dumps({"default_branch": "main"}).encode())
+        return Response(payload.getvalue())
+
+    with pytest.raises(FuseKitError):
+        fetch_github_source_archive(
+            "https://github.com/owner/public.git",
+            existing,
+            opener=opener,
+        )
+
+    assert (existing / "keep.txt").read_text(encoding="utf-8") == "do not delete"
+
+
 def test_normalize_github_repo_slug_accepts_common_forms() -> None:
     assert normalize_github_repo_slug("https://github.com/owner/repo.git") == "owner/repo"
+    assert (
+        normalize_github_repo_slug("https://github.com/owner/repo.git?tab=readme")
+        == "owner/repo"
+    )
     assert normalize_github_repo_slug("git@github.com:owner/repo.git") == "owner/repo"
     assert normalize_github_repo_slug("owner/repo") == "owner/repo"
+
+
+def test_github_source_rejects_non_root_repo_urls() -> None:
+    assert is_github_https_source("https://github.com/owner/repo") is True
+    assert is_github_https_source("https://github.com/owner/repo/") is True
+    assert is_github_https_source("https://github.com/owner/repo/tree/main") is False
+    with pytest.raises(FuseKitError, match="root owner/repo"):
+        normalize_github_repo_slug("https://github.com/owner/repo/tree/main")

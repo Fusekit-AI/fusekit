@@ -289,13 +289,16 @@ def _create_app_archive(app_path: Path, archive: Path) -> None:
 
 def _extract_artifacts(archive: Path, output_dir: Path) -> None:
     try:
+        extracted = 0
         with tarfile.open(archive, "r:gz") as tar:
             for member in tar.getmembers():
                 target = (output_dir / member.name).resolve()
                 try:
                     target.relative_to(output_dir.resolve())
                 except ValueError:
-                    continue
+                    raise FuseKitError(
+                        "Remote artifact archive contains unsafe paths."
+                    ) from None
                 if member.isdir():
                     target.mkdir(parents=True, exist_ok=True)
                     continue
@@ -307,6 +310,9 @@ def _extract_artifacts(archive: Path, output_dir: Path) -> None:
                     continue
                 with source, target.open("wb") as destination:
                     shutil.copyfileobj(source, destination)
+                    extracted += 1
+        if extracted == 0:
+            raise FuseKitError("Remote artifact archive did not contain files.")
     except tarfile.TarError as exc:
         raise FuseKitError("Remote artifact archive could not be read.") from exc
 
