@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 import time
 from pathlib import Path
 
+from fusekit.detonation.preflight import verification_report_allows_detonation
 from fusekit.errors import FuseKitError
 from fusekit.runner.job import JobState
 
@@ -50,9 +52,20 @@ def run_remote_loop(
         )
         if completed.returncode == 0:
             job.mark("setup.execute", "done", "remote FuseKit launch completed")
-            job.mark("verify.live", "done", "verification delegated to setup receipt")
+            if _verification_report_ready(app_path / ".fusekit" / "verification_report.json"):
+                job.mark("verify.live", "done", "remote verification is passed or pending-safe")
+                job.save(job_state)
+                return 0
+            job.mark(
+                "verify.live",
+                "failed",
+                "remote verification report is missing, failed, or not pending-safe",
+            )
             job.save(job_state)
-            return 0
+            if once:
+                raise FuseKitError("Remote FuseKit launch did not produce safe verification.")
+            time.sleep(interval_seconds)
+            continue
         job.mark("setup.execute", "failed", "remote FuseKit launch failed")
         job.save(job_state)
         if once:
@@ -75,6 +88,14 @@ def main(argv: list[str] | None = None) -> int:
         passphrase_file=args.passphrase_file,
         once=not args.forever,
     )
+
+
+def _verification_report_ready(path: Path) -> bool:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(raw, dict) and verification_report_allows_detonation(raw)
 
 
 if __name__ == "__main__":

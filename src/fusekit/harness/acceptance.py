@@ -8,6 +8,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from fusekit.detonation.preflight import (
+    verification_report_failures,
+)
 from fusekit.errors import FuseKitError, VaultError
 from fusekit.harness.ledger import HarnessLedger
 from fusekit.manifest import SetupManifest, load_manifest, write_manifest
@@ -134,6 +137,14 @@ def run_acceptance(
 
     audit_log_path = _app_relative(app_path, audit_log_path) or (fusekit_dir / "audit.jsonl")
     _check_audit_log(audit_log_path, mode, checks, missing)
+    _check_verification_report(
+        fusekit_dir / "verification_report.json",
+        mode,
+        checks,
+        missing,
+        ledger,
+    )
+    _check_rollback_metadata(fusekit_dir / "rollback_plan.json", mode, checks, missing, ledger)
     _check_detonation(fusekit_dir, mode, checks, missing)
     _check_leaks(app_path, checks, missing, ledger)
 
@@ -367,6 +378,124 @@ def _check_audit_log(
     checks.append(AcceptanceCheck("audit.exists", status, f"Audit log not found: {audit_log_path}"))
     if mode == "live":
         missing.append("redacted audit log")
+
+
+def _check_verification_report(
+    report_path: Path,
+    mode: str,
+    checks: list[AcceptanceCheck],
+    missing: list[str],
+    ledger: HarnessLedger,
+) -> None:
+    if not report_path.exists():
+        status = "skipped" if mode == "rehearsal" else "missing"
+        checks.append(
+            AcceptanceCheck(
+                "verification_report.safe",
+                status,
+                f"Verification report not found: {report_path}",
+            )
+        )
+        if mode == "live":
+            missing.append("safe verification report")
+        return
+    try:
+        raw = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        checks.append(
+            AcceptanceCheck(
+                "verification_report.safe",
+                "failed",
+                "Verification report could not be read.",
+            )
+        )
+        missing.append("safe verification report")
+        return
+    snapshot = ledger.snapshot_json("verification-report", raw)
+    failures = verification_report_failures(raw if isinstance(raw, dict) else {})
+    if failures:
+        checks.append(
+            AcceptanceCheck(
+                "verification_report.safe",
+                "failed" if mode == "live" else "skipped",
+                "Verification is not passed or pending-safe: " + "; ".join(failures),
+                str(snapshot),
+            )
+        )
+        if mode == "live":
+            missing.append("safe verification report")
+        return
+    checks.append(
+        AcceptanceCheck(
+            "verification_report.safe",
+            "ok",
+            "Verification report is passed or explicitly pending-safe.",
+            str(snapshot),
+        )
+    )
+
+
+def _check_rollback_metadata(
+    rollback_path: Path,
+    mode: str,
+    checks: list[AcceptanceCheck],
+    missing: list[str],
+    ledger: HarnessLedger,
+) -> None:
+    if not rollback_path.exists():
+        status = "skipped" if mode == "rehearsal" else "missing"
+        checks.append(
+            AcceptanceCheck(
+                "rollback_metadata.actionable",
+                status,
+                f"Rollback metadata not found: {rollback_path}",
+            )
+        )
+        if mode == "live":
+            missing.append("rollback metadata")
+        return
+    try:
+        raw = json.loads(rollback_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        checks.append(
+            AcceptanceCheck(
+                "rollback_metadata.actionable",
+                "failed",
+                "Rollback metadata could not be read.",
+            )
+        )
+        missing.append("rollback metadata")
+        return
+    snapshot = ledger.snapshot_json("rollback-metadata", raw)
+    actions_raw = raw.get("rollback", raw.get("actions", [])) if isinstance(raw, dict) else []
+    actions = actions_raw if isinstance(actions_raw, list) else []
+    actionable = [
+        item
+        for item in actions
+        if isinstance(item, dict)
+        and str(item.get("action", "")).startswith("rollback.")
+        and str(item.get("status", "")) not in {"missing", "failed"}
+    ]
+    if not actionable:
+        checks.append(
+            AcceptanceCheck(
+                "rollback_metadata.actionable",
+                "failed" if mode == "live" else "skipped",
+                "Rollback metadata has no provider rollback actions.",
+                str(snapshot),
+            )
+        )
+        if mode == "live":
+            missing.append("rollback metadata")
+        return
+    checks.append(
+        AcceptanceCheck(
+            "rollback_metadata.actionable",
+            "ok",
+            f"Rollback metadata contains {len(actionable)} provider action(s).",
+            str(snapshot),
+        )
+    )
 
 
 def _check_detonation(

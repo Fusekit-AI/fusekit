@@ -78,7 +78,7 @@ Expected checks:
 ! fusekit request --vault "$tmpdir/app/.fusekit/fusekit.vault.json" --passphrase-file "$tmpdir/pass.txt" secret.raw
 ```
 
-Verified locally on 2026-05-25: `pip install -e ".[dev]"`, `pytest`, `ruff`, `mypy`, and the local acceptance run passed.
+Verified locally on 2026-06-01: `pip install -e ".[dev]"`, `pytest`, `ruff`, `mypy`, and the local acceptance run passed.
 
 ## Launch Acceptance Harness
 
@@ -98,7 +98,7 @@ Rehearsal mode proves the local product invariants without pretending a provider
 - `.fusekit/acceptance/report.json`
 - `.fusekit/acceptance/artifacts/*.json`
 
-Live mode will not mark the run ready unless it has an encrypted vault, a passphrase unlock proof, redacted receipt, redacted audit log, verified live URL in the receipt, validated provider packs, clean leak scan, and detonated worker state. The harness creates public proof artifacts without raw secrets.
+Live mode will not mark the run ready unless it has an encrypted vault, a passphrase unlock proof, redacted receipt, redacted audit log, verified live URL in the receipt, a redacted verification report whose checks are passed or explicitly pending-safe, actionable rollback metadata, validated provider packs, clean leak scan, and detonated worker state. The harness creates public proof artifacts without raw secrets.
 
 ## Real Provider Acceptance Run
 

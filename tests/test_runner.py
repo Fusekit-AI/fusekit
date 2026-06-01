@@ -7,7 +7,8 @@ import tarfile
 import threading
 from http.server import ThreadingHTTPServer
 from pathlib import Path
-from urllib.request import urlopen
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 import pytest
 
@@ -42,6 +43,7 @@ from fusekit.runner.remote import (
     render_cloud_init,
     should_include_app_path,
 )
+from fusekit.runner.run_state import LaunchRunState, update_run_state
 from fusekit.runner.server import _handler, _is_loopback, control_room_payload
 from fusekit.security import scan_for_secret_leaks
 from fusekit.vault import Vault
@@ -96,6 +98,81 @@ def test_job_state_writes_recovery_checkpoints(tmp_path) -> None:
     assert setup["status"] == "running"
     assert setup["mascot_state"] == "privacy"
     assert "Human gates wait forever" in setup["resume_hint"]
+
+
+def test_launch_run_state_contract_tracks_detonation_readiness(tmp_path) -> None:
+    path = tmp_path / "run_state.json"
+
+    state = update_run_state(
+        path,
+        app_repo_known=True,
+        runner_selected=True,
+        oci_ready=True,
+        browser_ready=False,
+        vault_created=True,
+        secrets_captured=True,
+        provider_checks_passed_or_pending_safe=False,
+        receipt_written=True,
+    )
+
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert state.oci_ready is True
+    assert state.browser_ready is False
+    assert state.missing_for_detonation() == ["provider_checks_passed_or_pending_safe"]
+    assert state.to_dict()["ready_to_detonate"] is False
+
+    loaded = LaunchRunState.load(path)
+    loaded.mark(provider_checks_passed_or_pending_safe=True, detonation_safe=True)
+
+    assert loaded.missing_for_detonation() == []
+    assert loaded.to_dict()["ready_to_detonate"] is True
+
+
+def test_launch_run_state_notes_are_redacted(tmp_path) -> None:
+    path = tmp_path / "run_state.json"
+    state = LaunchRunState()
+    fake_secret = "fake_test_secret_value_abcdefghijklmnopqrstuvwxyz"
+    state.add_note(f"captured key={fake_secret}")
+    state.save(path)
+
+    payload = json.loads(path.read_text("utf-8"))
+
+    assert fake_secret not in json.dumps(payload)
+    assert "[redacted]" in json.dumps(payload)
+
+
+def test_launch_run_state_recovers_from_corrupt_state(tmp_path) -> None:
+    path = tmp_path / "run_state.json"
+    path.write_text("{not-json", encoding="utf-8")
+
+    state = update_run_state(path, runner_selected=True)
+    payload = json.loads(path.read_text("utf-8"))
+
+    assert state.runner_selected is True
+    assert payload["runner_selected"] is True
+    assert "rebuilt" in payload["notes"][0]
+
+
+def test_launch_run_state_parses_false_strings_as_false(tmp_path) -> None:
+    path = tmp_path / "run_state.json"
+    path.write_text(
+        json.dumps(
+            {
+                "app_repo_known": "false",
+                "runner_selected": "true",
+                "oci_ready": "0",
+                "browser_ready": "1",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    state = LaunchRunState.load(path)
+
+    assert state.app_repo_known is False
+    assert state.runner_selected is True
+    assert state.oci_ready is False
+    assert state.browser_ready is True
 
 
 def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
@@ -208,6 +285,41 @@ def test_control_room_renders_job_without_secrets(tmp_path) -> None:
     assert payload["id"] == "fk-test"
 
 
+def test_control_room_brand_and_snowman_markup_match_assets(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job.mark("setup.execute", "running", "remote setup is running")
+
+    html = render_control_room(job)
+
+    assert "mark-hat" in html
+    assert "mark-node mark-node-a" in html
+    assert "brand-copy" in html
+    assert '<span class="snow-hat"></span>' in html
+    assert '<span class="steam one"></span>' in html
+
+
+def test_control_room_renders_launch_run_state_contract(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    update_run_state(
+        tmp_path / "run_state.json",
+        app_repo_known=True,
+        runner_selected=True,
+        vault_created=True,
+    )
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+    payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
+
+    assert "Launch contract" in html
+    assert "What FuseKit knows" in html
+    assert 'data-run-state-field="app_repo_known"' in html
+    assert "renderRunState" in html
+    assert payload["run_state"]["app_repo_known"] is True
+    assert payload["run_state"]["vault_created"] is True
+
+
 def test_control_room_renders_verification_trust_cards(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     report = tmp_path / "verification_report.json"
@@ -247,6 +359,18 @@ def test_control_room_renders_verification_trust_cards(tmp_path) -> None:
     assert payload["verification"]["overall"] == "pending"
 
 
+def test_control_room_reports_invalid_verification_report_as_failed(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    report = tmp_path / "verification_report.json"
+    report.write_text("[]", encoding="utf-8")
+    job.add_artifact("verification_report", report)
+
+    payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
+
+    assert payload["verification"]["overall"] == "failed"
+    assert "not a JSON object" in payload["verification"]["error"]
+
+
 def test_control_room_payload_includes_active_gate_records(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job.mark("setup.execute", "running", "remote setup is running")
@@ -257,14 +381,23 @@ def test_control_room_payload_includes_active_gate_records(tmp_path) -> None:
         provider="vercel",
         reason="vercel login/MFA/CAPTCHA/billing/consent/token creation",
         resume_url="https://vercel.com/account/tokens",
+        classification="mfa",
+        target="Continue",
+        follow_steps=("Click Continue", "Finish the MFA prompt"),
     )
 
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
     payload = control_room_payload(job_path)
 
     assert payload["status"] == "running"
     assert payload["gates"][0]["provider"] == "vercel"
     assert payload["gates"][0]["status"] == "waiting"
     assert "token" in str(payload["gates"][0]["reason"])
+    assert "vercel needs your approval" in html
+    assert "Click Continue" in html
+    assert "Snowman highlighted" in html
+    assert 'data-gate-pass="provider.vercel.authorization"' in html
+    assert "<strong data-count-waiting>1</strong> gates" in html
 
 
 def test_control_room_gate_help_includes_resume_link_and_attempts(tmp_path) -> None:
@@ -278,6 +411,9 @@ def test_control_room_gate_help_includes_resume_link_and_attempts(tmp_path) -> N
         provider="vercel",
         reason="vercel login/MFA/CAPTCHA/billing/consent/token creation",
         resume_url="https://vercel.com/account/tokens",
+        classification="mfa",
+        target="ref=7",
+        follow_steps=("Use the highlighted MFA field.", "Click I finished this step."),
     )
     service.wait(
         "provider.vercel.authorization",
@@ -292,6 +428,98 @@ def test_control_room_gate_help_includes_resume_link_and_attempts(tmp_path) -> N
     assert "gate-attempts" in html
     assert "https://vercel.com/account/tokens" in html
     assert '"attempts":2' in html or '"attempts": 2' in html
+    assert "Use the highlighted MFA field." in html
+    assert "I finished this step" in html
+    assert "state-gate" in html
+
+
+def test_control_room_post_marks_human_gate_passed(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.github.mfa.123",
+        provider="github",
+        reason="MFA required",
+        classification="mfa",
+        follow_steps=("Pass the provider MFA challenge.",),
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/api/gates/provider.github.mfa.123/pass"
+        request = Request(url, method="POST", headers={"x-fusekit-control-room": "resume"})
+        with urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert payload["ok"] is True
+    assert GateService.load(tmp_path / "gates.json").records[
+        "provider.github.mfa.123"
+    ].status == "passed"
+
+
+def test_control_room_post_rejects_cross_site_gate_pass(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.github.mfa.123",
+        provider="github",
+        reason="MFA required",
+        classification="mfa",
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/api/gates/provider.github.mfa.123/pass"
+        with pytest.raises(HTTPError):
+            urlopen(Request(url, method="POST"), timeout=5)
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert GateService.load(tmp_path / "gates.json").records[
+        "provider.github.mfa.123"
+    ].status == "waiting"
+
+
+def test_control_room_post_rejects_untrusted_origin(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.github.mfa.123",
+        provider="github",
+        reason="MFA required",
+        classification="mfa",
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/api/gates/provider.github.mfa.123/pass"
+        request = Request(
+            url,
+            method="POST",
+            headers={
+                "x-fusekit-control-room": "resume",
+                "Origin": "https://evil.example",
+            },
+        )
+        with pytest.raises(HTTPError):
+            urlopen(request, timeout=5)
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert GateService.load(tmp_path / "gates.json").records[
+        "provider.github.mfa.123"
+    ].status == "waiting"
 
 
 def test_control_room_uses_privacy_mascot_for_secret_gates(tmp_path) -> None:
@@ -620,12 +848,16 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
             gates = tmp_path / "gates.json"
             checkpoints = tmp_path / "checkpoints.json"
             vault_file = tmp_path / "fusekit.vault.json"
+            audit = tmp_path / "audit.jsonl"
+            receipt = tmp_path / "setup_receipt.json"
             verification = tmp_path / "verification_report.json"
             rollback = tmp_path / "rollback_plan.json"
             payload.write_text("{}", encoding="utf-8")
             gates.write_text('{"gates":[]}', encoding="utf-8")
             checkpoints.write_text('{"checkpoints":[]}', encoding="utf-8")
             vault_file.write_text("encrypted", encoding="utf-8")
+            audit.write_text('{"event":"ok"}\n', encoding="utf-8")
+            receipt.write_text('{"actions":[]}', encoding="utf-8")
             verification.write_text('{"checks":[]}', encoding="utf-8")
             rollback.write_text(
                 '{"rollback":[{"action":"rollback.test","status":"planned"}]}',
@@ -635,6 +867,8 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
             archive.add(gates, arcname=".fusekit/gates.json")
             archive.add(checkpoints, arcname=".fusekit/checkpoints.json")
             archive.add(vault_file, arcname=".fusekit/fusekit.vault.json")
+            archive.add(audit, arcname=".fusekit/audit.jsonl")
+            archive.add(receipt, arcname=".fusekit/setup_receipt.json")
             archive.add(verification, arcname=".fusekit/verification_report.json")
             archive.add(rollback, arcname=".fusekit/rollback_plan.json")
             archive.close()
@@ -682,6 +916,8 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
     assert (tmp_path / "out" / ".fusekit" / "gates.json").exists()
     assert (tmp_path / "out" / ".fusekit" / "checkpoints.json").exists()
     assert (tmp_path / "out" / ".fusekit" / "fusekit.vault.json").exists()
+    assert (tmp_path / "out" / ".fusekit" / "audit.jsonl").exists()
+    assert (tmp_path / "out" / ".fusekit" / "setup_receipt.json").exists()
     assert (tmp_path / "out" / ".fusekit" / "verification_report.json").exists()
     assert (tmp_path / "out" / ".fusekit" / "rollback_plan.json").exists()
     assert any(".fusekit/gates.json" in command[-1] for command in calls if command[0] == "ssh")
@@ -716,6 +952,25 @@ def test_remote_artifact_extraction_rejects_invalid_archive(tmp_path) -> None:
         assert "archive could not be read" in str(exc)
     else:
         raise AssertionError("invalid remote artifact archive should fail")
+
+
+def test_remote_artifact_bundle_requires_detonation_survivors(tmp_path) -> None:
+    from fusekit.errors import FuseKitError
+    from fusekit.runner.remote import _validate_artifact_bundle
+
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    for name in (
+        "fusekit.vault.json",
+        "job.json",
+        "checkpoints.json",
+        "verification_report.json",
+        "rollback_plan.json",
+    ):
+        (fusekit_dir / name).write_text("{}", encoding="utf-8")
+
+    with pytest.raises(FuseKitError, match="audit.jsonl"):
+        _validate_artifact_bundle(tmp_path)
 
 
 def test_cloud_shell_style_oci_config_uses_delegation_token_signer(
@@ -757,13 +1012,14 @@ def test_cloud_shell_style_oci_config_uses_delegation_token_signer(
 def test_secret_leak_scanner_reports_locations_without_values(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()
-    (app / "config.txt").write_text("API_KEY=test-supersecretvalue123456\n", encoding="utf-8")
+    secret = "redaction_sentinel_value_abcdefghijklmnopqrstuvwxyz123456"
+    (app / "config.txt").write_text(f"API_KEY={secret}\n", encoding="utf-8")
 
     findings = scan_for_secret_leaks(app)
 
     assert findings[0].path == "config.txt"
     assert findings[0].line == 1
-    assert "supersecret" not in str([finding.to_dict() for finding in findings])
+    assert secret not in str([finding.to_dict() for finding in findings])
 
 
 def test_rollback_and_start_over_are_redacted_and_preserve_vault(tmp_path) -> None:
@@ -795,6 +1051,12 @@ def test_rollback_and_start_over_are_redacted_and_preserve_vault(tmp_path) -> No
 def test_remote_loop_marks_job_done(monkeypatch, tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()
+    fusekit = app / ".fusekit"
+    fusekit.mkdir()
+    (fusekit / "verification_report.json").write_text(
+        '{"checks":[{"provider":"live_app","check":"live_url_healthy","status":"passed"}]}',
+        encoding="utf-8",
+    )
     passphrase = tmp_path / "passphrase"
     passphrase.write_text("passphrase", encoding="utf-8")
     job_path = tmp_path / "job.json"
@@ -814,6 +1076,32 @@ def test_remote_loop_marks_job_done(monkeypatch, tmp_path) -> None:
     assert run_remote_loop(app_path=app, job_state=job_path, passphrase_file=passphrase) == 0
     job = JobState.load(job_path)
     assert any(step.id == "setup.execute" and step.status == "done" for step in job.steps)
+    assert any(step.id == "verify.live" and step.status == "done" for step in job.steps)
+
+
+def test_remote_loop_rejects_missing_safe_verification(monkeypatch, tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    passphrase = tmp_path / "passphrase"
+    passphrase.write_text("passphrase", encoding="utf-8")
+    job_path = tmp_path / "job.json"
+
+    def local_run(
+        command: list[str],
+        *,
+        capture_output: bool,
+        check: bool,
+        text: bool,
+        timeout: int,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("subprocess.run", local_run)
+
+    with pytest.raises(FuseKitError, match="safe verification"):
+        run_remote_loop(app_path=app, job_state=job_path, passphrase_file=passphrase)
+    job = JobState.load(job_path)
+    assert any(step.id == "verify.live" and step.status == "failed" for step in job.steps)
 
 
 def test_execute_native_rollback_calls_provider_deletes(monkeypatch, tmp_path) -> None:

@@ -67,8 +67,8 @@ def provider_handoff_playbook(
             action="policy.boundary",
             status="manual-gates-required",
             note=(
-                "FuseKit may navigate provider pages, but the user must complete "
-                "login, MFA, CAPTCHA, billing, fraud checks, and consent screens."
+                "FuseKit may navigate provider pages; the human only completes highlighted "
+                "login, MFA, CAPTCHA, billing, fraud-check, or consent prompts."
             ),
         )
     ]

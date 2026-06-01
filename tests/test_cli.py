@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import argparse
 import json
 from urllib.error import URLError
 
-from fusekit.audit import assert_no_secret_text
-from fusekit.cli import main
+from fusekit.audit import AuditLog, Receipt, assert_no_secret_text
+from fusekit.cli import _attempt_provider_api_fallback, _repair_navigation_completed, main
 from fusekit.errors import FuseKitError
 from fusekit.manifest import ServiceRequirement, SetupManifest, write_manifest
 from fusekit.providers.capability_pack import (
@@ -375,8 +376,8 @@ def test_apply_repairs_failed_provider_verification_with_inferred_ui(
         return [
             BrowserPlaybookEvent(
                 provider=pack.provider,
-                action="repair",
-                status="ok",
+                action="stop",
+                status="done",
                 note="dry repair",
             )
         ]
@@ -411,6 +412,165 @@ def test_apply_repairs_failed_provider_verification_with_inferred_ui(
     assert actions[-1]["action"] == "provider_pack.verify"
     assert actions[-1]["status"] == "ok"
     assert "repaired-secret-value" not in json.dumps(receipt)
+
+
+def test_provider_api_fallback_runs_pack_setup_when_token_exists(monkeypatch, tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    pack = synthesize_provider_pack("resend", app)
+    manifest = SetupManifest(
+        app_name="app",
+        app_path=str(app),
+        services=(
+            ServiceRequirement(
+                provider="resend",
+                kind="email",
+                name="email",
+                capabilities=("capability_pack",),
+                secrets=("RESEND_API_KEY",),
+            ),
+        ),
+    )
+    vault = Vault.empty()
+    vault.put(
+        "provider.resend.token",
+        "provider_token",
+        "resend",
+        "resend API token",
+        "provider-token-hidden",
+    )
+    monkeypatch.setenv("RESEND_API_KEY", "fallback-secret-hidden")
+    args = argparse.Namespace(
+        secret=[],
+        approve_dns=False,
+        allow_incomplete=False,
+        fusekit_gates="service-only",
+        app_source="",
+        github_repo="",
+        vercel_project="",
+        vercel_framework="",
+        vercel_git_repo_id="",
+        vercel_git_ref="main",
+        dns_zone="",
+    )
+    receipt = Receipt(app_name="app", vault_path=str(tmp_path / "vault.json"))
+
+    assert _attempt_provider_api_fallback(
+        args,
+        manifest,
+        pack,
+        vault,
+        AuditLog(tmp_path / "audit.jsonl"),
+        receipt,
+    )
+
+    assert vault.require("provider.resend.resend_api_key").value == "fallback-secret-hidden"
+    public = json.dumps(receipt.to_dict())
+    assert_no_secret_text(public, ["provider-token-hidden", "fallback-secret-hidden"])
+
+
+def test_repair_navigation_waiting_gate_is_not_treated_as_complete() -> None:
+    assert not _repair_navigation_completed(
+        [
+            BrowserPlaybookEvent(
+                provider="resend",
+                action="human.takeover",
+                status="waiting",
+                note="MFA required",
+            )
+        ]
+    )
+    assert _repair_navigation_completed(
+        [
+            BrowserPlaybookEvent(
+                provider="resend",
+                action="stop",
+                status="done",
+                note="verified UI step reached",
+            )
+        ]
+    )
+
+
+def test_apply_accepts_pending_safe_provider_verification(monkeypatch, tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    pack_dir = app / ".fusekit" / "provider-packs"
+    pack_dir.mkdir(parents=True)
+    pack_path = pack_dir / "resend.json"
+    pack = synthesize_provider_pack("resend", app)
+    object.__setattr__(pack, "setup", ())
+    object.__setattr__(
+        pack,
+        "verification",
+        (VerificationRecipe(kind="resend-domain", target="moonlite.rsvp"),),
+    )
+    write_provider_pack(pack, pack_path)
+    manifest = SetupManifest(
+        app_name="app",
+        app_path=str(app),
+        services=(
+            ServiceRequirement(
+                provider="resend",
+                kind="email",
+                name="email",
+                capabilities=("capability_pack",),
+                settings={"capability_pack": str(pack_path.relative_to(app))},
+            ),
+        ),
+    )
+    manifest_path = tmp_path / "fusekit.yaml"
+    passphrase = tmp_path / "passphrase.txt"
+    vault_path = tmp_path / "vault.json"
+    report_path = app / ".fusekit" / "verification_report.json"
+    write_manifest(manifest, manifest_path)
+    passphrase.write_text("passphrase\n", encoding="utf-8")
+    vault = Vault.empty()
+    vault.put("provider.resend.token", "provider_token", "resend", "token", "token-hidden")
+    vault.save(vault_path, "passphrase")
+
+    class Response:
+        status = 200
+
+        def __enter__(self):  # type: ignore[no-untyped-def]
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b'{"data":[{"name":"moonlite.rsvp","status":"pending"}]}'
+
+    monkeypatch.setattr(
+        "fusekit.providers.verification.urlopen",
+        lambda *args, **kwargs: Response(),
+    )
+
+    assert (
+        main(
+            [
+                "apply",
+                str(manifest_path),
+                "--vault",
+                str(vault_path),
+                "--passphrase-file",
+                str(passphrase),
+                "--receipt-json",
+                str(app / ".fusekit" / "setup_receipt.json"),
+                "--receipt-md",
+                str(app / ".fusekit" / "setup_receipt.md"),
+                "--audit-log",
+                str(app / ".fusekit" / "audit.jsonl"),
+                "--verification-report",
+                str(report_path),
+            ]
+        )
+        == 0
+    )
+
+    receipt = json.loads((app / ".fusekit" / "setup_receipt.json").read_text("utf-8"))
+    assert receipt["actions"][-1]["status"] == "pending-safe"
+    assert json.loads(report_path.read_text("utf-8"))["overall"] == "pending"
 
 
 def test_apply_writes_verification_report_when_provider_check_fails(tmp_path) -> None:
@@ -499,6 +659,18 @@ def test_cli_refuses_raw_secret_argument(tmp_path) -> None:
         )
         == 2
     )
+
+
+def test_detonate_command_uses_paths_argument(tmp_path, capsys) -> None:
+    worker = tmp_path / "worker"
+    worker.mkdir()
+    (worker / "state.txt").write_text("temporary", encoding="utf-8")
+
+    assert main(["detonate", str(worker)]) == 0
+
+    output = capsys.readouterr().out
+    assert "detonated" in output
+    assert not worker.exists()
 
 
 def test_authorize_handoff_captures_hidden_token(monkeypatch, tmp_path, capsys) -> None:
@@ -756,6 +928,49 @@ def test_setup_runs_one_command_rehearsal_and_detonates(tmp_path) -> None:
     assert (app / ".fusekit" / "setup_plan.json").exists()
     assert (app / ".fusekit" / "fusekit.vault.json").exists()
     assert (app / ".fusekit" / "setup_receipt.json").exists()
+    job = json.loads((app / ".fusekit" / "job.json").read_text("utf-8"))
+    assert job["runner"] == "local"
+    assert any(step["id"] == "setup.execute" and step["status"] == "done" for step in job["steps"])
+    assert any(step["id"] == "verify.live" and step["status"] == "skipped" for step in job["steps"])
+    run_state = json.loads((app / ".fusekit" / "run_state.json").read_text("utf-8"))
+    assert run_state["app_repo_known"] is True
+    assert run_state["runner_selected"] is True
+    assert run_state["vault_created"] is True
+
+
+def test_local_launch_control_room_has_truth_artifacts(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "index.js").write_text("console.log(process.env.WEBHOOK_SECRET)", encoding="utf-8")
+    passphrase = tmp_path / "passphrase.txt"
+    passphrase.write_text("passphrase\n", encoding="utf-8")
+
+    assert (
+        main(
+            [
+                "launch",
+                str(app),
+                "--runner",
+                "local",
+                "--passphrase-file",
+                str(passphrase),
+                "--allow-incomplete",
+                "--no-bootstrap",
+                "--yes",
+                "--control-room",
+            ]
+        )
+        == 0
+    )
+
+    html = (app / ".fusekit" / "control-room.html").read_text("utf-8")
+    job = json.loads((app / ".fusekit" / "job.json").read_text("utf-8"))
+    assert "Launch contract" in html
+    assert "local runner selected" in json.dumps(job)
+    assert "local rehearsal did not require live verification" in html
+    assert job["artifacts"]["verification_report"].endswith("verification_report.json")
+    assert job["artifacts"]["rollback_plan"].endswith("rollback_plan.json")
+    assert job["artifacts"]["vault"].endswith("fusekit.vault.json")
 
 
 def test_launch_requires_plan_approval(tmp_path) -> None:
@@ -837,6 +1052,87 @@ def test_launch_auto_runner_creates_cloud_shell_launcher(tmp_path, monkeypatch) 
     assert "--infer-ui" in command
     assert (app / ".fusekit" / "launcher.html").exists()
     assert opened and "cloud.oracle.com" in opened[0]
+
+
+def test_launch_cloud_shell_resumes_existing_waiting_job(tmp_path, monkeypatch) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "index.js").write_text("console.log('launch')", encoding="utf-8")
+    (app / ".git").mkdir()
+    (app / ".git" / "config").write_text(
+        "[remote \"origin\"]\n\turl = https://github.com/example/app.git\n",
+        encoding="utf-8",
+    )
+    passphrase = tmp_path / "passphrase.txt"
+    passphrase.write_text("passphrase\n", encoding="utf-8")
+    job_state = app / ".fusekit" / "job.json"
+    from fusekit.runner.job import JobState
+
+    existing = JobState.create("fk-existing", app.resolve(), "oci-cloud-shell")
+    existing.mark("oci.authorize", "waiting", "OCI Cloud Shell service gate is open")
+    existing.save(job_state)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("OCI_CONFIG_FILE", raising=False)
+    monkeypatch.setattr("webbrowser.open", lambda url: None)
+
+    assert (
+        main(
+            [
+                "launch",
+                str(app),
+                "--runner",
+                "auto",
+                "--passphrase-file",
+                str(passphrase),
+                "--no-bootstrap",
+                "--job-state",
+                str(job_state),
+            ]
+        )
+        == 0
+    )
+
+    resumed = json.loads(job_state.read_text("utf-8"))
+    run_state = json.loads((app / ".fusekit" / "run_state.json").read_text("utf-8"))
+    assert resumed["id"] == "fk-existing"
+    assert "resumed from state" in resumed["steps"][0]["detail"]
+    assert run_state["app_repo_known"] is True
+    assert run_state["runner_selected"] is True
+    assert run_state["provider_sessions_known"] is True
+
+
+def test_launch_cloud_shell_does_not_claim_unknown_app_repo(tmp_path, monkeypatch) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "index.js").write_text("console.log('launch')", encoding="utf-8")
+    passphrase = tmp_path / "passphrase.txt"
+    passphrase.write_text("passphrase\n", encoding="utf-8")
+    job_state = app / ".fusekit" / "job.json"
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("OCI_CONFIG_FILE", raising=False)
+    monkeypatch.setattr("webbrowser.open", lambda url: None)
+
+    assert (
+        main(
+            [
+                "launch",
+                str(app),
+                "--runner",
+                "auto",
+                "--passphrase-file",
+                str(passphrase),
+                "--no-bootstrap",
+                "--job-state",
+                str(job_state),
+                "--no-open-launcher",
+            ]
+        )
+        == 0
+    )
+
+    run_state = json.loads((app / ".fusekit" / "run_state.json").read_text("utf-8"))
+    assert run_state["app_repo_known"] is False
+    assert run_state["runner_selected"] is True
 
 
 def test_launch_cloud_shell_derives_provider_inputs_for_zero_knowledge_user(
@@ -979,9 +1275,51 @@ def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch)
     job = json.loads((app / ".fusekit" / "job.json").read_text(encoding="utf-8"))
     assert job["status"] == "done"
     assert job["steps"][1]["status"] == "done"
+    run_state = json.loads((app / ".fusekit" / "run_state.json").read_text(encoding="utf-8"))
+    assert run_state["provider_checks_passed_or_pending_safe"] is True
+    assert run_state["receipt_written"] is True
+    assert run_state["detonation_safe"] is True
     checkpoints = json.loads((app / ".fusekit" / "checkpoints.json").read_text(encoding="utf-8"))
     assert checkpoints["job_id"] == job["id"]
     assert any(item["id"] == "detonate.workspace" for item in checkpoints["checkpoints"])
+
+
+def test_remote_verification_path_must_be_passed_or_pending_safe(tmp_path) -> None:
+    from fusekit.cli import _verification_report_path_allows_detonation
+
+    report = tmp_path / "verification_report.json"
+    report.write_text(
+        json.dumps(
+            {
+                "checks": [
+                    {
+                        "provider": "live_app",
+                        "check": "live_url_healthy",
+                        "status": "failed",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert _verification_report_path_allows_detonation(report) is False
+
+    report.write_text(
+        json.dumps(
+            {
+                "checks": [
+                    {
+                        "provider": "cloudflare",
+                        "check": "dns_propagated",
+                        "status": "pending",
+                        "details": {"pending_safe": True},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert _verification_report_path_allows_detonation(report) is True
 
 
 def test_launch_detonates_oci_workspace_after_remote_failure(tmp_path, monkeypatch) -> None:

@@ -1,0 +1,645 @@
+"""Control-room browser event script."""
+
+from __future__ import annotations
+
+SCRIPT = r"""
+const initialJob = JSON.parse(document.getElementById("job-data").textContent);
+
+const labels = {
+  created: "Created",
+  pending: "Pending",
+  running: "Running",
+  waiting: "Human gate",
+  done: "Done",
+  failed: "Needs repair",
+  skipped: "Skipped",
+  passed: "Passed",
+  repairing: "Repairing",
+  needs_human_gate: "Needs human gate",
+};
+
+function label(status) {
+  return labels[status] || String(status || "unknown").replaceAll("_", " ");
+}
+
+function stepDetail(step) {
+  return step?.detail || "Queued and ready for the worker.";
+}
+
+function statusCounts(steps) {
+  const counts = { running: 0, waiting: 0, done: 0, failed: 0 };
+  for (const step of steps || []) {
+    if (step.status === "skipped") counts.done += 1;
+    else if (counts[step.status] !== undefined) counts[step.status] += 1;
+  }
+  return counts;
+}
+
+function activeGate(job) {
+  return (job.gates || []).find((gate) => ["waiting", "resurfaced"].includes(gate.status));
+}
+
+function gateStateErrorStep(job) {
+  if (!job.gate_state_error) return null;
+  return {
+    id: "gate.state.error",
+    label: "Gate state needs repair",
+    status: "failed",
+    detail: job.gate_state_error,
+  };
+}
+
+function gateStep(gate) {
+  if (!gate) return null;
+  return {
+    id: gate.id || "provider.gate",
+    label: `${gate.provider || "Provider"} needs your approval`,
+    status: "waiting",
+    detail: gate.reason || "A provider-created human gate is waiting.",
+    provider: gate.provider || "",
+    resume_url: gate.resume_url || "",
+    classification: gate.classification || "",
+    target: gate.target || "",
+    follow_steps: gate.follow_steps || [],
+    attempts: gate.attempts || 0,
+    updated_at: gate.updated_at,
+  };
+}
+
+function progress(job) {
+  const steps = job.steps || [];
+  const total = Math.max(steps.length, 1);
+  const done = steps.filter((step) => ["done", "skipped"].includes(step.status)).length;
+  return { done, total: steps.length, percent: Math.round((done / total) * 100) };
+}
+
+function currentStep(job) {
+  const gateError = gateStateErrorStep(job);
+  if (gateError) return gateError;
+  const gate = gateStep(activeGate(job));
+  if (gate) return gate;
+  for (const status of ["failed", "waiting", "running"]) {
+    const active = (job.steps || []).find((step) => step.status === status);
+    if (active) return active;
+  }
+  return (job.steps || []).find((step) => step.status === "pending") || (job.steps || []).at(-1);
+}
+
+function nextStep(job, current) {
+  if (!current) return null;
+  const steps = job.steps || [];
+  const index = steps.findIndex((step) => step.id === current.id);
+  return steps.slice(index + 1).find((step) => !["done", "skipped"].includes(step.status));
+}
+
+function focusKicker(step) {
+  if (!step) return "Current focus";
+  if (step.status === "waiting") return "Human gate";
+  if (step.status === "failed") return "Repair needed";
+  if (step.status === "running") return "Now running";
+  return "Up next";
+}
+
+function mascotState(step, job) {
+  if (step?.id === "detonate.workspace") return "detonate";
+  if (job.status === "done") return "done";
+  if (isPrivacyStep(step)) return "privacy";
+  if (step?.status === "waiting") return "gate";
+  if (step?.status === "failed") return "repair";
+  if (step?.id?.includes("verify")) return "verify";
+  if (["provision", "bootstrap", "upload", "setup"].some((part) => step?.id?.includes(part))) {
+    return "working";
+  }
+  return "launch";
+}
+
+function mascotCaption(state) {
+  return {
+    launch: "packing the clean-room suitcase",
+    working: "tightening the little launch bolts",
+    gate: "waiting politely with a tiny access badge",
+    privacy: "covering his eyes while secrets stay private",
+    verify: "checking the live app with a frosty magnifier",
+    repair: "patching the route with a tiny wrench",
+    detonate: "melting away the worker state",
+    done: "celebrating with a snow-safe high five",
+  }[state] || "packing the clean-room suitcase";
+}
+
+const privacyStepSignals = [
+  "api key",
+  "api-key",
+  "captcha",
+  "credential",
+  "hidden prompt",
+  "mfa",
+  "passkey",
+  "passphrase",
+  "password",
+  "payment",
+  "private key",
+  "secret",
+  "token",
+  "vault",
+];
+
+function isPrivacyStep(step) {
+  if (!step || !["waiting", "running"].includes(step.status)) return false;
+  const text = `${step.id || ""} ${step.label || ""} ${step.detail || ""}`.toLowerCase();
+  return privacyStepSignals.some((signal) => text.includes(signal));
+}
+
+function inferGateProvider(text) {
+  const lower = String(text || "").toLowerCase();
+  for (const provider of ["github", "vercel", "cloudflare", "resend", "oci", "openai"]) {
+    if (lower.includes(provider)) return provider;
+  }
+  if (lower.includes("oracle") || lower.includes("cloud shell")) return "oci";
+  return "generic";
+}
+
+function gateGuidance(provider) {
+  return {
+    github: {
+      title: "GitHub is asking for your approval",
+      body:
+        "FuseKit opened GitHub so the repo can receive deploy keys and encrypted secrets.",
+      actions: [
+        "Sign in or create the GitHub account when GitHub asks.",
+        "Complete the highlighted email, passkey, MFA, CAPTCHA, or consent prompt.",
+        "When GitHub reveals the approved token, paste it into FuseKit's hidden prompt.",
+      ],
+      reassurance: "FuseKit waits here, then resumes automatically after the token is captured.",
+    },
+    vercel: {
+      title: "Vercel is checking deploy permission",
+      body:
+        "FuseKit is connecting the app repo to Vercel and starting deployment.",
+      actions: [
+        "Sign in or create the Vercel account when prompted.",
+        "Approve only the highlighted GitHub, team, billing, MFA, CAPTCHA, or consent prompt.",
+        "When Vercel reveals the approved token, paste it into FuseKit's hidden prompt.",
+      ],
+      reassurance: "FuseKit keeps the run alive and continues once Vercel accepts the gate.",
+    },
+    cloudflare: {
+      title: "Cloudflare is checking domain control",
+      body:
+        "FuseKit is preparing DNS records and waiting for Cloudflare approval.",
+      actions: [
+        "Sign in or create the Cloudflare account when prompted.",
+        "Complete the highlighted nameserver, domain, MFA, CAPTCHA, billing, or consent prompt.",
+        "When Cloudflare reveals the approved DNS token, paste it into FuseKit's hidden prompt.",
+      ],
+      reassurance: "FuseKit will keep retrying DNS verification instead of giving up early.",
+    },
+    resend: {
+      title: "Resend is checking email sending access",
+      body:
+        "FuseKit is preparing email delivery credentials and domain verification records.",
+      actions: [
+        "Sign in or create the Resend account when prompted.",
+        "Complete the highlighted email, MFA, CAPTCHA, billing, consent, or domain check.",
+        "When Resend reveals the API key, paste it into FuseKit's hidden prompt.",
+      ],
+      reassurance: "FuseKit stores the key only in the encrypted vault and then resumes setup.",
+    },
+    oci: {
+      title: "Oracle Cloud is opening the clean room",
+      body:
+        "FuseKit is starting the disposable OCI workspace that runs setup away from your computer.",
+      actions: [
+        "Sign in or create the OCI account when Oracle asks.",
+        "Complete the highlighted MFA, CAPTCHA, payment, tenancy, or Cloud Shell prompt.",
+        "Leave the Cloud Shell tab open; FuseKit will continue from there.",
+      ],
+      reassurance: "FuseKit treats this as a waiting state, not a failure.",
+    },
+    openai: {
+      title: "OpenAI is authorizing the brain lane",
+      body:
+        "FuseKit needs an LLM route when no API key is already available.",
+      actions: [
+        "Sign in to OpenAI when prompted.",
+        "Complete the highlighted MFA, CAPTCHA, consent, or organization prompt.",
+        "Click the resume button after the provider says authorization is complete.",
+      ],
+      reassurance: "FuseKit encrypts auth state and detonates plaintext worker state later.",
+    },
+  }[provider] || {
+    title: "A provider needs a human check",
+    body:
+      "FuseKit has done what it can safely automate. The provider needs account approval.",
+    actions: [
+      "Use the Open provider gate button to bring the exact provider page forward.",
+      "Complete only highlighted login, MFA, CAPTCHA, consent, payment, or ownership prompts.",
+      "Click the resume button here; FuseKit will verify the provider state before continuing.",
+    ],
+    reassurance: "The worker remains alive and will retry this gate until it passes.",
+  };
+}
+
+function renderGateHelp(step) {
+  if (step?.status !== "waiting") return "";
+  const guidance = gateGuidance(inferGateProvider(`${step.id} ${step.label} ${step.detail}`));
+  const followSteps = Array.isArray(step.follow_steps) && step.follow_steps.length
+    ? step.follow_steps
+    : guidance.actions;
+  const resumeLink = step.resume_url
+    ? [
+        `<a class="gate-link" href="${escapeAttr(step.resume_url)}"`,
+        ` target="_blank" rel="noreferrer">Open provider gate</a>`,
+      ].join("")
+    : "";
+  const attempts = step.attempts
+    ? [
+        `<span class="gate-attempts">Resurfaced ${escapeHtml(String(step.attempts))}`,
+        ` time${step.attempts === 1 ? "" : "s"}</span>`,
+      ].join("")
+    : "";
+  const meta = resumeLink || attempts
+    ? `<div class="gate-meta">${resumeLink}${attempts}</div>`
+    : "";
+  const classification = step.classification
+    ? [
+        `<span class="gate-classification">`,
+        `${escapeHtml(step.classification.replaceAll("_", " "))}</span>`,
+      ].join("")
+    : "";
+  const target = step.target
+    ? `<p class="gate-target">Snowman highlighted: <strong>${escapeHtml(step.target)}</strong></p>`
+    : "";
+  const resumeButton = step.id
+    ? [
+        `<button class="gate-done" type="button" `,
+        `data-gate-pass="${escapeAttr(step.id)}">I finished this step</button>`,
+      ].join("")
+    : "";
+  return `
+    <div class="gate-help">
+      <span>What you need to do</span>${classification}
+      <strong>${escapeHtml(guidance.title)}</strong>
+      <p>${escapeHtml(guidance.body)}</p>
+      ${target}
+      ${meta}
+      <ol>${followSteps.map((action) => `<li>${escapeHtml(action)}</li>`).join("")}</ol>
+      <em>${escapeHtml(guidance.reassurance)}</em>
+      ${resumeButton}
+    </div>
+  `;
+}
+
+function escapeHtml(value) {
+  const div = document.createElement("div");
+  div.textContent = value || "";
+  return div.innerHTML;
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value).replaceAll('"', "&quot;");
+}
+
+function classToken(value) {
+  return String(value || "").replace(/[^a-zA-Z0-9_-]/g, "");
+}
+
+function renderSteps(job) {
+  const root = document.querySelector("[data-steps]");
+  root.innerHTML = (job.steps || [])
+    .map((step, index) => `
+      <li class="step-card ${classToken(step.status)}" data-step-id="${escapeAttr(step.id)}">
+        <span class="step-number">${String(index + 1).padStart(2, "0")}</span>
+        <div class="step-copy">
+          <strong>${escapeHtml(step.label)}</strong>
+          <span>${escapeHtml(stepDetail(step))}</span>
+        </div>
+        <span class="badge ${classToken(step.status)}">${escapeHtml(label(step.status))}</span>
+      </li>
+    `)
+    .join("");
+}
+
+function renderArtifacts(job) {
+  const root = document.querySelector("[data-artifacts]");
+  const entries = Object.entries(job.artifacts || {}).sort();
+  if (!entries.length) {
+    root.innerHTML =
+      "<li class='empty'>Encrypted vault, receipts, and audit logs appear " +
+      "here after retrieval.</li>";
+    return;
+  }
+  root.innerHTML = entries
+    .map(([name, path]) => `
+      <li>
+        <div>
+          <strong>${escapeHtml(name)}</strong>
+          <code>${escapeHtml(path)}</code>
+        </div>
+        <button type="button" data-copy="${escapeAttr(path)}">Copy path</button>
+      </li>
+    `)
+    .join("");
+}
+
+function visibleCheckpoints(job) {
+  const checkpoints = job.checkpoints || [];
+  const active = checkpoints.filter((item) =>
+    ["failed", "waiting", "running"].includes(item.status),
+  );
+  if (active.length) return active.slice(0, 4);
+  const pending = checkpoints.filter((item) => item.status === "pending");
+  if (pending.length) return pending.slice(0, 3);
+  return checkpoints.slice(-3);
+}
+
+function renderCheckpoints(job) {
+  const root = document.querySelector("[data-checkpoints]");
+  if (!root) return;
+  const checkpoints = visibleCheckpoints(job);
+  if (!checkpoints.length) {
+    root.innerHTML =
+      "<article class='checkpoint-card pending'><div></div><div>" +
+      "<span>Ready</span><strong>Waiting for first checkpoint</strong>" +
+      "<p>FuseKit will populate this map as soon as the worker starts.</p>" +
+      "<em>Nothing needed yet.</em><code>Keep this control room open.</code>" +
+      "</div></article>";
+    return;
+  }
+  root.innerHTML = checkpoints
+    .map((checkpoint) => `
+      <article class="checkpoint-card ${classToken(checkpoint.status)}"
+        data-checkpoint-id="${escapeAttr(checkpoint.id)}">
+        <div class="checkpoint-snow state-${classToken(checkpoint.mascot_state)}"
+          aria-hidden="true">
+          <span class="mini-snow-head"></span>
+          <span class="mini-snow-body"></span>
+        </div>
+        <div>
+          <span>${escapeHtml(label(checkpoint.status))}</span>
+          <strong>${escapeHtml(checkpoint.label)}</strong>
+          <p>${escapeHtml(checkpoint.detail)}</p>
+          <em>${escapeHtml(checkpoint.next_action)}</em>
+          <code>${escapeHtml(checkpoint.resume_hint)}</code>
+        </div>
+      </article>
+    `)
+    .join("");
+}
+
+function trustSnowState(status) {
+  return {
+    passed: "passed",
+    pending: "checking",
+    repairing: "repairing",
+    failed: "failed",
+    needs_human_gate: "checking",
+    skipped: "checking",
+  }[status] || "checking";
+}
+
+function renderTrust(job) {
+  const root = document.querySelector("[data-trust-checks]");
+  if (!root) return;
+  const report = job.verification || {};
+  const checks = report.checks || [];
+  if (!checks.length) {
+    root.innerHTML =
+      "<article class='trust-card pending'>" +
+      "<div class='trust-snow state-checking' aria-hidden='true'></div><div>" +
+      "<span>Waiting</span><strong>Trust checks appear after verification</strong>" +
+      "<p>Snowman will inspect provider setup, DNS, app health, " +
+      "and encrypted survivor artifacts.</p>" +
+      "<em>Nothing to do yet. Keep the control room open.</em>" +
+      "</div></article>";
+    return;
+  }
+  root.innerHTML = checks
+    .slice(0, 8)
+    .map((check) => {
+      const status = classToken(check.status || "pending");
+      const snow = trustSnowState(status);
+      const title = `${check.provider || "provider"} · ${check.check || "check"}`.replaceAll(
+        "_",
+        " ",
+      );
+      return `
+        <article class="trust-card ${status}">
+          <div class="trust-snow state-${classToken(snow)}" aria-hidden="true"></div>
+          <div>
+            <span>${escapeHtml(label(status))}</span>
+            <strong>${escapeHtml(title)}</strong>
+            <p>${escapeHtml(check.summary || "Verification is running.")}</p>
+            <em>${escapeHtml(check.repair || "Keep the control room open.")}</em>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+}
+
+const runStateLabels = {
+  app_repo_known: "App repo",
+  runner_selected: "Runner",
+  oci_ready: "OCI",
+  browser_ready: "Browser",
+  provider_sessions_known: "Provider gates",
+  vault_created: "Vault",
+  secrets_captured: "Secrets",
+  provider_checks_passed_or_pending_safe: "Provider checks",
+  receipt_written: "Receipt",
+  detonation_safe: "Detonation",
+};
+
+const runStateDetails = {
+  app_repo_known: [
+    "Source found. FuseKit knows what to launch.",
+    "Waiting for a repo URL or local app source that the clean room can fetch.",
+  ],
+  runner_selected: [
+    "Execution lane selected.",
+    "Choosing local, OCI Cloud Shell, or OCI VM based on available authorization.",
+  ],
+  oci_ready: [
+    "Clean-room runner is ready or not required.",
+    "Waiting for OCI Cloud Shell, OCI VM provisioning, or a local-runner decision.",
+  ],
+  browser_ready: [
+    "Computer-use browser is ready.",
+    "Waiting for the provider browser spine to open and report healthy state.",
+  ],
+  provider_sessions_known: [
+    "Provider gates are tracked.",
+    "Waiting for provider login, MFA, consent, billing, or token gates to surface.",
+  ],
+  vault_created: [
+    "Encrypted vault exists.",
+    "Creating the passphrase-protected vault before any secrets are captured.",
+  ],
+  secrets_captured: [
+    "Secrets are stored only in the vault.",
+    "Waiting for approved tokens, keys, webhook secrets, or generated credentials.",
+  ],
+  provider_checks_passed_or_pending_safe: [
+    "Provider checks passed or are explicitly safe to wait on.",
+    "Waiting for API, DNS, deploy, webhook, email, and live-app checks.",
+  ],
+  receipt_written: [
+    "Redacted receipt exists.",
+    "Writing the audit-friendly receipt without raw secrets.",
+  ],
+  detonation_safe: [
+    "Preflight passed and detonation can run.",
+    "Waiting for vault, audit, receipt, verification, rollback, and leak checks.",
+  ],
+};
+
+function renderRunState(job) {
+  const root = document.querySelector("[data-run-state-checks]");
+  if (!root) return;
+  const state = job.run_state || {};
+  const missing = Array.isArray(state.missing_for_detonation)
+    ? state.missing_for_detonation
+    : [];
+  const summary = state.ready_to_detonate
+    ? "detonation preflight is ready"
+    : missing.length
+      ? `${missing.length} detonation preflight items pending`
+      : "launch contract is still filling in";
+  const summaryNode = document.querySelector("[data-run-state-overall]");
+  if (summaryNode) summaryNode.textContent = summary;
+  root.innerHTML = Object.entries(runStateLabels)
+    .map(([field, title]) => {
+      const passed = Boolean(state[field]);
+      const status = passed ? "passed" : "pending";
+      const snow = passed ? "passed" : "checking";
+      const detail = runStateDetails[field] || ["Ready and recorded.", "Waiting for this phase."];
+      return `
+        <article class="trust-card ${status}" data-run-state-field="${escapeAttr(field)}">
+          <div class="trust-snow state-${snow}" aria-hidden="true"></div>
+          <div>
+            <span>${escapeHtml(label(status))}</span>
+            <strong>${escapeHtml(title)}</strong>
+            <p>${escapeHtml(passed ? detail[0] : detail[1])}</p>
+            <em>${escapeHtml(field.replaceAll("_", " "))}</em>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+}
+
+function render(job) {
+  const prog = progress(job);
+  const counts = statusCounts(job.steps);
+  if (activeGate(job) && !(job.steps || []).some((step) => step.status === "waiting")) {
+    counts.waiting += 1;
+  }
+  if (job.gate_state_error && !(job.steps || []).some((step) => step.status === "failed")) {
+    counts.failed += 1;
+  }
+  const current = currentStep(job);
+  const next = nextStep(job, current);
+  const statusPill = document.querySelector("[data-job-status]");
+  statusPill.textContent = label(job.status);
+  statusPill.className = `pill status ${classToken(job.status)}`;
+  document.querySelector("[data-updated-at]").textContent = "Updated just now";
+  document.querySelector("[data-progress-label]").textContent = `${prog.done}/${prog.total} steps`;
+  document.querySelector("[data-progress-bar]").style.width = `${prog.percent}%`;
+  document.querySelector("[data-count-running]").textContent = counts.running;
+  document.querySelector("[data-count-waiting]").textContent = counts.waiting;
+  document.querySelector("[data-count-done]").textContent = counts.done;
+  document.querySelector("[data-count-failed]").textContent = counts.failed;
+
+  const focus = document.querySelector("[data-focus-panel]");
+  focus.classList.toggle("gate", current?.status === "waiting");
+  document.querySelector("[data-focus-kicker]").textContent = focusKicker(current);
+  const state = mascotState(current, job);
+  const scene = document.querySelector("[data-snow-scene]");
+  scene.className = `snow-scene state-${state}`;
+  document.querySelector("[data-snow-caption]").textContent = mascotCaption(state);
+  const dot = document.querySelector("[data-focus-dot]");
+  dot.className = `mini-dot ${classToken(current?.status || job.status)}`;
+  document.querySelector("[data-current-title]").textContent = current?.label || "Launch complete";
+  document.querySelector("[data-current-detail]").textContent =
+    current ? stepDetail(current) : "FuseKit is preserving encrypted and redacted artifacts.";
+  document.querySelector("[data-gate-help]").innerHTML = renderGateHelp(current);
+  document.querySelector("[data-next-title]").textContent =
+    next?.label || "Artifacts and audit review";
+  renderCheckpoints(job);
+  renderRunState(job);
+  renderTrust(job);
+  renderSteps(job);
+  renderArtifacts(job);
+}
+
+document.addEventListener("click", async (event) => {
+  const gateButton = event.target.closest("[data-gate-pass]");
+  if (gateButton) {
+    gateButton.disabled = true;
+    gateButton.textContent = "Checking again...";
+    try {
+      const response = await fetch(
+        `/api/gates/${encodeURIComponent(gateButton.dataset.gatePass)}/pass`,
+        {
+          method: "POST",
+          headers: { "x-fusekit-control-room": "resume" },
+        },
+      );
+      if (!response.ok) throw new Error("gate update failed");
+      setRefreshStatus("Gate marked done. Snowman is verifying now.");
+      await refreshJob();
+    } catch {
+      gateButton.disabled = false;
+      gateButton.textContent = "I finished this step";
+      setRefreshStatus(
+        "Could not mark the gate done from this snapshot. FuseKit will keep waiting.",
+        "stale",
+      );
+    }
+    return;
+  }
+  const button = event.target.closest("[data-copy]");
+  if (!button) return;
+  try {
+    await navigator.clipboard.writeText(button.dataset.copy);
+    button.textContent = "Copied";
+    setTimeout(() => {
+      button.textContent = "Copy path";
+    }, 1200);
+  } catch {
+    button.textContent = "Copy blocked";
+    setRefreshStatus("Copy was blocked by the browser. FuseKit left the path visible.", "stale");
+  }
+});
+
+function setRefreshStatus(text, tone = "ok") {
+  const node = document.querySelector("[data-refresh-status]");
+  if (!node) return;
+  node.textContent = text;
+  node.className = `pill ${tone === "stale" ? "refresh-stale" : "refresh-ok"}`;
+}
+
+async function refreshJob() {
+  try {
+    const response = await fetch("/api/job", { cache: "no-store" });
+    if (!response.ok) {
+      setRefreshStatus(`Live refresh paused (${response.status})`, "stale");
+      return;
+    }
+    render(await response.json());
+    setRefreshStatus("Live refresh connected");
+  } catch {
+    setRefreshStatus(
+      location.protocol.startsWith("http")
+        ? "Live refresh paused. Reopen or restart the control-room server."
+        : "Snapshot view. Serve the control room for live updates.",
+      "stale",
+    );
+  }
+}
+
+render(initialJob);
+if (location.protocol.startsWith("http")) {
+  setInterval(refreshJob, 2000);
+}
+"""

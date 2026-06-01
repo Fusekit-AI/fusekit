@@ -1,0 +1,610 @@
+"""Static control-room UI rendering."""
+
+from __future__ import annotations
+
+import html
+import json
+import time
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+from fusekit.runner.control_room.assets import STYLE
+from fusekit.runner.control_room.cards import (
+    TERMINAL_STEP_STATUSES,
+    progress,
+    status_counts,
+    status_label,
+)
+from fusekit.runner.control_room.events import SCRIPT
+from fusekit.runner.control_room.snowman import (
+    mascot_state,
+    render_brand_lockup,
+    render_snowman_scene,
+)
+from fusekit.runner.control_room.state import control_room_payload
+from fusekit.runner.gate_guidance import GateGuidance, infer_gate_provider, provider_gate_guidance
+from fusekit.runner.job import JobState, JobStep
+
+
+def render_control_room(job: JobState, *, gate_path: Path | None = None) -> str:
+    """Render a standalone HTML control-room page."""
+
+    control_payload = control_room_payload(job, gate_path=gate_path)
+    payload = _safe_json(control_payload)
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FuseKit Control Room</title>
+  <style>{STYLE}</style>
+</head>
+<body>
+  <main class="shell">
+    {_render_header(job)}
+    <section class="overview" aria-label="Launch overview">
+      {_render_progress(job, control_payload)}
+      {_render_focus(job, control_payload)}
+    </section>
+    {_render_recovery(job)}
+    {_render_run_state(control_payload.get("run_state", {}))}
+    {_render_trust(control_payload.get("verification", {}))}
+    <section class="workspace">
+      {_render_steps(job)}
+      {_render_artifacts(job)}
+    </section>
+  </main>
+  <script id="job-data" type="application/json">{payload}</script>
+  <script>{SCRIPT}</script>
+</body>
+</html>
+"""
+
+
+def write_control_room(job: JobState, path: Path) -> None:
+    """Write the control-room HTML file."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    html = render_control_room(job, gate_path=path.parent / "gates.json")
+    path.write_text(html, encoding="utf-8")
+
+
+def _render_header(job: JobState) -> str:
+    return f"""
+    <header class="hero">
+      <div>
+        {render_brand_lockup("control room")}
+        <h1>{html.escape(_headline(job))}</h1>
+        <p>
+          Job <code>{html.escape(job.id)}</code> is wiring
+          <code>{html.escape(job.app_path)}</code> through the
+          <code>{html.escape(job.runner)}</code> lane.
+        </p>
+      </div>
+      <div class="status-stack" aria-label="Job status">
+        <span class="pill status {html.escape(job.status)}" data-job-status>
+          {html.escape(status_label(job.status))}
+        </span>
+        <span class="pill muted" data-updated-at>
+          Updated {_format_time(job.updated_at)}
+        </span>
+        <span class="pill refresh-ok" data-refresh-status>
+          Live when served
+        </span>
+      </div>
+    </header>
+"""
+
+
+def _render_progress(job: JobState, payload: dict[str, Any]) -> str:
+    done, total, percent = progress(job.steps)
+    counts = status_counts(job.steps)
+    if _active_gate(payload) and not any(step.status == "waiting" for step in job.steps):
+        counts["waiting"] += 1
+    if payload.get("gate_state_error") and not any(step.status == "failed" for step in job.steps):
+        counts["failed"] += 1
+    return f"""
+      <article class="progress-panel">
+        <div class="panel-top">
+          <span class="section-kicker">Launch progress</span>
+          <strong data-progress-label>{done}/{total} steps</strong>
+        </div>
+        <div class="meter" aria-label="Progress">
+          <span data-progress-bar style="width: {percent}%"></span>
+        </div>
+        <div class="stats">
+          <span><strong data-count-running>{counts["running"]}</strong> running</span>
+          <span><strong data-count-waiting>{counts["waiting"]}</strong> gates</span>
+          <span><strong data-count-done>{counts["done"]}</strong> done</span>
+          <span><strong data-count-failed>{counts["failed"]}</strong> repair</span>
+        </div>
+      </article>
+"""
+
+
+def _render_focus(job: JobState, payload: dict[str, Any]) -> str:
+    current = _current_step(job, payload)
+    next_step = _next_step(job, current)
+    gate_class = " gate" if current and current.status == "waiting" else ""
+    current_mascot_state = mascot_state(current, job)
+    focus_label = html.escape(_focus_kicker(current))
+    focus_status = html.escape(current.status if current else job.status)
+    current_label = html.escape(current.label if current else "Launch complete")
+    next_label = html.escape(next_step.label if next_step else "Artifacts and audit review")
+    return f"""
+      <article class="focus-panel{gate_class}" data-focus-panel>
+        <div class="panel-top">
+          <span class="section-kicker" data-focus-kicker>{focus_label}</span>
+          <span class="mini-dot {focus_status}" data-focus-dot></span>
+        </div>
+        {render_snowman_scene(current_mascot_state)}
+        <h2 data-current-title>{current_label}</h2>
+        <p data-current-detail>{html.escape(_step_detail(current))}</p>
+        <div data-gate-help>{_render_gate_help(current)}</div>
+        <div class="next-line">
+          <span>Next</span>
+          <strong data-next-title>{next_label}</strong>
+        </div>
+      </article>
+"""
+
+
+def _render_steps(job: JobState) -> str:
+    cards = "\n".join(_render_step(step, index) for index, step in enumerate(job.steps, start=1))
+    return f"""
+      <section class="timeline" aria-label="Setup steps">
+        <div class="section-head">
+          <div>
+            <span class="section-kicker">Worker timeline</span>
+            <h2>What FuseKit is doing</h2>
+          </div>
+          <span class="live-pill">Live refresh when served</span>
+        </div>
+        <ol class="steps" data-steps>{cards}</ol>
+      </section>
+"""
+
+
+def _render_step(step: JobStep, index: int) -> str:
+    status = html.escape(step.status)
+    step_status_label = html.escape(status_label(step.status))
+    return f"""
+          <li class="step-card {status}" data-step-id="{html.escape(step.id)}">
+            <span class="step-number">{index:02d}</span>
+            <div class="step-copy">
+              <strong>{html.escape(step.label)}</strong>
+              <span>{html.escape(_step_detail(step))}</span>
+            </div>
+            <span class="badge {status}">{step_status_label}</span>
+          </li>
+"""
+
+
+def _render_artifacts(job: JobState) -> str:
+    rows = "\n".join(
+        f"""
+          <li>
+            <div>
+              <strong>{html.escape(name)}</strong>
+              <code>{html.escape(path)}</code>
+            </div>
+            <button type="button" data-copy="{html.escape(path)}">Copy path</button>
+          </li>
+"""
+        for name, path in sorted(job.artifacts.items())
+    )
+    if not rows:
+        rows = (
+            "<li class='empty'>Encrypted vault, receipts, and audit logs appear "
+            "here after retrieval.</li>"
+        )
+    return f"""
+      <aside class="artifact-panel" aria-label="Artifacts">
+        <div class="section-head compact">
+          <div>
+            <span class="section-kicker">Survivors</span>
+            <h2>Artifacts</h2>
+          </div>
+        </div>
+        <ul class="artifacts" data-artifacts>{rows}</ul>
+        <p class="artifact-note">
+          This room should show only encrypted vaults, redacted receipts, audit logs,
+          and rollback metadata. Raw secrets do not belong here.
+        </p>
+</aside>
+"""
+
+
+def _render_recovery(job: JobState) -> str:
+    cards = "\n".join(_render_checkpoint_card(item) for item in _visible_checkpoints(job))
+    return f"""
+    <section class="recovery-panel" aria-label="Recovery checkpoints">
+      <div class="section-head compact">
+        <div>
+          <span class="section-kicker">Recovery map</span>
+          <h2>Every step stays alive</h2>
+        </div>
+        <span class="live-pill">Plain-language resume hints</span>
+      </div>
+      <div class="checkpoint-grid" data-checkpoints>{cards}</div>
+    </section>
+"""
+
+
+def _render_trust(report: Any) -> str:
+    checks = list(report.get("checks", [])) if isinstance(report, dict) else []
+    if checks:
+        cards = "\n".join(_render_trust_card(check) for check in checks[:8])
+    else:
+        cards = """
+        <article class="trust-card pending">
+          <div class="trust-snow state-checking" aria-hidden="true"></div>
+          <div>
+            <span>Waiting</span>
+            <strong>Trust checks appear after verification</strong>
+            <p>
+              Snowman will inspect provider setup, DNS, app health, and encrypted
+              survivor artifacts.
+            </p>
+            <em>Nothing to do yet. Keep the control room open.</em>
+          </div>
+        </article>
+"""
+    overall = str(report.get("overall", "waiting")) if isinstance(report, dict) else "waiting"
+    return f"""
+    <section class="trust-panel" aria-label="Verification trust checks">
+      <div class="section-head compact">
+        <div>
+          <span class="section-kicker">Trust checks</span>
+          <h2>Proof it really works</h2>
+        </div>
+        <span class="live-pill trust-{html.escape(overall)}">
+          Snowman verification: {html.escape(overall)}
+        </span>
+      </div>
+      <div class="trust-grid" data-trust-checks>{cards}</div>
+    </section>
+"""
+
+
+_RUN_STATE_LABELS = {
+    "app_repo_known": "App repo",
+    "runner_selected": "Runner",
+    "oci_ready": "OCI",
+    "browser_ready": "Browser",
+    "provider_sessions_known": "Provider gates",
+    "vault_created": "Vault",
+    "secrets_captured": "Secrets",
+    "provider_checks_passed_or_pending_safe": "Provider checks",
+    "receipt_written": "Receipt",
+    "detonation_safe": "Detonation",
+}
+
+_RUN_STATE_DETAILS = {
+    "app_repo_known": (
+        "Source found. FuseKit knows what to launch.",
+        "Waiting for a repo URL or local app source that the clean room can fetch.",
+    ),
+    "runner_selected": (
+        "Execution lane selected.",
+        "Choosing local, OCI Cloud Shell, or OCI VM based on available authorization.",
+    ),
+    "oci_ready": (
+        "Clean-room runner is ready or not required.",
+        "Waiting for OCI Cloud Shell, OCI VM provisioning, or a local-runner decision.",
+    ),
+    "browser_ready": (
+        "Computer-use browser is ready.",
+        "Waiting for the provider browser spine to open and report healthy state.",
+    ),
+    "provider_sessions_known": (
+        "Provider gates are tracked.",
+        "Waiting for provider login, MFA, consent, billing, or token gates to surface.",
+    ),
+    "vault_created": (
+        "Encrypted vault exists.",
+        "Creating the passphrase-protected vault before any secrets are captured.",
+    ),
+    "secrets_captured": (
+        "Secrets are stored only in the vault.",
+        "Waiting for approved tokens, keys, webhook secrets, or generated credentials.",
+    ),
+    "provider_checks_passed_or_pending_safe": (
+        "Provider checks passed or are explicitly safe to wait on.",
+        "Waiting for API, DNS, deploy, webhook, email, and live-app checks.",
+    ),
+    "receipt_written": (
+        "Redacted receipt exists.",
+        "Writing the audit-friendly receipt without raw secrets.",
+    ),
+    "detonation_safe": (
+        "Preflight passed and detonation can run.",
+        "Waiting for vault, audit, receipt, verification, rollback, and leak checks.",
+    ),
+}
+
+
+def _render_run_state(state: Any) -> str:
+    state = state if isinstance(state, dict) else {}
+    cards = "\n".join(
+        _render_run_state_card(field, bool(state.get(field, False)))
+        for field in _RUN_STATE_LABELS
+    )
+    ready = bool(state.get("ready_to_detonate", False))
+    missing = state.get("missing_for_detonation", [])
+    if isinstance(missing, list) and missing:
+        summary = f"{len(missing)} detonation preflight items pending"
+    elif ready:
+        summary = "detonation preflight is ready"
+    else:
+        summary = "launch contract is still filling in"
+    return f"""
+    <section class="run-state-panel" aria-label="Launch run-state contract">
+      <div class="section-head compact">
+        <div>
+          <span class="section-kicker">Launch contract</span>
+          <h2>What FuseKit knows</h2>
+        </div>
+        <span class="live-pill" data-run-state-overall>{html.escape(summary)}</span>
+      </div>
+      <div class="run-state-grid" data-run-state-checks>{cards}</div>
+    </section>
+"""
+
+
+def _render_run_state_card(field: str, passed: bool) -> str:
+    status = "passed" if passed else "pending"
+    snow = "passed" if passed else "checking"
+    label = _RUN_STATE_LABELS[field]
+    ready_detail, pending_detail = _RUN_STATE_DETAILS[field]
+    detail = ready_detail if passed else pending_detail
+    return f"""
+        <article class="trust-card {status}" data-run-state-field="{html.escape(field)}">
+          <div class="trust-snow state-{snow}" aria-hidden="true"></div>
+          <div>
+            <span>{html.escape(status_label(status))}</span>
+            <strong>{html.escape(label)}</strong>
+            <p>{html.escape(detail)}</p>
+            <em>{html.escape(field.replace('_', ' '))}</em>
+          </div>
+        </article>
+"""
+
+
+def _render_trust_card(check: dict[str, Any]) -> str:
+    status = str(check.get("status", "pending"))
+    snow = _trust_snow_state(status)
+    title = f"{check.get('provider', 'provider')} · {check.get('check', 'check')}"
+    return f"""
+        <article class="trust-card {html.escape(status)}">
+          <div class="trust-snow state-{html.escape(snow)}" aria-hidden="true"></div>
+          <div>
+            <span>{html.escape(status_label(status))}</span>
+            <strong>{html.escape(title.replace('_', ' '))}</strong>
+            <p>{html.escape(str(check.get('summary', 'Verification is running.')))}</p>
+            <em>{html.escape(str(check.get('repair', 'Keep the control room open.')))}</em>
+          </div>
+        </article>
+"""
+
+
+def _trust_snow_state(status: str) -> str:
+    return {
+        "passed": "passed",
+        "pending": "checking",
+        "repairing": "repairing",
+        "failed": "failed",
+        "needs_human_gate": "checking",
+        "skipped": "checking",
+    }.get(status, "checking")
+
+
+def _visible_checkpoints(job: JobState) -> list[Any]:
+    active = [
+        checkpoint
+        for checkpoint in job.checkpoints
+        if checkpoint.status in {"failed", "waiting", "running"}
+    ]
+    if active:
+        return active[:4]
+    pending = [checkpoint for checkpoint in job.checkpoints if checkpoint.status == "pending"]
+    if pending:
+        return pending[:3]
+    return job.checkpoints[-3:]
+
+
+def _render_checkpoint_card(checkpoint: Any) -> str:
+    status = html.escape(checkpoint.status)
+    mascot_state = html.escape(checkpoint.mascot_state)
+    return f"""
+        <article class="checkpoint-card {status}" data-checkpoint-id="{html.escape(checkpoint.id)}">
+          <div class="checkpoint-snow state-{mascot_state}" aria-hidden="true">
+            <span class="mini-snow-head"></span>
+            <span class="mini-snow-body"></span>
+          </div>
+          <div>
+            <span>{html.escape(status_label(checkpoint.status))}</span>
+            <strong>{html.escape(checkpoint.label)}</strong>
+            <p>{html.escape(checkpoint.detail)}</p>
+            <em>{html.escape(checkpoint.next_action)}</em>
+            <code>{html.escape(checkpoint.resume_hint)}</code>
+          </div>
+        </article>
+"""
+
+
+def _headline(job: JobState) -> str:
+    if job.status == "waiting":
+        return "Waiting at a human gate"
+    if job.status == "failed":
+        return "Launch needs attention"
+    if job.status == "done":
+        return "Launch is complete"
+    return "Launch in progress"
+
+
+def _current_step(job: JobState, payload: dict[str, Any] | None = None) -> Any:
+    payload = payload or {}
+    if payload.get("gate_state_error"):
+        return SimpleNamespace(
+            id="gate.state.error",
+            label="Gate state needs repair",
+            status="failed",
+            detail=str(payload["gate_state_error"]),
+        )
+    active_gate = _active_gate(payload)
+    if active_gate:
+        return _gate_step(active_gate)
+    for status in ("failed", "waiting", "running"):
+        for step in job.steps:
+            if step.status == status:
+                return step
+    for step in job.steps:
+        if step.status == "pending":
+            return step
+    return job.steps[-1] if job.steps else None
+
+
+def _next_step(job: JobState, current: Any) -> JobStep | None:
+    if current is None:
+        return None
+    seen_current = False
+    for step in job.steps:
+        if seen_current and step.status not in TERMINAL_STEP_STATUSES:
+            return step
+        if step.id == current.id:
+            seen_current = True
+    if not any(step.id == current.id for step in job.steps):
+        for step in job.steps:
+            if step.status not in TERMINAL_STEP_STATUSES:
+                return step
+    return None
+
+
+def _focus_kicker(step: Any) -> str:
+    if step is None:
+        return "Current focus"
+    if step.status == "waiting":
+        return "Human gate"
+    if step.status == "failed":
+        return "Repair needed"
+    if step.status == "running":
+        return "Now running"
+    return "Up next"
+
+
+def _step_detail(step: Any) -> str:
+    if step is None:
+        return "FuseKit is preserving encrypted and redacted artifacts."
+    return step.detail or "Queued and ready for the worker."
+
+
+def _render_gate_help(step: Any) -> str:
+    if step is None or step.status != "waiting":
+        return ""
+    guidance = _guidance_for_step(step)
+    follow_steps = getattr(step, "follow_steps", None)
+    actions_source = (
+        follow_steps
+        if isinstance(follow_steps, list) and follow_steps
+        else guidance.actions
+    )
+    actions = "".join(f"<li>{html.escape(str(action))}</li>" for action in actions_source)
+    resume_url = str(getattr(step, "resume_url", "") or "")
+    resume_link = (
+        f'<a class="gate-link" href="{html.escape(resume_url)}" '
+        'target="_blank" rel="noreferrer">Open provider gate</a>'
+        if resume_url
+        else ""
+    )
+    attempts = int(getattr(step, "attempts", 0) or 0)
+    attempts_label = (
+        f'<span class="gate-attempts">Resurfaced {attempts} '
+        f'time{"" if attempts == 1 else "s"}</span>'
+        if attempts
+        else ""
+    )
+    meta = (
+        f'<div class="gate-meta">{resume_link}{attempts_label}</div>'
+        if resume_link or attempts_label
+        else ""
+    )
+    classification = str(getattr(step, "classification", "") or "").replace("_", " ")
+    classification_label = (
+        f'<span class="gate-classification">{html.escape(classification)}</span>'
+        if classification
+        else ""
+    )
+    target = str(getattr(step, "target", "") or "")
+    target_label = (
+        f'<p class="gate-target">Snowman highlighted: <strong>{html.escape(target)}</strong></p>'
+        if target
+        else ""
+    )
+    gate_id = str(getattr(step, "id", "") or "")
+    resume_button = (
+        f'<button class="gate-done" type="button" data-gate-pass="{html.escape(gate_id)}">'
+        "I finished this step</button>"
+        if gate_id
+        else ""
+    )
+    return f"""
+        <div class="gate-help">
+          <span>What you need to do</span>{classification_label}
+          <strong>{html.escape(guidance.title)}</strong>
+          <p>{html.escape(guidance.body)}</p>
+          {target_label}
+          {meta}
+          <ol>{actions}</ol>
+          <em>{html.escape(guidance.reassurance)}</em>
+          {resume_button}
+        </div>
+"""
+
+
+def _guidance_for_step(step: Any) -> GateGuidance:
+    provider = infer_gate_provider(f"{step.id} {step.label} {step.detail}")
+    return provider_gate_guidance(provider)
+
+
+def _active_gate(payload: dict[str, Any]) -> dict[str, Any] | None:
+    gates = payload.get("gates", [])
+    if not isinstance(gates, list):
+        return None
+    for gate in gates:
+        if isinstance(gate, dict) and str(gate.get("status", "")) in {"waiting", "resurfaced"}:
+            return gate
+    return None
+
+
+def _gate_step(gate: dict[str, Any]) -> Any:
+    provider = str(gate.get("provider", "") or "Provider")
+    return SimpleNamespace(
+        id=str(gate.get("id", "") or "provider.gate"),
+        label=f"{provider} needs your approval",
+        status="waiting",
+        detail=str(gate.get("reason", "") or "A provider-created human gate is waiting."),
+        provider=provider,
+        resume_url=str(gate.get("resume_url", "") or ""),
+        classification=str(gate.get("classification", "") or ""),
+        target=str(gate.get("target", "") or ""),
+        follow_steps=gate.get("follow_steps", []),
+        attempts=int(gate.get("attempts", 0) or 0),
+    )
+
+
+def _format_time(timestamp: float) -> str:
+    age = max(0, int(time.time() - timestamp))
+    if age < 60:
+        return "just now"
+    if age < 3600:
+        return f"{age // 60}m ago"
+    if age < 86400:
+        return f"{age // 3600}h ago"
+    return f"{age // 86400}d ago"
+
+
+def _safe_json(payload: dict[str, Any]) -> str:
+    data = json.dumps(payload, sort_keys=True)
+    return data.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")

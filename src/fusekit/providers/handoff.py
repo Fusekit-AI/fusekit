@@ -43,7 +43,7 @@ HANDOFFS: dict[str, ProviderHandoff] = {
         required_scopes=("target repo access", "Actions secrets", "deploy keys"),
         account_steps=(
             "Create or sign in to a GitHub account.",
-            "Complete any email verification, passkey, MFA, CAPTCHA, or consent challenge.",
+            "Complete the highlighted email, passkey, MFA, CAPTCHA, or consent challenge.",
             "Create or choose the repository that will receive secrets and deploy keys.",
         ),
         secret_steps=(
@@ -63,7 +63,7 @@ HANDOFFS: dict[str, ProviderHandoff] = {
         required_scopes=("project access", "environment variables", "deployments"),
         account_steps=(
             "Create or sign in to a Vercel account.",
-            "Complete any email verification, SSO, MFA, CAPTCHA, billing, or consent step.",
+            "Complete the highlighted email, SSO, MFA, CAPTCHA, billing, or consent step.",
             "Connect the Git provider or choose an existing project if Vercel requires it.",
         ),
         secret_steps=(
@@ -84,8 +84,8 @@ HANDOFFS: dict[str, ProviderHandoff] = {
             "Create or sign in to a Cloudflare account.",
             "Add or choose the zone that owns the target domain.",
             (
-                "Complete nameserver, domain ownership, MFA, CAPTCHA, billing, "
-                "or consent steps yourself."
+                "Complete the highlighted nameserver, domain ownership, MFA, CAPTCHA, billing, "
+                "or consent step."
             ),
         ),
         secret_steps=(
@@ -104,7 +104,7 @@ HANDOFFS: dict[str, ProviderHandoff] = {
         required_scopes=("email send", "domain verification"),
         account_steps=(
             "Create or sign in to a Resend account.",
-            "Complete any email verification, MFA, CAPTCHA, billing, or consent step.",
+            "Complete the highlighted email, MFA, CAPTCHA, billing, or consent step.",
             "Add or choose the sending domain if the app uses a custom sender.",
         ),
         secret_steps=(

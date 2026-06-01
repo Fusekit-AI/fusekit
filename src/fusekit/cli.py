@@ -11,14 +11,25 @@ import sys
 import time
 import uuid
 import webbrowser
+from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlparse
 
 from fusekit import __version__
 from fusekit.audit import AuditLog, Receipt
 from fusekit.capabilities.runtime import CapabilityBroker
+from fusekit.commands import apply as apply_command
+from fusekit.commands import authorize as authorize_command
+from fusekit.commands import detonate as detonate_command
+from fusekit.commands import launch as launch_command
+from fusekit.commands import plan as plan_command
+from fusekit.commands import scan as scan_command
+from fusekit.commands import verify as verify_command
 from fusekit.detonation.cleanup import detonate as detonate_paths
-from fusekit.detonation.preflight import run_detonation_preflight
+from fusekit.detonation.preflight import (
+    run_detonation_preflight,
+    verification_report_allows_detonation,
+)
 from fusekit.errors import ApprovalRequired, FuseKitError
 from fusekit.harness import run_acceptance
 from fusekit.llm import LlmConfig, authorize_openclaw_llm, capture_llm_config
@@ -74,6 +85,7 @@ from fusekit.runner.oci_live import (
     load_oci_auth_from_vault_or_config,
 )
 from fusekit.runner.remote import detonate_remote_worker, execute_remote_setup
+from fusekit.runner.run_state import LaunchRunState, update_run_state
 from fusekit.runner.server import serve_control_room
 from fusekit.runtime import bootstrap_runtime, doctor
 from fusekit.runtime.bootstrap import openclaw_state_home
@@ -122,7 +134,7 @@ def _parser() -> argparse.ArgumentParser:
     scan = sub.add_parser("scan", help="scan an app repo and write a setup manifest")
     scan.add_argument("path", type=Path)
     scan.add_argument("-o", "--output", type=Path, default=Path("fusekit.yaml"))
-    scan.set_defaults(handler=_cmd_scan)
+    scan.set_defaults(handler=scan_command.run)
 
     validate = sub.add_parser("validate", help="validate a setup manifest")
     validate.add_argument("manifest", type=Path)
@@ -150,7 +162,7 @@ def _parser() -> argparse.ArgumentParser:
     plan = sub.add_parser("plan", help="print a setup plan")
     plan.add_argument("manifest", type=Path)
     plan.add_argument("--json", action="store_true", dest="as_json")
-    plan.set_defaults(handler=_cmd_plan)
+    plan.set_defaults(handler=plan_command.run)
 
     authorize = sub.add_parser(
         "authorize",
@@ -196,7 +208,7 @@ def _parser() -> argparse.ArgumentParser:
         help="include the provider project creation/import page in the handoff",
     )
     _gate_args(authorize)
-    authorize.set_defaults(handler=_cmd_authorize)
+    authorize.set_defaults(handler=authorize_command.run)
 
     provider = sub.add_parser("provider", help="manage provider capability packs")
     provider_sub = provider.add_subparsers(dest="provider_command")
@@ -315,19 +327,19 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path(".fusekit/verification_report.json"),
     )
-    apply.set_defaults(handler=_cmd_apply)
+    apply.set_defaults(handler=apply_command.run)
 
     setup = sub.add_parser("setup", help="one-command guided real setup for an app")
     _launch_args(setup)
-    setup.set_defaults(handler=_cmd_setup)
+    setup.set_defaults(handler=launch_command.run)
 
     launch = sub.add_parser("launch", help="launch a vibe-coded app with FuseKit")
     _launch_args(launch)
-    launch.set_defaults(handler=_cmd_setup)
+    launch.set_defaults(handler=launch_command.run)
 
     verify = sub.add_parser("verify", help="verify a live app URL")
     verify.add_argument("url")
-    verify.set_defaults(handler=_cmd_verify)
+    verify.set_defaults(handler=verify_command.run)
 
     receipt = sub.add_parser("receipt", help="write a redacted receipt from a manifest and vault")
     receipt.add_argument("manifest", type=Path)
@@ -343,7 +355,7 @@ def _parser() -> argparse.ArgumentParser:
         default=[Path(".fusekit/worker"), Path(".fusekit/tmp")],
     )
     detonate.add_argument("--preserve", action="append", type=Path, default=[])
-    detonate.set_defaults(handler=_cmd_detonate)
+    detonate.set_defaults(handler=detonate_command.run)
 
     unlock = sub.add_parser("unlock", help="unlock a vault and print non-secret metadata")
     _vault_args(unlock)
@@ -818,7 +830,10 @@ def _github_source_handoff(args: argparse.Namespace) -> ProviderHandoff:
             account_steps=(
                 "Sign in to GitHub.",
                 "Install or authorize the FuseKit GitHub App for only the selected repository.",
-                "Complete GitHub passkey, MFA, CAPTCHA, organization, or consent gates if shown.",
+                (
+                    "Complete the highlighted GitHub passkey, MFA, CAPTCHA, organization, "
+                    "or consent gate."
+                ),
             ),
             secret_steps=(
                 "Return the app-issued installation token or approved access token to FuseKit.",
@@ -1011,57 +1026,104 @@ def _cmd_setup(args: argparse.Namespace) -> int:
         return _cmd_cloud_shell_runner_launch(args, app_path, runner_resolution.selected)
     if runner_resolution.selected != "local":
         return _cmd_cloud_runner_launch(args, app_path, runner_resolution.selected)
+    job = _load_or_create_launch_job(args, app_path, "local")
+    _mark_run_state(args, app_repo_known=True, runner_selected=True, oci_ready=True)
+    for step_id, detail in (
+        ("oci.authorize", "local runner selected; OCI authorization is not required"),
+        ("oci.provision", "local runner selected; disposable OCI VM is not required"),
+        ("remote.bootstrap", "local runner selected; remote bootstrap is not required"),
+        ("app.upload", "local runner selected; app stays on this machine"),
+    ):
+        job.mark(step_id, "skipped", detail)
+    job.mark("setup.execute", "running", "scanning app and preparing setup plan")
+    _save_launch_job(args, job)
     args._cached_passphrase = _passphrase(args)
     vault = open_or_create(args.vault, args._cached_passphrase)
-    if not args.no_bootstrap:
-        result = bootstrap_runtime(install=True)
-        print(json.dumps({"bootstrap": result.to_dict()}, indent=2, sort_keys=True))
-        if not result.ok:
-            raise FuseKitError("FuseKit runtime bootstrap did not complete.")
-    _capture_llm(args, vault, require=not args.allow_incomplete)
-    vault.save(args.vault, args._cached_passphrase)
-    manifest_path = (args.manifest or (app_path / "fusekit.yaml")).resolve()
-    manifest = scan_repo(app_path)
-    _apply_magic_defaults(args, manifest, app_path)
-    write_manifest(manifest, manifest_path)
-    pack_paths = _ensure_provider_packs(app_path, manifest)
-    print(f"Scanned app and wrote manifest: {manifest_path}")
-    for pack_path in pack_paths:
-        print(f"Prepared provider capability pack: {pack_path}")
-    plan = build_plan(manifest)
-    args.plan_json.parent.mkdir(parents=True, exist_ok=True)
-    args.plan_json.write_text(
-        json.dumps(plan.to_dict(), indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    print("Setup plan:")
-    for action in plan.actions:
-        print(f"{action.kind:17} {action.id:28} {action.summary}")
-    print(f"Setup plan artifact: {args.plan_json}")
-    if args.fusekit_gates == "explicit" and not args.yes:
-        _await_plan_approval(args)
-    if not args.allow_incomplete:
-        _authorize_required_providers(args, manifest)
-    args.manifest = manifest_path
-    _apply_loaded_manifest(args, manifest)
-    if not args.no_detonate:
-        _run_local_detonation_preflight(args, app_path)
-        detonation_targets = [app_path / ".fusekit" / "worker", app_path / ".fusekit" / "tmp"]
-        if bool(getattr(args, "_detonate_openclaw_state", False)):
-            detonation_targets.append(openclaw_state_home())
-        removed = detonate_paths(
-            detonation_targets,
-            preserve=[
-                args.vault,
-                args.audit_log,
-                args.receipt_json,
-                args.receipt_md,
-                args.verification_report,
-                args.rollback_json,
-            ],
+    try:
+        if not args.no_bootstrap:
+            result = bootstrap_runtime(install=True)
+            print(json.dumps({"bootstrap": result.to_dict()}, indent=2, sort_keys=True))
+            if not result.ok:
+                raise FuseKitError("FuseKit runtime bootstrap did not complete.")
+        _capture_llm(args, vault, require=not args.allow_incomplete)
+        vault.save(args.vault, args._cached_passphrase)
+        _mark_run_state(args, vault_created=True)
+        manifest_path = (args.manifest or (app_path / "fusekit.yaml")).resolve()
+        manifest = scan_repo(app_path)
+        _apply_magic_defaults(args, manifest, app_path)
+        write_manifest(manifest, manifest_path)
+        job.add_artifact("manifest", manifest_path)
+        pack_paths = _ensure_provider_packs(app_path, manifest)
+        print(f"Scanned app and wrote manifest: {manifest_path}")
+        for pack_path in pack_paths:
+            print(f"Prepared provider capability pack: {pack_path}")
+        plan = build_plan(manifest)
+        args.plan_json.parent.mkdir(parents=True, exist_ok=True)
+        args.plan_json.write_text(
+            json.dumps(plan.to_dict(), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
         )
-        print(json.dumps({"detonated": removed}, indent=2, sort_keys=True))
-    return 0
+        job.add_artifact("setup_plan", args.plan_json)
+        print("Setup plan:")
+        for action in plan.actions:
+            print(f"{action.kind:17} {action.id:28} {action.summary}")
+        print(f"Setup plan artifact: {args.plan_json}")
+        if args.fusekit_gates == "explicit" and not args.yes:
+            job.mark("setup.execute", "waiting", "setup plan is waiting for explicit approval")
+            _save_launch_job(args, job)
+            _await_plan_approval(args)
+        if not args.allow_incomplete:
+            job.mark("setup.execute", "waiting", "provider authorization gates are being checked")
+            _save_launch_job(args, job)
+            _authorize_required_providers(args, manifest)
+        _mark_run_state(args, browser_ready=True, provider_sessions_known=True)
+        job.mark("setup.execute", "running", "configuring providers and writing artifacts")
+        _save_launch_job(args, job)
+        args.manifest = manifest_path
+        _apply_loaded_manifest(args, manifest)
+        _attach_local_survivor_artifacts(args, job)
+        verification_safe = _verification_report_path_allows_detonation(args.verification_report)
+        job.mark(
+            "verify.live",
+            "done" if verification_safe else "skipped",
+            (
+                "verification is passed or pending-safe"
+                if verification_safe
+                else "local rehearsal did not require live verification"
+            ),
+        )
+        job.mark("setup.execute", "done", "local setup worker completed")
+        job.mark("artifacts.retrieve", "done", "encrypted/redacted artifacts were written locally")
+        if not args.no_detonate:
+            _run_local_detonation_preflight(args, app_path)
+            detonation_targets = [app_path / ".fusekit" / "worker", app_path / ".fusekit" / "tmp"]
+            if bool(getattr(args, "_detonate_openclaw_state", False)):
+                detonation_targets.append(openclaw_state_home())
+            removed = detonate_paths(
+                detonation_targets,
+                preserve=[
+                    args.vault,
+                    args.audit_log,
+                    args.receipt_json,
+                    args.receipt_md,
+                    args.verification_report,
+                    args.rollback_json,
+                ],
+            )
+            job.mark("detonate.workspace", "done", "local worker scratch state detonated")
+            print(json.dumps({"detonated": removed}, indent=2, sort_keys=True))
+        else:
+            job.mark(
+                "detonate.workspace",
+                "skipped",
+                "worker scratch state retained by --no-detonate",
+            )
+        _save_launch_job(args, job)
+        return 0
+    except FuseKitError:
+        job.mark("setup.execute", "failed", "local setup worker did not complete")
+        _save_launch_job(args, job)
+        raise
 
 
 def _apply_loaded_manifest(args: argparse.Namespace, manifest: SetupManifest) -> None:
@@ -1080,6 +1142,8 @@ def _apply_loaded_manifest(args: argparse.Namespace, manifest: SetupManifest) ->
     try:
         _capture_provider_tokens(vault)
         _capture_manifest_provider_env(vault, manifest)
+        if hasattr(args, "job_state"):
+            _mark_run_state(args, vault_created=True, secrets_captured=True)
         context = ProviderSetupContext(
             manifest=manifest,
             vault=vault,
@@ -1103,14 +1167,41 @@ def _apply_loaded_manifest(args: argparse.Namespace, manifest: SetupManifest) ->
             receipt.add_action("verify.live_url", "ok" if result["ok"] else "failed", result)
 
         _verify_provider_packs(args, manifest, vault, audit, receipt, verification_report)
+        provider_checks_safe = verification_report_allows_detonation(
+            verification_report.to_dict()
+        )
+        if hasattr(args, "job_state"):
+            _mark_run_state(
+                args,
+                provider_checks_passed_or_pending_safe=provider_checks_safe,
+            )
+        if not provider_checks_safe and not args.allow_incomplete:
+            raise FuseKitError(
+                "Verification did not reach a passed or pending-safe state."
+            )
     except FuseKitError:
         _write_apply_artifacts(args, passphrase, vault, audit, receipt, verification_report)
         raise
 
     _write_apply_artifacts(args, passphrase, vault, audit, receipt, verification_report)
+    if hasattr(args, "job_state"):
+        _mark_run_state(args, receipt_written=True)
     print(f"Apply finished. Redacted receipt: {args.receipt_json}")
     print(f"Verification report: {args.verification_report}")
     print(f"Encrypted vault: {args.vault}")
+
+
+def _attach_local_survivor_artifacts(args: argparse.Namespace, job: JobState) -> None:
+    for name, path in (
+        ("vault", args.vault),
+        ("audit_log", args.audit_log),
+        ("receipt_json", args.receipt_json),
+        ("receipt_md", args.receipt_md),
+        ("verification_report", args.verification_report),
+        ("rollback_plan", args.rollback_json),
+    ):
+        if Path(path).exists():
+            job.add_artifact(name, Path(path))
 
 
 def _write_apply_artifacts(
@@ -1149,6 +1240,8 @@ def _run_local_detonation_preflight(args: argparse.Namespace, app_path: Path) ->
         raise FuseKitError(
             "Detonation preflight failed: " + "; ".join(result.failures)
         )
+    if hasattr(args, "job_state"):
+        _mark_run_state(args, detonation_safe=True)
 
 
 def _cmd_verify(args: argparse.Namespace) -> int:
@@ -1603,6 +1696,9 @@ def _save_launch_job(args: argparse.Namespace, job: JobState) -> None:
     """Persist job, checkpoints, and the static control room when requested."""
 
     args.job_state.parent.mkdir(parents=True, exist_ok=True)
+    run_state_path = _run_state_path(args)
+    if run_state_path.exists() and job.artifacts.get("run_state") != str(run_state_path):
+        job.add_artifact("run_state", run_state_path)
     checkpoints_path = args.job_state.with_name("checkpoints.json")
     if job.artifacts.get("checkpoints") != str(checkpoints_path):
         job.add_artifact("checkpoints", checkpoints_path)
@@ -1616,10 +1712,41 @@ def _save_launch_job(args: argparse.Namespace, job: JobState) -> None:
     job.save(args.job_state)
 
 
-def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_name: str) -> int:
-    _apply_magic_defaults(args, scan_repo(app_path), app_path)
+def _run_state_path(args: argparse.Namespace) -> Path:
+    return Path(args.job_state).parent / "run_state.json"
+
+
+def _mark_run_state(args: argparse.Namespace, **updates: bool) -> LaunchRunState:
+    return update_run_state(_run_state_path(args), **updates)
+
+
+def _load_or_create_launch_job(
+    args: argparse.Namespace,
+    app_path: Path,
+    runner_name: str,
+) -> JobState:
+    if args.job_state.exists():
+        try:
+            job = JobState.load(args.job_state)
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+            job = JobState.create(f"fk-{uuid.uuid4().hex[:12]}", app_path, runner_name)
+        else:
+            if job.app_path == str(app_path) and job.runner == runner_name and job.status != "done":
+                job.mark("runner.resolve", "done", f"{runner_name} selected; resumed from state")
+                return job
     job = JobState.create(f"fk-{uuid.uuid4().hex[:12]}", app_path, runner_name)
     job.mark("runner.resolve", "done", f"{runner_name} selected")
+    return job
+
+
+def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_name: str) -> int:
+    _apply_magic_defaults(args, scan_repo(app_path), app_path)
+    job = _load_or_create_launch_job(args, app_path, runner_name)
+    _mark_run_state(
+        args,
+        app_repo_known=bool(args.app_source or _infer_app_source(app_path)),
+        runner_selected=True,
+    )
     if not args.no_bootstrap:
         result = bootstrap_runtime(install=True)
         print(json.dumps({"bootstrap": result.to_dict()}, indent=2, sort_keys=True))
@@ -1640,8 +1767,10 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
     _save_launch_job(args, job)
     passphrase = _passphrase(args)
     vault = open_or_create(args.vault, passphrase)
+    _mark_run_state(args, vault_created=True)
     _ensure_oci_authorized_for_launch(args, vault, passphrase, job)
     workspace = _provision_oci_workspace(args, vault, plan)
+    _mark_run_state(args, oci_ready=True)
     vault.save(args.vault, passphrase)
     workspace_path = args.job_state.parent / "oci_workspace.json"
     workspace_path.write_text(
@@ -1675,22 +1804,52 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
         _save_launch_job(args, job)
         raise
     job.mark("remote.bootstrap", "done", "remote setup completed")
+    _mark_run_state(args, browser_ready=True, provider_sessions_known=True)
     job.mark("app.upload", "done", "app uploaded without excluded secret paths")
     job.mark("setup.execute", "done", "remote FuseKit launch completed")
-    job.mark("verify.live", "done", "verification delegated to setup receipt")
     job.mark("artifacts.retrieve", "done", artifacts["output_dir"])
     verification_report = (
         Path(artifacts["output_dir"]) / ".fusekit" / "verification_report.json"
     )
+    provider_checks_safe = False
     if verification_report.exists():
         job.add_artifact("verification_report", verification_report)
+        provider_checks_safe = _verification_report_path_allows_detonation(verification_report)
     rollback_plan = Path(artifacts["output_dir"]) / ".fusekit" / "rollback_plan.json"
     if rollback_plan.exists():
         job.add_artifact("rollback_plan", rollback_plan)
+    receipt_path = Path(artifacts["output_dir"]) / ".fusekit" / "setup_receipt.json"
+    _mark_run_state(
+        args,
+        secrets_captured=True,
+        provider_checks_passed_or_pending_safe=provider_checks_safe,
+        receipt_written=receipt_path.exists(),
+    )
+    if not provider_checks_safe:
+        job.mark(
+            "verify.live",
+            "failed",
+            "remote verification did not reach a passed or pending-safe state",
+        )
+        if not args.no_detonate:
+            remote_deleted = _detonate_oci_workspace(args, workspace, vault)
+            job.mark(
+                "detonate.workspace",
+                "done",
+                "workspace detonation attempted after failed verification",
+            )
+        else:
+            job.mark("detonate.workspace", "skipped", "workspace retained by --no-detonate")
+        _save_launch_job(args, job)
+        raise FuseKitError(
+            "Remote verification did not reach a passed or pending-safe state."
+        )
+    job.mark("verify.live", "done", "remote verification is passed or pending-safe")
     if args.no_detonate:
         job.mark("detonate.workspace", "skipped", "workspace retained by --no-detonate")
     else:
         _run_remote_detonation_preflight(args, Path(artifacts["output_dir"]))
+        _mark_run_state(args, detonation_safe=True)
         remote_deleted = _detonate_oci_workspace(args, workspace, vault)
         job.mark("detonate.workspace", "done", "remote worker and OCI workspace detonated")
     _save_launch_job(args, job)
@@ -1708,6 +1867,14 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
         )
     )
     return 0
+
+
+def _verification_report_path_allows_detonation(path: Path) -> bool:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(raw, dict) and verification_report_allows_detonation(raw)
 
 
 def _detonate_oci_workspace(
@@ -1759,11 +1926,11 @@ def _cmd_cloud_shell_runner_launch(
     runner_name: str,
 ) -> int:
     _apply_magic_defaults(args, scan_repo(app_path), app_path)
-    job = JobState.create(f"fk-{uuid.uuid4().hex[:12]}", app_path, runner_name)
-    job.mark("runner.resolve", "done", f"{runner_name} selected")
+    job = _load_or_create_launch_job(args, app_path, runner_name)
     args.job_state.parent.mkdir(parents=True, exist_ok=True)
     app_source = args.app_source or _infer_app_source(app_path)
     args.app_source = app_source
+    _mark_run_state(args, app_repo_known=bool(app_source), runner_selected=True, oci_ready=False)
     plan = build_cloud_shell_launch_plan(
         app_source=app_source,
         fusekit_package=args.fusekit_package,
@@ -1775,6 +1942,7 @@ def _cmd_cloud_shell_runner_launch(
     plan_path.write_text(json.dumps(plan.to_dict(), indent=2, sort_keys=True) + "\n", "utf-8")
     write_cloud_shell_launcher(plan, launcher_path)
     job.mark("oci.authorize", "waiting", "OCI Cloud Shell service gate is open")
+    _mark_run_state(args, provider_sessions_known=True)
     job.add_artifact("cloud_shell_plan", plan_path)
     job.add_artifact("launcher", launcher_path)
     _save_launch_job(args, job)
@@ -1977,6 +2145,9 @@ def _run_handoff(
                     navigator=OpenAiUiNavigator(_llm_config_from_args(args), vault),
                     gate_retry_seconds=float(getattr(args, "gate_retry_seconds", 300.0)),
                     max_gate_attempts=int(getattr(args, "gate_max_attempts", 0)),
+                    gate_recorder=_gate_recorder(args),
+                    gate_passed=_gate_passed_checker(args),
+                    provider_memory_path=_provider_memory_path(args, provider),
                 )
             else:
                 try:
@@ -2012,6 +2183,9 @@ def _run_handoff(
                 navigator=OpenAiUiNavigator(_llm_config_from_args(args), vault),
                 gate_retry_seconds=float(getattr(args, "gate_retry_seconds", 300.0)),
                 max_gate_attempts=int(getattr(args, "gate_max_attempts", 0)),
+                gate_recorder=_gate_recorder(args),
+                gate_passed=_gate_passed_checker(args),
+                provider_memory_path=_provider_memory_path(args, provider),
             )
         else:
             try:
@@ -2055,12 +2229,18 @@ def _record_gate_waiting(
     provider: str,
     reason: str,
     resume_url: str = "",
+    classification: str = "",
+    target: str = "",
+    follow_steps: tuple[str, ...] = (),
 ) -> None:
     GateService.load(_gate_state_path(args)).wait(
         gate_id,
         provider=provider,
         reason=reason,
         resume_url=resume_url,
+        classification=classification,
+        target=target,
+        follow_steps=follow_steps,
     )
 
 
@@ -2076,6 +2256,49 @@ def _record_gate_passed(
     if gate_id not in service.records:
         service.wait(gate_id, provider=provider, reason=reason, resume_url=resume_url)
     service.pass_gate(gate_id)
+
+
+def _gate_recorder(args: argparse.Namespace) -> Callable[
+    [str, str, str, str, str, tuple[str, ...], str],
+    str,
+]:
+    def record(
+        gate_id: str,
+        provider: str,
+        reason: str,
+        resume_url: str,
+        target: str,
+        follow_steps: tuple[str, ...],
+        classification: str,
+    ) -> str:
+        _record_gate_waiting(
+            args,
+            gate_id,
+            provider=provider,
+            reason=reason,
+            resume_url=resume_url,
+            classification=classification,
+            target=target,
+            follow_steps=follow_steps,
+        )
+        return gate_id
+
+    return record
+
+
+def _gate_passed_checker(args: argparse.Namespace) -> Callable[[str], bool]:
+    def is_passed(gate_id: str) -> bool:
+        service = GateService.load(_gate_state_path(args))
+        record = service.records.get(gate_id)
+        return bool(record and record.status == "passed")
+
+    return is_passed
+
+
+def _provider_memory_path(args: argparse.Namespace, provider: str) -> Path:
+    base = _gate_state_path(args).parent / "provider-memory"
+    safe_provider = re.sub(r"[^a-z0-9_-]+", "-", provider.lower()).strip("-") or "provider"
+    return base / f"{safe_provider}.json"
 
 
 def _provider_ui_goal(provider: str, include_project: bool) -> str:
@@ -2474,46 +2697,53 @@ def _verify_provider_packs(
         )
         payload = {"provider": pack.provider, "results": [result.to_dict() for result in results]}
         audit.record("provider_pack.verify", payload)
-        all_ok = all(result.status in {"ok", "skipped"} for result in results)
-        any_pending = any(result.status == "pending" for result in results)
-        overall = "ok" if all_ok else "pending" if any_pending else "failed"
-        if overall != "ok" and _attempt_provider_verification_repair(
-            args,
-            pack,
-            results,
-            vault,
-            audit,
-            receipt,
-        ):
-            results = verify_provider_pack(
+        overall = _provider_verification_overall(results)
+        attempted_repair_or_fallback = False
+        if not _provider_verification_acceptable(results):
+            repaired = _attempt_provider_verification_repair(
+                args,
+                pack,
+                results,
+                vault,
+                audit,
+                receipt,
+            )
+            if repaired:
+                attempted_repair_or_fallback = True
+                results = _rerun_provider_verification(args, manifest, pack, vault)
+                payload = {
+                    "provider": pack.provider,
+                    "results": [result.to_dict() for result in results],
+                }
+                audit.record("provider_pack.verify_after_repair", payload)
+                overall = _provider_verification_overall(results)
+        if not _provider_verification_acceptable(results):
+            fallback = _attempt_provider_api_fallback(
+                args,
+                manifest,
                 pack,
                 vault,
-                live_url=getattr(args, "live_url", ""),
-                inputs=_verification_inputs(args, manifest),
-                attempts=int(getattr(args, "verify_attempts", 1)),
-                retry_seconds=float(getattr(args, "verify_retry_seconds", 0.0)),
+                audit,
+                receipt,
             )
-            payload = {
-                "provider": pack.provider,
-                "results": [result.to_dict() for result in results],
-            }
-            audit.record("provider_pack.verify_after_repair", payload)
-            all_ok = all(result.status in {"ok", "skipped"} for result in results)
-            any_pending = any(result.status == "pending" for result in results)
-            overall = "ok" if all_ok else "pending" if any_pending else "failed"
-            verification_report.add_provider_results(
-                pack.provider,
-                results,
-                repaired=overall != "ok",
-            )
-        else:
-            verification_report.add_provider_results(
-                pack.provider,
-                results,
-                repaired=False,
-            )
+            if fallback:
+                attempted_repair_or_fallback = True
+                results = _rerun_provider_verification(args, manifest, pack, vault)
+                payload = {
+                    "provider": pack.provider,
+                    "results": [result.to_dict() for result in results],
+                }
+                audit.record("provider_pack.verify_after_api_fallback", payload)
+                overall = _provider_verification_overall(results)
+        verification_report.add_provider_results(
+            pack.provider,
+            results,
+            repaired=attempted_repair_or_fallback
+            and not _provider_verification_acceptable(results)
+            and overall != "pending-safe",
+        )
         receipt.add_action("provider_pack.verify", overall, payload)
-        if overall != "ok" and not args.allow_incomplete:
+        if not _provider_verification_acceptable(results) and not args.allow_incomplete:
             raise FuseKitError(
                 f"Provider verification failed for {pack.provider}. See redacted receipt/audit."
             )
@@ -2542,6 +2772,45 @@ def _verification_inputs(args: argparse.Namespace, manifest: SetupManifest) -> d
         }
     )
     return inputs
+
+
+def _rerun_provider_verification(
+    args: argparse.Namespace,
+    manifest: SetupManifest,
+    pack: ProviderCapabilityPack,
+    vault: Vault,
+) -> list[VerificationResult]:
+    return verify_provider_pack(
+        pack,
+        vault,
+        live_url=getattr(args, "live_url", ""),
+        inputs=_verification_inputs(args, manifest),
+        attempts=int(getattr(args, "verify_attempts", 1)),
+        retry_seconds=float(getattr(args, "verify_retry_seconds", 0.0)),
+    )
+
+
+def _provider_verification_acceptable(results: list[VerificationResult]) -> bool:
+    return all(
+        result.status in {"ok", "skipped"}
+        or (
+            result.status == "pending"
+            and bool(result.to_dict().get("details", {}).get("pending_safe"))
+        )
+        for result in results
+    )
+
+
+def _provider_verification_overall(results: list[VerificationResult]) -> str:
+    if all(result.status in {"ok", "skipped"} for result in results):
+        return "ok"
+    if _provider_verification_acceptable(results):
+        return "pending-safe"
+    if any(result.status == "needs_human_gate" for result in results):
+        return "needs_human_gate"
+    if any(result.status == "pending" for result in results):
+        return "pending"
+    return "failed"
 
 
 def _app_env_names_for_verification(
@@ -2598,6 +2867,79 @@ def _webhook_secret_available(vault: Vault, name: str) -> bool:
     return False
 
 
+def _attempt_provider_api_fallback(
+    args: argparse.Namespace,
+    manifest: SetupManifest,
+    pack: ProviderCapabilityPack,
+    vault: Vault,
+    audit: AuditLog,
+    receipt: Receipt,
+) -> bool:
+    """Retry provider-native setup when UI repair is stuck and a token exists."""
+
+    if not _has_pack_provider_token(pack, vault):
+        receipt.add_action(
+            "provider_pack.api_fallback",
+            "skipped",
+            {"provider": pack.provider, "reason": "provider token is not available"},
+        )
+        return False
+    try:
+        context = ProviderSetupContext(
+            manifest=manifest,
+            vault=vault,
+            audit=audit,
+            receipt=receipt,
+            secrets={
+                **_collect_secrets(getattr(args, "secret", [])),
+                **_collect_manifest_env_secrets(manifest),
+            },
+            provider_names=_required_providers(manifest),
+            inputs=_provider_setup_inputs(args),
+            approve_dns=bool(getattr(args, "approve_dns", False)),
+            allow_incomplete=bool(getattr(args, "allow_incomplete", False)),
+            fusekit_gates=str(getattr(args, "fusekit_gates", "service-only")),
+        )
+        result = run_provider_pack_setup(pack, context)
+    except FuseKitError as exc:
+        payload: dict[str, object] = {
+            "provider": pack.provider,
+            "status": "blocked",
+            "error": _redact_cli_error(str(exc)),
+        }
+        audit.record("provider_pack.api_fallback", payload)
+        receipt.add_action("provider_pack.api_fallback", "blocked", payload)
+        return False
+    payload = {"provider": pack.provider, "status": "attempted", "result": result}
+    audit.record("provider_pack.api_fallback", payload)
+    receipt.add_action("provider_pack.api_fallback", "attempted", payload)
+    return True
+
+
+def _has_pack_provider_token(pack: ProviderCapabilityPack, vault: Vault) -> bool:
+    token_ids = {
+        f"provider.{pack.provider}.token",
+        pack.handoff.token_record_id,
+    }
+    for record_id in token_ids:
+        if record_id:
+            try:
+                vault.require(record_id)
+                return True
+            except FuseKitError:
+                pass
+    env_names = {
+        "github": "GITHUB_TOKEN",
+        "vercel": "VERCEL_TOKEN",
+        "cloudflare": "CLOUDFLARE_API_TOKEN",
+        "dns": "CLOUDFLARE_API_TOKEN",
+        "resend": "RESEND_API_KEY",
+        "plaid": "PLAID_SECRET",
+    }
+    env_name = env_names.get(pack.provider.lower())
+    return bool(env_name and os.environ.get(env_name))
+
+
 def _attempt_provider_verification_repair(
     args: argparse.Namespace,
     pack: ProviderCapabilityPack,
@@ -2632,7 +2974,11 @@ def _attempt_provider_verification_repair(
     try:
         events = _run_provider_repair_navigation(args, pack, vault, start_url, goal)
     except FuseKitError as exc:
-        blocked_payload = {"provider": pack.provider, "status": "blocked", "error": str(exc)}
+        blocked_payload = {
+            "provider": pack.provider,
+            "status": "blocked",
+            "error": _redact_cli_error(str(exc)),
+        }
         audit.record("provider_pack.repair", blocked_payload)
         receipt.add_action("provider_pack.repair", "blocked", blocked_payload)
         return False
@@ -2643,9 +2989,42 @@ def _attempt_provider_verification_repair(
         "events": [event.to_dict() for event in events],
     }
     audit.record("provider_pack.repair", payload)
-    repair_ok = not any(event.status == "blocked" for event in events)
+    repair_ok = _repair_navigation_completed(events)
     receipt.add_action("provider_pack.repair", "attempted" if repair_ok else "blocked", payload)
     return repair_ok
+
+
+def _repair_navigation_completed(events: list[BrowserPlaybookEvent]) -> bool:
+    if any(event.status in {"blocked", "max-attempts", "failed"} for event in events):
+        return False
+    if any(
+        event.action in {"gate", "human.takeover"} and event.status == "waiting"
+        for event in events
+    ):
+        return False
+    return any(event.action == "stop" and event.status == "done" for event in events)
+
+
+def _redact_cli_error(text: str) -> str:
+    patterns = (
+        r"sk-[A-Za-z0-9_-]{12,}",
+        r"sk_(?:live|test|prod)_[A-Za-z0-9_-]{12,}",
+        r"pk_(?:live|test|prod)_[A-Za-z0-9_-]{12,}",
+        r"gh[pousr]_[A-Za-z0-9_]{12,}",
+        r"github_pat_[A-Za-z0-9_]{12,}",
+        r"whsec_[A-Za-z0-9_]{12,}",
+        r"rk_[A-Za-z0-9_-]{12,}",
+        r"re_[A-Za-z0-9_-]{12,}",
+        r"plaid-[A-Za-z0-9_-]{12,}",
+        r"eyJ[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{8,}",
+        r"\b[A-Za-z0-9_-]{36,}\b",
+        r"([?&](?:token|key|secret|code|password|passphrase|signature)=)[^&#\s]+",
+    )
+    redacted = text
+    for pattern in patterns:
+        replacement = r"\1[redacted]" if pattern.startswith("([?&]") else "[redacted]"
+        redacted = re.sub(pattern, replacement, redacted)
+    return redacted
 
 
 def _run_provider_repair_navigation(
@@ -2671,6 +3050,9 @@ def _run_provider_repair_navigation(
                 max_steps=max_steps,
                 gate_retry_seconds=float(getattr(args, "gate_retry_seconds", 300.0)),
                 max_gate_attempts=int(getattr(args, "gate_max_attempts", 0)),
+                gate_recorder=_gate_recorder(args),
+                gate_passed=_gate_passed_checker(args),
+                provider_memory_path=_provider_memory_path(args, pack.provider),
             )
         finally:
             spine.close()
@@ -2687,6 +3069,9 @@ def _run_provider_repair_navigation(
         max_steps=max_steps,
         gate_retry_seconds=float(getattr(args, "gate_retry_seconds", 300.0)),
         max_gate_attempts=int(getattr(args, "gate_max_attempts", 0)),
+        gate_recorder=_gate_recorder(args),
+        gate_passed=_gate_passed_checker(args),
+        provider_memory_path=_provider_memory_path(args, pack.provider),
     )
 
 

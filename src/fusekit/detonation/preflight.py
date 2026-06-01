@@ -62,6 +62,18 @@ def run_detonation_preflight(
     return DetonationPreflightResult(ok=not failures, failures=tuple(failures))
 
 
+def verification_report_failures(report: dict[str, Any]) -> list[str]:
+    """Return redacted verification failures using detonation-preflight semantics."""
+
+    return _verification_failures(report)
+
+
+def verification_report_allows_detonation(report: dict[str, Any]) -> bool:
+    """Return true when a verification report is passed or explicitly pending-safe."""
+
+    return not verification_report_failures(report)
+
+
 def _verification_failures(report: dict[str, Any]) -> list[str]:
     checks = report.get("checks", [])
     if not isinstance(checks, list) or not checks:

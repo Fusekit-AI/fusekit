@@ -9,16 +9,16 @@ from fusekit.vault import Vault
 
 
 def test_capture_llm_config_stores_key_in_vault_without_public_value(monkeypatch) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-llm-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-openai-test-key")
     vault = Vault.empty()
     config = LlmConfig()
 
     assert capture_llm_config(vault, config)
 
     record = vault.require("llm.openai.api_key")
-    assert record.value == "sk-test-llm-key"
+    assert record.value == "fake-openai-test-key"
     assert record.metadata["model"] == "gpt-5.5"
-    assert "sk-test-llm-key" not in str(vault.public_index())
+    assert "fake-openai-test-key" not in str(vault.public_index())
 
 
 def test_openclaw_llm_auth_captures_auth_state_in_vault(monkeypatch, tmp_path) -> None:

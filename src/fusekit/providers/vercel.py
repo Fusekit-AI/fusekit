@@ -62,11 +62,27 @@ class VercelProvider:
         value: str,
         target: tuple[str, ...],
     ) -> dict[str, Any]:
-        """Create an encrypted Vercel environment variable."""
+        """Create or replace an encrypted Vercel environment variable."""
 
         payload = {"key": key, "value": value, "type": "encrypted", "target": list(target)}
-        self._client().request("POST", f"/v10/projects/{project_id_or_name}/env", payload)
-        return {"project": project_id_or_name, "env": key, "target": ",".join(target)}
+        existing = self._env_ids_by_key(project_id_or_name, key)
+        replaced_existing = bool(existing)
+        try:
+            self._client().request("POST", f"/v10/projects/{project_id_or_name}/env", payload)
+        except ProviderError:
+            if not existing:
+                raise
+            self._delete_env_ids(project_id_or_name, existing)
+            self._client().request("POST", f"/v10/projects/{project_id_or_name}/env", payload)
+        else:
+            if existing:
+                self._delete_env_ids(project_id_or_name, existing)
+        return {
+            "project": project_id_or_name,
+            "env": key,
+            "target": ",".join(target),
+            "replaced_existing": replaced_existing,
+        }
 
     def create_git_deployment(
         self,
@@ -109,9 +125,16 @@ class VercelProvider:
     def delete_env_by_key(self, project_id_or_name: str, key: str) -> dict[str, Any]:
         """Delete Vercel env vars matching a key."""
 
+        deleted = self._delete_env_ids(
+            project_id_or_name,
+            self._env_ids_by_key(project_id_or_name, key),
+        )
+        return {"project": project_id_or_name, "env": key, "deleted_ids": deleted}
+
+    def _env_ids_by_key(self, project_id_or_name: str, key: str) -> list[str]:
         env_response = self._client().request("GET", f"/v9/projects/{project_id_or_name}/env")
         envs = env_response.get("envs", env_response.get("data", []))
-        deleted: list[str] = []
+        ids: list[str] = []
         if isinstance(envs, list):
             for item in envs:
                 if not isinstance(item, dict) or str(item.get("key", "")) != key:
@@ -119,9 +142,15 @@ class VercelProvider:
                 env_id = str(item.get("id", ""))
                 if not env_id:
                     continue
-                self._client().request("DELETE", f"/v9/projects/{project_id_or_name}/env/{env_id}")
-                deleted.append(env_id)
-        return {"project": project_id_or_name, "env": key, "deleted_ids": deleted}
+                ids.append(env_id)
+        return ids
+
+    def _delete_env_ids(self, project_id_or_name: str, env_ids: list[str]) -> list[str]:
+        deleted: list[str] = []
+        for env_id in env_ids:
+            self._client().request("DELETE", f"/v9/projects/{project_id_or_name}/env/{env_id}")
+            deleted.append(env_id)
+        return deleted
 
 
 def verify_live_url(url: str, expected_status: int = 200) -> dict[str, Any]:

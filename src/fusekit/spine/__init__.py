@@ -4,6 +4,8 @@ from fusekit.spine.infer import (
     InferredUiAction,
     OpenAiUiNavigator,
     StaticUiNavigator,
+    StumpClassification,
+    classify_ui_stump,
     run_inferred_navigation,
 )
 from fusekit.spine.openclaw import OpenClawBrowserSpine
@@ -22,6 +24,8 @@ __all__ = [
     "OpenAiUiNavigator",
     "PlaywrightBrowserSpine",
     "StaticUiNavigator",
+    "StumpClassification",
+    "classify_ui_stump",
     "execute_provider_ui_playbook",
     "provider_authorization_playbook",
     "provider_handoff_playbook",

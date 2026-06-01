@@ -326,6 +326,8 @@ def _extract_artifacts(archive: Path, output_dir: Path) -> None:
 def _validate_artifact_bundle(output_dir: Path) -> str:
     required = (
         ".fusekit/fusekit.vault.json",
+        ".fusekit/audit.jsonl",
+        ".fusekit/setup_receipt.json",
         ".fusekit/job.json",
         ".fusekit/checkpoints.json",
         ".fusekit/verification_report.json",

@@ -16,5 +16,6 @@ def test_gate_service_resurfaces_and_persists(tmp_path) -> None:
 
     loaded = GateService.load(path)
     assert loaded.records["github-auth"].attempts == 2
+    assert oct(path.stat().st_mode & 0o777) == "0o600"
     loaded.pass_gate("github-auth")
     assert GateService.load(path).records["github-auth"].status == "passed"

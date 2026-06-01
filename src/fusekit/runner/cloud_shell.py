@@ -382,7 +382,7 @@ def render_cloud_shell_launcher(plan: CloudShellLaunchPlan) -> str:
         command.focus();
         command.select();
         status.textContent =
-          'Copy was blocked. The command is selected so you can copy it manually.';
+          'Copy was blocked. FuseKit selected the exact command for you.';
       }}
     }});
   </script>

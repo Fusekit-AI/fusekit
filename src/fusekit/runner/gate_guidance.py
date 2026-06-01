@@ -24,7 +24,7 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
         ),
         actions=(
             "Sign in or create the GitHub account when GitHub asks.",
-            "Pass email, passkey, MFA, CAPTCHA, or consent prompts yourself.",
+            "Complete the highlighted email, passkey, MFA, CAPTCHA, or consent prompt.",
             "When GitHub reveals the approved token, paste it into FuseKit's hidden prompt.",
         ),
         reassurance="FuseKit waits here, then resumes automatically after the token is captured.",
@@ -37,7 +37,7 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
         ),
         actions=(
             "Sign in or create the Vercel account when prompted.",
-            "Approve GitHub connection, team, billing, MFA, CAPTCHA, or consent prompts if shown.",
+            "Approve only the highlighted GitHub, team, billing, MFA, CAPTCHA, or consent prompt.",
             "When Vercel reveals the approved token, paste it into FuseKit's hidden prompt.",
         ),
         reassurance="FuseKit keeps the run alive and continues once Vercel accepts the gate.",
@@ -51,8 +51,8 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
         actions=(
             "Sign in or create the Cloudflare account when prompted.",
             (
-                "Pass nameserver, domain ownership, MFA, CAPTCHA, billing, or consent prompts "
-                "yourself."
+                "Complete the highlighted nameserver, domain ownership, MFA, CAPTCHA, billing, "
+                "or consent prompt."
             ),
             (
                 "When Cloudflare reveals the approved DNS token, paste it into FuseKit's hidden "
@@ -69,7 +69,7 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
         ),
         actions=(
             "Sign in or create the Resend account when prompted.",
-            "Pass email verification, MFA, CAPTCHA, billing, consent, or domain checks yourself.",
+            "Complete the highlighted email, MFA, CAPTCHA, billing, consent, or domain check.",
             "When Resend reveals the API key, paste it into FuseKit's hidden prompt.",
         ),
         reassurance="FuseKit stores the key only in the encrypted vault and then resumes setup.",
@@ -82,7 +82,7 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
         ),
         actions=(
             "Sign in or create the OCI account when Oracle asks.",
-            "Pass MFA, CAPTCHA, payment verification, tenancy, or Cloud Shell prompts yourself.",
+            "Complete the highlighted MFA, CAPTCHA, payment, tenancy, or Cloud Shell prompt.",
             "Leave the Cloud Shell tab open; FuseKit will continue from there.",
         ),
         reassurance="FuseKit treats this as a waiting state, not a failure.",
@@ -95,8 +95,8 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
         ),
         actions=(
             "Sign in to OpenAI when prompted.",
-            "Pass MFA, CAPTCHA, consent, or organization prompts yourself.",
-            "Return to FuseKit after the provider says authorization is complete.",
+            "Complete the highlighted MFA, CAPTCHA, consent, or organization prompt.",
+            "Click the resume button after the provider says authorization is complete.",
         ),
         reassurance=(
             "FuseKit encrypts captured auth state and detonates plaintext worker state later."
@@ -111,9 +111,9 @@ _GENERIC = GateGuidance(
         "something only the account owner is allowed to approve."
     ),
     actions=(
-        "Look at the browser or provider tab FuseKit opened.",
-        "Complete login, MFA, CAPTCHA, consent, payment, or ownership prompts yourself.",
-        "When the page says the action is done, return to FuseKit and it will continue.",
+        "Use the Open provider gate button to bring the exact provider page forward.",
+        "Complete only highlighted login, MFA, CAPTCHA, consent, payment, or ownership prompts.",
+        "Click the resume button here; FuseKit will verify the provider state before continuing.",
     ),
     reassurance="The worker remains alive and will retry this gate until it passes.",
 )

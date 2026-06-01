@@ -32,6 +32,8 @@ def test_acceptance_live_requires_real_provider_evidence(tmp_path) -> None:
     assert report.launch_ready is False
     assert "encrypted vault" in report.missing
     assert "redacted setup receipt" in report.missing
+    assert "safe verification report" in report.missing
+    assert "rollback metadata" in report.missing
 
 
 def test_acceptance_cli_checks_vault_without_leaking_secret(tmp_path, capsys) -> None:

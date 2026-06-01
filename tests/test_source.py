@@ -36,24 +36,25 @@ def _zip_bytes(*, root: str = "repo-main", name: str = "package.json") -> bytes:
 
 def test_fetch_private_github_source_uses_token_without_putting_it_in_url(tmp_path) -> None:
     seen: list[Request | str] = []
+    token = "local-double-github-token"
 
     def opener(request: Request | str, timeout: float | None = None) -> Response:
         seen.append(request)
         url = request.full_url if isinstance(request, Request) else request
         if url == "https://api.github.com/repos/owner/private":
             assert isinstance(request, Request)
-            assert request.headers["Authorization"] == "Bearer ghp_secret_token"
+            assert request.headers["Authorization"] == f"Bearer {token}"
             return Response(json.dumps({"default_branch": "trunk"}).encode())
         if url == "https://codeload.github.com/owner/private/zip/refs/heads/trunk":
             assert isinstance(request, Request)
-            assert request.headers["Authorization"] == "Bearer ghp_secret_token"
+            assert request.headers["Authorization"] == f"Bearer {token}"
             return Response(_zip_bytes(root="private-trunk", name="index.js"))
         raise AssertionError(url)
 
     result = fetch_github_source_archive(
         "https://github.com/owner/private.git",
         tmp_path / "app",
-        token="ghp_secret_token",
+        token=token,
         opener=opener,
     )
 
@@ -62,7 +63,7 @@ def test_fetch_private_github_source_uses_token_without_putting_it_in_url(tmp_pa
     assert result.private is True
     assert result.auth_source == "github-token"
     assert (tmp_path / "app" / "index.js").exists()
-    assert all("ghp_secret_token" not in str(item) for item in seen)
+    assert all(token not in str(item) for item in seen)
 
 
 def test_fetch_public_github_source_tries_main_archive(tmp_path) -> None:

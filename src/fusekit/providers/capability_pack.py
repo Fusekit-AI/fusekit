@@ -559,8 +559,8 @@ def _plaid_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
             account_steps=(
                 "Create or sign in to a Plaid developer account.",
                 (
-                    "Complete Plaid email, MFA, CAPTCHA, business, billing, consent, "
-                    "or identity gates if shown."
+                    "Complete the highlighted Plaid email, MFA, CAPTCHA, business, billing, "
+                    "consent, or identity gate."
                 ),
                 "Choose Sandbox or Development mode based on the app environment.",
             ),
@@ -651,7 +651,7 @@ def _github_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
             required_scopes=("target repo access", "Actions secrets", "deploy keys"),
             account_steps=(
                 "Create or sign in to a GitHub account.",
-                "Complete email verification, passkey, MFA, CAPTCHA, or consent gates if shown.",
+                "Complete the highlighted email, passkey, MFA, CAPTCHA, or consent gate.",
                 "Create or choose the repository that will receive secrets and deploy keys.",
             ),
             secret_steps=(
@@ -723,7 +723,7 @@ def _vercel_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
             required_scopes=("project access", "environment variables", "deployments"),
             account_steps=(
                 "Create or sign in to a Vercel account.",
-                "Complete SSO, MFA, CAPTCHA, billing, payment, or consent gates if shown.",
+                "Complete the highlighted SSO, MFA, CAPTCHA, billing, payment, or consent gate.",
                 "Connect the Git provider or choose an existing project if required.",
             ),
             secret_steps=(
@@ -809,8 +809,8 @@ def _cloudflare_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                 "Create or sign in to a Cloudflare account.",
                 "Add or choose the DNS zone that owns the target domain.",
                 (
-                    "Complete nameserver, domain ownership, MFA, CAPTCHA, billing, "
-                    "or consent gates if shown."
+                    "Complete the highlighted nameserver, domain ownership, MFA, CAPTCHA, "
+                    "billing, or consent gate."
                 ),
             ),
             secret_steps=(
@@ -890,8 +890,8 @@ def _resend_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
             account_steps=(
                 "Create or sign in to a Resend account.",
                 (
-                    "Complete email verification, MFA, CAPTCHA, billing, consent, or "
-                    "domain ownership gates if shown."
+                    "Complete the highlighted email verification, MFA, CAPTCHA, billing, "
+                    "consent, or domain ownership gate."
                 ),
                 "Add the sending domain when the app uses a custom From address.",
             ),
@@ -988,8 +988,8 @@ def _inferred_pack(provider: str, evidence: ProviderEvidence) -> ProviderCapabil
             account_steps=(
                 f"Create or sign in to {provider}.",
                 (
-                    "Complete provider login, MFA, CAPTCHA, billing, fraud, consent, "
-                    "or verification gates if shown."
+                    "Complete the highlighted provider login, MFA, CAPTCHA, billing, fraud, "
+                    "consent, or verification gate."
                 ),
             ),
             secret_steps=(

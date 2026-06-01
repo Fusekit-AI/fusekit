@@ -61,6 +61,49 @@ def test_github_pack_setup_runs_through_capability_executor(monkeypatch, tmp_pat
     assert_no_secret_text(public, ["webhook-secret-value", "test-github-token-hidden"])
 
 
+def test_github_pack_setup_reuses_existing_deploy_key_on_resume(monkeypatch, tmp_path) -> None:
+    calls: list[str] = []
+
+    class FakeGitHubProvider:
+        def __init__(self, token: str) -> None:
+            self.token = token
+
+        def add_deploy_key(self, repo, title, key_pair):  # type: ignore[no-untyped-def]
+            calls.append(repo)
+            return {"repo": repo, "key_id": "1", "title": title}
+
+        def put_repo_secret(self, repo, name, value):  # type: ignore[no-untyped-def]
+            return {"repo": repo, "secret": name}
+
+    monkeypatch.setattr("fusekit.providers.automation.GitHubProvider", FakeGitHubProvider)
+    vault = Vault.empty()
+    vault.put("provider.github.token", "provider_token", "github", "GitHub token", "token")
+    vault.put(
+        "github.owner/repo.deploy_key.private",
+        "ssh_private_key",
+        "github",
+        "GitHub deploy key private half",
+        "private-key-hidden",
+        {"repo": "owner/repo"},
+    )
+    context = ProviderSetupContext(
+        manifest=SetupManifest(app_name="app"),
+        vault=vault,
+        audit=AuditLog(tmp_path / "audit.jsonl"),
+        receipt=Receipt(app_name="app"),
+        secrets={},
+        provider_names={"github"},
+        inputs={"github_repo": "owner/repo"},
+    )
+    pack = synthesize_provider_pack("github", tmp_path)
+
+    result = run_provider_pack_setup(pack, context)
+
+    assert calls == []
+    reused = [item for item in result["setup"] if item["kind"] == "github-deploy-key"]
+    assert reused[0]["reused"] is True
+
+
 def test_vercel_pack_connects_project_and_deploys_from_github_repo(
     monkeypatch,
     tmp_path,

@@ -111,11 +111,17 @@ def _provider_for_recipe(context: ProviderSetupContext, name: str) -> str:
 
 def _github_deploy_key(recipe: SetupRecipe, context: ProviderSetupContext) -> dict[str, Any]:
     repo = _required_input(context, "github_repo", recipe.target)
+    record_id = f"github.{repo}.deploy_key.private"
+    if record_id in context.vault.records:
+        result = {"repo": repo, "title": "FuseKit deploy key", "reused": True}
+        context.audit.record("provider_pack.github.deploy_key", result)
+        context.receipt.add_action("github.deploy_key", "ok", result)
+        return {"kind": recipe.kind, "status": "ok", **result}
     token = _provider_token(context.vault, "github", "GITHUB_TOKEN")
     provider = GitHubProvider(token)
     key_pair = generate_ed25519_keypair(f"fusekit-{repo}")
     context.vault.put(
-        f"github.{repo}.deploy_key.private",
+        record_id,
         "ssh_private_key",
         "github",
         "GitHub deploy key private half",

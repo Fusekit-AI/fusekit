@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -35,6 +36,12 @@ def _float_value(value: object, default: float) -> float:
         return default
 
 
+def _string_tuple(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(str(item) for item in value if isinstance(item, str))
+
+
 @dataclass
 class GateRecord:
     """A resumable provider-created human gate."""
@@ -44,11 +51,14 @@ class GateRecord:
     reason: str
     status: GateStatus = "waiting"
     resume_url: str = ""
+    classification: str = ""
+    target: str = ""
+    follow_steps: tuple[str, ...] = ()
     attempts: int = 0
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
 
-    def to_dict(self) -> dict[str, str | int | float]:
+    def to_dict(self) -> dict[str, str | int | float | list[str]]:
         """Serialize gate state."""
 
         return {
@@ -57,6 +67,9 @@ class GateRecord:
             "reason": self.reason,
             "status": self.status,
             "resume_url": self.resume_url,
+            "classification": self.classification,
+            "target": self.target,
+            "follow_steps": list(self.follow_steps),
             "attempts": self.attempts,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -72,6 +85,9 @@ class GateRecord:
             reason=str(raw["reason"]),
             status=str(raw.get("status", "waiting")),  # type: ignore[arg-type]
             resume_url=str(raw.get("resume_url", "")),
+            classification=str(raw.get("classification", "")),
+            target=str(raw.get("target", "")),
+            follow_steps=_string_tuple(raw.get("follow_steps", [])),
             attempts=_int_value(raw.get("attempts"), 0),
             created_at=_float_value(raw.get("created_at"), time.time()),
             updated_at=_float_value(raw.get("updated_at"), time.time()),
@@ -109,6 +125,9 @@ class GateService:
         provider: str,
         reason: str,
         resume_url: str = "",
+        classification: str = "",
+        target: str = "",
+        follow_steps: tuple[str, ...] = (),
     ) -> GateRecord:
         """Mark a gate as waiting/resurfaced."""
 
@@ -120,12 +139,18 @@ class GateService:
             status = "resurfaced"
             attempts = record.attempts + 1
             created_at = record.created_at
+            classification = classification or record.classification
+            target = target or record.target
+            follow_steps = follow_steps or record.follow_steps
         record = GateRecord(
             id=gate_id,
             provider=provider,
             reason=reason,
             status=status,
             resume_url=resume_url,
+            classification=classification,
+            target=target,
+            follow_steps=follow_steps,
             attempts=attempts,
             created_at=created_at,
             updated_at=time.time(),
@@ -154,12 +179,29 @@ class GateService:
         """Write gate records."""
 
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(
+        _atomic_write_private(
+            self.path,
             json.dumps(
                 {"gates": [record.to_dict() for record in self.records.values()]},
                 indent=2,
                 sort_keys=True,
             )
             + "\n",
-            encoding="utf-8",
         )
+
+
+def _atomic_write_private(path: Path, content: str) -> None:
+    temp = path.with_name(f".{path.name}.tmp")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    fd = os.open(temp, flags, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+        os.replace(temp, path)
+        path.chmod(0o600)
+    except Exception:
+        try:
+            temp.unlink()
+        except OSError:
+            pass
+        raise

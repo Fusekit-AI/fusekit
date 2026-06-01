@@ -58,8 +58,16 @@ def provider_ui_playbook(provider: str, include_project: bool = False) -> Provid
         specific = (
             ProviderUiStep("click_text", "Generate new token", note="Start token creation."),
             ProviderUiStep("click_text", "Repository permissions", note="Open repo permissions."),
-            ProviderUiStep("click_text", "Secrets", note="Grant secrets permission if shown."),
-            ProviderUiStep("click_text", "Deploy keys", note="Grant deploy-key access if shown."),
+            ProviderUiStep(
+                "click_text",
+                "Secrets",
+                note="Grant the highlighted secrets permission.",
+            ),
+            ProviderUiStep(
+                "click_text",
+                "Deploy keys",
+                note="Grant the highlighted deploy-key access.",
+            ),
         )
     elif provider == "vercel":
         specific = (
@@ -170,7 +178,7 @@ def _common_steps(
             "service_gate",
             url=handoff.signup_url,
             service_gate=True,
-            note="Complete provider login/MFA/CAPTCHA/account verification if shown.",
+            note="Complete only the highlighted provider login/MFA/CAPTCHA/account gate.",
         ),
         ProviderUiStep(
             "open",
