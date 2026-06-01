@@ -76,6 +76,28 @@ def test_doctor_verifies_openclaw_doctor_and_browser(monkeypatch, tmp_path) -> N
     assert calls[-1][-3:] == ["browser", "status", "--json"]
 
 
+def test_doctor_can_use_default_openclaw_home(monkeypatch, tmp_path) -> None:
+    openclaw_bin = tmp_path / "openclaw"
+    openclaw_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    openclaw_bin.chmod(0o700)
+    monkeypatch.setenv("FUSEKIT_OPENCLAW_BIN", str(openclaw_bin))
+    monkeypatch.setenv("FUSEKIT_OPENCLAW_HOME_MODE", "default")
+    calls: list[list[str]] = []
+
+    def runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="ok", stderr="")
+
+    result = bootstrap.doctor(runner=runner)
+
+    assert result.ok
+    assert calls == [
+        [str(openclaw_bin), "--version"],
+        [str(openclaw_bin), "doctor", "--non-interactive"],
+        [str(openclaw_bin), "browser", "status", "--json"],
+    ]
+
+
 def test_bootstrap_config_disables_browser_evaluate_by_default(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("FUSEKIT_HOME", str(tmp_path))
     monkeypatch.setenv("HOME", str(tmp_path / "home"))

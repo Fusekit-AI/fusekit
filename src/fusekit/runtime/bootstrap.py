@@ -227,7 +227,13 @@ def openclaw_state_home() -> Path:
 
 
 def _openclaw_command(binary: str, args: list[str]) -> list[str]:
-    return ["env", f"OPENCLAW_HOME={openclaw_state_home()}", binary, *args]
+    return [*_openclaw_env_prefix(), binary, *args]
+
+
+def _openclaw_env_prefix() -> list[str]:
+    if os.environ.get("FUSEKIT_OPENCLAW_HOME_MODE", "").strip().lower() == "default":
+        return []
+    return ["env", f"OPENCLAW_HOME={openclaw_state_home()}"]
 
 
 def _openclaw_verification_commands(binary: str) -> list[list[str]]:

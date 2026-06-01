@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Protocol
 
 from fusekit.errors import ProviderError
-from fusekit.runtime.bootstrap import openclaw_binary, openclaw_state_home
+from fusekit.runtime.bootstrap import _openclaw_env_prefix, openclaw_binary
 
 
 class CommandRunner(Protocol):
@@ -178,8 +178,7 @@ class OpenClawBrowserSpine:
 
     def _run(self, action: str, args: list[str]) -> SpineResult:
         command = [
-            "env",
-            f"OPENCLAW_HOME={openclaw_state_home()}",
+            *_openclaw_env_prefix(),
             self._binary(),
             "browser",
             "--browser-profile",

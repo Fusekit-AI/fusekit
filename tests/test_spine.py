@@ -45,6 +45,30 @@ def test_openclaw_spine_builds_browser_commands() -> None:
     ]
 
 
+def test_openclaw_spine_can_use_default_openclaw_home(monkeypatch) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setenv("FUSEKIT_OPENCLAW_HOME_MODE", "default")
+
+    def runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="{}", stderr="")
+
+    spine = OpenClawBrowserSpine(profile="work", runner=runner)
+    result = spine.open("https://example.com")
+
+    assert result.status == "ok"
+    assert calls == [
+        [
+            "openclaw",
+            "browser",
+            "--browser-profile",
+            "work",
+            "open",
+            "https://example.com",
+        ]
+    ]
+
+
 def test_openclaw_spine_supports_inferred_action_surface() -> None:
     calls: list[list[str]] = []
 
