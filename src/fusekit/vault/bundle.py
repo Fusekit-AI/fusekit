@@ -6,6 +6,7 @@ import base64
 import json
 import os
 import time
+from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -217,8 +218,6 @@ def _atomic_write_private(path: Path, content: str) -> None:
         os.replace(temp, path)
         path.chmod(0o600)
     except Exception:
-        try:
+        with suppress(OSError):
             temp.unlink()
-        except OSError:
-            pass
         raise

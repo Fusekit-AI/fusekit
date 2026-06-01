@@ -114,12 +114,7 @@ def build_cloud_shell_bootstrap_command(
                         "else printf '%s\\n' 'Python is required in OCI Cloud Shell.' >&2; "
                         "exit 43; fi"
                     ),
-                    (
-                        "\"$python_cmd\" - <<'PY'\n"
-                        "import sys\n"
-                        "raise SystemExit(0 if sys.version_info >= (3, 10) else 43)\n"
-                        "PY"
-                    ),
+                    "pip_target_flag=--user",
                     f"fusekit_package={package}",
                     (
                         "if [ \"${fusekit_package#git+}\" != \"$fusekit_package\" ] && "
@@ -129,7 +124,28 @@ def build_cloud_shell_bootstrap_command(
                     ),
                     "\"$python_cmd\" -m ensurepip --upgrade >/dev/null 2>&1 || true",
                     "retry \"$python_cmd\" -m pip install --user --upgrade pip setuptools wheel",
-                    "retry \"$python_cmd\" -m pip install --user --upgrade \"$fusekit_package\"",
+                    (
+                        "if ! \"$python_cmd\" - <<'PY'\n"
+                        "import sys\n"
+                        "raise SystemExit(0 if sys.version_info >= (3, 10) else 1)\n"
+                        "PY\n"
+                        "then\n"
+                        "  printf '%s\\n' "
+                        "'Python 3.10+ was not the default. Installing an isolated "
+                        "Python 3.12 runtime with uv.'\n"
+                        "  retry \"$python_cmd\" -m pip install --user --upgrade uv\n"
+                        "  export PATH=\"$HOME/.local/bin:$PATH\"\n"
+                        "  retry uv python install 3.12\n"
+                        "  retry uv venv --python 3.12 \"$work/python\"\n"
+                        "  python_cmd=\"$work/python/bin/python\"\n"
+                        "  export PATH=\"$work/python/bin:$PATH\"\n"
+                        "  pip_target_flag=\n"
+                        "fi"
+                    ),
+                    (
+                        "retry \"$python_cmd\" -m pip install "
+                        "${pip_target_flag:+$pip_target_flag} --upgrade \"$fusekit_package\""
+                    ),
                     "fusekit --version",
                     f"app_source={source}",
                     "printf '%s\\n' 'Enter a vault passphrase for FuseKit.'",

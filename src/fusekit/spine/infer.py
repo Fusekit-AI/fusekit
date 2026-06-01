@@ -528,7 +528,7 @@ def _highlight_attention(spine: InferenceSpine, target: str) -> SpineResult | No
         try:
             scroller(target)
         except Exception:
-            pass
+            return None
     candidate = getattr(spine, "highlight", None)
     if not callable(candidate):
         return None

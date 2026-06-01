@@ -187,7 +187,7 @@ def _verify_http_json(
             text = response.read().decode("utf-8")
     except HTTPError as exc:
         status_code = int(exc.code)
-        text = exc.read().decode("utf-8", errors="replace")
+        text = ""
     except URLError as exc:
         raise ProviderError(f"HTTP verification failed: {exc.reason}") from exc
     data: Any = {}

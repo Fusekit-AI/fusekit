@@ -19,24 +19,34 @@ retry() {
 }
 
 if [ -z "$PYTHON_BIN" ]; then
-  if command -v python3 >/dev/null 2>&1; then
-    PYTHON_BIN="python3"
-  elif command -v python >/dev/null 2>&1; then
-    PYTHON_BIN="python"
-  else
-    echo "FuseKit needs Python 3.10+ to start. Install Python, then rerun this script." >&2
-    exit 1
-  fi
+  for candidate in python3.12 python3.11 python3.10 python3 python; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      PYTHON_BIN="$candidate"
+      break
+    fi
+  done
 fi
 
-"$PYTHON_BIN" - <<'PY'
+if [ -z "$PYTHON_BIN" ]; then
+  echo "FuseKit needs Python to start. Install Python, then rerun this script." >&2
+  exit 1
+fi
+
+if "$PYTHON_BIN" - <<'PY'
 import sys
 
-if sys.version_info < (3, 10):
-    raise SystemExit("FuseKit needs Python 3.10+ to start.")
+raise SystemExit(0 if sys.version_info >= (3, 10) else 1)
 PY
-
-"$PYTHON_BIN" -m venv "$VENV_DIR"
+then
+  "$PYTHON_BIN" -m venv "$VENV_DIR"
+else
+  echo "Python 3.10+ was not the default. Installing an isolated Python 3.12 runtime with uv." >&2
+  "$PYTHON_BIN" -m ensurepip --upgrade >/dev/null 2>&1 || true
+  retry "$PYTHON_BIN" -m pip install --user --upgrade pip setuptools wheel uv
+  export PATH="$HOME/.local/bin:$PATH"
+  retry uv python install 3.12
+  retry uv venv --python 3.12 "$VENV_DIR"
+fi
 . "$VENV_DIR/bin/activate"
 python -m ensurepip --upgrade >/dev/null 2>&1 || true
 retry python -m pip install --upgrade pip setuptools wheel

@@ -94,6 +94,11 @@ def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
     assert "fusekit launch" in plan.bootstrap_command
     assert "python_cmd=python3" in plan.bootstrap_command
     assert "sys.version_info >= (3, 10)" in plan.bootstrap_command
+    assert "uv python install 3.12" in plan.bootstrap_command
+    assert "uv venv --python 3.12" in plan.bootstrap_command
+    assert "pip_target_flag=--user" in plan.bootstrap_command
+    assert "pip_target_flag=" in plan.bootstrap_command
+    assert "export PATH=\"$work/python/bin:$PATH\"" in plan.bootstrap_command
     assert "retry \"$python_cmd\" -m pip install --user --upgrade" in plan.bootstrap_command
     assert "fusekit --version" in plan.bootstrap_command
     assert "Git is required in OCI Cloud Shell for git+ FuseKit packages" in plan.bootstrap_command

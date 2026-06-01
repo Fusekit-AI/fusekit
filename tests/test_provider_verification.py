@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from io import BytesIO
+from urllib.error import HTTPError
 
 from fusekit.providers.capability_pack import (
     PackHandoff,
@@ -79,6 +80,56 @@ def test_http_json_recipe_uses_secret_template_refs_without_leaking(monkeypatch)
     public = json.dumps(http_result.to_dict())
     assert "client-secret-value" not in public
     assert "plaid-secret-value" not in public
+
+
+def test_http_json_error_body_is_not_retained(monkeypatch) -> None:
+    vault = Vault.empty()
+    pack = ProviderCapabilityPack(
+        schema_version="fusekit.provider-pack.v1",
+        provider="test-provider",
+        display_name="Test Provider",
+        category="service",
+        confidence="medium",
+        evidence=("test",),
+        detection=ProviderDetection(),
+        handoff=PackHandoff(
+            signup_url="https://test-provider.example",
+            token_url="https://test-provider.example/tokens",
+            token_env="TEST_PROVIDER_API_KEY",
+            token_record_id="provider.test-provider.token",
+            token_label="Test provider key",
+        ),
+        required_secrets=(),
+        env_vars=(),
+        setup=(),
+        setup_goals=(),
+        verification=(
+            VerificationRecipe(
+                kind="http-json",
+                target="https://api.test-provider.example/me",
+                expected="401 means token rejected",
+                inputs={"expected_status": "401"},
+            ),
+        ),
+        rollback=(),
+    )
+
+    def local_urlopen(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise HTTPError(
+            "https://api.test-provider.example/me",
+            401,
+            "Unauthorized",
+            {},
+            BytesIO(b'{"error":"do-not-keep-secret-body"}'),
+        )
+
+    monkeypatch.setattr("fusekit.providers.verification.urlopen", local_urlopen)
+
+    result = verify_provider_pack(pack, vault)[0]
+    public = json.dumps(result.to_dict())
+
+    assert result.status == "ok"
+    assert "do-not-keep-secret-body" not in public
 
 
 def test_url_health_recipe_reports_status(monkeypatch) -> None:

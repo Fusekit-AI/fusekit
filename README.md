@@ -37,7 +37,7 @@ cd fusekit
 ./install.sh /path/to/generated-app
 ```
 
-The installer creates a local virtual environment for FuseKit, installs FuseKit, writes the app's one-click `.fusekit/setup.sh`, and leaves runtime bootstrap to `launch`. Add `--web-launcher --app-source https://github.com/owner/repo.git` to also write `.fusekit/launcher.html`, a local OCI Cloud Shell launcher that needs only a browser.
+The installer creates a local virtual environment for FuseKit, installs FuseKit, writes the app's one-click `.fusekit/setup.sh`, and leaves runtime bootstrap to `launch`. If the starting machine only has an older Python available, the installer uses `uv` to provision an isolated Python 3.12 runtime for FuseKit instead of stopping early. Add `--web-launcher --app-source https://github.com/owner/repo.git` to also write `.fusekit/launcher.html`, a local OCI Cloud Shell launcher that needs only a browser.
 
 ## Local Acceptance Run
 
