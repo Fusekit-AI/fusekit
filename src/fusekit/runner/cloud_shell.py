@@ -93,6 +93,7 @@ def build_cloud_shell_bootstrap_command(
                 [
                     "set -euo pipefail",
                     "export PATH=\"$HOME/.local/bin:$PATH\"",
+                    "export FUSEKIT_OPENCLAW_HOME_MODE=default",
                     "work=\"$HOME/fusekit-cloud-shell\"",
                     "passfile=\"\"",
                     (
