@@ -246,9 +246,27 @@ def _openclaw_binary_available(openclaw_bin: str | None = None) -> bool:
 def _ensure_browser_plugin_config() -> None:
     """Ensure FuseKit-owned OpenClaw state allows the browser plugin."""
 
-    config_dir = openclaw_state_home()
-    config_dir.mkdir(parents=True, exist_ok=True)
-    config_path = config_dir / "openclaw.json"
+    for config_path in _openclaw_config_paths():
+        _ensure_one_browser_plugin_config(config_path)
+
+
+def _openclaw_config_paths() -> tuple[Path, ...]:
+    """Return OpenClaw config paths FuseKit should self-heal.
+
+    OpenClaw's CLI respects OPENCLAW_HOME in most installs, but some Cloud Shell
+    builds still read the default home config before loading plugin commands.
+    Keep both aligned so the browser plugin is not accidentally allowlisted out.
+    """
+
+    primary = openclaw_state_home() / "openclaw.json"
+    default = Path.home() / ".openclaw" / "openclaw.json"
+    if primary == default:
+        return (primary,)
+    return (primary, default)
+
+
+def _ensure_one_browser_plugin_config(config_path: Path) -> None:
+    config_path.parent.mkdir(parents=True, exist_ok=True)
     if config_path.exists():
         try:
             raw = json.loads(config_path.read_text(encoding="utf-8"))
@@ -271,8 +289,10 @@ def _ensure_browser_plugin_config() -> None:
         allowed.append("browser")
     browser = raw.setdefault("browser", {})
     if isinstance(browser, dict):
+        browser.setdefault("enabled", True)
         browser.setdefault("evaluateEnabled", False)
     config_path.write_text(json.dumps(raw, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    config_path.chmod(0o600)
 
 
 def _download_file(url: str, destination: Path) -> None:

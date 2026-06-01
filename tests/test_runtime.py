@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 
 import fusekit.runtime.bootstrap as bootstrap
@@ -77,8 +78,15 @@ def test_doctor_verifies_openclaw_doctor_and_browser(monkeypatch, tmp_path) -> N
 
 def test_bootstrap_config_disables_browser_evaluate_by_default(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("FUSEKIT_HOME", str(tmp_path))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
 
     bootstrap._ensure_browser_plugin_config()
 
-    config = (tmp_path / "openclaw-state" / "openclaw.json").read_text(encoding="utf-8")
-    assert '"evaluateEnabled": false' in config
+    primary = tmp_path / "openclaw-state" / "openclaw.json"
+    default = tmp_path / "home" / ".openclaw" / "openclaw.json"
+    for path in (primary, default):
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        assert raw["browser"]["enabled"] is True
+        assert raw["browser"]["evaluateEnabled"] is False
+        assert "browser" in raw["plugins"]["allow"]
+        assert oct(path.stat().st_mode & 0o777) == "0o600"
