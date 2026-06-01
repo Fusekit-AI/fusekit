@@ -95,6 +95,7 @@ from fusekit.spine import (
     run_inferred_navigation,
 )
 from fusekit.vault.bundle import Vault, open_or_create
+from fusekit.verification_report import VerificationReport
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -307,6 +308,11 @@ def _parser() -> argparse.ArgumentParser:
     apply.add_argument("--audit-log", type=Path, default=Path(".fusekit/audit.jsonl"))
     apply.add_argument("--receipt-json", type=Path, default=Path(".fusekit/setup_receipt.json"))
     apply.add_argument("--receipt-md", type=Path, default=Path(".fusekit/setup_receipt.md"))
+    apply.add_argument(
+        "--verification-report",
+        type=Path,
+        default=Path(".fusekit/verification_report.json"),
+    )
     apply.set_defaults(handler=_cmd_apply)
 
     setup = sub.add_parser("setup", help="one-command guided real setup for an app")
@@ -450,6 +456,11 @@ def _provider_apply_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--audit-log", type=Path, default=Path(".fusekit/audit.jsonl"))
     parser.add_argument("--receipt-json", type=Path, default=Path(".fusekit/setup_receipt.json"))
     parser.add_argument("--receipt-md", type=Path, default=Path(".fusekit/setup_receipt.md"))
+    parser.add_argument(
+        "--verification-report",
+        type=Path,
+        default=Path(".fusekit/verification_report.json"),
+    )
     _fusekit_gate_arg(parser)
     _gate_args(parser)
 
@@ -1048,39 +1059,62 @@ def _apply_loaded_manifest(args: argparse.Namespace, manifest: SetupManifest) ->
     vault = open_or_create(args.vault, passphrase)
     audit = AuditLog(args.audit_log)
     receipt = Receipt(app_name=manifest.app_name, vault_path=str(args.vault))
+    verification_report = VerificationReport(
+        app_name=manifest.app_name,
+        live_url=str(getattr(args, "live_url", "")),
+    )
     secrets = _collect_secrets(args.secret)
     secrets.update(_collect_manifest_env_secrets(manifest))
 
-    _capture_provider_tokens(vault)
-    _capture_manifest_provider_env(vault, manifest)
-    context = ProviderSetupContext(
-        manifest=manifest,
-        vault=vault,
-        audit=audit,
-        receipt=receipt,
-        secrets=secrets,
-        provider_names=_required_providers(manifest),
-        inputs=_provider_setup_inputs(args),
-        approve_dns=bool(args.approve_dns),
-        allow_incomplete=bool(args.allow_incomplete),
-        fusekit_gates=str(getattr(args, "fusekit_gates", "service-only")),
-    )
-    ensure_webhook_secrets(manifest, context)
-    _run_manifest_provider_pack_setup(args, manifest, context)
+    try:
+        _capture_provider_tokens(vault)
+        _capture_manifest_provider_env(vault, manifest)
+        context = ProviderSetupContext(
+            manifest=manifest,
+            vault=vault,
+            audit=audit,
+            receipt=receipt,
+            secrets=secrets,
+            provider_names=_required_providers(manifest),
+            inputs=_provider_setup_inputs(args),
+            approve_dns=bool(args.approve_dns),
+            allow_incomplete=bool(args.allow_incomplete),
+            fusekit_gates=str(getattr(args, "fusekit_gates", "service-only")),
+        )
+        ensure_webhook_secrets(manifest, context)
+        _run_manifest_provider_pack_setup(args, manifest, context)
 
-    if args.live_url:
-        result = verify_live_url(args.live_url)
-        receipt.live_url = args.live_url
-        audit.record("verify.live_url", result)
-        receipt.add_action("verify.live_url", "ok" if result["ok"] else "failed", result)
+        if args.live_url:
+            result = verify_live_url(args.live_url)
+            receipt.live_url = args.live_url
+            verification_report.add_live_url(result)
+            audit.record("verify.live_url", result)
+            receipt.add_action("verify.live_url", "ok" if result["ok"] else "failed", result)
 
-    _verify_provider_packs(args, manifest, vault, audit, receipt)
+        _verify_provider_packs(args, manifest, vault, audit, receipt, verification_report)
+    except FuseKitError:
+        _write_apply_artifacts(args, passphrase, vault, audit, receipt, verification_report)
+        raise
 
+    _write_apply_artifacts(args, passphrase, vault, audit, receipt, verification_report)
+    print(f"Apply finished. Redacted receipt: {args.receipt_json}")
+    print(f"Verification report: {args.verification_report}")
+    print(f"Encrypted vault: {args.vault}")
+
+
+def _write_apply_artifacts(
+    args: argparse.Namespace,
+    passphrase: str,
+    vault: Vault,
+    audit: AuditLog,
+    receipt: Receipt,
+    verification_report: VerificationReport,
+) -> None:
     vault.save(args.vault, passphrase)
+    verification_report.write(args.verification_report)
+    audit.record("verification.report", verification_report.to_dict())
     receipt.write_json(args.receipt_json)
     receipt.write_markdown(args.receipt_md)
-    print(f"Apply finished. Redacted receipt: {args.receipt_json}")
-    print(f"Encrypted vault: {args.vault}")
 
 
 def _cmd_verify(args: argparse.Namespace) -> int:
@@ -1611,6 +1645,11 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
     job.mark("setup.execute", "done", "remote FuseKit launch completed")
     job.mark("verify.live", "done", "verification delegated to setup receipt")
     job.mark("artifacts.retrieve", "done", artifacts["output_dir"])
+    verification_report = (
+        Path(artifacts["output_dir"]) / ".fusekit" / "verification_report.json"
+    )
+    if verification_report.exists():
+        job.add_artifact("verification_report", verification_report)
     if args.no_detonate:
         job.mark("detonate.workspace", "skipped", "workspace retained by --no-detonate")
     else:
@@ -2343,6 +2382,7 @@ def _verify_provider_packs(
     vault: Vault,
     audit: AuditLog,
     receipt: Receipt,
+    verification_report: VerificationReport,
 ) -> None:
     app_path = Path(manifest.app_path)
     services = list(manifest.services)
@@ -2399,6 +2439,17 @@ def _verify_provider_packs(
             all_ok = all(result.status in {"ok", "skipped"} for result in results)
             any_pending = any(result.status == "pending" for result in results)
             overall = "ok" if all_ok else "pending" if any_pending else "failed"
+            verification_report.add_provider_results(
+                pack.provider,
+                results,
+                repaired=overall != "ok",
+            )
+        else:
+            verification_report.add_provider_results(
+                pack.provider,
+                results,
+                repaired=False,
+            )
         receipt.add_action("provider_pack.verify", overall, payload)
         if overall != "ok" and not args.allow_incomplete:
             raise FuseKitError(

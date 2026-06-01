@@ -11,8 +11,13 @@ from fusekit.providers.capability_pack import (
     VerificationRecipe,
     synthesize_provider_pack,
 )
-from fusekit.providers.verification import verify_provider_pack, verify_recipe_with_retries
+from fusekit.providers.verification import (
+    VerificationResult,
+    verify_provider_pack,
+    verify_recipe_with_retries,
+)
 from fusekit.vault import Vault
+from fusekit.verification_report import VerificationReport
 
 
 def test_verifies_env_present_from_vault_without_revealing_secret() -> None:
@@ -201,6 +206,36 @@ def test_verification_retry_reports_pending_after_failures() -> None:
 
     assert result.status == "pending"
     assert result.details["attempts"] == 2
+
+
+def test_verification_report_summarizes_repair_without_secrets(tmp_path) -> None:
+    secret = "re_hidden_secret"
+    report = VerificationReport(app_name="app", live_url="https://app.example")
+    report.add_provider_results(
+        "resend",
+        [
+            VerificationResult(
+                provider="resend",
+                kind="http-json",
+                target="https://api.resend.com/domains",
+                status="failed",
+                details={"token": secret},
+            )
+        ],
+        repaired=True,
+    )
+    path = tmp_path / "verification_report.json"
+
+    report.write(path)
+    public = path.read_text("utf-8")
+    payload = json.loads(public)
+
+    assert payload["overall"] == "repairing"
+    assert payload["counts"]["repairing"] == 1
+    assert secret not in public
+    assert "[REDACTED" in public
+    assert "Snowman" not in payload["checks"][0]["summary"]
+    assert "repair" in payload["checks"][0]["repair"].lower()
 
 
 class _NoPath:

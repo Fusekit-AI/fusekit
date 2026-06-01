@@ -123,7 +123,20 @@ def test_cli_provider_synthesize_validate_and_authorize_pack(monkeypatch, tmp_pa
     token = "plaid-approved-secret"
     monkeypatch.setattr("getpass.getpass", lambda prompt: token)
 
-    assert main(["provider", "synthesize", "plaid", "--app", str(app)]) == 0
+    assert (
+        main(
+            [
+                "provider",
+                "synthesize",
+                "plaid",
+                "--app",
+                str(app),
+                "--vault",
+                str(tmp_path / "synth-vault.json"),
+            ]
+        )
+        == 0
+    )
     pack = app / ".fusekit" / "provider-packs" / "plaid.json"
     assert pack.exists()
     assert main(["provider", "validate", str(pack)]) == 0
@@ -213,7 +226,20 @@ def test_cli_provider_verify_runs_pack_recipes(tmp_path, capsys) -> None:
     )
     vault.save(vault_path, "passphrase")
 
-    assert main(["provider", "synthesize", "resend", "--app", str(app)]) == 0
+    assert (
+        main(
+            [
+                "provider",
+                "synthesize",
+                "resend",
+                "--app",
+                str(app),
+                "--vault",
+                str(tmp_path / "synth-vault.json"),
+            ]
+        )
+        == 0
+    )
     pack = app / ".fusekit" / "provider-packs" / "resend.json"
     data = json.loads(pack.read_text(encoding="utf-8"))
     data["verification"] = [item for item in data["verification"] if item["kind"] == "env-present"]
@@ -247,7 +273,20 @@ def test_cli_provider_verify_pending_is_not_success(monkeypatch, tmp_path, capsy
     passphrase.write_text("passphrase\n", encoding="utf-8")
     Vault.empty().save(vault_path, "passphrase")
 
-    assert main(["provider", "synthesize", "resend", "--app", str(app)]) == 0
+    assert (
+        main(
+            [
+                "provider",
+                "synthesize",
+                "resend",
+                "--app",
+                str(app),
+                "--vault",
+                str(tmp_path / "synth-vault.json"),
+            ]
+        )
+        == 0
+    )
     pack = app / ".fusekit" / "provider-packs" / "resend.json"
     data = json.loads(pack.read_text(encoding="utf-8"))
     data["verification"] = [
@@ -372,6 +411,70 @@ def test_apply_repairs_failed_provider_verification_with_inferred_ui(
     assert actions[-1]["action"] == "provider_pack.verify"
     assert actions[-1]["status"] == "ok"
     assert "repaired-secret-value" not in json.dumps(receipt)
+
+
+def test_apply_writes_verification_report_when_provider_check_fails(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    pack_dir = app / ".fusekit" / "provider-packs"
+    pack_dir.mkdir(parents=True)
+    pack_path = pack_dir / "resend.json"
+    pack = synthesize_provider_pack("resend", app)
+    object.__setattr__(pack, "setup", ())
+    object.__setattr__(
+        pack,
+        "verification",
+        (VerificationRecipe("env-present", "RESEND_API_KEY"),),
+    )
+    write_provider_pack(pack, pack_path)
+    manifest = SetupManifest(
+        app_name="app",
+        app_path=str(app),
+        services=(
+            ServiceRequirement(
+                provider="resend",
+                kind="email",
+                name="email",
+                capabilities=("capability_pack",),
+                secrets=("RESEND_API_KEY",),
+                settings={"capability_pack": str(pack_path.relative_to(app))},
+            ),
+        ),
+    )
+    manifest_path = tmp_path / "fusekit.yaml"
+    passphrase = tmp_path / "passphrase.txt"
+    vault_path = tmp_path / "vault.json"
+    report_path = app / ".fusekit" / "verification_report.json"
+    write_manifest(manifest, manifest_path)
+    passphrase.write_text("passphrase\n", encoding="utf-8")
+
+    assert (
+        main(
+            [
+                "apply",
+                str(manifest_path),
+                "--vault",
+                str(vault_path),
+                "--passphrase-file",
+                str(passphrase),
+                "--receipt-json",
+                str(app / ".fusekit" / "setup_receipt.json"),
+                "--receipt-md",
+                str(app / ".fusekit" / "setup_receipt.md"),
+                "--audit-log",
+                str(app / ".fusekit" / "audit.jsonl"),
+                "--verification-report",
+                str(report_path),
+            ]
+        )
+        == 2
+    )
+
+    report = json.loads(report_path.read_text("utf-8"))
+    assert report["overall"] == "failed"
+    assert report["counts"]["failed"] == 1
+    assert report["checks"][0]["status"] == "failed"
+    assert "rerun verification" in report["checks"][0]["repair"]
 
 
 def test_cli_refuses_raw_secret_argument(tmp_path) -> None:

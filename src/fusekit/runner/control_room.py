@@ -20,6 +20,8 @@ STATUS_LABELS = {
     "done": "Done",
     "failed": "Needs repair",
     "skipped": "Skipped",
+    "passed": "Passed",
+    "repairing": "Repairing",
 }
 
 TERMINAL_STEP_STATUSES = {"done", "skipped"}
@@ -28,7 +30,8 @@ TERMINAL_STEP_STATUSES = {"done", "skipped"}
 def render_control_room(job: JobState, *, gate_path: Path | None = None) -> str:
     """Render a standalone HTML control-room page."""
 
-    payload = _safe_json(control_room_payload(job, gate_path=gate_path))
+    control_payload = control_room_payload(job, gate_path=gate_path)
+    payload = _safe_json(control_payload)
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -45,6 +48,7 @@ def render_control_room(job: JobState, *, gate_path: Path | None = None) -> str:
       {_render_focus(job)}
     </section>
     {_render_recovery(job)}
+    {_render_trust(control_payload.get("verification", {}))}
     <section class="workspace">
       {_render_steps(job)}
       {_render_artifacts(job)}
@@ -69,6 +73,7 @@ def control_room_payload(job: JobState, *, gate_path: Path | None = None) -> dic
     """Build the embedded control-room payload with durable gate state."""
 
     payload = job.to_dict()
+    payload["verification"] = _read_verification_report(_verification_report_path(job, gate_path))
     if gate_path is None:
         payload.setdefault("gates", [])
         return payload
@@ -92,6 +97,29 @@ def _read_gate_records(gate_path: Path) -> tuple[list[dict[str, str | int | floa
     except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         return [], f"Gate state could not be read from {gate_path.name}: {type(exc).__name__}"
     return records, ""
+
+
+def _verification_report_path(job: JobState, gate_path: Path | None) -> Path | None:
+    artifact = job.artifacts.get("verification_report", "")
+    if artifact:
+        return Path(artifact)
+    if gate_path is not None:
+        return gate_path.parent / "verification_report.json"
+    return None
+
+
+def _read_verification_report(path: Path | None) -> dict[str, Any]:
+    if path is None or not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {
+            "overall": "failed",
+            "checks": [],
+            "error": f"Verification report could not be read from {path.name}",
+        }
+    return raw if isinstance(raw, dict) else {}
 
 
 def _render_header(job: JobState) -> str:
@@ -250,6 +278,69 @@ def _render_recovery(job: JobState) -> str:
       <div class="checkpoint-grid" data-checkpoints>{cards}</div>
     </section>
 """
+
+
+def _render_trust(report: Any) -> str:
+    checks = list(report.get("checks", [])) if isinstance(report, dict) else []
+    if checks:
+        cards = "\n".join(_render_trust_card(check) for check in checks[:8])
+    else:
+        cards = """
+        <article class="trust-card pending">
+          <div class="trust-snow state-checking" aria-hidden="true"></div>
+          <div>
+            <span>Waiting</span>
+            <strong>Trust checks appear after verification</strong>
+            <p>
+              Snowman will inspect provider setup, DNS, app health, and encrypted
+              survivor artifacts.
+            </p>
+            <em>Nothing to do yet. Keep the control room open.</em>
+          </div>
+        </article>
+"""
+    overall = str(report.get("overall", "waiting")) if isinstance(report, dict) else "waiting"
+    return f"""
+    <section class="trust-panel" aria-label="Verification trust checks">
+      <div class="section-head compact">
+        <div>
+          <span class="section-kicker">Trust checks</span>
+          <h2>Proof it really works</h2>
+        </div>
+        <span class="live-pill trust-{html.escape(overall)}">
+          Snowman verification: {html.escape(overall)}
+        </span>
+      </div>
+      <div class="trust-grid" data-trust-checks>{cards}</div>
+    </section>
+"""
+
+
+def _render_trust_card(check: dict[str, Any]) -> str:
+    status = str(check.get("status", "pending"))
+    snow = _trust_snow_state(status)
+    title = f"{check.get('provider', 'provider')} · {check.get('check', 'check')}"
+    return f"""
+        <article class="trust-card {html.escape(status)}">
+          <div class="trust-snow state-{html.escape(snow)}" aria-hidden="true"></div>
+          <div>
+            <span>{html.escape(_status_label(status))}</span>
+            <strong>{html.escape(title.replace('_', ' '))}</strong>
+            <p>{html.escape(str(check.get('summary', 'Verification is running.')))}</p>
+            <em>{html.escape(str(check.get('repair', 'Keep the control room open.')))}</em>
+          </div>
+        </article>
+"""
+
+
+def _trust_snow_state(status: str) -> str:
+    return {
+        "passed": "passed",
+        "pending": "checking",
+        "repairing": "repairing",
+        "failed": "failed",
+        "skipped": "checking",
+    }.get(status, "checking")
 
 
 def _visible_checkpoints(job: JobState) -> list[Any]:
@@ -1468,6 +1559,140 @@ button {
   animation: snow-melt 2s ease-in-out infinite;
 }
 
+.trust-panel {
+  min-width: 0;
+  margin-top: 18px;
+  border: 1px solid rgba(0, 151, 255, 0.14);
+  border-radius: 8px;
+  padding: 20px;
+  background:
+    radial-gradient(circle at 92% 8%, rgba(0, 151, 255, 0.18), transparent 24%),
+    rgba(255, 255, 255, 0.8);
+  box-shadow: 0 22px 52px rgba(0, 21, 42, 0.08);
+}
+
+.trust-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.trust-card {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 12px;
+  min-height: 164px;
+  border: 1px solid rgba(17, 22, 21, 0.11);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.trust-card.passed {
+  border-color: rgba(54, 127, 54, 0.28);
+  background: #f0fff0;
+}
+
+.trust-card.pending,
+.trust-card.repairing {
+  border-color: rgba(0, 151, 255, 0.22);
+}
+
+.trust-card.failed {
+  border-color: rgba(185, 48, 32, 0.24);
+  background: #fff3f0;
+}
+
+.trust-card span,
+.trust-card strong,
+.trust-card p,
+.trust-card em {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.trust-card span {
+  color: var(--snow-muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.trust-card strong {
+  margin-top: 5px;
+  color: var(--snow-navy);
+  font-size: 15px;
+}
+
+.trust-card p {
+  margin-top: 8px;
+  color: #42566c;
+  font-size: 13px;
+  line-height: 1.42;
+}
+
+.trust-card em {
+  margin-top: 10px;
+  color: #133a5c;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 850;
+  line-height: 1.35;
+}
+
+.trust-snow {
+  position: relative;
+  width: 38px;
+  height: 50px;
+}
+
+.trust-snow::before,
+.trust-snow::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow:
+    inset -4px -5px 0 #d9efff,
+    0 0 0 1px rgba(0, 151, 255, 0.16);
+  transform: translateX(-50%);
+}
+
+.trust-snow::before {
+  width: 23px;
+  height: 23px;
+  top: 2px;
+}
+
+.trust-snow::after {
+  width: 33px;
+  height: 30px;
+  bottom: 0;
+}
+
+.trust-snow.state-checking {
+  animation: snow-bob 1.6s ease-in-out infinite;
+}
+
+.trust-snow.state-passed {
+  animation: snow-celebrate 0.9s ease-in-out infinite;
+}
+
+.trust-snow.state-passed::before {
+  box-shadow:
+    inset -4px -5px 0 #d9efff,
+    0 0 0 3px rgba(99, 210, 118, 0.24);
+}
+
+.trust-snow.state-repairing {
+  animation: snow-fix 0.95s ease-in-out infinite;
+}
+
+.trust-snow.state-failed {
+  animation: hat-tap 0.9s ease-in-out infinite;
+}
+
 .timeline,
 .artifact-panel {
   min-width: 0;
@@ -1616,7 +1841,8 @@ button {
 @media (max-width: 1040px) {
   .overview,
   .workspace,
-  .checkpoint-grid {
+  .checkpoint-grid,
+  .trust-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1646,7 +1872,8 @@ button {
   .focus-panel,
   .timeline,
   .artifact-panel,
-  .recovery-panel {
+  .recovery-panel,
+  .trust-panel {
     width: 100%;
     max-width: 100%;
     margin-bottom: 18px;
@@ -2079,6 +2306,56 @@ function renderCheckpoints(job) {
     .join("");
 }
 
+function trustSnowState(status) {
+  return {
+    passed: "passed",
+    pending: "checking",
+    repairing: "repairing",
+    failed: "failed",
+    skipped: "checking",
+  }[status] || "checking";
+}
+
+function renderTrust(job) {
+  const root = document.querySelector("[data-trust-checks]");
+  if (!root) return;
+  const report = job.verification || {};
+  const checks = report.checks || [];
+  if (!checks.length) {
+    root.innerHTML =
+      "<article class='trust-card pending'>" +
+      "<div class='trust-snow state-checking' aria-hidden='true'></div><div>" +
+      "<span>Waiting</span><strong>Trust checks appear after verification</strong>" +
+      "<p>Snowman will inspect provider setup, DNS, app health, " +
+      "and encrypted survivor artifacts.</p>" +
+      "<em>Nothing to do yet. Keep the control room open.</em>" +
+      "</div></article>";
+    return;
+  }
+  root.innerHTML = checks
+    .slice(0, 8)
+    .map((check) => {
+      const status = classToken(check.status || "pending");
+      const snow = trustSnowState(status);
+      const title = `${check.provider || "provider"} · ${check.check || "check"}`.replaceAll(
+        "_",
+        " ",
+      );
+      return `
+        <article class="trust-card ${status}">
+          <div class="trust-snow state-${classToken(snow)}" aria-hidden="true"></div>
+          <div>
+            <span>${escapeHtml(label(status))}</span>
+            <strong>${escapeHtml(title)}</strong>
+            <p>${escapeHtml(check.summary || "Verification is running.")}</p>
+            <em>${escapeHtml(check.repair || "Keep the control room open.")}</em>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+}
+
 function render(job) {
   const prog = progress(job);
   const counts = statusCounts(job.steps);
@@ -2113,6 +2390,7 @@ function render(job) {
   document.querySelector("[data-next-title]").textContent =
     next?.label || "Artifacts and audit review";
   renderCheckpoints(job);
+  renderTrust(job);
   renderSteps(job);
   renderArtifacts(job);
 }

@@ -18,6 +18,9 @@ from fusekit.runner.cloud_shell import (
     build_cloud_shell_launch_plan,
     render_cloud_shell_launcher,
 )
+from fusekit.runner.control_room import (
+    control_room_payload as static_control_room_payload,
+)
 from fusekit.runner.control_room import render_control_room
 from fusekit.runner.gates import GateService
 from fusekit.runner.job import JobState
@@ -203,6 +206,45 @@ def test_control_room_renders_job_without_secrets(tmp_path) -> None:
     assert "setRefreshStatus" in html
     assert "fk-test" in html
     assert payload["id"] == "fk-test"
+
+
+def test_control_room_renders_verification_trust_cards(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    report = tmp_path / "verification_report.json"
+    report.write_text(
+        json.dumps(
+            {
+                "overall": "pending",
+                "checks": [
+                    {
+                        "provider": "resend",
+                        "check": "auth_valid",
+                        "status": "passed",
+                        "summary": "resend auth valid passed.",
+                        "repair": "Nothing needed.",
+                    },
+                    {
+                        "provider": "cloudflare",
+                        "check": "dns_verified",
+                        "status": "pending",
+                        "summary": "cloudflare dns verified is still pending.",
+                        "repair": "Keep waiting for DNS propagation.",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    job.add_artifact("verification_report", report)
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+    payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
+
+    assert "Trust checks" in html
+    assert "Proof it really works" in html
+    assert "trust-snow state-passed" in html
+    assert "trust-snow state-checking" in html
+    assert payload["verification"]["overall"] == "pending"
 
 
 def test_control_room_payload_includes_active_gate_records(tmp_path) -> None:
@@ -578,14 +620,17 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
             gates = tmp_path / "gates.json"
             checkpoints = tmp_path / "checkpoints.json"
             vault_file = tmp_path / "fusekit.vault.json"
+            verification = tmp_path / "verification_report.json"
             payload.write_text("{}", encoding="utf-8")
             gates.write_text('{"gates":[]}', encoding="utf-8")
             checkpoints.write_text('{"checkpoints":[]}', encoding="utf-8")
             vault_file.write_text("encrypted", encoding="utf-8")
+            verification.write_text('{"checks":[]}', encoding="utf-8")
             archive.add(payload, arcname=".fusekit/job.json")
             archive.add(gates, arcname=".fusekit/gates.json")
             archive.add(checkpoints, arcname=".fusekit/checkpoints.json")
             archive.add(vault_file, arcname=".fusekit/fusekit.vault.json")
+            archive.add(verification, arcname=".fusekit/verification_report.json")
             archive.close()
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
@@ -631,9 +676,15 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
     assert (tmp_path / "out" / ".fusekit" / "gates.json").exists()
     assert (tmp_path / "out" / ".fusekit" / "checkpoints.json").exists()
     assert (tmp_path / "out" / ".fusekit" / "fusekit.vault.json").exists()
+    assert (tmp_path / "out" / ".fusekit" / "verification_report.json").exists()
     assert any(".fusekit/gates.json" in command[-1] for command in calls if command[0] == "ssh")
     assert any(
         ".fusekit/checkpoints.json" in command[-1]
+        for command in calls
+        if command[0] == "ssh"
+    )
+    assert any(
+        ".fusekit/verification_report.json" in command[-1]
         for command in calls
         if command[0] == "ssh"
     )
