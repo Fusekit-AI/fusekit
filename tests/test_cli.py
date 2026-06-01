@@ -861,6 +861,9 @@ def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch)
     job = json.loads((app / ".fusekit" / "job.json").read_text(encoding="utf-8"))
     assert job["status"] == "done"
     assert job["steps"][1]["status"] == "done"
+    checkpoints = json.loads((app / ".fusekit" / "checkpoints.json").read_text(encoding="utf-8"))
+    assert checkpoints["job_id"] == job["id"]
+    assert any(item["id"] == "detonate.workspace" for item in checkpoints["checkpoints"])
 
 
 def test_launch_detonates_oci_workspace_after_remote_failure(tmp_path, monkeypatch) -> None:

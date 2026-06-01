@@ -238,7 +238,7 @@ def execute_remote_setup(
             "cd /var/lib/fusekit-runner/app && "
             "set -- .fusekit/fusekit.vault.json .fusekit/audit.jsonl "
             ".fusekit/setup_receipt.json .fusekit/setup_receipt.md .fusekit/job.json "
-            ".fusekit/gates.json; "
+            ".fusekit/checkpoints.json .fusekit/gates.json; "
             "existing=''; "
             "for path in \"$@\"; do [ -f \"$path\" ] && existing=\"$existing $path\"; done; "
             "[ -n \"$existing\" ] || exit 44; "
@@ -246,7 +246,12 @@ def execute_remote_setup(
         )
         _run_checked(run, [*ssh, remote, fetch], stdout_path=artifacts)
         _extract_artifacts(artifacts, local_output_dir)
-    return {"artifact_archive": str(artifacts), "output_dir": str(local_output_dir)}
+        completeness = _validate_artifact_bundle(local_output_dir)
+    return {
+        "artifact_archive": str(artifacts),
+        "output_dir": str(local_output_dir),
+        "artifact_status": completeness,
+    }
 
 
 def detonate_remote_worker(
@@ -315,6 +320,22 @@ def _extract_artifacts(archive: Path, output_dir: Path) -> None:
             raise FuseKitError("Remote artifact archive did not contain files.")
     except tarfile.TarError as exc:
         raise FuseKitError("Remote artifact archive could not be read.") from exc
+
+
+def _validate_artifact_bundle(output_dir: Path) -> str:
+    required = (
+        ".fusekit/fusekit.vault.json",
+        ".fusekit/job.json",
+        ".fusekit/checkpoints.json",
+    )
+    missing = [path for path in required if not (output_dir / path).is_file()]
+    if missing:
+        raise FuseKitError(
+            "Remote artifact bundle is incomplete; missing "
+            + ", ".join(missing)
+            + ". Detonation should not be trusted until artifacts are recovered."
+        )
+    return "complete"
 
 
 def _workspace_ssh_private_key(vault: Vault, run_id: str) -> str:

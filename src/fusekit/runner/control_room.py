@@ -44,6 +44,7 @@ def render_control_room(job: JobState, *, gate_path: Path | None = None) -> str:
       {_render_progress(job)}
       {_render_focus(job)}
     </section>
+    {_render_recovery(job)}
     <section class="workspace">
       {_render_steps(job)}
       {_render_artifacts(job)}
@@ -232,6 +233,56 @@ def _render_artifacts(job: JobState) -> str:
           and rollback metadata. Raw secrets do not belong here.
         </p>
 </aside>
+"""
+
+
+def _render_recovery(job: JobState) -> str:
+    cards = "\n".join(_render_checkpoint_card(item) for item in _visible_checkpoints(job))
+    return f"""
+    <section class="recovery-panel" aria-label="Recovery checkpoints">
+      <div class="section-head compact">
+        <div>
+          <span class="section-kicker">Recovery map</span>
+          <h2>Every step stays alive</h2>
+        </div>
+        <span class="live-pill">Plain-language resume hints</span>
+      </div>
+      <div class="checkpoint-grid" data-checkpoints>{cards}</div>
+    </section>
+"""
+
+
+def _visible_checkpoints(job: JobState) -> list[Any]:
+    active = [
+        checkpoint
+        for checkpoint in job.checkpoints
+        if checkpoint.status in {"failed", "waiting", "running"}
+    ]
+    if active:
+        return active[:4]
+    pending = [checkpoint for checkpoint in job.checkpoints if checkpoint.status == "pending"]
+    if pending:
+        return pending[:3]
+    return job.checkpoints[-3:]
+
+
+def _render_checkpoint_card(checkpoint: Any) -> str:
+    status = html.escape(checkpoint.status)
+    mascot_state = html.escape(checkpoint.mascot_state)
+    return f"""
+        <article class="checkpoint-card {status}" data-checkpoint-id="{html.escape(checkpoint.id)}">
+          <div class="checkpoint-snow state-{mascot_state}" aria-hidden="true">
+            <span class="mini-snow-head"></span>
+            <span class="mini-snow-body"></span>
+          </div>
+          <div>
+            <span>{html.escape(_status_label(checkpoint.status))}</span>
+            <strong>{html.escape(checkpoint.label)}</strong>
+            <p>{html.escape(checkpoint.detail)}</p>
+            <em>{html.escape(checkpoint.next_action)}</em>
+            <code>{html.escape(checkpoint.resume_hint)}</code>
+          </div>
+        </article>
 """
 
 
@@ -1270,6 +1321,153 @@ button {
   margin-top: 18px;
 }
 
+.recovery-panel {
+  min-width: 0;
+  margin-top: 18px;
+  border: 1px solid rgba(0, 151, 255, 0.14);
+  border-radius: 8px;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.76);
+  box-shadow: 0 22px 52px rgba(0, 21, 42, 0.08);
+}
+
+.checkpoint-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.checkpoint-card {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 12px;
+  min-height: 172px;
+  border: 1px solid rgba(17, 22, 21, 0.11);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.checkpoint-card.running,
+.checkpoint-card.waiting,
+.checkpoint-card.failed {
+  background: #ffffff;
+}
+
+.checkpoint-card span,
+.checkpoint-card em,
+.checkpoint-card code,
+.checkpoint-card p,
+.checkpoint-card strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.checkpoint-card span {
+  color: var(--snow-muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.checkpoint-card strong {
+  margin-top: 5px;
+  color: var(--snow-navy);
+  font-size: 15px;
+}
+
+.checkpoint-card p {
+  margin-top: 8px;
+  color: #42566c;
+  font-size: 13px;
+  line-height: 1.42;
+}
+
+.checkpoint-card em {
+  margin-top: 10px;
+  color: #133a5c;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 850;
+  line-height: 1.35;
+}
+
+.checkpoint-card code {
+  margin-top: 10px;
+  padding: 7px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.checkpoint-snow {
+  position: relative;
+  width: 42px;
+  height: 54px;
+  align-self: start;
+}
+
+.mini-snow-head,
+.mini-snow-body {
+  position: absolute;
+  left: 50%;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow:
+    inset -4px -5px 0 #d9efff,
+    0 0 0 1px rgba(0, 151, 255, 0.16);
+  transform: translateX(-50%);
+}
+
+.mini-snow-head {
+  width: 24px;
+  height: 24px;
+  top: 2px;
+}
+
+.mini-snow-body {
+  width: 34px;
+  height: 31px;
+  bottom: 0;
+}
+
+.checkpoint-snow.state-working {
+  animation: snow-bob 1.8s ease-in-out infinite;
+}
+
+.checkpoint-snow.state-gate .mini-snow-head {
+  animation: hat-tap 1.2s ease-in-out infinite;
+}
+
+.checkpoint-snow.state-privacy::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 10px;
+  width: 26px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--snow-blue);
+}
+
+.checkpoint-snow.state-repair {
+  animation: snow-fix 1s ease-in-out infinite;
+}
+
+.checkpoint-snow.state-verify::after {
+  content: "";
+  position: absolute;
+  right: -4px;
+  top: 20px;
+  width: 14px;
+  height: 14px;
+  border: 3px solid var(--snow-blue);
+  border-radius: 50%;
+}
+
+.checkpoint-snow.state-detonate {
+  animation: snow-melt 2s ease-in-out infinite;
+}
+
 .timeline,
 .artifact-panel {
   min-width: 0;
@@ -1417,7 +1615,8 @@ button {
 
 @media (max-width: 1040px) {
   .overview,
-  .workspace {
+  .workspace,
+  .checkpoint-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1446,7 +1645,8 @@ button {
   .progress-panel,
   .focus-panel,
   .timeline,
-  .artifact-panel {
+  .artifact-panel,
+  .recovery-panel {
     width: 100%;
     max-width: 100%;
     margin-bottom: 18px;
@@ -1834,6 +2034,51 @@ function renderArtifacts(job) {
     .join("");
 }
 
+function visibleCheckpoints(job) {
+  const checkpoints = job.checkpoints || [];
+  const active = checkpoints.filter((item) =>
+    ["failed", "waiting", "running"].includes(item.status),
+  );
+  if (active.length) return active.slice(0, 4);
+  const pending = checkpoints.filter((item) => item.status === "pending");
+  if (pending.length) return pending.slice(0, 3);
+  return checkpoints.slice(-3);
+}
+
+function renderCheckpoints(job) {
+  const root = document.querySelector("[data-checkpoints]");
+  if (!root) return;
+  const checkpoints = visibleCheckpoints(job);
+  if (!checkpoints.length) {
+    root.innerHTML =
+      "<article class='checkpoint-card pending'><div></div><div>" +
+      "<span>Ready</span><strong>Waiting for first checkpoint</strong>" +
+      "<p>FuseKit will populate this map as soon as the worker starts.</p>" +
+      "<em>Nothing needed yet.</em><code>Keep this control room open.</code>" +
+      "</div></article>";
+    return;
+  }
+  root.innerHTML = checkpoints
+    .map((checkpoint) => `
+      <article class="checkpoint-card ${classToken(checkpoint.status)}"
+        data-checkpoint-id="${escapeAttr(checkpoint.id)}">
+        <div class="checkpoint-snow state-${classToken(checkpoint.mascot_state)}"
+          aria-hidden="true">
+          <span class="mini-snow-head"></span>
+          <span class="mini-snow-body"></span>
+        </div>
+        <div>
+          <span>${escapeHtml(label(checkpoint.status))}</span>
+          <strong>${escapeHtml(checkpoint.label)}</strong>
+          <p>${escapeHtml(checkpoint.detail)}</p>
+          <em>${escapeHtml(checkpoint.next_action)}</em>
+          <code>${escapeHtml(checkpoint.resume_hint)}</code>
+        </div>
+      </article>
+    `)
+    .join("");
+}
+
 function render(job) {
   const prog = progress(job);
   const counts = statusCounts(job.steps);
@@ -1867,6 +2112,7 @@ function render(job) {
   document.querySelector("[data-gate-help]").innerHTML = renderGateHelp(current);
   document.querySelector("[data-next-title]").textContent =
     next?.label || "Artifacts and audit review";
+  renderCheckpoints(job);
   renderSteps(job);
   renderArtifacts(job);
 }

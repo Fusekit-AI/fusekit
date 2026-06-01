@@ -77,6 +77,24 @@ def test_job_status_preserves_failure_after_cleanup_step(tmp_path) -> None:
     assert job.status == "failed"
 
 
+def test_job_state_writes_recovery_checkpoints(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job.mark("setup.execute", "running", "provider token hidden prompt is open")
+    job_path = tmp_path / "job.json"
+
+    job.save(job_path)
+    checkpoint_payload = json.loads((tmp_path / "checkpoints.json").read_text("utf-8"))
+
+    assert "checkpoints" in job.to_dict()
+    assert checkpoint_payload["job_id"] == "fk-test"
+    setup = next(
+        item for item in checkpoint_payload["checkpoints"] if item["id"] == "setup.execute"
+    )
+    assert setup["status"] == "running"
+    assert setup["mascot_state"] == "privacy"
+    assert "Human gates wait forever" in setup["resume_hint"]
+
+
 def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
     plan = build_cloud_shell_launch_plan(
         app_source="https://github.com/example/app.git",
@@ -176,6 +194,10 @@ def test_control_room_renders_job_without_secrets(tmp_path) -> None:
     assert "OCI login required" in html
     assert "What you need to do" in html
     assert "Oracle Cloud is opening the clean room" in html
+    assert "Recovery map" in html
+    assert "Every step stays alive" in html
+    assert "checkpoint-card" in html
+    assert "waiting politely with a tiny access badge" in html
     assert "Live refresh paused. Reopen or restart the control-room server." in html
     assert "Snapshot view. Serve the control room for live updates." in html
     assert "setRefreshStatus" in html
@@ -342,6 +364,17 @@ def test_remote_artifact_extract_rejects_empty_archives(tmp_path) -> None:
 
     with pytest.raises(FuseKitError, match="did not contain files"):
         _extract_artifacts(archive, tmp_path / "out")
+
+
+def test_remote_artifact_bundle_requires_survivor_files(tmp_path) -> None:
+    from fusekit.runner.remote import _validate_artifact_bundle
+
+    (tmp_path / ".fusekit").mkdir()
+    (tmp_path / ".fusekit" / "job.json").write_text("{}", encoding="utf-8")
+    (tmp_path / ".fusekit" / "checkpoints.json").write_text("{}", encoding="utf-8")
+
+    with pytest.raises(FuseKitError, match="fusekit.vault.json"):
+        _validate_artifact_bundle(tmp_path)
 
 
 def test_latest_workspace_round_trips_from_vault() -> None:
@@ -543,10 +576,16 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
             archive = tarfile.open(stdout_path, "w:gz")
             payload = tmp_path / "job.json"
             gates = tmp_path / "gates.json"
+            checkpoints = tmp_path / "checkpoints.json"
+            vault_file = tmp_path / "fusekit.vault.json"
             payload.write_text("{}", encoding="utf-8")
             gates.write_text('{"gates":[]}', encoding="utf-8")
+            checkpoints.write_text('{"checkpoints":[]}', encoding="utf-8")
+            vault_file.write_text("encrypted", encoding="utf-8")
             archive.add(payload, arcname=".fusekit/job.json")
             archive.add(gates, arcname=".fusekit/gates.json")
+            archive.add(checkpoints, arcname=".fusekit/checkpoints.json")
+            archive.add(vault_file, arcname=".fusekit/fusekit.vault.json")
             archive.close()
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
@@ -561,6 +600,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
     )
 
     assert result["output_dir"] == str(tmp_path / "out")
+    assert result["artifact_status"] == "complete"
     assert any(command[0] == "scp" for command in calls)
     assert any(command[0] == "ssh" and command[-1] == "true" for command in calls)
     assert any(
@@ -589,7 +629,14 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         if command[0] == "ssh"
     )
     assert (tmp_path / "out" / ".fusekit" / "gates.json").exists()
+    assert (tmp_path / "out" / ".fusekit" / "checkpoints.json").exists()
+    assert (tmp_path / "out" / ".fusekit" / "fusekit.vault.json").exists()
     assert any(".fusekit/gates.json" in command[-1] for command in calls if command[0] == "ssh")
+    assert any(
+        ".fusekit/checkpoints.json" in command[-1]
+        for command in calls
+        if command[0] == "ssh"
+    )
     assert any("[ -n \"$existing\" ] || exit 44" in command[-1] for command in calls)
 
 

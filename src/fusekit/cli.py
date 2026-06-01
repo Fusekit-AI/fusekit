@@ -1359,12 +1359,12 @@ def _ensure_oci_authorized_for_launch(
 
     if has_vault_oci_profile(vault):
         job.mark("oci.authorize", "done", "encrypted OCI profile found")
-        job.save(args.job_state)
+        _save_launch_job(args, job)
         return
     status = oci_runtime_status(args.oci_config_file)
     if status["oci_config"] and args.oci_auth_mode in {"auto", "existing-config"}:
         job.mark("oci.authorize", "done", "existing OCI config detected")
-        job.save(args.job_state)
+        _save_launch_job(args, job)
         return
     if args.oci_auth_mode == "api-key-upload":
         _await_oci_api_key_upload(args, vault, passphrase, job)
@@ -1397,7 +1397,7 @@ def _await_oci_browser_session(
             "waiting",
             "OCI signup/login/MFA/account verification gate is open",
         )
-        job.save(args.job_state)
+        _save_launch_job(args, job)
         _run_oci_handoff(args)
         try:
             authorize_oci_browser_session(
@@ -1408,7 +1408,7 @@ def _await_oci_browser_session(
             capture_oci_session_profile(vault, config_file=config_file, profile=profile)
             vault.save(args.vault, passphrase)
             job.mark("oci.authorize", "done", "OCI browser-session profile captured")
-            job.save(args.job_state)
+            _save_launch_job(args, job)
             _record_gate_passed(
                 args,
                 gate_id,
@@ -1452,7 +1452,7 @@ def _await_oci_api_key_upload(
             "waiting",
             "OCI API public-key upload/config-snippet gate is open",
         )
-        job.save(args.job_state)
+        _save_launch_job(args, job)
         _run_oci_handoff(args)
         print("Upload or paste this public OCI API signing key:")
         print(public_key)
@@ -1461,7 +1461,7 @@ def _await_oci_api_key_upload(
             capture_oci_api_key_profile(vault, config_snippet=config_snippet)
             vault.save(args.vault, passphrase)
             job.mark("oci.authorize", "done", "OCI API key profile captured")
-            job.save(args.job_state)
+            _save_launch_job(args, job)
             _record_gate_passed(
                 args,
                 gate_id,
@@ -1531,6 +1531,23 @@ def _detonate_openclaw_state_if_requested(args: argparse.Namespace) -> None:
     print(json.dumps({"detonated_openclaw_state": removed}, indent=2, sort_keys=True))
 
 
+def _save_launch_job(args: argparse.Namespace, job: JobState) -> None:
+    """Persist job, checkpoints, and the static control room when requested."""
+
+    args.job_state.parent.mkdir(parents=True, exist_ok=True)
+    checkpoints_path = args.job_state.with_name("checkpoints.json")
+    if job.artifacts.get("checkpoints") != str(checkpoints_path):
+        job.add_artifact("checkpoints", checkpoints_path)
+    if getattr(args, "control_room", False):
+        control_path = args.job_state.parent / "control-room.html"
+        if job.artifacts.get("control_room") != str(control_path):
+            job.add_artifact("control_room", control_path)
+        job.save(args.job_state)
+        write_control_room(job, control_path)
+        return
+    job.save(args.job_state)
+
+
 def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_name: str) -> int:
     _apply_magic_defaults(args, scan_repo(app_path), app_path)
     job = JobState.create(f"fk-{uuid.uuid4().hex[:12]}", app_path, runner_name)
@@ -1552,10 +1569,7 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
     plan_path = args.job_state.parent / "runner_plan.json"
     plan_path.write_text(json.dumps(plan.to_dict(), indent=2, sort_keys=True) + "\n", "utf-8")
     job.add_artifact("runner_plan", plan_path)
-    if args.control_room:
-        control_path = args.job_state.parent / "control-room.html"
-        write_control_room(job, control_path)
-        job.add_artifact("control_room", control_path)
+    _save_launch_job(args, job)
     passphrase = _passphrase(args)
     vault = open_or_create(args.vault, passphrase)
     _ensure_oci_authorized_for_launch(args, vault, passphrase, job)
@@ -1571,7 +1585,7 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
     job.mark("remote.bootstrap", "running", "uploading app and running remote setup")
     job.mark("app.upload", "running", "uploading app without excluded secret paths")
     job.mark("setup.execute", "running", "remote FuseKit launch starting")
-    job.save(args.job_state)
+    _save_launch_job(args, job)
     remote_deleted: dict[str, str] = {}
     try:
         artifacts = execute_remote_setup(
@@ -1590,7 +1604,7 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
             job.mark("detonate.workspace", "done", "workspace detonation attempted after failure")
         else:
             job.mark("detonate.workspace", "skipped", "workspace retained by --no-detonate")
-        job.save(args.job_state)
+        _save_launch_job(args, job)
         raise
     job.mark("remote.bootstrap", "done", "remote setup completed")
     job.mark("app.upload", "done", "app uploaded without excluded secret paths")
@@ -1602,7 +1616,7 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
     else:
         remote_deleted = _detonate_oci_workspace(args, workspace, vault)
         job.mark("detonate.workspace", "done", "remote worker and OCI workspace detonated")
-    job.save(args.job_state)
+    _save_launch_job(args, job)
     _detonate_openclaw_state_if_requested(args)
     print(
         json.dumps(
@@ -1664,7 +1678,7 @@ def _cmd_cloud_shell_runner_launch(
     job.mark("oci.authorize", "waiting", "OCI Cloud Shell service gate is open")
     job.add_artifact("cloud_shell_plan", plan_path)
     job.add_artifact("launcher", launcher_path)
-    job.save(args.job_state)
+    _save_launch_job(args, job)
     if args.open_browser or not getattr(args, "no_open_launcher", False):
         webbrowser.open(plan.deeplink_url)
     print(
