@@ -2117,7 +2117,17 @@ def _provision_oci_workspace(
     plan: OciRunnerPlan,
 ) -> OciWorkspace:
     auth = load_oci_auth_from_vault_or_config(vault, config_file=args.oci_config_file)
-    return OciProvisioner(auth).provision(plan, vault)
+    print(
+        "FuseKit is provisioning the OCI clean-room VM. "
+        "This can take a few minutes; progress will stay visible.",
+        file=sys.stderr,
+        flush=True,
+    )
+    return OciProvisioner(auth, progress=_print_oci_progress).provision(plan, vault)
+
+
+def _print_oci_progress(message: str) -> None:
+    print(f"[fusekit:oci] {message}", file=sys.stderr, flush=True)
 
 
 def _collect_secrets(items: list[str]) -> dict[str, str]:

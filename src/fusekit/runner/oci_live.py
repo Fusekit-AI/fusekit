@@ -10,6 +10,7 @@ import logging
 import os
 import time
 import warnings
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, cast
@@ -72,7 +73,7 @@ class OciWorkspace:
 class OciProvisioner:
     """Live OCI provisioner using the official OCI Python SDK."""
 
-    def __init__(self, auth: OciAuth) -> None:
+    def __init__(self, auth: OciAuth, progress: Callable[[str], None] | None = None) -> None:
         suppress_oci_http_debug_logging()
         try:
             import oci
@@ -83,6 +84,7 @@ class OciProvisioner:
         self.identity = oci.identity.IdentityClient(auth.config, signer=auth.signer)
         self.network = oci.core.VirtualNetworkClient(auth.config, signer=auth.signer)
         self.compute = oci.core.ComputeClient(auth.config, signer=auth.signer)
+        self._progress = progress or (lambda message: None)
 
     def provision(self, plan: OciRunnerPlan, vault: Vault) -> OciWorkspace:
         """Create a live OCI workspace."""
@@ -101,6 +103,7 @@ class OciProvisioner:
         tags = {"fusekit": "true", "fusekit_run": run_id}
         workspace: OciWorkspace | None = None
         try:
+            self._emit_progress(f"OCI workspace {run_id}: creating isolated compartment")
             compartment = self._create_compartment(tenancy_id, run_id, tags)
             compartment_id = str(compartment.id)
             workspace = OciWorkspace(
@@ -110,21 +113,31 @@ class OciProvisioner:
                 shape=plan.shape,
             )
             workspace.resource_ids["compartment"] = compartment_id
+            self._emit_progress("OCI workspace: selecting availability domain")
             availability_domain = self._availability_domain(tenancy_id)
             workspace.availability_domain = availability_domain
+            self._emit_progress("OCI workspace: creating private network")
             vcn = self._create_vcn(compartment_id, run_id, tags)
             workspace.resource_ids["vcn"] = vcn.id
+            self._emit_progress("OCI workspace: attaching internet gateway")
             gateway = self._create_internet_gateway(compartment_id, vcn.id, run_id, tags)
             workspace.resource_ids["internet_gateway"] = gateway.id
+            self._emit_progress("OCI workspace: creating route table")
             route_table = self._create_route_table(compartment_id, vcn.id, gateway.id, run_id, tags)
             workspace.resource_ids["route_table"] = route_table.id
+            self._emit_progress("OCI workspace: creating network security group")
             nsg = self._create_nsg(compartment_id, vcn.id, run_id, tags)
             workspace.resource_ids["network_security_group"] = nsg.id
+            self._emit_progress("OCI workspace: creating public subnet")
             subnet = self._create_subnet(compartment_id, vcn.id, route_table.id, run_id, tags)
             workspace.resource_ids["subnet"] = subnet.id
             cloud_init = render_cloud_init(
                 fusekit_wheel_url=plan.fusekit_package,
                 openclaw_install_url=OPENCLAW_INSTALL_URL,
+            )
+            self._emit_progress(
+                f"OCI workspace: launching VM shape {plan.shape} "
+                f"({plan.ocpus} OCPU, {plan.memory_gb} GB)"
             )
             instance, selected_plan = self._launch_with_capacity_fallback(
                 base_plan=plan,
@@ -139,9 +152,12 @@ class OciProvisioner:
             )
             workspace.shape = selected_plan.shape
             workspace.resource_ids["instance"] = instance.id
+            self._emit_progress(f"OCI workspace: VM is running on shape {selected_plan.shape}")
+            self._emit_progress("OCI workspace: waiting for public IP")
             workspace.public_ip = self._public_ip(compartment_id, instance.id)
             if not workspace.public_ip:
                 raise FuseKitError("OCI runner did not receive a public IP address.")
+            self._emit_progress(f"OCI workspace: ready at {workspace.public_ip}")
             vault.put(
                 f"runner.oci.{run_id}.workspace",
                 "runner_workspace",
@@ -190,6 +206,11 @@ class OciProvisioner:
             except Exception as exc:  # pragma: no cover - exception type is SDK-defined.
                 deleted["failed.compartment"] = _safe_oci_error(exc)
         return deleted
+
+    def _emit_progress(self, message: str) -> None:
+        progress = getattr(self, "_progress", None)
+        if progress is not None:
+            progress(message)
 
     def _create_compartment(self, tenancy_id: str, run_id: str, tags: dict[str, str]) -> Any:
         details = self.oci.identity.models.CreateCompartmentDetails(
@@ -408,7 +429,9 @@ class OciProvisioner:
                 continue
             seen.add(key)
             try:
+                self._emit_progress(f"OCI workspace: finding image for {candidate.shape}")
                 image_id = self._latest_image(compartment_id, candidate.shape)
+                self._emit_progress(f"OCI workspace: trying shape {candidate.shape}")
                 return (
                     self._launch_instance(
                         compartment_id=compartment_id,
@@ -428,6 +451,9 @@ class OciProvisioner:
                 last_error = exc
                 if not _is_capacity_error(exc):
                     raise
+                self._emit_progress(
+                    f"OCI workspace: {candidate.shape} capacity unavailable, retrying"
+                )
         raise FuseKitError(
             "OCI capacity was unavailable for all configured runner shapes."
         ) from last_error
@@ -453,6 +479,7 @@ def load_oci_auth_from_vault_or_config(
 ) -> OciAuth:
     """Load OCI auth from the encrypted vault or an existing OCI config file."""
 
+    suppress_oci_http_debug_logging()
     try:
         config_record = vault.require("runner.oci.config")
         try:
@@ -467,6 +494,7 @@ def load_oci_auth_from_vault_or_config(
 
 
 def _load_oci_config_file(config_file: Path | None) -> OciAuth:
+    suppress_oci_http_debug_logging()
     try:
         import oci
     except ImportError as exc:
@@ -502,6 +530,7 @@ def _auth_tenancy_id(auth: OciAuth) -> str:
 
 
 def _auth_from_api_key_snippet(config_snippet: str, private_key_pem: str) -> OciAuth:
+    suppress_oci_http_debug_logging()
     try:
         import oci
     except ImportError as exc:
@@ -529,6 +558,7 @@ def _auth_from_session_snippet(
     security_token: str,
     private_key_pem: str,
 ) -> OciAuth:
+    suppress_oci_http_debug_logging()
     try:
         import oci
     except ImportError as exc:
@@ -590,7 +620,6 @@ def suppress_oci_http_debug_logging() -> None:
         "ignore",
         message=r"The 'strict' parameter is no longer needed on Python 3\+.*",
         category=FutureWarning,
-        module=r"urllib3\.poolmanager",
     )
 
 
