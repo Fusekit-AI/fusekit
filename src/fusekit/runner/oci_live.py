@@ -7,6 +7,7 @@ import configparser
 import http.client
 import json
 import logging
+import os
 import time
 import warnings
 from dataclasses import dataclass, field, replace
@@ -564,7 +565,19 @@ def _safe_oci_error(exc: Exception) -> str:
 def suppress_oci_http_debug_logging() -> None:
     """Prevent OCI SDK HTTP wire dumps from exposing delegated auth material."""
 
+    for env_name in ("OCI_PYTHON_SDK_DEBUG", "OCI_SDK_DEBUG"):
+        os.environ.pop(env_name, None)
     http.client.HTTPConnection.debuglevel = 0
+    http.client.HTTPSConnection.debuglevel = 0
+    http.client.HTTPConnection.set_debuglevel = _disable_http_debuglevel  # type: ignore[assignment]
+    http.client.HTTPSConnection.set_debuglevel = _disable_http_debuglevel  # type: ignore[assignment]
+    try:
+        import urllib3.connection
+
+        urllib3.connection.HTTPConnection.debuglevel = 0
+        urllib3.connection.HTTPSConnection.debuglevel = 0
+    except Exception:
+        pass
     for logger_name in (
         "oci",
         "oci.base_client",
@@ -579,6 +592,12 @@ def suppress_oci_http_debug_logging() -> None:
         category=FutureWarning,
         module=r"urllib3\.poolmanager",
     )
+
+
+def _disable_http_debuglevel(connection: Any, level: int = 0) -> None:
+    """Ignore attempts to re-enable stdlib HTTP wire logging."""
+
+    connection.debuglevel = 0
 
 
 def latest_workspace_from_vault(vault: Vault) -> OciWorkspace:

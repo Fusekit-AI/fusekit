@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
 import shlex
 import subprocess
 import tarfile
@@ -875,15 +876,27 @@ def test_oci_create_nsg_wraps_security_rules_for_sdk_request() -> None:
     assert details.security_rules[1].direction == "EGRESS"
 
 
-def test_oci_debug_logging_is_suppressed() -> None:
-    original_level = http.client.HTTPConnection.debuglevel
+def test_oci_debug_logging_is_suppressed(monkeypatch: pytest.MonkeyPatch) -> None:
+    original_http_level = http.client.HTTPConnection.debuglevel
+    original_https_level = http.client.HTTPSConnection.debuglevel
     try:
+        monkeypatch.setenv("OCI_PYTHON_SDK_DEBUG", "1")
+        monkeypatch.setenv("OCI_SDK_DEBUG", "1")
         http.client.HTTPConnection.debuglevel = 1
+        http.client.HTTPSConnection.debuglevel = 1
         suppress_oci_http_debug_logging()
 
         assert http.client.HTTPConnection.debuglevel == 0
+        assert http.client.HTTPSConnection.debuglevel == 0
+        assert "OCI_PYTHON_SDK_DEBUG" not in os.environ
+        assert "OCI_SDK_DEBUG" not in os.environ
+
+        connection = object.__new__(http.client.HTTPConnection)
+        http.client.HTTPConnection.set_debuglevel(connection, 1)
+        assert connection.debuglevel == 0
     finally:
-        http.client.HTTPConnection.debuglevel = original_level
+        http.client.HTTPConnection.debuglevel = original_http_level
+        http.client.HTTPSConnection.debuglevel = original_https_level
 
 
 def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_path) -> None:
