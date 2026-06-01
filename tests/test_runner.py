@@ -217,7 +217,8 @@ def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
     assert "Copy Backup Command" in html
     assert 'role="status"' in html
     assert "navigator.clipboard.writeText" in html
-    assert "Copy was blocked" in html
+    assert "document.execCommand('copy')" in html
+    assert "Press Command+C" in html
     assert "command.select()" in html
     assert "Passphrase:" in plan.bootstrap_command
 

@@ -142,6 +142,11 @@ def build_cloud_shell_bootstrap_command(
                         "  pip_target_flag=\n"
                         "fi"
                     ),
+                    "\"$python_cmd\" -m ensurepip --upgrade >/dev/null 2>&1 || true",
+                    (
+                        "retry \"$python_cmd\" -m pip install "
+                        "${pip_target_flag:+$pip_target_flag} --upgrade pip setuptools wheel"
+                    ),
                     (
                         "retry \"$python_cmd\" -m pip install "
                         "${pip_target_flag:+$pip_target_flag} --upgrade \"$fusekit_package\""
@@ -669,13 +674,22 @@ def render_cloud_shell_launcher(plan: CloudShellLaunchPlan) -> str:
     document.querySelector('#refresh').addEventListener('click', refresh);
     document.querySelector('#copy').addEventListener('click', async () => {{
       try {{
-        await navigator.clipboard.writeText(command.value);
+        if (navigator.clipboard && window.isSecureContext) {{
+          await navigator.clipboard.writeText(command.value);
+        }} else {{
+          command.focus();
+          command.select();
+          const copied = document.execCommand('copy');
+          if (!copied) {{
+            throw new Error('selection copy unavailable');
+          }}
+        }}
         status.textContent = 'Bootstrap command copied.';
       }} catch (error) {{
         command.focus();
         command.select();
         status.textContent =
-          'Copy was blocked. FuseKit selected the exact command for you.';
+          'Copy was blocked. Press Command+C; FuseKit selected the exact command.';
       }}
     }});
   </script>
