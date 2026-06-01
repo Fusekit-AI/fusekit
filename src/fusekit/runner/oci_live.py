@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import base64
 import configparser
+import http.client
 import json
+import logging
 import time
+import warnings
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, cast
@@ -69,6 +72,7 @@ class OciProvisioner:
     """Live OCI provisioner using the official OCI Python SDK."""
 
     def __init__(self, auth: OciAuth) -> None:
+        suppress_oci_http_debug_logging()
         try:
             import oci
         except ImportError as exc:  # pragma: no cover - exercised by install checks.
@@ -280,7 +284,10 @@ class OciProvisioner:
             destination="0.0.0.0/0",
             destination_type="CIDR_BLOCK",
         )
-        self.network.add_network_security_group_security_rules(nsg.id, [ssh_rule, egress_rule])
+        security_rules = self.oci.core.models.AddNetworkSecurityGroupSecurityRulesDetails(
+            security_rules=[ssh_rule, egress_rule],
+        )
+        self.network.add_network_security_group_security_rules(nsg.id, security_rules)
         return nsg
 
     def _create_subnet(
@@ -552,6 +559,26 @@ def _safe_oci_error(exc: Exception) -> str:
     if status or code:
         return " ".join(str(part) for part in (status, code) if part)
     return exc.__class__.__name__
+
+
+def suppress_oci_http_debug_logging() -> None:
+    """Prevent OCI SDK HTTP wire dumps from exposing delegated auth material."""
+
+    http.client.HTTPConnection.debuglevel = 0
+    for logger_name in (
+        "oci",
+        "oci.base_client",
+        "oci._vendor.urllib3",
+        "urllib3",
+        "urllib3.connectionpool",
+    ):
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
+    warnings.filterwarnings(
+        "ignore",
+        message=r"The 'strict' parameter is no longer needed on Python 3\+.*",
+        category=FutureWarning,
+        module=r"urllib3\.poolmanager",
+    )
 
 
 def latest_workspace_from_vault(vault: Vault) -> OciWorkspace:

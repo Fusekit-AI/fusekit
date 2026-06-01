@@ -69,6 +69,7 @@
 - [x] Whole-lane failure-mode tests: run-state detonation readiness/redaction, corrupt-state recovery, strict false-value parsing, OCI-ready/browser-missing state, provider-gate waits, token-backed API fallback, DNS pending-safe verification, detonation preflight blocking, interrupted Cloud Shell resume, control-room launch-contract rendering, and Vercel env repair are covered by local tests.
 - [x] Precision-alignment pass: remote artifact completeness now matches detonation preflight survivors, provider-check run-state readiness and the remote runner loop are driven by the redacted verification report instead of optimistic completion, durable gates render the same guided follow-me UI in static and live control rooms, and launch-contract cards now explain the exact next condition for each phase.
 - [x] Truth/user-surface alignment pass: local launches now write the same durable job, checkpoint, run-state, and optional control-room artifacts as OCI launches; `fusekit detonate` uses the split command module correctly; and live acceptance readiness checks the verification report plus rollback metadata directly instead of trusting receipt presence alone.
+- [x] Live OCI provisioning hardening: NSG security rules now use the OCI SDK request-details wrapper expected by the live API, and OCI HTTP debug/wire logging is suppressed before provisioning so delegated auth material cannot spill into terminals or run logs.
 
 ## Milestone 1: Repo Skeleton And CLI
 
@@ -217,7 +218,8 @@
 - [x] Forward provider/domain/live URL/inference launch intent through the OCI Cloud Shell bootstrap into the clean-room worker.
 - [x] Allow Cloud Shell and OCI VM bootstrap to install a selected FuseKit package/repo instead of silently defaulting to PyPI.
 - [x] Support OCI Cloud Shell delegation-token config loading for SDK calls.
-- [ ] Add local doubles for OCI API tests plus one documented supervised real OCI acceptance run.
+- [x] Add local doubles for OCI API tests.
+- [ ] Add one documented supervised real OCI acceptance run.
 
 ## Milestone 12: Super-Magic Launch UX
 

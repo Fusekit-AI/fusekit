@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import json
 import shlex
 import subprocess
@@ -7,6 +8,7 @@ import tarfile
 import threading
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from typing import Any, cast
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -36,6 +38,7 @@ from fusekit.runner.oci_live import (
     OciWorkspace,
     _load_oci_config_file,
     latest_workspace_from_vault,
+    suppress_oci_http_debug_logging,
 )
 from fusekit.runner.remote import (
     _extract_artifacts,
@@ -814,6 +817,73 @@ def test_oci_provision_cleans_partial_workspace_when_readiness_fails() -> None:
     assert provisioner.deleted is not None
     assert provisioner.deleted.resource_ids["instance"] == "ocid1.instance.example"
     assert provisioner.deleted.resource_ids["compartment"] == "ocid1.compartment.example"
+
+
+def test_oci_create_nsg_wraps_security_rules_for_sdk_request() -> None:
+    class Details:
+        def __init__(self, **kwargs: object) -> None:
+            self.__dict__.update(kwargs)
+
+    class Created:
+        def __init__(self, resource_id: str) -> None:
+            self.id = resource_id
+
+    class Response:
+        def __init__(self, data: object) -> None:
+            self.data = data
+
+    class FakeModels:
+        CreateNetworkSecurityGroupDetails = Details
+        AddSecurityRuleDetails = Details
+        TcpOptions = Details
+        PortRange = Details
+        AddNetworkSecurityGroupSecurityRulesDetails = Details
+
+    class FakeOci:
+        class core:
+            models = FakeModels
+
+    class FakeNetwork:
+        def __init__(self) -> None:
+            self.added: tuple[str, object] | None = None
+
+        def create_network_security_group(self, details: object) -> Response:
+            assert cast(Any, details).display_name == "fusekit-test-nsg"
+            return Response(Created("ocid1.nsg.example"))
+
+        def add_network_security_group_security_rules(self, nsg_id: str, details: object) -> None:
+            self.added = (nsg_id, details)
+
+    provisioner = object.__new__(OciProvisioner)
+    provisioner.oci = FakeOci()
+    provisioner.network = FakeNetwork()
+
+    nsg = provisioner._create_nsg(
+        "ocid1.compartment.example",
+        "ocid1.vcn.example",
+        "fusekit-test",
+        {"fusekit": "true"},
+    )
+
+    assert nsg.id == "ocid1.nsg.example"
+    assert provisioner.network.added is not None
+    nsg_id, details = provisioner.network.added
+    assert nsg_id == "ocid1.nsg.example"
+    assert not isinstance(details, list)
+    assert len(details.security_rules) == 2
+    assert details.security_rules[0].direction == "INGRESS"
+    assert details.security_rules[1].direction == "EGRESS"
+
+
+def test_oci_debug_logging_is_suppressed() -> None:
+    original_level = http.client.HTTPConnection.debuglevel
+    try:
+        http.client.HTTPConnection.debuglevel = 1
+        suppress_oci_http_debug_logging()
+
+        assert http.client.HTTPConnection.debuglevel == 0
+    finally:
+        http.client.HTTPConnection.debuglevel = original_level
 
 
 def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_path) -> None:
