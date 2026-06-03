@@ -30,7 +30,7 @@ from fusekit.detonation.preflight import (
     run_detonation_preflight,
     verification_report_allows_detonation,
 )
-from fusekit.errors import ApprovalRequired, FuseKitError
+from fusekit.errors import ApprovalRequired, FuseKitError, ProviderError
 from fusekit.harness import run_acceptance
 from fusekit.llm import LlmConfig, authorize_openclaw_llm, capture_llm_config
 from fusekit.manifest import ServiceRequirement, SetupManifest, load_manifest, write_manifest
@@ -1259,11 +1259,7 @@ def _apply_loaded_manifest(args: argparse.Namespace, manifest: SetupManifest) ->
         _run_manifest_provider_pack_setup(args, manifest, context)
 
         if args.live_url:
-            result = verify_live_url(args.live_url)
-            receipt.live_url = args.live_url
-            verification_report.add_live_url(result)
-            audit.record("verify.live_url", result)
-            receipt.add_action("verify.live_url", "ok" if result["ok"] else "failed", result)
+            _verify_apply_live_url(args, audit, receipt, verification_report)
 
         _verify_provider_packs(args, manifest, vault, audit, receipt, verification_report)
         provider_checks_safe = verification_report_allows_detonation(
@@ -1288,6 +1284,35 @@ def _apply_loaded_manifest(args: argparse.Namespace, manifest: SetupManifest) ->
     print(f"Apply finished. Redacted receipt: {args.receipt_json}")
     print(f"Verification report: {args.verification_report}")
     print(f"Encrypted vault: {args.vault}")
+
+
+def _verify_apply_live_url(
+    args: argparse.Namespace,
+    audit: AuditLog,
+    receipt: Receipt,
+    verification_report: VerificationReport,
+) -> None:
+    url = str(args.live_url)
+    try:
+        result = verify_live_url(url)
+    except ProviderError as exc:
+        if not bool(getattr(args, "allow_incomplete", False)):
+            raise
+        result = {
+            "url": url,
+            "ok": False,
+            "status": "pending",
+            "pending_safe": True,
+            "error": str(exc),
+        }
+    receipt.live_url = url
+    verification_report.add_live_url(result)
+    audit.record("verify.live_url", result)
+    receipt.add_action(
+        "verify.live_url",
+        "ok" if result["ok"] else "pending" if result.get("pending_safe") else "failed",
+        result,
+    )
 
 
 def _attach_local_survivor_artifacts(args: argparse.Namespace, job: JobState) -> None:

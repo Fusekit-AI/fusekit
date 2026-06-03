@@ -9,9 +9,11 @@ from fusekit.cli import (
     _attempt_provider_api_fallback,
     _playwright_headless,
     _repair_navigation_completed,
+    _verify_apply_live_url,
     main,
 )
-from fusekit.errors import FuseKitError
+from fusekit.detonation.preflight import verification_report_allows_detonation
+from fusekit.errors import FuseKitError, ProviderError
 from fusekit.manifest import ServiceRequirement, SetupManifest, write_manifest
 from fusekit.providers.capability_pack import (
     VerificationRecipe,
@@ -21,6 +23,7 @@ from fusekit.providers.capability_pack import (
 from fusekit.runner.oci_live import OciWorkspace
 from fusekit.spine.playbooks import BrowserPlaybookEvent
 from fusekit.vault import Vault
+from fusekit.verification_report import VerificationReport
 
 
 def test_install_writes_one_click_entrypoint(tmp_path) -> None:
@@ -1381,6 +1384,45 @@ def test_remote_verification_path_must_be_passed_or_pending_safe(tmp_path) -> No
         encoding="utf-8",
     )
     assert _verification_report_path_allows_detonation(report) is True
+
+
+def test_allow_incomplete_live_url_failure_is_pending_safe(monkeypatch, tmp_path) -> None:
+    args = argparse.Namespace(live_url="https://moonlite.rsvp", allow_incomplete=True)
+    audit = AuditLog(tmp_path / "audit.jsonl")
+    receipt = Receipt(app_name="app", vault_path="vault.json")
+    report = VerificationReport(app_name="app", live_url=args.live_url)
+
+    def fail_live_url(url: str) -> dict[str, object]:
+        raise ProviderError(f"Live URL verification failed: {url}")
+
+    monkeypatch.setattr("fusekit.cli.verify_live_url", fail_live_url)
+
+    _verify_apply_live_url(args, audit, receipt, report)
+
+    payload = report.to_dict()
+    assert payload["checks"][0]["status"] == "pending"
+    assert payload["checks"][0]["details"]["pending_safe"] is True
+    assert verification_report_allows_detonation(payload) is True
+    assert receipt.actions[0]["status"] == "pending"
+
+
+def test_strict_live_url_failure_still_fails(monkeypatch, tmp_path) -> None:
+    args = argparse.Namespace(live_url="https://moonlite.rsvp", allow_incomplete=False)
+    audit = AuditLog(tmp_path / "audit.jsonl")
+    receipt = Receipt(app_name="app", vault_path="vault.json")
+    report = VerificationReport(app_name="app", live_url=args.live_url)
+
+    def fail_live_url(url: str) -> dict[str, object]:
+        raise ProviderError(f"Live URL verification failed: {url}")
+
+    monkeypatch.setattr("fusekit.cli.verify_live_url", fail_live_url)
+
+    try:
+        _verify_apply_live_url(args, audit, receipt, report)
+    except ProviderError:
+        pass
+    else:
+        raise AssertionError("strict live URL verification should fail")
 
 
 def test_launch_detonates_oci_workspace_after_remote_failure(tmp_path, monkeypatch) -> None:

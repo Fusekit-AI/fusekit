@@ -51,7 +51,8 @@ class VerificationReport:
         """Add a live URL health check."""
 
         ok = bool(result.get("ok"))
-        status = "passed" if ok else "failed"
+        pending_safe = bool(result.get("pending_safe"))
+        status = "passed" if ok else "pending" if pending_safe else "failed"
         self.checks.append(
             VerificationCheck(
                 provider="live_app",
@@ -59,12 +60,16 @@ class VerificationReport:
                 status=status,
                 summary=(
                     "The deployed app answered successfully."
-                    if ok
+                    if status == "passed"
+                    else "The live URL has not become reachable yet."
+                    if status == "pending"
                     else "The deployed app did not answer successfully yet."
                 ),
                 repair=(
                     "Nothing needed."
-                    if ok
+                    if status == "passed"
+                    else "Wait for DNS/deployment propagation, then retry the live URL check."
+                    if status == "pending"
                     else (
                         "FuseKit should retry health checks, inspect deployment logs, "
                         "and redeploy after provider repair."
