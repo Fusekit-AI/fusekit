@@ -335,6 +335,11 @@ def test_control_room_renders_job_without_secrets(tmp_path) -> None:
     assert "Live refresh paused. Reopen or restart the control-room server." in html
     assert "Snapshot view. Serve the control room for live updates." in html
     assert "setRefreshStatus" in html
+    assert "function copyText(text)" in html
+    assert "document.createElement(\"textarea\")" in html
+    assert "document.execCommand(\"copy\")" in html
+    assert "function renderVisual(job)" in html
+    assert "data-visual-session" in html
     assert "fk-test" in html
     assert payload["id"] == "fk-test"
 
@@ -630,6 +635,13 @@ def test_control_room_payload_and_html_include_visual_session(tmp_path) -> None:
     assert "Live VM browser" in html
     assert "viewer-password" in html
     assert 'class="visual-frame"' in html
+    assert (
+        'sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock allow-modals"'
+        in html
+    )
+    assert 'aria-label="noVNC password"' in html
+    assert 'data-copy-label="password"' in html
+    assert "Copy browser link" in html
     assert "http://203.0.113.10:6080/vnc.html?autoconnect=1" in html
 
 

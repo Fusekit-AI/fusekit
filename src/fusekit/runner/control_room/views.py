@@ -47,7 +47,7 @@ def render_control_room(job: JobState, *, gate_path: Path | None = None) -> str:
       {_render_progress(job, control_payload)}
       {_render_focus(job, control_payload)}
     </section>
-    {_render_visual_session(control_payload.get("visual", {}))}
+    <div data-visual-session>{_render_visual_session(control_payload.get("visual", {}))}</div>
     {_render_recovery(job)}
     {_render_run_state(control_payload.get("run_state", {}))}
     {_render_trust(control_payload.get("verification", {}))}
@@ -190,7 +190,9 @@ def _render_artifacts(job: JobState) -> str:
               <strong>{html.escape(name)}</strong>
               <code>{html.escape(path)}</code>
             </div>
-            <button type="button" data-copy="{html.escape(path)}">Copy path</button>
+            <button type="button" data-copy="{html.escape(path)}" data-copy-label="path">
+              Copy path
+            </button>
           </li>
 """
         for name, path in sorted(job.artifacts.items())
@@ -241,7 +243,22 @@ def _render_visual_session(visual: Any) -> str:
     password = str(visual.get("novnc_password", ""))
     status = str(visual.get("status", "ready") or "ready")
     password_row = (
-        f"<code>{html.escape(password)}</code>"
+        f"""
+            <div class="visual-secret-row">
+              <input
+                value="{html.escape(password)}"
+                readonly
+                aria-label="noVNC password"
+              />
+              <button
+                type="button"
+                data-copy="{html.escape(password)}"
+                data-copy-label="password"
+              >
+                Copy
+              </button>
+            </div>
+        """
         if password
         else "<span>Stored only on the active VM</span>"
     )
@@ -265,8 +282,10 @@ def _render_visual_session(visual: Any) -> str:
           class="visual-frame"
           src="{html.escape(novnc_url)}"
           title="FuseKit VM browser"
+          tabindex="0"
           referrerpolicy="no-referrer"
           allow="clipboard-read; clipboard-write"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock allow-modals"
         ></iframe>
         <aside class="visual-help">
           <strong>Interactive remote browser</strong>
@@ -278,10 +297,19 @@ def _render_visual_session(visual: Any) -> str:
             <span>noVNC password</span>
             {password_row}
           </div>
-          <a href="{html.escape(novnc_url)}" target="_blank" rel="noreferrer">
-            Open browser surface
-          </a>
-          {control_link}
+          <div class="visual-actions">
+            <a href="{html.escape(novnc_url)}" target="_blank" rel="noreferrer">
+              Open browser surface
+            </a>
+            <button
+              type="button"
+              data-copy="{html.escape(novnc_url)}"
+              data-copy-label="browser link"
+            >
+              Copy browser link
+            </button>
+            {control_link}
+          </div>
         </aside>
       </div>
     </section>

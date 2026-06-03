@@ -335,10 +335,88 @@ function renderArtifacts(job) {
           <strong>${escapeHtml(name)}</strong>
           <code>${escapeHtml(path)}</code>
         </div>
-        <button type="button" data-copy="${escapeAttr(path)}">Copy path</button>
+        <button type="button" data-copy="${escapeAttr(path)}" data-copy-label="path">
+          Copy path
+        </button>
       </li>
     `)
     .join("");
+}
+
+function renderVisual(job) {
+  const root = document.querySelector("[data-visual-session]");
+  if (!root) return;
+  const visual = job.visual || {};
+  if (!visual.novnc_url) {
+    root.innerHTML = "";
+    return;
+  }
+  const novncUrl = String(visual.novnc_url || "");
+  const controlRoomUrl = String(visual.control_room_url || "");
+  const status = String(visual.status || "ready");
+  const password = String(visual.novnc_password || "");
+  const passwordRow = password
+    ? `
+        <div class="visual-secret-row">
+          <input value="${escapeAttr(password)}" readonly aria-label="noVNC password" />
+          <button type="button" data-copy="${escapeAttr(password)}" data-copy-label="password">
+            Copy
+          </button>
+        </div>
+      `
+    : "<span>Stored only on the active VM</span>";
+  const controlLink = controlRoomUrl
+    ? [
+        `<a href="${escapeAttr(controlRoomUrl)}" target="_blank" rel="noreferrer">`,
+        "Open live control room</a>",
+      ].join("")
+    : "";
+  root.innerHTML = `
+    <section class="visual-panel" aria-label="Live VM browser">
+      <div class="section-head compact">
+        <div>
+          <span class="section-kicker">Live VM browser</span>
+          <h2>Human gates happen here</h2>
+        </div>
+        <span class="live-pill">Visual session: ${escapeHtml(status)}</span>
+      </div>
+      <div class="visual-grid">
+        <iframe
+          class="visual-frame"
+          src="${escapeAttr(novncUrl)}"
+          title="FuseKit VM browser"
+          tabindex="0"
+          referrerpolicy="no-referrer"
+          allow="clipboard-read; clipboard-write"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock allow-modals"
+        ></iframe>
+        <aside class="visual-help">
+          <strong>Interactive remote browser</strong>
+          <p>
+            This is the disposable VM display. Use it to click, type, and pass
+            provider gates while FuseKit keeps observing the same session.
+          </p>
+          <div class="visual-secret">
+            <span>noVNC password</span>
+            ${passwordRow}
+          </div>
+          <div class="visual-actions">
+            <a href="${escapeAttr(novncUrl)}" target="_blank" rel="noreferrer">
+              Open browser surface
+            </a>
+            <button
+              type="button"
+              data-copy="${escapeAttr(novncUrl)}"
+              data-copy-label="browser link"
+            >
+              Copy browser link
+            </button>
+            ${controlLink}
+          </div>
+        </aside>
+      </div>
+    </section>
+  `;
 }
 
 function visibleCheckpoints(job) {
@@ -568,8 +646,38 @@ function render(job) {
   renderCheckpoints(job);
   renderRunState(job);
   renderTrust(job);
+  renderVisual(job);
   renderSteps(job);
   renderArtifacts(job);
+}
+
+async function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fall through to the selection-based copy path for public HTTP VM URLs.
+    }
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.inset = "0 auto auto 0";
+  textarea.style.width = "1px";
+  textarea.style.height = "1px";
+  textarea.style.opacity = "0";
+  document.body.append(textarea);
+  textarea.focus();
+  textarea.select();
+  try {
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+  }
 }
 
 document.addEventListener("click", async (event) => {
@@ -600,15 +708,26 @@ document.addEventListener("click", async (event) => {
   }
   const button = event.target.closest("[data-copy]");
   if (!button) return;
+  const copyLabel = button.dataset.copyLabel || "value";
+  const originalText = button.textContent;
   try {
-    await navigator.clipboard.writeText(button.dataset.copy);
+    const copied = await copyText(button.dataset.copy || "");
+    if (!copied) throw new Error("copy blocked");
     button.textContent = "Copied";
     setTimeout(() => {
-      button.textContent = "Copy path";
+      button.textContent = originalText;
     }, 1200);
   } catch {
     button.textContent = "Copy blocked";
-    setRefreshStatus("Copy was blocked by the browser. FuseKit left the path visible.", "stale");
+    const nearbyInput = button.parentElement?.querySelector("input");
+    if (nearbyInput) {
+      nearbyInput.focus();
+      nearbyInput.select();
+    }
+    setRefreshStatus(
+      `Copy was blocked by the browser. FuseKit left the ${copyLabel} visible.`,
+      "stale",
+    );
   }
 });
 

@@ -1105,6 +1105,7 @@ button {
 
 .visual-help a {
   display: inline-flex;
+  align-items: center;
   justify-content: center;
   width: 100%;
   border: 1px solid var(--snow-navy);
@@ -1114,6 +1115,21 @@ button {
   color: white;
   font-weight: 850;
   text-decoration: none;
+}
+
+.visual-actions {
+  display: grid;
+  gap: 9px;
+}
+
+.visual-actions button {
+  min-height: 40px;
+  border: 1px solid rgba(0, 21, 42, 0.24);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--snow-navy);
+  font-weight: 850;
 }
 
 .visual-secret {
@@ -1133,6 +1149,33 @@ button {
   display: block;
   width: 100%;
   overflow-wrap: anywhere;
+}
+
+.visual-secret-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.visual-secret-row input {
+  min-width: 0;
+  border: 1px solid rgba(0, 21, 42, 0.16);
+  border-radius: 6px;
+  padding: 10px 11px;
+  background: #ffffff;
+  color: var(--snow-navy);
+  font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.visual-secret-row button {
+  min-width: 74px;
+  border: 1px solid var(--snow-navy);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: var(--snow-navy);
+  color: #ffffff;
+  font-weight: 850;
 }
 
 .trust-grid,
@@ -1455,6 +1498,10 @@ button {
 
   .visual-frame {
     min-height: 300px;
+  }
+
+  .visual-secret-row {
+    grid-template-columns: 1fr;
   }
 
   h1 {
