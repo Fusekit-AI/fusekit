@@ -104,6 +104,29 @@ def test_github_pack_setup_reuses_existing_deploy_key_on_resume(monkeypatch, tmp
     assert reused[0]["reused"] is True
 
 
+def test_github_pack_setup_reports_browser_strategy_when_token_missing(tmp_path) -> None:
+    vault = Vault.empty()
+    context = ProviderSetupContext(
+        manifest=SetupManifest(app_name="app"),
+        vault=vault,
+        audit=AuditLog(tmp_path / "audit.jsonl"),
+        receipt=Receipt(app_name="app"),
+        secrets={},
+        provider_names={"github"},
+        inputs={"github_repo": "owner/repo"},
+        allow_incomplete=True,
+    )
+    pack = synthesize_provider_pack("github", tmp_path)
+
+    result = run_provider_pack_setup(pack, context)
+
+    deploy_key = next(item for item in result["setup"] if item["kind"] == "github-deploy-key")
+    assert deploy_key["status"] == "needs_human_gate"
+    assert deploy_key["strategy"] == "browser_guided"
+    assert deploy_key["strategy_decision"]["selected"]["kind"] == "browser_guided"
+    assert "login/MFA/CAPTCHA/consent" in deploy_key["next_action"]
+
+
 def test_vercel_pack_connects_project_and_deploys_from_github_repo(
     monkeypatch,
     tmp_path,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from shutil import which
 from typing import Any
 
 from fusekit.audit import AuditLog, Receipt
@@ -16,6 +17,11 @@ from fusekit.providers.capability_pack import ProviderCapabilityPack, SetupRecip
 from fusekit.providers.cloudflare import CloudflareDnsProvider
 from fusekit.providers.github import GitHubProvider
 from fusekit.providers.secret_routing import select_app_env_secrets
+from fusekit.providers.strategy import (
+    StrategySignal,
+    choose_provider_strategy,
+    summarize_strategy_action,
+)
 from fusekit.providers.vercel import VercelProvider
 from fusekit.vault import Vault
 
@@ -34,6 +40,7 @@ class ProviderSetupContext:
     approve_dns: bool = False
     allow_incomplete: bool = False
     fusekit_gates: str = "service-only"
+    available_cli_tools: set[str] = field(default_factory=set)
 
 
 SetupHandler = Callable[[SetupRecipe, ProviderSetupContext], dict[str, Any]]
@@ -51,6 +58,16 @@ def run_provider_pack_setup(
         if recipe.when and not context.inputs.get(recipe.when):
             results.append({"kind": recipe.kind, "status": "skipped", "reason": recipe.when})
             continue
+        decision = choose_provider_strategy(pack, recipe, _strategy_signal(pack, context))
+        strategy_payload = decision.to_dict()
+        if not decision.executable:
+            action = summarize_strategy_action(decision)
+            action.update({"kind": recipe.kind, "strategy_decision": strategy_payload})
+            if not context.allow_incomplete and action["status"] != "needs_human_gate":
+                raise FuseKitError(str(action["reason"]))
+            results.append(action)
+            continue
+        result: dict[str, Any]
         try:
             handler = handlers.get(recipe.kind)
             if handler is None:
@@ -64,6 +81,7 @@ def run_provider_pack_setup(
             if not context.allow_incomplete:
                 raise
             result = {"kind": recipe.kind, "status": "skipped", "reason": "incomplete"}
+        result["strategy_decision"] = strategy_payload
         results.append(result)
     return {"provider": pack.provider, "setup": results}
 
@@ -323,6 +341,50 @@ def _provider_token(vault: Vault, provider: str, env_name: str) -> str:
         except FuseKitError:
             continue
     raise FuseKitError(f"Provider token is required for {provider}: {env_name}")
+
+
+def _provider_token_available(vault: Vault, provider: str, env_name: str) -> bool:
+    import os
+
+    if os.environ.get(env_name):
+        return True
+    for record_id in (
+        f"provider.{provider}.token",
+        f"provider.{provider}.{env_name.lower()}",
+        env_name,
+    ):
+        try:
+            vault.require(record_id)
+            return True
+        except FuseKitError:
+            continue
+    return False
+
+
+def _strategy_signal(pack: ProviderCapabilityPack, context: ProviderSetupContext) -> StrategySignal:
+    env_names = {
+        "github": "GITHUB_TOKEN",
+        "vercel": "VERCEL_TOKEN",
+        "cloudflare": "CLOUDFLARE_API_TOKEN",
+        "dns": "CLOUDFLARE_API_TOKEN",
+        "resend": "RESEND_API_KEY",
+        "plaid": "PLAID_SECRET",
+    }
+    provider = pack.provider.lower()
+    env_name = env_names.get(provider, pack.handoff.token_env)
+    cli_tools = context.available_cli_tools or _discover_cli_tools()
+    return StrategySignal(
+        token_available=_provider_token_available(context.vault, provider, env_name),
+        cli_tools=frozenset(cli_tools),
+        browser_available=True,
+        human_gate_allowed=context.fusekit_gates in {"service-only", "explicit"},
+        approve_dns=context.approve_dns,
+    )
+
+
+def _discover_cli_tools() -> set[str]:
+    candidates = {"gh", "vercel", "wrangler"}
+    return {tool for tool in candidates if which(tool)}
 
 
 def ensure_webhook_secrets(manifest: SetupManifest, context: ProviderSetupContext) -> None:

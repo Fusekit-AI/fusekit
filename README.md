@@ -128,6 +128,11 @@ Verification is pack-driven and broad by design. Supported executable recipe kin
 
 Setup is pack-driven too. Bundled GitHub, Vercel, and Cloudflare behavior is now represented as provider-pack setup recipes and executed by the capability recipe runtime. The low-level Python provider modules remain as reusable primitives for API details such as GitHub secret encryption, Vercel env writes, and Cloudflare DNS mutation; the product flow no longer depends on provider-specific CLI branches for those providers.
 
+Provider setup also records a strategy decision for each recipe: provider API,
+official CLI, guided browser, human follow-me, or local vault capture. The
+north-star plan is documented in
+[`docs/northstar-provider-strategy.md`](docs/northstar-provider-strategy.md).
+
 Example Plaid path:
 
 ```zsh
