@@ -154,10 +154,16 @@ def build_cloud_shell_bootstrap_command(
                         "${pip_target_flag:+$pip_target_flag} --upgrade pip setuptools wheel"
                     ),
                     (
+                        "fusekit_install_flags=\"--upgrade\"\n"
+                        "if [ \"${fusekit_package#git+}\" != \"$fusekit_package\" ]; then\n"
+                        "  fusekit_install_flags=\"--upgrade --force-reinstall --no-cache-dir\"\n"
+                        "fi\n"
                         "retry \"$python_cmd\" -m pip install "
-                        "${pip_target_flag:+$pip_target_flag} --upgrade \"$fusekit_package\""
+                        "${pip_target_flag:+$pip_target_flag} "
+                        "$fusekit_install_flags \"$fusekit_package\""
                     ),
                     "fusekit --version",
+                    "rm -rf \"$HOME/.fusekit-runtime/openclaw\"",
                     f"app_source={source}",
                     "printf '%s\\n' 'Enter a vault passphrase for FuseKit.'",
                     "stty -echo",

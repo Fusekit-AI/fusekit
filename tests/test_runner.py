@@ -224,10 +224,12 @@ def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
     assert "pip_target_flag=" in plan.bootstrap_command
     assert "export PATH=\"$work/python/bin:$PATH\"" in plan.bootstrap_command
     assert "export FUSEKIT_OPENCLAW_HOME_MODE=default" in plan.bootstrap_command
-    assert "retry \"$python_cmd\" -m pip install ${pip_target_flag:+$pip_target_flag}" in (
+    assert "fusekit_install_flags=\"--upgrade --force-reinstall --no-cache-dir\"" in (
         plan.bootstrap_command
     )
+    assert "$fusekit_install_flags \"$fusekit_package\"" in plan.bootstrap_command
     assert "fusekit --version" in plan.bootstrap_command
+    assert "rm -rf \"$HOME/.fusekit-runtime/openclaw\"" in plan.bootstrap_command
     assert "Git is required in OCI Cloud Shell for git+ FuseKit packages" in plan.bootstrap_command
     assert "fusekit source fetch" in plan.bootstrap_command
     assert "--github-auth auto" in plan.bootstrap_command
