@@ -1165,6 +1165,24 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         for command in calls
         if command[0] == "ssh"
     )
+    assert any(
+        "FUSEKIT_OPENCLAW_HOME_MODE=default" in command[-1]
+        and "unset OPENCLAW_HOME" in command[-1]
+        for command in calls
+        if command[0] == "ssh"
+    )
+    assert any(
+        "openclaw config set browser.executablePath" in command[-1]
+        and "openclaw gateway run --allow-unconfigured --auth none --bind loopback --port 19002"
+        in command[-1]
+        for command in calls
+        if command[0] == "ssh"
+    )
+    assert not any(
+        "openclaw gateway run" in command[-1] and "--bind 0.0.0.0" in command[-1]
+        for command in calls
+        if command[0] == "ssh"
+    )
     assert (tmp_path / "out" / ".fusekit" / "gates.json").exists()
     assert (tmp_path / "out" / ".fusekit" / "checkpoints.json").exists()
     assert (tmp_path / "out" / ".fusekit" / "fusekit.vault.json").exists()
