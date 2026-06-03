@@ -174,7 +174,6 @@ def build_cloud_shell_bootstrap_command(
                         "  fusekit source fetch \"$app_source\" --dest \"$work/app\" "
                         "--vault \"$vaultfile\" --passphrase-file \"$passfile\" "
                         "--github-auth auto --handoff --open-browser --capture-stdin "
-                        "--spine openclaw --infer-ui "
                         "--gate-retry-seconds 300 --gate-max-attempts 0"
                         f"{source_fetch_suffix}"
                     ),
@@ -193,7 +192,7 @@ def build_cloud_shell_bootstrap_command(
                         "  fusekit launch \"$work/app\" "
                         f"--runner {runner_arg} "
                         f"--fusekit-gates {gates_arg} "
-                        "--control-room "
+                        "--control-room --no-bootstrap "
                         "--vault \"$vaultfile\" "
                         f"--passphrase-file \"$passfile\"{launch_suffix}"
                     ),
@@ -202,7 +201,7 @@ def build_cloud_shell_bootstrap_command(
                         "  printf '%s\\n' "
                         "'fusekit launch $HOME/fusekit-cloud-shell/app "
                         f"--runner {runner_arg} --fusekit-gates {gates_arg} "
-                        "--control-room --vault "
+                        "--control-room --no-bootstrap --vault "
                         "$HOME/fusekit-cloud-shell/fusekit.vault.json --passphrase-file "
                         f"$HOME/fusekit-cloud-shell/passphrase{launch_suffix}'"
                     ),

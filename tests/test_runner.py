@@ -232,6 +232,12 @@ def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
     assert "fusekit source fetch" in plan.bootstrap_command
     assert "--github-auth auto" in plan.bootstrap_command
     assert "--capture-stdin" in plan.bootstrap_command
+    source_fetch_line = next(
+        line for line in plan.bootstrap_command.splitlines() if "fusekit source fetch" in line
+    )
+    assert "--spine openclaw" not in source_fetch_line
+    assert "--infer-ui" not in source_fetch_line
+    assert "--no-bootstrap" in plan.bootstrap_command
     assert "--infer-ui" in plan.bootstrap_command
     assert "--vault \"$vaultfile\"" in plan.bootstrap_command
     assert "https://github.com/example/app.git" in plan.bootstrap_command
