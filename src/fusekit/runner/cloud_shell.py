@@ -113,7 +113,7 @@ def build_cloud_shell_bootstrap_command(
                         "python_cmd=\n"
                         "for candidate in python3.12 python3.11 python3.10 python3 python; do\n"
                         "  if command -v \"$candidate\" >/dev/null 2>&1 && "
-                        "\"$candidate\" - <<'PY'\n"
+                        "\"$candidate\" - 2>/dev/null <<'PY'\n"
                         "import sys\n"
                         "raise SystemExit(0 if sys.version_info >= (3, 10) else 1)\n"
                         "PY\n"

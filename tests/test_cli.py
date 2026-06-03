@@ -123,6 +123,7 @@ def test_launcher_derives_no_code_live_context_and_snowman_surface(tmp_path) -> 
     assert "--infer-ui" in text
     assert "--capture-stdin" in text
     assert "--visual-runner novnc" in text
+    assert "&quot;$candidate&quot; - 2&gt;/dev/null" in text
     payload_text = text.split('<script type="application/json" id="payload">', 1)[1].split(
         "</script>",
         1,
