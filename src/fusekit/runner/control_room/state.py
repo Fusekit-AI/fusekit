@@ -17,6 +17,7 @@ def control_room_payload(job: JobState, *, gate_path: Path | None = None) -> dic
     payload = job.to_dict()
     payload["verification"] = _read_verification_report(_verification_report_path(job, gate_path))
     payload["run_state"] = _read_run_state(_run_state_path(job, gate_path))
+    payload["visual"] = _read_visual_state(_visual_state_path(job, gate_path))
     if gate_path is None:
         payload.setdefault("gates", [])
         return payload
@@ -91,3 +92,24 @@ def _read_run_state(path: Path | None) -> dict[str, Any]:
         state = LaunchRunState()
         state.notes = ("Run state could not be read; FuseKit will rebuild it from checkpoints.",)
         return state.to_dict()
+
+
+def _visual_state_path(job: JobState, gate_path: Path | None) -> Path | None:
+    artifact = job.artifacts.get("visual_session", "")
+    if artifact:
+        return Path(artifact)
+    if gate_path is not None:
+        return gate_path.parent / "visual.json"
+    return None
+
+
+def _read_visual_state(path: Path | None) -> dict[str, Any]:
+    if path is None or not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"status": "unavailable", "error": "Visual session state could not be read."}
+    if not isinstance(raw, dict):
+        return {"status": "unavailable", "error": "Visual session state was not a JSON object."}
+    return raw

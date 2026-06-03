@@ -122,6 +122,7 @@ def test_launcher_derives_no_code_live_context_and_snowman_surface(tmp_path) -> 
     assert "--gate-max-attempts 0" in text
     assert "--infer-ui" in text
     assert "--capture-stdin" in text
+    assert "--visual-runner novnc" in text
 
 
 def test_cli_scan_validate_plan_unlock_request(tmp_path, capsys) -> None:

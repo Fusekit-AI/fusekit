@@ -25,7 +25,7 @@ from fusekit.runner.oci import (
     OciRunnerPlan,
     is_arm_shape,
 )
-from fusekit.runner.remote import render_cloud_init
+from fusekit.runner.remote import CONTROL_ROOM_PORT, NOVNC_PORT, render_cloud_init
 from fusekit.runtime.bootstrap import OPENCLAW_INSTALL_URL
 from fusekit.vault import Vault
 
@@ -311,15 +311,9 @@ class OciProvisioner:
             freeform_tags=tags,
         )
         nsg = self.network.create_network_security_group(details).data
-        ssh_rule = self.oci.core.models.AddSecurityRuleDetails(
-            direction="INGRESS",
-            protocol="6",
-            source="0.0.0.0/0",
-            source_type="CIDR_BLOCK",
-            tcp_options=self.oci.core.models.TcpOptions(
-                destination_port_range=self.oci.core.models.PortRange(min=22, max=22)
-            ),
-        )
+        ssh_rule = self._tcp_ingress_rule(22)
+        control_room_rule = self._tcp_ingress_rule(CONTROL_ROOM_PORT)
+        novnc_rule = self._tcp_ingress_rule(NOVNC_PORT)
         egress_rule = self.oci.core.models.AddSecurityRuleDetails(
             direction="EGRESS",
             protocol="all",
@@ -327,10 +321,21 @@ class OciProvisioner:
             destination_type="CIDR_BLOCK",
         )
         security_rules = self.oci.core.models.AddNetworkSecurityGroupSecurityRulesDetails(
-            security_rules=[ssh_rule, egress_rule],
+            security_rules=[ssh_rule, control_room_rule, novnc_rule, egress_rule],
         )
         self.network.add_network_security_group_security_rules(nsg.id, security_rules)
         return nsg
+
+    def _tcp_ingress_rule(self, port: int) -> Any:
+        return self.oci.core.models.AddSecurityRuleDetails(
+            direction="INGRESS",
+            protocol="6",
+            source="0.0.0.0/0",
+            source_type="CIDR_BLOCK",
+            tcp_options=self.oci.core.models.TcpOptions(
+                destination_port_range=self.oci.core.models.PortRange(min=port, max=port)
+            ),
+        )
 
     def _create_subnet(
         self,

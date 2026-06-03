@@ -1056,6 +1056,85 @@ button {
   box-shadow: 0 22px 52px rgba(0, 21, 42, 0.08);
 }
 
+.visual-panel {
+  margin: 24px 0;
+  padding: 24px;
+  border: 2px solid rgba(0, 21, 42, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.visual-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.visual-frame {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  min-height: 420px;
+  border: 2px solid var(--snow-navy);
+  border-radius: 6px;
+  background: #06101f;
+}
+
+.visual-help {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+  justify-content: flex-start;
+  padding: 18px;
+  border: 1px solid rgba(0, 21, 42, 0.14);
+  border-radius: 8px;
+  background: rgba(238, 248, 255, 0.82);
+}
+
+.visual-help strong {
+  color: var(--snow-navy);
+  font-size: 18px;
+}
+
+.visual-help p {
+  color: #31465c;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.visual-help a {
+  display: inline-flex;
+  justify-content: center;
+  width: 100%;
+  border: 1px solid var(--snow-navy);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: var(--snow-navy);
+  color: white;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.visual-secret {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.visual-secret span {
+  color: var(--snow-muted);
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.visual-secret code {
+  display: block;
+  width: 100%;
+  overflow-wrap: anywhere;
+}
+
 .trust-grid,
 .run-state-grid {
   display: grid;
@@ -1334,7 +1413,8 @@ button {
   .workspace,
   .checkpoint-grid,
   .trust-grid,
-  .run-state-grid {
+  .run-state-grid,
+  .visual-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1366,10 +1446,15 @@ button {
   .artifact-panel,
   .recovery-panel,
   .trust-panel,
-  .run-state-panel {
+  .run-state-panel,
+  .visual-panel {
     width: 100%;
     max-width: 100%;
     margin-bottom: 18px;
+  }
+
+  .visual-frame {
+    min-height: 300px;
   }
 
   h1 {

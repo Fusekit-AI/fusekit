@@ -405,6 +405,7 @@ def _parser() -> argparse.ArgumentParser:
         default="openclaw",
     )
     launcher.add_argument("--openclaw-profile", default="openclaw")
+    _visual_session_args(launcher)
     _llm_args(launcher)
     launcher.add_argument("--open-browser", action="store_true")
     launcher.set_defaults(handler=_cmd_launcher)
@@ -460,6 +461,7 @@ def _parser() -> argparse.ArgumentParser:
     runner_exec.add_argument("path", type=Path)
     _vault_args(runner_exec)
     _runner_oci_args(runner_exec)
+    _visual_session_args(runner_exec)
     runner_exec.set_defaults(handler=_cmd_runner_exec)
     runner_receipt = runner_sub.add_parser("receipt", help="show runner job status")
     runner_receipt.add_argument("--job-state", type=Path, default=Path(".fusekit/job.json"))
@@ -521,6 +523,15 @@ def _computer_use_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--repair-ui-steps", type=int, default=12)
 
 
+def _visual_session_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--visual-runner",
+        choices=("auto", "off", "novnc"),
+        default="auto",
+        help="remote browser viewing surface; auto enables noVNC for OCI control-room launches",
+    )
+
+
 def _verify_retry_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--verify-attempts", type=int, default=1)
     parser.add_argument("--verify-retry-seconds", type=float, default=0.0)
@@ -541,6 +552,7 @@ def _launch_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--job-state", type=Path, default=Path(".fusekit/job.json"))
     parser.add_argument("--control-room", action="store_true")
     parser.add_argument("--no-open-launcher", action="store_true")
+    _visual_session_args(parser)
     _runner_oci_args(parser)
     parser.add_argument("--capture-stdin", action="store_true")
     _computer_use_args(parser)
@@ -1035,6 +1047,9 @@ def _cloud_shell_launcher_launch_args(args: argparse.Namespace) -> tuple[str, ..
     for flag in ("capture_stdin", "infer_ui", "capture_llm_key", "llm_openclaw_device_code"):
         if bool(getattr(args, flag, False)):
             forwarded.append("--" + flag.replace("_", "-"))
+    visual_runner = _resolved_cloud_shell_visual_runner(args)
+    if visual_runner:
+        forwarded.extend(["--visual-runner", visual_runner])
     return tuple(forwarded)
 
 
@@ -2150,6 +2165,9 @@ def _remote_launch_args(args: argparse.Namespace) -> tuple[str, ...]:
             forwarded.extend([flag, str(value)])
     for item in getattr(args, "secret", []):
         forwarded.extend(["--secret", str(item)])
+    visual_runner = _resolved_remote_visual_runner(args)
+    if visual_runner:
+        forwarded.extend(["--visual-runner", visual_runner])
     for flag in (
         "approve_dns",
         "allow_incomplete",
@@ -2164,6 +2182,23 @@ def _remote_launch_args(args: argparse.Namespace) -> tuple[str, ...]:
         if bool(getattr(args, flag, False)):
             forwarded.append("--" + flag.replace("_", "-"))
     return tuple(forwarded)
+
+
+def _resolved_cloud_shell_visual_runner(args: argparse.Namespace) -> str:
+    visual_runner = str(getattr(args, "visual_runner", "auto") or "auto")
+    if visual_runner == "auto":
+        return "novnc"
+    return visual_runner
+
+
+def _resolved_remote_visual_runner(args: argparse.Namespace) -> str:
+    visual_runner = str(getattr(args, "visual_runner", "auto") or "auto")
+    if visual_runner != "auto":
+        return visual_runner
+    runner = str(getattr(args, "runner", "") or "")
+    if runner in {"oci-free", "oci-existing"} and bool(getattr(args, "control_room", False)):
+        return "novnc"
+    return ""
 
 
 def _drop_forwarded_option(

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import secrets
 import shutil
 import subprocess
 import tarfile
@@ -10,6 +12,7 @@ import time
 from pathlib import Path
 from shlex import quote
 from typing import TYPE_CHECKING, Protocol
+from urllib.parse import urlencode
 
 from fusekit.errors import FuseKitError
 from fusekit.vault import Vault
@@ -34,6 +37,10 @@ EXCLUDED_APP_PATHS = (
     ".ruff_cache",
     ".mypy_cache",
 )
+
+CONTROL_ROOM_PORT = 8765
+NOVNC_PORT = 6080
+VISUAL_DISPLAY = ":99"
 
 
 class CommandRunner(Protocol):
@@ -159,6 +166,55 @@ write_files:
       export OPENCLAW_HOME=/var/lib/fusekit-runner/openclaw-state
       export PLAYWRIGHT_BROWSERS_PATH={playwright_browsers_path}
       {runner_loop}
+  - path: /usr/local/sbin/fusekit-visual-start
+    permissions: '0755'
+    content: |
+      #!/bin/sh
+      set -eu
+      display="${{FUSEKIT_VISUAL_DISPLAY:-{VISUAL_DISPLAY}}}"
+      width="${{FUSEKIT_VISUAL_WIDTH:-1440}}"
+      height="${{FUSEKIT_VISUAL_HEIGHT:-900}}"
+      state_dir="/var/lib/fusekit-runner/visual"
+      password_file="$state_dir/vnc.pass"
+      password_text_file="$state_dir/vnc.password"
+      mkdir -p "$state_dir"
+      chmod 700 "$state_dir"
+      if [ -n "${{FUSEKIT_VISUAL_PASSWORD:-}}" ]; then
+        printf '%s\n' "$FUSEKIT_VISUAL_PASSWORD" > "$password_text_file"
+      elif [ ! -s "$password_text_file" ]; then
+        python3 -c 'import secrets; print(secrets.token_urlsafe(18))' > "$password_text_file"
+      fi
+      chmod 600 "$password_text_file"
+      if [ ! -s "$password_file" ]; then
+        x11vnc -storepasswd "$(cat "$password_text_file")" "$password_file" >/dev/null
+        chmod 600 "$password_file"
+      fi
+      if ! pgrep -f "Xvfb $display" >/dev/null 2>&1; then
+        nohup Xvfb "$display" -screen 0 "${{width}}x${{height}}x24" -nolisten tcp \
+          > "$state_dir/xvfb.log" 2>&1 &
+      fi
+      export DISPLAY="$display"
+      if command -v fluxbox >/dev/null 2>&1 && ! pgrep -f "fluxbox" >/dev/null 2>&1; then
+        nohup fluxbox > "$state_dir/window-manager.log" 2>&1 &
+      fi
+      if ! pgrep -f "x11vnc.*5900" >/dev/null 2>&1; then
+        nohup x11vnc -display "$display" -localhost -forever -shared -rfbport 5900 \
+          -rfbauth "$password_file" -noxdamage -repeat -quiet \
+          > "$state_dir/x11vnc.log" 2>&1 &
+      fi
+      novnc_web="/usr/share/novnc"
+      if ! pgrep -f "websockify.*{NOVNC_PORT}" >/dev/null 2>&1; then
+        if command -v websockify >/dev/null 2>&1; then
+          nohup websockify --web "$novnc_web" 0.0.0.0:{NOVNC_PORT} localhost:5900 \
+            > "$state_dir/novnc.log" 2>&1 &
+        elif [ -x /usr/share/novnc/utils/novnc_proxy ]; then
+          nohup /usr/share/novnc/utils/novnc_proxy --listen {NOVNC_PORT} --vnc localhost:5900 \
+            > "$state_dir/novnc.log" 2>&1 &
+        else
+          printf '%s\n' "websockify/noVNC is not installed" > "$state_dir/error"
+          exit 1
+        fi
+      fi
 runcmd:
   - mkdir -p /var/lib/fusekit-runner
   - mkdir -p {playwright_browsers_path}
@@ -166,6 +222,13 @@ runcmd:
   - fusekit-retry /opt/fusekit-python/bin/python -m pip install --upgrade pip setuptools wheel
   - fusekit-retry {install_fusekit}
   - fusekit-retry {install_playwright}
+  - |
+    if command -v apt-get >/dev/null 2>&1; then
+      DEBIAN_FRONTEND=noninteractive apt-get update
+      DEBIAN_FRONTEND=noninteractive apt-get install -y xvfb fluxbox x11vnc novnc websockify
+    elif command -v dnf >/dev/null 2>&1; then
+      dnf install -y xorg-x11-server-Xvfb fluxbox x11vnc novnc python3-websockify || true
+    fi
   - ln -sf /opt/fusekit-python/bin/fusekit /usr/local/bin/fusekit
   - ln -sf /opt/fusekit-python/bin/fusekit-runner-loop /usr/local/bin/fusekit-runner-loop
   - mkdir -p /opt/fusekit-openclaw
@@ -247,6 +310,10 @@ def execute_remote_setup(
                 f"{remote}:/var/lib/fusekit-runner/app/.fusekit/fusekit.vault.json",
             ],
         )
+        visual = _remote_visual_session(workspace, launch_args)
+        if visual is not None:
+            _prepare_remote_visual_session(run, ssh, remote, visual)
+        display_export = f"export DISPLAY={quote(VISUAL_DISPLAY)}; " if visual is not None else ""
         launch = (
             "umask 077; "
             "export PATH=/opt/fusekit-python/bin:/opt/fusekit-openclaw/bin:$PATH; "
@@ -254,6 +321,7 @@ def execute_remote_setup(
             "export FUSEKIT_OPENCLAW_BIN=/opt/fusekit-openclaw/bin/openclaw; "
             "export OPENCLAW_HOME=/var/lib/fusekit-runner/openclaw-state; "
             "export PLAYWRIGHT_BROWSERS_PATH=/opt/fusekit-playwright-browsers; "
+            f"{display_export}"
             "trap 'rm -f /var/lib/fusekit-runner/passphrase' EXIT; "
             "cat > /var/lib/fusekit-runner/passphrase; "
             "cd /var/lib/fusekit-runner/app; "
@@ -269,7 +337,7 @@ def execute_remote_setup(
             "set -- .fusekit/fusekit.vault.json .fusekit/audit.jsonl "
             ".fusekit/setup_receipt.json .fusekit/setup_receipt.md .fusekit/job.json "
             ".fusekit/checkpoints.json .fusekit/verification_report.json "
-            ".fusekit/rollback_plan.json .fusekit/gates.json; "
+            ".fusekit/rollback_plan.json .fusekit/gates.json .fusekit/visual.json; "
             "existing=''; "
             "for path in \"$@\"; do [ -f \"$path\" ] && existing=\"$existing $path\"; done; "
             "[ -n \"$existing\" ] || exit 44; "
@@ -282,6 +350,8 @@ def execute_remote_setup(
         "artifact_archive": str(artifacts),
         "output_dir": str(local_output_dir),
         "artifact_status": completeness,
+        **({"control_room_url": visual["control_room_url"]} if visual is not None else {}),
+        **({"novnc_url": visual["novnc_url"]} if visual is not None else {}),
     }
 
 
@@ -312,6 +382,105 @@ def detonate_remote_worker(
 
 def _quote_args(args: tuple[str, ...]) -> str:
     return " ".join(quote(arg) for arg in args)
+
+
+def _remote_visual_session(
+    workspace: OciWorkspace,
+    launch_args: tuple[str, ...],
+) -> dict[str, str] | None:
+    mode = _launch_arg_value(launch_args, "--visual-runner")
+    if mode in {"", "off"}:
+        return None
+    if mode == "auto":
+        mode = "novnc"
+    if mode != "novnc":
+        return None
+    public_ip = str(getattr(workspace, "public_ip", "") or "")
+    if not public_ip:
+        return None
+    control_token = secrets.token_urlsafe(24)
+    visual_password = secrets.token_urlsafe(18)
+    novnc_params = urlencode(
+        {
+            "autoconnect": "1",
+            "resize": "scale",
+            "password": visual_password,
+        }
+    )
+    return {
+        "mode": "novnc",
+        "display": VISUAL_DISPLAY,
+        "control_room_token": control_token,
+        "control_room_url": f"http://{public_ip}:{CONTROL_ROOM_PORT}/?token={control_token}",
+        "novnc_url": f"http://{public_ip}:{NOVNC_PORT}/vnc.html?{novnc_params}",
+        "novnc_password": visual_password,
+    }
+
+
+def _launch_arg_value(args: tuple[str, ...], flag: str) -> str:
+    try:
+        index = args.index(flag)
+    except ValueError:
+        return ""
+    if index + 1 >= len(args):
+        return ""
+    return args[index + 1]
+
+
+def _prepare_remote_visual_session(
+    runner: CommandRunner,
+    ssh: list[str],
+    remote: str,
+    visual: dict[str, str],
+) -> None:
+    visual_payload = {
+        "runner": "novnc",
+        "status": "starting",
+        "interactive": True,
+        "display": visual["display"],
+        "control_room_url": visual["control_room_url"],
+        "novnc_url": visual["novnc_url"],
+        "novnc_password": visual["novnc_password"],
+        "notes": [
+            "The browser is running on the disposable OCI VM.",
+            "Use the noVNC window to complete human gates in the same session FuseKit observes.",
+        ],
+    }
+    placeholder_job = {
+        "id": "remote-visual-session",
+        "app_path": "/var/lib/fusekit-runner/app",
+        "runner": "oci-remote",
+        "status": "running",
+        "steps": [
+            {
+                "id": "remote.bootstrap",
+                "label": "Bootstrap FuseKit and visual browser session",
+                "status": "running",
+                "detail": "FuseKit is starting the VM-owned browser surface.",
+            }
+        ],
+        "checkpoints": [],
+        "artifacts": {"visual_session": "/var/lib/fusekit-runner/app/.fusekit/visual.json"},
+    }
+    command = (
+        "umask 077; "
+        "mkdir -p /var/lib/fusekit-runner/app/.fusekit /var/lib/fusekit-runner; "
+        f"printf %s {quote(json.dumps(visual_payload, sort_keys=True))} "
+        "> /var/lib/fusekit-runner/app/.fusekit/visual.json; "
+        "[ -f /var/lib/fusekit-runner/app/.fusekit/job.json ] || "
+        f"printf %s {quote(json.dumps(placeholder_job, sort_keys=True))} "
+        "> /var/lib/fusekit-runner/app/.fusekit/job.json; "
+        f"export FUSEKIT_VISUAL_PASSWORD={quote(visual['novnc_password'])}; "
+        f"export FUSEKIT_VISUAL_DISPLAY={quote(visual['display'])}; "
+        "fusekit-visual-start; "
+        f"export FUSEKIT_CONTROL_ROOM_TOKEN={quote(visual['control_room_token'])}; "
+        "export FUSEKIT_ALLOW_REMOTE_CONTROL_ROOM=1; "
+        "nohup fusekit control-room --serve "
+        "--job-state /var/lib/fusekit-runner/app/.fusekit/job.json "
+        f"--host 0.0.0.0 --port {CONTROL_ROOM_PORT} "
+        "> /var/lib/fusekit-runner/control-room.log 2>&1 &"
+    )
+    _run_checked(runner, [*ssh, remote, command])
 
 
 def _create_app_archive(app_path: Path, archive: Path) -> None:

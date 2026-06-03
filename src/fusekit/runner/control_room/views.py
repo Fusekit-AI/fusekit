@@ -47,6 +47,7 @@ def render_control_room(job: JobState, *, gate_path: Path | None = None) -> str:
       {_render_progress(job, control_payload)}
       {_render_focus(job, control_payload)}
     </section>
+    {_render_visual_session(control_payload.get("visual", {}))}
     {_render_recovery(job)}
     {_render_run_state(control_payload.get("run_state", {}))}
     {_render_trust(control_payload.get("verification", {}))}
@@ -228,6 +229,61 @@ def _render_recovery(job: JobState) -> str:
         <span class="live-pill">Plain-language resume hints</span>
       </div>
       <div class="checkpoint-grid" data-checkpoints>{cards}</div>
+    </section>
+"""
+
+
+def _render_visual_session(visual: Any) -> str:
+    if not isinstance(visual, dict) or not visual.get("novnc_url"):
+        return ""
+    novnc_url = str(visual.get("novnc_url", ""))
+    control_room_url = str(visual.get("control_room_url", ""))
+    password = str(visual.get("novnc_password", ""))
+    status = str(visual.get("status", "ready") or "ready")
+    password_row = (
+        f"<code>{html.escape(password)}</code>"
+        if password
+        else "<span>Stored only on the active VM</span>"
+    )
+    control_link = (
+        f'<a href="{html.escape(control_room_url)}" target="_blank" rel="noreferrer">'
+        "Open live control room</a>"
+        if control_room_url
+        else ""
+    )
+    return f"""
+    <section class="visual-panel" aria-label="Live VM browser">
+      <div class="section-head compact">
+        <div>
+          <span class="section-kicker">Live VM browser</span>
+          <h2>Human gates happen here</h2>
+        </div>
+        <span class="live-pill">Visual session: {html.escape(status)}</span>
+      </div>
+      <div class="visual-grid">
+        <iframe
+          class="visual-frame"
+          src="{html.escape(novnc_url)}"
+          title="FuseKit VM browser"
+          referrerpolicy="no-referrer"
+          allow="clipboard-read; clipboard-write"
+        ></iframe>
+        <aside class="visual-help">
+          <strong>Interactive remote browser</strong>
+          <p>
+            This is the disposable VM display. Use it to click, type, and pass
+            provider gates while FuseKit keeps observing the same session.
+          </p>
+          <div class="visual-secret">
+            <span>noVNC password</span>
+            {password_row}
+          </div>
+          <a href="{html.escape(novnc_url)}" target="_blank" rel="noreferrer">
+            Open browser surface
+          </a>
+          {control_link}
+        </aside>
+      </div>
     </section>
 """
 

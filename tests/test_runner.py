@@ -603,6 +603,34 @@ def test_control_room_payload_reports_corrupt_gate_state(tmp_path) -> None:
     assert "Gate state could not be read" in str(payload["gate_state_error"])
 
 
+def test_control_room_payload_and_html_include_visual_session(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    (tmp_path / "visual.json").write_text(
+        json.dumps(
+            {
+                "runner": "novnc",
+                "status": "ready",
+                "interactive": True,
+                "novnc_url": "http://203.0.113.10:6080/vnc.html?autoconnect=1",
+                "control_room_url": "http://203.0.113.10:8765/?token=test",
+                "novnc_password": "viewer-password",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = control_room_payload(job_path)
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+
+    assert payload["visual"]["runner"] == "novnc"
+    assert "Live VM browser" in html
+    assert "viewer-password" in html
+    assert 'class="visual-frame"' in html
+    assert "http://203.0.113.10:6080/vnc.html?autoconnect=1" in html
+
+
 def test_control_room_server_uses_local_only_and_security_headers(tmp_path) -> None:
     assert _is_loopback("127.0.0.1")
     assert _is_loopback("localhost")
@@ -626,6 +654,37 @@ def test_control_room_server_uses_local_only_and_security_headers(tmp_path) -> N
     assert headers["x-content-type-options"] == "nosniff"
     assert headers["x-frame-options"] == "DENY"
     assert "frame-ancestors 'none'" in headers["content-security-policy"]
+
+
+def test_control_room_server_requires_remote_token(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FUSEKIT_CONTROL_ROOM_TOKEN", "token-123")
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_port}"
+        with pytest.raises(HTTPError):
+            urlopen(f"{base}/", timeout=5)
+        with urlopen(f"{base}/?token=token-123", timeout=5) as response:
+            cookie = response.headers["set-cookie"]
+            html = response.read().decode("utf-8")
+        request = Request(f"{base}/api/job", headers={"Cookie": cookie})
+        with urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert "FuseKit Control Room" in html
+    assert "fusekit_control_room=token-123" in cookie
+    assert payload["id"] == "fk-test"
 
 
 def test_remote_bootstrap_artifacts_are_self_contained() -> None:
@@ -652,6 +711,10 @@ def test_remote_bootstrap_artifacts_are_self_contained() -> None:
     ) in cloud_init
     assert "chromium-browser" not in cloud_init
     assert "sync_playwright" in cloud_init
+    assert "xvfb fluxbox x11vnc novnc websockify" in cloud_init
+    assert "fusekit-visual-start" in cloud_init
+    assert "websockify --web \"$novnc_web\" 0.0.0.0:6080 localhost:5900" in cloud_init
+    assert "x11vnc -display \"$display\" -localhost" in cloud_init
     assert "openclaw browser status --json" not in cloud_init
     assert (
         "fusekit-retry env OPENCLAW_HOME=/var/lib/fusekit-runner/openclaw-state "
@@ -928,9 +991,14 @@ def test_oci_create_nsg_wraps_security_rules_for_sdk_request() -> None:
     nsg_id, details = provisioner.network.added
     assert nsg_id == "ocid1.nsg.example"
     assert not isinstance(details, list)
-    assert len(details.security_rules) == 2
+    assert len(details.security_rules) == 4
     assert details.security_rules[0].direction == "INGRESS"
-    assert details.security_rules[1].direction == "EGRESS"
+    assert details.security_rules[0].tcp_options.destination_port_range.min == 22
+    assert details.security_rules[1].direction == "INGRESS"
+    assert details.security_rules[1].tcp_options.destination_port_range.min == 8765
+    assert details.security_rules[2].direction == "INGRESS"
+    assert details.security_rules[2].tcp_options.destination_port_range.min == 6080
+    assert details.security_rules[3].direction == "EGRESS"
 
 
 def test_oci_debug_logging_is_suppressed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1025,12 +1093,14 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         app_path=app,
         local_output_dir=tmp_path / "out",
         passphrase="secret-passphrase",
-        launch_args=("--github-repo", "owner/repo", "--infer-ui"),
+        launch_args=("--github-repo", "owner/repo", "--infer-ui", "--visual-runner", "novnc"),
         runner=runner,
     )
 
     assert result["output_dir"] == str(tmp_path / "out")
     assert result["artifact_status"] == "complete"
+    assert result["control_room_url"].startswith("http://203.0.113.10:8765/?token=")
+    assert result["novnc_url"].startswith("http://203.0.113.10:6080/vnc.html?")
     assert any(command[0] == "scp" for command in calls)
     assert any("ubuntu@203.0.113.10" in command for command in calls)
     assert not any("opc@203.0.113.10" in command for command in calls)
@@ -1052,7 +1122,13 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         for command in calls
     )
     assert any("fusekit launch . --runner local --yes" in command[-1] for command in calls)
-    assert any("--github-repo owner/repo --infer-ui" in command[-1] for command in calls)
+    assert any(
+        "--github-repo owner/repo --infer-ui --visual-runner novnc" in command[-1]
+        for command in calls
+    )
+    assert any("fusekit-visual-start" in command[-1] for command in calls)
+    assert any("fusekit control-room --serve" in command[-1] for command in calls)
+    assert any("export DISPLAY=:99" in command[-1] for command in calls)
     assert any(
         "trap 'rm -f /var/lib/fusekit-runner/passphrase' EXIT" in command[-1]
         for command in calls
