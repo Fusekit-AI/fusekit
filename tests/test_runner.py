@@ -1121,7 +1121,20 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         for option in command
     )
     assert any(
-        "cloud-init status --wait && /usr/local/sbin/fusekit-runner-verify" in command[-1]
+        "cloud-init status --wait && cloud_status=$(cloud-init status --long 2>&1)"
+        in command[-1]
+        for command in calls
+        if command[0] == "ssh"
+    )
+    assert any(
+        "fusekit-runner-verify missing; cloud-init bootstrap did not install runner helpers."
+        in command[-1]
+        for command in calls
+        if command[0] == "ssh"
+    )
+    assert any(
+        "[ ! -x /usr/local/sbin/fusekit-runner-verify ]" in command[-1]
+        and "/usr/local/sbin/fusekit-runner-verify" in command[-1]
         for command in calls
         if command[0] == "ssh"
     )

@@ -607,7 +607,15 @@ def _wait_for_remote_ready(
                 [
                     *ssh,
                     remote,
-                    "cloud-init status --wait && /usr/local/sbin/fusekit-runner-verify",
+                    "cloud-init status --wait && "
+                    "cloud_status=$(cloud-init status --long 2>&1) && "
+                    "if printf '%s\\n' \"$cloud_status\" | "
+                    "grep -Eqi 'status:.*degraded|extended_status:.*degraded|status:.*error'; "
+                    "then printf '%s\\n' \"$cloud_status\" >&2; exit 42; fi && "
+                    "if [ ! -x /usr/local/sbin/fusekit-runner-verify ]; then "
+                    "printf '%s\\n' 'fusekit-runner-verify missing; "
+                    "cloud-init bootstrap did not install runner helpers.' >&2; exit 127; fi && "
+                    "/usr/local/sbin/fusekit-runner-verify",
                 ],
             )
             return
