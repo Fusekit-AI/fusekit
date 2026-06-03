@@ -110,10 +110,18 @@ def build_cloud_shell_bootstrap_command(
                     "rm -rf \"$work\"",
                     "mkdir -p \"$work\"",
                     (
-                        "if command -v python3 >/dev/null 2>&1; then python_cmd=python3; "
-                        "elif command -v python >/dev/null 2>&1; then python_cmd=python; "
-                        "else printf '%s\\n' 'Python is required in OCI Cloud Shell.' >&2; "
-                        "exit 43; fi"
+                        "python_cmd=\n"
+                        "for candidate in python3.12 python3.11 python3.10 python3 python; do\n"
+                        "  if command -v \"$candidate\" >/dev/null 2>&1 && "
+                        "\"$candidate\" - <<'PY'\n"
+                        "import sys\n"
+                        "raise SystemExit(0 if sys.version_info >= (3, 10) else 1)\n"
+                        "PY\n"
+                        "  then\n"
+                        "    python_cmd=\"$candidate\"\n"
+                        "    break\n"
+                        "  fi\n"
+                        "done"
                     ),
                     "pip_target_flag=--user",
                     f"fusekit_package={package}",
@@ -123,21 +131,18 @@ def build_cloud_shell_bootstrap_command(
                         "printf '%s\\n' 'Git is required in OCI Cloud Shell for git+ "
                         "FuseKit packages.' >&2; exit 43; fi"
                     ),
-                    "\"$python_cmd\" -m ensurepip --upgrade >/dev/null 2>&1 || true",
-                    "retry \"$python_cmd\" -m pip install --user --upgrade pip setuptools wheel",
                     (
-                        "if ! \"$python_cmd\" - <<'PY'\n"
-                        "import sys\n"
-                        "raise SystemExit(0 if sys.version_info >= (3, 10) else 1)\n"
-                        "PY\n"
-                        "then\n"
-                        "  printf '%s\\n' "
-                        "'Python 3.10+ was not the default. Installing an isolated "
-                        "Python 3.12 runtime with uv.'\n"
-                        "  retry \"$python_cmd\" -m pip install --user --upgrade uv\n"
+                        "if [ -z \"$python_cmd\" ]; then\n"
+                        "  printf '%s\\n' 'Python 3.10+ was not available. "
+                        "Installing an isolated Python 3.12 runtime with uv.'\n"
+                        "  if ! command -v curl >/dev/null 2>&1; then "
+                        "printf '%s\\n' 'curl is required to install Python in OCI "
+                        "Cloud Shell.' >&2; exit 43; fi\n"
+                        "  rm -f \"$HOME/.local/bin/uv\"\n"
+                        "  retry sh -c 'curl -LsSf https://astral.sh/uv/install.sh | sh'\n"
                         "  export PATH=\"$HOME/.local/bin:$PATH\"\n"
-                        "  retry uv python install 3.12\n"
-                        "  retry uv venv --python 3.12 \"$work/python\"\n"
+                        "  retry \"$HOME/.local/bin/uv\" python install 3.12\n"
+                        "  retry \"$HOME/.local/bin/uv\" venv --python 3.12 \"$work/python\"\n"
                         "  python_cmd=\"$work/python/bin/python\"\n"
                         "  export PATH=\"$work/python/bin:$PATH\"\n"
                         "  pip_target_flag=\n"

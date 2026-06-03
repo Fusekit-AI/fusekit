@@ -212,15 +212,21 @@ def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
     assert plan.deeplink_url == "https://cloud.oracle.com/?cloudshell=true"
     assert "command=" not in plan.deeplink_url
     assert "fusekit launch" in plan.bootstrap_command
-    assert "python_cmd=python3" in plan.bootstrap_command
+    assert "for candidate in python3.12 python3.11 python3.10 python3 python" in (
+        plan.bootstrap_command
+    )
     assert "sys.version_info >= (3, 10)" in plan.bootstrap_command
-    assert "uv python install 3.12" in plan.bootstrap_command
-    assert "uv venv --python 3.12" in plan.bootstrap_command
+    assert "curl -LsSf https://astral.sh/uv/install.sh | sh" in plan.bootstrap_command
+    assert "pip install --user --upgrade uv" not in plan.bootstrap_command
+    assert "\"$HOME/.local/bin/uv\" python install 3.12" in plan.bootstrap_command
+    assert "\"$HOME/.local/bin/uv\" venv --python 3.12" in plan.bootstrap_command
     assert "pip_target_flag=--user" in plan.bootstrap_command
     assert "pip_target_flag=" in plan.bootstrap_command
     assert "export PATH=\"$work/python/bin:$PATH\"" in plan.bootstrap_command
     assert "export FUSEKIT_OPENCLAW_HOME_MODE=default" in plan.bootstrap_command
-    assert "retry \"$python_cmd\" -m pip install --user --upgrade" in plan.bootstrap_command
+    assert "retry \"$python_cmd\" -m pip install ${pip_target_flag:+$pip_target_flag}" in (
+        plan.bootstrap_command
+    )
     assert "fusekit --version" in plan.bootstrap_command
     assert "Git is required in OCI Cloud Shell for git+ FuseKit packages" in plan.bootstrap_command
     assert "fusekit source fetch" in plan.bootstrap_command
