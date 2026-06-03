@@ -46,6 +46,7 @@ class PlaywrightBrowserSpine:
             self._context = self._playwright.chromium.launch_persistent_context(
                 user_data_dir=str(profile),
                 headless=self.headless,
+                args=self._launch_args(),
             )
             self._context.set_default_timeout(self.timeout_ms)
             self._page = self._context.pages[0] if self._context.pages else self._context.new_page()
@@ -56,6 +57,13 @@ class PlaywrightBrowserSpine:
                 "or use the OCI Cloud Shell/VM lane so FuseKit installs it remotely."
             ) from exc
         return SpineResult("start", ("playwright", "chromium", "launch"), "ok")
+
+    def _launch_args(self) -> list[str]:
+        """Return Chromium flags for the selected display mode."""
+
+        if self.headless:
+            return []
+        return ["--disable-gpu"]
 
     def open(self, url: str) -> SpineResult:
         """Open a URL."""

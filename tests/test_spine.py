@@ -220,6 +220,11 @@ def test_playwright_spine_dry_run_does_not_need_local_browser() -> None:
     assert spine.highlight("ref=1").status == "dry-run"
 
 
+def test_playwright_spine_disables_gpu_for_visible_xvfb_runs() -> None:
+    assert PlaywrightBrowserSpine(headless=False)._launch_args() == ["--disable-gpu"]
+    assert PlaywrightBrowserSpine(headless=True)._launch_args() == []
+
+
 def test_playwright_spine_snapshot_passes_selector_as_evaluate_argument() -> None:
     class FakePage:
         def evaluate(self, script: str, selector: str) -> dict[str, object]:
