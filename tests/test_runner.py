@@ -44,6 +44,7 @@ from fusekit.runner.oci_live import (
 )
 from fusekit.runner.remote import (
     _extract_artifacts,
+    detonate_remote_worker,
     execute_remote_setup,
     render_cloud_init,
     should_include_app_path,
@@ -730,6 +731,10 @@ def test_remote_bootstrap_artifacts_are_self_contained() -> None:
     ) in cloud_init
     assert "chown -R \"$runner_user:$runner_user\" /var/lib/fusekit-runner" in cloud_init
     assert "fusekit-runner-verify" in cloud_init
+    assert (
+        cloud_init.rindex("chown -R \"$runner_user:$runner_user\" /var/lib/fusekit-runner")
+        > cloud_init.rindex("OPENCLAW_HOME=/var/lib/fusekit-runner/openclaw-state")
+    )
     assert "/usr/local/sbin/fusekit-retry" in cloud_init
     assert "export PATH=/opt/fusekit-python/bin:/opt/fusekit-openclaw/bin:$PATH" in cloud_init
     assert "FUSEKIT_OPENCLAW_BIN=/opt/fusekit-openclaw/bin/openclaw" in cloud_init
@@ -1149,6 +1154,11 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         for command in calls
     )
     assert any("/usr/local/sbin/fusekit-visual-start" in command[-1] for command in calls)
+    assert any(
+        "curl -fsS http://127.0.0.1:6080/vnc.html" in command[-1]
+        and "exit 45" in command[-1]
+        for command in calls
+    )
     assert any("fusekit control-room --serve" in command[-1] for command in calls)
     assert any("export DISPLAY=:99" in command[-1] for command in calls)
     assert any(
@@ -1212,6 +1222,53 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         if command[0] == "ssh" and "tar -czf -" in command[-1]
     )
     assert any("[ -n \"$existing\" ] || exit 44" in command[-1] for command in calls)
+
+
+def test_remote_detonation_cleans_visual_and_control_processes() -> None:
+    vault = Vault.empty()
+    vault.put(
+        "runner.oci.fusekit-test.ssh.private",
+        "ssh_private_key",
+        "oci",
+        "runner key",
+        "PRIVATE KEY",
+    )
+    workspace = OciWorkspace(
+        id="fusekit-test",
+        compartment_id="tenancy",
+        availability_domain="AD-1",
+        shape="VM.Standard3.Flex",
+        ssh_user="ubuntu",
+        public_ip="203.0.113.10",
+    )
+    calls: list[list[str]] = []
+
+    def runner(
+        command: list[str],
+        *,
+        input_text: str | None = None,
+        stdout_path: Path | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        assert input_text is None
+        assert stdout_path is None
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    detonate_remote_worker(workspace=workspace, vault=vault, runner=runner)
+
+    assert len(calls) == 1
+    command = calls[0][-1]
+    assert "sudo -n sh -c" in command
+    assert "|| sh -c" in command
+    assert "[f]usekit control-room --serve" in command
+    assert "[o]penclaw gateway run.*19002" in command
+    assert "[c]hrome-linux.*/chrome" in command
+    assert "[w]ebsockify.*6080" in command
+    assert "[x]11vnc.*5900" in command
+    assert "[X]vfb :99" in command
+    assert "/var/lib/fusekit-runner/visual" in command
+    assert "/var/lib/fusekit-runner/control-room.log" in command
+    assert "/var/lib/fusekit-runner/openclaw-gateway.log" in command
 
 
 def test_remote_artifact_extraction_rejects_invalid_archive(tmp_path) -> None:

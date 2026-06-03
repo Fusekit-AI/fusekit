@@ -103,6 +103,15 @@ def render_cloud_init(*, fusekit_wheel_url: str = "", openclaw_install_url: str)
         "OPENCLAW_HOME=/var/lib/fusekit-runner/openclaw-state "
         "/usr/local/sbin/fusekit-runner-verify"
     )
+    chown_runner_state = (
+        "runner_user=; "
+        "if id ubuntu >/dev/null 2>&1; then runner_user=ubuntu; "
+        "elif id opc >/dev/null 2>&1; then runner_user=opc; fi; "
+        "if [ -n \"$runner_user\" ]; then "
+        "chown -R \"$runner_user:$runner_user\" "
+        f"/var/lib/fusekit-runner {playwright_browsers_path}; "
+        "fi"
+    )
     runner_loop = (
         "fusekit-runner-loop /var/lib/fusekit-runner/app "
         "--job-state /var/lib/fusekit-runner/app/.fusekit/job.json "
@@ -263,6 +272,7 @@ runcmd:
       chown -R "$runner_user:$runner_user" /var/lib/fusekit-runner {playwright_browsers_path}
     fi
   - {verify_openclaw}
+  - {chown_runner_state}
 """
 
 
@@ -397,12 +407,29 @@ def detonate_remote_worker(
         key_path.write_text(key, encoding="utf-8")
         key_path.chmod(0o600)
         remote = _workspace_remote(workspace)
-        command = (
+        cleanup_script = (
+            "pkill -f '[f]usekit control-room --serve' || true; "
+            "pkill -f '[o]penclaw gateway run.*19002' || true; "
+            "pkill -f '[c]hrome-linux.*/chrome' || true; "
+            "pkill -f '[w]ebsockify.*6080' || true; "
+            "pkill -f '[x]11vnc.*5900' || true; "
+            "pkill -f '[X]vfb :99' || true; "
+            "pkill -f '[f]luxbox' || true; "
             "rm -rf /var/lib/fusekit-runner/app "
             "/var/lib/fusekit-runner/tmp "
             "/var/lib/fusekit-runner/openclaw-state "
             "/var/lib/fusekit-runner/passphrase "
-            "/var/lib/fusekit-runner/app.tar.gz"
+            "/var/lib/fusekit-runner/app.tar.gz "
+            "/var/lib/fusekit-runner/visual "
+            "/var/lib/fusekit-runner/control-room.log "
+            "/var/lib/fusekit-runner/openclaw-gateway.log"
+        )
+        command = (
+            "sudo -n sh -c "
+            + quote(cleanup_script)
+            + " || "
+            "sh -c "
+            + quote(cleanup_script)
         )
         _run_checked(run, [*_ssh_base(key_path), remote, command])
 
@@ -499,6 +526,12 @@ def _prepare_remote_visual_session(
         f"export FUSEKIT_VISUAL_PASSWORD={quote(visual['novnc_password'])}; "
         f"export FUSEKIT_VISUAL_DISPLAY={quote(visual['display'])}; "
         "/usr/local/sbin/fusekit-visual-start; "
+        f"for i in $(seq 1 20); do "
+        f"if curl -fsS http://127.0.0.1:{NOVNC_PORT}/vnc.html >/dev/null 2>&1; "
+        "then break; fi; sleep 1; done; "
+        f"curl -fsS http://127.0.0.1:{NOVNC_PORT}/vnc.html >/dev/null || "
+        "(cat /var/lib/fusekit-runner/visual/*.log "
+        "/var/lib/fusekit-runner/visual/error 2>/dev/null >&2; exit 45); "
         f"export FUSEKIT_CONTROL_ROOM_TOKEN={quote(visual['control_room_token'])}; "
         "export FUSEKIT_ALLOW_REMOTE_CONTROL_ROOM=1; "
         "nohup fusekit control-room --serve "
@@ -632,12 +665,19 @@ def _wait_for_remote_ready(
                     remote,
                     "cloud-init status --wait && "
                     "cloud_status=$(cloud-init status --long 2>&1) && "
+                    "cloud_degraded=0 && "
                     "if printf '%s\\n' \"$cloud_status\" | "
                     "grep -Eqi 'status:.*degraded|extended_status:.*degraded|status:.*error'; "
-                    "then printf '%s\\n' \"$cloud_status\" >&2; exit 42; fi && "
+                    "then cloud_degraded=1; fi && "
                     "if [ ! -x /usr/local/sbin/fusekit-runner-verify ]; then "
+                    "if [ \"$cloud_degraded\" = 1 ]; then "
+                    "printf '%s\\n' \"$cloud_status\" >&2; fi; "
                     "printf '%s\\n' 'fusekit-runner-verify missing; "
                     "cloud-init bootstrap did not install runner helpers.' >&2; exit 127; fi && "
+                    "if [ \"$cloud_degraded\" = 1 ]; then "
+                    "printf '%s\\n' \"$cloud_status\" >&2; "
+                    "printf '%s\\n' 'cloud-init is degraded, but runner helpers exist; "
+                    "continuing only if runner verification passes.' >&2; fi && "
                     "/usr/local/sbin/fusekit-runner-verify",
                 ],
             )
