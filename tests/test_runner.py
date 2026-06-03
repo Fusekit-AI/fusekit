@@ -14,6 +14,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import pytest
+import yaml
 
 from fusekit.errors import FuseKitError
 from fusekit.rollback import execute_native_rollback, plan_rollback, start_over
@@ -694,7 +695,10 @@ def test_remote_bootstrap_artifacts_are_self_contained() -> None:
         openclaw_install_url="https://openclaw.ai/install-cli.sh",
     )
 
+    assert isinstance(yaml.safe_load(cloud_init), dict)
+    assert isinstance(yaml.safe_load(git_cloud_init), dict)
     assert "python3-venv" in cloud_init
+    assert "printf '%s\\n' \"$FUSEKIT_VISUAL_PASSWORD\"" in cloud_init
     assert (
         "/usr/local/sbin/fusekit-retry "
         "/opt/fusekit-python/bin/python -m pip install --upgrade fusekit"

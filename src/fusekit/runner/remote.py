@@ -183,7 +183,7 @@ write_files:
       mkdir -p "$state_dir"
       chmod 700 "$state_dir"
       if [ -n "${{FUSEKIT_VISUAL_PASSWORD:-}}" ]; then
-        printf '%s\n' "$FUSEKIT_VISUAL_PASSWORD" > "$password_text_file"
+        printf '%s\\n' "$FUSEKIT_VISUAL_PASSWORD" > "$password_text_file"
       elif [ ! -s "$password_text_file" ]; then
         python3 -c 'import secrets; print(secrets.token_urlsafe(18))' > "$password_text_file"
       fi
@@ -214,7 +214,7 @@ write_files:
           nohup /usr/share/novnc/utils/novnc_proxy --listen {NOVNC_PORT} --vnc localhost:5900 \
             > "$state_dir/novnc.log" 2>&1 &
         else
-          printf '%s\n' "websockify/noVNC is not installed" > "$state_dir/error"
+          printf '%s\\n' "websockify/noVNC is not installed" > "$state_dir/error"
           exit 1
         fi
       fi
