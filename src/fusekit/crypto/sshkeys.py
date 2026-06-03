@@ -6,7 +6,7 @@ import base64
 from dataclasses import dataclass
 
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ed25519
+from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 
 
 @dataclass(frozen=True)
@@ -38,4 +38,29 @@ def generate_ed25519_keypair(comment: str) -> SshKeyPair:
         public_key=public_key,
         private_key=private_bytes.decode("utf-8"),
         fingerprint=f"ed25519:{fingerprint}",
+    )
+
+
+def generate_rsa_keypair(comment: str, *, key_size: int = 4096) -> SshKeyPair:
+    """Generate an OpenSSH RSA key pair."""
+
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=key_size)
+    private_bytes = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.OpenSSH,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    public = private_key.public_key()
+    public_bytes = public.public_bytes(
+        encoding=serialization.Encoding.OpenSSH,
+        format=serialization.PublicFormat.OpenSSH,
+    )
+    public_key = f"{public_bytes.decode('utf-8')} {comment}"
+    fingerprint = base64.b64encode(public.public_numbers().n.to_bytes(key_size // 8, "big")).decode(
+        "ascii"
+    )[:16]
+    return SshKeyPair(
+        public_key=public_key,
+        private_key=private_bytes.decode("utf-8"),
+        fingerprint=f"rsa:{fingerprint}",
     )

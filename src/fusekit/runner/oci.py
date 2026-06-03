@@ -19,6 +19,8 @@ from fusekit.vault import Vault
 OCI_SIGNUP_URL = "https://signup.cloud.oracle.com/"
 OCI_CONSOLE_URL = "https://cloud.oracle.com/"
 OCI_API_KEYS_URL = "https://cloud.oracle.com/identity/domains/my-profile/api-keys"
+DEFAULT_X86_SHAPE = "VM.Standard.E2.1.Micro"
+ARM_SHAPE_FAMILIES = {"A1"}
 
 
 class CommandRunner(Protocol):
@@ -75,9 +77,13 @@ def build_oci_runner_plan(
 ) -> OciRunnerPlan:
     """Build the non-secret OCI runner plan."""
 
-    selected_shape = "VM.Standard.A1.Flex" if shape == "auto" else shape
-    ocpus = 2 if selected_shape == "VM.Standard.A1.Flex" else 1
-    memory = 12 if selected_shape == "VM.Standard.A1.Flex" else 1
+    selected_shape = DEFAULT_X86_SHAPE if shape == "auto" else shape
+    if is_arm_shape(selected_shape):
+        raise FuseKitError(
+            f"OCI runner shape {selected_shape} is ARM-based. FuseKit requires an x86_64 runner."
+        )
+    ocpus = 1
+    memory = 1
     return OciRunnerPlan(
         runner=runner,
         auth_mode=auth_mode,
@@ -86,7 +92,7 @@ def build_oci_runner_plan(
         shape=selected_shape,
         ocpus=ocpus,
         memory_gb=memory,
-        fallback_shapes=("VM.Standard.A1.Flex:1:6", "VM.Standard.E2.1.Micro:1:1"),
+        fallback_shapes=(f"{DEFAULT_X86_SHAPE}:1:1",),
         resources=(
             "compartment",
             "vcn",
@@ -109,6 +115,12 @@ def build_oci_runner_plan(
             openclaw_install_url=OPENCLAW_INSTALL_URL,
         ),
     )
+
+
+def is_arm_shape(shape: str) -> bool:
+    """Return true when an OCI shape is known to use Arm architecture."""
+
+    return any(part in ARM_SHAPE_FAMILIES for part in shape.split("."))
 
 
 def oci_runtime_status(config_file: Path | None = None) -> dict[str, object]:

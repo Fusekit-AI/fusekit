@@ -358,6 +358,10 @@ def _ssh_base(key_path: Path) -> list[str]:
         "ServerAliveInterval=15",
         "-o",
         "ServerAliveCountMax=4",
+        "-o",
+        "IdentitiesOnly=yes",
+        "-o",
+        "PubkeyAcceptedAlgorithms=+ssh-rsa",
         "-i",
         str(key_path),
     ]
@@ -374,6 +378,10 @@ def _scp_base(key_path: Path) -> list[str]:
         "ServerAliveInterval=15",
         "-o",
         "ServerAliveCountMax=4",
+        "-o",
+        "IdentitiesOnly=yes",
+        "-o",
+        "PubkeyAcceptedAlgorithms=+ssh-rsa",
         "-i",
         str(key_path),
     ]

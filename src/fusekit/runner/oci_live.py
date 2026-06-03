@@ -15,9 +15,9 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, cast
 
-from fusekit.crypto.sshkeys import generate_ed25519_keypair
+from fusekit.crypto.sshkeys import generate_rsa_keypair
 from fusekit.errors import FuseKitError
-from fusekit.runner.oci import OciRunnerPlan
+from fusekit.runner.oci import DEFAULT_X86_SHAPE, OciRunnerPlan, is_arm_shape
 from fusekit.runner.remote import render_cloud_init
 from fusekit.runtime.bootstrap import OPENCLAW_INSTALL_URL
 from fusekit.vault import Vault
@@ -90,7 +90,11 @@ class OciProvisioner:
         """Create a live OCI workspace."""
 
         run_id = f"fusekit-{int(time.time())}"
-        ssh_key = generate_ed25519_keypair(run_id)
+        if is_arm_shape(plan.shape):
+            raise FuseKitError(
+                f"OCI runner shape {plan.shape} is ARM-based. FuseKit requires an x86_64 runner."
+            )
+        ssh_key = generate_rsa_keypair(run_id)
         vault.put(
             f"runner.oci.{run_id}.ssh.private",
             "ssh_private_key",
@@ -367,7 +371,7 @@ class OciProvisioner:
         tags: dict[str, str],
     ) -> Any:
         shape_config = None
-        if plan.shape == "VM.Standard.A1.Flex":
+        if plan.shape.endswith(".Flex"):
             shape_config = self.oci.core.models.LaunchInstanceShapeConfigDetails(
                 ocpus=plan.ocpus,
                 memory_in_gbs=plan.memory_gb,
@@ -416,16 +420,22 @@ class OciProvisioner:
         cloud_init: str,
         tags: dict[str, str],
     ) -> tuple[Any, OciRunnerPlan]:
+        if is_arm_shape(base_plan.shape):
+            raise FuseKitError(
+                f"OCI runner shape {base_plan.shape} is ARM-based. "
+                "FuseKit requires an x86_64 runner."
+            )
         candidates = [
             base_plan,
-            replace(base_plan, shape="VM.Standard.A1.Flex", ocpus=1, memory_gb=6),
-            replace(base_plan, shape="VM.Standard.E2.1.Micro", ocpus=1, memory_gb=1),
+            replace(base_plan, shape=DEFAULT_X86_SHAPE, ocpus=1, memory_gb=1),
         ]
         last_error: Exception | None = None
         seen: set[tuple[str, int, int]] = set()
         for candidate in candidates:
             key = (candidate.shape, candidate.ocpus, candidate.memory_gb)
             if key in seen:
+                continue
+            if is_arm_shape(candidate.shape):
                 continue
             seen.add(key)
             try:

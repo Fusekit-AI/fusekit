@@ -76,6 +76,21 @@ def test_runner_env_override_rejects_unknown_runner(monkeypatch) -> None:
         resolve_runner("auto")
 
 
+def test_oci_runner_plan_defaults_to_x86_only() -> None:
+    plan = build_oci_runner_plan(runner="oci")
+
+    assert plan.shape == "VM.Standard.E2.1.Micro"
+    assert all("A1" not in fallback for fallback in plan.fallback_shapes)
+
+
+def test_oci_runner_plan_rejects_arm_shape() -> None:
+    with pytest.raises(FuseKitError, match="ARM-based"):
+        build_oci_runner_plan(runner="oci", shape="VM.Standard.A1.Flex")
+
+    with pytest.raises(FuseKitError, match="ARM-based"):
+        build_oci_runner_plan(runner="oci", shape="BM.Standard.A1.160")
+
+
 def test_job_status_preserves_failure_after_cleanup_step(tmp_path) -> None:
     from fusekit.runner.job import JobState
 
@@ -816,6 +831,9 @@ def test_oci_provision_cleans_partial_workspace_when_readiness_fails() -> None:
         provisioner.provision(plan, vault)
 
     assert provisioner.deleted is not None
+    ssh_record = vault.require(f"runner.oci.{provisioner.deleted.id}.ssh.private")
+    assert ssh_record.value.startswith("-----BEGIN OPENSSH PRIVATE KEY-----")
+    assert ssh_record.metadata["fingerprint"].startswith("rsa:")
     assert provisioner.deleted.resource_ids["instance"] == "ocid1.instance.example"
     assert provisioner.deleted.resource_ids["compartment"] == "ocid1.compartment.example"
 
@@ -975,6 +993,10 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
     assert result["artifact_status"] == "complete"
     assert any(command[0] == "scp" for command in calls)
     assert any(command[0] == "ssh" and command[-1] == "true" for command in calls)
+    assert any("IdentitiesOnly=yes" in command for command in calls if command[0] == "ssh")
+    assert any(
+        "PubkeyAcceptedAlgorithms=+ssh-rsa" in command for command in calls if command[0] == "ssh"
+    )
     assert any(
         "cloud-init status --wait && fusekit-runner-verify" in command[-1]
         for command in calls
