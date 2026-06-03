@@ -57,11 +57,11 @@ def build_cloud_shell_launch_plan(
         app_source=app_source,
         fusekit_package=fusekit_package,
         launch_args=launch_args,
-        deeplink_url=cloud_shell_deeplink(command),
+        deeplink_url=cloud_shell_url(),
         bootstrap_command=command,
         fallback_steps=(
             "Open Oracle Cloud Shell.",
-            "Paste and run the bootstrap command if Oracle does not auto-run deeplink commands.",
+            "Paste and run the bootstrap command in Cloud Shell.",
             "Enter the vault passphrase only when Cloud Shell prompts for it.",
             "Let the Cloud Shell bootstrap provision the disposable FuseKit runner.",
         ),
@@ -245,6 +245,12 @@ def cloud_shell_deeplink(command: str) -> str:
         quote_via=quote,
     )
     return f"{OCI_CLOUD_SHELL_URL}?{query}"
+
+
+def cloud_shell_url() -> str:
+    """Return the OCI Console Cloud Shell URL without an embedded command."""
+
+    return f"{OCI_CLOUD_SHELL_URL}?cloudshell=true"
 
 
 def render_cloud_shell_launcher(plan: CloudShellLaunchPlan) -> str:
@@ -540,13 +546,13 @@ def render_cloud_shell_launcher(plan: CloudShellLaunchPlan) -> str:
       font-weight: 850;
       cursor: pointer;
     }}
-    a.button.primary {{
+    .button.primary {{
       background: var(--snow-blue);
       border-color: var(--snow-blue);
       color: white;
       box-shadow: 0 12px 28px rgba(0, 151, 255, 0.28);
     }}
-    button.secondary {{
+    .secondary {{
       background: #ffffff;
       color: var(--snow-navy);
     }}
@@ -616,8 +622,8 @@ def render_cloud_shell_launcher(plan: CloudShellLaunchPlan) -> str:
       <div class="panel">
         <h2>Ready To Launch</h2>
         <p>
-          Review the app source, then open OCI. If Oracle asks you to sign in
-          or confirm anything, complete that gate and FuseKit resumes.
+          Review the app source, copy the bootstrap command, then open OCI.
+          Paste the command into Cloud Shell after Oracle opens the terminal.
         </p>
         <label>
           App source
@@ -625,10 +631,16 @@ def render_cloud_shell_launcher(plan: CloudShellLaunchPlan) -> str:
         </label>
         <div id="source-example">Example: https://github.com/owner/repo.git</div>
         <div class="actions">
-          <a class="button primary" id="open" href="{escaped_url}" target="_blank" rel="noreferrer">
+          <button id="copy" type="button" class="button primary">Copy Bootstrap Command</button>
+          <a
+            class="button secondary"
+            id="open"
+            href="{escaped_url}"
+            target="_blank"
+            rel="noreferrer"
+          >
             Open OCI Cloud Shell
           </a>
-          <button id="copy" type="button" class="secondary">Copy Backup Command</button>
           <button id="refresh" type="button" class="secondary">Update Source</button>
         </div>
         <div id="status" class="status" role="status" aria-live="polite"></div>
@@ -667,8 +679,7 @@ def render_cloud_shell_launcher(plan: CloudShellLaunchPlan) -> str:
 
     function refresh() {{
       command.value = buildCommand(source.value);
-      const params = new URLSearchParams({{ cloudshell: 'true', command: command.value }});
-      openLink.href = 'https://cloud.oracle.com/?' + params.toString();
+      openLink.href = initial.deeplink_url;
       status.textContent = 'Launcher updated.';
     }}
 

@@ -209,6 +209,8 @@ def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
     html = render_cloud_shell_launcher(plan)
 
     assert "cloud.oracle.com" in plan.deeplink_url
+    assert plan.deeplink_url == "https://cloud.oracle.com/?cloudshell=true"
+    assert "command=" not in plan.deeplink_url
     assert "fusekit launch" in plan.bootstrap_command
     assert "python_cmd=python3" in plan.bootstrap_command
     assert "sys.version_info >= (3, 10)" in plan.bootstrap_command
@@ -234,7 +236,9 @@ def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
     assert plan.launch_args[-1] == "--infer-ui"
     assert "SnowmanAI / FuseKit" in html
     assert "Privacy mode" in html
-    assert "Copy Backup Command" in html
+    assert "Copy Bootstrap Command" in html
+    assert "command: command.value" not in html
+    assert "openLink.href = initial.deeplink_url" in html
     assert 'role="status"' in html
     assert "navigator.clipboard.writeText" in html
     assert "document.execCommand('copy')" in html
