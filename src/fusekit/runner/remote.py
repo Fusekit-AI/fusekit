@@ -83,10 +83,12 @@ def render_cloud_init(*, fusekit_wheel_url: str = "", openclaw_install_url: str)
     fusekit_package = quote(fusekit_wheel_url or "fusekit")
     python_bin = "/opt/fusekit-python/bin/python"
     playwright_browsers_path = "/opt/fusekit-playwright-browsers"
+    retry_bin = "/usr/local/sbin/fusekit-retry"
     fusekit_install_flags = "--upgrade"
     if fusekit_wheel_url.startswith("git+"):
         fusekit_install_flags = "--upgrade --force-reinstall --no-cache-dir"
     install_fusekit = f"{python_bin} -m pip install {fusekit_install_flags} {fusekit_package}"
+    install_pip_tools = f"{python_bin} -m pip install --upgrade pip setuptools wheel"
     install_playwright = (
         f"env PLAYWRIGHT_BROWSERS_PATH={playwright_browsers_path} "
         f"{python_bin} -m playwright install --with-deps chromium"
@@ -98,7 +100,8 @@ def render_cloud_init(*, fusekit_wheel_url: str = "", openclaw_install_url: str)
     )
     verify_openclaw = (
         "export PATH=/opt/fusekit-openclaw/bin:$PATH && "
-        "OPENCLAW_HOME=/var/lib/fusekit-runner/openclaw-state fusekit-runner-verify"
+        "OPENCLAW_HOME=/var/lib/fusekit-runner/openclaw-state "
+        "/usr/local/sbin/fusekit-runner-verify"
     )
     runner_loop = (
         "fusekit-runner-loop /var/lib/fusekit-runner/app "
@@ -219,9 +222,9 @@ runcmd:
   - mkdir -p /var/lib/fusekit-runner
   - mkdir -p {playwright_browsers_path}
   - python3 -m venv /opt/fusekit-python
-  - fusekit-retry /opt/fusekit-python/bin/python -m pip install --upgrade pip setuptools wheel
-  - fusekit-retry {install_fusekit}
-  - fusekit-retry {install_playwright}
+  - {retry_bin} {install_pip_tools}
+  - {retry_bin} {install_fusekit}
+  - {retry_bin} {install_playwright}
   - |
     if command -v apt-get >/dev/null 2>&1; then
       DEBIAN_FRONTEND=noninteractive apt-get update
@@ -247,7 +250,7 @@ runcmd:
             time.sleep(attempt * 10)
     target.chmod(0o755)
     PY
-  - fusekit-retry {install_openclaw}
+  - {retry_bin} {install_openclaw}
   - ln -sf /opt/fusekit-openclaw/bin/openclaw /usr/local/bin/openclaw
   - |
     runner_user=
@@ -472,7 +475,7 @@ def _prepare_remote_visual_session(
         "> /var/lib/fusekit-runner/app/.fusekit/job.json; "
         f"export FUSEKIT_VISUAL_PASSWORD={quote(visual['novnc_password'])}; "
         f"export FUSEKIT_VISUAL_DISPLAY={quote(visual['display'])}; "
-        "fusekit-visual-start; "
+        "/usr/local/sbin/fusekit-visual-start; "
         f"export FUSEKIT_CONTROL_ROOM_TOKEN={quote(visual['control_room_token'])}; "
         "export FUSEKIT_ALLOW_REMOTE_CONTROL_ROOM=1; "
         "nohup fusekit control-room --serve "
@@ -604,7 +607,7 @@ def _wait_for_remote_ready(
                 [
                     *ssh,
                     remote,
-                    "cloud-init status --wait && fusekit-runner-verify",
+                    "cloud-init status --wait && /usr/local/sbin/fusekit-runner-verify",
                 ],
             )
             return

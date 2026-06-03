@@ -696,17 +696,20 @@ def test_remote_bootstrap_artifacts_are_self_contained() -> None:
 
     assert "python3-venv" in cloud_init
     assert (
-        "fusekit-retry /opt/fusekit-python/bin/python -m pip install --upgrade fusekit"
+        "/usr/local/sbin/fusekit-retry "
+        "/opt/fusekit-python/bin/python -m pip install --upgrade fusekit"
         in cloud_init
     )
     assert (
-        "fusekit-retry /opt/fusekit-python/bin/python -m pip install "
+        "/usr/local/sbin/fusekit-retry "
+        "/opt/fusekit-python/bin/python -m pip install "
         "--upgrade --force-reinstall --no-cache-dir "
         "git+https://github.com/example/fusekit.git"
     ) in git_cloud_init
     assert "PLAYWRIGHT_BROWSERS_PATH=/opt/fusekit-playwright-browsers" in cloud_init
     assert (
-        "fusekit-retry env PLAYWRIGHT_BROWSERS_PATH=/opt/fusekit-playwright-browsers "
+        "/usr/local/sbin/fusekit-retry "
+        "env PLAYWRIGHT_BROWSERS_PATH=/opt/fusekit-playwright-browsers "
         "/opt/fusekit-python/bin/python -m playwright install --with-deps chromium"
     ) in cloud_init
     assert "chromium-browser" not in cloud_init
@@ -717,12 +720,13 @@ def test_remote_bootstrap_artifacts_are_self_contained() -> None:
     assert "x11vnc -display \"$display\" -localhost" in cloud_init
     assert "openclaw browser status --json" not in cloud_init
     assert (
-        "fusekit-retry env OPENCLAW_HOME=/var/lib/fusekit-runner/openclaw-state "
+        "/usr/local/sbin/fusekit-retry "
+        "env OPENCLAW_HOME=/var/lib/fusekit-runner/openclaw-state "
         "bash /opt/fusekit-openclaw/install-openclaw.sh"
     ) in cloud_init
     assert "chown -R \"$runner_user:$runner_user\" /var/lib/fusekit-runner" in cloud_init
     assert "fusekit-runner-verify" in cloud_init
-    assert "fusekit-retry" in cloud_init
+    assert "/usr/local/sbin/fusekit-retry" in cloud_init
     assert "export PATH=/opt/fusekit-python/bin:/opt/fusekit-openclaw/bin:$PATH" in cloud_init
     assert "FUSEKIT_OPENCLAW_BIN=/opt/fusekit-openclaw/bin/openclaw" in cloud_init
     assert "ln -sf /opt/fusekit-python/bin/fusekit /usr/local/bin/fusekit" in cloud_init
@@ -1113,7 +1117,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         for option in command
     )
     assert any(
-        "cloud-init status --wait && fusekit-runner-verify" in command[-1]
+        "cloud-init status --wait && /usr/local/sbin/fusekit-runner-verify" in command[-1]
         for command in calls
         if command[0] == "ssh"
     )
@@ -1126,7 +1130,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         "--github-repo owner/repo --infer-ui --visual-runner novnc" in command[-1]
         for command in calls
     )
-    assert any("fusekit-visual-start" in command[-1] for command in calls)
+    assert any("/usr/local/sbin/fusekit-visual-start" in command[-1] for command in calls)
     assert any("fusekit control-room --serve" in command[-1] for command in calls)
     assert any("export DISPLAY=:99" in command[-1] for command in calls)
     assert any(
