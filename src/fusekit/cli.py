@@ -729,6 +729,18 @@ def _use_playwright_browser_spine(args: argparse.Namespace) -> bool:
     return True
 
 
+def _playwright_headless(args: argparse.Namespace) -> bool:
+    """Return whether Playwright should launch headless for this run."""
+
+    if bool(getattr(args, "headless_browser", False)):
+        return True
+    if getattr(args, "spine", "system") != "openclaw":
+        return False
+    if _openclaw_browser_available(args):
+        return False
+    return not bool(os.environ.get("DISPLAY"))
+
+
 def _openclaw_browser_available(args: argparse.Namespace) -> bool:
     """Return true when OpenClaw exposes browser automation commands."""
 
@@ -1732,7 +1744,7 @@ def _run_oci_handoff(args: argparse.Namespace) -> None:
             webbrowser.open(url)
     if _use_playwright_browser_spine(args):
         playwright_spine = PlaywrightBrowserSpine(
-            headless=getattr(args, "headless_browser", False),
+            headless=_playwright_headless(args),
             dry_run=getattr(args, "dry_run_spine", False),
         )
         print("Playwright spine events:")
@@ -2228,7 +2240,7 @@ def _run_handoff(
     _print_handoff(handoff, include_project=include_project)
     if _use_playwright_browser_spine(args):
         playwright_spine = PlaywrightBrowserSpine(
-            headless=getattr(args, "headless_browser", False),
+            headless=_playwright_headless(args),
             dry_run=args.dry_run_spine,
         )
         try:
@@ -3134,7 +3146,7 @@ def _run_provider_repair_navigation(
     max_steps = max(1, int(getattr(args, "repair_ui_steps", 12)))
     if _use_playwright_browser_spine(args):
         spine = PlaywrightBrowserSpine(
-            headless=getattr(args, "headless_browser", False),
+            headless=_playwright_headless(args),
             dry_run=bool(getattr(args, "dry_run_spine", False)),
         )
         try:

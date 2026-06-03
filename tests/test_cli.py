@@ -5,7 +5,12 @@ import json
 from urllib.error import URLError
 
 from fusekit.audit import AuditLog, Receipt, assert_no_secret_text
-from fusekit.cli import _attempt_provider_api_fallback, _repair_navigation_completed, main
+from fusekit.cli import (
+    _attempt_provider_api_fallback,
+    _playwright_headless,
+    _repair_navigation_completed,
+    main,
+)
 from fusekit.errors import FuseKitError
 from fusekit.manifest import ServiceRequirement, SetupManifest, write_manifest
 from fusekit.providers.capability_pack import (
@@ -31,6 +36,22 @@ def test_install_writes_one_click_entrypoint(tmp_path) -> None:
     assert "fusekit launch . --manifest fusekit.yaml" in setup_script.read_text(encoding="utf-8")
     gitignore = (app / ".gitignore").read_text(encoding="utf-8")
     assert ".fusekit/*.vault.json" in gitignore
+
+
+def test_playwright_fallback_is_headless_without_display(monkeypatch) -> None:
+    args = argparse.Namespace(spine="openclaw", headless_browser=False)
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.setattr("fusekit.cli._openclaw_browser_available", lambda args: False)
+
+    assert _playwright_headless(args) is True
+
+
+def test_playwright_fallback_preserves_visible_local_browser(monkeypatch) -> None:
+    args = argparse.Namespace(spine="openclaw", headless_browser=False)
+    monkeypatch.setenv("DISPLAY", ":0")
+    monkeypatch.setattr("fusekit.cli._openclaw_browser_available", lambda args: False)
+
+    assert _playwright_headless(args) is False
 
 
 def test_install_can_write_local_cloud_shell_launcher(tmp_path) -> None:

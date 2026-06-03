@@ -45,6 +45,32 @@ def test_openclaw_spine_builds_browser_commands() -> None:
     ]
 
 
+def test_openclaw_browser_availability_requires_runnable_command(tmp_path) -> None:
+    calls: list[list[str]] = []
+    openclaw = tmp_path / "openclaw"
+    openclaw.write_text("#!/bin/sh\n", encoding="utf-8")
+    openclaw.chmod(0o700)
+
+    def runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        if command[-2:] == ["browser", "doctor"]:
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="browser missing")
+        return subprocess.CompletedProcess(command, 0, stdout="{}", stderr="")
+
+    spine = OpenClawBrowserSpine(profile="work", binary=str(openclaw), runner=runner)
+
+    assert spine.browser_command_available() is False
+    assert calls == [
+        [
+            "env",
+            f"OPENCLAW_HOME={bootstrap.openclaw_state_home()}",
+            str(openclaw),
+            "browser",
+            "doctor",
+        ]
+    ]
+
+
 def test_openclaw_spine_can_use_default_openclaw_home(monkeypatch) -> None:
     calls: list[list[str]] = []
     monkeypatch.setenv("FUSEKIT_OPENCLAW_HOME_MODE", "default")
