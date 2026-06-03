@@ -940,6 +940,33 @@ def test_authorize_can_use_openclaw_spine_dry_run(monkeypatch, tmp_path, capsys)
     assert opened_vault.require("provider.vercel.token").value == token
 
 
+def test_launch_rejects_dry_run_spine_without_allow_incomplete(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "index.js").write_text("console.log(process.env.WEBHOOK_SECRET)", encoding="utf-8")
+    passphrase = tmp_path / "passphrase.txt"
+    passphrase.write_text("passphrase\n", encoding="utf-8")
+
+    assert (
+        main(
+            [
+                "launch",
+                str(app),
+                "--runner",
+                "local",
+                "--passphrase-file",
+                str(passphrase),
+                "--no-bootstrap",
+                "--yes",
+                "--spine",
+                "openclaw",
+                "--dry-run-spine",
+            ]
+        )
+        == 2
+    )
+
+
 def test_apply_requires_real_provider_targets_by_default(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()

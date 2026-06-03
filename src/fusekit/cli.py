@@ -1119,6 +1119,7 @@ def _cmd_setup(args: argparse.Namespace) -> int:
     app_path = args.path.resolve()
     if not app_path.exists():
         raise FuseKitError(f"App path does not exist: {app_path}")
+    _reject_non_live_launch_modes(args)
     _rebase_setup_artifacts(args, app_path)
     runner_resolution = _resolve_launch_runner(args)
     if runner_resolution.selected == "oci-cloud-shell":
@@ -1223,6 +1224,16 @@ def _cmd_setup(args: argparse.Namespace) -> int:
         job.mark("setup.execute", "failed", "local setup worker did not complete")
         _save_launch_job(args, job)
         raise
+
+
+def _reject_non_live_launch_modes(args: argparse.Namespace) -> None:
+    if bool(getattr(args, "dry_run_spine", False)) and not bool(
+        getattr(args, "allow_incomplete", False)
+    ):
+        raise FuseKitError(
+            "--dry-run-spine is only allowed with --allow-incomplete. "
+            "A live launch must use a real browser spine."
+        )
 
 
 def _apply_loaded_manifest(args: argparse.Namespace, manifest: SetupManifest) -> None:
