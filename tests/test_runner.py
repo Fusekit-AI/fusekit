@@ -1010,8 +1010,11 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
     assert any(command[0] == "scp" for command in calls)
     assert any(command[0] == "ssh" and command[-1] == "true" for command in calls)
     assert any("IdentitiesOnly=yes" in command for command in calls if command[0] == "ssh")
-    assert any(
-        "PubkeyAcceptedAlgorithms=+ssh-rsa" in command for command in calls if command[0] == "ssh"
+    assert not any(
+        option.startswith("PubkeyAcceptedAlgorithms=")
+        for command in calls
+        if command[0] == "ssh"
+        for option in command
     )
     assert any(
         "cloud-init status --wait && fusekit-runner-verify" in command[-1]
