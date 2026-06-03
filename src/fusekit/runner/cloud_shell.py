@@ -667,7 +667,7 @@ def render_cloud_shell_launcher(plan: CloudShellLaunchPlan) -> str:
       </div>
     </section>
   </main>
-  <script type="application/json" id="payload">{html.escape(payload)}</script>
+  <script type="application/json" id="payload">{_safe_script_json(payload)}</script>
   <script>
     const source = document.querySelector('#source');
     const command = document.querySelector('#command');
@@ -711,15 +711,32 @@ def render_cloud_shell_launcher(plan: CloudShellLaunchPlan) -> str:
       }}
     }}
 
+    async function copyText(text) {{
+      if (navigator.clipboard && window.isSecureContext) {{
+        try {{
+          await Promise.race([
+            navigator.clipboard.writeText(text),
+            new Promise((_, reject) => {{
+              window.setTimeout(
+                () => reject(new Error('clipboard write timed out')),
+                1200
+              );
+            }}),
+          ]);
+          return;
+        }} catch (error) {{
+          fallbackCopy(text);
+          return;
+        }}
+      }}
+      fallbackCopy(text);
+    }}
+
     document.querySelector('#refresh').addEventListener('click', refresh);
     document.querySelector('#copy').addEventListener('click', async () => {{
       command.value = buildCommand(source.value);
       try {{
-        if (navigator.clipboard && window.isSecureContext) {{
-          await navigator.clipboard.writeText(command.value);
-        }} else {{
-          fallbackCopy(command.value);
-        }}
+        await copyText(command.value);
         status.textContent = 'Bootstrap command copied.';
       }} catch (error) {{
         command.closest('details').open = true;
@@ -734,6 +751,12 @@ def render_cloud_shell_launcher(plan: CloudShellLaunchPlan) -> str:
 </body>
 </html>
 """
+
+
+def _safe_script_json(payload: str) -> str:
+    """Return JSON text safe for embedding in a raw-text script tag."""
+
+    return payload.replace("</", "<\\/")
 
 
 def _launcher_summary_items(plan: CloudShellLaunchPlan) -> tuple[str, ...]:

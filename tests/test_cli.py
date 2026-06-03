@@ -123,6 +123,13 @@ def test_launcher_derives_no_code_live_context_and_snowman_surface(tmp_path) -> 
     assert "--infer-ui" in text
     assert "--capture-stdin" in text
     assert "--visual-runner novnc" in text
+    payload_text = text.split('<script type="application/json" id="payload">', 1)[1].split(
+        "</script>",
+        1,
+    )[0]
+    payload = json.loads(payload_text)
+    assert payload["launch_args"][-2:] == ["--visual-runner", "novnc"]
+    assert "clipboard write timed out" in text
 
 
 def test_cli_scan_validate_plan_unlock_request(tmp_path, capsys) -> None:
