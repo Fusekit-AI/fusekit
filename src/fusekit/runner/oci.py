@@ -19,7 +19,10 @@ from fusekit.vault import Vault
 OCI_SIGNUP_URL = "https://signup.cloud.oracle.com/"
 OCI_CONSOLE_URL = "https://cloud.oracle.com/"
 OCI_API_KEYS_URL = "https://cloud.oracle.com/identity/domains/my-profile/api-keys"
-DEFAULT_X86_SHAPE = "VM.Standard.E2.1.Micro"
+DEFAULT_X86_SHAPE = "VM.Standard3.Flex"
+DEFAULT_X86_OCPUS = 2
+DEFAULT_X86_MEMORY_GB = 16
+FALLBACK_X86_SHAPES = ("VM.Standard.E4.Flex", "VM.Standard.E5.Flex")
 ARM_SHAPE_FAMILIES = {"A1"}
 
 
@@ -82,8 +85,8 @@ def build_oci_runner_plan(
         raise FuseKitError(
             f"OCI runner shape {selected_shape} is ARM-based. FuseKit requires an x86_64 runner."
         )
-    ocpus = 1
-    memory = 1
+    ocpus = DEFAULT_X86_OCPUS
+    memory = DEFAULT_X86_MEMORY_GB
     return OciRunnerPlan(
         runner=runner,
         auth_mode=auth_mode,
@@ -92,7 +95,13 @@ def build_oci_runner_plan(
         shape=selected_shape,
         ocpus=ocpus,
         memory_gb=memory,
-        fallback_shapes=(f"{DEFAULT_X86_SHAPE}:1:1",),
+        fallback_shapes=(
+            f"{DEFAULT_X86_SHAPE}:{DEFAULT_X86_OCPUS}:{DEFAULT_X86_MEMORY_GB}",
+            *(
+                f"{fallback}:{DEFAULT_X86_OCPUS}:{DEFAULT_X86_MEMORY_GB}"
+                for fallback in FALLBACK_X86_SHAPES
+            ),
+        ),
         resources=(
             "compartment",
             "vcn",
@@ -107,7 +116,7 @@ def build_oci_runner_plan(
         gates=(
             "OCI signup/login/MFA/card verification",
             "OCI API key upload or security-token login",
-            "Always Free capacity availability",
+            "x86_64 Flex capacity availability",
         ),
         fusekit_package=fusekit_package,
         cloud_init_preview=render_cloud_init(

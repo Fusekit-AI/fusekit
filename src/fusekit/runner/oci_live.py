@@ -17,7 +17,14 @@ from typing import Any, cast
 
 from fusekit.crypto.sshkeys import generate_rsa_keypair
 from fusekit.errors import FuseKitError
-from fusekit.runner.oci import DEFAULT_X86_SHAPE, OciRunnerPlan, is_arm_shape
+from fusekit.runner.oci import (
+    DEFAULT_X86_MEMORY_GB,
+    DEFAULT_X86_OCPUS,
+    DEFAULT_X86_SHAPE,
+    FALLBACK_X86_SHAPES,
+    OciRunnerPlan,
+    is_arm_shape,
+)
 from fusekit.runner.remote import render_cloud_init
 from fusekit.runtime.bootstrap import OPENCLAW_INSTALL_URL
 from fusekit.vault import Vault
@@ -427,7 +434,15 @@ class OciProvisioner:
             )
         candidates = [
             base_plan,
-            replace(base_plan, shape=DEFAULT_X86_SHAPE, ocpus=1, memory_gb=1),
+            *(
+                replace(
+                    base_plan,
+                    shape=shape,
+                    ocpus=DEFAULT_X86_OCPUS,
+                    memory_gb=DEFAULT_X86_MEMORY_GB,
+                )
+                for shape in (DEFAULT_X86_SHAPE, *FALLBACK_X86_SHAPES)
+            ),
         ]
         last_error: Exception | None = None
         seen: set[tuple[str, int, int]] = set()

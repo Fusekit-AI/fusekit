@@ -79,7 +79,14 @@ def test_runner_env_override_rejects_unknown_runner(monkeypatch) -> None:
 def test_oci_runner_plan_defaults_to_x86_only() -> None:
     plan = build_oci_runner_plan(runner="oci")
 
-    assert plan.shape == "VM.Standard.E2.1.Micro"
+    assert plan.shape == "VM.Standard3.Flex"
+    assert plan.ocpus == 2
+    assert plan.memory_gb == 16
+    assert plan.fallback_shapes == (
+        "VM.Standard3.Flex:2:16",
+        "VM.Standard.E4.Flex:2:16",
+        "VM.Standard.E5.Flex:2:16",
+    )
     assert all("A1" not in fallback for fallback in plan.fallback_shapes)
 
 
