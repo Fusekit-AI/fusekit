@@ -1109,6 +1109,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
     assert result["artifact_status"] == "complete"
     assert result["control_room_url"].startswith("http://203.0.113.10:8765/?token=")
     assert result["novnc_url"].startswith("http://203.0.113.10:6080/vnc.html?")
+    assert "password=" not in result["novnc_url"]
     assert any(command[0] == "scp" for command in calls)
     assert any("ubuntu@203.0.113.10" in command for command in calls)
     assert not any("opc@203.0.113.10" in command for command in calls)
@@ -1186,6 +1187,11 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         ".fusekit/rollback_plan.json" in command[-1]
         for command in calls
         if command[0] == "ssh"
+    )
+    assert not any(
+        ".fusekit/visual.json" in command[-1]
+        for command in calls
+        if command[0] == "ssh" and "tar -czf -" in command[-1]
     )
     assert any("[ -n \"$existing\" ] || exit 44" in command[-1] for command in calls)
 
