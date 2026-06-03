@@ -80,7 +80,7 @@ class PlaywrightBrowserSpine:
         page = self._ensure_page()
         payload = page.evaluate(
             """
-            () => {
+            (selector) => {
               const visible = (element) => {
                 const style = window.getComputedStyle(element);
                 const rect = element.getBoundingClientRect();
@@ -102,7 +102,6 @@ class PlaywrightBrowserSpine:
                   .replace(/\\s+/g, " ")
                   .trim()
                   .slice(0, 160);
-              const selector = arguments[0];
               const elements = Array.from(document.querySelectorAll(selector))
                 .filter(visible)
                 .slice(0, 80)

@@ -220,6 +220,25 @@ def test_playwright_spine_dry_run_does_not_need_local_browser() -> None:
     assert spine.highlight("ref=1").status == "dry-run"
 
 
+def test_playwright_spine_snapshot_passes_selector_as_evaluate_argument() -> None:
+    class FakePage:
+        def evaluate(self, script: str, selector: str) -> dict[str, object]:
+            assert "(selector) =>" in script
+            assert "arguments[0]" not in script
+            assert selector == (
+                "button,a[href],input,textarea,select,[role=button],[role=link],[aria-label]"
+            )
+            return {"url": "https://example.com", "title": "Example", "elements": []}
+
+    spine = PlaywrightBrowserSpine()
+    spine._page = FakePage()
+
+    result = spine.snapshot()
+
+    assert result.status == "ok"
+    assert json.loads(result.stdout)["title"] == "Example"
+
+
 def test_resend_ui_playbook_uses_computer_actions_without_secrets() -> None:
     spine = PlaywrightBrowserSpine(dry_run=True)
     playbook = provider_ui_playbook("resend", include_project=True)
