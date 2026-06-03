@@ -262,9 +262,13 @@ def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
     assert "openLink.href = initial.deeplink_url" in html
     assert 'role="status"' in html
     assert "navigator.clipboard.writeText" in html
+    assert "function fallbackCopy(text)" in html
+    assert "document.createElement('textarea')" in html
     assert "document.execCommand('copy')" in html
     assert "Press Command+C" in html
     assert "command.select()" in html
+    assert "command.closest('details').open = true" in html
+    assert "command.value = buildCommand(source.value);" in html
     assert "Passphrase:" in plan.bootstrap_command
 
 

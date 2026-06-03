@@ -693,23 +693,39 @@ def render_cloud_shell_launcher(plan: CloudShellLaunchPlan) -> str:
       status.textContent = 'Launcher updated.';
     }}
 
+    function fallbackCopy(text) {{
+      const scratch = document.createElement('textarea');
+      scratch.value = text;
+      scratch.setAttribute('readonly', '');
+      scratch.style.position = 'fixed';
+      scratch.style.left = '-9999px';
+      scratch.style.top = '0';
+      document.body.appendChild(scratch);
+      scratch.focus();
+      scratch.select();
+      scratch.setSelectionRange(0, scratch.value.length);
+      const copied = document.execCommand('copy');
+      scratch.remove();
+      if (!copied) {{
+        throw new Error('selection copy unavailable');
+      }}
+    }}
+
     document.querySelector('#refresh').addEventListener('click', refresh);
     document.querySelector('#copy').addEventListener('click', async () => {{
+      command.value = buildCommand(source.value);
       try {{
         if (navigator.clipboard && window.isSecureContext) {{
           await navigator.clipboard.writeText(command.value);
         }} else {{
-          command.focus();
-          command.select();
-          const copied = document.execCommand('copy');
-          if (!copied) {{
-            throw new Error('selection copy unavailable');
-          }}
+          fallbackCopy(command.value);
         }}
         status.textContent = 'Bootstrap command copied.';
       }} catch (error) {{
+        command.closest('details').open = true;
         command.focus();
         command.select();
+        command.setSelectionRange(0, command.value.length);
         status.textContent =
           'Copy was blocked. Press Command+C; FuseKit selected the exact command.';
       }}
