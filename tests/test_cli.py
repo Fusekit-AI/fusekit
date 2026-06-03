@@ -1211,6 +1211,7 @@ def test_launch_cloud_shell_derives_provider_inputs_for_zero_knowledge_user(
     plan = json.loads((app / ".fusekit" / "cloud_shell_plan.json").read_text("utf-8"))
     command = plan["bootstrap_command"]
     assert "--github-repo fusekitdemo/moonlite-rsvp-demo" in command
+    assert "--fusekit-package git+https://github.com/example/fusekit.git" in command
     assert "--vercel-project moonlite-rsvp-demo" in command
     assert "--dns-zone moonlite.test" in command
     assert "--live-url https://rsvp.moonlite.test" in command

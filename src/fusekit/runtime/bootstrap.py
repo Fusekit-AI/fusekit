@@ -240,7 +240,6 @@ def _openclaw_verification_commands(binary: str) -> list[list[str]]:
     return [
         _openclaw_command(binary, ["--version"]),
         _openclaw_command(binary, ["doctor", "--non-interactive"]),
-        _openclaw_command(binary, ["browser", "status", "--json"]),
     ]
 
 

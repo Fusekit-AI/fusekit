@@ -637,15 +637,23 @@ def test_remote_bootstrap_artifacts_are_self_contained() -> None:
         in cloud_init
     )
     assert (
-        "fusekit-retry /opt/fusekit-python/bin/python -m pip install --upgrade "
+        "fusekit-retry /opt/fusekit-python/bin/python -m pip install "
+        "--upgrade --force-reinstall --no-cache-dir "
         "git+https://github.com/example/fusekit.git"
     ) in git_cloud_init
+    assert "PLAYWRIGHT_BROWSERS_PATH=/opt/fusekit-playwright-browsers" in cloud_init
     assert (
-        "fusekit-retry /opt/fusekit-python/bin/python -m playwright install --with-deps chromium"
-        in cloud_init
-    )
+        "fusekit-retry env PLAYWRIGHT_BROWSERS_PATH=/opt/fusekit-playwright-browsers "
+        "/opt/fusekit-python/bin/python -m playwright install --with-deps chromium"
+    ) in cloud_init
     assert "chromium-browser" not in cloud_init
-    assert "openclaw browser status --json" in cloud_init
+    assert "sync_playwright" in cloud_init
+    assert "openclaw browser status --json" not in cloud_init
+    assert (
+        "fusekit-retry env OPENCLAW_HOME=/var/lib/fusekit-runner/openclaw-state "
+        "bash /opt/fusekit-openclaw/install-openclaw.sh"
+    ) in cloud_init
+    assert "chown -R \"$runner_user:$runner_user\" /var/lib/fusekit-runner" in cloud_init
     assert "fusekit-runner-verify" in cloud_init
     assert "fusekit-retry" in cloud_init
     assert "export PATH=/opt/fusekit-python/bin:/opt/fusekit-openclaw/bin:$PATH" in cloud_init
@@ -716,6 +724,7 @@ def test_latest_workspace_round_trips_from_vault() -> None:
     loaded = latest_workspace_from_vault(vault)
 
     assert loaded.shape == "VM.Standard3.Flex"
+    assert loaded.ssh_user == "opc"
     assert loaded.public_ip == "203.0.113.10"
 
 
@@ -838,8 +847,8 @@ def test_oci_provision_cleans_partial_workspace_when_readiness_fails() -> None:
         ) -> Created:
             return Created("ocid1.subnet.example")
 
-        def _launch_with_capacity_fallback(self, **kwargs: object) -> tuple[Created, object]:
-            return Created("ocid1.instance.example"), kwargs["base_plan"]
+        def _launch_with_capacity_fallback(self, **kwargs: object) -> tuple[Created, object, str]:
+            return Created("ocid1.instance.example"), kwargs["base_plan"], "ubuntu"
 
         def _public_ip(self, compartment_id: str, instance_id: str) -> str:
             return ""
@@ -861,6 +870,7 @@ def test_oci_provision_cleans_partial_workspace_when_readiness_fails() -> None:
     assert ssh_record.metadata["fingerprint"].startswith("rsa:")
     assert provisioner.deleted.resource_ids["instance"] == "ocid1.instance.example"
     assert provisioner.deleted.resource_ids["compartment"] == "ocid1.compartment.example"
+    assert provisioner.deleted.ssh_user == "ubuntu"
 
 
 def test_oci_create_nsg_wraps_security_rules_for_sdk_request() -> None:
@@ -960,6 +970,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         compartment_id="tenancy",
         availability_domain="AD-1",
         shape="VM.Standard3.Flex",
+        ssh_user="ubuntu",
         public_ip="203.0.113.10",
     )
     calls: list[list[str]] = []
@@ -1017,6 +1028,8 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
     assert result["output_dir"] == str(tmp_path / "out")
     assert result["artifact_status"] == "complete"
     assert any(command[0] == "scp" for command in calls)
+    assert any("ubuntu@203.0.113.10" in command for command in calls)
+    assert not any("opc@203.0.113.10" in command for command in calls)
     assert any(command[0] == "ssh" and command[-1] == "true" for command in calls)
     assert any("IdentitiesOnly=yes" in command for command in calls if command[0] == "ssh")
     assert not any(

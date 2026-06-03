@@ -31,7 +31,7 @@ def test_bootstrap_runs_openclaw_installer_when_missing(monkeypatch, tmp_path) -
     assert "openclaw" in result.configured
     assert calls
     assert "install-openclaw.sh" in calls[0][-1]
-    assert calls[-3:] == [
+    assert calls[-2:] == [
         [
             "env",
             f"OPENCLAW_HOME={bootstrap.openclaw_state_home()}",
@@ -45,18 +45,10 @@ def test_bootstrap_runs_openclaw_installer_when_missing(monkeypatch, tmp_path) -
             "doctor",
             "--non-interactive",
         ],
-        [
-            "env",
-            f"OPENCLAW_HOME={bootstrap.openclaw_state_home()}",
-            str(tmp_path / "openclaw" / "bin" / "openclaw"),
-            "browser",
-            "status",
-            "--json",
-        ],
     ]
 
 
-def test_doctor_verifies_openclaw_doctor_and_browser(monkeypatch, tmp_path) -> None:
+def test_doctor_verifies_openclaw_doctor(monkeypatch, tmp_path) -> None:
     openclaw_bin = tmp_path / "openclaw"
     openclaw_bin.write_text("#!/bin/sh\n", encoding="utf-8")
     openclaw_bin.chmod(0o700)
@@ -65,15 +57,15 @@ def test_doctor_verifies_openclaw_doctor_and_browser(monkeypatch, tmp_path) -> N
 
     def runner(command: list[str]) -> subprocess.CompletedProcess[str]:
         calls.append(command)
-        if command[-3:] == ["browser", "status", "--json"]:
-            return subprocess.CompletedProcess(command, 2, stdout="", stderr="browser missing")
+        if command[-2:] == ["doctor", "--non-interactive"]:
+            return subprocess.CompletedProcess(command, 2, stdout="", stderr="doctor failed")
         return subprocess.CompletedProcess(command, 0, stdout="ok", stderr="")
 
     result = bootstrap.doctor(runner=runner)
 
     assert not result.ok
-    assert "browser missing" in result.statuses[-1].detail
-    assert calls[-1][-3:] == ["browser", "status", "--json"]
+    assert "doctor failed" in result.statuses[-1].detail
+    assert calls[-1][-2:] == ["doctor", "--non-interactive"]
 
 
 def test_doctor_can_use_default_openclaw_home(monkeypatch, tmp_path) -> None:
@@ -94,7 +86,6 @@ def test_doctor_can_use_default_openclaw_home(monkeypatch, tmp_path) -> None:
     assert calls == [
         [str(openclaw_bin), "--version"],
         [str(openclaw_bin), "doctor", "--non-interactive"],
-        [str(openclaw_bin), "browser", "status", "--json"],
     ]
 
 

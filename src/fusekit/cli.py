@@ -703,6 +703,8 @@ def _run_provider_intelligence(
 def _provider_research_sources(args: argparse.Namespace) -> tuple[ProviderResearchSource, ...]:
     if getattr(args, "research_spine", "openclaw") == "none":
         return ()
+    if not _openclaw_browser_available(args):
+        return ()
     return (
         OpenClawProviderResearch(
             OpenClawBrowserSpine(
@@ -711,6 +713,30 @@ def _provider_research_sources(args: argparse.Namespace) -> tuple[ProviderResear
             )
         ),
     )
+
+
+def _use_playwright_browser_spine(args: argparse.Namespace) -> bool:
+    """Return true when browser automation should run through Playwright."""
+
+    spine = getattr(args, "spine", "system")
+    if spine == "playwright":
+        return True
+    if spine != "openclaw":
+        return False
+    if _openclaw_browser_available(args):
+        return False
+    print("OpenClaw browser commands are unavailable; using Playwright browser spine.")
+    return True
+
+
+def _openclaw_browser_available(args: argparse.Namespace) -> bool:
+    """Return true when OpenClaw exposes browser automation commands."""
+
+    spine = OpenClawBrowserSpine(
+        profile=getattr(args, "openclaw_profile", "openclaw"),
+        dry_run=bool(getattr(args, "dry_run_spine", False)),
+    )
+    return spine.browser_command_available()
 
 
 def _cmd_provider_validate(args: argparse.Namespace) -> int:
@@ -988,6 +1014,7 @@ def _cloud_shell_launcher_launch_args(args: argparse.Namespace) -> tuple[str, ..
         ("--llm-auth-mode", "llm_auth_mode"),
         ("--spine", "spine"),
         ("--openclaw-profile", "openclaw_profile"),
+        ("--fusekit-package", "fusekit_package"),
     )
     for flag, attr in pairs:
         value = getattr(args, attr, "")
@@ -1703,7 +1730,7 @@ def _run_oci_handoff(args: argparse.Namespace) -> None:
     if getattr(args, "open_browser", False):
         for url in (OCI_SIGNUP_URL, OCI_CONSOLE_URL, OCI_API_KEYS_URL):
             webbrowser.open(url)
-    if getattr(args, "spine", "system") == "playwright":
+    if _use_playwright_browser_spine(args):
         playwright_spine = PlaywrightBrowserSpine(
             headless=getattr(args, "headless_browser", False),
             dry_run=getattr(args, "dry_run_spine", False),
@@ -2199,7 +2226,7 @@ def _run_handoff(
     goal: str = "",
 ) -> None:
     _print_handoff(handoff, include_project=include_project)
-    if args.spine == "playwright":
+    if _use_playwright_browser_spine(args):
         playwright_spine = PlaywrightBrowserSpine(
             headless=getattr(args, "headless_browser", False),
             dry_run=args.dry_run_spine,
@@ -3105,7 +3132,7 @@ def _run_provider_repair_navigation(
     goal: str,
 ) -> list[BrowserPlaybookEvent]:
     max_steps = max(1, int(getattr(args, "repair_ui_steps", 12)))
-    if getattr(args, "spine", "openclaw") == "playwright":
+    if _use_playwright_browser_spine(args):
         spine = PlaywrightBrowserSpine(
             headless=getattr(args, "headless_browser", False),
             dry_run=bool(getattr(args, "dry_run_spine", False)),

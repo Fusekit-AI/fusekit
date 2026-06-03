@@ -59,6 +59,17 @@ class OpenClawBrowserSpine:
         binary = self._binary()
         return self.dry_run or shutil.which(binary) is not None or Path(binary).exists()
 
+    def browser_command_available(self) -> bool:
+        """Return whether this OpenClaw build exposes browser automation commands."""
+
+        if self.dry_run:
+            return True
+        if not self.available():
+            return False
+        run = self.runner or _default_runner
+        completed = run([*_openclaw_env_prefix(), self._binary(), "browser", "--help"])
+        return completed.returncode == 0
+
     def start(self) -> SpineResult:
         """Start or attach to the OpenClaw-managed browser profile."""
 
@@ -190,6 +201,11 @@ class OpenClawBrowserSpine:
         if self.runner is None and not self.available():
             raise ProviderError(
                 "OpenClaw CLI is not available. Install OpenClaw or run with --dry-run-spine."
+            )
+        if self.runner is None and not self.browser_command_available():
+            raise ProviderError(
+                "OpenClaw browser commands are not available in this OpenClaw build. "
+                "Run with --spine playwright for browser automation."
             )
         run = self.runner or _default_runner
         completed = run(command)

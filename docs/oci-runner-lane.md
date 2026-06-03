@@ -93,7 +93,7 @@ Cloud-init should create a self-contained runner with no dependency on the user'
    - `fusekit --version`
    - `openclaw --version`
    - `openclaw doctor --non-interactive`
-   - `openclaw browser status`
+   - Playwright Chromium smoke test using the shared runner browser cache.
 5. Create `/var/lib/fusekit-runner` for transient worker state.
 6. Refuse to continue if verification fails, then either self-heal packages or return to a retryable human gate.
 

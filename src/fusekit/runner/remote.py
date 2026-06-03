@@ -75,9 +75,17 @@ def render_cloud_init(*, fusekit_wheel_url: str = "", openclaw_install_url: str)
 
     fusekit_package = quote(fusekit_wheel_url or "fusekit")
     python_bin = "/opt/fusekit-python/bin/python"
-    install_fusekit = f"{python_bin} -m pip install --upgrade {fusekit_package}"
+    playwright_browsers_path = "/opt/fusekit-playwright-browsers"
+    fusekit_install_flags = "--upgrade"
+    if fusekit_wheel_url.startswith("git+"):
+        fusekit_install_flags = "--upgrade --force-reinstall --no-cache-dir"
+    install_fusekit = f"{python_bin} -m pip install {fusekit_install_flags} {fusekit_package}"
+    install_playwright = (
+        f"env PLAYWRIGHT_BROWSERS_PATH={playwright_browsers_path} "
+        f"{python_bin} -m playwright install --with-deps chromium"
+    )
     install_openclaw = (
-        "OPENCLAW_HOME=/var/lib/fusekit-runner/openclaw-state "
+        "env OPENCLAW_HOME=/var/lib/fusekit-runner/openclaw-state "
         "bash /opt/fusekit-openclaw/install-openclaw.sh "
         "--prefix /opt/fusekit-openclaw --version latest --no-onboard"
     )
@@ -125,12 +133,21 @@ write_files:
       export FUSEKIT_HOME=/var/lib/fusekit-runner/fusekit-runtime
       export FUSEKIT_OPENCLAW_BIN=/opt/fusekit-openclaw/bin/openclaw
       export OPENCLAW_HOME=/var/lib/fusekit-runner/openclaw-state
+      export PLAYWRIGHT_BROWSERS_PATH={playwright_browsers_path}
       python3 --version
       /opt/fusekit-python/bin/python --version
       fusekit --version
       openclaw --version
       openclaw doctor --non-interactive
-      openclaw browser status --json
+      /opt/fusekit-python/bin/python - <<'PY'
+      from playwright.sync_api import sync_playwright
+      with sync_playwright() as playwright:
+          browser = playwright.chromium.launch(headless=True)
+          page = browser.new_page()
+          page.goto('data:text/html,<title>fusekit-ok</title>')
+          assert page.title() == 'fusekit-ok'
+          browser.close()
+      PY
   - path: /usr/local/sbin/fusekit-runner-loop-once
     permissions: '0755'
     content: |
@@ -140,13 +157,15 @@ write_files:
       export FUSEKIT_HOME=/var/lib/fusekit-runner/fusekit-runtime
       export FUSEKIT_OPENCLAW_BIN=/opt/fusekit-openclaw/bin/openclaw
       export OPENCLAW_HOME=/var/lib/fusekit-runner/openclaw-state
+      export PLAYWRIGHT_BROWSERS_PATH={playwright_browsers_path}
       {runner_loop}
 runcmd:
   - mkdir -p /var/lib/fusekit-runner
+  - mkdir -p {playwright_browsers_path}
   - python3 -m venv /opt/fusekit-python
   - fusekit-retry /opt/fusekit-python/bin/python -m pip install --upgrade pip setuptools wheel
   - fusekit-retry {install_fusekit}
-  - fusekit-retry /opt/fusekit-python/bin/python -m playwright install --with-deps chromium
+  - fusekit-retry {install_playwright}
   - ln -sf /opt/fusekit-python/bin/fusekit /usr/local/bin/fusekit
   - ln -sf /opt/fusekit-python/bin/fusekit-runner-loop /usr/local/bin/fusekit-runner-loop
   - mkdir -p /opt/fusekit-openclaw
@@ -167,6 +186,16 @@ runcmd:
     PY
   - fusekit-retry {install_openclaw}
   - ln -sf /opt/fusekit-openclaw/bin/openclaw /usr/local/bin/openclaw
+  - |
+    runner_user=
+    if id ubuntu >/dev/null 2>&1; then
+      runner_user=ubuntu
+    elif id opc >/dev/null 2>&1; then
+      runner_user=opc
+    fi
+    if [ -n "$runner_user" ]; then
+      chown -R "$runner_user:$runner_user" /var/lib/fusekit-runner {playwright_browsers_path}
+    fi
   - {verify_openclaw}
 """
 
@@ -192,7 +221,7 @@ def execute_remote_setup(
         key_path.chmod(0o600)
         archive = temp_path / "app.tar.gz"
         _create_app_archive(app_path, archive)
-        remote = f"opc@{workspace.public_ip}"
+        remote = _workspace_remote(workspace)
         ssh = _ssh_base(key_path)
         scp = _scp_base(key_path)
         _wait_for_remote_ready(run, ssh, remote)
@@ -224,6 +253,7 @@ def execute_remote_setup(
             "export FUSEKIT_HOME=/var/lib/fusekit-runner/fusekit-runtime; "
             "export FUSEKIT_OPENCLAW_BIN=/opt/fusekit-openclaw/bin/openclaw; "
             "export OPENCLAW_HOME=/var/lib/fusekit-runner/openclaw-state; "
+            "export PLAYWRIGHT_BROWSERS_PATH=/opt/fusekit-playwright-browsers; "
             "trap 'rm -f /var/lib/fusekit-runner/passphrase' EXIT; "
             "cat > /var/lib/fusekit-runner/passphrase; "
             "cd /var/lib/fusekit-runner/app; "
@@ -269,7 +299,7 @@ def detonate_remote_worker(
         key_path = Path(temp) / "runner.key"
         key_path.write_text(key, encoding="utf-8")
         key_path.chmod(0o600)
-        remote = f"opc@{workspace.public_ip}"
+        remote = _workspace_remote(workspace)
         command = (
             "rm -rf /var/lib/fusekit-runner/app "
             "/var/lib/fusekit-runner/tmp "
@@ -345,6 +375,11 @@ def _validate_artifact_bundle(output_dir: Path) -> str:
 
 def _workspace_ssh_private_key(vault: Vault, run_id: str) -> str:
     return vault.require(f"runner.oci.{run_id}.ssh.private").value
+
+
+def _workspace_remote(workspace: OciWorkspace) -> str:
+    ssh_user = getattr(workspace, "ssh_user", "opc") or "opc"
+    return f"{ssh_user}@{workspace.public_ip}"
 
 
 def _ssh_base(key_path: Path) -> list[str]:

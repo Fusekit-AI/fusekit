@@ -46,6 +46,7 @@ class OciWorkspace:
     compartment_id: str
     availability_domain: str
     shape: str
+    ssh_user: str = "opc"
     public_ip: str = ""
     resource_ids: dict[str, str] = field(default_factory=dict)
 
@@ -57,6 +58,7 @@ class OciWorkspace:
             "compartment_id": self.compartment_id,
             "availability_domain": self.availability_domain,
             "shape": self.shape,
+            "ssh_user": self.ssh_user,
             "public_ip": self.public_ip,
             "resource_ids": self.resource_ids,
         }
@@ -72,6 +74,7 @@ class OciWorkspace:
             compartment_id=str(data["compartment_id"]),
             availability_domain=str(data["availability_domain"]),
             shape=str(data["shape"]),
+            ssh_user=str(data.get("ssh_user", "opc")),
             public_ip=str(data.get("public_ip", "")),
             resource_ids={str(k): str(v) for k, v in resource_ids.items()},
         )
@@ -150,7 +153,7 @@ class OciProvisioner:
                 f"OCI workspace: launching VM shape {plan.shape} "
                 f"({plan.ocpus} OCPU, {plan.memory_gb} GB)"
             )
-            instance, selected_plan = self._launch_with_capacity_fallback(
+            instance, selected_plan, ssh_user = self._launch_with_capacity_fallback(
                 base_plan=plan,
                 compartment_id=compartment_id,
                 availability_domain=availability_domain,
@@ -162,6 +165,7 @@ class OciProvisioner:
                 tags=tags,
             )
             workspace.shape = selected_plan.shape
+            workspace.ssh_user = ssh_user
             workspace.resource_ids["instance"] = instance.id
             self._emit_progress(f"OCI workspace: VM is running on shape {selected_plan.shape}")
             self._emit_progress("OCI workspace: waiting for public IP")
@@ -175,7 +179,12 @@ class OciProvisioner:
                 "oci",
                 "OCI clean-room runner workspace",
                 json.dumps(workspace.to_dict(), sort_keys=True),
-                {"run_id": run_id, "shape": workspace.shape, "public_ip": workspace.public_ip},
+                {
+                    "run_id": run_id,
+                    "shape": workspace.shape,
+                    "public_ip": workspace.public_ip,
+                    "ssh_user": workspace.ssh_user,
+                },
             )
             return workspace
         except Exception:
@@ -343,7 +352,7 @@ class OciProvisioner:
         )
         return self.network.create_subnet(details).data
 
-    def _latest_image(self, compartment_id: str, shape: str) -> str:
+    def _latest_image(self, compartment_id: str, shape: str) -> tuple[str, str]:
         images = self.compute.list_images(
             compartment_id=compartment_id,
             operating_system="Canonical Ubuntu",
@@ -359,9 +368,12 @@ class OciProvisioner:
                 sort_by="TIMECREATED",
                 sort_order="DESC",
             ).data
+            ssh_user = "opc"
+        else:
+            ssh_user = "ubuntu"
         if not images:
             raise FuseKitError(f"No OCI image found for shape {shape}.")
-        return str(images[0].id)
+        return str(images[0].id), ssh_user
 
     def _launch_instance(
         self,
@@ -426,7 +438,7 @@ class OciProvisioner:
         ssh_public_key: str,
         cloud_init: str,
         tags: dict[str, str],
-    ) -> tuple[Any, OciRunnerPlan]:
+    ) -> tuple[Any, OciRunnerPlan, str]:
         if is_arm_shape(base_plan.shape):
             raise FuseKitError(
                 f"OCI runner shape {base_plan.shape} is ARM-based. "
@@ -455,7 +467,7 @@ class OciProvisioner:
             seen.add(key)
             try:
                 self._emit_progress(f"OCI workspace: finding image for {candidate.shape}")
-                image_id = self._latest_image(compartment_id, candidate.shape)
+                image_id, ssh_user = self._latest_image(compartment_id, candidate.shape)
                 self._emit_progress(f"OCI workspace: trying shape {candidate.shape}")
                 return (
                     self._launch_instance(
@@ -471,6 +483,7 @@ class OciProvisioner:
                         tags=tags,
                     ),
                     candidate,
+                    ssh_user,
                 )
             except Exception as exc:
                 last_error = exc
