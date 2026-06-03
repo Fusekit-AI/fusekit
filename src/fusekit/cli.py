@@ -1182,16 +1182,10 @@ def _cmd_setup(args: argparse.Namespace) -> int:
         args.manifest = manifest_path
         _apply_loaded_manifest(args, manifest)
         _attach_local_survivor_artifacts(args, job)
-        verification_safe = _verification_report_path_allows_detonation(args.verification_report)
-        job.mark(
-            "verify.live",
-            "done" if verification_safe else "skipped",
-            (
-                "verification is passed or pending-safe"
-                if verification_safe
-                else "local rehearsal did not require live verification"
-            ),
+        verification_status, verification_detail = _local_verification_job_result(
+            args.verification_report
         )
+        job.mark("verify.live", verification_status, verification_detail)
         job.mark("setup.execute", "done", "local setup worker completed")
         job.mark("artifacts.retrieve", "done", "encrypted/redacted artifacts were written locally")
         if not args.no_detonate:
@@ -1337,6 +1331,21 @@ def _attach_local_survivor_artifacts(args: argparse.Namespace, job: JobState) ->
     ):
         if Path(path).exists():
             job.add_artifact(name, Path(path))
+
+
+def _local_verification_job_result(path: Path) -> tuple[str, str]:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return "skipped", "local rehearsal did not produce a verification report"
+    if not isinstance(raw, dict):
+        return "failed", "verification report is malformed"
+    checks = raw.get("checks", [])
+    if verification_report_allows_detonation(raw):
+        return "done", "verification is passed or pending-safe"
+    if isinstance(checks, list) and checks:
+        return "failed", "verification report contains failed or blocked checks"
+    return "skipped", "local rehearsal did not require live verification"
 
 
 def _write_apply_artifacts(

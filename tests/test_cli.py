@@ -7,6 +7,7 @@ from urllib.error import URLError
 from fusekit.audit import AuditLog, Receipt, assert_no_secret_text
 from fusekit.cli import (
     _attempt_provider_api_fallback,
+    _local_verification_job_result,
     _playwright_headless,
     _repair_navigation_completed,
     _verify_apply_live_url,
@@ -1021,7 +1022,7 @@ def test_setup_runs_one_command_rehearsal_and_detonates(tmp_path) -> None:
     job = json.loads((app / ".fusekit" / "job.json").read_text("utf-8"))
     assert job["runner"] == "local"
     assert any(step["id"] == "setup.execute" and step["status"] == "done" for step in job["steps"])
-    assert any(step["id"] == "verify.live" and step["status"] == "skipped" for step in job["steps"])
+    assert any(step["id"] == "verify.live" and step["status"] == "failed" for step in job["steps"])
     run_state = json.loads((app / ".fusekit" / "run_state.json").read_text("utf-8"))
     assert run_state["app_repo_known"] is True
     assert run_state["runner_selected"] is True
@@ -1057,7 +1058,7 @@ def test_local_launch_control_room_has_truth_artifacts(tmp_path) -> None:
     job = json.loads((app / ".fusekit" / "job.json").read_text("utf-8"))
     assert "Launch contract" in html
     assert "local runner selected" in json.dumps(job)
-    assert "local rehearsal did not require live verification" in html
+    assert "verification report contains failed or blocked checks" in html
     assert job["artifacts"]["verification_report"].endswith("verification_report.json")
     assert job["artifacts"]["rollback_plan"].endswith("rollback_plan.json")
     assert job["artifacts"]["vault"].endswith("fusekit.vault.json")
@@ -1411,6 +1412,60 @@ def test_remote_verification_path_must_be_passed_or_pending_safe(tmp_path) -> No
         encoding="utf-8",
     )
     assert _verification_report_path_allows_detonation(report) is True
+
+
+def test_local_verification_job_result_reflects_failed_report(tmp_path) -> None:
+    report = tmp_path / "verification_report.json"
+    report.write_text(
+        json.dumps(
+            {
+                "checks": [
+                    {
+                        "provider": "vercel",
+                        "check": "project_exists",
+                        "status": "needs_human_gate",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert _local_verification_job_result(report) == (
+        "failed",
+        "verification report contains failed or blocked checks",
+    )
+
+
+def test_local_verification_job_result_allows_pending_safe_report(tmp_path) -> None:
+    report = tmp_path / "verification_report.json"
+    report.write_text(
+        json.dumps(
+            {
+                "checks": [
+                    {
+                        "provider": "live_app",
+                        "check": "live_url_healthy",
+                        "status": "pending",
+                        "details": {"pending_safe": True},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert _local_verification_job_result(report) == (
+        "done",
+        "verification is passed or pending-safe",
+    )
+
+
+def test_local_verification_job_result_skips_missing_rehearsal_report(tmp_path) -> None:
+    assert _local_verification_job_result(tmp_path / "missing.json") == (
+        "skipped",
+        "local rehearsal did not produce a verification report",
+    )
 
 
 def test_allow_incomplete_live_url_failure_is_pending_safe(monkeypatch, tmp_path) -> None:
