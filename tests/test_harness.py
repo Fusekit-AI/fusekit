@@ -36,6 +36,91 @@ def test_acceptance_live_requires_real_provider_evidence(tmp_path) -> None:
     assert "rollback metadata" in report.missing
 
 
+def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "package.json").write_text(
+        json.dumps({"name": "moonlite-rsvp", "dependencies": {"next": "latest"}}),
+        encoding="utf-8",
+    )
+    (app / "index.js").write_text("console.log(process.env.WEBHOOK_SECRET)", encoding="utf-8")
+
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.put(
+        "provider.github.token",
+        "provider_token",
+        "github",
+        "GitHub token",
+        "ghp_secret_for_harness",
+    )
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    (remote_fusekit / "audit.jsonl").write_text('{"event":"provider.verify"}\n', "utf-8")
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "live_url": "https://moonlite.example",
+                "raw_secrets_exposed": 0,
+                "actions": [{"provider": "github", "action": "secret.upsert"}],
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "verification_report.json").write_text(
+        json.dumps(
+            {
+                "checks": [
+                    {
+                        "provider": "github",
+                        "check": "repo_secret_exists",
+                        "status": "passed",
+                    },
+                    {
+                        "provider": "vercel",
+                        "check": "deployment_ready",
+                        "status": "passed",
+                    },
+                    {
+                        "provider": "live_app",
+                        "check": "live_url_healthy",
+                        "status": "passed",
+                    },
+                ]
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "rollback_plan.json").write_text(
+        json.dumps(
+            {
+                "rollback": [
+                    {"action": "rollback.github.secret", "status": "planned"},
+                    {"action": "rollback.vercel.env", "status": "planned"},
+                ]
+            }
+        ),
+        "utf-8",
+    )
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    assert report.launch_ready is True
+    check_ids = {check.id for check in report.checks}
+    assert "remote_artifacts.loaded" in check_ids
+    assert "verification_report.safe" in check_ids
+    assert report.missing == ()
+    report_json = json.loads((app / ".fusekit" / "acceptance" / "report.json").read_text())
+    assert report_json["launch_ready"] is True
+    assert any(check["id"] == "remote_artifacts.loaded" for check in report_json["checks"])
+
+
 def test_acceptance_cli_checks_vault_without_leaking_secret(tmp_path, capsys) -> None:
     app = tmp_path / "app"
     app.mkdir()

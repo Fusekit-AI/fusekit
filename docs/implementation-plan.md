@@ -260,4 +260,4 @@
 - [x] Fixed gap 5: README documents the supervised real-provider acceptance run protocol and marks live execution as pending provider account handoff.
 - [x] Fixed gap 6: failed/pending provider verification now feeds redacted errors into a bounded inferred UI repair pass and reruns verification.
 - [ ] Remaining: full public acceptance run still requires supervised GitHub/Vercel/Cloudflare authorization and a disposable test domain.
-- [ ] Remaining: acceptance harness should ingest provider verification results directly from remote OCI artifacts once the first live run is completed.
+- [x] Remaining: acceptance harness can ingest provider verification results directly from retrieved remote OCI artifacts.

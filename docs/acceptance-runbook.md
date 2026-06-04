@@ -51,7 +51,7 @@ Then run the proof gate:
 ```zsh
 fusekit acceptance run /path/to/moonlite-rsvp \
   --mode live \
-  --vault /path/to/moonlite-rsvp/.fusekit/fusekit.vault.json \
+  --remote-artifacts /path/to/moonlite-rsvp/.fusekit/remote-artifacts \
   --passphrase-file /path/to/pass.txt
 ```
 

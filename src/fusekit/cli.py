@@ -300,6 +300,12 @@ def _parser() -> argparse.ArgumentParser:
     _vault_args(acceptance_run)
     acceptance_run.add_argument("--receipt", type=Path, default=None)
     acceptance_run.add_argument("--audit-log", type=Path, default=None)
+    acceptance_run.add_argument(
+        "--remote-artifacts",
+        type=Path,
+        default=None,
+        help="retrieved OCI artifact directory to use as live acceptance evidence",
+    )
     acceptance_run.add_argument("--output-dir", type=Path, default=None)
     acceptance_run.add_argument("--json", action="store_true", dest="as_json")
     acceptance_run.set_defaults(handler=_cmd_acceptance_run)
@@ -960,6 +966,7 @@ def _cmd_acceptance_run(args: argparse.Namespace) -> int:
         passphrase=_optional_passphrase(args),
         receipt_path=args.receipt,
         audit_log_path=args.audit_log,
+        remote_artifacts_path=args.remote_artifacts,
         output_dir=args.output_dir,
     )
     if args.as_json:

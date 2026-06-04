@@ -84,6 +84,7 @@ def run_acceptance(
     passphrase: str | None = None,
     receipt_path: Path | None = None,
     audit_log_path: Path | None = None,
+    remote_artifacts_path: Path | None = None,
     output_dir: Path | None = None,
 ) -> AcceptanceReport:
     """Run a redacted harness pass for launch readiness.
@@ -99,10 +100,14 @@ def run_acceptance(
         raise FuseKitError(f"App path does not exist: {app_path}")
     fusekit_dir = app_path / ".fusekit"
     output_dir = _app_relative(app_path, output_dir) or (fusekit_dir / "acceptance")
+    remote_fusekit_dir = _resolve_remote_fusekit_dir(app_path, remote_artifacts_path)
+    evidence_fusekit_dir = remote_fusekit_dir or fusekit_dir
     ledger = HarnessLedger.create(output_dir)
     checks: list[AcceptanceCheck] = []
     missing: list[str] = []
     ledger.record("acceptance.started", {"mode": mode, "app_path": str(app_path)})
+    if remote_fusekit_dir is not None:
+        _record_remote_artifacts(remote_fusekit_dir, checks, ledger)
 
     manifest_path = _app_relative(app_path, manifest_path) or (app_path / "fusekit.yaml")
     manifest = _load_or_scan_manifest(app_path, manifest_path, checks, ledger)
@@ -129,23 +134,35 @@ def run_acceptance(
             )
         )
 
-    vault_path = _app_relative(app_path, vault_path) or (fusekit_dir / "fusekit.vault.json")
+    vault_path = _app_relative(app_path, vault_path) or (
+        evidence_fusekit_dir / "fusekit.vault.json"
+    )
     _check_vault(vault_path, passphrase, mode, checks, missing, ledger)
 
-    receipt_path = _app_relative(app_path, receipt_path) or (fusekit_dir / "setup_receipt.json")
+    receipt_path = _app_relative(app_path, receipt_path) or (
+        evidence_fusekit_dir / "setup_receipt.json"
+    )
     _check_receipt(receipt_path, mode, checks, missing, ledger)
 
-    audit_log_path = _app_relative(app_path, audit_log_path) or (fusekit_dir / "audit.jsonl")
+    audit_log_path = _app_relative(app_path, audit_log_path) or (
+        evidence_fusekit_dir / "audit.jsonl"
+    )
     _check_audit_log(audit_log_path, mode, checks, missing)
     _check_verification_report(
-        fusekit_dir / "verification_report.json",
+        evidence_fusekit_dir / "verification_report.json",
         mode,
         checks,
         missing,
         ledger,
     )
-    _check_rollback_metadata(fusekit_dir / "rollback_plan.json", mode, checks, missing, ledger)
-    _check_detonation(fusekit_dir, mode, checks, missing)
+    _check_rollback_metadata(
+        evidence_fusekit_dir / "rollback_plan.json",
+        mode,
+        checks,
+        missing,
+        ledger,
+    )
+    _check_detonation(evidence_fusekit_dir, mode, checks, missing)
     _check_leaks(app_path, checks, missing, ledger)
 
     launch_ready = all(check.status == "ok" for check in checks) and not missing
@@ -172,6 +189,58 @@ def _app_relative(app_path: Path, path: Path | None) -> Path | None:
     if path.is_absolute():
         return path
     return app_path / path
+
+
+def _resolve_remote_fusekit_dir(app_path: Path, path: Path | None) -> Path | None:
+    root = _app_relative(app_path, path)
+    if root is None:
+        return None
+    root = root.resolve()
+    if not root.exists():
+        raise FuseKitError(f"Remote artifact path does not exist: {root}")
+    fusekit_dir = root if root.name == ".fusekit" else root / ".fusekit"
+    if not fusekit_dir.is_dir():
+        raise FuseKitError(
+            "Remote artifact path must be a retrieved OCI artifact directory "
+            f"containing .fusekit: {root}"
+        )
+    return fusekit_dir
+
+
+def _record_remote_artifacts(
+    remote_fusekit_dir: Path,
+    checks: list[AcceptanceCheck],
+    ledger: HarnessLedger,
+) -> None:
+    expected = (
+        "fusekit.vault.json",
+        "setup_receipt.json",
+        "audit.jsonl",
+        "verification_report.json",
+        "rollback_plan.json",
+        "provider_strategies.json",
+    )
+    inventory = {
+        name: {
+            "present": (remote_fusekit_dir / name).exists(),
+            "bytes": (remote_fusekit_dir / name).stat().st_size
+            if (remote_fusekit_dir / name).exists()
+            else 0,
+        }
+        for name in expected
+    }
+    snapshot = ledger.snapshot_json(
+        "remote-artifact-inventory",
+        {"fusekit_dir": str(remote_fusekit_dir), "files": inventory},
+    )
+    checks.append(
+        AcceptanceCheck(
+            "remote_artifacts.loaded",
+            "ok",
+            "Using retrieved OCI artifacts as live acceptance evidence.",
+            str(snapshot),
+        )
+    )
 
 
 def _load_or_scan_manifest(
