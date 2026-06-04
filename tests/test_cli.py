@@ -1333,6 +1333,10 @@ def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch)
         '{"rollback":[{"action":"rollback.github.secret","status":"planned"}]}',
         encoding="utf-8",
     )
+    (remote_fusekit / "provider_strategies.json").write_text(
+        '{"providers":[]}',
+        encoding="utf-8",
+    )
 
     def fake_remote_setup(**kwargs):  # type: ignore[no-untyped-def]
         return {"artifact_archive": "artifacts.tar.gz", "output_dir": str(remote_artifacts)}

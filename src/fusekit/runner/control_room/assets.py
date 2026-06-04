@@ -1044,6 +1044,7 @@ button {
 }
 
 .trust-panel,
+.strategy-panel,
 .run-state-panel {
   min-width: 0;
   margin-top: 18px;
@@ -1179,10 +1180,73 @@ button {
 }
 
 .trust-grid,
+.strategy-grid,
 .run-state-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
+}
+
+.strategy-card {
+  min-width: 0;
+  border: 1px solid rgba(17, 22, 21, 0.11);
+  border-radius: 8px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.strategy-card.pending {
+  border-color: rgba(0, 151, 255, 0.22);
+  background: #f2f8ff;
+}
+
+.strategy-card span,
+.strategy-card strong,
+.strategy-card p,
+.strategy-card b,
+.strategy-card em,
+.strategy-card small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.strategy-card span {
+  color: var(--snow-muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.strategy-card strong {
+  margin-top: 5px;
+  color: var(--snow-navy);
+  font-size: 15px;
+}
+
+.strategy-card p {
+  margin: 11px 0 0;
+  border-top: 1px solid rgba(0, 21, 42, 0.1);
+  padding-top: 10px;
+}
+
+.strategy-card b {
+  color: #13263a;
+  font-size: 12px;
+}
+
+.strategy-card em {
+  margin-top: 4px;
+  color: #0067d9;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.strategy-card small {
+  margin-top: 5px;
+  color: #42566c;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .trust-card {
@@ -1456,6 +1520,7 @@ button {
   .workspace,
   .checkpoint-grid,
   .trust-grid,
+  .strategy-grid,
   .run-state-grid,
   .visual-grid {
     grid-template-columns: 1fr;

@@ -13,6 +13,7 @@ import uuid
 import webbrowser
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 from fusekit import __version__
@@ -1343,6 +1344,7 @@ def _attach_local_survivor_artifacts(args: argparse.Namespace, job: JobState) ->
         ("receipt_md", args.receipt_md),
         ("verification_report", args.verification_report),
         ("rollback_plan", args.rollback_json),
+        ("provider_strategies", _provider_strategy_artifact_path(Path(args.vault))),
     ):
         if Path(path).exists():
             job.add_artifact(name, Path(path))
@@ -1977,6 +1979,11 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
     rollback_plan = Path(artifacts["output_dir"]) / ".fusekit" / "rollback_plan.json"
     if rollback_plan.exists():
         job.add_artifact("rollback_plan", rollback_plan)
+    provider_strategies = (
+        Path(artifacts["output_dir"]) / ".fusekit" / "provider_strategies.json"
+    )
+    if provider_strategies.exists():
+        job.add_artifact("provider_strategies", provider_strategies)
     receipt_path = Path(artifacts["output_dir"]) / ".fusekit" / "setup_receipt.json"
     _mark_run_state(
         args,
@@ -2713,6 +2720,7 @@ def _run_manifest_provider_pack_setup(
     context: ProviderSetupContext,
 ) -> None:
     app_path = Path(manifest.app_path)
+    strategy_runs: list[dict[str, object]] = []
     providers = {service.provider.lower(): service for service in manifest.services}
     if manifest.domains and not any(provider in providers for provider in {"cloudflare", "dns"}):
         providers["cloudflare"] = ServiceRequirement(
@@ -2737,8 +2745,52 @@ def _run_manifest_provider_pack_setup(
             )
             continue
         result = run_provider_pack_setup(pack, context)
+        strategy_runs.append(_provider_strategy_record(result))
+        _write_provider_strategy_artifact(args, strategy_runs)
         context.audit.record("provider_pack.setup", result)
         context.receipt.add_action("provider_pack.setup", "ok", result)
+    if not strategy_runs:
+        _write_provider_strategy_artifact(args, strategy_runs)
+
+
+def _provider_strategy_record(result: dict[str, Any]) -> dict[str, object]:
+    strategies: list[dict[str, object]] = []
+    for item in result.get("setup", []):
+        if not isinstance(item, dict):
+            continue
+        decision = item.get("strategy_decision")
+        if not isinstance(decision, dict):
+            continue
+        selected = decision.get("selected", {})
+        strategies.append(
+            {
+                "recipe": str(item.get("kind", decision.get("recipe_kind", ""))),
+                "status": str(item.get("status", "")),
+                "strategy": str(item.get("strategy", selected.get("kind", "")))
+                if isinstance(selected, dict)
+                else str(item.get("strategy", "")),
+                "decision": decision,
+            }
+        )
+    return {"provider": str(result.get("provider", "")), "strategies": strategies}
+
+
+def _write_provider_strategy_artifact(
+    args: argparse.Namespace,
+    strategy_runs: list[dict[str, object]],
+) -> Path:
+    path = _provider_strategy_artifact_path(Path(args.vault))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema_version": "fusekit.provider-strategies.v1",
+        "providers": strategy_runs,
+    }
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
+def _provider_strategy_artifact_path(vault_path: Path) -> Path:
+    return vault_path.parent / "provider_strategies.json"
 
 
 def _provider_pack_path(app_path: Path, provider: str, service: ServiceRequirement) -> Path:

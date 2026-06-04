@@ -645,6 +645,48 @@ def test_control_room_payload_and_html_include_visual_session(tmp_path) -> None:
     assert "http://203.0.113.10:6080/vnc.html?autoconnect=1" in html
 
 
+def test_control_room_payload_and_html_include_provider_strategy_routes(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    (tmp_path / "provider_strategies.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.provider-strategies.v1",
+                "providers": [
+                    {
+                        "provider": "github",
+                        "strategies": [
+                            {
+                                "recipe": "github-deploy-key",
+                                "status": "needs_human_gate",
+                                "strategy": "browser_guided",
+                                "decision": {
+                                    "selected": {
+                                        "kind": "browser_guided",
+                                        "reason": "Provider token is missing.",
+                                    }
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+
+    assert payload["provider_strategies"]["providers"][0]["provider"] == "github"
+    assert "Provider routes" in html
+    assert "How FuseKit is connecting services" in html
+    assert "github-deploy-key" in html
+    assert "browser guided" in html
+    assert "Provider token is missing." in html
+
+
 def test_control_room_server_uses_local_only_and_security_headers(tmp_path) -> None:
     assert _is_loopback("127.0.0.1")
     assert _is_loopback("localhost")
@@ -1090,6 +1132,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
             receipt = tmp_path / "setup_receipt.json"
             verification = tmp_path / "verification_report.json"
             rollback = tmp_path / "rollback_plan.json"
+            strategies = tmp_path / "provider_strategies.json"
             payload.write_text("{}", encoding="utf-8")
             gates.write_text('{"gates":[]}', encoding="utf-8")
             checkpoints.write_text('{"checkpoints":[]}', encoding="utf-8")
@@ -1101,6 +1144,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
                 '{"rollback":[{"action":"rollback.test","status":"planned"}]}',
                 encoding="utf-8",
             )
+            strategies.write_text('{"providers":[]}', encoding="utf-8")
             archive.add(payload, arcname=".fusekit/job.json")
             archive.add(gates, arcname=".fusekit/gates.json")
             archive.add(checkpoints, arcname=".fusekit/checkpoints.json")
@@ -1109,6 +1153,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
             archive.add(receipt, arcname=".fusekit/setup_receipt.json")
             archive.add(verification, arcname=".fusekit/verification_report.json")
             archive.add(rollback, arcname=".fusekit/rollback_plan.json")
+            archive.add(strategies, arcname=".fusekit/provider_strategies.json")
             archive.close()
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
@@ -1212,6 +1257,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
     assert (tmp_path / "out" / ".fusekit" / "setup_receipt.json").exists()
     assert (tmp_path / "out" / ".fusekit" / "verification_report.json").exists()
     assert (tmp_path / "out" / ".fusekit" / "rollback_plan.json").exists()
+    assert (tmp_path / "out" / ".fusekit" / "provider_strategies.json").exists()
     assert any(".fusekit/gates.json" in command[-1] for command in calls if command[0] == "ssh")
     assert any(
         ".fusekit/checkpoints.json" in command[-1]
@@ -1225,6 +1271,11 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
     )
     assert any(
         ".fusekit/rollback_plan.json" in command[-1]
+        for command in calls
+        if command[0] == "ssh"
+    )
+    assert any(
+        ".fusekit/provider_strategies.json" in command[-1]
         for command in calls
         if command[0] == "ssh"
     )
@@ -1310,6 +1361,7 @@ def test_remote_artifact_bundle_requires_detonation_survivors(tmp_path) -> None:
         "checkpoints.json",
         "verification_report.json",
         "rollback_plan.json",
+        "provider_strategies.json",
     ):
         (fusekit_dir / name).write_text("{}", encoding="utf-8")
 

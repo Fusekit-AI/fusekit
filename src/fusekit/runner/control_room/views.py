@@ -50,6 +50,7 @@ def render_control_room(job: JobState, *, gate_path: Path | None = None) -> str:
     <div data-visual-session>{_render_visual_session(control_payload.get("visual", {}))}</div>
     {_render_recovery(job)}
     {_render_run_state(control_payload.get("run_state", {}))}
+    {_render_provider_strategies(control_payload.get("provider_strategies", {}))}
     {_render_trust(control_payload.get("verification", {}))}
     <section class="workspace">
       {_render_steps(job)}
@@ -349,6 +350,72 @@ def _render_trust(report: Any) -> str:
       </div>
       <div class="trust-grid" data-trust-checks>{cards}</div>
     </section>
+"""
+
+
+def _render_provider_strategies(strategies: Any) -> str:
+    payload = strategies if isinstance(strategies, dict) else {}
+    providers = payload.get("providers", [])
+    if not isinstance(providers, list) or not providers:
+        cards = """
+        <article class="strategy-card pending">
+          <span>Waiting</span>
+          <strong>Provider routes appear after setup starts</strong>
+          <p>FuseKit will show whether it chose API, CLI, browser guidance, or follow-me.</p>
+        </article>
+"""
+    else:
+        cards = "\n".join(_render_strategy_card(item) for item in providers)
+    return f"""
+    <section class="strategy-panel" aria-label="Provider route decisions">
+      <div class="section-head compact">
+        <div>
+          <span class="section-kicker">Provider routes</span>
+          <h2>How FuseKit is connecting services</h2>
+        </div>
+        <span class="live-pill">API, CLI, browser, or follow-me</span>
+      </div>
+      <div class="strategy-grid" data-provider-strategies>{cards}</div>
+    </section>
+"""
+
+
+def _render_strategy_card(provider_record: Any) -> str:
+    if not isinstance(provider_record, dict):
+        return ""
+    provider = str(provider_record.get("provider", "provider"))
+    strategies = provider_record.get("strategies", [])
+    if not isinstance(strategies, list) or not strategies:
+        return f"""
+        <article class="strategy-card pending">
+          <span>{html.escape(provider)}</span>
+          <strong>No route decision recorded yet</strong>
+          <p>FuseKit is still preparing provider setup.</p>
+        </article>
+"""
+    rows = "\n".join(_render_strategy_row(item) for item in strategies if isinstance(item, dict))
+    return f"""
+        <article class="strategy-card">
+          <span>{html.escape(provider)}</span>
+          <strong>{len(strategies)} setup route{'s' if len(strategies) != 1 else ''}</strong>
+          <div>{rows}</div>
+        </article>
+"""
+
+
+def _render_strategy_row(strategy: dict[str, Any]) -> str:
+    decision = strategy.get("decision", {})
+    selected = decision.get("selected", {}) if isinstance(decision, dict) else {}
+    reason = str(selected.get("reason", "")) if isinstance(selected, dict) else ""
+    route = str(strategy.get("strategy", "unknown"))
+    status = str(strategy.get("status", "pending"))
+    recipe = str(strategy.get("recipe", "setup"))
+    return f"""
+            <p>
+              <b>{html.escape(recipe)}</b>
+              <em>{html.escape(route.replace('_', ' '))} · {html.escape(status)}</em>
+              <small>{html.escape(reason)}</small>
+            </p>
 """
 
 

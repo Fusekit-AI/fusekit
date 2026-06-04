@@ -515,6 +515,59 @@ function renderTrust(job) {
     .join("");
 }
 
+function renderProviderStrategies(job) {
+  const root = document.querySelector("[data-provider-strategies]");
+  if (!root) return;
+  const payload = job.provider_strategies || {};
+  const providers = Array.isArray(payload.providers) ? payload.providers : [];
+  if (!providers.length) {
+    root.innerHTML =
+      "<article class='strategy-card pending'>" +
+      "<span>Waiting</span><strong>Provider routes appear after setup starts</strong>" +
+      "<p>FuseKit will show whether it chose API, CLI, browser guidance, or follow-me.</p>" +
+      "</article>";
+    return;
+  }
+  root.innerHTML = providers.map(renderProviderStrategyCard).join("");
+}
+
+function renderProviderStrategyCard(providerRecord) {
+  const provider = String(providerRecord.provider || "provider");
+  const strategies = Array.isArray(providerRecord.strategies) ? providerRecord.strategies : [];
+  if (!strategies.length) {
+    return `
+      <article class="strategy-card pending">
+        <span>${escapeHtml(provider)}</span>
+        <strong>No route decision recorded yet</strong>
+        <p>FuseKit is still preparing provider setup.</p>
+      </article>
+    `;
+  }
+  return `
+    <article class="strategy-card">
+      <span>${escapeHtml(provider)}</span>
+      <strong>${strategies.length} setup route${strategies.length === 1 ? "" : "s"}</strong>
+      <div>${strategies.map(renderProviderStrategyRow).join("")}</div>
+    </article>
+  `;
+}
+
+function renderProviderStrategyRow(strategy) {
+  const decision = strategy.decision || {};
+  const selected = decision.selected || {};
+  const recipe = String(strategy.recipe || "setup");
+  const route = String(strategy.strategy || "unknown").replaceAll("_", " ");
+  const status = String(strategy.status || "pending");
+  const reason = String(selected.reason || "");
+  return `
+    <p>
+      <b>${escapeHtml(recipe)}</b>
+      <em>${escapeHtml(route)} · ${escapeHtml(status)}</em>
+      <small>${escapeHtml(reason)}</small>
+    </p>
+  `;
+}
+
 const runStateLabels = {
   app_repo_known: "App repo",
   runner_selected: "Runner",
@@ -646,6 +699,7 @@ function render(job) {
   renderCheckpoints(job);
   renderRunState(job);
   renderTrust(job);
+  renderProviderStrategies(job);
   renderVisual(job);
   renderSteps(job);
   renderArtifacts(job);
