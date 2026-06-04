@@ -182,7 +182,7 @@
 ## Milestone 10: Launch Hardening
 
 - [x] Rewrite README around the real setup flow.
-- [ ] Add safety model diagram.
+- [x] Add safety model diagram.
 - [x] Add local control-room HTML artifact for runner/job visibility.
 - [x] Add live control-room server for runner/job visibility.
 - [x] Add plaintext secret-leak scanner for repos and artifacts.
@@ -191,7 +191,7 @@
 - [x] Add provider authorization guide.
 - [x] Add launch acceptance harness with redacted proof ledger and launch-readiness report.
 - [x] Add public acceptance app/runbook for the launch recording path.
-- [ ] Add threat model.
+- [x] Add threat model.
 - [x] Run full tests.
 - [x] Verify package install from fresh checkout.
 - [x] Verify `.gitignore` blocks vault bundles, logs, receipts, and worker temp files.

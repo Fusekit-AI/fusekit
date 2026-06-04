@@ -48,6 +48,32 @@ artifacts and removes plaintext worker state.
 - Receipts, audit logs, launcher files, and acceptance reports are public by
   default and must be redacted.
 
+## Safety Model
+
+```mermaid
+flowchart LR
+    User["Human user<br/>passes provider gates"] --> Runner["FuseKit runner<br/>local or OCI clean room"]
+    App["Generated app<br/>untrusted consumer"] --> Broker["Capability broker<br/>default deny"]
+    Runner --> Vault["Encrypted vault<br/>long-lived secret artifact"]
+    Runner --> Providers["Provider APIs and websites<br/>GitHub, Vercel, DNS, email"]
+    Providers --> Gates["Provider-owned gates<br/>MFA, CAPTCHA, billing, consent"]
+    Gates --> User
+    Broker --> SafeResponses["Safe capability responses<br/>metadata, health, handles"]
+    Vault --> Broker
+    Runner --> Receipts["Redacted receipts, audit logs,<br/>verification reports"]
+    Runner --> Detonation["Detonation<br/>remove plaintext worker state"]
+
+    App -. "raw-secret request denied" .-> Broker
+    Providers -. "raw tokens captured only after approval" .-> Vault
+    Receipts -. "public-safe artifacts" .-> User
+```
+
+The central boundary is between the unlocked runner and everything that can
+outlive the setup run. Secrets may be present only inside the active runner or
+encrypted vault. Generated apps, receipts, audits, prompts, screenshots,
+launcher files, and acceptance artifacts receive redacted metadata or safe
+capability responses.
+
 ## Main Risks
 
 - secret leakage through generated files, logs, receipts, screenshots, command
