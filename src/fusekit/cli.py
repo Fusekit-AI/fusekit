@@ -404,6 +404,11 @@ def _parser() -> argparse.ArgumentParser:
     launcher.add_argument("--vercel-project", default="")
     launcher.add_argument("--live-url", default="")
     launcher.add_argument("--dns-zone", default="")
+    launcher.add_argument(
+        "--approve-dns",
+        action="store_true",
+        help="forward explicit DNS apply approval into the live Cloud Shell launch",
+    )
     launcher.add_argument("--verify-attempts", type=int, default=10)
     launcher.add_argument("--verify-retry-seconds", type=float, default=30.0)
     launcher.add_argument("--gate-retry-seconds", type=float, default=300.0)
@@ -1076,7 +1081,13 @@ def _cloud_shell_launcher_launch_args(args: argparse.Namespace) -> tuple[str, ..
         value = getattr(args, attr, "")
         if value not in {"", None}:
             forwarded.extend([flag, str(value)])
-    for flag in ("capture_stdin", "infer_ui", "capture_llm_key", "llm_openclaw_device_code"):
+    for flag in (
+        "approve_dns",
+        "capture_stdin",
+        "infer_ui",
+        "capture_llm_key",
+        "llm_openclaw_device_code",
+    ):
         if bool(getattr(args, flag, False)):
             forwarded.append("--" + flag.replace("_", "-"))
     visual_runner = _resolved_cloud_shell_visual_runner(args)

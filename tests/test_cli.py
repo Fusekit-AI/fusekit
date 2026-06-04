@@ -108,6 +108,7 @@ def test_launcher_derives_no_code_live_context_and_snowman_surface(tmp_path) -> 
                 "https://github.com/fusekitdemo/moonlight-rsvp-demo.git",
                 "--fusekit-package",
                 "git+https://github.com/xpxpxp-coder/fusekit.git",
+                "--approve-dns",
             ]
         )
         == 0
@@ -122,6 +123,7 @@ def test_launcher_derives_no_code_live_context_and_snowman_surface(tmp_path) -> 
     assert "--vercel-project moonlight-rsvp-demo" in text
     assert "--dns-zone moonlite.rsvp" in text
     assert "--live-url https://moonlite.rsvp" in text
+    assert "--approve-dns" in text
     assert "--verify-attempts 10" in text
     assert "--verify-retry-seconds 30.0" in text
     assert "--gate-max-attempts 0" in text
