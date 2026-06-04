@@ -7,6 +7,7 @@ import shlex
 import subprocess
 import tarfile
 import threading
+import time
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, cast
@@ -1192,6 +1193,98 @@ def test_oci_create_nsg_wraps_security_rules_for_sdk_request() -> None:
     assert details.security_rules[2].direction == "INGRESS"
     assert details.security_rules[2].tcp_options.destination_port_range.min == 6080
     assert details.security_rules[3].direction == "EGRESS"
+
+
+def test_oci_launch_retries_transient_not_authorized_or_not_found(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Created:
+        def __init__(self, resource_id: str) -> None:
+            self.id = resource_id
+
+    class FakeOciError(Exception):
+        status = 404
+        code = "NotAuthorizedOrNotFound"
+        request_id = "request-1"
+
+    progress: list[str] = []
+    sleeps: list[int] = []
+    plan = build_oci_runner_plan(runner="oci", fusekit_package="fusekit")
+    provisioner = object.__new__(OciProvisioner)
+    provisioner._progress = progress.append
+    attempts = 0
+
+    def launch(**kwargs: object) -> Created:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise FakeOciError("not ready")
+        return Created("ocid1.instance.example")
+
+    provisioner._launch_instance = launch
+    monkeypatch.setattr(time, "sleep", sleeps.append)
+
+    instance = provisioner._launch_instance_with_iam_retries(
+        compartment_id="ocid1.compartment.example",
+        availability_domain="AD-1",
+        image_id="ocid1.image.example",
+        subnet_id="ocid1.subnet.example",
+        nsg_id="ocid1.nsg.example",
+        plan=plan,
+        run_id="fusekit-test",
+        ssh_public_key="ssh-rsa test",
+        cloud_init="#cloud-config",
+        tags={"fusekit": "true"},
+    )
+
+    assert instance.id == "ocid1.instance.example"
+    assert attempts == 3
+    assert sleeps == [20, 40]
+    assert any("waiting for OCI IAM/resource propagation" in item for item in progress)
+
+
+def test_oci_launch_not_authorized_or_not_found_reports_actionable_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeOciError(Exception):
+        status = 404
+        code = "NotAuthorizedOrNotFound"
+        request_id = "request-final"
+
+    progress: list[str] = []
+    plan = build_oci_runner_plan(runner="oci", fusekit_package="fusekit")
+    provisioner = object.__new__(OciProvisioner)
+    provisioner._progress = progress.append
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(
+        provisioner,
+        "_latest_image",
+        lambda compartment_id, shape: (f"ocid1.image.{shape}", "ubuntu"),
+    )
+
+    def launch(**kwargs: object) -> object:
+        raise FakeOciError("no launch permission")
+
+    provisioner._launch_instance = launch
+
+    with pytest.raises(FuseKitError) as exc_info:
+        provisioner._launch_with_capacity_fallback(
+            base_plan=plan,
+            compartment_id="ocid1.compartment.example",
+            availability_domain="AD-1",
+            subnet_id="ocid1.subnet.example",
+            nsg_id="ocid1.nsg.example",
+            run_id="fusekit-test",
+            ssh_public_key="ssh-rsa test",
+            cloud_init="#cloud-config",
+            tags={"fusekit": "true"},
+        )
+
+    message = str(exc_info.value)
+    assert "404 NotAuthorizedOrNotFound" in message
+    assert "permission to manage instances" in message
+    assert "request-final" in message
+    assert any("trying next x86 shape" in item for item in progress)
 
 
 def test_oci_debug_logging_is_suppressed(monkeypatch: pytest.MonkeyPatch) -> None:

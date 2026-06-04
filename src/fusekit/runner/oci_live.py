@@ -475,7 +475,7 @@ class OciProvisioner:
                 image_id, ssh_user = self._latest_image(compartment_id, candidate.shape)
                 self._emit_progress(f"OCI workspace: trying shape {candidate.shape}")
                 return (
-                    self._launch_instance(
+                    self._launch_instance_with_iam_retries(
                         compartment_id=compartment_id,
                         availability_domain=availability_domain,
                         image_id=image_id,
@@ -492,14 +492,62 @@ class OciProvisioner:
                 )
             except Exception as exc:
                 last_error = exc
+                if _is_capacity_error(exc):
+                    self._emit_progress(
+                        f"OCI workspace: {candidate.shape} capacity unavailable, retrying"
+                    )
+                    continue
+                if _is_oci_not_authorized_or_not_found(exc):
+                    self._emit_progress(
+                        f"OCI workspace: {candidate.shape} launch was not authorized "
+                        "or not visible yet, trying next x86 shape"
+                    )
+                    continue
                 if not _is_capacity_error(exc):
                     raise
-                self._emit_progress(
-                    f"OCI workspace: {candidate.shape} capacity unavailable, retrying"
-                )
+        if last_error is not None and _is_oci_not_authorized_or_not_found(last_error):
+            raise FuseKitError(_oci_launch_authorization_message(last_error)) from last_error
         raise FuseKitError(
             "OCI capacity was unavailable for all configured runner shapes."
         ) from last_error
+
+    def _launch_instance_with_iam_retries(
+        self,
+        *,
+        compartment_id: str,
+        availability_domain: str,
+        image_id: str,
+        subnet_id: str,
+        nsg_id: str,
+        plan: OciRunnerPlan,
+        run_id: str,
+        ssh_public_key: str,
+        cloud_init: str,
+        tags: dict[str, str],
+        attempts: int = 3,
+    ) -> Any:
+        for attempt in range(1, attempts + 1):
+            try:
+                return self._launch_instance(
+                    compartment_id=compartment_id,
+                    availability_domain=availability_domain,
+                    image_id=image_id,
+                    subnet_id=subnet_id,
+                    nsg_id=nsg_id,
+                    plan=plan,
+                    run_id=run_id,
+                    ssh_public_key=ssh_public_key,
+                    cloud_init=cloud_init,
+                    tags=tags,
+                )
+            except Exception as exc:
+                if not _is_oci_not_authorized_or_not_found(exc) or attempt >= attempts:
+                    raise
+                self._emit_progress(
+                    "OCI workspace: compute launch is waiting for OCI IAM/resource "
+                    f"propagation, retrying ({attempt}/{attempts - 1})"
+                )
+                time.sleep(20 * attempt)
 
     def _public_ip(self, compartment_id: str, instance_id: str) -> str:
         for _ in range(30):
@@ -623,6 +671,30 @@ def _auth_from_session_snippet(
 def _is_capacity_error(exc: Exception) -> bool:
     text = str(exc).lower()
     return "capacity" in text or "out of host" in text or "limitexceeded" in text
+
+
+def _is_oci_not_authorized_or_not_found(exc: Exception) -> bool:
+    status = str(getattr(exc, "status", ""))
+    code = str(getattr(exc, "code", ""))
+    return status == "404" and code == "NotAuthorizedOrNotFound"
+
+
+def _oci_launch_authorization_message(exc: Exception) -> str:
+    request_id = str(
+        getattr(exc, "opc_request_id", "")
+        or getattr(exc, "request_id", "")
+        or getattr(exc, "opc-request-id", "")
+    )
+    suffix = f" OCI request id: {request_id}." if request_id else ""
+    return (
+        "OCI rejected the compute instance launch with 404 NotAuthorizedOrNotFound after "
+        "retrying x86_64 runner shapes. This usually means the OCI user/session can create "
+        "networking resources but cannot launch compute instances in this region/compartment, "
+        "or OCI has not made the newly-created compartment/subnet visible to Compute yet. "
+        "Confirm the account has permission to manage instances, vnics, images, and volumes in "
+        "the target compartment and that VM.Standard3/E4/E5 Flex shapes are available in "
+        f"{'this region'}.{suffix}"
+    )
 
 
 def _safe_oci_error(exc: Exception) -> str:
