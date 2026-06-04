@@ -71,8 +71,12 @@ After authorization, FuseKit creates a tagged, disposable OCI workspace. There i
    - Fall back only across x86_64 Flex shapes with the same 2 OCPU and 24 GB sizing, currently `VM.Standard.E4.Flex` and `VM.Standard3.Flex`.
    - Reject known Arm/Ampere A1 shapes instead of silently falling back to them. FuseKit's remote bootstrap path assumes an x86_64 runner.
    - Allow explicit non-free/paid x86_64 shapes when selected by the user through OCI account authorization and CLI options; FuseKit should prefer a working live runner over adding its own approval gate. The default runner shape may consume paid capacity depending on the OCI tenancy.
-8. Oracle Linux or Ubuntu image with cloud-init.
+8. Oracle Linux image with cloud-init by default, falling back to Ubuntu only when Oracle Linux is unavailable for the selected x86 shape.
 9. Boot volume marked delete-on-termination.
+
+FuseKit leaves OCI placement defaults such as fault domain and migration behavior to Oracle.
+It intentionally diverges from the console's private-IP default by assigning a public IPv4
+address and NSG rules for SSH, control-room, and noVNC reachability during the live run.
 
 Capacity failures are a service-side gate with an automatic retry loop, not a terminal failure. OCI can return out-of-capacity responses for individual shapes and availability domains. FuseKit should retry configured x86_64 runner shapes at the recommended runner size, then use the selected paid/BYOC x86_64 shape when the user has configured one.
 

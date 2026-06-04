@@ -385,21 +385,20 @@ class OciProvisioner:
     def _latest_image(self, compartment_id: str, shape: str) -> tuple[str, str]:
         images = self.compute.list_images(
             compartment_id=compartment_id,
-            operating_system="Canonical Ubuntu",
+            operating_system="Oracle Linux",
             shape=shape,
             sort_by="TIMECREATED",
             sort_order="DESC",
         ).data
+        ssh_user = "opc"
         if not images:
             images = self.compute.list_images(
                 compartment_id=compartment_id,
-                operating_system="Oracle Linux",
+                operating_system="Canonical Ubuntu",
                 shape=shape,
                 sort_by="TIMECREATED",
                 sort_order="DESC",
             ).data
-            ssh_user = "opc"
-        else:
             ssh_user = "ubuntu"
         if not images:
             raise FuseKitError(f"No OCI image found for shape {shape}.")

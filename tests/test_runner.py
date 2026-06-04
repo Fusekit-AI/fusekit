@@ -1137,6 +1137,50 @@ def test_oci_provision_cleans_partial_workspace_when_readiness_fails() -> None:
     assert provisioner.deleted.ssh_user == "ubuntu"
 
 
+def test_oci_latest_image_prefers_oracle_linux_for_console_defaults() -> None:
+    class Image:
+        def __init__(self, image_id: str) -> None:
+            self.id = image_id
+
+    class Response:
+        def __init__(self, data: object) -> None:
+            self.data = data
+
+    class FakeCompute:
+        def __init__(self) -> None:
+            self.operating_systems: list[str] = []
+
+        def list_images(
+            self,
+            *,
+            compartment_id: str,
+            operating_system: str,
+            shape: str,
+            sort_by: str,
+            sort_order: str,
+        ) -> Response:
+            assert compartment_id == "ocid1.compartment.example"
+            assert shape == "VM.Standard.E5.Flex"
+            assert sort_by == "TIMECREATED"
+            assert sort_order == "DESC"
+            self.operating_systems.append(operating_system)
+            if operating_system == "Oracle Linux":
+                return Response([Image("ocid1.image.oraclelinux")])
+            return Response([Image("ocid1.image.ubuntu")])
+
+    provisioner = object.__new__(OciProvisioner)
+    provisioner.compute = FakeCompute()
+
+    image_id, ssh_user = provisioner._latest_image(
+        "ocid1.compartment.example",
+        "VM.Standard.E5.Flex",
+    )
+
+    assert image_id == "ocid1.image.oraclelinux"
+    assert ssh_user == "opc"
+    assert provisioner.compute.operating_systems == ["Oracle Linux"]
+
+
 def test_oci_create_nsg_wraps_security_rules_for_sdk_request() -> None:
     class Details:
         def __init__(self, **kwargs: object) -> None:
