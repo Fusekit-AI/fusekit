@@ -97,11 +97,9 @@ def test_oci_runner_plan_defaults_to_x86_only() -> None:
     assert all("A1" not in fallback for fallback in plan.fallback_shapes)
 
 
-def test_oci_runner_plan_can_request_isolated_compartment() -> None:
-    plan = build_oci_runner_plan(runner="oci", compartment_mode="isolated")
-
-    assert plan.compartment_mode == "isolated"
-    assert plan.resources[0] == "isolated_compartment"
+def test_oci_runner_plan_rejects_isolated_compartment() -> None:
+    with pytest.raises(FuseKitError, match="no longer creates OCI compartments"):
+        build_oci_runner_plan(runner="oci", compartment_mode="isolated")
 
 
 def test_oci_runner_plan_rejects_arm_shape() -> None:
@@ -1067,14 +1065,6 @@ def test_oci_provision_cleans_partial_workspace_when_readiness_fails() -> None:
             self.auth = type("Auth", (), {"config": {"tenancy": "ocid1.tenancy.example"}})()
             self.deleted: OciWorkspace | None = None
 
-        def _create_compartment(
-            self,
-            tenancy_id: str,
-            run_id: str,
-            tags: dict[str, str],
-        ) -> Created:
-            return Created("ocid1.compartment.example")
-
         def _availability_domains(self, compartment_id: str) -> tuple[str, ...]:
             return ("AD-1",)
 
@@ -1544,15 +1534,7 @@ def test_oci_create_nsg_wraps_security_rules_for_sdk_request() -> None:
     assert details.security_rules[3].direction == "EGRESS"
 
 
-def test_oci_compartment_uses_home_identity_and_ads_use_runner_region_identity() -> None:
-    class Details:
-        def __init__(self, **kwargs: object) -> None:
-            self.__dict__.update(kwargs)
-
-    class Created:
-        def __init__(self, resource_id: str) -> None:
-            self.id = resource_id
-
+def test_oci_availability_domains_use_runner_region_identity() -> None:
     class Domain:
         def __init__(self, name: str) -> None:
             self.name = name
@@ -1561,40 +1543,16 @@ def test_oci_compartment_uses_home_identity_and_ads_use_runner_region_identity()
         def __init__(self, data: object) -> None:
             self.data = data
 
-    class FakeModels:
-        CreateCompartmentDetails = Details
-
-    class FakeOci:
-        class identity:
-            models = FakeModels
-
-    class HomeIdentity:
-        def __init__(self) -> None:
-            self.created: object | None = None
-
-        def create_compartment(self, details: object) -> Response:
-            self.created = details
-            return Response(Created("ocid1.compartment.example"))
-
     class RegionalIdentity:
         def list_availability_domains(self, compartment_id: str) -> Response:
             assert compartment_id == "ocid1.tenancy.example"
             return Response([Domain("regional-ad-1"), Domain("regional-ad-2")])
 
     provisioner = object.__new__(OciProvisioner)
-    provisioner.oci = FakeOci()
-    provisioner.home_identity = HomeIdentity()
     provisioner.identity = RegionalIdentity()
 
-    compartment = provisioner._create_compartment(
-        "ocid1.tenancy.example",
-        "fusekit-test",
-        {"fusekit": "true"},
-    )
     domains = provisioner._availability_domains("ocid1.tenancy.example")
 
-    assert compartment.id == "ocid1.compartment.example"
-    assert cast(Any, provisioner.home_identity.created).compartment_id == "ocid1.tenancy.example"
     assert domains == ("regional-ad-1", "regional-ad-2")
 
 

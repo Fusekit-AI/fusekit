@@ -90,10 +90,14 @@ def build_oci_runner_plan(
         )
     ocpus = DEFAULT_X86_OCPUS
     memory = DEFAULT_X86_MEMORY_GB
-    if compartment_mode not in {"root", "isolated"}:
-        raise FuseKitError(f"Unsupported OCI compartment mode: {compartment_mode}")
+    if compartment_mode != "root":
+        raise FuseKitError(
+            "FuseKit no longer creates OCI compartments for runner workspaces. "
+            "Use --oci-compartment-mode root and let FuseKit create only the disposable "
+            "network and compute resources inside the selected compartment."
+        )
     resources = (
-        "existing_root_compartment" if compartment_mode == "root" else "isolated_compartment",
+        "existing_root_compartment",
         "vcn",
         "public_subnet",
         "internet_gateway",

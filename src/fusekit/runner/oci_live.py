@@ -128,24 +128,22 @@ class OciProvisioner:
         tags = {"fusekit": "true", "fusekit_run": run_id}
         workspace: OciWorkspace | None = None
         try:
-            if plan.compartment_mode == "isolated":
-                self._emit_progress(f"OCI workspace {run_id}: creating isolated compartment")
-                compartment = self._create_compartment(tenancy_id, run_id, tags)
-                compartment_id = str(compartment.id)
-                compartment_resource_key = "compartment"
-            else:
-                self._emit_progress(
-                    f"OCI workspace {run_id}: using tenancy root compartment"
+            if plan.compartment_mode != "root":
+                raise FuseKitError(
+                    "FuseKit no longer creates OCI compartments for runner workspaces. "
+                    "Use --oci-compartment-mode root."
                 )
-                compartment_id = tenancy_id
-                compartment_resource_key = "root_compartment"
+            self._emit_progress(
+                f"OCI workspace {run_id}: using tenancy root compartment"
+            )
+            compartment_id = tenancy_id
             workspace = OciWorkspace(
                 id=run_id,
                 compartment_id=compartment_id,
                 availability_domain="",
                 shape=plan.shape,
             )
-            workspace.resource_ids[compartment_resource_key] = compartment_id
+            workspace.resource_ids["root_compartment"] = compartment_id
             self._emit_progress("OCI workspace: selecting availability domains")
             availability_domains = self._availability_domains(tenancy_id)
             workspace.availability_domain = availability_domains[0]
@@ -264,17 +262,6 @@ class OciProvisioner:
         progress = getattr(self, "_progress", None)
         if progress is not None:
             progress(message)
-
-    def _create_compartment(self, tenancy_id: str, run_id: str, tags: dict[str, str]) -> Any:
-        details = self.oci.identity.models.CreateCompartmentDetails(
-            compartment_id=tenancy_id,
-            description=f"FuseKit clean-room runner workspace {run_id}",
-            name=run_id.replace("-", "_"),
-            freeform_tags=tags,
-        )
-        compartment = self.home_identity.create_compartment(details).data
-        time.sleep(10)
-        return compartment
 
     def _availability_domain(self, compartment_id: str) -> str:
         return self._availability_domains(compartment_id)[0]

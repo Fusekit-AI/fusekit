@@ -412,9 +412,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     launcher.add_argument(
         "--oci-compartment-mode",
-        choices=("root", "isolated"),
+        choices=("root",),
         default="root",
-        help="where to create runner resources; root matches OCI console defaults",
+        help="where to create runner resources; FuseKit uses the selected root compartment",
     )
     launcher.add_argument(
         "--approve-dns",
@@ -647,9 +647,9 @@ def _runner_oci_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--oci-shape", default="auto")
     parser.add_argument(
         "--oci-compartment-mode",
-        choices=("root", "isolated"),
+        choices=("root",),
         default="root",
-        help="where to create runner resources; root matches OCI console defaults",
+        help="where to create runner resources; FuseKit uses the selected root compartment",
     )
     parser.add_argument("--oci-config-file", type=Path, default=None)
     parser.add_argument("--oci-profile", default="FUSEKIT")
