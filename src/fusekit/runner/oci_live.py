@@ -127,9 +127,9 @@ class OciProvisioner:
                 shape=plan.shape,
             )
             workspace.resource_ids["compartment"] = compartment_id
-            self._emit_progress("OCI workspace: selecting availability domain")
-            availability_domain = self._availability_domain(tenancy_id)
-            workspace.availability_domain = availability_domain
+            self._emit_progress("OCI workspace: selecting availability domains")
+            availability_domains = self._availability_domains(tenancy_id)
+            workspace.availability_domain = availability_domains[0]
             self._emit_progress("OCI workspace: creating private network")
             vcn = self._create_vcn(compartment_id, run_id, tags)
             workspace.resource_ids["vcn"] = vcn.id
@@ -153,10 +153,15 @@ class OciProvisioner:
                 f"OCI workspace: launching VM shape {plan.shape} "
                 f"({plan.ocpus} OCPU, {plan.memory_gb} GB)"
             )
-            instance, selected_plan, ssh_user = self._launch_with_capacity_fallback(
+            (
+                instance,
+                selected_plan,
+                ssh_user,
+                selected_domain,
+            ) = self._launch_with_capacity_fallback(
                 base_plan=plan,
                 compartment_id=compartment_id,
-                availability_domain=availability_domain,
+                availability_domains=availability_domains,
                 subnet_id=subnet.id,
                 nsg_id=nsg.id,
                 run_id=run_id,
@@ -165,6 +170,7 @@ class OciProvisioner:
                 tags=tags,
             )
             workspace.shape = selected_plan.shape
+            workspace.availability_domain = selected_domain
             workspace.ssh_user = ssh_user
             workspace.resource_ids["instance"] = instance.id
             self._emit_progress(f"OCI workspace: VM is running on shape {selected_plan.shape}")
@@ -244,10 +250,13 @@ class OciProvisioner:
         return compartment
 
     def _availability_domain(self, compartment_id: str) -> str:
+        return self._availability_domains(compartment_id)[0]
+
+    def _availability_domains(self, compartment_id: str) -> tuple[str, ...]:
         domains = self.identity.list_availability_domains(compartment_id).data
         if not domains:
             raise FuseKitError("OCI account has no availability domains.")
-        return str(domains[0].name)
+        return tuple(str(domain.name) for domain in domains)
 
     def _create_vcn(self, compartment_id: str, run_id: str, tags: dict[str, str]) -> Any:
         details = self.oci.core.models.CreateVcnDetails(
@@ -436,20 +445,24 @@ class OciProvisioner:
         *,
         base_plan: OciRunnerPlan,
         compartment_id: str,
-        availability_domain: str,
+        availability_domain: str | None = None,
+        availability_domains: tuple[str, ...] | None = None,
         subnet_id: str,
         nsg_id: str,
         run_id: str,
         ssh_public_key: str,
         cloud_init: str,
         tags: dict[str, str],
-    ) -> tuple[Any, OciRunnerPlan, str]:
+    ) -> tuple[Any, OciRunnerPlan, str, str]:
         if is_arm_shape(base_plan.shape):
             raise FuseKitError(
                 f"OCI runner shape {base_plan.shape} is ARM-based. "
                 "FuseKit requires an x86_64 runner."
             )
-        candidates = [
+        domains = availability_domains or ((availability_domain,) if availability_domain else ())
+        if not domains:
+            raise FuseKitError("OCI account has no availability domains.")
+        raw_candidates = [
             base_plan,
             *(
                 replace(
@@ -461,54 +474,69 @@ class OciProvisioner:
                 for shape in (DEFAULT_X86_SHAPE, *FALLBACK_X86_SHAPES)
             ),
         ]
-        last_error: Exception | None = None
+        candidates: list[OciRunnerPlan] = []
         seen: set[tuple[str, int, int]] = set()
-        for candidate in candidates:
+        for candidate in raw_candidates:
             key = (candidate.shape, candidate.ocpus, candidate.memory_gb)
-            if key in seen:
-                continue
-            if is_arm_shape(candidate.shape):
+            if key in seen or is_arm_shape(candidate.shape):
                 continue
             seen.add(key)
-            try:
-                self._emit_progress(f"OCI workspace: finding image for {candidate.shape}")
-                image_id, ssh_user = self._latest_image(compartment_id, candidate.shape)
-                self._emit_progress(f"OCI workspace: trying shape {candidate.shape}")
-                return (
-                    self._launch_instance_with_iam_retries(
-                        compartment_id=compartment_id,
-                        availability_domain=availability_domain,
-                        image_id=image_id,
-                        subnet_id=subnet_id,
-                        nsg_id=nsg_id,
-                        plan=candidate,
-                        run_id=run_id,
-                        ssh_public_key=ssh_public_key,
-                        cloud_init=cloud_init,
-                        tags=tags,
-                    ),
-                    candidate,
-                    ssh_user,
-                )
-            except Exception as exc:
-                last_error = exc
-                if _is_capacity_error(exc):
+            candidates.append(candidate)
+        last_error: Exception | None = None
+        saw_capacity_error = False
+        saw_authorization_error = False
+        for domain in domains:
+            self._emit_progress(f"OCI workspace: checking availability domain {domain}")
+            for candidate in candidates:
+                try:
+                    self._emit_progress(f"OCI workspace: finding image for {candidate.shape}")
+                    image_id, ssh_user = self._latest_image(compartment_id, candidate.shape)
                     self._emit_progress(
-                        f"OCI workspace: {candidate.shape} capacity unavailable, retrying"
+                        f"OCI workspace: trying shape {candidate.shape} in {domain}"
                     )
-                    continue
-                if _is_oci_not_authorized_or_not_found(exc):
-                    self._emit_progress(
-                        f"OCI workspace: {candidate.shape} launch was not authorized "
-                        "or not visible yet, trying next x86 shape"
+                    return (
+                        self._launch_instance_with_iam_retries(
+                            compartment_id=compartment_id,
+                            availability_domain=domain,
+                            image_id=image_id,
+                            subnet_id=subnet_id,
+                            nsg_id=nsg_id,
+                            plan=candidate,
+                            run_id=run_id,
+                            ssh_public_key=ssh_public_key,
+                            cloud_init=cloud_init,
+                            tags=tags,
+                        ),
+                        candidate,
+                        ssh_user,
+                        domain,
                     )
-                    continue
-                if not _is_capacity_error(exc):
+                except Exception as exc:
+                    last_error = exc
+                    if _is_capacity_error(exc):
+                        saw_capacity_error = True
+                        self._emit_progress(
+                            f"OCI workspace: {candidate.shape} capacity unavailable "
+                            f"in {domain}, retrying"
+                        )
+                        continue
+                    if _is_oci_not_authorized_or_not_found(exc):
+                        saw_authorization_error = True
+                        self._emit_progress(
+                            f"OCI workspace: {candidate.shape} launch was not authorized "
+                            f"or not visible yet in {domain}, trying next x86 option"
+                        )
+                        continue
                     raise
+        if saw_capacity_error and saw_authorization_error:
+            raise FuseKitError(
+                _oci_mixed_capacity_authorization_message(last_error)
+            ) from last_error
         if last_error is not None and _is_oci_not_authorized_or_not_found(last_error):
             raise FuseKitError(_oci_launch_authorization_message(last_error)) from last_error
         raise FuseKitError(
-            "OCI capacity was unavailable for all configured runner shapes."
+            "OCI capacity was unavailable for all configured x86_64 runner shapes "
+            "across all availability domains."
         ) from last_error
 
     def _launch_instance_with_iam_retries(
@@ -694,6 +722,26 @@ def _oci_launch_authorization_message(exc: Exception) -> str:
         "Confirm the account has permission to manage instances, vnics, images, and volumes in "
         "the target compartment and that VM.Standard3/E4/E5 Flex shapes are available in "
         f"{'this region'}.{suffix}"
+    )
+
+
+def _oci_mixed_capacity_authorization_message(exc: Exception | None) -> str:
+    request_id = ""
+    if exc is not None:
+        request_id = str(
+            getattr(exc, "opc_request_id", "")
+            or getattr(exc, "request_id", "")
+            or getattr(exc, "opc-request-id", "")
+        )
+    suffix = f" Last OCI request id: {request_id}." if request_id else ""
+    return (
+        "OCI could not launch an x86_64 16 GB FuseKit runner after trying all configured "
+        "availability domains and x86 shapes. Some attempts reported no capacity, and some "
+        "reported 404 NotAuthorizedOrNotFound. This usually means OCI capacity is exhausted "
+        "for the allowed shapes in this region, or the current OCI user/session lacks compute "
+        "launch permission for one of the fallback shape families. Try another OCI region or "
+        "confirm Compute permissions/limits for VM.Standard3, VM.Standard.E4, and "
+        f"VM.Standard.E5 Flex.{suffix}"
     )
 
 

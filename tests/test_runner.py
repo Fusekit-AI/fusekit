@@ -32,6 +32,7 @@ from fusekit.runner.gates import GateService
 from fusekit.runner.job import JobState
 from fusekit.runner.loop import run_remote_loop
 from fusekit.runner.oci import (
+    OciRunnerPlan,
     build_oci_runner_plan,
     capture_oci_api_key_profile,
     prepare_oci_api_signing_key,
@@ -1064,8 +1065,8 @@ def test_oci_provision_cleans_partial_workspace_when_readiness_fails() -> None:
         ) -> Created:
             return Created("ocid1.compartment.example")
 
-        def _availability_domain(self, compartment_id: str) -> str:
-            return "AD-1"
+        def _availability_domains(self, compartment_id: str) -> tuple[str, ...]:
+            return ("AD-1",)
 
         def _create_vcn(self, compartment_id: str, run_id: str, tags: dict[str, str]) -> Created:
             return Created("ocid1.vcn.example")
@@ -1108,8 +1109,10 @@ def test_oci_provision_cleans_partial_workspace_when_readiness_fails() -> None:
         ) -> Created:
             return Created("ocid1.subnet.example")
 
-        def _launch_with_capacity_fallback(self, **kwargs: object) -> tuple[Created, object, str]:
-            return Created("ocid1.instance.example"), kwargs["base_plan"], "ubuntu"
+        def _launch_with_capacity_fallback(
+            self, **kwargs: object
+        ) -> tuple[Created, object, str, str]:
+            return Created("ocid1.instance.example"), kwargs["base_plan"], "ubuntu", "AD-1"
 
         def _public_ip(self, compartment_id: str, instance_id: str) -> str:
             return ""
@@ -1284,7 +1287,59 @@ def test_oci_launch_not_authorized_or_not_found_reports_actionable_error(
     assert "404 NotAuthorizedOrNotFound" in message
     assert "permission to manage instances" in message
     assert "request-final" in message
-    assert any("trying next x86 shape" in item for item in progress)
+    assert any("trying next x86 option" in item for item in progress)
+
+
+def test_oci_launch_fallback_checks_all_availability_domains(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Created:
+        def __init__(self, resource_id: str) -> None:
+            self.id = resource_id
+
+    class FakeCapacityError(Exception):
+        pass
+
+    progress: list[str] = []
+    attempts: list[tuple[str, str]] = []
+    plan = build_oci_runner_plan(runner="oci", fusekit_package="fusekit")
+    provisioner = object.__new__(OciProvisioner)
+    provisioner._progress = progress.append
+    monkeypatch.setattr(
+        provisioner,
+        "_latest_image",
+        lambda compartment_id, shape: (f"ocid1.image.{shape}", "ubuntu"),
+    )
+
+    def launch(**kwargs: object) -> Created:
+        candidate = cast(OciRunnerPlan, kwargs["plan"])
+        domain = cast(str, kwargs["availability_domain"])
+        attempts.append((domain, candidate.shape))
+        if domain == "AD-1":
+            raise FakeCapacityError("capacity unavailable")
+        return Created("ocid1.instance.example")
+
+    provisioner._launch_instance_with_iam_retries = launch
+
+    instance, selected_plan, ssh_user, selected_domain = provisioner._launch_with_capacity_fallback(
+        base_plan=plan,
+        compartment_id="ocid1.compartment.example",
+        availability_domains=("AD-1", "AD-2"),
+        subnet_id="ocid1.subnet.example",
+        nsg_id="ocid1.nsg.example",
+        run_id="fusekit-test",
+        ssh_public_key="ssh-rsa test",
+        cloud_init="#cloud-config",
+        tags={"fusekit": "true"},
+    )
+
+    assert instance.id == "ocid1.instance.example"
+    assert selected_plan.shape == "VM.Standard3.Flex"
+    assert ssh_user == "ubuntu"
+    assert selected_domain == "AD-2"
+    assert ("AD-1", "VM.Standard3.Flex") in attempts
+    assert ("AD-2", "VM.Standard3.Flex") in attempts
+    assert any("checking availability domain AD-2" in item for item in progress)
 
 
 def test_oci_debug_logging_is_suppressed(monkeypatch: pytest.MonkeyPatch) -> None:
