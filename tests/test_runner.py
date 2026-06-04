@@ -1767,6 +1767,55 @@ def test_oci_launch_fallback_checks_all_availability_domains(
     assert any("checking availability domain AD-2" in item for item in progress)
 
 
+def test_oci_launch_limit_exceeded_reports_account_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeLimitExceededError(Exception):
+        status = 400
+        code = "LimitExceeded"
+        message = (
+            "Your resource creation limit has been reached. To unblock resource "
+            "creation, please upgrade to a Pay As You Go or Oracle Universal Credits "
+            "account, or delete resources to restore your resource creation capability."
+        )
+        request_id = "limit-request-123"
+
+    progress: list[str] = []
+    plan = build_oci_runner_plan(runner="oci", fusekit_package="fusekit")
+    provisioner = object.__new__(OciProvisioner)
+    provisioner._progress = progress.append
+    monkeypatch.setattr(
+        provisioner,
+        "_latest_image",
+        lambda compartment_id, shape: (f"ocid1.image.{shape}", "ubuntu"),
+    )
+
+    def launch(**kwargs: object) -> object:
+        raise FakeLimitExceededError()
+
+    provisioner._launch_instance_with_iam_retries = launch
+
+    with pytest.raises(FuseKitError) as exc_info:
+        provisioner._launch_with_capacity_fallback(
+            base_plan=plan,
+            compartment_id="ocid1.compartment.example",
+            availability_domains=("AD-1", "AD-2"),
+            subnet_id="ocid1.subnet.example",
+            nsg_id="ocid1.nsg.example",
+            run_id="fusekit-test",
+            ssh_public_key="ssh-rsa test",
+            cloud_init="#cloud-config",
+            tags={"fusekit": "true"},
+        )
+
+    message = str(exc_info.value)
+    assert "resource creation limit" in message
+    assert "Pay As You Go" in message
+    assert "limit-request-123" in message
+    assert any("account resource limit reached" in item for item in progress)
+    assert not any("capacity unavailable" in item for item in progress)
+
+
 def test_oci_error_summary_includes_message_and_request_id() -> None:
     class FakeOciError(Exception):
         status = 500

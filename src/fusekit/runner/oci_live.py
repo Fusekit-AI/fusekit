@@ -633,6 +633,13 @@ class OciProvisioner:
                     )
                 except Exception as exc:
                     last_error = exc
+                    if _is_oci_limit_error(exc):
+                        self._emit_progress(
+                            f"OCI workspace: account resource limit reached while "
+                            f"launching {candidate.shape} in {domain} "
+                            f"({_safe_oci_error(exc)})"
+                        )
+                        raise FuseKitError(_oci_resource_limit_message(exc)) from exc
                     if _is_capacity_error(exc):
                         saw_capacity_error = True
                         self._emit_progress(
@@ -873,7 +880,18 @@ def _auth_from_session_snippet(
 
 def _is_capacity_error(exc: Exception) -> bool:
     text = str(exc).lower()
-    return "capacity" in text or "out of host" in text or "limitexceeded" in text
+    return "capacity" in text or "out of host" in text
+
+
+def _is_oci_limit_error(exc: Exception) -> bool:
+    status = str(getattr(exc, "status", ""))
+    code = str(getattr(exc, "code", ""))
+    text = str(exc).lower()
+    return (
+        code == "LimitExceeded"
+        or (status == "400" and "limitexceeded" in text)
+        or "resource creation limit has been reached" in text
+    )
 
 
 def _capacity_report_status(report: object) -> str:
@@ -963,6 +981,17 @@ def _oci_launch_authorization_message(exc: Exception) -> str:
         "Confirm the account has permission to manage instances, vnics, images, and volumes in "
         "the target compartment and that VM.Standard3/E4/E5 Flex shapes are available in "
         f"{'this region'}.{suffix}"
+    )
+
+
+def _oci_resource_limit_message(exc: Exception) -> str:
+    request_id = _oci_request_id(exc)
+    suffix = f" OCI request id: {request_id}." if request_id else ""
+    return (
+        "OCI rejected the FuseKit runner launch because this account has reached its "
+        "resource creation limit. Delete unused OCI resources, upgrade the tenancy to Pay "
+        "As You Go or Oracle Universal Credits, or ask Oracle support to restore resource "
+        f"creation capability before launching again.{suffix}"
     )
 
 
