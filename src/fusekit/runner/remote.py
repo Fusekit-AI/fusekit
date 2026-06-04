@@ -118,6 +118,15 @@ def render_cloud_init(*, fusekit_wheel_url: str = "", openclaw_install_url: str)
         "--passphrase-file /var/lib/fusekit-runner/passphrase"
     )
     return f"""#cloud-config
+apt:
+  conf: |
+    Acquire::ForceIPv4 "true";
+  primary:
+    - arches: [default]
+      uri: http://archive.ubuntu.com/ubuntu
+  security:
+    - arches: [default]
+      uri: http://security.ubuntu.com/ubuntu
 package_update: true
 packages:
   - python3

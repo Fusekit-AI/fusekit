@@ -39,8 +39,10 @@ from fusekit.runner.oci import (
 )
 from fusekit.runner.oci_live import (
     OciProvisioner,
+    OciAuth,
     OciWorkspace,
     _load_oci_config_file,
+    _oci_client_kwargs,
     _safe_oci_error,
     latest_workspace_from_vault,
     suppress_oci_http_debug_logging,
@@ -888,6 +890,9 @@ def test_remote_bootstrap_artifacts_are_self_contained() -> None:
 
     assert isinstance(yaml.safe_load(cloud_init), dict)
     assert isinstance(yaml.safe_load(git_cloud_init), dict)
+    assert 'Acquire::ForceIPv4 "true";' in cloud_init
+    assert "http://archive.ubuntu.com/ubuntu" in cloud_init
+    assert "http://security.ubuntu.com/ubuntu" in cloud_init
     assert "python3-venv" in cloud_init
     assert "printf '%s\\n' \"$FUSEKIT_VISUAL_PASSWORD\"" in cloud_init
     assert (
@@ -998,39 +1003,59 @@ def test_latest_workspace_round_trips_from_vault() -> None:
     assert loaded.public_ip == "203.0.113.10"
 
 
-def test_oci_detonation_reports_provider_delete_failures() -> None:
+def test_oci_detonation_reports_provider_delete_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class FailedDelete(Exception):
         status = 409
         code = "Conflict"
+
+    class Response:
+        def __init__(self, data: object) -> None:
+            self.data = data
 
     class FakeCompute:
         def terminate_instance(self, instance_id: str, *, preserve_boot_volume: bool) -> None:
             assert instance_id == "ocid1.instance.oc1..example"
             assert preserve_boot_volume is False
 
+        def list_vnic_attachments(self, *, compartment_id: str, instance_id: str) -> Response:
+            assert compartment_id == "ocid1.tenancy.oc1..example"
+            assert instance_id == "ocid1.instance.oc1..example"
+            return Response([])
+
     class FakeNetwork:
+        def __init__(self) -> None:
+            self.deleted: list[str] = []
+
         def delete_subnet(self, resource_id: str) -> None:
             raise FailedDelete(resource_id)
 
         def delete_network_security_group(self, resource_id: str) -> None:
+            self.deleted.append("network_security_group")
             return None
 
         def delete_route_table(self, resource_id: str) -> None:
+            self.deleted.append("route_table")
             return None
 
         def delete_internet_gateway(self, resource_id: str) -> None:
+            self.deleted.append("internet_gateway")
             return None
 
         def delete_vcn(self, resource_id: str) -> None:
+            self.deleted.append("vcn")
             return None
 
     class FakeIdentity:
         def delete_compartment(self, resource_id: str) -> None:
             raise FailedDelete(resource_id)
 
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
     provisioner = object.__new__(OciProvisioner)
     provisioner.compute = FakeCompute()
-    provisioner.network = FakeNetwork()
+    network = FakeNetwork()
+    provisioner.network = network
     provisioner.identity = FakeIdentity()
     workspace = OciWorkspace(
         id="fusekit-test",
@@ -1053,6 +1078,12 @@ def test_oci_detonation_reports_provider_delete_failures() -> None:
     assert deleted["instance"] == "ocid1.instance.oc1..example"
     assert deleted["failed.subnet"] == "409 Conflict"
     assert deleted["failed.compartment"] == "409 Conflict"
+    assert network.deleted == [
+        "route_table",
+        "internet_gateway",
+        "network_security_group",
+        "vcn",
+    ]
 
 
 def test_oci_provision_cleans_partial_workspace_when_readiness_fails() -> None:
@@ -1577,6 +1608,43 @@ def test_oci_availability_domains_reports_unsubscribed_region() -> None:
     assert "could not list availability domains in us-ashburn-1" in message
     assert "not subscribed to that region" in message
     assert "region-request" in message
+
+
+def test_oci_availability_domains_retries_transient_auth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Domain:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+    class Response:
+        def __init__(self, data: object) -> None:
+            self.data = data
+
+    class TransientAuthError(Exception):
+        status = 401
+        code = "NotAuthenticated"
+
+    class RegionalIdentity:
+        calls = 0
+
+        def list_availability_domains(self, compartment_id: str) -> Response:
+            assert compartment_id == "ocid1.tenancy.example"
+            self.calls += 1
+            if self.calls == 1:
+                raise TransientAuthError("identity auth is settling")
+            return Response([Domain("regional-ad-1")])
+
+    sleeps: list[int] = []
+    monkeypatch.setattr(time, "sleep", sleeps.append)
+    provisioner = object.__new__(OciProvisioner)
+    provisioner.identity = RegionalIdentity()
+    provisioner._progress = lambda message: None
+
+    domains = provisioner._availability_domains("ocid1.tenancy.example")
+
+    assert domains == ("regional-ad-1",)
+    assert sleeps == [10]
 
 
 def test_oci_launch_retries_transient_not_authorized_or_not_found(
@@ -2129,6 +2197,40 @@ def test_cloud_shell_style_oci_config_uses_delegation_token_signer(
     assert auth.config["tenancy"] == "ocid1.tenancy.oc1..cloudshell"
     assert auth.config["region"] == "us-ashburn-1"
     assert isinstance(auth.signer, FakeSigner)
+
+
+def test_oci_config_loader_drops_none_pass_phrase(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import oci
+
+    def local_from_file(path: str) -> dict[str, object]:
+        assert path == str(tmp_path / "config")
+        return {
+            "user": "ocid1.user.oc1..example",
+            "fingerprint": "aa:bb",
+            "tenancy": "ocid1.tenancy.oc1..example",
+            "region": "us-phoenix-1",
+            "key_file": str(tmp_path / "key.pem"),
+            "pass_phrase": None,
+        }
+
+    monkeypatch.setattr(oci.config, "from_file", local_from_file)
+
+    auth = _load_oci_config_file(tmp_path / "config")
+
+    assert auth.config["key_file"] == str(tmp_path / "key.pem")
+    assert "pass_phrase" not in auth.config
+
+
+def test_oci_client_kwargs_omits_absent_signer() -> None:
+    signer = object()
+
+    assert _oci_client_kwargs(OciAuth({"region": "us-phoenix-1"})) == {}
+    assert _oci_client_kwargs(OciAuth({"region": "us-phoenix-1"}, signer)) == {
+        "signer": signer
+    }
 
 
 def test_secret_leak_scanner_reports_locations_without_values(tmp_path) -> None:

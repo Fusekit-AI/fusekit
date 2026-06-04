@@ -34,7 +34,7 @@ from fusekit.vault import Vault
 class OciAuth:
     """OCI SDK auth material."""
 
-    config: dict[str, str]
+    config: dict[str, Any]
     signer: Any | None = None
 
 
@@ -97,14 +97,16 @@ class OciProvisioner:
             raise FuseKitError("OCI SDK is not installed. Run `pip install -e .`.") from exc
         self.oci = oci
         self.auth = auth
-        self.identity = oci.identity.IdentityClient(auth.config, signer=auth.signer)
+        auth_kwargs = _oci_client_kwargs(auth)
+        self.identity = oci.identity.IdentityClient(auth.config, **auth_kwargs)
         home_auth = identity_auth or auth
+        home_auth_kwargs = _oci_client_kwargs(home_auth)
         self.home_identity = oci.identity.IdentityClient(
             home_auth.config,
-            signer=home_auth.signer,
+            **home_auth_kwargs,
         )
-        self.network = oci.core.VirtualNetworkClient(auth.config, signer=auth.signer)
-        self.compute = oci.core.ComputeClient(auth.config, signer=auth.signer)
+        self.network = oci.core.VirtualNetworkClient(auth.config, **auth_kwargs)
+        self.compute = oci.core.ComputeClient(auth.config, **auth_kwargs)
         self._progress = progress or (lambda message: None)
 
     def provision(self, plan: OciRunnerPlan, vault: Vault) -> OciWorkspace:
@@ -232,31 +234,80 @@ class OciProvisioner:
             try:
                 self.compute.terminate_instance(instance_id, preserve_boot_volume=False)
                 deleted["instance"] = instance_id
+                self._wait_for_instance_network_release(workspace.compartment_id, instance_id)
             except Exception as exc:  # pragma: no cover - exception type is SDK-defined.
                 deleted["failed.instance"] = _safe_oci_error(exc)
         for key, method_name in (
             ("subnet", "delete_subnet"),
-            ("network_security_group", "delete_network_security_group"),
             ("route_table", "delete_route_table"),
             ("internet_gateway", "delete_internet_gateway"),
+            ("network_security_group", "delete_network_security_group"),
             ("vcn", "delete_vcn"),
         ):
             resource_id = workspace.resource_ids.get(key)
             if not resource_id:
                 continue
-            try:
-                getattr(self.network, method_name)(resource_id)
-                deleted[key] = resource_id
-            except Exception as exc:  # pragma: no cover - exception type is SDK-defined.
-                deleted[f"failed.{key}"] = _safe_oci_error(exc)
+            self._delete_oci_resource(
+                deleted,
+                key,
+                getattr(self.network, method_name),
+                resource_id,
+            )
         compartment_id = workspace.resource_ids.get("compartment")
         if compartment_id:
-            try:
-                self.identity.delete_compartment(compartment_id)
-                deleted["compartment"] = compartment_id
-            except Exception as exc:  # pragma: no cover - exception type is SDK-defined.
-                deleted["failed.compartment"] = _safe_oci_error(exc)
+            self._delete_oci_resource(
+                deleted,
+                "compartment",
+                self.identity.delete_compartment,
+                compartment_id,
+            )
         return deleted
+
+    def _wait_for_instance_network_release(
+        self,
+        compartment_id: str,
+        instance_id: str,
+        *,
+        timeout_seconds: int = 300,
+    ) -> None:
+        if not hasattr(self.compute, "list_vnic_attachments"):
+            return
+        deadline = time.time() + timeout_seconds
+        while time.time() < deadline:
+            attachments = self.compute.list_vnic_attachments(
+                compartment_id=compartment_id,
+                instance_id=instance_id,
+            ).data
+            active = [
+                attachment
+                for attachment in attachments
+                if str(getattr(attachment, "lifecycle_state", "")).upper()
+                not in {"DETACHED", "TERMINATED"}
+            ]
+            if not active:
+                return
+            time.sleep(10)
+
+    def _delete_oci_resource(
+        self,
+        deleted: dict[str, str],
+        key: str,
+        delete: Callable[[str], object],
+        resource_id: str,
+        *,
+        attempts: int = 6,
+    ) -> None:
+        for attempt in range(1, attempts + 1):
+            try:
+                delete(resource_id)
+                deleted[key] = resource_id
+                return
+            except Exception as exc:  # pragma: no cover - exception type is SDK-defined.
+                if _is_oci_delete_retryable(exc) and attempt < attempts:
+                    time.sleep(10 * attempt)
+                    continue
+                deleted[f"failed.{key}"] = _safe_oci_error(exc)
+                return
 
     def _emit_progress(self, message: str) -> None:
         progress = getattr(self, "_progress", None)
@@ -267,12 +318,21 @@ class OciProvisioner:
         return self._availability_domains(compartment_id)[0]
 
     def _availability_domains(self, compartment_id: str) -> tuple[str, ...]:
-        try:
-            domains = self.identity.list_availability_domains(compartment_id).data
-        except Exception as exc:
-            if _is_oci_region_unavailable(exc):
-                raise FuseKitError(_oci_region_unavailable_message(exc, self.auth)) from exc
-            raise
+        for attempt in range(1, 4):
+            try:
+                domains = self.identity.list_availability_domains(compartment_id).data
+                break
+            except Exception as exc:
+                if _is_oci_transient_auth_error(exc) and attempt < 3:
+                    self._emit_progress(
+                        "OCI workspace: identity auth is settling, retrying "
+                        f"availability domains ({attempt}/2)"
+                    )
+                    time.sleep(10 * attempt)
+                    continue
+                if _is_oci_region_unavailable(exc):
+                    raise FuseKitError(_oci_region_unavailable_message(exc, self.auth)) from exc
+                raise
         if not domains:
             raise FuseKitError("OCI account has no availability domains.")
         return tuple(str(domain.name) for domain in domains)
@@ -789,7 +849,11 @@ def _load_oci_config_file(config_file: Path | None) -> OciAuth:
         raise FuseKitError("OCI SDK is not installed. Run `pip install -e .`.") from exc
     path = str(config_file) if config_file else oci.config.DEFAULT_LOCATION
     config = oci.config.from_file(path)
-    normalized = {str(key): str(value) for key, value in config.items()}
+    normalized = {
+        str(key): value
+        for key, value in config.items()
+        if value is not None and not (key == "pass_phrase" and str(value) == "None")
+    }
     if normalized.get("authentication_type"):
         signer = oci.util.get_signer_from_authentication_type(normalized)
         if getattr(signer, "tenancy_id", None):
@@ -815,6 +879,12 @@ def _auth_tenancy_id(auth: OciAuth) -> str:
     if signer_tenancy:
         return str(signer_tenancy)
     raise FuseKitError("OCI auth did not expose a tenancy id.")
+
+
+def _oci_client_kwargs(auth: OciAuth) -> dict[str, Any]:
+    if auth.signer is None:
+        return {}
+    return {"signer": auth.signer}
 
 
 def _auth_from_api_key_snippet(config_snippet: str, private_key_pem: str) -> OciAuth:
@@ -932,6 +1002,23 @@ def _is_oci_region_unavailable(exc: Exception) -> bool:
     status = str(getattr(exc, "status", ""))
     code = str(getattr(exc, "code", ""))
     return status == "404" and code in {"EntityNotFound", "NotAuthorizedOrNotFound"}
+
+
+def _is_oci_transient_auth_error(exc: Exception) -> bool:
+    status = str(getattr(exc, "status", ""))
+    code = str(getattr(exc, "code", ""))
+    return status == "401" and code == "NotAuthenticated"
+
+
+def _is_oci_delete_retryable(exc: Exception) -> bool:
+    status = str(getattr(exc, "status", ""))
+    code = str(getattr(exc, "code", ""))
+    return status in {"409", "412", "429", "500", "502", "503", "504"} or code in {
+        "Conflict",
+        "IncorrectState",
+        "PreconditionFailed",
+        "TooManyRequests",
+    }
 
 
 def _oci_request_id(exc: Exception | None) -> str:
