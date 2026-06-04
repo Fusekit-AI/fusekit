@@ -1252,6 +1252,29 @@ def test_oci_compartment_uses_home_identity_and_ads_use_runner_region_identity()
     assert domains == ("regional-ad-1", "regional-ad-2")
 
 
+def test_oci_availability_domains_reports_unsubscribed_region() -> None:
+    class FakeOciError(Exception):
+        status = 404
+        code = "EntityNotFound"
+        request_id = "region-request"
+
+    class RegionalIdentity:
+        def list_availability_domains(self, compartment_id: str) -> object:
+            raise FakeOciError("tenancy not found")
+
+    provisioner = object.__new__(OciProvisioner)
+    provisioner.identity = RegionalIdentity()
+    provisioner.auth = type("Auth", (), {"config": {"region": "us-ashburn-1"}})()
+
+    with pytest.raises(FuseKitError) as exc_info:
+        provisioner._availability_domains("ocid1.tenancy.example")
+
+    message = str(exc_info.value)
+    assert "could not list availability domains in us-ashburn-1" in message
+    assert "not subscribed to that region" in message
+    assert "region-request" in message
+
+
 def test_oci_launch_retries_transient_not_authorized_or_not_found(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

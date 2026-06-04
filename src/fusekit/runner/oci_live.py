@@ -264,7 +264,12 @@ class OciProvisioner:
         return self._availability_domains(compartment_id)[0]
 
     def _availability_domains(self, compartment_id: str) -> tuple[str, ...]:
-        domains = self.identity.list_availability_domains(compartment_id).data
+        try:
+            domains = self.identity.list_availability_domains(compartment_id).data
+        except Exception as exc:
+            if _is_oci_region_unavailable(exc):
+                raise FuseKitError(_oci_region_unavailable_message(exc, self.auth)) from exc
+            raise
         if not domains:
             raise FuseKitError("OCI account has no availability domains.")
         return tuple(str(domain.name) for domain in domains)
@@ -718,12 +723,37 @@ def _is_oci_not_authorized_or_not_found(exc: Exception) -> bool:
     return status == "404" and code == "NotAuthorizedOrNotFound"
 
 
-def _oci_launch_authorization_message(exc: Exception) -> str:
-    request_id = str(
+def _is_oci_region_unavailable(exc: Exception) -> bool:
+    status = str(getattr(exc, "status", ""))
+    code = str(getattr(exc, "code", ""))
+    return status == "404" and code in {"EntityNotFound", "NotAuthorizedOrNotFound"}
+
+
+def _oci_request_id(exc: Exception | None) -> str:
+    if exc is None:
+        return ""
+    return str(
         getattr(exc, "opc_request_id", "")
         or getattr(exc, "request_id", "")
         or getattr(exc, "opc-request-id", "")
     )
+
+
+def _oci_region_unavailable_message(exc: Exception, auth: OciAuth) -> str:
+    region = auth.config.get("region", "the requested region")
+    request_id = _oci_request_id(exc)
+    suffix = f" OCI request id: {request_id}." if request_id else ""
+    return (
+        f"OCI could not list availability domains in {region}. This usually means the "
+        "tenancy is not subscribed to that region, IAM has not propagated there, or the "
+        "current OCI session is not authorized in that region. Use a subscribed OCI region "
+        "for the runner, or subscribe the tenancy to the requested region before launching."
+        f"{suffix}"
+    )
+
+
+def _oci_launch_authorization_message(exc: Exception) -> str:
+    request_id = _oci_request_id(exc)
     suffix = f" OCI request id: {request_id}." if request_id else ""
     return (
         "OCI rejected the compute instance launch with 404 NotAuthorizedOrNotFound after "
@@ -737,13 +767,7 @@ def _oci_launch_authorization_message(exc: Exception) -> str:
 
 
 def _oci_mixed_capacity_authorization_message(exc: Exception | None) -> str:
-    request_id = ""
-    if exc is not None:
-        request_id = str(
-            getattr(exc, "opc_request_id", "")
-            or getattr(exc, "request_id", "")
-            or getattr(exc, "opc-request-id", "")
-        )
+    request_id = _oci_request_id(exc)
     suffix = f" Last OCI request id: {request_id}." if request_id else ""
     return (
         "OCI could not launch an x86_64 24 GB FuseKit runner after trying all configured "
