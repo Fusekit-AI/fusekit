@@ -411,6 +411,12 @@ def _parser() -> argparse.ArgumentParser:
         help="OCI region for the disposable runner VM, e.g. us-ashburn-1",
     )
     launcher.add_argument(
+        "--oci-compartment-mode",
+        choices=("root", "isolated"),
+        default="root",
+        help="where to create runner resources; root matches OCI console defaults",
+    )
+    launcher.add_argument(
         "--approve-dns",
         action="store_true",
         help="forward explicit DNS apply approval into the live Cloud Shell launch",
@@ -639,6 +645,12 @@ def _runner_oci_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--oci-region", default="auto")
     parser.add_argument("--oci-shape", default="auto")
+    parser.add_argument(
+        "--oci-compartment-mode",
+        choices=("root", "isolated"),
+        default="root",
+        help="where to create runner resources; root matches OCI console defaults",
+    )
     parser.add_argument("--oci-config-file", type=Path, default=None)
     parser.add_argument("--oci-profile", default="FUSEKIT")
 
@@ -1075,6 +1087,7 @@ def _cloud_shell_launcher_launch_args(args: argparse.Namespace) -> tuple[str, ..
         ("--gate-retry-seconds", "gate_retry_seconds"),
         ("--gate-max-attempts", "gate_max_attempts"),
         ("--oci-region", "oci_region"),
+        ("--oci-compartment-mode", "oci_compartment_mode"),
         ("--llm-provider", "llm_provider"),
         ("--llm-model", "llm_model"),
         ("--llm-base-url", "llm_base_url"),
@@ -1616,6 +1629,7 @@ def _cmd_runner_plan(args: argparse.Namespace) -> int:
         runner=args.runner,
         auth_mode=args.oci_auth_mode,
         account_mode=args.oci_account_mode,
+        compartment_mode=args.oci_compartment_mode,
         region=args.oci_region,
         shape=args.oci_shape,
     )
@@ -1646,6 +1660,7 @@ def _cmd_runner_provision(args: argparse.Namespace) -> int:
         runner=args.runner,
         auth_mode=args.oci_auth_mode,
         account_mode=args.oci_account_mode,
+        compartment_mode=args.oci_compartment_mode,
         region=args.oci_region,
         shape=args.oci_shape,
     )
@@ -1997,6 +2012,7 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
         runner=runner_name,
         auth_mode=args.oci_auth_mode,
         account_mode=args.oci_account_mode,
+        compartment_mode=args.oci_compartment_mode,
         region=args.oci_region,
         shape=args.oci_shape,
         fusekit_package=args.fusekit_package,
@@ -2247,6 +2263,7 @@ def _remote_launch_args(args: argparse.Namespace) -> tuple[str, ...]:
         ("--fusekit-package", "fusekit_package"),
         ("--oci-region", "oci_region"),
         ("--oci-shape", "oci_shape"),
+        ("--oci-compartment-mode", "oci_compartment_mode"),
     )
     for flag, attr in pairs:
         value = getattr(args, attr, "")

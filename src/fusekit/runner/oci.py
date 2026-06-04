@@ -40,6 +40,7 @@ class OciRunnerPlan:
     runner: str
     auth_mode: str
     account_mode: str
+    compartment_mode: str
     region: str
     shape: str
     ocpus: int
@@ -57,6 +58,7 @@ class OciRunnerPlan:
             "runner": self.runner,
             "auth_mode": self.auth_mode,
             "account_mode": self.account_mode,
+            "compartment_mode": self.compartment_mode,
             "region": self.region,
             "shape": self.shape,
             "ocpus": self.ocpus,
@@ -74,6 +76,7 @@ def build_oci_runner_plan(
     runner: str,
     auth_mode: str = "auto",
     account_mode: str = "auto",
+    compartment_mode: str = "root",
     region: str = "auto",
     shape: str = "auto",
     fusekit_package: str = "fusekit",
@@ -87,10 +90,24 @@ def build_oci_runner_plan(
         )
     ocpus = DEFAULT_X86_OCPUS
     memory = DEFAULT_X86_MEMORY_GB
+    if compartment_mode not in {"root", "isolated"}:
+        raise FuseKitError(f"Unsupported OCI compartment mode: {compartment_mode}")
+    resources = (
+        "existing_root_compartment" if compartment_mode == "root" else "isolated_compartment",
+        "vcn",
+        "public_subnet",
+        "internet_gateway",
+        "route_rule",
+        "network_security_group",
+        "ephemeral_ssh_key",
+        "compute_instance",
+        "boot_volume_delete_on_terminate",
+    )
     return OciRunnerPlan(
         runner=runner,
         auth_mode=auth_mode,
         account_mode=account_mode,
+        compartment_mode=compartment_mode,
         region=region,
         shape=selected_shape,
         ocpus=ocpus,
@@ -102,17 +119,7 @@ def build_oci_runner_plan(
                 for fallback in FALLBACK_X86_SHAPES
             ),
         ),
-        resources=(
-            "compartment",
-            "vcn",
-            "public_subnet",
-            "internet_gateway",
-            "route_rule",
-            "network_security_group",
-            "ephemeral_ssh_key",
-            "compute_instance",
-            "boot_volume_delete_on_terminate",
-        ),
+        resources=resources,
         gates=(
             "OCI signup/login/MFA/card verification",
             "OCI API key upload or security-token login",

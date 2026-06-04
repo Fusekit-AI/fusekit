@@ -91,7 +91,16 @@ def test_oci_runner_plan_defaults_to_x86_only() -> None:
         "VM.Standard.E4.Flex:2:24",
         "VM.Standard3.Flex:2:24",
     )
+    assert plan.compartment_mode == "root"
+    assert plan.resources[0] == "existing_root_compartment"
     assert all("A1" not in fallback for fallback in plan.fallback_shapes)
+
+
+def test_oci_runner_plan_can_request_isolated_compartment() -> None:
+    plan = build_oci_runner_plan(runner="oci", compartment_mode="isolated")
+
+    assert plan.compartment_mode == "isolated"
+    assert plan.resources[0] == "isolated_compartment"
 
 
 def test_oci_runner_plan_rejects_arm_shape() -> None:
@@ -1141,7 +1150,7 @@ def test_oci_provision_cleans_partial_workspace_when_readiness_fails() -> None:
     assert ssh_record.value.startswith("-----BEGIN OPENSSH PRIVATE KEY-----")
     assert ssh_record.metadata["fingerprint"].startswith("rsa:")
     assert provisioner.deleted.resource_ids["instance"] == "ocid1.instance.example"
-    assert provisioner.deleted.resource_ids["compartment"] == "ocid1.compartment.example"
+    assert provisioner.deleted.resource_ids["root_compartment"] == "ocid1.tenancy.example"
     assert provisioner.deleted.ssh_user == "ubuntu"
 
 

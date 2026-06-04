@@ -126,6 +126,7 @@ def test_launcher_derives_no_code_live_context_and_snowman_surface(tmp_path) -> 
     assert "--dns-zone moonlite.rsvp" in text
     assert "--live-url https://moonlite.rsvp" in text
     assert "--approve-dns" in text
+    assert "--oci-compartment-mode root" in text
     assert "--oci-region us-ashburn-1" in text
     assert "--verify-attempts 10" in text
     assert "--verify-retry-seconds 30.0" in text

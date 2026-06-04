@@ -128,16 +128,24 @@ class OciProvisioner:
         tags = {"fusekit": "true", "fusekit_run": run_id}
         workspace: OciWorkspace | None = None
         try:
-            self._emit_progress(f"OCI workspace {run_id}: creating isolated compartment")
-            compartment = self._create_compartment(tenancy_id, run_id, tags)
-            compartment_id = str(compartment.id)
+            if plan.compartment_mode == "isolated":
+                self._emit_progress(f"OCI workspace {run_id}: creating isolated compartment")
+                compartment = self._create_compartment(tenancy_id, run_id, tags)
+                compartment_id = str(compartment.id)
+                compartment_resource_key = "compartment"
+            else:
+                self._emit_progress(
+                    f"OCI workspace {run_id}: using tenancy root compartment"
+                )
+                compartment_id = tenancy_id
+                compartment_resource_key = "root_compartment"
             workspace = OciWorkspace(
                 id=run_id,
                 compartment_id=compartment_id,
                 availability_domain="",
                 shape=plan.shape,
             )
-            workspace.resource_ids["compartment"] = compartment_id
+            workspace.resource_ids[compartment_resource_key] = compartment_id
             self._emit_progress("OCI workspace: selecting availability domains")
             availability_domains = self._availability_domains(tenancy_id)
             workspace.availability_domain = availability_domains[0]
@@ -842,7 +850,7 @@ def _oci_launch_authorization_message(exc: Exception) -> str:
         "OCI rejected the compute instance launch with 404 NotAuthorizedOrNotFound after "
         "retrying x86_64 runner shapes. This usually means the OCI user/session can create "
         "networking resources but cannot launch compute instances in this region/compartment, "
-        "or OCI has not made the newly-created compartment/subnet visible to Compute yet. "
+        "or OCI has not made the selected compartment/subnet visible to Compute yet. "
         "Confirm the account has permission to manage instances, vnics, images, and volumes in "
         "the target compartment and that VM.Standard3/E4/E5 Flex shapes are available in "
         f"{'this region'}.{suffix}"

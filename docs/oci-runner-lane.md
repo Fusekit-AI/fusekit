@@ -57,7 +57,9 @@ Useful official references:
 
 After authorization, FuseKit creates a tagged, disposable OCI workspace. There is no FuseKit-originated provisioning approval gate; the user's OCI account/login/API-key flow is the service-side authorization boundary. FuseKit may still stop at service-originated gates such as OCI signup, MFA, payment-card verification, capacity exhaustion, identity checks, and API authorization.
 
-1. Compartment: `fusekit-<timestamp>-<short-id>`.
+1. Compartment: the current tenancy/root compartment by default, matching the OCI
+   console launch path. A child compartment `fusekit-<timestamp>-<short-id>` is
+   available only through explicit isolated mode.
 2. VCN with internet connectivity.
 3. Public subnet.
 4. Internet gateway and route rule.
@@ -84,6 +86,9 @@ It intentionally diverges from the console's private-IP default by assigning a p
 address and NSG rules for SSH, control-room, and noVNC reachability during the live run.
 Before launch, FuseKit asks OCI for a compute capacity report using the root tenancy
 compartment as required by the API, then attempts the launch only on x86 runner options.
+Using the root/current compartment by default avoids child-compartment IAM, quota, and
+propagation mismatches where OCI reports capacity in the tenancy but rejects launch in a
+freshly-created compartment.
 
 Capacity failures are a service-side gate with an automatic retry loop, not a terminal failure. OCI can return out-of-capacity responses for individual shapes and availability domains. FuseKit should retry configured x86_64 runner shapes at the recommended runner size, then use the selected paid/BYOC x86_64 shape when the user has configured one.
 
