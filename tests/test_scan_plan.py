@@ -84,6 +84,19 @@ def test_scanner_ignores_lockfile_domains(tmp_path) -> None:
     assert not any(domain.domain == "opencollective.com" for domain in manifest.domains)
 
 
+def test_scanner_ignores_third_party_asset_urls(tmp_path) -> None:
+    (tmp_path / "package.json").write_text(json.dumps({"name": "asset-app"}), encoding="utf-8")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "page.tsx").write_text(
+        '<img src="https://images.unsplash.com/photo.jpg" />',
+        encoding="utf-8",
+    )
+
+    manifest = scan_repo(tmp_path)
+
+    assert not any(domain.domain == "images.unsplash.com" for domain in manifest.domains)
+
+
 def test_scanner_detects_plaid_provider_pack(tmp_path) -> None:
     (tmp_path / "package.json").write_text(
         json.dumps({"name": "finance-app", "dependencies": {"plaid": "latest"}}),

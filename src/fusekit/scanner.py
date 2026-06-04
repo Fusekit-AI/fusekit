@@ -28,6 +28,21 @@ ENV_PATTERNS = (
     re.compile(r"Deno\.env\.get\(['\"]([A-Z][A-Z0-9_]+)['\"]\)"),
 )
 DOMAIN_PATTERN = re.compile(r"https?://([A-Za-z0-9][A-Za-z0-9.-]+\.[A-Za-z]{2,})(?:[:/'\"]|$)")
+DOMAIN_CONTEXT_MARKERS = (
+    "app_url",
+    "base_url",
+    "callback",
+    "canonical",
+    "custom_domain",
+    "domain",
+    "hostname",
+    "live_url",
+    "origin",
+    "redirect_uri",
+    "site_url",
+    "url",
+    "webhook",
+)
 TEXT_EXTENSIONS = {
     ".env",
     ".js",
@@ -261,7 +276,10 @@ def _find_domains(root: Path, text_index: dict[Path, str]) -> list[DomainRequire
     for text in text_index.values():
         for match in DOMAIN_PATTERN.finditer(text):
             domain = match.group(1).lower()
-            if _is_custom_domain_candidate(domain):
+            if _is_custom_domain_candidate(domain) and _domain_context_allows_url(
+                text,
+                match.start(),
+            ):
                 domains.add(domain)
     vercel_config = root / "vercel.json"
     if vercel_config.exists():
@@ -312,6 +330,13 @@ def _is_custom_domain_candidate(domain: str) -> bool:
     return domain not in blocked and not any(
         domain.endswith(suffix) for suffix in provider_suffixes
     )
+
+
+def _domain_context_allows_url(text: str, start: int) -> bool:
+    context = text[max(0, start - 120) : start].lower()
+    if "src=" in context[-24:] or "srcset=" in context[-32:]:
+        return False
+    return any(marker in context for marker in DOMAIN_CONTEXT_MARKERS)
 
 
 def _webhook_requirements(
