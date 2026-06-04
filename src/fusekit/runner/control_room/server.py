@@ -52,6 +52,11 @@ def control_room_payload(job_state: Path) -> dict[str, Any]:
 
 def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
     class ControlRoomHandler(BaseHTTPRequestHandler):
+        def do_OPTIONS(self) -> None:  # noqa: N802
+            self.send_response(405)
+            self._write_security_headers()
+            self.end_headers()
+
         def do_GET(self) -> None:  # noqa: N802
             route = urlparse(self.path)
             if not self._authorize_request(route):
@@ -75,6 +80,9 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                 return
             if not _trusted_browser_origin(self.headers.get("Origin"), self.headers.get("Host")):
                 self._write_json({"ok": False, "error": "untrusted origin"}, status=403)
+                return
+            if not _trusted_fetch_site(self.headers.get("Sec-Fetch-Site")):
+                self._write_json({"ok": False, "error": "cross-site request"}, status=403)
                 return
             prefix = "/api/gates/"
             suffix = "/pass"
@@ -145,6 +153,8 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
             expected = os.environ.get("FUSEKIT_CONTROL_ROOM_TOKEN", "")
             if not expected or not getattr(self, "_set_control_room_cookie", False):
                 return
+            if not _safe_cookie_value(expected):
+                return
             self.send_header(
                 "set-cookie",
                 f"fusekit_control_room={expected}; HttpOnly; SameSite=Lax; Path=/",
@@ -193,6 +203,18 @@ def _trusted_browser_origin(origin: str | None, host: str | None) -> bool:
     return normalized_origin == normalized_host and _is_loopback(
         _hostname_without_port(normalized_host)
     )
+
+
+def _trusted_fetch_site(value: str | None) -> bool:
+    """Reject browser-declared cross-site state changes."""
+
+    if not value:
+        return True
+    return value.strip().lower() in {"same-origin", "none"}
+
+
+def _safe_cookie_value(value: str) -> bool:
+    return not any(char in value for char in ("\r", "\n", ";", ","))
 
 
 def _query_token(route: Any) -> str:

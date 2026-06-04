@@ -352,6 +352,7 @@ python -m mypy src
 
 - `src/fusekit/`: open-source trust core and CLI.
 - `docs/threat-model.md`: security model and boundaries.
+- `docs/security-surface-map.md`: accessible routes, state-changing actions, and CSRF/command-injection boundaries.
 - `docs/open-core-boundary.md`: what belongs in the public core versus hosted or commercial layers.
 - `docs/oci-runner-lane.md`: clean-room OCI runner design.
 - `examples/moonlite-rsvp/`: public acceptance fixture for a real launch path.

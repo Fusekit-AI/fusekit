@@ -70,6 +70,7 @@
 - [x] Precision-alignment pass: remote artifact completeness now matches detonation preflight survivors, provider-check run-state readiness and the remote runner loop are driven by the redacted verification report instead of optimistic completion, durable gates render the same guided follow-me UI in static and live control rooms, and launch-contract cards now explain the exact next condition for each phase.
 - [x] Truth/user-surface alignment pass: local launches now write the same durable job, checkpoint, run-state, and optional control-room artifacts as OCI launches; `fusekit detonate` uses the split command module correctly; and live acceptance readiness checks the verification report plus rollback metadata directly instead of trusting receipt presence alone.
 - [x] Live OCI provisioning hardening: NSG security rules now use the OCI SDK request-details wrapper expected by the live API, and OCI HTTP debug/wire logging is suppressed before provisioning so delegated auth material cannot spill into terminals or run logs.
+- [x] Route/action security sweep: accessible HTTP routes and state-changing actions are mapped, control-room POSTs reject CORS preflight and browser-declared cross-site fetches, and OpenClaw installer bootstrap no longer shells env-controlled args through `bash -lc`.
 
 ## Milestone 1: Repo Skeleton And CLI
 

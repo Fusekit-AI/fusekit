@@ -185,12 +185,15 @@ def _install_openclaw(runner: CommandRunner) -> None:
     installer.chmod(0o700)
     version = os.environ.get("FUSEKIT_OPENCLAW_VERSION", "latest")
     command = [
+        "env",
+        f"OPENCLAW_HOME={openclaw_state_home()}",
         "bash",
-        "-lc",
-        (
-            f"OPENCLAW_HOME='{openclaw_state_home()}' "
-            f"bash '{installer}' --prefix '{home / 'openclaw'}' --version '{version}' --no-onboard"
-        ),
+        str(installer),
+        "--prefix",
+        str(home / "openclaw"),
+        "--version",
+        version,
+        "--no-onboard",
     ]
     completed = runner(command)
     if completed.returncode != 0:

@@ -30,7 +30,12 @@ def test_bootstrap_runs_openclaw_installer_when_missing(monkeypatch, tmp_path) -
     assert "openclaw" in result.installed
     assert "openclaw" in result.configured
     assert calls
-    assert "install-openclaw.sh" in calls[0][-1]
+    assert calls[0][:3] == [
+        "env",
+        f"OPENCLAW_HOME={bootstrap.openclaw_state_home()}",
+        "bash",
+    ]
+    assert calls[0][3].endswith("install-openclaw.sh")
     assert calls[-2:] == [
         [
             "env",
@@ -46,6 +51,35 @@ def test_bootstrap_runs_openclaw_installer_when_missing(monkeypatch, tmp_path) -
             "--non-interactive",
         ],
     ]
+
+
+def test_bootstrap_openclaw_install_uses_argv_for_hostile_env(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    calls: list[list[str]] = []
+    hostile_home = tmp_path / "runtime with spaces ' && touch injected"
+    hostile_version = "latest' && touch injected"
+    monkeypatch.setenv("FUSEKIT_HOME", str(hostile_home))
+    monkeypatch.setenv("FUSEKIT_OPENCLAW_VERSION", hostile_version)
+    monkeypatch.setenv("FUSEKIT_OPENCLAW_BIN", str(tmp_path / "missing-openclaw"))
+    monkeypatch.setattr(
+        bootstrap,
+        "_download_file",
+        lambda url, destination: destination.write_text(""),
+    )
+
+    def runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    bootstrap._install_openclaw(runner)
+
+    command = calls[0]
+    assert command[0] == "env"
+    assert "-lc" not in command
+    assert command[1] == f"OPENCLAW_HOME={bootstrap.openclaw_state_home()}"
+    assert command[command.index("--version") + 1] == hostile_version
 
 
 def test_doctor_verifies_openclaw_doctor(monkeypatch, tmp_path) -> None:

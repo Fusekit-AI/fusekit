@@ -581,6 +581,71 @@ def test_control_room_post_rejects_untrusted_origin(tmp_path) -> None:
     ].status == "waiting"
 
 
+def test_control_room_post_rejects_cross_site_fetch_metadata(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.github.mfa.123",
+        provider="github",
+        reason="MFA required",
+        classification="mfa",
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/api/gates/provider.github.mfa.123/pass"
+        request = Request(
+            url,
+            method="POST",
+            headers={
+                "x-fusekit-control-room": "resume",
+                "Sec-Fetch-Site": "cross-site",
+            },
+        )
+        with pytest.raises(HTTPError):
+            urlopen(request, timeout=5)
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert GateService.load(tmp_path / "gates.json").records[
+        "provider.github.mfa.123"
+    ].status == "waiting"
+
+
+def test_control_room_rejects_cors_preflight_without_cors_headers(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+        connection.request(
+            "OPTIONS",
+            "/api/gates/provider.github.mfa.123/pass",
+            headers={
+                "Origin": "https://evil.example",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "x-fusekit-control-room",
+            },
+        )
+        response = connection.getresponse()
+        headers = {key.lower(): value for key, value in response.getheaders()}
+        response.read()
+    finally:
+        connection.close()
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert response.status == 405
+    assert "access-control-allow-origin" not in headers
+    assert headers["x-frame-options"] == "DENY"
+
+
 def test_control_room_uses_privacy_mascot_for_secret_gates(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job.mark(
