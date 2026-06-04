@@ -1145,7 +1145,7 @@ def test_oci_provision_cleans_partial_workspace_when_readiness_fails() -> None:
     assert provisioner.deleted.ssh_user == "ubuntu"
 
 
-def test_oci_latest_image_prefers_oracle_linux_for_console_defaults() -> None:
+def test_oci_latest_image_prefers_ubuntu_for_runner_bootstrap() -> None:
     class Image:
         def __init__(self, image_id: str) -> None:
             self.id = image_id
@@ -1172,9 +1172,9 @@ def test_oci_latest_image_prefers_oracle_linux_for_console_defaults() -> None:
             assert sort_by == "TIMECREATED"
             assert sort_order == "DESC"
             self.operating_systems.append(operating_system)
-            if operating_system == "Oracle Linux":
-                return Response([Image("ocid1.image.oraclelinux")])
-            return Response([Image("ocid1.image.ubuntu")])
+            if operating_system == "Canonical Ubuntu":
+                return Response([Image("ocid1.image.ubuntu")])
+            return Response([Image("ocid1.image.oraclelinux")])
 
     provisioner = object.__new__(OciProvisioner)
     provisioner.compute = FakeCompute()
@@ -1184,9 +1184,9 @@ def test_oci_latest_image_prefers_oracle_linux_for_console_defaults() -> None:
         "VM.Standard.E5.Flex",
     )
 
-    assert image_id == "ocid1.image.oraclelinux"
-    assert ssh_user == "opc"
-    assert provisioner.compute.operating_systems == ["Oracle Linux"]
+    assert image_id == "ocid1.image.ubuntu"
+    assert ssh_user == "ubuntu"
+    assert provisioner.compute.operating_systems == ["Canonical Ubuntu"]
 
 
 def test_oci_launch_instance_matches_console_recommended_options() -> None:
@@ -1241,7 +1241,7 @@ def test_oci_launch_instance_matches_console_recommended_options() -> None:
     assert details.shape == "VM.Standard.E5.Flex"
     assert details.shape_config.ocpus == 2
     assert details.shape_config.memory_in_gbs == 24
-    assert details.shape_config.baseline_ocpu_utilization == "BASELINE_1_1"
+    assert not hasattr(details.shape_config, "baseline_ocpu_utilization")
     assert details.create_vnic_details.assign_public_ip is True
     assert details.create_vnic_details.hostname_label == "runner"
     assert details.create_vnic_details.nsg_ids == ["ocid1.nsg.example"]

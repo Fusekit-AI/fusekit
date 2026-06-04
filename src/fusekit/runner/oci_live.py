@@ -387,21 +387,21 @@ class OciProvisioner:
     def _latest_image(self, compartment_id: str, shape: str) -> tuple[str, str]:
         images = self.compute.list_images(
             compartment_id=compartment_id,
-            operating_system="Oracle Linux",
+            operating_system="Canonical Ubuntu",
             shape=shape,
             sort_by="TIMECREATED",
             sort_order="DESC",
         ).data
-        ssh_user = "opc"
+        ssh_user = "ubuntu"
         if not images:
             images = self.compute.list_images(
                 compartment_id=compartment_id,
-                operating_system="Canonical Ubuntu",
+                operating_system="Oracle Linux",
                 shape=shape,
                 sort_by="TIMECREATED",
                 sort_order="DESC",
             ).data
-            ssh_user = "ubuntu"
+            ssh_user = "opc"
         if not images:
             raise FuseKitError(f"No OCI image found for shape {shape}.")
         return str(images[0].id), ssh_user
@@ -472,7 +472,6 @@ class OciProvisioner:
             shape_config = self.oci.core.models.LaunchInstanceShapeConfigDetails(
                 ocpus=plan.ocpus,
                 memory_in_gbs=plan.memory_gb,
-                baseline_ocpu_utilization="BASELINE_1_1",
             )
         details_kwargs: dict[str, object] = {
             "availability_domain": availability_domain,

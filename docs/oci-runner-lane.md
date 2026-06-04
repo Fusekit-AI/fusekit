@@ -71,10 +71,10 @@ After authorization, FuseKit creates a tagged, disposable OCI workspace. There i
    - Fall back only across x86_64 Flex shapes with the same 2 OCPU and 24 GB sizing, currently `VM.Standard.E4.Flex` and `VM.Standard3.Flex`.
    - Reject known Arm/Ampere A1 shapes instead of silently falling back to them. FuseKit's remote bootstrap path assumes an x86_64 runner.
    - Allow explicit non-free/paid x86_64 shapes when selected by the user through OCI account authorization and CLI options; FuseKit should prefer a working live runner over adding its own approval gate. The default runner shape may consume paid capacity depending on the OCI tenancy.
-8. Oracle Linux image with cloud-init by default, falling back to Ubuntu only when Oracle Linux is unavailable for the selected x86 shape.
+8. Ubuntu image with cloud-init by default for the runner bootstrap, falling back to Oracle Linux only when Ubuntu is unavailable for the selected x86 shape.
 9. VM launch options aligned to the current OCI instance flow:
    - IMDSv1 disabled so instance metadata requires the IMDSv2 authorization header.
-   - Full baseline OCPU utilization for the non-burstable runner.
+   - OCPU baseline left unset so OCI applies the selected E5 Flex shape default.
    - In-transit encryption enabled for paravirtualized boot-volume attachment.
    - Restore instance lifecycle state after infrastructure maintenance.
 10. Boot volume marked delete-on-termination.
