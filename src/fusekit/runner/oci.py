@@ -19,10 +19,10 @@ from fusekit.vault import Vault
 OCI_SIGNUP_URL = "https://signup.cloud.oracle.com/"
 OCI_CONSOLE_URL = "https://cloud.oracle.com/"
 OCI_API_KEYS_URL = "https://cloud.oracle.com/identity/domains/my-profile/api-keys"
-DEFAULT_X86_SHAPE = "VM.Standard3.Flex"
+DEFAULT_X86_SHAPE = "VM.Standard.E5.Flex"
 DEFAULT_X86_OCPUS = 2
-DEFAULT_X86_MEMORY_GB = 16
-FALLBACK_X86_SHAPES = ("VM.Standard.E4.Flex", "VM.Standard.E5.Flex")
+DEFAULT_X86_MEMORY_GB = 24
+FALLBACK_X86_SHAPES = ("VM.Standard.E4.Flex", "VM.Standard3.Flex")
 ARM_SHAPE_FAMILIES = {"A1"}
 
 

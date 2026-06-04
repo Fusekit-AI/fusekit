@@ -735,7 +735,7 @@ def _oci_mixed_capacity_authorization_message(exc: Exception | None) -> str:
         )
     suffix = f" Last OCI request id: {request_id}." if request_id else ""
     return (
-        "OCI could not launch an x86_64 16 GB FuseKit runner after trying all configured "
+        "OCI could not launch an x86_64 24 GB FuseKit runner after trying all configured "
         "availability domains and x86 shapes. Some attempts reported no capacity, and some "
         "reported 404 NotAuthorizedOrNotFound. This usually means OCI capacity is exhausted "
         "for the allowed shapes in this region, or the current OCI user/session lacks compute "

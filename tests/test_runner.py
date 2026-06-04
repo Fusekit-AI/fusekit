@@ -83,13 +83,13 @@ def test_runner_env_override_rejects_unknown_runner(monkeypatch) -> None:
 def test_oci_runner_plan_defaults_to_x86_only() -> None:
     plan = build_oci_runner_plan(runner="oci")
 
-    assert plan.shape == "VM.Standard3.Flex"
+    assert plan.shape == "VM.Standard.E5.Flex"
     assert plan.ocpus == 2
-    assert plan.memory_gb == 16
+    assert plan.memory_gb == 24
     assert plan.fallback_shapes == (
-        "VM.Standard3.Flex:2:16",
-        "VM.Standard.E4.Flex:2:16",
-        "VM.Standard.E5.Flex:2:16",
+        "VM.Standard.E5.Flex:2:24",
+        "VM.Standard.E4.Flex:2:24",
+        "VM.Standard3.Flex:2:24",
     )
     assert all("A1" not in fallback for fallback in plan.fallback_shapes)
 
@@ -1334,11 +1334,11 @@ def test_oci_launch_fallback_checks_all_availability_domains(
     )
 
     assert instance.id == "ocid1.instance.example"
-    assert selected_plan.shape == "VM.Standard3.Flex"
+    assert selected_plan.shape == "VM.Standard.E5.Flex"
     assert ssh_user == "ubuntu"
     assert selected_domain == "AD-2"
-    assert ("AD-1", "VM.Standard3.Flex") in attempts
-    assert ("AD-2", "VM.Standard3.Flex") in attempts
+    assert ("AD-1", "VM.Standard.E5.Flex") in attempts
+    assert ("AD-2", "VM.Standard.E5.Flex") in attempts
     assert any("checking availability domain AD-2" in item for item in progress)
 
 
