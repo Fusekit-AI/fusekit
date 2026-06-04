@@ -2326,17 +2326,19 @@ def _provision_oci_workspace(
     vault: Vault,
     plan: OciRunnerPlan,
 ) -> OciWorkspace:
-    auth = _oci_auth_for_plan_region(
-        load_oci_auth_from_vault_or_config(vault, config_file=args.oci_config_file),
-        plan,
-    )
+    identity_auth = load_oci_auth_from_vault_or_config(vault, config_file=args.oci_config_file)
+    auth = _oci_auth_for_plan_region(identity_auth, plan)
     print(
         "FuseKit is provisioning the OCI clean-room VM. "
         "This can take a few minutes; progress will stay visible.",
         file=sys.stderr,
         flush=True,
     )
-    return OciProvisioner(auth, progress=_print_oci_progress).provision(plan, vault)
+    return OciProvisioner(
+        auth,
+        progress=_print_oci_progress,
+        identity_auth=identity_auth,
+    ).provision(plan, vault)
 
 
 def _oci_auth_for_plan_region(auth: OciAuth, plan: OciRunnerPlan) -> OciAuth:

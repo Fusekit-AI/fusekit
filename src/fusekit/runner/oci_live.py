@@ -83,7 +83,13 @@ class OciWorkspace:
 class OciProvisioner:
     """Live OCI provisioner using the official OCI Python SDK."""
 
-    def __init__(self, auth: OciAuth, progress: Callable[[str], None] | None = None) -> None:
+    def __init__(
+        self,
+        auth: OciAuth,
+        progress: Callable[[str], None] | None = None,
+        *,
+        identity_auth: OciAuth | None = None,
+    ) -> None:
         suppress_oci_http_debug_logging()
         try:
             import oci
@@ -92,6 +98,11 @@ class OciProvisioner:
         self.oci = oci
         self.auth = auth
         self.identity = oci.identity.IdentityClient(auth.config, signer=auth.signer)
+        home_auth = identity_auth or auth
+        self.home_identity = oci.identity.IdentityClient(
+            home_auth.config,
+            signer=home_auth.signer,
+        )
         self.network = oci.core.VirtualNetworkClient(auth.config, signer=auth.signer)
         self.compute = oci.core.ComputeClient(auth.config, signer=auth.signer)
         self._progress = progress or (lambda message: None)
@@ -245,7 +256,7 @@ class OciProvisioner:
             name=run_id.replace("-", "_"),
             freeform_tags=tags,
         )
-        compartment = self.identity.create_compartment(details).data
+        compartment = self.home_identity.create_compartment(details).data
         time.sleep(10)
         return compartment
 

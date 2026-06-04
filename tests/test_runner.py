@@ -1198,6 +1198,60 @@ def test_oci_create_nsg_wraps_security_rules_for_sdk_request() -> None:
     assert details.security_rules[3].direction == "EGRESS"
 
 
+def test_oci_compartment_uses_home_identity_and_ads_use_runner_region_identity() -> None:
+    class Details:
+        def __init__(self, **kwargs: object) -> None:
+            self.__dict__.update(kwargs)
+
+    class Created:
+        def __init__(self, resource_id: str) -> None:
+            self.id = resource_id
+
+    class Domain:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+    class Response:
+        def __init__(self, data: object) -> None:
+            self.data = data
+
+    class FakeModels:
+        CreateCompartmentDetails = Details
+
+    class FakeOci:
+        class identity:
+            models = FakeModels
+
+    class HomeIdentity:
+        def __init__(self) -> None:
+            self.created: object | None = None
+
+        def create_compartment(self, details: object) -> Response:
+            self.created = details
+            return Response(Created("ocid1.compartment.example"))
+
+    class RegionalIdentity:
+        def list_availability_domains(self, compartment_id: str) -> Response:
+            assert compartment_id == "ocid1.tenancy.example"
+            return Response([Domain("regional-ad-1"), Domain("regional-ad-2")])
+
+    provisioner = object.__new__(OciProvisioner)
+    provisioner.oci = FakeOci()
+    provisioner.home_identity = HomeIdentity()
+    provisioner.identity = RegionalIdentity()
+
+    compartment = provisioner._create_compartment(
+        "ocid1.tenancy.example",
+        "fusekit-test",
+        {"fusekit": "true"},
+    )
+    domains = provisioner._availability_domains("ocid1.tenancy.example")
+
+    assert compartment.id == "ocid1.compartment.example"
+    assert cast(Any, provisioner.home_identity.created).compartment_id == "ocid1.tenancy.example"
+    assert domains == ("regional-ad-1", "regional-ad-2")
+
+
 def test_oci_launch_retries_transient_not_authorized_or_not_found(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
