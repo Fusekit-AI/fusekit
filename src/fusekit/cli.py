@@ -2747,6 +2747,7 @@ def _run_manifest_provider_pack_setup(
         result = run_provider_pack_setup(pack, context)
         strategy_runs.append(_provider_strategy_record(result))
         _write_provider_strategy_artifact(args, strategy_runs)
+        _record_provider_strategy_gates(args, pack, result)
         context.audit.record("provider_pack.setup", result)
         context.receipt.add_action("provider_pack.setup", "ok", result)
     if not strategy_runs:
@@ -2773,6 +2774,85 @@ def _provider_strategy_record(result: dict[str, Any]) -> dict[str, object]:
             }
         )
     return {"provider": str(result.get("provider", "")), "strategies": strategies}
+
+
+def _record_provider_strategy_gates(
+    args: argparse.Namespace,
+    pack: ProviderCapabilityPack,
+    result: dict[str, Any],
+) -> None:
+    provider = str(result.get("provider", pack.provider)).lower()
+    follow_steps = _provider_strategy_follow_steps(pack)
+    default_resume_url = _provider_strategy_resume_url(pack)
+    for item in result.get("setup", []):
+        if not isinstance(item, dict):
+            continue
+        strategy = str(item.get("strategy", ""))
+        if item.get("status") != "needs_human_gate":
+            continue
+        if strategy not in {"browser_guided", "human_follow_me"}:
+            continue
+        recipe = str(item.get("kind", "setup"))
+        reason = str(
+            item.get("reason")
+            or item.get("next_action")
+            or f"{provider} authorization is required for {recipe}."
+        )
+        resume_url = default_resume_url or _provider_strategy_decision_url(item)
+        gate_id = f"provider.{provider}.{_strategy_gate_slug(recipe)}"
+        _record_gate_waiting(
+            args,
+            gate_id,
+            provider=provider,
+            reason=reason,
+            resume_url=resume_url,
+            classification="provider-authorization",
+            follow_steps=follow_steps,
+        )
+
+
+def _provider_strategy_follow_steps(pack: ProviderCapabilityPack) -> tuple[str, ...]:
+    steps = tuple(
+        step
+        for step in (*pack.handoff.account_steps, *pack.handoff.secret_steps)
+        if step.strip()
+    )
+    if steps:
+        return steps
+    return (
+        f"Open the {pack.display_name} provider gate.",
+        "Complete provider-owned login, MFA, CAPTCHA, consent, billing, or verification steps.",
+        "Return to FuseKit and mark the gate finished once the approved capability exists.",
+    )
+
+
+def _provider_strategy_resume_url(pack: ProviderCapabilityPack) -> str:
+    for value in (
+        pack.handoff.token_url,
+        pack.handoff.project_url,
+        pack.handoff.login_url,
+        pack.handoff.signup_url,
+    ):
+        if value:
+            return value
+    return ""
+
+
+def _provider_strategy_decision_url(item: dict[str, Any]) -> str:
+    decision = item.get("strategy_decision", {})
+    if not isinstance(decision, dict):
+        return ""
+    selected = decision.get("selected", {})
+    if not isinstance(selected, dict):
+        return ""
+    evidence = selected.get("evidence", {})
+    if not isinstance(evidence, dict):
+        return ""
+    return str(evidence.get("handoff_url", ""))
+
+
+def _strategy_gate_slug(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-") or "setup"
 
 
 def _write_provider_strategy_artifact(

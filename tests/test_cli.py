@@ -21,6 +21,7 @@ from fusekit.providers.capability_pack import (
     synthesize_provider_pack,
     write_provider_pack,
 )
+from fusekit.runner.gates import GateService
 from fusekit.runner.oci_live import OciWorkspace
 from fusekit.spine.playbooks import BrowserPlaybookEvent
 from fusekit.vault import Vault
@@ -644,6 +645,69 @@ def test_apply_accepts_pending_safe_provider_verification(monkeypatch, tmp_path)
     receipt = json.loads((app / ".fusekit" / "setup_receipt.json").read_text("utf-8"))
     assert receipt["actions"][-1]["status"] == "pending-safe"
     assert json.loads(report_path.read_text("utf-8"))["overall"] == "pending"
+
+
+def test_apply_records_provider_strategy_gate_when_token_is_missing(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    app = tmp_path / "app"
+    app.mkdir()
+    manifest = SetupManifest(
+        app_name="app",
+        app_path=str(app),
+        services=(
+            ServiceRequirement(
+                provider="github",
+                kind="source",
+                name="source",
+                capabilities=("capability_pack",),
+                secrets=("GITHUB_TOKEN",),
+            ),
+        ),
+    )
+    manifest_path = tmp_path / "fusekit.yaml"
+    write_manifest(manifest, manifest_path)
+    fusekit_dir = app / ".fusekit"
+    passphrase = tmp_path / "passphrase.txt"
+    passphrase.write_text("passphrase\n", encoding="utf-8")
+
+    assert (
+        main(
+            [
+                "apply",
+                str(manifest_path),
+                "--vault",
+                str(fusekit_dir / "fusekit.vault.json"),
+                "--passphrase-file",
+                str(passphrase),
+                "--github-repo",
+                "owner/repo",
+                "--allow-incomplete",
+                "--receipt-json",
+                str(fusekit_dir / "setup_receipt.json"),
+                "--receipt-md",
+                str(fusekit_dir / "setup_receipt.md"),
+                "--audit-log",
+                str(fusekit_dir / "audit.jsonl"),
+                "--verification-report",
+                str(fusekit_dir / "verification_report.json"),
+            ]
+        )
+        == 0
+    )
+
+    gates = GateService.load(fusekit_dir / "gates.json").records
+    gate = gates["provider.github.github-deploy-key"]
+    assert gate.provider == "github"
+    assert gate.resume_url == "https://github.com/settings/tokens?type=beta"
+    assert gate.classification == "provider-authorization"
+    assert "fine-grained token" in " ".join(gate.follow_steps)
+
+    strategies = json.loads((fusekit_dir / "provider_strategies.json").read_text("utf-8"))
+    assert strategies["providers"][0]["provider"] == "github"
+    assert strategies["providers"][0]["strategies"][0]["strategy"] == "browser_guided"
 
 
 def test_apply_writes_verification_report_when_provider_check_fails(tmp_path) -> None:
