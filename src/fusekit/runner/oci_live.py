@@ -399,14 +399,27 @@ class OciProvisioner:
         return self.network.create_subnet(details).data
 
     def _latest_image(self, compartment_id: str, shape: str) -> tuple[str, str]:
-        images = self.compute.list_images(
-            compartment_id=compartment_id,
-            operating_system="Canonical Ubuntu",
-            shape=shape,
-            sort_by="TIMECREATED",
-            sort_order="DESC",
-        ).data
         ssh_user = "ubuntu"
+        images: list[Any] = []
+        for ubuntu_version in ("24.04", "22.04"):
+            images = self.compute.list_images(
+                compartment_id=compartment_id,
+                operating_system="Canonical Ubuntu",
+                operating_system_version=ubuntu_version,
+                shape=shape,
+                sort_by="TIMECREATED",
+                sort_order="DESC",
+            ).data
+            if images:
+                break
+        if not images:
+            images = self.compute.list_images(
+                compartment_id=compartment_id,
+                operating_system="Canonical Ubuntu",
+                shape=shape,
+                sort_by="TIMECREATED",
+                sort_order="DESC",
+            ).data
         if not images:
             images = self.compute.list_images(
                 compartment_id=compartment_id,

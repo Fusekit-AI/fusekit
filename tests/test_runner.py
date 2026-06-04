@@ -1161,7 +1161,7 @@ def test_oci_provision_cleans_partial_workspace_when_readiness_fails() -> None:
     assert provisioner.deleted.ssh_user == "ubuntu"
 
 
-def test_oci_latest_image_prefers_ubuntu_for_runner_bootstrap() -> None:
+def test_oci_latest_image_prefers_ubuntu_lts_for_runner_bootstrap() -> None:
     class Image:
         def __init__(self, image_id: str) -> None:
             self.id = image_id
@@ -1172,13 +1172,14 @@ def test_oci_latest_image_prefers_ubuntu_for_runner_bootstrap() -> None:
 
     class FakeCompute:
         def __init__(self) -> None:
-            self.operating_systems: list[str] = []
+            self.requests: list[tuple[str, str]] = []
 
         def list_images(
             self,
             *,
             compartment_id: str,
             operating_system: str,
+            operating_system_version: str = "",
             shape: str,
             sort_by: str,
             sort_order: str,
@@ -1187,9 +1188,9 @@ def test_oci_latest_image_prefers_ubuntu_for_runner_bootstrap() -> None:
             assert shape == "VM.Standard.E5.Flex"
             assert sort_by == "TIMECREATED"
             assert sort_order == "DESC"
-            self.operating_systems.append(operating_system)
-            if operating_system == "Canonical Ubuntu":
-                return Response([Image("ocid1.image.ubuntu")])
+            self.requests.append((operating_system, operating_system_version))
+            if operating_system == "Canonical Ubuntu" and operating_system_version == "24.04":
+                return Response([Image("ocid1.image.ubuntu-24-04")])
             return Response([Image("ocid1.image.oraclelinux")])
 
     provisioner = object.__new__(OciProvisioner)
@@ -1200,9 +1201,53 @@ def test_oci_latest_image_prefers_ubuntu_for_runner_bootstrap() -> None:
         "VM.Standard.E5.Flex",
     )
 
-    assert image_id == "ocid1.image.ubuntu"
+    assert image_id == "ocid1.image.ubuntu-24-04"
     assert ssh_user == "ubuntu"
-    assert provisioner.compute.operating_systems == ["Canonical Ubuntu"]
+    assert provisioner.compute.requests == [("Canonical Ubuntu", "24.04")]
+
+
+def test_oci_latest_image_falls_back_to_ubuntu_2204_before_oracle_linux() -> None:
+    class Image:
+        def __init__(self, image_id: str) -> None:
+            self.id = image_id
+
+    class Response:
+        def __init__(self, data: object) -> None:
+            self.data = data
+
+    class FakeCompute:
+        def __init__(self) -> None:
+            self.requests: list[tuple[str, str]] = []
+
+        def list_images(
+            self,
+            *,
+            compartment_id: str,
+            operating_system: str,
+            operating_system_version: str = "",
+            shape: str,
+            sort_by: str,
+            sort_order: str,
+        ) -> Response:
+            self.requests.append((operating_system, operating_system_version))
+            if operating_system == "Canonical Ubuntu" and operating_system_version == "22.04":
+                return Response([Image("ocid1.image.ubuntu-22-04")])
+            return Response([])
+
+    provisioner = object.__new__(OciProvisioner)
+    provisioner.compute = FakeCompute()
+
+    image_id, ssh_user = provisioner._latest_image(
+        "ocid1.compartment.example",
+        "VM.Standard.E5.Flex",
+    )
+
+    assert image_id == "ocid1.image.ubuntu-22-04"
+    assert ssh_user == "ubuntu"
+    assert provisioner.compute.requests == [
+        ("Canonical Ubuntu", "24.04"),
+        ("Canonical Ubuntu", "22.04"),
+    ]
 
 
 def test_oci_launch_instance_matches_console_recommended_options() -> None:
