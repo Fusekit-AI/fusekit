@@ -292,6 +292,27 @@ def test_cli_provider_synthesize_validate_and_authorize_pack(monkeypatch, tmp_pa
     assert opened.require("provider.plaid.token").value == token
 
 
+def test_cli_provider_list_reports_account_creation_mode(tmp_path, capsys) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "package.json").write_text(
+        json.dumps({"dependencies": {"stripe": "latest"}}),
+        encoding="utf-8",
+    )
+    (app / "checkout.ts").write_text(
+        "process.env.STRIPE_SECRET_KEY;",
+        encoding="utf-8",
+    )
+
+    assert main(["provider", "list", "--app", str(app), "--json"]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    provider = payload["providers"][0]
+    assert provider["provider"] == "stripe"
+    assert provider["account_creation"] == "supervised"
+    assert "supervised" in provider["account_creation_reason"].lower()
+
+
 def test_provider_synthesize_refuses_silent_vault_downgrade(tmp_path, capsys) -> None:
     app = tmp_path / "app"
     app.mkdir()

@@ -17,6 +17,10 @@ Python package is the live control room in `fusekit.runner.control_room.server`.
 | `/api/gates/<gate_id>/pass` | `POST` | Marks one human gate as passed in `.fusekit/gates.json`. | Requires `x-fusekit-control-room: resume`; rejects untrusted `Origin`; rejects browser-declared cross-site `Sec-Fetch-Site`; remote access requires token via bearer/query/cookie; no CORS headers are emitted. |
 | Any route | `OPTIONS` | None. | Returns `405` with security headers and no CORS allow headers, so browser preflights for custom-header POSTs fail closed. |
 
+There is no browser route that accepts a shell command, command arguments,
+provider recipe name, vault path, user name, admin account request, or arbitrary
+state mutation. Unknown GET/POST paths return `404`.
+
 ## State-Changing CLI and Provider Actions
 
 These actions are not browser routes. They require local CLI execution, a remote runner
@@ -28,6 +32,7 @@ SSH session provisioned by FuseKit, or an encrypted vault/passphrase boundary.
 | `fusekit unlock` / `fusekit request` | Opens encrypted vault or creates short-lived vault sessions. | Passphrase or short-lived session token required; session token is not persisted; session file is encrypted and owner-only. |
 | `fusekit authorize` | Captures approved provider secrets into the encrypted vault. | Uses hidden prompts/env handoff; raw secrets are redacted from output, logs, receipts, and control-room payloads. |
 | `fusekit apply` / `fusekit launch --runner local` | Runs provider setup recipes, writes receipts, audit logs, verification report, rollback metadata. | Provider strategy must select a deterministic API/CLI/browser/vault-capture lane; missing provider auth becomes a human gate; DNS apply requires explicit `approve_dns`. |
+| Provider account creation | Creates or selects an account/project with an external provider. | Capability packs declare `api`, `supervised`, or `none`; API mode requires a matching setup recipe; current public catalog packs are supervised gates because signup usually involves provider-owned email, MFA, CAPTCHA, billing, identity, fraud, or consent checks. |
 | GitHub provider recipes | Deploy keys and repo secrets. | Requires provider token in vault/env; values are sent through provider API primitives and redacted from artifacts. |
 | Vercel provider recipes | Project, env vars, deployment. | Requires provider token; env replacement creates before deleting old values unless repair requires replacement. |
 | Cloudflare provider recipes | DNS proposal/apply/verify. | Proposal is safe by default; apply requires explicit DNS approval scope; rollback metadata is written. |
@@ -63,6 +68,8 @@ or trigger commands:
   local untokened control rooms.
 - If a browser sends `Sec-Fetch-Site: cross-site`, FuseKit rejects the state-changing
   POST even when other headers are present.
+- Tokenized remote control rooms still reject attacker-origin gate POSTs before
+  mutating gate state.
 - Remote control rooms require an unguessable token; token cookies are `HttpOnly` and
   `SameSite=Lax`.
 - The control room never exposes a route that executes arbitrary shell commands.

@@ -69,6 +69,7 @@ HTTP_JSON_PURPOSES = {
     "verify-webhook",
     "verify-health",
 }
+ACCOUNT_CREATION_MODES = {"api", "supervised", "none"}
 
 
 @dataclass(frozen=True)
@@ -120,6 +121,9 @@ class PackHandoff:
     account_steps: tuple[str, ...] = ()
     secret_steps: tuple[str, ...] = ()
     service_gates: tuple[str, ...] = ()
+    account_creation: str = "supervised"
+    account_creation_recipe: str = ""
+    account_creation_reason: str = "Provider account signup is a supervised service gate."
 
     def to_dict(self) -> dict[str, object]:
         """Serialize handoff metadata."""
@@ -136,6 +140,9 @@ class PackHandoff:
             "account_steps": list(self.account_steps),
             "secret_steps": list(self.secret_steps),
             "service_gates": list(self.service_gates),
+            "account_creation": self.account_creation,
+            "account_creation_recipe": self.account_creation_recipe,
+            "account_creation_reason": self.account_creation_reason,
         }
 
     @classmethod
@@ -154,6 +161,14 @@ class PackHandoff:
             account_steps=_tuple(raw.get("account_steps", ()), "handoff.account_steps"),
             secret_steps=_tuple(raw.get("secret_steps", ()), "handoff.secret_steps"),
             service_gates=_tuple(raw.get("service_gates", ()), "handoff.service_gates"),
+            account_creation=str(raw.get("account_creation", "supervised")),
+            account_creation_recipe=str(raw.get("account_creation_recipe", "")),
+            account_creation_reason=str(
+                raw.get(
+                    "account_creation_reason",
+                    "Provider account signup is a supervised service gate.",
+                )
+            ),
         )
 
 
@@ -689,6 +704,7 @@ def validate_provider_pack(pack: ProviderCapabilityPack) -> None:
         f"provider.{pack.provider}."
     ):
         raise ProviderError("handoff.token_record_id must be provider-scoped.")
+    _validate_account_creation(pack)
     for setup_recipe in pack.setup:
         _validate_setup_secret_routes(pack, setup_recipe)
     for verification_recipe in pack.verification:
@@ -1492,6 +1508,31 @@ def _validate_tool_permissions(pack: ProviderCapabilityPack) -> None:
             raise ProviderError(
                 f"Verification recipe is not bound to tool permission: {permission}"
             )
+
+
+def _validate_account_creation(pack: ProviderCapabilityPack) -> None:
+    mode = pack.handoff.account_creation
+    recipe_kind = pack.handoff.account_creation_recipe
+    if mode not in ACCOUNT_CREATION_MODES:
+        raise ProviderError(
+            "handoff.account_creation must be api, supervised, or none."
+        )
+    if not pack.handoff.account_creation_reason.strip():
+        raise ProviderError("handoff.account_creation_reason must explain the account route.")
+    if mode == "api":
+        if not recipe_kind:
+            raise ProviderError(
+                "API account creation requires handoff.account_creation_recipe."
+            )
+        if not any(recipe.kind == recipe_kind for recipe in pack.setup):
+            raise ProviderError(
+                "API account creation recipe must match a setup recipe in the pack."
+            )
+        return
+    if recipe_kind:
+        raise ProviderError(
+            "Only API account creation may declare handoff.account_creation_recipe."
+        )
 
 
 def _validate_setup_secret_routes(pack: ProviderCapabilityPack, recipe: SetupRecipe) -> None:

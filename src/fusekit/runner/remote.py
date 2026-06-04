@@ -500,7 +500,7 @@ def _prepare_remote_visual_session(
             "Use the noVNC window to complete human gates in the same session FuseKit observes.",
         ],
     }
-    placeholder_job = {
+    initial_visual_job = {
         "id": "remote-visual-session",
         "app_path": "/var/lib/fusekit-runner/app",
         "runner": "oci-remote",
@@ -522,7 +522,7 @@ def _prepare_remote_visual_session(
         f"printf %s {quote(json.dumps(visual_payload, sort_keys=True))} "
         "> /var/lib/fusekit-runner/app/.fusekit/visual.json; "
         "[ -f /var/lib/fusekit-runner/app/.fusekit/job.json ] || "
-        f"printf %s {quote(json.dumps(placeholder_job, sort_keys=True))} "
+        f"printf %s {quote(json.dumps(initial_visual_job, sort_keys=True))} "
         "> /var/lib/fusekit-runner/app/.fusekit/job.json; "
         f"export FUSEKIT_VISUAL_PASSWORD={quote(visual['novnc_password'])}; "
         f"export FUSEKIT_VISUAL_DISPLAY={quote(visual['display'])}; "

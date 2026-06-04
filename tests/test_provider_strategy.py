@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from fusekit.providers.capability_pack import SetupRecipe, synthesize_provider_pack
-from fusekit.providers.strategy import StrategySignal, choose_provider_strategy
+from fusekit.providers.strategy import (
+    StrategySignal,
+    choose_account_creation_strategy,
+    choose_provider_strategy,
+)
 
 
 def test_provider_strategy_prefers_api_when_token_is_available(tmp_path) -> None:
@@ -45,3 +51,33 @@ def test_provider_strategy_uses_local_vault_for_capture_recipes(tmp_path) -> Non
 
     assert decision.selected.kind == "local_vault"
     assert decision.executable
+
+
+def test_account_creation_strategy_uses_supervised_gate(tmp_path) -> None:
+    pack = synthesize_provider_pack("stripe", tmp_path)
+
+    decision = choose_account_creation_strategy(pack, StrategySignal())
+
+    assert decision.recipe_kind == "account.creation"
+    assert decision.selected.kind == "browser_guided"
+    assert not decision.executable
+    assert decision.selected.status == "available"
+    assert decision.selected.evidence["handoff_url"].startswith("https://")
+
+
+def test_account_creation_strategy_blocks_when_pack_declares_none(tmp_path) -> None:
+    pack = synthesize_provider_pack("stripe", tmp_path)
+    pack = replace(
+        pack,
+        handoff=replace(
+            pack.handoff,
+            account_creation="none",
+            account_creation_reason="Provider account creation is unavailable.",
+        ),
+    )
+
+    decision = choose_account_creation_strategy(pack, StrategySignal())
+
+    assert decision.selected.kind == "unsupported"
+    assert decision.selected.status == "blocked"
+    assert not decision.executable

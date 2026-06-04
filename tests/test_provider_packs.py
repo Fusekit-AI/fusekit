@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -245,7 +246,36 @@ def test_common_provider_catalog_synthesizes_valid_specific_packs(tmp_path) -> N
         assert pack.setup[0].kind == "vault-capture-env"
         assert pack.verification[0].kind == "env-present"
         assert pack.handoff.token_record_id == f"provider.{provider}.token"
+        assert pack.handoff.account_creation == "supervised"
+        assert pack.handoff.account_creation_reason
         assert pack.detection.docs_urls
+
+
+def test_provider_pack_rejects_invalid_account_creation_mode(tmp_path) -> None:
+    pack = synthesize_provider_pack("stripe", tmp_path)
+    bad = replace(
+        pack,
+        handoff=replace(pack.handoff, account_creation="magic"),
+    )
+
+    with pytest.raises(ProviderError, match="account_creation"):
+        validate_provider_pack(bad)
+
+
+def test_api_account_creation_requires_matching_setup_recipe(tmp_path) -> None:
+    pack = synthesize_provider_pack("stripe", tmp_path)
+    bad = replace(
+        pack,
+        handoff=replace(
+            pack.handoff,
+            account_creation="api",
+            account_creation_recipe="stripe-account-create",
+            account_creation_reason="Stripe account creation is available through API.",
+        ),
+    )
+
+    with pytest.raises(ProviderError, match="must match a setup recipe"):
+        validate_provider_pack(bad)
 
 
 def test_common_provider_catalog_infers_from_dependencies_and_env() -> None:

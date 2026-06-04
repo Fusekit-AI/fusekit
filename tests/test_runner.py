@@ -808,6 +808,47 @@ def test_control_room_server_requires_remote_token(
     assert payload["id"] == "fk-test"
 
 
+def test_tokenized_control_room_rejects_cross_site_gate_post(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FUSEKIT_CONTROL_ROOM_TOKEN", "token-123")
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.github.mfa.123",
+        provider="github",
+        reason="MFA required",
+        classification="mfa",
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/api/gates/provider.github.mfa.123/pass"
+        request = Request(
+            url,
+            method="POST",
+            headers={
+                "Authorization": "Bearer token-123",
+                "x-fusekit-control-room": "resume",
+                "Origin": "https://evil.example",
+                "Sec-Fetch-Site": "cross-site",
+            },
+        )
+        with pytest.raises(HTTPError):
+            urlopen(request, timeout=5)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert GateService.load(tmp_path / "gates.json").records[
+        "provider.github.mfa.123"
+    ].status == "waiting"
+
+
 def test_control_room_remote_bind_requires_allow_flag_and_token(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,

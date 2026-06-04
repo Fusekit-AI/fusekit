@@ -20,6 +20,7 @@ API_SETUP_KINDS = {
     "vercel-git-deployment",
     "cloudflare-dns",
 }
+API_ACCOUNT_CREATION_SETUP_KINDS: set[str] = set()
 LOCAL_SETUP_KINDS = {"vault-capture-env"}
 CLI_BY_PROVIDER = {
     "github": "gh",
@@ -123,6 +124,79 @@ def choose_provider_strategy(
     candidates = _candidate_strategies(pack, recipe, signal)
     selected = _select_candidate(candidates)
     return ProviderStrategyDecision(provider, recipe.kind, selected, tuple(candidates))
+
+
+def choose_account_creation_strategy(
+    pack: ProviderCapabilityPack,
+    signal: StrategySignal,
+) -> ProviderStrategyDecision:
+    """Choose the safest available route for creating or connecting a provider account."""
+
+    provider = pack.provider.lower()
+    mode = pack.handoff.account_creation
+    recipe_kind = pack.handoff.account_creation_recipe or "account.creation"
+    candidates: list[ProviderStrategy] = []
+    if mode == "api":
+        implemented = recipe_kind in API_ACCOUNT_CREATION_SETUP_KINDS
+        candidates.append(
+            ProviderStrategy(
+                kind="api",
+                label="Provider account API",
+                priority=10,
+                status="available" if signal.token_available else "blocked",
+                deterministic=True,
+                implemented=implemented,
+                reason=(
+                    "Provider pack declares an API account creation recipe."
+                    if implemented
+                    else (
+                        "Provider pack declares API account creation, "
+                        "but no executor is registered."
+                    )
+                ),
+                evidence={"recipe": recipe_kind},
+            )
+        )
+    elif mode == "none":
+        candidates.append(
+            ProviderStrategy(
+                kind="unsupported",
+                label="Account creation unavailable",
+                priority=100,
+                status="blocked",
+                deterministic=False,
+                implemented=False,
+                reason=pack.handoff.account_creation_reason,
+            )
+        )
+    else:
+        handoff_url = _account_handoff_url(pack)
+        candidates.append(
+            ProviderStrategy(
+                kind="browser_guided",
+                label="Guided provider signup",
+                priority=30,
+                status="available" if signal.browser_available and handoff_url else "unavailable",
+                deterministic=False,
+                implemented=False,
+                reason=pack.handoff.account_creation_reason,
+                evidence={"handoff_url": handoff_url},
+            )
+        )
+        candidates.append(
+            ProviderStrategy(
+                kind="human_follow_me",
+                label="Human follow-me signup",
+                priority=40,
+                status="available" if signal.human_gate_allowed and handoff_url else "unavailable",
+                deterministic=False,
+                implemented=False,
+                reason="The user can complete provider-owned signup gates with guidance.",
+                evidence={"handoff_url": handoff_url},
+            )
+        )
+    selected = _select_candidate(candidates)
+    return ProviderStrategyDecision(provider, "account.creation", selected, tuple(candidates))
 
 
 def _candidate_strategies(
@@ -240,6 +314,13 @@ def _handoff_url(pack: ProviderCapabilityPack) -> str:
         pack.handoff.login_url,
         pack.handoff.signup_url,
     ):
+        if value:
+            return value
+    return ""
+
+
+def _account_handoff_url(pack: ProviderCapabilityPack) -> str:
+    for value in (pack.handoff.signup_url, pack.handoff.login_url, pack.handoff.project_url):
         if value:
             return value
     return ""

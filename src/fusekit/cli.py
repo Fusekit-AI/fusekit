@@ -813,20 +813,30 @@ def _cmd_provider_list(args: argparse.Namespace) -> int:
     manifest = scan_repo(args.app)
     providers = []
     for service in manifest.services:
+        pack_path = _provider_pack_path(args.app, service.provider.lower(), service)
+        pack = load_provider_pack(pack_path) if pack_path.exists() else synthesize_provider_pack(
+            service.provider.lower(),
+            args.app,
+        )
         providers.append(
             {
                 "provider": service.provider,
                 "kind": service.kind,
                 "capabilities": list(service.capabilities),
                 "capability_pack": service.settings.get("capability_pack", ""),
+                "account_creation": pack.handoff.account_creation,
+                "account_creation_reason": pack.handoff.account_creation_reason,
             }
         )
     if args.as_json:
         print(json.dumps({"providers": providers}, indent=2, sort_keys=True))
     else:
         for provider in providers:
-            pack = f" pack={provider['capability_pack']}" if provider["capability_pack"] else ""
-            print(f"{provider['provider']:16} {provider['kind']}{pack}")
+            pack_note = (
+                f" pack={provider['capability_pack']}" if provider["capability_pack"] else ""
+            )
+            account = f" account={provider['account_creation']}"
+            print(f"{provider['provider']:16} {provider['kind']}{account}{pack_note}")
     return 0
 
 

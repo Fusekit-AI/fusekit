@@ -133,7 +133,7 @@
 - [x] Implement Vercel project and environment variable adapter.
 - [x] Implement DNS propose/apply adapter for one provider.
 - [x] Implement webhook create/verify utilities.
-- [ ] Create accounts automatically where provider APIs allow it.
+- [x] Declare account creation support in provider packs. API account creation is fail-closed unless the pack names a real setup recipe; current public catalog packs use supervised account gates.
 - [x] Use supervised user handoff when provider APIs require browser login, CAPTCHA, MFA, billing, or identity checks, then capture approved resulting credentials into the encrypted vault.
 - [x] Open provider signup/token/project pages for GitHub, Vercel, and Cloudflare during authorization handoff.
 - [x] Add OpenClaw browser spine adapter and provider authorization playbooks.
@@ -261,5 +261,6 @@
 - [x] Fixed gap 4: rollback can execute provider-native delete/revoke/restore paths for GitHub repo secrets/deploy keys, Vercel env/project resources, and Cloudflare DNS proposal metadata.
 - [x] Fixed gap 5: README documents the supervised real-provider acceptance run protocol and marks live execution as pending provider account handoff.
 - [x] Fixed gap 6: failed/pending provider verification now feeds redacted errors into a bounded inferred UI repair pass and reruns verification.
+- [x] Fixed gap 7: provider packs now expose account-creation mode, so automatic account creation cannot be implied without an API-backed recipe and supervised signup remains visible to users and audits.
 - [ ] Remaining: full public acceptance run still requires supervised GitHub/Vercel/Cloudflare authorization and a disposable test domain.
 - [x] Remaining: acceptance harness can ingest provider verification results directly from retrieved remote OCI artifacts.

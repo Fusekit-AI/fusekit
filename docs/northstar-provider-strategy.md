@@ -34,6 +34,13 @@ Every provider-pack setup recipe gets a strategy decision:
 - `human_follow_me`: exact human instructions and highlighted gates.
 - `local_vault`: deterministic local vault capture for already-approved values.
 
+Account creation is also explicit pack metadata:
+
+- `api`: only when the pack declares a matching setup recipe and FuseKit has a
+  real executor for it.
+- `supervised`: provider signup/account selection is a first-class human gate.
+- `none`: FuseKit must block and explain why account creation is unavailable.
+
 Each decision records:
 
 - selected route
@@ -78,6 +85,12 @@ The durable path is:
 
 Provider pack updates must be signed and auditable. FuseKit should never execute
 untrusted live code from arbitrary provider docs or pages.
+
+Current public catalog packs declare account creation as `supervised`. That is
+intentional: many providers require email, MFA, CAPTCHA, billing, identity, or
+consent gates before issuing app capabilities. FuseKit can guide those gates and
+capture approved outputs, but it must not promise fake automatic account
+creation unless a provider-supported API route is implemented and tested.
 
 ## OCI Acceptance
 
