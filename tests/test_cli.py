@@ -109,6 +109,8 @@ def test_launcher_derives_no_code_live_context_and_snowman_surface(tmp_path) -> 
                 "--fusekit-package",
                 "git+https://github.com/xpxpxp-coder/fusekit.git",
                 "--approve-dns",
+                "--oci-region",
+                "us-ashburn-1",
             ]
         )
         == 0
@@ -124,6 +126,7 @@ def test_launcher_derives_no_code_live_context_and_snowman_surface(tmp_path) -> 
     assert "--dns-zone moonlite.rsvp" in text
     assert "--live-url https://moonlite.rsvp" in text
     assert "--approve-dns" in text
+    assert "--oci-region us-ashburn-1" in text
     assert "--verify-attempts 10" in text
     assert "--verify-retry-seconds 30.0" in text
     assert "--gate-max-attempts 0" in text
@@ -138,6 +141,22 @@ def test_launcher_derives_no_code_live_context_and_snowman_surface(tmp_path) -> 
     payload = json.loads(payload_text)
     assert payload["launch_args"][-2:] == ["--visual-runner", "novnc"]
     assert "clipboard write timed out" in text
+
+
+def test_oci_auth_for_plan_region_overrides_sdk_region() -> None:
+    from fusekit.cli import _oci_auth_for_plan_region
+    from fusekit.runner.oci import build_oci_runner_plan
+    from fusekit.runner.oci_live import OciAuth
+
+    signer = object()
+    auth = OciAuth({"region": "us-phoenix-1", "tenancy": "ocid1.tenancy.example"}, signer)
+    plan = build_oci_runner_plan(runner="oci-existing", region="us-ashburn-1")
+
+    updated = _oci_auth_for_plan_region(auth, plan)
+
+    assert updated.config["region"] == "us-ashburn-1"
+    assert updated.signer is signer
+    assert auth.config["region"] == "us-phoenix-1"
 
 
 def test_cli_scan_validate_plan_unlock_request(tmp_path, capsys) -> None:

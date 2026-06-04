@@ -80,6 +80,7 @@ from fusekit.runner.oci import (
     prepare_oci_api_signing_key,
 )
 from fusekit.runner.oci_live import (
+    OciAuth,
     OciProvisioner,
     OciWorkspace,
     latest_workspace_from_vault,
@@ -404,6 +405,11 @@ def _parser() -> argparse.ArgumentParser:
     launcher.add_argument("--vercel-project", default="")
     launcher.add_argument("--live-url", default="")
     launcher.add_argument("--dns-zone", default="")
+    launcher.add_argument(
+        "--oci-region",
+        default="auto",
+        help="OCI region for the disposable runner VM, e.g. us-ashburn-1",
+    )
     launcher.add_argument(
         "--approve-dns",
         action="store_true",
@@ -1068,6 +1074,7 @@ def _cloud_shell_launcher_launch_args(args: argparse.Namespace) -> tuple[str, ..
         ("--verify-retry-seconds", "verify_retry_seconds"),
         ("--gate-retry-seconds", "gate_retry_seconds"),
         ("--gate-max-attempts", "gate_max_attempts"),
+        ("--oci-region", "oci_region"),
         ("--llm-provider", "llm_provider"),
         ("--llm-model", "llm_model"),
         ("--llm-base-url", "llm_base_url"),
@@ -1079,6 +1086,8 @@ def _cloud_shell_launcher_launch_args(args: argparse.Namespace) -> tuple[str, ..
     )
     for flag, attr in pairs:
         value = getattr(args, attr, "")
+        if attr.startswith("oci_") and value == "auto":
+            continue
         if value not in {"", None}:
             forwarded.extend([flag, str(value)])
     for flag in (
@@ -2236,9 +2245,13 @@ def _remote_launch_args(args: argparse.Namespace) -> tuple[str, ...]:
         ("--verify-attempts", "verify_attempts"),
         ("--verify-retry-seconds", "verify_retry_seconds"),
         ("--fusekit-package", "fusekit_package"),
+        ("--oci-region", "oci_region"),
+        ("--oci-shape", "oci_shape"),
     )
     for flag, attr in pairs:
         value = getattr(args, attr, "")
+        if attr.startswith("oci_") and value == "auto":
+            continue
         if value not in {"", None}:
             forwarded.extend([flag, str(value)])
     for item in getattr(args, "secret", []):
@@ -2313,7 +2326,10 @@ def _provision_oci_workspace(
     vault: Vault,
     plan: OciRunnerPlan,
 ) -> OciWorkspace:
-    auth = load_oci_auth_from_vault_or_config(vault, config_file=args.oci_config_file)
+    auth = _oci_auth_for_plan_region(
+        load_oci_auth_from_vault_or_config(vault, config_file=args.oci_config_file),
+        plan,
+    )
     print(
         "FuseKit is provisioning the OCI clean-room VM. "
         "This can take a few minutes; progress will stay visible.",
@@ -2321,6 +2337,14 @@ def _provision_oci_workspace(
         flush=True,
     )
     return OciProvisioner(auth, progress=_print_oci_progress).provision(plan, vault)
+
+
+def _oci_auth_for_plan_region(auth: OciAuth, plan: OciRunnerPlan) -> OciAuth:
+    if not plan.region or plan.region == "auto":
+        return auth
+    config = dict(auth.config)
+    config["region"] = plan.region
+    return OciAuth(config, auth.signer)
 
 
 def _print_oci_progress(message: str) -> None:
