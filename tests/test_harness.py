@@ -34,6 +34,7 @@ def test_acceptance_live_requires_real_provider_evidence(tmp_path) -> None:
     assert "redacted setup receipt" in report.missing
     assert "safe verification report" in report.missing
     assert "rollback metadata" in report.missing
+    assert "provider strategy decisions" in report.missing
 
 
 def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
@@ -103,6 +104,31 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
         ),
         "utf-8",
     )
+    (remote_fusekit / "provider_strategies.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.provider-strategies.v1",
+                "providers": [
+                    {
+                        "provider": "github",
+                        "strategies": [
+                            {
+                                "recipe": "github-repo-secrets",
+                                "strategy": "api",
+                                "status": "ok",
+                                "decision": {
+                                    "provider": "github",
+                                    "recipe_kind": "github-repo-secrets",
+                                    "selected": {"kind": "api", "status": "available"},
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        "utf-8",
+    )
 
     report = run_acceptance(
         app,
@@ -115,6 +141,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
     check_ids = {check.id for check in report.checks}
     assert "remote_artifacts.loaded" in check_ids
     assert "verification_report.safe" in check_ids
+    assert "provider_strategies.recorded" in check_ids
     assert report.missing == ()
     report_json = json.loads((app / ".fusekit" / "acceptance" / "report.json").read_text())
     assert report_json["launch_ready"] is True

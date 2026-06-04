@@ -155,6 +155,13 @@ def run_acceptance(
         missing,
         ledger,
     )
+    _check_provider_strategies(
+        evidence_fusekit_dir / "provider_strategies.json",
+        mode,
+        checks,
+        missing,
+        ledger,
+    )
     _check_rollback_metadata(
         evidence_fusekit_dir / "rollback_plan.json",
         mode,
@@ -502,6 +509,88 @@ def _check_verification_report(
             str(snapshot),
         )
     )
+
+
+def _check_provider_strategies(
+    strategies_path: Path,
+    mode: str,
+    checks: list[AcceptanceCheck],
+    missing: list[str],
+    ledger: HarnessLedger,
+) -> None:
+    if not strategies_path.exists():
+        status = "skipped" if mode == "rehearsal" else "missing"
+        checks.append(
+            AcceptanceCheck(
+                "provider_strategies.recorded",
+                status,
+                f"Provider strategy artifact not found: {strategies_path}",
+            )
+        )
+        if mode == "live":
+            missing.append("provider strategy decisions")
+        return
+    try:
+        raw = json.loads(strategies_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        checks.append(
+            AcceptanceCheck(
+                "provider_strategies.recorded",
+                "failed",
+                "Provider strategy artifact could not be read.",
+            )
+        )
+        missing.append("provider strategy decisions")
+        return
+    snapshot = ledger.snapshot_json("provider-strategies", raw)
+    providers = raw.get("providers", []) if isinstance(raw, dict) else []
+    schema_version = str(raw.get("schema_version", "")) if isinstance(raw, dict) else ""
+    if schema_version != "fusekit.provider-strategies.v1":
+        checks.append(
+            AcceptanceCheck(
+                "provider_strategies.recorded",
+                "failed" if mode == "live" else "skipped",
+                "Provider strategy artifact has an unsupported schema.",
+                str(snapshot),
+            )
+        )
+        if mode == "live":
+            missing.append("provider strategy decisions")
+        return
+    if not _has_strategy_decisions(providers):
+        checks.append(
+            AcceptanceCheck(
+                "provider_strategies.recorded",
+                "failed" if mode == "live" else "skipped",
+                "Provider strategy artifact has no provider route decisions.",
+                str(snapshot),
+            )
+        )
+        if mode == "live":
+            missing.append("provider strategy decisions")
+        return
+    checks.append(
+        AcceptanceCheck(
+            "provider_strategies.recorded",
+            "ok",
+            "Provider strategy route decisions were recorded.",
+            str(snapshot),
+        )
+    )
+
+
+def _has_strategy_decisions(providers: Any) -> bool:
+    if not isinstance(providers, list):
+        return False
+    for provider in providers:
+        if not isinstance(provider, dict) or not str(provider.get("provider", "")):
+            continue
+        strategies = provider.get("strategies", [])
+        if not isinstance(strategies, list):
+            continue
+        if any(isinstance(strategy, dict) and strategy.get("decision") for strategy in strategies):
+            return True
+    return False
 
 
 def _check_rollback_metadata(
