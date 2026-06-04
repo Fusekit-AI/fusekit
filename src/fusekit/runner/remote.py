@@ -662,26 +662,7 @@ def _wait_for_remote_ready(
         if completed.returncode == 0:
             _run_checked(
                 runner,
-                [
-                    *ssh,
-                    remote,
-                    "cloud-init status --wait && "
-                    "cloud_status=$(cloud-init status --long 2>&1) && "
-                    "cloud_degraded=0 && "
-                    "if printf '%s\\n' \"$cloud_status\" | "
-                    "grep -Eqi 'status:.*degraded|extended_status:.*degraded|status:.*error'; "
-                    "then cloud_degraded=1; fi && "
-                    "if [ ! -x /usr/local/sbin/fusekit-runner-verify ]; then "
-                    "if [ \"$cloud_degraded\" = 1 ]; then "
-                    "printf '%s\\n' \"$cloud_status\" >&2; fi; "
-                    "printf '%s\\n' 'fusekit-runner-verify missing; "
-                    "cloud-init bootstrap did not install runner helpers.' >&2; exit 127; fi && "
-                    "if [ \"$cloud_degraded\" = 1 ]; then "
-                    "printf '%s\\n' \"$cloud_status\" >&2; "
-                    "printf '%s\\n' 'cloud-init is degraded, but runner helpers exist; "
-                    "continuing only if runner verification passes.' >&2; fi && "
-                    "/usr/local/sbin/fusekit-runner-verify",
-                ],
+                [*ssh, remote, _remote_ready_command()],
             )
             return
         last_error = completed.stderr.strip() or completed.stdout.strip()
@@ -689,6 +670,42 @@ def _wait_for_remote_ready(
             time.sleep(delay_seconds)
     detail = f" Last SSH error: {last_error[:500]}" if last_error else ""
     raise FuseKitError(f"OCI runner did not become reachable over SSH.{detail}")
+
+
+def _remote_ready_command(*, timeout_seconds: int = 1200) -> str:
+    polls = max(1, timeout_seconds // 10)
+    return (
+        f"timeout_polls={polls}; "
+        "cloud_status=''; "
+        "for i in $(seq 1 \"$timeout_polls\"); do "
+        "cloud_status=$(cloud-init status --long 2>&1 || true); "
+        "if ! printf '%s\\n' \"$cloud_status\" | grep -Eqi 'status:.*running'; "
+        "then break; fi; "
+        "sleep 10; "
+        "done; "
+        "cloud_status=$(cloud-init status --long 2>&1 || true); "
+        "if printf '%s\\n' \"$cloud_status\" | grep -Eqi 'status:.*running'; then "
+        "printf '%s\\n' \"$cloud_status\" >&2; "
+        "printf '%s\\n' 'cloud-init did not finish before FuseKit runner readiness timeout.' >&2; "
+        "printf '%s\\n' '--- cloud-init-output tail ---' >&2; "
+        "sudo tail -120 /var/log/cloud-init-output.log >&2 2>/dev/null || true; "
+        "exit 124; fi; "
+        "cloud_degraded=0; "
+        "if printf '%s\\n' \"$cloud_status\" | "
+        "grep -Eqi 'status:.*degraded|extended_status:.*degraded|status:.*error'; "
+        "then cloud_degraded=1; fi; "
+        "if [ ! -x /usr/local/sbin/fusekit-runner-verify ]; then "
+        "printf '%s\\n' \"$cloud_status\" >&2; "
+        "printf '%s\\n' '--- cloud-init-output tail ---' >&2; "
+        "sudo tail -120 /var/log/cloud-init-output.log >&2 2>/dev/null || true; "
+        "printf '%s\\n' 'fusekit-runner-verify missing; "
+        "cloud-init bootstrap did not install runner helpers.' >&2; exit 127; fi; "
+        "if [ \"$cloud_degraded\" = 1 ]; then "
+        "printf '%s\\n' \"$cloud_status\" >&2; "
+        "printf '%s\\n' 'cloud-init is degraded, but runner helpers exist; "
+        "continuing only if runner verification passes.' >&2; fi; "
+        "/usr/local/sbin/fusekit-runner-verify"
+    )
 
 
 def _run_checked(

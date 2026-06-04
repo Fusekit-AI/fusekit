@@ -1310,8 +1310,13 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         for option in command
     )
     assert any(
-        "cloud-init status --wait && cloud_status=$(cloud-init status --long 2>&1)"
+        "cloud-init did not finish before FuseKit runner readiness timeout."
         in command[-1]
+        for command in calls
+        if command[0] == "ssh"
+    )
+    assert any(
+        "cloud-init-output tail" in command[-1]
         for command in calls
         if command[0] == "ssh"
     )
