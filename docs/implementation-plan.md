@@ -235,7 +235,7 @@
 - [x] Expose verification polling with `--verify-attempts` and `--verify-retry-seconds`.
 - [x] Add OpenClaw-backed provider docs/UI research before provider-pack drafting. Full ref-based provider action playbooks still need broader coverage.
 - [x] Add acceptance harness for scan/plan/pack/vault/receipt/leak-scan/detonation proof artifacts.
-- [ ] Add provider capability catalog for common AI-built app services. Plaid pack synthesis exists; broader catalog remains.
+- [x] Add provider capability catalog for common AI-built app services. Catalog-backed packs now cover Stripe, Supabase, Clerk, Neon, Upstash, OpenAI, Resend, and Plaid paths with conservative verification where provider-native recipes are not yet implemented.
 - [x] Add stronger provider-pack provenance, endpoint-purpose validation, and tool-permission binding. Generic provider-pack verification covers env, HTTP JSON, DNS records, and URL health; demo-path provider verification covers GitHub secrets/deploy keys, Vercel project/env/deployment URL, Cloudflare API records plus DNS propagation, Resend domain/API health, app health, and webhook signature secrets.
 - [x] Polish the public Moonlite RSVP acceptance surface so the live setup path looks credible in recordings.
 - [ ] Complete supervised public real acceptance run. README now documents the exact supervised run protocol and current status.

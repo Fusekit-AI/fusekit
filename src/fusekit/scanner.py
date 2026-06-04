@@ -385,8 +385,18 @@ def _detect_providers(
                 provider="stripe",
                 kind="payments",
                 name="payments",
-                capabilities=("webhook_secret",),
+                capabilities=(
+                    "webhook_secret",
+                    "capability_pack",
+                    "computer_use_setup",
+                    "vault_secret_capture",
+                    "verify",
+                ),
                 secrets=("STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"),
+                settings={
+                    "capability_pack": str(pack_default_path(root, "stripe").relative_to(root)),
+                    "setup_lane": "openclaw-inferred-ui",
+                },
             )
         )
     if "@supabase/supabase-js" in deps or "supabase" in deps:
@@ -395,8 +405,19 @@ def _detect_providers(
                 provider="supabase",
                 kind="database",
                 name="database",
-                capabilities=("project", "api_keys"),
+                capabilities=(
+                    "project",
+                    "api_keys",
+                    "capability_pack",
+                    "computer_use_setup",
+                    "vault_secret_capture",
+                    "verify",
+                ),
                 secrets=("SUPABASE_SERVICE_ROLE_KEY",),
+                settings={
+                    "capability_pack": str(pack_default_path(root, "supabase").relative_to(root)),
+                    "setup_lane": "openclaw-inferred-ui",
+                },
             )
         )
     if "resend" in deps or "@react-email" in " ".join(deps):

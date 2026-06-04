@@ -12,7 +12,9 @@ from fusekit.providers.capability_pack import (
     ProviderEvidence,
     SetupRecipe,
     VerificationRecipe,
+    catalog_provider_ids,
     handoff_from_provider_pack,
+    infer_provider_candidates,
     load_provider_pack,
     synthesize_provider_pack,
     validate_provider_pack,
@@ -229,3 +231,29 @@ def test_inferred_pack_billing_language_has_matching_service_gate(tmp_path) -> N
 
     validate_provider_pack(pack)
     assert "billing" in " ".join(pack.handoff.service_gates).lower()
+
+
+def test_common_provider_catalog_synthesizes_valid_specific_packs(tmp_path) -> None:
+    providers = {"stripe", "supabase", "clerk", "neon", "upstash", "openai"}
+
+    assert providers <= set(catalog_provider_ids())
+    for provider in sorted(providers):
+        pack = synthesize_provider_pack(provider, tmp_path)
+        validate_provider_pack(pack)
+        assert pack.provider == provider
+        assert pack.confidence == "medium"
+        assert pack.setup[0].kind == "vault-capture-env"
+        assert pack.verification[0].kind == "env-present"
+        assert pack.handoff.token_record_id == f"provider.{provider}.token"
+        assert pack.detection.docs_urls
+
+
+def test_common_provider_catalog_infers_from_dependencies_and_env() -> None:
+    evidence = ProviderEvidence(
+        dependencies=("@clerk/nextjs", "@neondatabase/serverless"),
+        env_names=("OPENAI_API_KEY", "UPSTASH_REDIS_REST_TOKEN"),
+    )
+
+    candidates = set(infer_provider_candidates(evidence))
+
+    assert {"clerk", "neon", "openai", "upstash"} <= candidates

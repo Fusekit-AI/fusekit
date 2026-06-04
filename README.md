@@ -157,7 +157,7 @@ fusekit authorize plaid \
   --capture-stdin
 ```
 
-During `scan`, `install`, and `launch`, Resend/Plaid dependencies or `RESEND_*`/`PLAID_*` env usage produce provider-pack metadata and prepare `.fusekit/provider-packs/<provider>.json`. The launch plan then includes pack synthesis, OpenClaw-guided authorization, vault capture, and pack verification. Plaid's generated pack verifies credentials with an authenticated `/institutions/get` sandbox smoke check. Resend's generated pack verifies the API key against the Domains API. This is real-provider capable, but live Resend/Plaid account/key setup still requires supervised provider authorization and has not been acceptance-run in this checkout.
+During `scan`, `install`, and `launch`, maintained provider catalog entries produce provider-pack metadata and prepare `.fusekit/provider-packs/<provider>.json`. The catalog covers common generated-app services including Stripe, Supabase, Clerk, Neon, Upstash, OpenAI, Resend, and Plaid. The launch plan then includes pack synthesis, OpenClaw-guided authorization, vault capture, and pack verification. Plaid's generated pack verifies credentials with an authenticated `/institutions/get` sandbox smoke check. Resend's generated pack verifies the API key against the Domains API. Other catalog packs use conservative vault-capture and env-present checks until provider-native setup/verification recipes are explicitly implemented and tested. These paths are real-provider capable, but live account/key setup still requires supervised provider authorization and has not been acceptance-run in this checkout.
 
 Minimum token scopes:
 

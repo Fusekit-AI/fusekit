@@ -24,6 +24,8 @@ def test_scanner_detects_env_and_core_services(tmp_path) -> None:
     assert any(service.provider == "github" for service in manifest.services)
     assert any(service.provider == "vercel" for service in manifest.services)
     assert manifest.webhooks[0].secret_name == "WEBHOOK_SECRET"
+    supabase = next(service for service in manifest.services if service.provider == "supabase")
+    assert "capability_pack" in supabase.capabilities
 
 
 def test_scanner_detects_resend_email_service(tmp_path) -> None:
@@ -102,6 +104,45 @@ def test_scanner_detects_plaid_provider_pack(tmp_path) -> None:
     assert plaid.settings["setup_lane"] == "openclaw-inferred-ui"
     assert any(action.id == "plaid.capability_pack.synthesize" for action in plan.actions)
     assert any(action.id == "plaid.configure_verify" for action in plan.actions)
+
+
+def test_scanner_plans_catalog_provider_pack_for_common_ai_app_services(tmp_path) -> None:
+    (tmp_path / "package.json").write_text(
+        json.dumps(
+            {
+                "name": "catalog-app",
+                "dependencies": {
+                    "@clerk/nextjs": "latest",
+                    "@upstash/redis": "latest",
+                    "openai": "latest",
+                    "stripe": "latest",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "integrations.ts").write_text(
+        "\n".join(
+            [
+                "process.env.CLERK_SECRET_KEY;",
+                "process.env.OPENAI_API_KEY;",
+                "process.env.STRIPE_SECRET_KEY;",
+                "process.env.UPSTASH_REDIS_REST_TOKEN;",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    manifest = scan_repo(tmp_path)
+    plan = build_plan(manifest)
+    providers = {service.provider: service for service in manifest.services}
+
+    for provider in ("clerk", "openai", "stripe", "upstash"):
+        assert provider in providers
+        assert "capability_pack" in providers[provider].capabilities
+        assert any(action.id == f"{provider}.authorize" for action in plan.actions)
+        assert any(action.id == f"{provider}.configure_verify" for action in plan.actions)
 
 
 def test_plan_marks_dns_apply_as_approval_required(tmp_path) -> None:

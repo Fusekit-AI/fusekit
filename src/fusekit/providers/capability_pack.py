@@ -339,6 +339,296 @@ class ProviderEvidence:
     imports: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class ProviderCatalogEntry:
+    """Maintained provider metadata for common generated-app integrations."""
+
+    provider: str
+    display_name: str
+    category: str
+    dependencies: tuple[str, ...]
+    env_names: tuple[str, ...]
+    env_prefixes: tuple[str, ...]
+    imports: tuple[str, ...]
+    docs_urls: tuple[str, ...]
+    signup_url: str
+    token_url: str
+    project_url: str
+    token_env: str
+    token_label: str
+    required_scopes: tuple[str, ...]
+    account_steps: tuple[str, ...]
+    secret_steps: tuple[str, ...]
+    service_gates: tuple[str, ...]
+    required_secrets: tuple[str, ...]
+    setup_goals: tuple[str, ...]
+    rollback: tuple[str, ...]
+    confidence: str = "medium"
+    login_url: str = ""
+
+
+COMMON_PROVIDER_CATALOG: dict[str, ProviderCatalogEntry] = {
+    "stripe": ProviderCatalogEntry(
+        provider="stripe",
+        display_name="Stripe",
+        category="payments",
+        dependencies=("stripe", "@stripe/stripe-js", "@stripe/react-stripe-js"),
+        env_names=(
+            "STRIPE_SECRET_KEY",
+            "STRIPE_WEBHOOK_SECRET",
+            "STRIPE_PUBLISHABLE_KEY",
+            "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY",
+        ),
+        env_prefixes=("STRIPE_", "NEXT_PUBLIC_STRIPE_"),
+        imports=("stripe", "@stripe/stripe-js", "@stripe/react-stripe-js"),
+        docs_urls=("https://docs.stripe.com/",),
+        signup_url="https://dashboard.stripe.com/register",
+        login_url="https://dashboard.stripe.com/login",
+        token_url="https://dashboard.stripe.com/apikeys",
+        project_url="https://dashboard.stripe.com/webhooks",
+        token_env="STRIPE_SECRET_KEY",
+        token_label="Stripe secret key",
+        required_scopes=("restricted API key or secret key for the target account",),
+        account_steps=(
+            "Create or sign in to a Stripe account.",
+            "Complete the highlighted email, MFA, CAPTCHA, business, identity, or payment gate.",
+            "Choose test mode or live mode based on the app launch target.",
+        ),
+        secret_steps=(
+            "Open Developers > API keys and capture the approved secret key.",
+            "Create the webhook endpoint when the app has a Stripe webhook route.",
+            "Capture STRIPE_WEBHOOK_SECRET after Stripe reveals the endpoint signing secret.",
+        ),
+        service_gates=(
+            "email verification",
+            "MFA",
+            "CAPTCHA",
+            "business verification",
+            "identity verification",
+            "payment verification",
+            "consent",
+        ),
+        required_secrets=("STRIPE_SECRET_KEY",),
+        setup_goals=(
+            "Create or connect the Stripe account in the requested mode.",
+            "Capture only approved Stripe keys and webhook secrets into the encrypted vault.",
+            "Configure webhook endpoints inferred from app routes.",
+        ),
+        rollback=(
+            "Delete FuseKit-created Stripe webhook endpoints.",
+            "Rotate or revoke Stripe API keys captured for this app.",
+            "Remove Stripe env vars from deployment secret stores.",
+        ),
+    ),
+    "supabase": ProviderCatalogEntry(
+        provider="supabase",
+        display_name="Supabase",
+        category="database",
+        dependencies=("@supabase/supabase-js", "supabase"),
+        env_names=(
+            "SUPABASE_URL",
+            "SUPABASE_SERVICE_ROLE_KEY",
+            "SUPABASE_ANON_KEY",
+            "NEXT_PUBLIC_SUPABASE_URL",
+            "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+        ),
+        env_prefixes=("SUPABASE_", "NEXT_PUBLIC_SUPABASE_"),
+        imports=("@supabase/supabase-js", "supabase"),
+        docs_urls=("https://supabase.com/docs",),
+        signup_url="https://supabase.com/dashboard/sign-up",
+        login_url="https://supabase.com/dashboard/sign-in",
+        token_url="https://supabase.com/dashboard/account/tokens",
+        project_url="https://supabase.com/dashboard/projects",
+        token_env="SUPABASE_SERVICE_ROLE_KEY",
+        token_label="Supabase service role key",
+        required_scopes=("project API settings", "database configuration required by the app"),
+        account_steps=(
+            "Create or sign in to Supabase.",
+            "Complete the highlighted email, SSO, MFA, CAPTCHA, billing, or consent gate.",
+            "Create or choose the project and region that match the app.",
+        ),
+        secret_steps=(
+            "Open Project Settings > API for the selected project.",
+            "Capture SUPABASE_URL and the approved anon or service role key into the vault.",
+            "Apply schema, auth redirect, or storage settings only when the app requires them.",
+        ),
+        service_gates=("email verification", "SSO", "MFA", "CAPTCHA", "billing", "consent"),
+        required_secrets=("SUPABASE_SERVICE_ROLE_KEY",),
+        setup_goals=(
+            "Create or connect the Supabase project.",
+            "Capture project URL and keys into the encrypted vault.",
+            "Guide schema, auth, and storage setup only where app evidence requires it.",
+        ),
+        rollback=(
+            "Rotate Supabase service role keys captured for this app.",
+            "Remove Supabase env vars from deployment secret stores.",
+            "Delete FuseKit-created Supabase project resources only after explicit approval.",
+        ),
+    ),
+    "clerk": ProviderCatalogEntry(
+        provider="clerk",
+        display_name="Clerk",
+        category="auth",
+        dependencies=("@clerk/nextjs", "@clerk/clerk-react", "@clerk/remix"),
+        env_names=(
+            "CLERK_SECRET_KEY",
+            "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
+            "CLERK_WEBHOOK_SECRET",
+        ),
+        env_prefixes=("CLERK_", "NEXT_PUBLIC_CLERK_"),
+        imports=("@clerk/nextjs", "@clerk/clerk-react", "@clerk/remix"),
+        docs_urls=("https://clerk.com/docs",),
+        signup_url="https://dashboard.clerk.com/sign-up",
+        login_url="https://dashboard.clerk.com/sign-in",
+        token_url="https://dashboard.clerk.com/last-active?path=api-keys",
+        project_url="https://dashboard.clerk.com/apps",
+        token_env="CLERK_SECRET_KEY",
+        token_label="Clerk secret key",
+        required_scopes=("application API keys", "webhook settings when detected"),
+        account_steps=(
+            "Create or sign in to Clerk.",
+            "Complete the highlighted email, MFA, CAPTCHA, billing, or consent gate.",
+            "Create or choose the Clerk application for the app.",
+        ),
+        secret_steps=(
+            "Open API Keys for the selected Clerk application.",
+            "Capture CLERK_SECRET_KEY and the public publishable key into the vault/env store.",
+            "Create a webhook endpoint and capture CLERK_WEBHOOK_SECRET when required.",
+        ),
+        service_gates=("email verification", "MFA", "CAPTCHA", "billing", "consent"),
+        required_secrets=("CLERK_SECRET_KEY",),
+        setup_goals=(
+            "Create or connect the Clerk application.",
+            "Capture Clerk API keys into the encrypted vault.",
+            "Configure auth redirect URLs and webhooks inferred from app routes.",
+        ),
+        rollback=(
+            "Delete FuseKit-created Clerk webhook endpoints.",
+            "Rotate Clerk secret keys captured for this app.",
+            "Remove Clerk env vars from deployment secret stores.",
+        ),
+    ),
+    "neon": ProviderCatalogEntry(
+        provider="neon",
+        display_name="Neon",
+        category="database",
+        dependencies=("@neondatabase/serverless", "neonctl"),
+        env_names=("NEON_API_KEY", "DATABASE_URL", "POSTGRES_URL"),
+        env_prefixes=("NEON_",),
+        imports=("@neondatabase/serverless", "neon"),
+        docs_urls=("https://neon.tech/docs",),
+        signup_url="https://console.neon.tech/signup",
+        login_url="https://console.neon.tech/app/projects",
+        token_url="https://console.neon.tech/app/settings/api-keys",
+        project_url="https://console.neon.tech/app/projects",
+        token_env="NEON_API_KEY",
+        token_label="Neon API key",
+        required_scopes=("project creation or selected project access",),
+        account_steps=(
+            "Create or sign in to Neon.",
+            "Complete the highlighted email, SSO, MFA, CAPTCHA, billing, or consent gate.",
+            "Create or choose the Postgres project and branch for the app.",
+        ),
+        secret_steps=(
+            "Create a Neon API key when project automation is needed.",
+            "Capture DATABASE_URL or POSTGRES_URL for the selected branch into the vault.",
+        ),
+        service_gates=("email verification", "SSO", "MFA", "CAPTCHA", "billing", "consent"),
+        required_secrets=("NEON_API_KEY",),
+        setup_goals=(
+            "Create or connect the Neon Postgres project.",
+            "Capture the selected branch connection string into the encrypted vault.",
+            "Run migrations only through an explicit app-provided command or approval.",
+        ),
+        rollback=(
+            "Rotate Neon API keys captured for this app.",
+            "Remove Neon database URLs from deployment secret stores.",
+            "Delete FuseKit-created Neon branches or projects only after explicit approval.",
+        ),
+    ),
+    "upstash": ProviderCatalogEntry(
+        provider="upstash",
+        display_name="Upstash",
+        category="cache",
+        dependencies=("@upstash/redis", "@upstash/vector", "@upstash/qstash"),
+        env_names=(
+            "UPSTASH_REDIS_REST_URL",
+            "UPSTASH_REDIS_REST_TOKEN",
+            "UPSTASH_VECTOR_REST_URL",
+            "UPSTASH_VECTOR_REST_TOKEN",
+            "QSTASH_TOKEN",
+        ),
+        env_prefixes=("UPSTASH_", "QSTASH_"),
+        imports=("@upstash/redis", "@upstash/vector", "@upstash/qstash"),
+        docs_urls=("https://upstash.com/docs",),
+        signup_url="https://console.upstash.com/sign-up",
+        login_url="https://console.upstash.com/login",
+        token_url="https://console.upstash.com/",
+        project_url="https://console.upstash.com/",
+        token_env="UPSTASH_REDIS_REST_TOKEN",
+        token_label="Upstash REST token",
+        required_scopes=("resource credentials for Redis, Vector, or QStash used by the app",),
+        account_steps=(
+            "Create or sign in to Upstash.",
+            "Complete the highlighted email, MFA, CAPTCHA, billing, or consent gate.",
+            "Create or choose the Redis, Vector, or QStash resource required by the app.",
+        ),
+        secret_steps=(
+            "Open the selected resource details.",
+            "Capture the REST URL and token into the encrypted vault.",
+        ),
+        service_gates=("email verification", "MFA", "CAPTCHA", "billing", "consent"),
+        required_secrets=("UPSTASH_REDIS_REST_TOKEN",),
+        setup_goals=(
+            "Create or connect the Upstash resource inferred from dependencies.",
+            "Capture REST URLs and tokens into the encrypted vault.",
+        ),
+        rollback=(
+            "Rotate Upstash tokens captured for this app.",
+            "Remove Upstash env vars from deployment secret stores.",
+            "Delete FuseKit-created Upstash resources only after explicit approval.",
+        ),
+    ),
+    "openai": ProviderCatalogEntry(
+        provider="openai",
+        display_name="OpenAI",
+        category="ai",
+        dependencies=("openai", "@ai-sdk/openai"),
+        env_names=("OPENAI_API_KEY",),
+        env_prefixes=("OPENAI_",),
+        imports=("openai", "@ai-sdk/openai"),
+        docs_urls=("https://platform.openai.com/docs",),
+        signup_url="https://platform.openai.com/signup",
+        login_url="https://platform.openai.com/login",
+        token_url="https://platform.openai.com/api-keys",
+        project_url="https://platform.openai.com/settings/organization/projects",
+        token_env="OPENAI_API_KEY",
+        token_label="OpenAI API key",
+        required_scopes=("project API key for the selected app project",),
+        account_steps=(
+            "Create or sign in to OpenAI.",
+            "Complete the highlighted email, MFA, CAPTCHA, billing, payment, or consent gate.",
+            "Choose the project that should own the app key.",
+        ),
+        secret_steps=(
+            "Create a project API key for the app.",
+            "Capture OPENAI_API_KEY into the encrypted vault.",
+        ),
+        service_gates=("email verification", "MFA", "CAPTCHA", "billing/payment", "consent"),
+        required_secrets=("OPENAI_API_KEY",),
+        setup_goals=(
+            "Create or choose the OpenAI project for the app.",
+            "Capture the project API key into the encrypted vault.",
+            "Record model/provider settings without hardcoding raw secrets.",
+        ),
+        rollback=(
+            "Revoke the OpenAI API key captured for this app.",
+            "Remove OpenAI env vars from deployment secret stores.",
+        ),
+    ),
+}
+
+
 def load_provider_pack(path: Path) -> ProviderCapabilityPack:
     """Load and validate a provider pack from JSON."""
 
@@ -460,6 +750,8 @@ def synthesize_provider_pack(
         return _plaid_pack(evidence)
     if normalized == "resend":
         return _resend_pack(evidence)
+    if normalized in COMMON_PROVIDER_CATALOG:
+        return _catalog_pack(COMMON_PROVIDER_CATALOG[normalized], evidence)
     return _inferred_pack(normalized, evidence)
 
 
@@ -505,11 +797,20 @@ def infer_provider_candidates(evidence: ProviderEvidence) -> tuple[str, ...]:
 
     deps = set(evidence.dependencies)
     envs = set(evidence.env_names)
+    imports = set(evidence.imports)
     candidates: set[str] = set()
     if {"plaid", "plaid-node"} & deps or any(name.startswith("PLAID_") for name in envs):
         candidates.add("plaid")
     if "resend" in deps or any(name.startswith("RESEND_") for name in envs):
         candidates.add("resend")
+    for provider, entry in COMMON_PROVIDER_CATALOG.items():
+        if (
+            deps.intersection(entry.dependencies)
+            or imports.intersection(entry.imports)
+            or envs.intersection(entry.env_names)
+            or any(name.startswith(prefix) for name in envs for prefix in entry.env_prefixes)
+        ):
+            candidates.add(provider)
     for env_name in envs:
         prefix = env_name.split("_", 1)[0].lower()
         if prefix in FRAMEWORK_ENV_PREFIXES:
@@ -525,6 +826,12 @@ def pack_default_path(app_path: Path, provider: str) -> Path:
     """Return the default on-disk path for a synthesized provider pack."""
 
     return app_path / ".fusekit" / "provider-packs" / f"{provider}.json"
+
+
+def catalog_provider_ids() -> tuple[str, ...]:
+    """Return provider ids with maintained common-app catalog metadata."""
+
+    return tuple(sorted(COMMON_PROVIDER_CATALOG))
 
 
 def _plaid_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
@@ -958,6 +1265,67 @@ def _resend_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
     )
 
 
+def _catalog_pack(
+    entry: ProviderCatalogEntry,
+    evidence: ProviderEvidence,
+) -> ProviderCapabilityPack:
+    detected_env = tuple(name for name in entry.env_names if name in evidence.env_names)
+    env_vars = tuple(dict.fromkeys((*entry.required_secrets, *detected_env)))
+    required = entry.required_secrets
+    return ProviderCapabilityPack(
+        schema_version="fusekit.provider-pack.v1",
+        provider=entry.provider,
+        display_name=entry.display_name,
+        category=entry.category,
+        confidence=entry.confidence,
+        evidence=_catalog_evidence_lines(entry, evidence),
+        detection=ProviderDetection(
+            dependencies=tuple(
+                dep for dep in evidence.dependencies if dep in entry.dependencies
+            ),
+            env_names=env_vars,
+            env_prefixes=entry.env_prefixes,
+            imports=tuple(item for item in evidence.imports if item in entry.imports),
+            docs_urls=entry.docs_urls,
+        ),
+        handoff=PackHandoff(
+            signup_url=entry.signup_url,
+            login_url=entry.login_url,
+            token_url=entry.token_url,
+            project_url=entry.project_url,
+            token_env=entry.token_env,
+            token_record_id=f"provider.{entry.provider}.token",
+            token_label=entry.token_label,
+            required_scopes=entry.required_scopes,
+            account_steps=entry.account_steps,
+            secret_steps=entry.secret_steps,
+            service_gates=entry.service_gates,
+        ),
+        required_secrets=required,
+        env_vars=env_vars,
+        setup=(
+            SetupRecipe(
+                kind="vault-capture-env",
+                target=",".join(env_vars),
+                secret_refs=required,
+            ),
+        ),
+        setup_goals=entry.setup_goals,
+        verification=(
+            VerificationRecipe(
+                kind="env-present",
+                target=",".join(env_vars),
+                expected=(
+                    f"{entry.display_name} required env values are stored in the "
+                    "encrypted vault/provider env store"
+                ),
+                secret_refs=required,
+            ),
+        ),
+        rollback=entry.rollback,
+    )
+
+
 def _inferred_pack(provider: str, evidence: ProviderEvidence) -> ProviderCapabilityPack:
     prefix = provider.replace("-", "_").upper()
     env_names = tuple(name for name in evidence.env_names if name.startswith(f"{prefix}_"))
@@ -1045,6 +1413,25 @@ def _evidence_lines(provider: str, evidence: ProviderEvidence) -> tuple[str, ...
         if provider in import_name.lower():
             lines.append(f"import:{import_name}")
     return tuple(lines or (f"provider:{provider}",))
+
+
+def _catalog_evidence_lines(
+    entry: ProviderCatalogEntry,
+    evidence: ProviderEvidence,
+) -> tuple[str, ...]:
+    lines: list[str] = []
+    for dep in evidence.dependencies:
+        if dep in entry.dependencies:
+            lines.append(f"dependency:{dep}")
+    for env_name in evidence.env_names:
+        if env_name in entry.env_names or any(
+            env_name.startswith(prefix) for prefix in entry.env_prefixes
+        ):
+            lines.append(f"env:{env_name}")
+    for import_name in evidence.imports:
+        if import_name in entry.imports:
+            lines.append(f"import:{import_name}")
+    return tuple(lines or (f"catalog:{entry.provider}",))
 
 
 def _validate_url(url: str, label: str) -> None:
