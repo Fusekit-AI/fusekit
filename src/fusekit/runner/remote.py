@@ -366,7 +366,7 @@ def execute_remote_setup(
             "--passphrase-file /var/lib/fusekit-runner/passphrase "
             f"{_quote_args(launch_args)}"
         )
-        _run_checked(run, [*ssh, remote, launch], input_text=passphrase)
+        _run_checked(run, [*ssh, remote, launch], input_text=passphrase, stream_output=True)
         local_output_dir.mkdir(parents=True, exist_ok=True)
         artifacts = local_output_dir / "fusekit-artifacts.tar.gz"
         fetch = (
@@ -714,8 +714,17 @@ def _run_checked(
     *,
     input_text: str | None = None,
     stdout_path: Path | None = None,
+    stream_output: bool = False,
 ) -> subprocess.CompletedProcess[str]:
-    completed = runner(command, input_text=input_text, stdout_path=stdout_path)
+    if stream_output and runner is _default_runner:
+        completed = _default_runner(
+            command,
+            input_text=input_text,
+            stdout_path=stdout_path,
+            stream_output=True,
+        )
+    else:
+        completed = runner(command, input_text=input_text, stdout_path=stdout_path)
     if completed.returncode != 0:
         detail = completed.stderr.strip()
         message = f"Remote runner command failed with exit {completed.returncode}."
@@ -730,8 +739,27 @@ def _default_runner(
     *,
     input_text: str | None = None,
     stdout_path: Path | None = None,
+    stream_output: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     if stdout_path is None:
+        if stream_output:
+            process = subprocess.Popen(  # noqa: S603
+                command,
+                stdin=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                process.communicate(input=input_text, timeout=3600)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.communicate()
+                return subprocess.CompletedProcess(
+                    command,
+                    124,
+                    stdout="",
+                    stderr="Remote runner command timed out after 3600 seconds.",
+                )
+            return subprocess.CompletedProcess(command, process.returncode, stdout="", stderr="")
         return subprocess.run(
             command,
             input=input_text,
