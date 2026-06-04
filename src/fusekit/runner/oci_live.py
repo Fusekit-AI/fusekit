@@ -160,11 +160,21 @@ class OciProvisioner:
             self._emit_progress("OCI workspace: creating route table")
             route_table = self._create_route_table(compartment_id, vcn.id, gateway.id, run_id, tags)
             workspace.resource_ids["route_table"] = route_table.id
+            self._emit_progress("OCI workspace: creating security list")
+            security_list = self._create_security_list(compartment_id, vcn.id, run_id, tags)
+            workspace.resource_ids["security_list"] = security_list.id
             self._emit_progress("OCI workspace: creating network security group")
             nsg = self._create_nsg(compartment_id, vcn.id, run_id, tags)
             workspace.resource_ids["network_security_group"] = nsg.id
             self._emit_progress("OCI workspace: creating public subnet")
-            subnet = self._create_subnet(compartment_id, vcn.id, route_table.id, run_id, tags)
+            subnet = self._create_subnet(
+                compartment_id,
+                vcn.id,
+                route_table.id,
+                security_list.id,
+                run_id,
+                tags,
+            )
             workspace.resource_ids["subnet"] = subnet.id
             cloud_init = render_cloud_init(
                 fusekit_wheel_url=plan.fusekit_package,
@@ -242,6 +252,7 @@ class OciProvisioner:
             ("route_table", "delete_route_table"),
             ("internet_gateway", "delete_internet_gateway"),
             ("network_security_group", "delete_network_security_group"),
+            ("security_list", "delete_security_list"),
             ("vcn", "delete_vcn"),
         ):
             resource_id = workspace.resource_ids.get(key)
@@ -385,6 +396,35 @@ class OciProvisioner:
         )
         return self.network.create_route_table(details).data
 
+    def _create_security_list(
+        self,
+        compartment_id: str,
+        vcn_id: str,
+        run_id: str,
+        tags: dict[str, str],
+    ) -> Any:
+        ingress_rules = [
+            self._tcp_ingress_security_rule(22),
+            self._tcp_ingress_security_rule(CONTROL_ROOM_PORT),
+            self._tcp_ingress_security_rule(NOVNC_PORT),
+        ]
+        egress_rules = [
+            self.oci.core.models.EgressSecurityRule(
+                protocol="all",
+                destination="0.0.0.0/0",
+                destination_type="CIDR_BLOCK",
+            )
+        ]
+        details = self.oci.core.models.CreateSecurityListDetails(
+            compartment_id=compartment_id,
+            display_name=f"{run_id}-sl",
+            egress_security_rules=egress_rules,
+            ingress_security_rules=ingress_rules,
+            vcn_id=vcn_id,
+            freeform_tags=tags,
+        )
+        return self.network.create_security_list(details).data
+
     def _create_nsg(
         self,
         compartment_id: str,
@@ -425,11 +465,22 @@ class OciProvisioner:
             ),
         )
 
+    def _tcp_ingress_security_rule(self, port: int) -> Any:
+        return self.oci.core.models.IngressSecurityRule(
+            protocol="6",
+            source="0.0.0.0/0",
+            source_type="CIDR_BLOCK",
+            tcp_options=self.oci.core.models.TcpOptions(
+                destination_port_range=self.oci.core.models.PortRange(min=port, max=port)
+            ),
+        )
+
     def _create_subnet(
         self,
         compartment_id: str,
         vcn_id: str,
         route_table_id: str,
+        security_list_id: str,
         run_id: str,
         tags: dict[str, str],
     ) -> Any:
@@ -440,6 +491,7 @@ class OciProvisioner:
             dns_label="runner",
             prohibit_public_ip_on_vnic=False,
             route_table_id=route_table_id,
+            security_list_ids=[security_list_id],
             vcn_id=vcn_id,
             freeform_tags=tags,
         )

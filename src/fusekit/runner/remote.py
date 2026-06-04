@@ -239,6 +239,8 @@ write_files:
 runcmd:
   - mkdir -p /var/lib/fusekit-runner
   - mkdir -p {playwright_browsers_path}
+  - iptables -I INPUT -p tcp --dport {CONTROL_ROOM_PORT} -j ACCEPT || true
+  - iptables -I INPUT -p tcp --dport {NOVNC_PORT} -j ACCEPT || true
   - python3 -m venv /opt/fusekit-python
   - {retry_bin} {install_pip_tools}
   - {retry_bin} {install_fusekit}

@@ -893,6 +893,8 @@ def test_remote_bootstrap_artifacts_are_self_contained() -> None:
     assert 'Acquire::ForceIPv4 "true";' in cloud_init
     assert "http://archive.ubuntu.com/ubuntu" in cloud_init
     assert "http://security.ubuntu.com/ubuntu" in cloud_init
+    assert "iptables -I INPUT -p tcp --dport 8765 -j ACCEPT" in cloud_init
+    assert "iptables -I INPUT -p tcp --dport 6080 -j ACCEPT" in cloud_init
     assert "python3-venv" in cloud_init
     assert "printf '%s\\n' \"$FUSEKIT_VISUAL_PASSWORD\"" in cloud_init
     assert (
@@ -1035,6 +1037,10 @@ def test_oci_detonation_reports_provider_delete_failures(
             self.deleted.append("network_security_group")
             return None
 
+        def delete_security_list(self, resource_id: str) -> None:
+            self.deleted.append("security_list")
+            return None
+
         def delete_route_table(self, resource_id: str) -> None:
             self.deleted.append("route_table")
             return None
@@ -1062,13 +1068,14 @@ def test_oci_detonation_reports_provider_delete_failures(
         compartment_id="ocid1.tenancy.oc1..example",
         availability_domain="AD-1",
         shape="VM.Standard3.Flex",
-        resource_ids={
-            "instance": "ocid1.instance.oc1..example",
-            "subnet": "ocid1.subnet.oc1..example",
-            "network_security_group": "ocid1.nsg.oc1..example",
-            "route_table": "ocid1.routetable.oc1..example",
-            "internet_gateway": "ocid1.ig.oc1..example",
-            "vcn": "ocid1.vcn.oc1..example",
+            resource_ids={
+                "instance": "ocid1.instance.oc1..example",
+                "subnet": "ocid1.subnet.oc1..example",
+                "network_security_group": "ocid1.nsg.oc1..example",
+                "security_list": "ocid1.securitylist.oc1..example",
+                "route_table": "ocid1.routetable.oc1..example",
+                "internet_gateway": "ocid1.ig.oc1..example",
+                "vcn": "ocid1.vcn.oc1..example",
             "compartment": "ocid1.compartment.oc1..example",
         },
     )
@@ -1082,6 +1089,7 @@ def test_oci_detonation_reports_provider_delete_failures(
         "route_table",
         "internet_gateway",
         "network_security_group",
+        "security_list",
         "vcn",
     ]
 
@@ -1121,6 +1129,15 @@ def test_oci_provision_cleans_partial_workspace_when_readiness_fails() -> None:
         ) -> Created:
             return Created("ocid1.route.example")
 
+        def _create_security_list(
+            self,
+            compartment_id: str,
+            vcn_id: str,
+            run_id: str,
+            tags: dict[str, str],
+        ) -> Created:
+            return Created("ocid1.security-list.example")
+
         def _create_nsg(
             self,
             compartment_id: str,
@@ -1135,9 +1152,11 @@ def test_oci_provision_cleans_partial_workspace_when_readiness_fails() -> None:
             compartment_id: str,
             vcn_id: str,
             route_table_id: str,
+            security_list_id: str,
             run_id: str,
             tags: dict[str, str],
         ) -> Created:
+            assert security_list_id == "ocid1.security-list.example"
             return Created("ocid1.subnet.example")
 
         def _emit_capacity_report(
@@ -1179,6 +1198,10 @@ def test_oci_provision_cleans_partial_workspace_when_readiness_fails() -> None:
     assert ssh_record.value.startswith("-----BEGIN OPENSSH PRIVATE KEY-----")
     assert ssh_record.metadata["fingerprint"].startswith("rsa:")
     assert provisioner.deleted.resource_ids["instance"] == "ocid1.instance.example"
+    assert (
+        provisioner.deleted.resource_ids["security_list"]
+        == "ocid1.security-list.example"
+    )
     assert provisioner.deleted.resource_ids["root_compartment"] == "ocid1.tenancy.example"
     assert provisioner.deleted.ssh_user == "ubuntu"
 
