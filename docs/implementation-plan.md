@@ -111,7 +111,7 @@
 ## Milestone 5: Vault Runtime And Sessions
 
 - [x] Unlock bundle into memory only.
-- [ ] Create short-lived local vault session tokens.
+- [x] Create short-lived local vault session tokens.
 - [x] Implement secret broker.
 - [x] Implement capability request and response schemas.
 - [x] Deny raw-secret export attempts.

@@ -109,6 +109,10 @@ from fusekit.spine import (
     run_inferred_navigation,
 )
 from fusekit.vault.bundle import Vault, open_or_create
+from fusekit.vault.session import (
+    create_vault_session,
+    open_vault_with_session,
+)
 from fusekit.verification_report import VerificationReport
 
 
@@ -360,10 +364,20 @@ def _parser() -> argparse.ArgumentParser:
 
     unlock = sub.add_parser("unlock", help="unlock a vault and print non-secret metadata")
     _vault_args(unlock)
+    unlock.add_argument(
+        "--session-ttl",
+        type=int,
+        default=0,
+        help="create a short-lived local vault session token for this many seconds",
+    )
+    unlock.add_argument("--session-file", type=Path, default=None)
     unlock.set_defaults(handler=_cmd_unlock)
 
     request = sub.add_parser("request", help="make a safe capability request")
     _vault_args(request)
+    request.add_argument("--session-token", default="")
+    request.add_argument("--session-token-file", type=Path, default=None)
+    request.add_argument("--session-file", type=Path, default=None)
     request.add_argument("capability")
     request.set_defaults(handler=_cmd_request)
 
@@ -1428,16 +1442,45 @@ def _cmd_detonate(args: argparse.Namespace) -> int:
 
 
 def _cmd_unlock(args: argparse.Namespace) -> int:
-    vault = Vault.open(args.vault, _passphrase(args))
-    print(json.dumps({"records": vault.public_index()}, indent=2, sort_keys=True))
+    passphrase = _passphrase(args)
+    vault = Vault.open(args.vault, passphrase)
+    payload: dict[str, object] = {"records": vault.public_index()}
+    if int(getattr(args, "session_ttl", 0) or 0) > 0:
+        payload["session"] = create_vault_session(
+            vault_path=args.vault,
+            passphrase=passphrase,
+            session_path=getattr(args, "session_file", None),
+            ttl_seconds=int(args.session_ttl),
+        )
+    print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
 
 
 def _cmd_request(args: argparse.Namespace) -> int:
-    vault = Vault.open(args.vault, _passphrase(args))
+    session_token = _session_token_from_args(args)
+    if session_token:
+        vault = open_vault_with_session(
+            vault_path=args.vault,
+            session_token=session_token,
+            session_path=getattr(args, "session_file", None),
+        )
+    else:
+        vault = Vault.open(args.vault, _passphrase(args))
     response = CapabilityBroker(vault).request(args.capability)
     print(json.dumps(response, indent=2, sort_keys=True))
     return 0
+
+
+def _session_token_from_args(args: argparse.Namespace) -> str:
+    if getattr(args, "session_token", ""):
+        return str(args.session_token)
+    token_file = getattr(args, "session_token_file", None)
+    if isinstance(token_file, Path):
+        try:
+            return token_file.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise FuseKitError(f"Cannot read vault session token file: {token_file}") from exc
+    return ""
 
 
 def _cmd_control_room(args: argparse.Namespace) -> int:

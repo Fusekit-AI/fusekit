@@ -298,6 +298,18 @@ fusekit request --vault .fusekit/fusekit.vault.json health
 fusekit request --vault .fusekit/fusekit.vault.json vault.index
 ```
 
+For repeated local checks, create a short-lived vault session instead of typing
+the passphrase each time:
+
+```zsh
+fusekit unlock --vault .fusekit/fusekit.vault.json --session-ttl 900
+fusekit request --vault .fusekit/fusekit.vault.json --session-token "$TOKEN" health
+```
+
+The owner-only session file expires within an hour and does not store the
+bearer token or plaintext passphrase. It only unlocks the local vault long
+enough to serve safe capability responses; raw secret export stays denied.
+
 Raw secret export is denied:
 
 ```zsh

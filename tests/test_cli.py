@@ -179,6 +179,49 @@ def test_cli_scan_validate_plan_unlock_request(tmp_path, capsys) -> None:
         )
         == 2
     )
+    capsys.readouterr()
+
+    session_file = tmp_path / "vault.session.json"
+    assert (
+        main(
+            [
+                "unlock",
+                "--vault",
+                str(vault),
+                "--passphrase-file",
+                str(passphrase),
+                "--session-ttl",
+                "60",
+                "--session-file",
+                str(session_file),
+            ]
+        )
+        == 0
+    )
+    session_payload = json.loads(capsys.readouterr().out)
+    session_token = session_payload["session"]["session_token"]
+    token_file = tmp_path / "session-token"
+    token_file.write_text(session_token, encoding="utf-8")
+
+    assert session_token not in session_file.read_text(encoding="utf-8")
+    assert "passphrase" not in session_file.read_text(encoding="utf-8")
+    assert (
+        main(
+            [
+                "request",
+                "--vault",
+                str(vault),
+                "--session-token-file",
+                str(token_file),
+                "--session-file",
+                str(session_file),
+                "health",
+            ]
+        )
+        == 0
+    )
+    request_payload = json.loads(capsys.readouterr().out)
+    assert request_payload["ok"] is True
 
 
 def test_cli_provider_synthesize_validate_and_authorize_pack(monkeypatch, tmp_path, capsys) -> None:
