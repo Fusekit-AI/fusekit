@@ -272,6 +272,8 @@ def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
     assert "command.closest('details').open = true" in html
     assert "command.value = buildCommand(source.value);" in html
     assert "Passphrase:" in plan.bootstrap_command
+    assert "if [ -t 0 ]; then" in plan.bootstrap_command
+    assert "stty -echo" in plan.bootstrap_command
 
 
 def test_cloud_shell_bootstrap_command_is_valid_shell() -> None:
