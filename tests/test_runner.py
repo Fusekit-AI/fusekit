@@ -50,7 +50,7 @@ from fusekit.runner.remote import (
     should_include_app_path,
 )
 from fusekit.runner.run_state import LaunchRunState, update_run_state
-from fusekit.runner.server import _handler, _is_loopback, control_room_payload
+from fusekit.runner.server import _handler, _is_loopback, control_room_payload, serve_control_room
 from fusekit.security import scan_for_secret_leaks
 from fusekit.vault import Vault
 
@@ -741,6 +741,24 @@ def test_control_room_server_requires_remote_token(
     assert "FuseKit Control Room" in html
     assert "fusekit_control_room=token-123" in cookie
     assert payload["id"] == "fk-test"
+
+
+def test_control_room_remote_bind_requires_allow_flag_and_token(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    monkeypatch.delenv("FUSEKIT_ALLOW_REMOTE_CONTROL_ROOM", raising=False)
+    monkeypatch.delenv("FUSEKIT_CONTROL_ROOM_TOKEN", raising=False)
+
+    with pytest.raises(FuseKitError, match="local-only"):
+        serve_control_room(job_path, host="0.0.0.0", port=0)
+
+    monkeypatch.setenv("FUSEKIT_ALLOW_REMOTE_CONTROL_ROOM", "1")
+    with pytest.raises(FuseKitError, match="requires FUSEKIT_CONTROL_ROOM_TOKEN"):
+        serve_control_room(job_path, host="0.0.0.0", port=0)
 
 
 def test_remote_bootstrap_artifacts_are_self_contained() -> None:

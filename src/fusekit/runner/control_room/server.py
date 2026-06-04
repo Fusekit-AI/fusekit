@@ -25,11 +25,14 @@ from fusekit.runner.job import JobState
 def serve_control_room(job_state: Path, host: str = "127.0.0.1", port: int = 8765) -> str:
     """Serve a live control room until interrupted."""
 
-    if not _is_loopback(host) and os.environ.get("FUSEKIT_ALLOW_REMOTE_CONTROL_ROOM") != "1":
-        raise FuseKitError(
-            "Control room serves local job metadata and is local-only by default. "
-            "Set FUSEKIT_ALLOW_REMOTE_CONTROL_ROOM=1 to bind a non-loopback host."
-        )
+    if not _is_loopback(host):
+        if os.environ.get("FUSEKIT_ALLOW_REMOTE_CONTROL_ROOM") != "1":
+            raise FuseKitError(
+                "Control room serves local job metadata and is local-only by default. "
+                "Set FUSEKIT_ALLOW_REMOTE_CONTROL_ROOM=1 to bind a non-loopback host."
+            )
+        if not os.environ.get("FUSEKIT_CONTROL_ROOM_TOKEN"):
+            raise FuseKitError("Remote control room binding requires FUSEKIT_CONTROL_ROOM_TOKEN.")
     handler = _handler(job_state)
     server = ThreadingHTTPServer((host, port), handler)
     url = f"http://{host}:{server.server_port}"
