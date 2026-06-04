@@ -72,11 +72,18 @@ After authorization, FuseKit creates a tagged, disposable OCI workspace. There i
    - Reject known Arm/Ampere A1 shapes instead of silently falling back to them. FuseKit's remote bootstrap path assumes an x86_64 runner.
    - Allow explicit non-free/paid x86_64 shapes when selected by the user through OCI account authorization and CLI options; FuseKit should prefer a working live runner over adding its own approval gate. The default runner shape may consume paid capacity depending on the OCI tenancy.
 8. Oracle Linux image with cloud-init by default, falling back to Ubuntu only when Oracle Linux is unavailable for the selected x86 shape.
-9. Boot volume marked delete-on-termination.
+9. VM launch options aligned to the current OCI instance flow:
+   - IMDSv1 disabled so instance metadata requires the IMDSv2 authorization header.
+   - Full baseline OCPU utilization for the non-burstable runner.
+   - In-transit encryption enabled for paravirtualized boot-volume attachment.
+   - Restore instance lifecycle state after infrastructure maintenance.
+10. Boot volume marked delete-on-termination.
 
 FuseKit leaves OCI placement defaults such as fault domain and migration behavior to Oracle.
 It intentionally diverges from the console's private-IP default by assigning a public IPv4
 address and NSG rules for SSH, control-room, and noVNC reachability during the live run.
+Before launch, FuseKit asks OCI for a compute capacity report using the root tenancy
+compartment as required by the API, then attempts the launch only on x86 runner options.
 
 Capacity failures are a service-side gate with an automatic retry loop, not a terminal failure. OCI can return out-of-capacity responses for individual shapes and availability domains. FuseKit should retry configured x86_64 runner shapes at the recommended runner size, then use the selected paid/BYOC x86_64 shape when the user has configured one.
 

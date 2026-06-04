@@ -141,6 +141,8 @@ class OciProvisioner:
             self._emit_progress("OCI workspace: selecting availability domains")
             availability_domains = self._availability_domains(tenancy_id)
             workspace.availability_domain = availability_domains[0]
+            self._emit_progress("OCI workspace: checking compute capacity report")
+            self._emit_capacity_report(tenancy_id, availability_domains, plan)
             self._emit_progress("OCI workspace: creating private network")
             vcn = self._create_vcn(compartment_id, run_id, tags)
             workspace.resource_ids["vcn"] = vcn.id
@@ -404,6 +406,53 @@ class OciProvisioner:
             raise FuseKitError(f"No OCI image found for shape {shape}.")
         return str(images[0].id), ssh_user
 
+    def _emit_capacity_report(
+        self,
+        root_compartment_id: str,
+        availability_domains: tuple[str, ...],
+        plan: OciRunnerPlan,
+    ) -> None:
+        if not all(
+            hasattr(self.oci.core.models, model_name)
+            for model_name in (
+                "CreateComputeCapacityReportDetails",
+                "CreateCapacityReportShapeAvailabilityDetails",
+                "CapacityReportInstanceShapeConfig",
+            )
+        ):
+            self._emit_progress("OCI workspace: compute capacity report unavailable in SDK")
+            return
+        for availability_domain in availability_domains:
+            try:
+                details = self.oci.core.models.CreateComputeCapacityReportDetails(
+                    compartment_id=root_compartment_id,
+                    availability_domain=availability_domain,
+                    shape_availabilities=[
+                        self.oci.core.models.CreateCapacityReportShapeAvailabilityDetails(
+                            instance_shape=plan.shape,
+                            instance_shape_config=(
+                                self.oci.core.models.CapacityReportInstanceShapeConfig(
+                                    ocpus=plan.ocpus,
+                                    memory_in_gbs=plan.memory_gb,
+                                )
+                            ),
+                        )
+                    ],
+                )
+                report = self.compute.create_compute_capacity_report(details).data
+            except Exception as exc:
+                self._emit_progress(
+                    "OCI workspace: compute capacity report unavailable "
+                    f"for {availability_domain}: {_safe_oci_error(exc)}"
+                )
+                continue
+            status = _capacity_report_status(report)
+            if status:
+                self._emit_progress(
+                    f"OCI workspace: capacity report for {plan.shape} "
+                    f"in {availability_domain}: {status}"
+                )
+
     def _launch_instance(
         self,
         *,
@@ -423,29 +472,43 @@ class OciProvisioner:
             shape_config = self.oci.core.models.LaunchInstanceShapeConfigDetails(
                 ocpus=plan.ocpus,
                 memory_in_gbs=plan.memory_gb,
+                baseline_ocpu_utilization="BASELINE_1_1",
             )
-        details = self.oci.core.models.LaunchInstanceDetails(
-            availability_domain=availability_domain,
-            compartment_id=compartment_id,
-            display_name=run_id,
-            shape=plan.shape,
-            shape_config=shape_config,
-            create_vnic_details=self.oci.core.models.CreateVnicDetails(
+        details_kwargs: dict[str, object] = {
+            "availability_domain": availability_domain,
+            "compartment_id": compartment_id,
+            "display_name": run_id,
+            "shape": plan.shape,
+            "shape_config": shape_config,
+            "create_vnic_details": self.oci.core.models.CreateVnicDetails(
                 assign_public_ip=True,
                 display_name=f"{run_id}-vnic",
+                hostname_label="runner",
                 nsg_ids=[nsg_id],
                 subnet_id=subnet_id,
             ),
-            metadata={
+            "metadata": {
                 "ssh_authorized_keys": ssh_public_key,
                 "user_data": base64.b64encode(cloud_init.encode("utf-8")).decode("ascii"),
             },
-            source_details=self.oci.core.models.InstanceSourceViaImageDetails(
+            "source_details": self.oci.core.models.InstanceSourceViaImageDetails(
                 image_id=image_id,
                 source_type="image",
             ),
-            freeform_tags=tags,
-        )
+            "freeform_tags": tags,
+        }
+        if hasattr(self.oci.core.models, "InstanceOptions"):
+            details_kwargs["instance_options"] = self.oci.core.models.InstanceOptions(
+                are_legacy_imds_endpoints_disabled=True,
+            )
+        if hasattr(self.oci.core.models, "LaunchInstanceAvailabilityConfigDetails"):
+            details_kwargs["availability_config"] = (
+                self.oci.core.models.LaunchInstanceAvailabilityConfigDetails(
+                    recovery_action="RESTORE_INSTANCE",
+                )
+            )
+        details_kwargs["is_pv_encryption_in_transit_enabled"] = True
+        details = self.oci.core.models.LaunchInstanceDetails(**details_kwargs)
         try:
             composite = self.oci.core.ComputeClientCompositeOperations(self.compute)
             return composite.launch_instance_and_wait_for_state(
@@ -714,6 +777,28 @@ def _auth_from_session_snippet(
 def _is_capacity_error(exc: Exception) -> bool:
     text = str(exc).lower()
     return "capacity" in text or "out of host" in text or "limitexceeded" in text
+
+
+def _capacity_report_status(report: object) -> str:
+    shape_availabilities = getattr(report, "shape_availabilities", None) or []
+    statuses: list[str] = []
+    for availability in shape_availabilities:
+        shape = str(
+            getattr(availability, "instance_shape", "")
+            or getattr(availability, "shape", "")
+        )
+        status = str(getattr(availability, "availability_status", "") or "")
+        if not status:
+            domain_reports = getattr(availability, "domain_level_capacity_reports", None) or []
+            nested = [
+                str(getattr(item, "availability_status", "") or "")
+                for item in domain_reports
+                if getattr(item, "availability_status", "")
+            ]
+            status = ",".join(nested)
+        if shape or status:
+            statuses.append(":".join(part for part in (shape, status) if part))
+    return "; ".join(statuses)
 
 
 def _is_oci_not_authorized_or_not_found(exc: Exception) -> bool:

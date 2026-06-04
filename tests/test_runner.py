@@ -1109,6 +1109,14 @@ def test_oci_provision_cleans_partial_workspace_when_readiness_fails() -> None:
         ) -> Created:
             return Created("ocid1.subnet.example")
 
+        def _emit_capacity_report(
+            self,
+            root_compartment_id: str,
+            availability_domains: tuple[str, ...],
+            plan: OciRunnerPlan,
+        ) -> None:
+            pass
+
         def _launch_with_capacity_fallback(
             self, **kwargs: object
         ) -> tuple[Created, object, str, str]:
@@ -1179,6 +1187,125 @@ def test_oci_latest_image_prefers_oracle_linux_for_console_defaults() -> None:
     assert image_id == "ocid1.image.oraclelinux"
     assert ssh_user == "opc"
     assert provisioner.compute.operating_systems == ["Oracle Linux"]
+
+
+def test_oci_launch_instance_matches_console_recommended_options() -> None:
+    class Details:
+        def __init__(self, **kwargs: object) -> None:
+            self.__dict__.update(kwargs)
+
+    class Response:
+        def __init__(self, data: object) -> None:
+            self.data = data
+
+    class FakeModels:
+        LaunchInstanceShapeConfigDetails = Details
+        CreateVnicDetails = Details
+        InstanceSourceViaImageDetails = Details
+        InstanceOptions = Details
+        LaunchInstanceAvailabilityConfigDetails = Details
+        LaunchInstanceDetails = Details
+
+    class FakeOci:
+        class core:
+            models = FakeModels
+
+    class FakeCompute:
+        def __init__(self) -> None:
+            self.details: object | None = None
+
+        def launch_instance(self, details: object) -> Response:
+            self.details = details
+            return Response(Details(id="ocid1.instance.example"))
+
+    plan = build_oci_runner_plan(runner="oci")
+    provisioner = object.__new__(OciProvisioner)
+    provisioner.oci = FakeOci()
+    provisioner.compute = FakeCompute()
+
+    instance = provisioner._launch_instance(
+        compartment_id="ocid1.compartment.example",
+        availability_domain="AD-1",
+        image_id="ocid1.image.example",
+        subnet_id="ocid1.subnet.example",
+        nsg_id="ocid1.nsg.example",
+        plan=plan,
+        run_id="fusekit-test",
+        ssh_public_key="ssh-rsa test",
+        cloud_init="#cloud-config",
+        tags={"fusekit": "true"},
+    )
+
+    details = cast(Any, provisioner.compute.details)
+    assert instance.id == "ocid1.instance.example"
+    assert details.shape == "VM.Standard.E5.Flex"
+    assert details.shape_config.ocpus == 2
+    assert details.shape_config.memory_in_gbs == 24
+    assert details.shape_config.baseline_ocpu_utilization == "BASELINE_1_1"
+    assert details.create_vnic_details.assign_public_ip is True
+    assert details.create_vnic_details.hostname_label == "runner"
+    assert details.create_vnic_details.nsg_ids == ["ocid1.nsg.example"]
+    assert details.instance_options.are_legacy_imds_endpoints_disabled is True
+    assert details.availability_config.recovery_action == "RESTORE_INSTANCE"
+    assert details.is_pv_encryption_in_transit_enabled is True
+
+
+def test_oci_capacity_report_uses_root_compartment_and_shape_config() -> None:
+    class Details:
+        def __init__(self, **kwargs: object) -> None:
+            self.__dict__.update(kwargs)
+
+    class Response:
+        def __init__(self, data: object) -> None:
+            self.data = data
+
+    class FakeModels:
+        CreateComputeCapacityReportDetails = Details
+        CreateCapacityReportShapeAvailabilityDetails = Details
+        CapacityReportInstanceShapeConfig = Details
+
+    class FakeOci:
+        class core:
+            models = FakeModels
+
+    class FakeCompute:
+        def __init__(self) -> None:
+            self.details: object | None = None
+
+        def create_compute_capacity_report(self, details: object) -> Response:
+            self.details = details
+            return Response(
+                Details(
+                    shape_availabilities=[
+                        Details(
+                            instance_shape="VM.Standard.E5.Flex",
+                            availability_status="AVAILABLE",
+                        )
+                    ]
+                )
+            )
+
+    progress: list[str] = []
+    provisioner = object.__new__(OciProvisioner)
+    provisioner.oci = FakeOci()
+    provisioner.compute = FakeCompute()
+    provisioner._progress = progress.append
+    plan = build_oci_runner_plan(runner="oci")
+
+    provisioner._emit_capacity_report(
+        "ocid1.tenancy.example",
+        ("AD-1",),
+        plan,
+    )
+
+    details = cast(Any, provisioner.compute.details)
+    shape_availability = details.shape_availabilities[0]
+    assert details.compartment_id == "ocid1.tenancy.example"
+    assert details.availability_domain == "AD-1"
+    assert shape_availability.instance_shape == "VM.Standard.E5.Flex"
+    assert shape_availability.instance_shape_config.ocpus == 2
+    assert shape_availability.instance_shape_config.memory_in_gbs == 24
+    assert any("AVAILABLE" in item for item in progress)
 
 
 def test_oci_create_nsg_wraps_security_rules_for_sdk_request() -> None:
