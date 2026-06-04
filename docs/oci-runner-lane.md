@@ -82,10 +82,12 @@ After authorization, FuseKit creates a tagged, disposable OCI workspace. There i
 10. Boot volume marked delete-on-termination.
 
 FuseKit leaves OCI placement defaults such as fault domain and migration behavior to Oracle.
-It intentionally diverges from the console's private-IP default by assigning a public IPv4
-address and NSG rules for SSH, control-room, and noVNC reachability during the live run.
-Before launch, FuseKit asks OCI for a compute capacity report using the root tenancy
-compartment as required by the API, then attempts the launch only on x86 runner options.
+It follows the console's private-VNIC launch path first, then attaches the runner NSG and
+assigns an ephemeral public IPv4 address after the instance is running. This keeps the
+compute capacity request close to the OCI console defaults while still making SSH,
+control-room, and noVNC reachable for the live run. Before launch, FuseKit asks OCI for a
+compute capacity report using the root tenancy compartment as required by the API, then
+attempts the launch only on x86 runner options.
 Using the root/current compartment by default avoids child-compartment IAM, quota, and
 propagation mismatches where OCI reports capacity in the tenancy but rejects launch in a
 freshly-created compartment.

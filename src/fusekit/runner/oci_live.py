@@ -195,8 +195,14 @@ class OciProvisioner:
             workspace.ssh_user = ssh_user
             workspace.resource_ids["instance"] = instance.id
             self._emit_progress(f"OCI workspace: VM is running on shape {selected_plan.shape}")
-            self._emit_progress("OCI workspace: waiting for public IP")
-            workspace.public_ip = self._public_ip(compartment_id, instance.id)
+            self._emit_progress("OCI workspace: wiring public runner access")
+            workspace.public_ip = self._public_ip(
+                compartment_id,
+                instance.id,
+                nsg.id,
+                run_id,
+                tags,
+            )
             if not workspace.public_ip:
                 raise FuseKitError("OCI runner did not receive a public IP address.")
             self._emit_progress(f"OCI workspace: ready at {workspace.public_ip}")
@@ -488,10 +494,9 @@ class OciProvisioner:
             "shape": plan.shape,
             "shape_config": shape_config,
             "create_vnic_details": self.oci.core.models.CreateVnicDetails(
-                assign_public_ip=True,
+                assign_public_ip=False,
                 display_name=f"{run_id}-vnic",
                 hostname_label="runner",
-                nsg_ids=[nsg_id],
                 subnet_id=subnet_id,
             ),
             "metadata": {
@@ -662,18 +667,72 @@ class OciProvisioner:
                 )
                 time.sleep(20 * attempt)
 
-    def _public_ip(self, compartment_id: str, instance_id: str) -> str:
+    def _public_ip(
+        self,
+        compartment_id: str,
+        instance_id: str,
+        nsg_id: str,
+        run_id: str,
+        tags: dict[str, str],
+    ) -> str:
         for _ in range(30):
             attachments = self.compute.list_vnic_attachments(
                 compartment_id=compartment_id,
                 instance_id=instance_id,
             ).data
             for attachment in attachments:
+                self._attach_nsg_to_vnic(str(attachment.vnic_id), nsg_id)
                 vnic = self.network.get_vnic(attachment.vnic_id).data
                 if getattr(vnic, "public_ip", None):
                     return str(vnic.public_ip)
+                assigned_ip = self._assign_public_ip(
+                    compartment_id,
+                    str(attachment.vnic_id),
+                    run_id,
+                    tags,
+                )
+                if assigned_ip:
+                    return assigned_ip
             time.sleep(5)
         return ""
+
+    def _attach_nsg_to_vnic(self, vnic_id: str, nsg_id: str) -> None:
+        if not hasattr(self.oci.core.models, "UpdateVnicDetails"):
+            return
+        details = self.oci.core.models.UpdateVnicDetails(nsg_ids=[nsg_id])
+        try:
+            self.network.update_vnic(vnic_id, details)
+        except Exception as exc:
+            raise FuseKitError(
+                "OCI launched the VM, but FuseKit could not attach the runner network "
+                f"security group needed for SSH/control-room/noVNC access: {_safe_oci_error(exc)}"
+            ) from exc
+
+    def _assign_public_ip(
+        self,
+        compartment_id: str,
+        vnic_id: str,
+        run_id: str,
+        tags: dict[str, str],
+    ) -> str:
+        private_ips = self.network.list_private_ips(vnic_id=vnic_id).data
+        if not private_ips:
+            return ""
+        details = self.oci.core.models.CreatePublicIpDetails(
+            compartment_id=compartment_id,
+            display_name=f"{run_id}-public-ip",
+            lifetime="EPHEMERAL",
+            private_ip_id=private_ips[0].id,
+            freeform_tags=tags,
+        )
+        try:
+            public_ip = self.network.create_public_ip(details).data
+        except Exception as exc:
+            raise FuseKitError(
+                "OCI launched the VM, but FuseKit could not assign the public IPv4 "
+                f"needed for SSH/control-room/noVNC reachability: {_safe_oci_error(exc)}"
+            ) from exc
+        return str(getattr(public_ip, "ip_address", "") or "")
 
 
 def load_oci_auth_from_vault_or_config(

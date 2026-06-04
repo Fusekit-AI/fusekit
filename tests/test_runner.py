@@ -1131,7 +1131,14 @@ def test_oci_provision_cleans_partial_workspace_when_readiness_fails() -> None:
         ) -> tuple[Created, object, str, str]:
             return Created("ocid1.instance.example"), kwargs["base_plan"], "ubuntu", "AD-1"
 
-        def _public_ip(self, compartment_id: str, instance_id: str) -> str:
+        def _public_ip(
+            self,
+            compartment_id: str,
+            instance_id: str,
+            nsg_id: str,
+            run_id: str,
+            tags: dict[str, str],
+        ) -> str:
             return ""
 
         def detonate(self, workspace: OciWorkspace) -> dict[str, str]:
@@ -1251,9 +1258,9 @@ def test_oci_launch_instance_matches_console_recommended_options() -> None:
     assert details.shape_config.ocpus == 2
     assert details.shape_config.memory_in_gbs == 24
     assert not hasattr(details.shape_config, "baseline_ocpu_utilization")
-    assert details.create_vnic_details.assign_public_ip is True
+    assert details.create_vnic_details.assign_public_ip is False
     assert details.create_vnic_details.hostname_label == "runner"
-    assert details.create_vnic_details.nsg_ids == ["ocid1.nsg.example"]
+    assert not hasattr(details.create_vnic_details, "nsg_ids")
     assert details.instance_options.are_legacy_imds_endpoints_disabled is True
     assert details.availability_config.recovery_action == "RESTORE_INSTANCE"
     assert details.is_pv_encryption_in_transit_enabled is True
@@ -1315,6 +1322,105 @@ def test_oci_capacity_report_uses_root_compartment_and_shape_config() -> None:
     assert shape_availability.instance_shape_config.ocpus == 2
     assert shape_availability.instance_shape_config.memory_in_gbs == 24
     assert any("AVAILABLE" in item for item in progress)
+
+
+def test_oci_public_ip_is_assigned_after_private_vnic_launch() -> None:
+    class Details:
+        def __init__(self, **kwargs: object) -> None:
+            self.__dict__.update(kwargs)
+
+    class Response:
+        def __init__(self, data: object) -> None:
+            self.data = data
+
+    class FakeModels:
+        CreatePublicIpDetails = Details
+
+    class FakeOci:
+        class core:
+            models = FakeModels
+
+    class FakeNetwork:
+        def __init__(self) -> None:
+            self.details: object | None = None
+
+        def list_private_ips(self, *, vnic_id: str) -> Response:
+            assert vnic_id == "ocid1.vnic.example"
+            return Response([Details(id="ocid1.privateip.example")])
+
+        def create_public_ip(self, details: object) -> Response:
+            self.details = details
+            return Response(Details(ip_address="203.0.113.44"))
+
+    provisioner = object.__new__(OciProvisioner)
+    provisioner.oci = FakeOci()
+    provisioner.network = FakeNetwork()
+
+    public_ip = provisioner._assign_public_ip(
+        "ocid1.tenancy.example",
+        "ocid1.vnic.example",
+        "fusekit-test",
+        {"fusekit": "true"},
+    )
+
+    details = cast(Any, provisioner.network.details)
+    assert public_ip == "203.0.113.44"
+    assert details.compartment_id == "ocid1.tenancy.example"
+    assert details.lifetime == "EPHEMERAL"
+    assert details.private_ip_id == "ocid1.privateip.example"
+
+
+def test_oci_public_ip_attaches_runner_nsg_after_launch() -> None:
+    class Details:
+        def __init__(self, **kwargs: object) -> None:
+            self.__dict__.update(kwargs)
+
+    class Response:
+        def __init__(self, data: object) -> None:
+            self.data = data
+
+    class FakeModels:
+        UpdateVnicDetails = Details
+
+    class FakeOci:
+        class core:
+            models = FakeModels
+
+    class FakeCompute:
+        def list_vnic_attachments(self, *, compartment_id: str, instance_id: str) -> Response:
+            assert compartment_id == "ocid1.tenancy.example"
+            assert instance_id == "ocid1.instance.example"
+            return Response([Details(vnic_id="ocid1.vnic.example")])
+
+    class FakeNetwork:
+        def __init__(self) -> None:
+            self.update_details: object | None = None
+
+        def update_vnic(self, vnic_id: str, details: object) -> Response:
+            assert vnic_id == "ocid1.vnic.example"
+            self.update_details = details
+            return Response(None)
+
+        def get_vnic(self, vnic_id: str) -> Response:
+            assert vnic_id == "ocid1.vnic.example"
+            return Response(Details(public_ip="203.0.113.45"))
+
+    provisioner = object.__new__(OciProvisioner)
+    provisioner.oci = FakeOci()
+    provisioner.compute = FakeCompute()
+    provisioner.network = FakeNetwork()
+
+    public_ip = provisioner._public_ip(
+        "ocid1.tenancy.example",
+        "ocid1.instance.example",
+        "ocid1.nsg.example",
+        "fusekit-test",
+        {"fusekit": "true"},
+    )
+
+    update_details = cast(Any, provisioner.network.update_details)
+    assert public_ip == "203.0.113.45"
+    assert update_details.nsg_ids == ["ocid1.nsg.example"]
 
 
 def test_oci_create_nsg_wraps_security_rules_for_sdk_request() -> None:
