@@ -1281,7 +1281,7 @@ def _apply_loaded_manifest(args: argparse.Namespace, manifest: SetupManifest) ->
     secrets.update(_collect_manifest_env_secrets(manifest))
 
     try:
-        _capture_provider_tokens(vault)
+        _capture_provider_tokens(vault, manifest)
         _capture_manifest_provider_env(vault, manifest)
         if hasattr(args, "job_state"):
             _mark_run_state(args, vault_created=True, secrets_captured=True)
@@ -3300,15 +3300,11 @@ def _has_pack_provider_token(pack: ProviderCapabilityPack, vault: Vault) -> bool
             except FuseKitError:
                 pass
     env_names = {
-        "github": "GITHUB_TOKEN",
-        "vercel": "VERCEL_TOKEN",
-        "cloudflare": "CLOUDFLARE_API_TOKEN",
-        "dns": "CLOUDFLARE_API_TOKEN",
-        "resend": "RESEND_API_KEY",
-        "plaid": "PLAID_SECRET",
+        name
+        for name in (pack.handoff.token_env, *pack.required_secrets)
+        if name
     }
-    env_name = env_names.get(pack.provider.lower())
-    return bool(env_name and os.environ.get(env_name))
+    return any(bool(os.environ.get(name)) for name in env_names)
 
 
 def _attempt_provider_verification_repair(
@@ -3523,23 +3519,72 @@ def _rebase_setup_artifacts(args: argparse.Namespace, app_path: Path) -> None:
         args.job_state = fusekit_dir / "job.json"
 
 
-def _capture_provider_tokens(vault: Vault) -> None:
-    for provider, env_name in (
-        ("github", "GITHUB_TOKEN"),
-        ("vercel", "VERCEL_TOKEN"),
-        ("cloudflare", "CLOUDFLARE_API_TOKEN"),
-        ("resend", "RESEND_API_KEY"),
+def _capture_provider_tokens(vault: Vault, manifest: SetupManifest) -> None:
+    app_path = Path(manifest.app_path)
+    token_env_by_provider = _manifest_provider_token_envs(manifest, app_path)
+    if manifest.domains:
+        token_env_by_provider.setdefault("cloudflare", set()).add("CLOUDFLARE_API_TOKEN")
+    for provider, env_names in sorted(token_env_by_provider.items()):
+        for env_name in sorted(env_names):
+            if not env_name:
+                continue
+            value = os.environ.get(env_name)
+            if value:
+                vault.put(
+                    f"provider.{provider}.token",
+                    "provider_token",
+                    provider,
+                    f"{provider} API token",
+                    value,
+                    {"source": f"env:{env_name}"},
+                )
+                break
+
+
+def _manifest_provider_token_envs(
+    manifest: SetupManifest,
+    app_path: Path,
+) -> dict[str, set[str]]:
+    token_env_by_provider: dict[str, set[str]] = {
+        "github": {"GITHUB_TOKEN"},
+        "vercel": {"VERCEL_TOKEN"},
+        "cloudflare": {"CLOUDFLARE_API_TOKEN"},
+        "dns": {"CLOUDFLARE_API_TOKEN"},
+    }
+    for service in manifest.services:
+        provider = service.provider.lower()
+        envs = token_env_by_provider.setdefault(provider, set())
+        handoff = _handoff_for_manifest_service(provider, service, app_path)
+        if handoff is not None:
+            envs.add(handoff.token_env)
+        envs.update(
+            name
+            for name in service.secrets
+            if any(marker in name for marker in ("TOKEN", "API_KEY", "SECRET_KEY"))
+        )
+    return token_env_by_provider
+
+
+def _handoff_for_manifest_service(
+    provider: str,
+    service: ServiceRequirement,
+    app_path: Path,
+) -> ProviderHandoff | None:
+    try:
+        return handoff_for(provider)
+    except FuseKitError:
+        pass
+    if "capability_pack" not in service.capabilities and not service.settings.get(
+        "capability_pack"
     ):
-        value = os.environ.get(env_name)
-        if value:
-            vault.put(
-                f"provider.{provider}.token",
-                "provider_token",
-                provider,
-                f"{provider} API token",
-                value,
-                {"source": f"env:{env_name}"},
-            )
+        return None
+    pack_hint = str(service.settings.get("capability_pack", ""))
+    pack_path = Path(pack_hint) if pack_hint else pack_default_path(app_path, provider)
+    if not pack_path.is_absolute():
+        pack_path = app_path / pack_path
+    if pack_path.exists():
+        return handoff_from_provider_pack(load_provider_pack(pack_path))
+    return handoff_from_provider_pack(synthesize_provider_pack(provider, app_path))
 
 
 def _capture_manifest_provider_env(vault: Vault, manifest: SetupManifest) -> None:

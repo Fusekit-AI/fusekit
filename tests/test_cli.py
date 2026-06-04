@@ -4,9 +4,13 @@ import argparse
 import json
 from urllib.error import URLError
 
+import pytest
+
 from fusekit.audit import AuditLog, Receipt, assert_no_secret_text
 from fusekit.cli import (
     _attempt_provider_api_fallback,
+    _capture_provider_tokens,
+    _has_pack_provider_token,
     _local_verification_job_result,
     _playwright_headless,
     _repair_navigation_completed,
@@ -584,6 +588,39 @@ def test_provider_api_fallback_runs_pack_setup_when_token_exists(monkeypatch, tm
     assert vault.require("provider.resend.resend_api_key").value == "fallback-secret-hidden"
     public = json.dumps(receipt.to_dict())
     assert_no_secret_text(public, ["provider-token-hidden", "fallback-secret-hidden"])
+
+
+def test_catalog_pack_env_token_counts_as_provider_token(monkeypatch, tmp_path) -> None:
+    pack = synthesize_provider_pack("stripe", tmp_path)
+    vault = Vault.empty()
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "stripe-token-hidden")
+
+    assert _has_pack_provider_token(pack, vault)
+
+
+def test_capture_provider_tokens_uses_catalog_handoff_env(monkeypatch, tmp_path) -> None:
+    manifest = SetupManifest(
+        app_name="app",
+        app_path=str(tmp_path),
+        services=(
+            ServiceRequirement(
+                provider="supabase",
+                kind="database",
+                name="database",
+                capabilities=("capability_pack",),
+                secrets=("SUPABASE_SERVICE_ROLE_KEY", "WEBHOOK_SECRET"),
+            ),
+        ),
+    )
+    vault = Vault.empty()
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "supabase-token-hidden")
+    monkeypatch.setenv("WEBHOOK_SECRET", "webhook-secret-not-provider-token")
+
+    _capture_provider_tokens(vault, manifest)
+
+    assert vault.require("provider.supabase.token").value == "supabase-token-hidden"
+    with pytest.raises(FuseKitError):
+        vault.require("provider.webhook.token")
 
 
 def test_repair_navigation_waiting_gate_is_not_treated_as_complete() -> None:
