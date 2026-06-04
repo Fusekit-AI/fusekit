@@ -41,6 +41,7 @@ from fusekit.runner.oci_live import (
     OciProvisioner,
     OciWorkspace,
     _load_oci_config_file,
+    _safe_oci_error,
     latest_workspace_from_vault,
     suppress_oci_http_debug_logging,
 )
@@ -1163,8 +1164,18 @@ def test_oci_provision_cleans_partial_workspace_when_readiness_fails() -> None:
 
 def test_oci_latest_image_prefers_ubuntu_lts_for_runner_bootstrap() -> None:
     class Image:
-        def __init__(self, image_id: str) -> None:
+        def __init__(
+            self,
+            image_id: str,
+            *,
+            operating_system: str = "Canonical Ubuntu",
+            operating_system_version: str = "24.04",
+            display_name: str = "Canonical-Ubuntu-24.04-2026.05.30-0",
+        ) -> None:
             self.id = image_id
+            self.operating_system = operating_system
+            self.operating_system_version = operating_system_version
+            self.display_name = display_name
 
     class Response:
         def __init__(self, data: object) -> None:
@@ -1195,6 +1206,8 @@ def test_oci_latest_image_prefers_ubuntu_lts_for_runner_bootstrap() -> None:
 
     provisioner = object.__new__(OciProvisioner)
     provisioner.compute = FakeCompute()
+    progress: list[str] = []
+    provisioner._progress = progress.append
 
     image_id, ssh_user = provisioner._latest_image(
         "ocid1.compartment.example",
@@ -1204,6 +1217,8 @@ def test_oci_latest_image_prefers_ubuntu_lts_for_runner_bootstrap() -> None:
     assert image_id == "ocid1.image.ubuntu-24-04"
     assert ssh_user == "ubuntu"
     assert provisioner.compute.requests == [("Canonical Ubuntu", "24.04")]
+    assert any("Canonical Ubuntu 24.04" in item for item in progress)
+    assert any("for SSH user ubuntu" in item for item in progress)
 
 
 def test_oci_latest_image_falls_back_to_ubuntu_2204_before_oracle_linux() -> None:
@@ -1747,7 +1762,24 @@ def test_oci_launch_fallback_checks_all_availability_domains(
     assert selected_domain == "AD-2"
     assert ("AD-1", "VM.Standard.E5.Flex") in attempts
     assert ("AD-2", "VM.Standard.E5.Flex") in attempts
+    assert any("launch inputs shape=VM.Standard.E5.Flex" in item for item in progress)
+    assert any("public_ip=post-launch nsg=post-launch" in item for item in progress)
     assert any("checking availability domain AD-2" in item for item in progress)
+
+
+def test_oci_error_summary_includes_message_and_request_id() -> None:
+    class FakeOciError(Exception):
+        status = 500
+        code = "InternalError"
+        message = "Out of host capacity."
+        request_id = "oci-request-123"
+
+    summary = _safe_oci_error(FakeOciError())
+
+    assert "500" in summary
+    assert "InternalError" in summary
+    assert "Out of host capacity" in summary
+    assert "oci-request-123" in summary
 
 
 def test_oci_debug_logging_is_suppressed(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -401,6 +401,7 @@ class OciProvisioner:
     def _latest_image(self, compartment_id: str, shape: str) -> tuple[str, str]:
         ssh_user = "ubuntu"
         images: list[Any] = []
+        selected_label = ""
         for ubuntu_version in ("24.04", "22.04"):
             images = self.compute.list_images(
                 compartment_id=compartment_id,
@@ -411,6 +412,7 @@ class OciProvisioner:
                 sort_order="DESC",
             ).data
             if images:
+                selected_label = f"Canonical Ubuntu {ubuntu_version}"
                 break
         if not images:
             images = self.compute.list_images(
@@ -420,6 +422,7 @@ class OciProvisioner:
                 sort_by="TIMECREATED",
                 sort_order="DESC",
             ).data
+            selected_label = "Canonical Ubuntu"
         if not images:
             images = self.compute.list_images(
                 compartment_id=compartment_id,
@@ -429,8 +432,13 @@ class OciProvisioner:
                 sort_order="DESC",
             ).data
             ssh_user = "opc"
+            selected_label = "Oracle Linux"
         if not images:
             raise FuseKitError(f"No OCI image found for shape {shape}.")
+        self._emit_progress(
+            "OCI workspace: selected runner image "
+            f"{_image_label(images[0], selected_label)} for SSH user {ssh_user}"
+        )
         return str(images[0].id), ssh_user
 
     def _emit_capacity_report(
@@ -595,6 +603,15 @@ class OciProvisioner:
                     self._emit_progress(f"OCI workspace: finding image for {candidate.shape}")
                     image_id, ssh_user = self._latest_image(compartment_id, candidate.shape)
                     self._emit_progress(
+                        "OCI workspace: launch inputs "
+                        f"shape={candidate.shape} ocpus={candidate.ocpus} "
+                        f"memory_gb={candidate.memory_gb} ad={domain} "
+                        f"compartment={_short_ocid(compartment_id)} "
+                        f"subnet={_short_ocid(subnet_id)} "
+                        f"image={_short_ocid(image_id)} "
+                        "public_ip=post-launch nsg=post-launch"
+                    )
+                    self._emit_progress(
                         f"OCI workspace: trying shape {candidate.shape} in {domain}"
                     )
                     return (
@@ -620,14 +637,15 @@ class OciProvisioner:
                         saw_capacity_error = True
                         self._emit_progress(
                             f"OCI workspace: {candidate.shape} capacity unavailable "
-                            f"in {domain}, retrying"
+                            f"in {domain}, retrying ({_safe_oci_error(exc)})"
                         )
                         continue
                     if _is_oci_not_authorized_or_not_found(exc):
                         saw_authorization_error = True
                         self._emit_progress(
                             f"OCI workspace: {candidate.shape} launch was not authorized "
-                            f"or not visible yet in {domain}, trying next x86 option"
+                            f"or not visible yet in {domain}, trying next x86 option "
+                            f"({_safe_oci_error(exc)})"
                         )
                         continue
                     raise
@@ -880,6 +898,25 @@ def _capacity_report_status(report: object) -> str:
     return "; ".join(statuses)
 
 
+def _image_label(image: object, fallback_label: str) -> str:
+    operating_system = str(getattr(image, "operating_system", "") or "")
+    version = str(getattr(image, "operating_system_version", "") or "")
+    display_name = str(getattr(image, "display_name", "") or "")
+    image_id = str(getattr(image, "id", "") or "")
+    label_parts = [part for part in (operating_system or fallback_label, version) if part]
+    label = " ".join(label_parts).strip() or fallback_label
+    suffix = f" ({display_name})" if display_name and display_name not in label else ""
+    return f"{label}{suffix} {_short_ocid(image_id)}".strip()
+
+
+def _short_ocid(value: str) -> str:
+    if not value:
+        return ""
+    if len(value) <= 28:
+        return value
+    return f"{value[:18]}...{value[-8:]}"
+
+
 def _is_oci_not_authorized_or_not_found(exc: Exception) -> bool:
     status = str(getattr(exc, "status", ""))
     code = str(getattr(exc, "code", ""))
@@ -948,6 +985,13 @@ def _safe_oci_error(exc: Exception) -> str:
 
     status = getattr(exc, "status", "")
     code = getattr(exc, "code", "")
+    message = str(getattr(exc, "message", "") or "")
+    request_id = _oci_request_id(exc)
+    parts = [str(part) for part in (status, code, message) if part]
+    if request_id:
+        parts.append(f"request_id={request_id}")
+    if parts:
+        return " ".join(parts)
     if status or code:
         return " ".join(str(part) for part in (status, code) if part)
     return exc.__class__.__name__
