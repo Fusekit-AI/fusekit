@@ -26,6 +26,29 @@ EXCLUDED_PARTS = {
     ".mypy_cache",
 }
 
+SAFE_REFERENCE_MARKERS = (
+    "process.env.",
+    "os.environ",
+    "getpass.getpass",
+    "secrets.token_urlsafe",
+    "recipe.inputs",
+    "_token_or_gate",
+    "=env:",
+    " env:",
+)
+
+PLACEHOLDER_MARKERS = (
+    "fake_",
+    "test_",
+    "hidden",
+    "placeholder",
+    "dummy",
+    "example",
+    "must-not-be",
+    "private-key-hidden",
+    "secret-value",
+)
+
 EXCLUDED_SUFFIXES = {
     ".png",
     ".jpg",
@@ -69,7 +92,7 @@ def scan_for_secret_leaks(root: Path) -> list[LeakFinding]:
             continue
         for index, line in enumerate(text.splitlines(), start=1):
             for pattern in SECRET_PATTERNS:
-                if pattern.search(line):
+                if pattern.search(line) and not _allowed_non_secret_line(pattern, line):
                     findings.append(
                         LeakFinding(
                             path=str(path.relative_to(root)),
@@ -84,11 +107,42 @@ def scan_for_secret_leaks(root: Path) -> list[LeakFinding]:
 def _excluded(path: Path) -> bool:
     if any(part in EXCLUDED_PARTS for part in path.parts):
         return True
+    if any(part.endswith(".egg-info") for part in path.parts):
+        return True
     if path.suffix.lower() in EXCLUDED_SUFFIXES:
         return True
     if path.name.endswith((".vault", ".vault.json")):
         return True
     return False
+
+
+def _allowed_non_secret_line(pattern: re.Pattern[str], line: str) -> bool:
+    if _kind_for_pattern(pattern) != "secret_assignment":
+        return False
+    normalized = line.lower()
+    if any(marker in normalized for marker in SAFE_REFERENCE_MARKERS):
+        return True
+    value = _assignment_value(line)
+    if not value:
+        return True
+    lowered_value = value.lower()
+    if any(marker in lowered_value for marker in PLACEHOLDER_MARKERS):
+        return True
+    if lowered_value.isidentifier() and " = " in line:
+        return True
+    expression_markers = ("(", ")", "{", "}", "[", "]", ".", "$", "/", "\\")
+    return any(marker in value for marker in expression_markers)
+
+
+def _assignment_value(line: str) -> str:
+    separator_index = len(line)
+    for separator in ("=", ":"):
+        index = line.find(separator)
+        if index != -1:
+            separator_index = min(separator_index, index)
+    if separator_index == len(line):
+        return ""
+    return line[separator_index + 1 :].strip().strip("'\"")
 
 
 def _kind_for_pattern(pattern: re.Pattern[str]) -> str:

@@ -1418,6 +1418,38 @@ def test_secret_leak_scanner_reports_locations_without_values(tmp_path) -> None:
     assert secret not in str([finding.to_dict() for finding in findings])
 
 
+def test_secret_leak_scanner_ignores_references_but_keeps_strong_signatures(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "references.txt").write_text(
+        "\n".join(
+            (
+                "export const secret = process.env.WEBHOOK_SECRET;",
+                "--secret APP_API_KEY=env:APP_API_KEY",
+                "token = os.environ.get('GITHUB_TOKEN')",
+                "fixture_secret = 'hidden-test-placeholder'",
+            )
+        ),
+        encoding="utf-8",
+    )
+    (app / "real.txt").write_text(
+        "\n".join(
+            (
+                "API_KEY=live_plaintext_value_abcdefghijklmnopqrstuvwxyz",
+                "GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz123456",
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    findings = scan_for_secret_leaks(app)
+
+    assert [finding.path for finding in findings] == ["real.txt", "real.txt"]
+    assert {finding.kind for finding in findings} == {"secret_assignment", "github_token"}
+
+
 def test_rollback_and_start_over_are_redacted_and_preserve_vault(tmp_path) -> None:
     app = tmp_path / "app"
     fusekit = app / ".fusekit"
