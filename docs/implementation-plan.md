@@ -89,7 +89,7 @@
 - [x] Detect environment variable usage.
 - [x] Detect provider SDK usage.
 - [x] Detect Plaid dependencies/env and emit a provider-pack service with a generated pack path.
-- [ ] Detect DNS/domain and webhook needs where possible. Webhook env detection exists; DNS is manifest-driven for V1.
+- [x] Detect DNS/domain and webhook needs where possible.
 - [x] Generate `fusekit.yaml` with required services, capabilities, approvals, and user-required steps.
 
 ## Milestone 3: Planning Engine
@@ -164,8 +164,8 @@
 - [x] Connect GitHub repo, including private source retrieval through supervised GitHub App/PAT authorization without local SSH setup.
 - [x] Connect deployment target adapter path. Live proof still depends on supervised provider authorization.
 - [x] Configure environment variables through provider-pack setup. Live proof still depends on supervised provider authorization.
-- [ ] Propose and optionally apply DNS.
-- [ ] Verify deployed website health.
+- [x] Propose and optionally apply DNS.
+- [x] Verify deployed website health.
 - [x] Store all sensitive setup material in encrypted vault bundle.
 - [ ] Document the real acceptance run in README. Reproduction steps are documented; real run log is pending supervised authorization.
 

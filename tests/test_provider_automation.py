@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from fusekit.audit import AuditLog, Receipt, assert_no_secret_text
-from fusekit.manifest import SetupManifest
+from fusekit.manifest import DnsRecord, DomainRequirement, SetupManifest
 from fusekit.providers.automation import ProviderSetupContext, run_provider_pack_setup
 from fusekit.providers.capability_pack import synthesize_provider_pack
 from fusekit.vault import Vault
@@ -253,3 +253,148 @@ def test_vercel_pack_connects_project_and_deploys_from_github_repo(
     assert context.receipt.live_url == "https://moonlite-rsvp.vercel.app"
     public = json.dumps(result) + json.dumps(receipt.to_dict())
     assert_no_secret_text(public, ["webhook-secret-value", "test-vercel-token-hidden"])
+
+
+def test_cloudflare_dns_proposes_without_apply_when_scope_missing(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    calls: list[str] = []
+
+    class FakeCloudflareDnsProvider:
+        def __init__(self, token: str) -> None:
+            self.token = token
+
+        def propose(self, zone: str, records: tuple[DnsRecord, ...]):  # type: ignore[no-untyped-def]
+            calls.append(f"propose:{zone}:{len(records)}")
+            return [
+                type(
+                    "Change",
+                    (),
+                    {
+                        "to_dict": lambda self: {
+                            "zone_id": "zone-1",
+                            "record": {"name": records[0].name, "type": records[0].type},
+                            "rollback": {"delete_created_record": True},
+                        }
+                    },
+                )()
+            ]
+
+        def apply(self, changes):  # type: ignore[no-untyped-def]
+            calls.append("apply")
+            return []
+
+        def verify(self, zone, records):  # type: ignore[no-untyped-def]
+            calls.append("verify")
+            return []
+
+    monkeypatch.setattr(
+        "fusekit.providers.automation.CloudflareDnsProvider",
+        FakeCloudflareDnsProvider,
+    )
+    vault = Vault.empty()
+    vault.put("provider.cloudflare.token", "provider_token", "cloudflare", "token", "hidden")
+    receipt = Receipt(app_name="app")
+    context = ProviderSetupContext(
+        manifest=SetupManifest(
+            app_name="app",
+            domains=(
+                DomainRequirement(
+                    domain="moonlite.rsvp",
+                    provider="cloudflare",
+                    records=(DnsRecord(name="moonlite.rsvp", type="A", value="76.76.21.21"),),
+                ),
+            ),
+        ),
+        vault=vault,
+        audit=AuditLog(tmp_path / "audit.jsonl"),
+        receipt=receipt,
+        secrets={},
+        provider_names={"cloudflare"},
+        approve_dns=False,
+    )
+    pack = synthesize_provider_pack("cloudflare", tmp_path)
+
+    result = run_provider_pack_setup(pack, context)
+
+    assert calls == ["propose:moonlite.rsvp:1"]
+    assert result["setup"][0]["domains"][0]["proposed"][0]["zone_id"] == "zone-1"
+    actions = receipt.to_dict()["actions"]
+    assert any(action["action"] == "dns.propose" and action["status"] == "ok" for action in actions)
+    assert any(
+        action["action"] == "dns.apply" and action["status"] == "skipped"
+        for action in actions
+    )
+
+
+def test_cloudflare_dns_apply_requires_explicit_dns_scope(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    calls: list[str] = []
+
+    class FakeCloudflareDnsProvider:
+        def __init__(self, token: str) -> None:
+            self.token = token
+
+        def propose(self, zone: str, records: tuple[DnsRecord, ...]):  # type: ignore[no-untyped-def]
+            calls.append(f"propose:{zone}:{len(records)}")
+            return [
+                type(
+                    "Change",
+                    (),
+                    {
+                        "to_dict": lambda self: {
+                            "zone_id": "zone-1",
+                            "record": {"name": records[0].name, "type": records[0].type},
+                            "rollback": {"delete_created_record": True},
+                        }
+                    },
+                )()
+            ]
+
+        def apply(self, changes):  # type: ignore[no-untyped-def]
+            calls.append(f"apply:{len(changes)}")
+            return [{"id": "record-1", "name": "moonlite.rsvp"}]
+
+        def verify(self, zone, records):  # type: ignore[no-untyped-def]
+            calls.append(f"verify:{zone}:{len(records)}")
+            return [{"name": "moonlite.rsvp", "ok": True}]
+
+    monkeypatch.setattr(
+        "fusekit.providers.automation.CloudflareDnsProvider",
+        FakeCloudflareDnsProvider,
+    )
+    vault = Vault.empty()
+    vault.put("provider.cloudflare.token", "provider_token", "cloudflare", "token", "hidden")
+    receipt = Receipt(app_name="app")
+    context = ProviderSetupContext(
+        manifest=SetupManifest(
+            app_name="app",
+            domains=(
+                DomainRequirement(
+                    domain="moonlite.rsvp",
+                    provider="cloudflare",
+                    records=(DnsRecord(name="moonlite.rsvp", type="A", value="76.76.21.21"),),
+                ),
+            ),
+        ),
+        vault=vault,
+        audit=AuditLog(tmp_path / "audit.jsonl"),
+        receipt=receipt,
+        secrets={},
+        provider_names={"cloudflare"},
+        approve_dns=True,
+    )
+    pack = synthesize_provider_pack("cloudflare", tmp_path)
+
+    result = run_provider_pack_setup(pack, context)
+
+    assert calls == ["propose:moonlite.rsvp:1", "apply:1", "verify:moonlite.rsvp:1"]
+    assert result["setup"][0]["domains"][0]["applied"] == [
+        {"id": "record-1", "name": "moonlite.rsvp"}
+    ]
+    actions = receipt.to_dict()["actions"]
+    assert any(action["action"] == "dns.apply" and action["status"] == "ok" for action in actions)
+    assert any(action["action"] == "dns.verify" and action["status"] == "ok" for action in actions)
