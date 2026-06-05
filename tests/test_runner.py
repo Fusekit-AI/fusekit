@@ -497,7 +497,8 @@ def test_control_room_gate_help_includes_resume_link_and_attempts(tmp_path) -> N
 
     html = render_control_room(JobState.load(job_path), gate_path=tmp_path / "gates.json")
 
-    assert "Open provider gate" in html
+    assert "Open provider gate in VM" in html
+    assert 'data-gate-open="provider.vercel.authorization"' in html
     assert "gate-attempts" in html
     assert "https://vercel.com/account/tokens" in html
     assert '"attempts":2' in html or '"attempts": 2' in html
@@ -533,6 +534,50 @@ def test_control_room_post_marks_human_gate_passed(tmp_path) -> None:
     assert GateService.load(tmp_path / "gates.json").records[
         "provider.github.mfa.123"
     ].status == "passed"
+
+
+def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    (tmp_path / "visual.json").write_text(json.dumps({"display": ":99"}), encoding="utf-8")
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.cloudflare.authorization",
+        provider="cloudflare",
+        reason="Cloudflare token creation",
+        resume_url="https://dash.cloudflare.com/profile/api-tokens",
+        classification="consent",
+    )
+    calls: list[dict[str, Any]] = []
+
+    class FakeProcess:
+        pass
+
+    def fake_popen(command, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append({"command": command, **kwargs})
+        return FakeProcess()
+
+    monkeypatch.setenv("FUSEKIT_VISUAL_BROWSER", "/usr/bin/fake-chrome")
+    monkeypatch.setattr("fusekit.runner.control_room.server.subprocess.Popen", fake_popen)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = (
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/gates/provider.cloudflare.authorization/open"
+        )
+        request = Request(url, method="POST", headers={"x-fusekit-control-room": "resume"})
+        with urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert payload["ok"] is True
+    assert calls[0]["command"][-1] == "https://dash.cloudflare.com/profile/api-tokens"
+    assert calls[0]["env"]["DISPLAY"] == ":99"
+    assert calls[0]["command"][0] == "/usr/bin/fake-chrome"
 
 
 def test_control_room_post_rejects_cross_site_gate_pass(tmp_path) -> None:
@@ -722,6 +767,8 @@ def test_control_room_payload_and_html_include_visual_session(tmp_path) -> None:
     assert 'data-copy-label="password"' in html
     assert "Copy browser link" in html
     assert "http://203.0.113.10:6080/vnc.html?autoconnect=1" in html
+    assert "password=viewer-password" in html
+    assert "withQueryParam(novncUrl, \"password\", password)" in html
     assert "data-visual-status" in html
     assert "sameVisualSession" in html
     assert "root.dataset.novncUrl" in html
@@ -2073,6 +2120,12 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         "openclaw config set browser.executablePath" in command[-1]
         and "openclaw gateway run --allow-unconfigured --auth none --bind loopback --port 19002"
         in command[-1]
+        for command in calls
+        if command[0] == "ssh"
+    )
+    assert any(
+        '"status": "ready"' in command[-1]
+        and "/var/lib/fusekit-runner/app/.fusekit/visual.json" in command[-1]
         for command in calls
         if command[0] == "ssh"
     )

@@ -512,6 +512,7 @@ def _prepare_remote_visual_session(
             "Use the noVNC window to complete human gates in the same session FuseKit observes.",
         ],
     }
+    visual_ready_payload = {**visual_payload, "status": "ready"}
     initial_visual_job = {
         "id": "remote-visual-session",
         "app_path": "/var/lib/fusekit-runner/app",
@@ -545,6 +546,8 @@ def _prepare_remote_visual_session(
         f"curl -fsS http://127.0.0.1:{NOVNC_PORT}/vnc.html >/dev/null || "
         "(cat /var/lib/fusekit-runner/visual/*.log "
         "/var/lib/fusekit-runner/visual/error 2>/dev/null >&2; exit 45); "
+        f"printf %s {quote(json.dumps(visual_ready_payload, sort_keys=True))} "
+        "> /var/lib/fusekit-runner/app/.fusekit/visual.json; "
         f"export FUSEKIT_CONTROL_ROOM_TOKEN={quote(visual['control_room_token'])}; "
         "export FUSEKIT_ALLOW_REMOTE_CONTROL_ROOM=1; "
         "nohup fusekit control-room --serve "

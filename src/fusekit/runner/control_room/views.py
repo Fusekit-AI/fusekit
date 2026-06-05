@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fusekit.runner.control_room.assets import STYLE
 from fusekit.runner.control_room.cards import (
@@ -242,6 +243,7 @@ def _render_visual_session(visual: Any) -> str:
     novnc_url = str(visual.get("novnc_url", ""))
     control_room_url = str(visual.get("control_room_url", ""))
     password = str(visual.get("novnc_password", ""))
+    iframe_url = _url_with_query_param(novnc_url, "password", password)
     status = str(visual.get("status", "ready") or "ready")
     password_row = (
         f"""
@@ -283,7 +285,7 @@ def _render_visual_session(visual: Any) -> str:
       <div class="visual-grid">
         <iframe
           class="visual-frame"
-          src="{html.escape(novnc_url)}"
+          src="{html.escape(iframe_url)}"
           title="FuseKit VM browser"
           tabindex="0"
           referrerpolicy="no-referrer"
@@ -665,10 +667,11 @@ def _render_gate_help(step: Any) -> str:
     )
     actions = "".join(f"<li>{html.escape(str(action))}</li>" for action in actions_source)
     resume_url = str(getattr(step, "resume_url", "") or "")
+    gate_id = str(getattr(step, "id", "") or "")
     resume_link = (
-        f'<a class="gate-link" href="{html.escape(resume_url)}" '
-        'target="_blank" rel="noreferrer">Open provider gate</a>'
-        if resume_url
+        f'<button class="gate-link" type="button" data-gate-open="{html.escape(gate_id)}">'
+        "Open provider gate in VM</button>"
+        if resume_url and gate_id
         else ""
     )
     attempts = int(getattr(step, "attempts", 0) or 0)
@@ -695,7 +698,6 @@ def _render_gate_help(step: Any) -> str:
         if target
         else ""
     )
-    gate_id = str(getattr(step, "id", "") or "")
     resume_button = (
         f'<button class="gate-done" type="button" data-gate-pass="{html.escape(gate_id)}">'
         "I finished this step</button>"
@@ -745,6 +747,16 @@ def _gate_step(gate: dict[str, Any]) -> Any:
         follow_steps=gate.get("follow_steps", []),
         attempts=int(gate.get("attempts", 0) or 0),
     )
+
+
+def _url_with_query_param(url: str, key: str, value: str) -> str:
+    if not url or not value:
+        return url
+    parts = urlsplit(url)
+    query = [(item_key, item_value) for item_key, item_value in parse_qsl(parts.query)]
+    query = [(item_key, item_value) for item_key, item_value in query if item_key != key]
+    query.append((key, value))
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
 
 
 def _format_time(timestamp: float) -> str:

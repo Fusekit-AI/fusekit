@@ -245,10 +245,10 @@ function renderGateHelp(step) {
   const followSteps = Array.isArray(step.follow_steps) && step.follow_steps.length
     ? step.follow_steps
     : guidance.actions;
-  const resumeLink = step.resume_url
+  const resumeLink = step.resume_url && step.id
     ? [
-        `<a class="gate-link" href="${escapeAttr(step.resume_url)}"`,
-        ` target="_blank" rel="noreferrer">Open provider gate</a>`,
+        `<button class="gate-link" type="button" `,
+        `data-gate-open="${escapeAttr(step.id)}">Open provider gate in VM</button>`,
       ].join("")
     : "";
   const attempts = step.attempts
@@ -355,6 +355,7 @@ function renderVisual(job) {
   const controlRoomUrl = String(visual.control_room_url || "");
   const status = String(visual.status || "ready");
   const password = String(visual.novnc_password || "");
+  const iframeUrl = withQueryParam(novncUrl, "password", password);
   const sameVisualSession =
     root.dataset.novncUrl === novncUrl &&
     root.dataset.controlRoomUrl === controlRoomUrl &&
@@ -397,7 +398,7 @@ function renderVisual(job) {
       <div class="visual-grid">
         <iframe
           class="visual-frame"
-          src="${escapeAttr(novncUrl)}"
+          src="${escapeAttr(iframeUrl)}"
           title="FuseKit VM browser"
           tabindex="0"
           referrerpolicy="no-referrer"
@@ -749,6 +750,32 @@ async function copyText(text) {
 }
 
 document.addEventListener("click", async (event) => {
+  const gateOpenButton = event.target.closest("[data-gate-open]");
+  if (gateOpenButton) {
+    gateOpenButton.disabled = true;
+    const originalText = gateOpenButton.textContent;
+    gateOpenButton.textContent = "Opening in VM...";
+    try {
+      const response = await fetch(
+        `/api/gates/${encodeURIComponent(gateOpenButton.dataset.gateOpen)}/open`,
+        {
+          method: "POST",
+          headers: { "x-fusekit-control-room": "resume" },
+        },
+      );
+      if (!response.ok) throw new Error("gate open failed");
+      setRefreshStatus("Provider gate opened inside the VM browser.");
+    } catch {
+      setRefreshStatus(
+        "Could not open the provider gate inside the VM. Use the noVNC browser surface.",
+        "stale",
+      );
+    } finally {
+      gateOpenButton.disabled = false;
+      gateOpenButton.textContent = originalText;
+    }
+    return;
+  }
   const gateButton = event.target.closest("[data-gate-pass]");
   if (gateButton) {
     gateButton.disabled = true;
@@ -798,6 +825,18 @@ document.addEventListener("click", async (event) => {
     );
   }
 });
+
+function withQueryParam(url, key, value) {
+  if (!url || !value) return url;
+  try {
+    const parsed = new URL(url, window.location.href);
+    parsed.searchParams.set(key, value);
+    return parsed.toString();
+  } catch {
+    const separator = url.includes("?") ? "&" : "?";
+    return `${url}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+  }
+}
 
 function setRefreshStatus(text, tone = "ok") {
   const node = document.querySelector("[data-refresh-status]");

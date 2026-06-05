@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import shutil
+import subprocess
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -20,6 +22,7 @@ from fusekit.runner.control_room import (
 )
 from fusekit.runner.gates import GateService
 from fusekit.runner.job import JobState
+from fusekit.security.url import require_safe_url
 
 
 def serve_control_room(job_state: Path, host: str = "127.0.0.1", port: int = 8765) -> str:
@@ -85,15 +88,28 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                 self._write_json({"ok": False, "error": "cross-site request"}, status=403)
                 return
             prefix = "/api/gates/"
-            suffix = "/pass"
-            if route.path.startswith(prefix) and route.path.endswith(suffix):
-                gate_id = unquote(route.path[len(prefix) : -len(suffix)])
+            if route.path.startswith(prefix) and route.path.endswith("/pass"):
+                gate_id = unquote(route.path[len(prefix) : -len("/pass")])
                 service = GateService.load(job_state.parent / "gates.json")
                 if gate_id not in service.records:
                     self._write_json({"ok": False, "error": "gate not found"}, status=404)
                     return
                 service.pass_gate(gate_id)
                 self._write_json({"ok": True, "gate_id": gate_id})
+                return
+            if route.path.startswith(prefix) and route.path.endswith("/open"):
+                gate_id = unquote(route.path[len(prefix) : -len("/open")])
+                service = GateService.load(job_state.parent / "gates.json")
+                gate = service.records.get(gate_id)
+                if gate is None:
+                    self._write_json({"ok": False, "error": "gate not found"}, status=404)
+                    return
+                try:
+                    browser = _open_gate_url_in_visual_browser(job_state, gate.resume_url)
+                except FuseKitError as exc:
+                    self._write_json({"ok": False, "error": str(exc)}, status=400)
+                    return
+                self._write_json({"ok": True, "gate_id": gate_id, "browser": browser})
                 return
             self.send_response(404)
             self.end_headers()
@@ -183,6 +199,73 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
 
 def _live_html(job: JobState, job_state: Path) -> str:
     return render_control_room(job, gate_path=job_state.parent / "gates.json")
+
+
+def _open_gate_url_in_visual_browser(job_state: Path, url: str) -> str:
+    safe_url = require_safe_url(url, label="Provider gate URL")
+    browser = _visual_browser_binary()
+    if not browser:
+        raise FuseKitError("No VM browser binary is available for provider gate launch.")
+    profile_dir = job_state.parent.parent / "visual" / "chrome-provider-profile"
+    try:
+        profile_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise FuseKitError(f"Could not prepare VM browser profile: {exc}") from exc
+    display = _visual_display(job_state)
+    command = [
+        browser,
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--start-maximized",
+        f"--user-data-dir={profile_dir}",
+        safe_url,
+    ]
+    env = {**os.environ, "DISPLAY": display}
+    try:
+        subprocess.Popen(
+            command,
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    except OSError as exc:
+        raise FuseKitError(f"Could not open provider gate in VM browser: {exc}") from exc
+    return browser
+
+
+def _visual_browser_binary() -> str:
+    configured = os.environ.get("FUSEKIT_VISUAL_BROWSER", "").strip()
+    if configured:
+        return configured
+    for root in (
+        Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "")),
+        Path("/opt/fusekit-playwright-browsers"),
+    ):
+        if not str(root):
+            continue
+        for candidate in sorted(root.glob("chromium-*/chrome-linux*/chrome")):
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return str(candidate)
+    for name in ("google-chrome", "chromium-browser", "chromium", "xdg-open"):
+        resolved = shutil.which(name)
+        if resolved:
+            return resolved
+    return ""
+
+
+def _visual_display(job_state: Path) -> str:
+    visual_path = job_state.parent / "visual.json"
+    try:
+        visual = json.loads(visual_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        visual = {}
+    if isinstance(visual, dict):
+        display = str(visual.get("display", "") or "").strip()
+        if display:
+            return display
+    return os.environ.get("FUSEKIT_VISUAL_DISPLAY", ":99")
 
 
 def _is_loopback(host: str) -> bool:
