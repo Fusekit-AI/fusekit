@@ -893,6 +893,8 @@ def test_remote_bootstrap_artifacts_are_self_contained() -> None:
     assert 'Acquire::ForceIPv4 "true";' in cloud_init
     assert "http://archive.ubuntu.com/ubuntu" in cloud_init
     assert "http://security.ubuntu.com/ubuntu" in cloud_init
+    assert "package_update:" not in cloud_init
+    assert "\npackages:\n" not in cloud_init
     assert (
         "/usr/local/sbin/fusekit-retry apt-get -o Acquire::ForceIPv4=true update"
         in cloud_init

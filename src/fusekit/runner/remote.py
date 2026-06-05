@@ -132,17 +132,6 @@ apt:
   security:
     - arches: [default]
       uri: http://security.ubuntu.com/ubuntu
-package_update: true
-packages:
-  - python3
-  - python3-pip
-  - python3-venv
-  - git
-  - openssh-client
-  - unzip
-  - jq
-  - ca-certificates
-  - curl
 write_files:
   - path: /usr/local/sbin/fusekit-retry
     permissions: '0755'
