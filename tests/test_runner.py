@@ -893,6 +893,15 @@ def test_remote_bootstrap_artifacts_are_self_contained() -> None:
     assert 'Acquire::ForceIPv4 "true";' in cloud_init
     assert "http://archive.ubuntu.com/ubuntu" in cloud_init
     assert "http://security.ubuntu.com/ubuntu" in cloud_init
+    assert (
+        "/usr/local/sbin/fusekit-retry apt-get -o Acquire::ForceIPv4=true update"
+        in cloud_init
+    )
+    assert (
+        "DEBIAN_FRONTEND=noninteractive /usr/local/sbin/fusekit-retry apt-get"
+        in cloud_init
+    )
+    assert "-o Acquire::ForceIPv4=true install -y python3 python3-pip python3-venv" in cloud_init
     assert "iptables -I INPUT -p tcp --dport 8765 -j ACCEPT" in cloud_init
     assert "iptables -I INPUT -p tcp --dport 6080 -j ACCEPT" in cloud_init
     assert "python3-venv" in cloud_init

@@ -84,6 +84,11 @@ def render_cloud_init(*, fusekit_wheel_url: str = "", openclaw_install_url: str)
     python_bin = "/opt/fusekit-python/bin/python"
     playwright_browsers_path = "/opt/fusekit-playwright-browsers"
     retry_bin = "/usr/local/sbin/fusekit-retry"
+    apt_system_packages = (
+        "python3 python3-pip python3-venv git openssh-client unzip jq "
+        "ca-certificates curl"
+    )
+    apt_visual_packages = "xvfb fluxbox x11vnc novnc websockify"
     fusekit_install_flags = "--upgrade"
     if fusekit_wheel_url.startswith("git+"):
         fusekit_install_flags = "--upgrade --force-reinstall --no-cache-dir"
@@ -241,14 +246,21 @@ runcmd:
   - mkdir -p {playwright_browsers_path}
   - iptables -I INPUT -p tcp --dport {CONTROL_ROOM_PORT} -j ACCEPT || true
   - iptables -I INPUT -p tcp --dport {NOVNC_PORT} -j ACCEPT || true
+  - |
+    if command -v apt-get >/dev/null 2>&1; then
+      {retry_bin} apt-get -o Acquire::ForceIPv4=true update
+      DEBIAN_FRONTEND=noninteractive {retry_bin} apt-get \
+        -o Acquire::ForceIPv4=true install -y {apt_system_packages}
+    fi
   - python3 -m venv /opt/fusekit-python
   - {retry_bin} {install_pip_tools}
   - {retry_bin} {install_fusekit}
   - {retry_bin} {install_playwright}
   - |
     if command -v apt-get >/dev/null 2>&1; then
-      DEBIAN_FRONTEND=noninteractive apt-get update
-      DEBIAN_FRONTEND=noninteractive apt-get install -y xvfb fluxbox x11vnc novnc websockify
+      {retry_bin} apt-get -o Acquire::ForceIPv4=true update
+      DEBIAN_FRONTEND=noninteractive {retry_bin} apt-get \
+        -o Acquire::ForceIPv4=true install -y {apt_visual_packages}
     elif command -v dnf >/dev/null 2>&1; then
       dnf install -y xorg-x11-server-Xvfb fluxbox x11vnc novnc python3-websockify || true
     fi
