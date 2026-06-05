@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import os
 import subprocess
 from dataclasses import dataclass
@@ -56,30 +57,21 @@ def authorize_openclaw_llm(
         DEFAULT_OPENCLAW_AUTH_PROVIDER,
     )
     model_ref = config.openclaw_model_ref()
-    login_args = [
-        "models",
-        "auth",
-        "login",
-        "--provider",
-        auth_provider,
-        "--set-default",
-    ]
+    set_model = _openclaw_command(["config", "set", "agents.defaults.model.primary", model_ref])
+    completed = command_runner(set_model)
+    if completed.returncode != 0:
+        raise FuseKitError(_openclaw_failure_message(completed, set_model))
+
+    login_args = ["models", "auth", "login", "--provider", auth_provider, "--set-default"]
     if device_code:
         login_args.append("--device-code")
-    commands = [
-        _openclaw_command(login_args),
-        _openclaw_command(["config", "set", "agents.defaults.model.primary", model_ref]),
-        _openclaw_command(["models", "auth", "list", "--provider", auth_provider]),
-        _openclaw_command(["models", "status", "--check"]),
-    ]
-    for command in commands:
-        completed = command_runner(command)
-        if completed.returncode != 0:
-            raise FuseKitError(
-                completed.stderr
-                or completed.stdout
-                or f"OpenClaw LLM authorization failed: {' '.join(command)}"
-            )
+    if not _openclaw_auth_ready(command_runner, auth_provider):
+        _run_openclaw_checked(command_runner, _openclaw_command(login_args))
+    _run_openclaw_checked(
+        command_runner,
+        _openclaw_command(["models", "auth", "list", "--provider", auth_provider, "--json"]),
+    )
+    _run_openclaw_checked(command_runner, _openclaw_command(["models", "status", "--check"]))
     captured = _capture_sensitive_openclaw_state(vault, auth_provider)
     vault.put(
         "llm.openai.openclaw_profile",
@@ -99,6 +91,42 @@ def authorize_openclaw_llm(
         model_ref=model_ref,
         state_home=openclaw_state_home(),
         captured_state_files=tuple(captured),
+    )
+
+
+def _openclaw_auth_ready(command_runner: CommandRunner, auth_provider: str) -> bool:
+    auth_list = command_runner(
+        _openclaw_command(["models", "auth", "list", "--provider", auth_provider, "--json"])
+    )
+    if auth_list.returncode != 0 or not _auth_list_has_profiles(auth_list.stdout):
+        return False
+    status = command_runner(_openclaw_command(["models", "status", "--check"]))
+    return status.returncode == 0
+
+
+def _auth_list_has_profiles(stdout: str) -> bool:
+    try:
+        payload = json.loads(stdout or "{}")
+    except json.JSONDecodeError:
+        return False
+    profiles = payload.get("profiles")
+    return isinstance(profiles, list) and bool(profiles)
+
+
+def _run_openclaw_checked(command_runner: CommandRunner, command: list[str]) -> None:
+    completed = command_runner(command)
+    if completed.returncode != 0:
+        raise FuseKitError(_openclaw_failure_message(completed, command))
+
+
+def _openclaw_failure_message(
+    completed: subprocess.CompletedProcess[str],
+    command: list[str],
+) -> str:
+    return (
+        completed.stderr
+        or completed.stdout
+        or f"OpenClaw LLM authorization failed: {' '.join(command)}"
     )
 
 

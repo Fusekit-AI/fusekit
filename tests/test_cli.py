@@ -16,6 +16,7 @@ from fusekit.cli import (
     _playwright_headless,
     _repair_navigation_completed,
     _start_openclaw_auth_terminal,
+    _ui_navigator_from_vault,
     _verify_apply_live_url,
     main,
 )
@@ -124,6 +125,29 @@ def test_openclaw_auth_terminal_launches_visible_login(monkeypatch, tmp_path) ->
     assert calls[1]["command"][-1].startswith("https://auth.openai.com/oauth/authorize")
     assert calls[2]["command"][:2] == ["/usr/bin/xterm", "-geometry"]
     assert calls[0]["env"]["DISPLAY"] == ":99"
+
+
+def test_ui_navigator_uses_openclaw_gate_fallback_without_api_key() -> None:
+    args = argparse.Namespace(
+        llm_provider="openai",
+        llm_model="gpt-5.5",
+        llm_base_url="https://api.openai.com/v1",
+        llm_api_key_env="OPENAI_API_KEY",
+    )
+    vault = Vault.empty()
+    vault.put(
+        "llm.openai.openclaw_profile",
+        "llm_openclaw_profile",
+        "openclaw",
+        "OpenClaw OpenAI authorization profile",
+        "openai:openai/gpt-5.5",
+    )
+
+    navigator = _ui_navigator_from_vault(args, vault)
+    action = navigator.next_action(provider="resend", goal="create key", snapshot="{}", history=[])
+
+    assert action.action == "gate"
+    assert "OpenClaw/OpenAI OAuth is authorized" in action.reason
 
 
 def test_install_can_write_local_cloud_shell_launcher(tmp_path) -> None:

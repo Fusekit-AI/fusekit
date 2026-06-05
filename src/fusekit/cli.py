@@ -102,9 +102,11 @@ from fusekit.source import (
 )
 from fusekit.spine import (
     BrowserPlaybookEvent,
+    InferredUiAction,
     OpenAiUiNavigator,
     OpenClawBrowserSpine,
     PlaywrightBrowserSpine,
+    StaticUiNavigator,
     execute_provider_ui_playbook,
     provider_authorization_playbook,
     provider_handoff_playbook,
@@ -2454,7 +2456,7 @@ def _run_handoff(
                     goal=goal or _provider_ui_goal(provider, include_project),
                     start_url=handoff.signup_url,
                     spine=playwright_spine,
-                    navigator=OpenAiUiNavigator(_llm_config_from_args(args), vault),
+                    navigator=_ui_navigator_from_vault(args, vault),
                     gate_retry_seconds=float(getattr(args, "gate_retry_seconds", 300.0)),
                     max_gate_attempts=int(getattr(args, "gate_max_attempts", 0)),
                     gate_recorder=_gate_recorder(args),
@@ -2492,7 +2494,7 @@ def _run_handoff(
                 goal=goal or _provider_ui_goal(provider, include_project),
                 start_url=handoff.signup_url,
                 spine=openclaw_spine,
-                navigator=OpenAiUiNavigator(_llm_config_from_args(args), vault),
+                navigator=_ui_navigator_from_vault(args, vault),
                 gate_retry_seconds=float(getattr(args, "gate_retry_seconds", 300.0)),
                 max_gate_attempts=int(getattr(args, "gate_max_attempts", 0)),
                 gate_recorder=_gate_recorder(args),
@@ -3479,7 +3481,7 @@ def _run_provider_repair_navigation(
                 goal=goal,
                 start_url=start_url,
                 spine=spine,
-                navigator=OpenAiUiNavigator(_llm_config_from_args(args), vault),
+                navigator=_ui_navigator_from_vault(args, vault),
                 max_steps=max_steps,
                 gate_retry_seconds=float(getattr(args, "gate_retry_seconds", 300.0)),
                 max_gate_attempts=int(getattr(args, "gate_max_attempts", 0)),
@@ -3498,7 +3500,7 @@ def _run_provider_repair_navigation(
         goal=goal,
         start_url=start_url,
         spine=openclaw_spine,
-        navigator=OpenAiUiNavigator(_llm_config_from_args(args), vault),
+        navigator=_ui_navigator_from_vault(args, vault),
         max_steps=max_steps,
         gate_retry_seconds=float(getattr(args, "gate_retry_seconds", 300.0)),
         max_gate_attempts=int(getattr(args, "gate_max_attempts", 0)),
@@ -3697,6 +3699,36 @@ def _llm_config_from_args(args: argparse.Namespace) -> LlmConfig:
         model=args.llm_model,
         base_url=args.llm_base_url,
         api_key_env=args.llm_api_key_env,
+    )
+
+
+def _ui_navigator_from_vault(args: argparse.Namespace, vault: Vault):
+    config = _llm_config_from_args(args)
+    try:
+        vault.require(config.record_id)
+    except FuseKitError:
+        pass
+    else:
+        return OpenAiUiNavigator(config, vault)
+    try:
+        vault.require("llm.openai.openclaw_profile")
+    except FuseKitError:
+        raise FuseKitError(
+            f"UI inference needs {config.record_id} or an OpenClaw OAuth profile. "
+            "Authorize OpenClaw/OpenAI or provide an LLM API key."
+        )
+    return StaticUiNavigator(
+        [
+            InferredUiAction(
+                "gate",
+                reason=(
+                    "OpenClaw/OpenAI OAuth is authorized, but local OpenClaw model "
+                    "inference is not available to FuseKit in this runtime. Complete "
+                    "the visible provider setup step manually; FuseKit will keep the "
+                    "gate durable and verify afterward."
+                ),
+            )
+        ]
     )
 
 

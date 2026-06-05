@@ -35,7 +35,7 @@ def test_openclaw_spine_builds_browser_commands() -> None:
         [
             "env",
             f"OPENCLAW_HOME={bootstrap.openclaw_state_home()}",
-            "openclaw",
+            bootstrap.openclaw_binary(),
             "browser",
             "--browser-profile",
             "work",
@@ -85,7 +85,7 @@ def test_openclaw_spine_can_use_default_openclaw_home(monkeypatch) -> None:
     assert result.status == "ok"
     assert calls == [
         [
-            "openclaw",
+            bootstrap.openclaw_binary(),
             "browser",
             "--browser-profile",
             "work",
