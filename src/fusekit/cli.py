@@ -3798,24 +3798,169 @@ def _current_visual_payload(args: argparse.Namespace) -> dict[str, Any]:
 
 def _start_openclaw_auth_terminal(*, provider: str, device_code: bool) -> bool:
     display = os.environ.get("DISPLAY", "")
-    xterm = shutil.which("xterm")
     openclaw = shutil.which("openclaw")
-    if not display or not xterm or not openclaw:
+    if not display or not openclaw:
         return False
     state_home = openclaw_state_home()
-    log_path = Path("/var/lib/fusekit-runner/visual/openclaw-auth-xterm.log")
+    visual_dir = Path(os.environ.get("FUSEKIT_VISUAL_STATE_DIR", "/var/lib/fusekit-runner/visual"))
+    script_log_path = visual_dir / "openclaw-auth-pty.log"
+    xterm_log_path = visual_dir / "openclaw-auth-xterm.log"
     try:
-        log_path.parent.mkdir(parents=True, exist_ok=True)
+        visual_dir.mkdir(parents=True, exist_ok=True)
     except OSError:
-        log_path = Path(os.devnull)
+        visual_dir = Path(os.devnull)
+        script_log_path = Path(os.devnull)
+        xterm_log_path = Path(os.devnull)
+    login_command = (
+        f"OPENCLAW_HOME={shlex_quote(str(state_home))} "
+        f"{shlex_quote(openclaw)} models auth login --provider {shlex_quote(provider)} "
+        f"--set-default{' --device-code' if device_code else ''}"
+    )
+    env = {**os.environ, "DISPLAY": display, "OPENCLAW_HOME": str(state_home)}
+    if _start_openclaw_auth_pty(
+        login_command=login_command,
+        log_path=script_log_path,
+        env=env,
+    ):
+        _launch_visual_chrome_to_openclaw_auth(log_path=script_log_path, env=env)
+        _start_openclaw_auth_tail_window(log_path=script_log_path, env=env)
+        return True
+    return _start_openclaw_auth_xterm(
+        login_command=login_command,
+        log_path=xterm_log_path,
+        env=env,
+    )
+
+
+def _start_openclaw_auth_pty(
+    *,
+    login_command: str,
+    log_path: Path,
+    env: dict[str, str],
+) -> bool:
+    script_bin = shutil.which("script")
+    if not script_bin:
+        return False
+    try:
+        subprocess.Popen(
+            [script_bin, "-qfec", login_command, str(log_path)],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    except OSError:
+        return False
+    return True
+
+
+def _launch_visual_chrome_to_openclaw_auth(*, log_path: Path, env: dict[str, str]) -> bool:
+    url = ""
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        try:
+            text = log_path.read_text(errors="ignore")
+        except OSError:
+            text = ""
+        match = re.search(r"https://auth\.openai\.com/oauth/authorize[^\s\x1b]+", text)
+        if match:
+            url = match.group(0)
+            break
+        time.sleep(0.5)
+    if not url:
+        return False
+    chrome = _visual_chrome_binary()
+    if not chrome:
+        return False
+    try:
+        subprocess.Popen(
+            [
+                str(chrome),
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--start-maximized",
+                f"--user-data-dir={log_path.parent / 'chrome-auth-profile'}",
+                url,
+            ],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    except OSError:
+        return False
+    return True
+
+
+def _visual_chrome_binary() -> Path | None:
+    browser_root = Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH", ""))
+    candidates: list[Path] = []
+    if browser_root:
+        candidates.extend(browser_root.glob("chromium-*/chrome-linux*/chrome"))
+        candidates.extend(browser_root.glob("chromium-*/chrome-linux64/chrome"))
+    candidates.extend(Path("/opt/fusekit-playwright-browsers").glob("chromium-*/chrome-linux*/chrome"))
+    candidates.extend(Path("/opt/fusekit-playwright-browsers").glob("chromium-*/chrome-linux64/chrome"))
+    for candidate in candidates:
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
+def _start_openclaw_auth_tail_window(*, log_path: Path, env: dict[str, str]) -> bool:
+    xterm = shutil.which("xterm")
+    if not xterm:
+        return False
+    tail_script = (
+        "echo 'FuseKit OpenClaw/OpenAI authorization'; "
+        "echo; "
+        "echo 'FuseKit opened the OpenAI sign-in page in the VM browser.'; "
+        "echo 'Finish sign-in there. This window mirrors the auth listener log.'; "
+        "echo; "
+        f"tail -f {shlex_quote(str(log_path))}; "
+    )
+    try:
+        subprocess.Popen(
+            [
+                xterm,
+                "-geometry",
+                "132x36+80+80",
+                "-fa",
+                "Monospace",
+                "-fs",
+                "12",
+                "-title",
+                "FuseKit OpenClaw OpenAI Authorization",
+                "-e",
+                "bash",
+                "-lc",
+                tail_script,
+            ],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    except OSError:
+        return False
+    return True
+
+
+def _start_openclaw_auth_xterm(
+    *,
+    login_command: str,
+    log_path: Path,
+    env: dict[str, str],
+) -> bool:
+    xterm = shutil.which("xterm")
+    if not xterm:
+        return False
     script = (
         "echo 'FuseKit OpenClaw/OpenAI authorization'; "
         "echo; "
         "echo 'Complete the login shown here. When it finishes, leave this window open.'; "
         "echo; "
-        f"OPENCLAW_HOME={shlex_quote(str(state_home))} "
-        f"{shlex_quote(openclaw)} models auth login --provider {shlex_quote(provider)} "
-        f"--set-default{' --device-code' if device_code else ''}; "
+        f"{login_command}; "
         "status=$?; "
         "echo; "
         "echo \"Auth command exited with status $status\"; "
@@ -3823,11 +3968,6 @@ def _start_openclaw_auth_terminal(*, provider: str, device_code: bool) -> bool:
         "read -r -p 'Press Enter to close this terminal...' _; "
         "exit $status"
     )
-    env = {
-        **os.environ,
-        "DISPLAY": display,
-        "OPENCLAW_HOME": str(state_home),
-    }
     try:
         log_file = log_path.open("ab")
     except OSError:

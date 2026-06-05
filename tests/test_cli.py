@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 from urllib.error import URLError
 
 import pytest
@@ -83,18 +84,45 @@ def test_openclaw_auth_terminal_launches_visible_login(monkeypatch, tmp_path) ->
 
     monkeypatch.setenv("DISPLAY", ":99")
     monkeypatch.setenv("FUSEKIT_HOME", str(tmp_path / "runtime"))
+    monkeypatch.setenv("FUSEKIT_VISUAL_STATE_DIR", str(tmp_path / "visual"))
+    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path / "browsers"))
+    chrome = tmp_path / "browsers" / "chromium-1" / "chrome-linux64" / "chrome"
+    chrome.parent.mkdir(parents=True)
+    chrome.write_text("#!/bin/sh\n", encoding="utf-8")
+    chrome.chmod(0o755)
     monkeypatch.setattr(
         "fusekit.cli.shutil.which",
-        lambda name: {"xterm": "/usr/bin/xterm", "openclaw": "/opt/openclaw/bin/openclaw"}.get(name),
+        lambda name: {
+            "script": "/usr/bin/script",
+            "xterm": "/usr/bin/xterm",
+            "openclaw": "/opt/openclaw/bin/openclaw",
+        }.get(name),
     )
     monkeypatch.setattr("fusekit.cli.subprocess.Popen", fake_popen)
+    log = tmp_path / "visual" / "openclaw-auth-pty.log"
+
+    def fake_read_text(*args, **kwargs):  # type: ignore[no-untyped-def]
+        return (
+            "Open this URL in your LOCAL browser:\n"
+            "https://auth.openai.com/oauth/authorize?response_type=code"
+        )
+
+    monkeypatch.setattr("pathlib.Path.read_text", fake_read_text)
 
     assert _start_openclaw_auth_terminal(provider="openai", device_code=True) is True
 
-    command = calls[0]["command"]
-    assert command[:2] == ["/usr/bin/xterm", "-geometry"]
-    script = command[-1]
-    assert "models auth login --provider 'openai' --set-default --device-code" in script
+    assert calls[0]["command"] == [
+        "/usr/bin/script",
+        "-qfec",
+        calls[0]["command"][2],
+        str(log),
+    ]
+    script_command = calls[0]["command"][2]
+    assert f"OPENCLAW_HOME='{tmp_path / 'runtime' / 'openclaw-state'}'" in script_command
+    assert "'/opt/openclaw/bin/openclaw' models auth login" in script_command
+    assert "--provider 'openai' --set-default --device-code" in script_command
+    assert calls[1]["command"][-1].startswith("https://auth.openai.com/oauth/authorize")
+    assert calls[2]["command"][:2] == ["/usr/bin/xterm", "-geometry"]
     assert calls[0]["env"]["DISPLAY"] == ":99"
 
 
