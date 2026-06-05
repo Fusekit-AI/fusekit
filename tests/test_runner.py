@@ -722,6 +722,9 @@ def test_control_room_payload_and_html_include_visual_session(tmp_path) -> None:
     assert 'data-copy-label="password"' in html
     assert "Copy browser link" in html
     assert "http://203.0.113.10:6080/vnc.html?autoconnect=1" in html
+    assert "data-visual-status" in html
+    assert "sameVisualSession" in html
+    assert "root.dataset.novncUrl" in html
 
 
 def test_control_room_payload_and_html_include_provider_strategy_routes(tmp_path) -> None:
@@ -927,7 +930,7 @@ def test_remote_bootstrap_artifacts_are_self_contained() -> None:
     ) in cloud_init
     assert "chromium-browser" not in cloud_init
     assert "sync_playwright" in cloud_init
-    assert "xvfb fluxbox x11vnc novnc websockify" in cloud_init
+    assert "xvfb fluxbox x11vnc novnc websockify xterm" in cloud_init
     assert "fusekit-visual-start" in cloud_init
     assert "websockify --web \"$novnc_web\" 0.0.0.0:6080 localhost:5900" in cloud_init
     assert "x11vnc -display \"$display\" -localhost" in cloud_init

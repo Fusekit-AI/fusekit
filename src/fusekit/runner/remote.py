@@ -88,7 +88,7 @@ def render_cloud_init(*, fusekit_wheel_url: str = "", openclaw_install_url: str)
         "python3 python3-pip python3-venv git openssh-client unzip jq "
         "ca-certificates curl"
     )
-    apt_visual_packages = "xvfb fluxbox x11vnc novnc websockify"
+    apt_visual_packages = "xvfb fluxbox x11vnc novnc websockify xterm"
     fusekit_install_flags = "--upgrade"
     if fusekit_wheel_url.startswith("git+"):
         fusekit_install_flags = "--upgrade --force-reinstall --no-cache-dir"

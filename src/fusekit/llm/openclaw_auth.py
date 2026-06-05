@@ -15,7 +15,7 @@ from fusekit.llm.config import LlmConfig
 from fusekit.runtime.bootstrap import openclaw_binary, openclaw_state_home
 from fusekit.vault import Vault
 
-DEFAULT_OPENCLAW_AUTH_PROVIDER = "openai-codex"
+DEFAULT_OPENCLAW_AUTH_PROVIDER = "openai"
 
 
 class CommandRunner(Protocol):

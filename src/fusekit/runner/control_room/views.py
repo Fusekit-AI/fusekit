@@ -276,7 +276,9 @@ def _render_visual_session(visual: Any) -> str:
           <span class="section-kicker">Live VM browser</span>
           <h2>Human gates happen here</h2>
         </div>
-        <span class="live-pill">Visual session: {html.escape(status)}</span>
+        <span class="live-pill" data-visual-status>
+          Visual session: {html.escape(status)}
+        </span>
       </div>
       <div class="visual-grid">
         <iframe

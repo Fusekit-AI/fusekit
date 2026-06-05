@@ -355,6 +355,20 @@ function renderVisual(job) {
   const controlRoomUrl = String(visual.control_room_url || "");
   const status = String(visual.status || "ready");
   const password = String(visual.novnc_password || "");
+  const sameVisualSession =
+    root.dataset.novncUrl === novncUrl &&
+    root.dataset.controlRoomUrl === controlRoomUrl &&
+    root.dataset.novncPassword === password;
+  if (sameVisualSession && root.querySelector("iframe.visual-frame")) {
+    const statusNode = root.querySelector("[data-visual-status]");
+    if (statusNode) {
+      statusNode.textContent = `Visual session: ${status}`;
+    }
+    return;
+  }
+  root.dataset.novncUrl = novncUrl;
+  root.dataset.controlRoomUrl = controlRoomUrl;
+  root.dataset.novncPassword = password;
   const passwordRow = password
     ? `
         <div class="visual-secret-row">
@@ -378,7 +392,7 @@ function renderVisual(job) {
           <span class="section-kicker">Live VM browser</span>
           <h2>Human gates happen here</h2>
         </div>
-        <span class="live-pill">Visual session: ${escapeHtml(status)}</span>
+        <span class="live-pill" data-visual-status>Visual session: ${escapeHtml(status)}</span>
       </div>
       <div class="visual-grid">
         <iframe

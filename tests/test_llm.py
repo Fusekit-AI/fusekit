@@ -39,7 +39,7 @@ def test_openclaw_llm_auth_captures_auth_state_in_vault(monkeypatch, tmp_path) -
     vault = Vault.empty()
     result = authorize_openclaw_llm(vault, LlmConfig(), runner=runner)
 
-    assert result.auth_provider == "openai-codex"
+    assert result.auth_provider == "openai"
     assert result.model_ref == "openai/gpt-5.5"
     assert calls[0] == [
         "env",
@@ -49,7 +49,7 @@ def test_openclaw_llm_auth_captures_auth_state_in_vault(monkeypatch, tmp_path) -
         "auth",
         "login",
         "--provider",
-        "openai-codex",
+        "openai",
         "--set-default",
     ]
     profile = vault.require("llm.openai.openclaw_profile")

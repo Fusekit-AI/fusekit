@@ -7,6 +7,8 @@ import getpass
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import time
 import uuid
@@ -3713,13 +3715,16 @@ def _await_openclaw_llm_authorization(
                 config,
                 device_code=bool(getattr(args, "llm_openclaw_device_code", False)),
             )
-        except FuseKitError:
+        except FuseKitError as exc:
+            resume_url, follow_steps = _openclaw_llm_auth_gate_handoff(args, config, exc)
             _record_gate_waiting(
                 args,
                 gate_id,
                 provider=config.provider,
                 reason="OpenAI/OpenClaw browser or device-code authorization",
-                resume_url=config.base_url,
+                resume_url=resume_url,
+                follow_steps=follow_steps,
+                classification="interactive-terminal",
             )
             _ensure_gate_attempt_allowed(args, attempt, "OpenAI/OpenClaw LLM authorization")
             print(
@@ -3741,6 +3746,127 @@ def _await_openclaw_llm_authorization(
         )
         args._detonate_openclaw_state = True
         return
+
+
+def _openclaw_llm_auth_gate_handoff(
+    args: argparse.Namespace,
+    config: LlmConfig,
+    error: FuseKitError,
+) -> tuple[str, tuple[str, ...]]:
+    visual = _current_visual_payload(args)
+    novnc_url = str(visual.get("novnc_url", "") or "")
+    provider = os.environ.get("FUSEKIT_OPENCLAW_LLM_AUTH_PROVIDER", "openai")
+    device_code = bool(getattr(args, "llm_openclaw_device_code", False))
+    terminal_started = _start_openclaw_auth_terminal(provider=provider, device_code=device_code)
+    if terminal_started:
+        return (
+            novnc_url or config.base_url,
+            (
+                "Open the live VM browser surface.",
+                "Enter the noVNC password if prompted.",
+                "Use the visible FuseKit OpenClaw authorization terminal to complete OpenAI login.",
+                "Leave the terminal open after it finishes; FuseKit retries this gate automatically.",
+            ),
+        )
+    detail = str(error).strip()
+    if "interactive TTY" in detail:
+        return (
+            novnc_url or config.base_url,
+            (
+                "Open the live VM browser surface if one is available.",
+                "Open a terminal in the VM and run: openclaw models auth login --provider openai --set-default",
+                "FuseKit retries this gate automatically after the configured wait interval.",
+            ),
+        )
+    return (
+        config.base_url,
+        (
+            "Complete OpenClaw/OpenAI authorization, then leave FuseKit running.",
+            "FuseKit retries this gate automatically after the configured wait interval.",
+        ),
+    )
+
+
+def _current_visual_payload(args: argparse.Namespace) -> dict[str, Any]:
+    path = _gate_state_path(args).parent / "visual.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _start_openclaw_auth_terminal(*, provider: str, device_code: bool) -> bool:
+    display = os.environ.get("DISPLAY", "")
+    xterm = shutil.which("xterm")
+    openclaw = shutil.which("openclaw")
+    if not display or not xterm or not openclaw:
+        return False
+    state_home = openclaw_state_home()
+    log_path = Path("/var/lib/fusekit-runner/visual/openclaw-auth-xterm.log")
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        log_path = Path(os.devnull)
+    script = (
+        "echo 'FuseKit OpenClaw/OpenAI authorization'; "
+        "echo; "
+        "echo 'Complete the login shown here. When it finishes, leave this window open.'; "
+        "echo; "
+        f"OPENCLAW_HOME={shlex_quote(str(state_home))} "
+        f"{shlex_quote(openclaw)} models auth login --provider {shlex_quote(provider)} "
+        f"--set-default{' --device-code' if device_code else ''}; "
+        "status=$?; "
+        "echo; "
+        "echo \"Auth command exited with status $status\"; "
+        "echo 'FuseKit will retry automatically. You can close this terminal after the gate passes.'; "
+        "read -r -p 'Press Enter to close this terminal...' _; "
+        "exit $status"
+    )
+    env = {
+        **os.environ,
+        "DISPLAY": display,
+        "OPENCLAW_HOME": str(state_home),
+    }
+    try:
+        log_file = log_path.open("ab")
+    except OSError:
+        log_file = subprocess.DEVNULL
+    try:
+        subprocess.Popen(
+            [
+                xterm,
+                "-geometry",
+                "132x36+80+80",
+                "-fa",
+                "Monospace",
+                "-fs",
+                "12",
+                "-title",
+                "FuseKit OpenClaw OpenAI Authorization",
+                "-e",
+                "bash",
+                "-lc",
+                script,
+            ],
+            env=env,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    except OSError:
+        if hasattr(log_file, "close"):
+            log_file.close()
+        return False
+    if hasattr(log_file, "close"):
+        log_file.close()
+    return True
+
+
+def shlex_quote(value: str) -> str:
+    """Quote a value for the small VM-local shell handoff script."""
+
+    return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
 def _provider_token(vault: Vault, provider: str, env_name: str) -> str:

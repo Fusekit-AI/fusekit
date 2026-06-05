@@ -14,6 +14,7 @@ from fusekit.cli import (
     _local_verification_job_result,
     _playwright_headless,
     _repair_navigation_completed,
+    _start_openclaw_auth_terminal,
     _verify_apply_live_url,
     main,
 )
@@ -61,6 +62,40 @@ def test_playwright_fallback_preserves_visible_local_browser(monkeypatch) -> Non
     monkeypatch.setattr("fusekit.cli._openclaw_browser_available", lambda args: False)
 
     assert _playwright_headless(args) is False
+
+
+def test_openclaw_auth_terminal_requires_visual_display(monkeypatch) -> None:
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.setattr("fusekit.cli.shutil.which", lambda name: f"/usr/bin/{name}")
+
+    assert _start_openclaw_auth_terminal(provider="openai", device_code=False) is False
+
+
+def test_openclaw_auth_terminal_launches_visible_login(monkeypatch, tmp_path) -> None:
+    calls: list[dict[str, object]] = []
+
+    class FakeProcess:
+        pass
+
+    def fake_popen(command, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append({"command": command, **kwargs})
+        return FakeProcess()
+
+    monkeypatch.setenv("DISPLAY", ":99")
+    monkeypatch.setenv("FUSEKIT_HOME", str(tmp_path / "runtime"))
+    monkeypatch.setattr(
+        "fusekit.cli.shutil.which",
+        lambda name: {"xterm": "/usr/bin/xterm", "openclaw": "/opt/openclaw/bin/openclaw"}.get(name),
+    )
+    monkeypatch.setattr("fusekit.cli.subprocess.Popen", fake_popen)
+
+    assert _start_openclaw_auth_terminal(provider="openai", device_code=True) is True
+
+    command = calls[0]["command"]
+    assert command[:2] == ["/usr/bin/xterm", "-geometry"]
+    script = command[-1]
+    assert "models auth login --provider 'openai' --set-default --device-code" in script
+    assert calls[0]["env"]["DISPLAY"] == ":99"
 
 
 def test_install_can_write_local_cloud_shell_launcher(tmp_path) -> None:
