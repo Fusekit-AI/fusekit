@@ -1370,7 +1370,7 @@ def _apply_loaded_manifest(args: argparse.Namespace, manifest: SetupManifest) ->
         _run_manifest_provider_pack_setup(args, manifest, context)
 
         if args.live_url:
-            _verify_apply_live_url(args, audit, receipt, verification_report)
+            _verify_apply_live_url(args, audit, receipt, verification_report, manifest=manifest)
 
         _verify_provider_packs(args, manifest, vault, audit, receipt, verification_report)
         provider_checks_ready = verification_report_allows_launch_progress(
@@ -1402,14 +1402,18 @@ def _verify_apply_live_url(
     audit: AuditLog,
     receipt: Receipt,
     verification_report: VerificationReport,
+    manifest: SetupManifest | None = None,
 ) -> None:
     url = str(args.live_url)
     try:
         result = verify_live_url(url)
     except ProviderError as exc:
-        if not bool(getattr(args, "allow_incomplete", False)) and not _has_pending_provider_gate(
-            args
-        ):
+        pending_safe = (
+            bool(getattr(args, "allow_incomplete", False))
+            or _has_pending_provider_gate(args)
+            or _live_url_waiting_on_dns_approval(args, manifest)
+        )
+        if not pending_safe:
             raise
         result = {
             "url": url,
@@ -1426,6 +1430,18 @@ def _verify_apply_live_url(
         "ok" if result["ok"] else "pending" if result.get("pending_safe") else "failed",
         result,
     )
+
+
+def _live_url_waiting_on_dns_approval(
+    args: argparse.Namespace,
+    manifest: SetupManifest | None,
+) -> bool:
+    if manifest is None or bool(getattr(args, "approve_dns", False)):
+        return False
+    hostname = urlparse(str(getattr(args, "live_url", ""))).hostname or ""
+    if not hostname:
+        return False
+    return hostname in {domain.domain for domain in manifest.domains}
 
 
 def _has_pending_provider_gate(args: argparse.Namespace) -> bool:

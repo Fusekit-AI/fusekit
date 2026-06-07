@@ -30,7 +30,7 @@ from fusekit.cli import (
 )
 from fusekit.detonation.preflight import verification_report_allows_detonation
 from fusekit.errors import FuseKitError, ProviderError
-from fusekit.manifest import ServiceRequirement, SetupManifest, write_manifest
+from fusekit.manifest import DomainRequirement, ServiceRequirement, SetupManifest, write_manifest
 from fusekit.providers.capability_pack import (
     VerificationRecipe,
     synthesize_provider_pack,
@@ -2101,6 +2101,64 @@ def test_pending_provider_gate_makes_live_url_failure_pending_safe(
     assert payload["checks"][0]["status"] == "pending"
     assert payload["checks"][0]["details"]["pending_safe"] is True
     assert receipt.actions[0]["status"] == "pending"
+
+
+def test_custom_domain_without_dns_approval_makes_live_url_failure_pending_safe(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    args = argparse.Namespace(
+        app=tmp_path,
+        live_url="https://moonlite.rsvp",
+        allow_incomplete=False,
+        approve_dns=False,
+    )
+    manifest = SetupManifest(
+        app_name="app",
+        domains=(DomainRequirement(domain="moonlite.rsvp", provider="cloudflare"),),
+    )
+    audit = AuditLog(tmp_path / "audit.jsonl")
+    receipt = Receipt(app_name="app", vault_path="vault.json")
+    report = VerificationReport(app_name="app", live_url=args.live_url)
+
+    def fail_live_url(url: str) -> dict[str, object]:
+        raise ProviderError(f"Live URL verification failed: {url}")
+
+    monkeypatch.setattr("fusekit.cli.verify_live_url", fail_live_url)
+
+    _verify_apply_live_url(args, audit, receipt, report, manifest=manifest)
+
+    payload = report.to_dict()
+    assert payload["checks"][0]["status"] == "pending"
+    assert payload["checks"][0]["details"]["pending_safe"] is True
+    assert receipt.actions[0]["status"] == "pending"
+
+
+def test_custom_domain_with_dns_approval_keeps_live_url_failure_strict(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    args = argparse.Namespace(
+        app=tmp_path,
+        live_url="https://moonlite.rsvp",
+        allow_incomplete=False,
+        approve_dns=True,
+    )
+    manifest = SetupManifest(
+        app_name="app",
+        domains=(DomainRequirement(domain="moonlite.rsvp", provider="cloudflare"),),
+    )
+    audit = AuditLog(tmp_path / "audit.jsonl")
+    receipt = Receipt(app_name="app", vault_path="vault.json")
+    report = VerificationReport(app_name="app", live_url=args.live_url)
+
+    def fail_live_url(url: str) -> dict[str, object]:
+        raise ProviderError(f"Live URL verification failed: {url}")
+
+    monkeypatch.setattr("fusekit.cli.verify_live_url", fail_live_url)
+
+    with pytest.raises(ProviderError):
+        _verify_apply_live_url(args, audit, receipt, report, manifest=manifest)
 
 
 def test_pending_provider_gate_disables_verification_retries(tmp_path) -> None:
