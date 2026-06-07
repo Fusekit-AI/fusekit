@@ -1,0 +1,47 @@
+# Magic Path Friction Log
+
+FuseKit's public promise is that the user logs in, approves real provider gates, and
+then watches FuseKit do the work through the launcher/control-room surface. Any step
+that requires the user to infer provider setup, paste side-channel commands, debug VM
+state, or decide which provider page matters is a product bug until it is automated,
+guided, or explicitly verified.
+
+## Product Rules
+
+- Provider gates must open inside the live VM browser session that FuseKit observes.
+- Verification failures that require a human must create durable control-room gates
+  with exact follow-me steps and the right provider URL.
+- DNS changes are allowed only after explicit approval, then FuseKit applies the
+  approved record shape and verifies propagation.
+- Secrets must be captured only into the encrypted vault or provider-native secret
+  stores; no launcher/control-room route may expose raw secret text.
+- "I finished this step" must trigger a visible state transition: either reverify,
+  surface the next guided gate, or show the exact remaining blocker.
+- Every real-run intervention should become an audit event, regression test, or
+  tracked backlog item before launch readiness is claimed.
+
+## Logged Friction And Fixes
+
+| Friction observed | Product fix |
+| --- | --- |
+| OCI launched ARM or too-small shapes that broke Python, uv, Node, OpenClaw, and browser runtime binaries. | Runner provisioning now prefers x86_64 Flex runners sized for visual/browser automation and rejects ARM fallback for the OCI lane. |
+| SSH reachability failed on older clients due to unsupported SSH options and image-specific login users. | OCI bootstrap now resolves the image user and avoids brittle SSH algorithm options when the client cannot support them. |
+| OCI compartment creation caused permission and cleanup churn. | The launcher can use the tenancy/root compartment path and must avoid unnecessary compartment creation for public runs. |
+| Provider pages opened in a local browser instead of the VM browser FuseKit observes. | Control-room gate-open actions launch provider URLs in the shared VM browser profile. |
+| noVNC/control-room loops made the user re-enter passwords or stare at a blank display. | Visual runtime readiness is surfaced as control-room state, and gates point users to the same VM browser session. |
+| Cloudflare DNS approval and application happened outside the guided launcher path. | DNS approval is treated as a first-class approval gate; after approval FuseKit applies and verifies the exact records. |
+| Resend account pages gave no exact instruction for API key, domain, audience ID, or from-email setup. | Verification-time Resend failures now create actionable control-room gates with Resend-specific follow-me steps. |
+| "I finished this step" sometimes appeared to do nothing after a provider gate was passed. | Provider verification gates are regenerated from verification results, so the next missing capability becomes visible instead of hiding in the report. |
+| Missing Vercel/GitHub runtime env values were reported as provider checks rather than guided Resend tasks. | Missing `RESEND_*` runtime values now route to a Resend runtime-values gate with exact capture instructions. |
+
+## Open Acceptance Items
+
+- Finish a full live Moonlite RSVP run where Cloudflare DNS, Resend domain/API key,
+  Resend audience/from email, Vercel env vars, GitHub secrets, deployment, and live
+  URL health all pass or are pending-safe without side-channel instructions.
+- Confirm the control-room copy path works for VM-local secret capture and never
+  copies raw secrets into the host page.
+- Add a visible "what Snowman is doing next" message after every gate pass.
+- Reduce VNC usage by preferring provider APIs after login/consent, using the VNC
+  only for real human gates such as login, MFA, CAPTCHA, consent, payment, and
+  provider-owned copy-once secret screens.

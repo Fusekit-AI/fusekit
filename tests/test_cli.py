@@ -19,6 +19,7 @@ from fusekit.cli import (
     _playwright_headless,
     _provider_verification_attempt_config,
     _provider_verification_acceptable,
+    _record_provider_verification_gates,
     _repair_navigation_completed,
     _rebase_setup_artifacts,
     _run_handoff,
@@ -37,8 +38,8 @@ from fusekit.providers.capability_pack import (
     synthesize_provider_pack,
     write_provider_pack,
 )
-from fusekit.providers.verification import VerificationResult
 from fusekit.providers.handoff import handoff_for
+from fusekit.providers.verification import VerificationResult
 from fusekit.runner.gates import GateService
 from fusekit.runner.oci_live import OciWorkspace
 from fusekit.spine.playbooks import BrowserPlaybookEvent
@@ -1063,6 +1064,91 @@ def test_apply_writes_verification_report_when_provider_check_fails(tmp_path) ->
     assert report["counts"]["failed"] == 1
     assert report["checks"][0]["status"] == "failed"
     assert "rerun verification" in report["checks"][0]["repair"]
+
+
+def test_verification_gate_records_resend_api_key_follow_me(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    args = argparse.Namespace(app=app)
+    manifest = SetupManifest(
+        app_name="app",
+        app_path=str(app),
+        domains=(DomainRequirement(provider="cloudflare", domain="moonlite.rsvp"),),
+    )
+    pack = synthesize_provider_pack("resend", app)
+    result = VerificationResult(
+        provider="resend",
+        kind="http-json",
+        target="https://api.resend.com/domains",
+        status="needs_human_gate",
+        details={
+            "reason": (
+                "Resend rejected the captured API key for domain access. "
+                "Create or capture a Resend key with sending/domain access."
+            ),
+            "service_gate": True,
+        },
+    )
+
+    recorded = _record_provider_verification_gates(args, manifest, pack, [result])
+
+    assert recorded == [
+        {
+            "id": "provider.resend.api-key-domain-access",
+            "provider": "resend",
+            "classification": "provider-authorization",
+            "target": "RESEND_API_KEY",
+        }
+    ]
+    gate = GateService.load(app / ".fusekit" / "gates.json").records[
+        "provider.resend.api-key-domain-access"
+    ]
+    assert gate.resume_url == "https://resend.com/api-keys"
+    assert "live VM browser" in " ".join(gate.follow_steps)
+    assert "domains for moonlite.rsvp" in " ".join(gate.follow_steps)
+
+
+def test_verification_gate_routes_resend_runtime_values_from_vercel(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    args = argparse.Namespace(app=app)
+    manifest = SetupManifest(
+        app_name="app",
+        app_path=str(app),
+        domains=(DomainRequirement(provider="cloudflare", domain="moonlite.rsvp"),),
+    )
+    pack = synthesize_provider_pack("vercel", app)
+    result = VerificationResult(
+        provider="vercel",
+        kind="vercel-env",
+        target="moonlite-rsvp-demo",
+        status="needs_human_gate",
+        details={
+            "reason": (
+                "Vercel is missing runtime values RESEND_AUDIENCE_ID, "
+                "RESEND_FROM_EMAIL."
+            ),
+            "service_gate": True,
+        },
+    )
+
+    recorded = _record_provider_verification_gates(args, manifest, pack, [result])
+
+    assert recorded == [
+        {
+            "id": "provider.resend.runtime-values",
+            "provider": "resend",
+            "classification": "provider-runtime-values",
+            "target": "RESEND_AUDIENCE_ID,RESEND_FROM_EMAIL",
+        }
+    ]
+    gate = GateService.load(app / ".fusekit" / "gates.json").records[
+        "provider.resend.runtime-values"
+    ]
+    assert gate.resume_url == "https://resend.com/audiences"
+    steps = " ".join(gate.follow_steps)
+    assert "RESEND_AUDIENCE_ID" in steps
+    assert "rsvp@moonlite.rsvp" in steps
 
 
 def test_cli_refuses_raw_secret_argument(tmp_path) -> None:

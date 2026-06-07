@@ -6,6 +6,11 @@ scopes, or token storage. FuseKit should guide the human through provider-owned
 gates, capture only approved capabilities into the encrypted vault, then use the
 fastest reliable deterministic route to finish setup.
 
+Real-run friction is tracked in
+[`docs/magic-path-friction-log.md`](magic-path-friction-log.md). A launcher flow
+is not launch-ready until observed user interventions are either automated,
+converted into explicit control-room gates, or kept as open acceptance items.
+
 ## Principle
 
 FuseKit does not prefer APIs for their own sake. FuseKit prefers the most

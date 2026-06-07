@@ -3425,6 +3425,17 @@ def _verify_provider_packs(
                 }
                 audit.record("provider_pack.verify_after_api_fallback", payload)
                 overall = _provider_verification_overall(results)
+        verification_gates = _record_provider_verification_gates(
+            args,
+            manifest,
+            pack,
+            results,
+        )
+        if verification_gates:
+            audit.record(
+                "provider_pack.verification_gates",
+                {"provider": pack.provider, "gates": verification_gates},
+            )
         verification_report.add_provider_results(
             pack.provider,
             results,
@@ -3438,6 +3449,152 @@ def _verify_provider_packs(
                 f"Provider verification failed for {pack.provider}. See redacted receipt/audit."
             )
     _verify_webhook_secret_checks(manifest, vault, verification_report)
+
+
+def _record_provider_verification_gates(
+    args: argparse.Namespace,
+    manifest: SetupManifest,
+    pack: ProviderCapabilityPack,
+    results: list[VerificationResult],
+) -> list[dict[str, object]]:
+    """Surface verification-time human gates in the live control room."""
+
+    recorded: list[dict[str, object]] = []
+    for result in results:
+        if result.status != "needs_human_gate" or result.kind == "provider-gate":
+            continue
+        gate = _provider_verification_gate(args, manifest, pack, result)
+        _record_gate_waiting(
+            args,
+            gate["id"],
+            provider=gate["provider"],
+            reason=gate["reason"],
+            resume_url=gate["resume_url"],
+            classification=gate["classification"],
+            target=gate["target"],
+            follow_steps=gate["follow_steps"],
+        )
+        recorded.append(
+            {
+                "id": gate["id"],
+                "provider": gate["provider"],
+                "classification": gate["classification"],
+                "target": gate["target"],
+            }
+        )
+    return recorded
+
+
+def _provider_verification_gate(
+    args: argparse.Namespace,
+    manifest: SetupManifest,
+    pack: ProviderCapabilityPack,
+    result: VerificationResult,
+) -> dict[str, Any]:
+    del args
+    reason = str(result.details.get("reason") or "").strip()
+    env_names = _verification_gate_env_names(reason)
+    domain = _default_manifest_domain(manifest)
+    if any(name.startswith("RESEND_") for name in env_names):
+        missing = ", ".join(env_names)
+        return {
+            "id": "provider.resend.runtime-values",
+            "provider": "resend",
+            "reason": (
+                "Finish Resend email configuration so FuseKit can apply the missing "
+                f"runtime values: {missing}."
+            ),
+            "resume_url": "https://resend.com/audiences",
+            "classification": "provider-runtime-values",
+            "target": ",".join(env_names),
+            "follow_steps": _resend_runtime_follow_steps(domain, env_names),
+        }
+    if pack.provider == "resend" and result.kind == "http-json":
+        return {
+            "id": "provider.resend.api-key-domain-access",
+            "provider": "resend",
+            "reason": reason
+            or "Resend rejected the captured API key for the required domain/API access.",
+            "resume_url": "https://resend.com/api-keys",
+            "classification": "provider-authorization",
+            "target": "RESEND_API_KEY",
+            "follow_steps": _resend_api_key_follow_steps(domain),
+        }
+    if pack.provider == "resend" and result.kind == "resend-domain":
+        target = result.target if "${input:" not in result.target else domain
+        return {
+            "id": "provider.resend.domain-verification",
+            "provider": "resend",
+            "reason": reason
+            or f"Add and verify the Resend sending domain {target or domain}.",
+            "resume_url": "https://resend.com/domains",
+            "classification": "provider-domain",
+            "target": target,
+            "follow_steps": _resend_domain_follow_steps(target or domain),
+        }
+    return {
+        "id": f"provider.{pack.provider}.{_strategy_gate_slug(result.kind)}",
+        "provider": pack.provider,
+        "reason": reason or f"{pack.display_name} needs a provider-owned verification step.",
+        "resume_url": _provider_strategy_resume_url(pack),
+        "classification": "provider-verification",
+        "target": result.target,
+        "follow_steps": _provider_strategy_follow_steps(pack),
+    }
+
+
+def _verification_gate_env_names(text: str) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(re.findall(r"\b[A-Z][A-Z0-9_]{2,}\b", text)))
+
+
+def _resend_api_key_follow_steps(domain: str) -> tuple[str, ...]:
+    domain_note = f" for {domain}" if domain else ""
+    return (
+        "Use the live VM browser surface, not a local browser tab.",
+        "Open Resend API Keys and create a new key named FuseKit email.",
+        f"Choose permissions that allow sending email and reading/managing domains{domain_note}.",
+        "Copy the API key only inside the VM browser; FuseKit stores it in the encrypted vault.",
+        "Return here and click I finished this step after the key has been captured.",
+    )
+
+
+def _resend_domain_follow_steps(domain: str) -> tuple[str, ...]:
+    named_domain = domain or "the app sending domain"
+    return (
+        "Use the live VM browser surface, not a local browser tab.",
+        f"Open Resend Domains and add or open {named_domain}.",
+        "Complete any Resend domain ownership instructions shown there.",
+        "If Resend shows DNS records, approve them in FuseKit so Cloudflare can apply them.",
+        (
+            "Return here and click I finished this step after Resend shows the "
+            "domain as verified or pending DNS."
+        ),
+    )
+
+
+def _resend_runtime_follow_steps(
+    domain: str,
+    env_names: tuple[str, ...],
+) -> tuple[str, ...]:
+    steps = [
+        "Use the live VM browser surface, not a local browser tab.",
+        "Open Resend Audiences and create or select the audience for this app.",
+    ]
+    if "RESEND_AUDIENCE_ID" in env_names:
+        steps.append("Copy the audience ID inside the VM so FuseKit can store RESEND_AUDIENCE_ID.")
+    if "RESEND_FROM_EMAIL" in env_names:
+        from_address = f"rsvp@{domain}" if domain else "the verified sending address"
+        steps.append(f"Use a verified From address such as {from_address} for RESEND_FROM_EMAIL.")
+    steps.extend(
+        [
+            (
+                "FuseKit will apply the captured values to Vercel and GitHub after "
+                "this gate is marked finished."
+            ),
+            "Return here and click I finished this step after the values have been captured.",
+        ]
+    )
+    return tuple(steps)
 
 
 def _verification_inputs(args: argparse.Namespace, manifest: SetupManifest) -> dict[str, str]:
