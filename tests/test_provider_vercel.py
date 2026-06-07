@@ -126,6 +126,8 @@ def test_vercel_file_deployment_sanitizes_vercel_config_and_excludes_runtime_fil
     (app / ".fusekit" / "job.json").write_text("{}", encoding="utf-8")
     (app / "node_modules").mkdir()
     (app / "node_modules" / "ignored.js").write_text("ignored", encoding="utf-8")
+    (app / "visual").mkdir()
+    (app / "visual" / "chrome-profile-cache").write_text("ignored", encoding="utf-8")
     requests: list[tuple[str, str, dict[str, Any] | None]] = []
 
     class FakeClient:

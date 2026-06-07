@@ -220,7 +220,16 @@ def _deployment_files(app_path: Path) -> list[dict[str, str]]:
 
 def _excluded_from_deployment(root: Path, path: Path) -> bool:
     rel_parts = path.relative_to(root).parts
-    blocked_dirs = {".git", ".fusekit", "node_modules", ".venv", "__pycache__"}
+    blocked_dirs = {
+        ".git",
+        ".fusekit",
+        ".pytest_cache",
+        ".venv",
+        "__pycache__",
+        "coverage",
+        "node_modules",
+        "visual",
+    }
     return any(part in blocked_dirs for part in rel_parts)
 
 
