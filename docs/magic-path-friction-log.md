@@ -33,14 +33,13 @@ guided, or explicitly verified.
 | Resend account pages gave no exact instruction for API key, domain, audience ID, or from-email setup. | Verification-time Resend failures now create actionable control-room gates with Resend-specific follow-me steps. |
 | "I finished this step" sometimes appeared to do nothing after a provider gate was passed. | Provider verification gates are regenerated from verification results, so the next missing capability becomes visible instead of hiding in the report. |
 | Missing Vercel/GitHub runtime env values were reported as provider checks rather than guided Resend tasks. | Missing `RESEND_*` runtime values now route to a Resend runtime-values gate with exact capture instructions. |
+| Copy-once provider secrets required side-channel capture after the user clicked Copy inside the VM. | Secret-bearing gates now show VM-clipboard capture buttons that write the selected value directly into the encrypted vault and return only redacted status. |
 
 ## Open Acceptance Items
 
 - Finish a full live Moonlite RSVP run where Cloudflare DNS, Resend domain/API key,
   Resend audience/from email, Vercel env vars, GitHub secrets, deployment, and live
   URL health all pass or are pending-safe without side-channel instructions.
-- Confirm the control-room copy path works for VM-local secret capture and never
-  copies raw secrets into the host page.
 - Add a visible "what Snowman is doing next" message after every gate pass.
 - Reduce VNC usage by preferring provider APIs after login/consent, using the VNC
   only for real human gates such as login, MFA, CAPTCHA, consent, payment, and

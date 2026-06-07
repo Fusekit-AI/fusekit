@@ -507,6 +507,26 @@ def test_control_room_gate_help_includes_resume_link_and_attempts(tmp_path) -> N
     assert "state-gate" in html
 
 
+def test_control_room_renders_vm_clipboard_capture_for_secret_gate(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.resend.api-key-domain-access",
+        provider="resend",
+        reason="Resend API key",
+        classification="provider-authorization",
+        target="RESEND_API_KEY",
+        follow_steps=("Copy the API key inside the VM.",),
+    )
+
+    html = render_control_room(JobState.load(job_path), gate_path=tmp_path / "gates.json")
+
+    assert "Capture RESEND_API_KEY from VM clipboard" in html
+    assert 'data-gate-capture="provider.resend.api-key-domain-access"' in html
+    assert 'data-gate-capture-target="RESEND_API_KEY"' in html
+
+
 def test_control_room_post_marks_human_gate_passed(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job_path = tmp_path / "job.json"
@@ -578,6 +598,67 @@ def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -
     assert calls[0]["command"][-1] == "https://dash.cloudflare.com/profile/api-tokens"
     assert calls[0]["env"]["DISPLAY"] == ":99"
     assert calls[0]["command"][0] == "/usr/bin/fake-chrome"
+
+
+def test_control_room_post_captures_vm_clipboard_into_vault(tmp_path, monkeypatch) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    vault_path = tmp_path / "fusekit.vault.json"
+    audit_path = tmp_path / "audit.jsonl"
+    passphrase_path = tmp_path / "passphrase"
+    passphrase_path.write_text("passphrase\n", encoding="utf-8")
+    Vault.empty().save(vault_path, "passphrase")
+    job.add_artifact("vault", vault_path)
+    job.add_artifact("audit_log", audit_path)
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.resend.api-key-domain-access",
+        provider="resend",
+        reason="Resend API key",
+        classification="provider-authorization",
+        target="RESEND_API_KEY",
+    )
+    monkeypatch.setenv("FUSEKIT_PASSPHRASE_FILE", str(passphrase_path))
+    monkeypatch.setattr(
+        "fusekit.runner.control_room.server._vm_clipboard_text",
+        lambda job_state: "re_live_secret_from_vm_clipboard\n",
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = (
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/gates/provider.resend.api-key-domain-access/capture-clipboard"
+        )
+        request = Request(
+            url,
+            data=json.dumps({"target": "RESEND_API_KEY"}).encode("utf-8"),
+            method="POST",
+            headers={
+                "content-type": "application/json",
+                "x-fusekit-control-room": "resume",
+            },
+        )
+        with urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert payload == {
+        "gate_id": "provider.resend.api-key-domain-access",
+        "ok": True,
+        "record_id": "provider.resend.resend_api_key",
+        "status": "captured",
+        "target": "RESEND_API_KEY",
+    }
+    vault = Vault.open(vault_path, "passphrase")
+    record = vault.require("provider.resend.resend_api_key")
+    assert record.value == "re_live_secret_from_vm_clipboard"
+    assert record.metadata["env"] == "RESEND_API_KEY"
+    assert "re_live_secret" not in json.dumps(payload)
+    assert "re_live_secret" not in audit_path.read_text(encoding="utf-8")
 
 
 def test_control_room_post_rejects_cross_site_gate_pass(tmp_path) -> None:

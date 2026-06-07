@@ -280,6 +280,7 @@ function renderGateHelp(step) {
         `data-gate-pass="${escapeAttr(step.id)}">I finished this step</button>`,
       ].join("")
     : "";
+  const captureButtons = renderCaptureButtons(step.id, step.target);
   return `
     <div class="gate-help">
       <span>What you need to do</span>${classification}
@@ -289,9 +290,32 @@ function renderGateHelp(step) {
       ${meta}
       <ol>${followSteps.map((action) => `<li>${escapeHtml(action)}</li>`).join("")}</ol>
       <em>${escapeHtml(guidance.reassurance)}</em>
+      ${captureButtons}
       ${resumeButton}
     </div>
   `;
+}
+
+function captureTargets(target) {
+  return String(target || "")
+    .split(",")
+    .map((item) => item.trim().toUpperCase())
+    .filter((item) => /^[A-Z][A-Z0-9_]{2,}$/.test(item));
+}
+
+function renderCaptureButtons(gateId, target) {
+  const targets = captureTargets(target);
+  if (!gateId || !targets.length) return "";
+  return [
+    `<div class="gate-capture-row">`,
+    targets.map((item) => [
+      `<button class="gate-capture" type="button" `,
+      `data-gate-capture="${escapeAttr(gateId)}" `,
+      `data-gate-capture-target="${escapeAttr(item)}">`,
+      `Capture ${escapeHtml(item)} from VM clipboard</button>`,
+    ].join("")).join(""),
+    `</div>`,
+  ].join("");
 }
 
 function escapeHtml(value) {
@@ -778,6 +802,37 @@ document.addEventListener("click", async (event) => {
     } finally {
       gateOpenButton.disabled = false;
       gateOpenButton.textContent = originalText;
+    }
+    return;
+  }
+  const captureButton = event.target.closest("[data-gate-capture]");
+  if (captureButton) {
+    captureButton.disabled = true;
+    const originalText = captureButton.textContent;
+    const target = captureButton.dataset.gateCaptureTarget || "";
+    captureButton.textContent = `Capturing ${target}...`;
+    try {
+      const response = await fetch(
+        `/api/gates/${encodeURIComponent(captureButton.dataset.gateCapture)}/capture-clipboard`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-fusekit-control-room": "resume",
+          },
+          body: JSON.stringify({ target }),
+        },
+      );
+      if (!response.ok) throw new Error("capture failed");
+      setRefreshStatus(`${target} captured into the encrypted vault.`);
+    } catch {
+      setRefreshStatus(
+        `Could not capture ${target} from the VM clipboard. Copy it in the VM and try again.`,
+        "stale",
+      );
+    } finally {
+      captureButton.disabled = false;
+      captureButton.textContent = originalText;
     }
     return;
   }

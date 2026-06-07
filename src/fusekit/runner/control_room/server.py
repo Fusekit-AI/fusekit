@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -23,6 +24,7 @@ from fusekit.runner.control_room import (
 from fusekit.runner.gates import GateService
 from fusekit.runner.job import JobState
 from fusekit.security.url import require_safe_url
+from fusekit.vault import Vault
 
 
 def serve_control_room(job_state: Path, host: str = "127.0.0.1", port: int = 8765) -> str:
@@ -111,6 +113,20 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                     return
                 self._write_json({"ok": True, "gate_id": gate_id, "browser": browser})
                 return
+            if route.path.startswith(prefix) and route.path.endswith("/capture-clipboard"):
+                gate_id = unquote(route.path[len(prefix) : -len("/capture-clipboard")])
+                try:
+                    body = self._read_json_body()
+                    captured = _capture_gate_clipboard_secret(
+                        job_state,
+                        gate_id,
+                        str(body.get("target", "")),
+                    )
+                except FuseKitError as exc:
+                    self._write_json({"ok": False, "error": str(exc)}, status=400)
+                    return
+                self._write_json({"ok": True, **captured})
+                return
             self.send_response(404)
             self.end_headers()
 
@@ -164,6 +180,24 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
             self._write_control_room_cookie()
             self.end_headers()
             self.wfile.write(data)
+
+        def _read_json_body(self) -> dict[str, Any]:
+            try:
+                length = int(self.headers.get("content-length", "0"))
+            except ValueError:
+                length = 0
+            if length <= 0:
+                return {}
+            if length > 4096:
+                raise FuseKitError("Control-room request body is too large.")
+            raw = self.rfile.read(length)
+            try:
+                data = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise FuseKitError("Control-room request body must be JSON.") from exc
+            if not isinstance(data, dict):
+                raise FuseKitError("Control-room request body must be a JSON object.")
+            return data
 
         def _write_control_room_cookie(self) -> None:
             expected = os.environ.get("FUSEKIT_CONTROL_ROOM_TOKEN", "")
@@ -233,6 +267,133 @@ def _open_gate_url_in_visual_browser(job_state: Path, url: str) -> str:
     except OSError as exc:
         raise FuseKitError(f"Could not open provider gate in VM browser: {exc}") from exc
     return browser
+
+
+def _capture_gate_clipboard_secret(
+    job_state: Path,
+    gate_id: str,
+    target: str,
+) -> dict[str, str]:
+    service = GateService.load(job_state.parent / "gates.json")
+    gate = service.records.get(gate_id)
+    if gate is None:
+        raise FuseKitError("Gate not found.")
+    if gate.status not in {"waiting", "resurfaced"}:
+        raise FuseKitError("Gate is not waiting for capture.")
+    target = target.strip().upper()
+    allowed_targets = _gate_capture_targets(gate.target)
+    if target not in allowed_targets:
+        raise FuseKitError("This gate is not allowed to capture that value.")
+    value = _vm_clipboard_text(job_state).strip()
+    if not value:
+        raise FuseKitError("The VM clipboard is empty.")
+    if len(value) > 8192:
+        raise FuseKitError("The VM clipboard value is too large to capture.")
+    if "\x00" in value:
+        raise FuseKitError("The VM clipboard value is not valid text.")
+    vault_path = _job_vault_path(job_state)
+    passphrase = _control_room_vault_passphrase(job_state)
+    vault = Vault.open(vault_path, passphrase) if vault_path.exists() else Vault.empty()
+    record_id, kind, provider = _capture_record_for_target(gate.provider, target)
+    vault.put(record_id, kind, provider, target, value, {"env": target, "source": "vm-clipboard"})
+    vault.save(vault_path, passphrase)
+    _append_capture_audit(job_state, gate_id, target, record_id)
+    return {
+        "gate_id": gate_id,
+        "target": target,
+        "record_id": record_id,
+        "status": "captured",
+    }
+
+
+def _gate_capture_targets(raw_target: str) -> set[str]:
+    return {
+        item
+        for item in (part.strip().upper() for part in raw_target.split(","))
+        if re.fullmatch(r"[A-Z][A-Z0-9_]{2,}", item)
+    }
+
+
+def _vm_clipboard_text(job_state: Path) -> str:
+    display = _visual_display(job_state)
+    for command in (("xclip", "-selection", "clipboard", "-o"), ("xsel", "-ob")):
+        if not shutil.which(command[0]):
+            continue
+        try:
+            completed = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                env={**os.environ, "DISPLAY": display},
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if completed.returncode == 0:
+            return completed.stdout
+    raise FuseKitError("Could not read the VM clipboard.")
+
+
+def _job_vault_path(job_state: Path) -> Path:
+    try:
+        job = JobState.load(job_state)
+    except (OSError, ValueError):
+        job = None
+    if job is not None:
+        vault = job.artifacts.get("vault")
+        if vault:
+            return Path(vault)
+    return job_state.parent / "fusekit.vault.json"
+
+
+def _control_room_vault_passphrase(job_state: Path) -> str:
+    candidates = [
+        Path(os.environ.get("FUSEKIT_PASSPHRASE_FILE", "")),
+        job_state.parent.parent.parent / "passphrase",
+    ]
+    for path in candidates:
+        if str(path) and path.is_file():
+            return path.read_text(encoding="utf-8").strip()
+    raise FuseKitError("Vault passphrase file is not available to the control room.")
+
+
+def _capture_record_for_target(
+    gate_provider: str,
+    target: str,
+) -> tuple[str, str, str]:
+    provider = gate_provider.lower() or target.split("_", 1)[0].lower()
+    if target.endswith("_API_KEY") or target.endswith("_TOKEN"):
+        record_id = f"provider.{provider}.{target.lower()}"
+        return record_id, "provider_token", provider
+    record_id = f"app.{provider}.{target.lower()}"
+    return record_id, "app_env", provider
+
+
+def _append_capture_audit(
+    job_state: Path,
+    gate_id: str,
+    target: str,
+    record_id: str,
+) -> None:
+    try:
+        job = JobState.load(job_state)
+    except (OSError, ValueError):
+        return
+    audit_path = job.artifacts.get("audit_log")
+    if not audit_path:
+        return
+    payload = {
+        "action": "control_room.clipboard_capture",
+        "gate_id": gate_id,
+        "target": target,
+        "record_id": record_id,
+    }
+    try:
+        with Path(audit_path).open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, sort_keys=True) + "\n")
+    except OSError:
+        return
 
 
 def _visual_browser_binary() -> str:

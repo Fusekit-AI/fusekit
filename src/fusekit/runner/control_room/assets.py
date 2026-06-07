@@ -467,6 +467,26 @@ button {
   border: 1px solid rgba(111, 215, 255, 0.34);
 }
 
+.gate-capture-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gate-capture {
+  min-height: 36px;
+  border: 1px solid rgba(111, 215, 255, 0.42);
+  border-radius: 8px;
+  padding: 9px 12px;
+  background: rgba(111, 215, 255, 0.16);
+  color: #f7fbff;
+  font-weight: 900;
+}
+
+.gate-capture:disabled {
+  opacity: 0.72;
+}
+
 .gate-done {
   justify-self: start;
   min-height: 36px;

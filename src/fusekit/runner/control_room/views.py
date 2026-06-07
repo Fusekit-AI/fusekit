@@ -704,6 +704,7 @@ def _render_gate_help(step: Any) -> str:
         if gate_id
         else ""
     )
+    capture_buttons = _render_capture_buttons(gate_id, target)
     return f"""
         <div class="gate-help">
           <span>What you need to do</span>{classification_label}
@@ -713,9 +714,34 @@ def _render_gate_help(step: Any) -> str:
           {meta}
           <ol>{actions}</ol>
           <em>{html.escape(guidance.reassurance)}</em>
+          {capture_buttons}
           {resume_button}
         </div>
 """
+
+
+def _render_capture_buttons(gate_id: str, target: str) -> str:
+    targets = _capture_targets(target)
+    if not gate_id or not targets:
+        return ""
+    buttons = "".join(
+        (
+            f'<button class="gate-capture" type="button" '
+            f'data-gate-capture="{html.escape(gate_id)}" '
+            f'data-gate-capture-target="{html.escape(item)}">'
+            f"Capture {html.escape(item)} from VM clipboard</button>"
+        )
+        for item in targets
+    )
+    return f'<div class="gate-capture-row">{buttons}</div>'
+
+
+def _capture_targets(target: str) -> tuple[str, ...]:
+    return tuple(
+        item
+        for item in (part.strip().upper() for part in target.split(","))
+        if item.isidentifier() and item == item.upper() and len(item) > 2
+    )
 
 
 def _guidance_for_step(step: Any) -> GateGuidance:
