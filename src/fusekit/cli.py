@@ -3368,7 +3368,7 @@ def _rerun_provider_verification(
 
 def _provider_verification_acceptable(results: list[VerificationResult]) -> bool:
     return all(
-        result.status in {"ok", "skipped"}
+        result.status in {"ok", "skipped", "needs_human_gate"}
         or (
             result.status == "pending"
             and bool(result.to_dict().get("details", {}).get("pending_safe"))

@@ -18,6 +18,7 @@ from fusekit.cli import (
     _local_verification_job_result,
     _playwright_headless,
     _provider_verification_attempt_config,
+    _provider_verification_acceptable,
     _repair_navigation_completed,
     _run_handoff,
     _start_openclaw_auth_terminal,
@@ -33,6 +34,7 @@ from fusekit.providers.capability_pack import (
     synthesize_provider_pack,
     write_provider_pack,
 )
+from fusekit.providers.verification import VerificationResult
 from fusekit.providers.handoff import handoff_for
 from fusekit.runner.gates import GateService
 from fusekit.runner.oci_live import OciWorkspace
@@ -2060,6 +2062,20 @@ def test_pending_provider_gate_disables_verification_retries(tmp_path) -> None:
     )
 
     assert _provider_verification_attempt_config(args) == (1, 0.0)
+
+
+def test_provider_verification_accepts_human_gate_as_parked_state() -> None:
+    assert _provider_verification_acceptable(
+        [
+            VerificationResult(
+                provider="vercel",
+                kind="vercel-project",
+                target="moonlight-rsvp-demo",
+                status="needs_human_gate",
+                details={"service_gate": True},
+            )
+        ]
+    )
 
 
 def test_strict_live_url_failure_still_fails(monkeypatch, tmp_path) -> None:
