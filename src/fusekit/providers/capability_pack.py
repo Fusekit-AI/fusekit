@@ -971,7 +971,11 @@ def _github_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
             token_env="GITHUB_TOKEN",
             token_record_id="provider.github.token",
             token_label="GitHub API token",
-            required_scopes=("target repo access", "Actions secrets", "deploy keys"),
+            required_scopes=(
+                "target repo only",
+                "repository Secrets read/write",
+                "repository Administration read/write",
+            ),
             account_steps=(
                 "Create or sign in to a GitHub account.",
                 "Complete the highlighted email, passkey, MFA, CAPTCHA, or consent gate.",
@@ -979,7 +983,7 @@ def _github_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
             ),
             secret_steps=(
                 "Create a fine-grained token for the target repository.",
-                "Grant only permissions needed for Actions secrets and deploy keys.",
+                "Grant only repository Secrets read/write and Administration read/write.",
                 "Capture the token into the encrypted vault.",
             ),
             service_gates=("email verification", "passkey", "MFA", "CAPTCHA", "consent"),
@@ -1047,7 +1051,8 @@ def _vercel_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
             account_steps=(
                 "Create or sign in to a Vercel account.",
                 "Complete the highlighted SSO, MFA, CAPTCHA, billing, payment, or consent gate.",
-                "Connect the Git provider or choose an existing project if required.",
+                "Connect GitHub under Login Connections if Vercel requires it before API project linking.",
+                "Choose an existing project if required.",
             ),
             secret_steps=(
                 "Create an account token with access to the target team or project.",

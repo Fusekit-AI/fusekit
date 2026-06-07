@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from fusekit.audit import AuditLog, Receipt, assert_no_secret_text
+from fusekit.errors import ProviderError
 from fusekit.manifest import DnsRecord, DomainRequirement, SetupManifest
 from fusekit.providers.automation import ProviderSetupContext, run_provider_pack_setup
 from fusekit.providers.capability_pack import synthesize_provider_pack
@@ -253,6 +254,97 @@ def test_vercel_pack_connects_project_and_deploys_from_github_repo(
     assert context.receipt.live_url == "https://moonlite-rsvp.vercel.app"
     public = json.dumps(result) + json.dumps(receipt.to_dict())
     assert_no_secret_text(public, ["webhook-secret-value", "test-vercel-token-hidden"])
+
+
+def test_vercel_pack_pauses_for_github_login_connection_gate(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    calls: list[str] = []
+
+    class FakeVercelProvider:
+        def __init__(self, token: str) -> None:
+            self.token = token
+
+        def ensure_project(
+            self,
+            name: str,
+            framework: str | None = None,
+            git_repository: str | None = None,
+            root_directory: str | None = None,
+        ) -> dict[str, object]:
+            del name, framework, git_repository, root_directory
+            calls.append("project")
+            raise ProviderError(
+                "POST /v11/projects failed with HTTP 400: "
+                "message=Failed to link owner/app.; action=Add a Login Connection"
+            )
+
+        def put_env(
+            self,
+            project_id_or_name: str,
+            key: str,
+            value: str,
+            target: tuple[str, ...],
+        ) -> dict[str, object]:
+            del project_id_or_name, key, value, target
+            calls.append("env")
+            return {}
+
+    monkeypatch.setattr("fusekit.providers.automation.VercelProvider", FakeVercelProvider)
+    vault = Vault.empty()
+    vault.put(
+        "provider.vercel.token",
+        "provider_token",
+        "vercel",
+        "Vercel token",
+        "test-vercel-token-hidden",
+    )
+    receipt = Receipt(app_name="app")
+    context = ProviderSetupContext(
+        manifest=SetupManifest(app_name="app"),
+        vault=vault,
+        audit=AuditLog(tmp_path / "audit.jsonl"),
+        receipt=receipt,
+        secrets={"WEBHOOK_SECRET": "webhook-secret-value"},
+        provider_names={"vercel"},
+        inputs={
+            "github_repo": "owner/app",
+            "vercel_project": "app",
+            "vercel_framework": "nextjs",
+        },
+    )
+    pack = synthesize_provider_pack("vercel", tmp_path)
+
+    result = run_provider_pack_setup(pack, context)
+
+    assert calls == ["project"]
+    assert result["setup"] == [
+        {
+            "kind": "vercel-project",
+            "status": "needs_human_gate",
+            "strategy": "browser_guided",
+            "reason": (
+                "Vercel needs GitHub connected as a login connection before its API can "
+                "link the requested repository."
+            ),
+            "next_action": (
+                "Open Vercel Login Connections in the VM browser, connect GitHub, approve "
+                "only the FuseKit account/repo access Vercel requests, then resume FuseKit."
+            ),
+            "resume_url": "https://vercel.com/account/settings/login-connections",
+            "follow_steps": (
+                "Use the live VM browser surface, not a local browser tab.",
+                "Open Vercel Login Connections and choose GitHub.",
+                (
+                    "Complete GitHub login, MFA, CAPTCHA, or consent only for the "
+                    "account/repo FuseKit named."
+                ),
+                "Return to FuseKit and mark the gate finished after Vercel confirms the connection.",
+            ),
+            "strategy_decision": result["setup"][0]["strategy_decision"],
+        }
+    ]
 
 
 def test_cloudflare_dns_proposes_without_apply_when_scope_missing(

@@ -10,11 +10,15 @@ import pytest
 from fusekit.audit import AuditLog, Receipt, assert_no_secret_text
 from fusekit.cli import (
     _attempt_provider_api_fallback,
+    _authorize_provider,
+    _await_provider_token,
+    _capture_llm,
     _capture_provider_tokens,
     _has_pack_provider_token,
     _local_verification_job_result,
     _playwright_headless,
     _repair_navigation_completed,
+    _run_handoff,
     _start_openclaw_auth_terminal,
     _ui_navigator_from_vault,
     _verify_apply_live_url,
@@ -28,6 +32,7 @@ from fusekit.providers.capability_pack import (
     synthesize_provider_pack,
     write_provider_pack,
 )
+from fusekit.providers.handoff import handoff_for
 from fusekit.runner.gates import GateService
 from fusekit.runner.oci_live import OciWorkspace
 from fusekit.spine.playbooks import BrowserPlaybookEvent
@@ -148,6 +153,32 @@ def test_ui_navigator_uses_openclaw_gate_fallback_without_api_key() -> None:
 
     assert action.action == "gate"
     assert "OpenClaw/OpenAI OAuth is authorized" in action.reason
+
+
+def test_capture_llm_reuses_openclaw_profile_without_reauth(monkeypatch) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(
+        "fusekit.cli._await_openclaw_llm_authorization",
+        lambda *args, **kwargs: pytest.fail("OpenClaw auth should not restart"),
+    )
+    args = argparse.Namespace(
+        capture_llm_key=False,
+        llm_api_key_env="OPENAI_API_KEY",
+        llm_auth_mode="auto",
+        llm_base_url="https://api.openai.com/v1",
+        llm_model="gpt-5.5",
+        llm_provider="openai",
+    )
+    vault = Vault.empty()
+    vault.put(
+        "llm.openai.openclaw_profile",
+        "llm_openclaw_profile",
+        "openclaw",
+        "OpenClaw OpenAI authorization profile",
+        "openai:openai/gpt-5.5",
+    )
+
+    _capture_llm(args, vault, require=True)
 
 
 def test_install_can_write_local_cloud_shell_launcher(tmp_path) -> None:
@@ -353,6 +384,7 @@ def test_cli_provider_synthesize_validate_and_authorize_pack(monkeypatch, tmp_pa
     passphrase.write_text("passphrase\n", encoding="utf-8")
     token = "plaid-approved-secret"
     monkeypatch.setattr("getpass.getpass", lambda prompt: token)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
 
     assert (
         main(
@@ -1029,6 +1061,7 @@ def test_authorize_handoff_captures_hidden_token(monkeypatch, tmp_path, capsys) 
     opened: list[str] = []
     monkeypatch.setattr("webbrowser.open", lambda url: opened.append(url))
     monkeypatch.setattr("getpass.getpass", lambda prompt: token)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
 
     assert (
         main(
@@ -1187,6 +1220,210 @@ def test_source_fetch_guides_private_repo_with_inferred_github_goal(
     assert "Use the gate action with a target" in goals[0]
 
 
+def test_await_provider_token_picks_up_token_saved_to_vault(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    vault_path = tmp_path / "fusekit.vault.json"
+    passphrase = tmp_path / "passphrase.txt"
+    passphrase.write_text("passphrase\n", encoding="utf-8")
+    vault = Vault.empty()
+    vault.put(
+        "provider.cloudflare.token",
+        "provider_token",
+        "cloudflare",
+        "Cloudflare API token",
+        "cfut_live_token_from_vm_clipboard",
+    )
+    vault.save(vault_path, "passphrase")
+    monkeypatch.delenv("CLOUDFLARE_API_TOKEN", raising=False)
+    monkeypatch.setattr(
+        "fusekit.cli._run_handoff",
+        lambda *args, **kwargs: pytest.fail("handoff should not run when vault has token"),
+    )
+
+    args = argparse.Namespace(
+        app=tmp_path,
+        capture_stdin=False,
+        gate_max_attempts=0,
+        gate_retry_seconds=0,
+        job_state=tmp_path / "job.json",
+        passphrase_file=passphrase,
+        token_env="",
+        vault=vault_path,
+    )
+
+    token, source = _await_provider_token(
+        args,
+        "cloudflare",
+        handoff_for("cloudflare"),
+        include_project=False,
+    )
+
+    assert token == "cfut_live_token_from_vm_clipboard"
+    assert source == "vault:provider.cloudflare.token"
+    gates = GateService.load(tmp_path / ".fusekit" / "gates.json")
+    assert gates.records["provider.cloudflare.authorization"].status == "passed"
+
+
+def test_await_provider_token_presents_handoff_only_once(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "fusekit.cli._run_handoff",
+        lambda *args, **kwargs: calls.append(str(args[1])),
+    )
+    args = argparse.Namespace(
+        app=tmp_path,
+        capture_stdin=False,
+        gate_max_attempts=2,
+        gate_retry_seconds=0,
+        job_state=tmp_path / "job.json",
+        passphrase_file=tmp_path / "passphrase.txt",
+        token_env="",
+        vault=tmp_path / "missing.vault.json",
+    )
+
+    with pytest.raises(FuseKitError):
+        _await_provider_token(
+            args,
+            "github",
+            handoff_for("github"),
+            include_project=False,
+        )
+
+    assert calls == ["github"]
+
+
+def test_await_provider_token_does_not_represent_existing_handoff(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.setattr(
+        "fusekit.cli._run_handoff",
+        lambda *args, **kwargs: pytest.fail("handoff was already presented"),
+    )
+    args = argparse.Namespace(
+        app=tmp_path,
+        capture_stdin=False,
+        gate_max_attempts=1,
+        gate_retry_seconds=0,
+        job_state=tmp_path / "job.json",
+        passphrase_file=tmp_path / "passphrase.txt",
+        token_env="",
+        vault=tmp_path / "missing.vault.json",
+    )
+
+    with pytest.raises(FuseKitError):
+        _await_provider_token(
+            args,
+            "github",
+            handoff_for("github"),
+            include_project=False,
+            handoff_presented=True,
+        )
+
+
+def test_await_provider_token_skips_hidden_prompt_without_tty(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    class NoTty:
+        def isatty(self) -> bool:
+            return False
+
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.setattr("sys.stdin", NoTty())
+    monkeypatch.setattr(
+        "fusekit.cli.getpass.getpass",
+        lambda *args, **kwargs: pytest.fail("detached worker should not prompt"),
+    )
+    args = argparse.Namespace(
+        app=tmp_path,
+        capture_stdin=True,
+        gate_max_attempts=1,
+        gate_retry_seconds=0,
+        job_state=tmp_path / "job.json",
+        passphrase_file=tmp_path / "passphrase.txt",
+        token_env="",
+        vault=tmp_path / "missing.vault.json",
+    )
+
+    with pytest.raises(FuseKitError):
+        _await_provider_token(
+            args,
+            "github",
+            handoff_for("github"),
+            include_project=False,
+            handoff_presented=True,
+        )
+
+
+def test_authorize_provider_does_not_reopen_existing_gate(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    passphrase = tmp_path / "passphrase.txt"
+    passphrase.write_text("passphrase\n", encoding="utf-8")
+    GateService.load(tmp_path / ".fusekit" / "gates.json").wait(
+        "provider.github.authorization",
+        provider="github",
+        reason="existing gate",
+        resume_url="https://github.com/settings/tokens?type=beta",
+    )
+    monkeypatch.setattr(
+        "fusekit.cli._run_handoff",
+        lambda *args, **kwargs: pytest.fail("existing gate should not reopen handoff"),
+    )
+    monkeypatch.setattr(
+        "fusekit.cli._await_provider_token",
+        lambda *args, **kwargs: ("github_token_value", "vault:provider.github.token"),
+    )
+    args = argparse.Namespace(
+        app=tmp_path,
+        job_state=tmp_path / ".fusekit" / "job.json",
+        handoff=True,
+        passphrase_file=passphrase,
+        vault=tmp_path / "fusekit.vault.json",
+    )
+
+    _authorize_provider(args, "github", handoff=handoff_for("github"))
+
+    assert Vault.open(args.vault, "passphrase").require("provider.github.token").value == (
+        "github_token_value"
+    )
+
+
+def test_run_handoff_uses_shared_visual_browser_profile(monkeypatch, tmp_path) -> None:
+    calls: list[dict[str, object]] = []
+    browser = tmp_path / "chrome"
+    browser.write_text("#!/bin/sh\n", encoding="utf-8")
+    browser.chmod(0o755)
+    monkeypatch.setenv("FUSEKIT_VISUAL_DISPLAY", ":99")
+    monkeypatch.setattr("fusekit.cli._visual_chrome_binary", lambda: browser)
+    monkeypatch.setattr(
+        "fusekit.cli.subprocess.Popen",
+        lambda command, **kwargs: calls.append({"command": command, **kwargs}),
+    )
+    args = argparse.Namespace(
+        dry_run_spine=False,
+        job_state=tmp_path / ".fusekit" / "job.json",
+    )
+
+    _run_handoff(args, "resend", handoff_for("resend"), include_project=False)
+
+    assert calls
+    command = calls[0]["command"]
+    assert command[0] == str(browser)
+    assert f"--user-data-dir={tmp_path / 'visual' / 'chrome-provider-profile'}" in command
+    assert "https://resend.com/signup" in command
+    assert calls[0]["env"]["DISPLAY"] == ":99"
+
+
 def test_authorize_can_use_openclaw_spine_dry_run(monkeypatch, tmp_path, capsys) -> None:
     vault = tmp_path / "vault.json"
     passphrase = tmp_path / "passphrase.txt"
@@ -1194,6 +1431,7 @@ def test_authorize_can_use_openclaw_spine_dry_run(monkeypatch, tmp_path, capsys)
     token = "vercel_supervised_token_value"
 
     monkeypatch.setattr("getpass.getpass", lambda prompt: token)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
 
     assert (
         main(
@@ -1969,4 +2207,4 @@ def test_authorize_retries_handoff_until_gate_attempt_limit(monkeypatch, tmp_pat
         )
         == 2
     )
-    assert opened.count("https://github.com/signup") == 2
+    assert opened.count("https://github.com/signup") == 1

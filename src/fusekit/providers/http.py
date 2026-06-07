@@ -47,7 +47,9 @@ class JsonHttpClient:
             with urlopen(request, timeout=30) as response:  # nosec B310
                 text = response.read().decode("utf-8")
         except HTTPError as exc:
-            raise ProviderError(f"{method} {path} failed with HTTP {exc.code}.") from exc
+            detail = _safe_http_error_detail(exc)
+            suffix = f": {detail}" if detail else "."
+            raise ProviderError(f"{method} {path} failed with HTTP {exc.code}{suffix}") from exc
         except URLError as exc:
             raise ProviderError(f"{method} {path} failed: {exc.reason}") from exc
         if not text:
@@ -56,3 +58,31 @@ class JsonHttpClient:
         if not isinstance(data, dict):
             raise ProviderError(f"{method} {path} returned non-object JSON.")
         return data
+
+
+def _safe_http_error_detail(exc: HTTPError) -> str:
+    """Return actionable provider error text without echoing arbitrary response bodies."""
+
+    try:
+        raw = exc.read(2048).decode("utf-8", errors="replace")
+    except Exception:
+        return ""
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    error = data.get("error")
+    if isinstance(error, dict):
+        source = error
+    else:
+        source = data
+    safe_keys = ("message", "action", "link", "repo", "code")
+    parts: list[str] = []
+    for key in safe_keys:
+        value = source.get(key)
+        if not isinstance(value, str) or not value.strip():
+            continue
+        parts.append(f"{key}={value.strip()[:500]}")
+    return "; ".join(parts)

@@ -132,6 +132,8 @@ class GateService:
         """Mark a gate as waiting/resurfaced."""
 
         record = self.records.get(gate_id)
+        if record is not None and record.status == "passed":
+            return record
         status: GateStatus = "waiting"
         attempts = 1
         created_at = time.time()

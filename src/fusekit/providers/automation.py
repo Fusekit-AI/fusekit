@@ -10,7 +10,7 @@ from typing import Any
 from fusekit.audit import AuditLog, Receipt
 from fusekit.crypto.secrets import token_urlsafe
 from fusekit.crypto.sshkeys import generate_ed25519_keypair
-from fusekit.errors import FuseKitError
+from fusekit.errors import FuseKitError, ProviderError
 from fusekit.manifest import SetupManifest
 from fusekit.policy import require_allowed
 from fusekit.providers.capability_pack import ProviderCapabilityPack, SetupRecipe
@@ -66,6 +66,8 @@ def run_provider_pack_setup(
             if not context.allow_incomplete and action["status"] != "needs_human_gate":
                 raise FuseKitError(str(action["reason"]))
             results.append(action)
+            if action["status"] == "needs_human_gate":
+                break
             continue
         result: dict[str, Any]
         try:
@@ -83,6 +85,8 @@ def run_provider_pack_setup(
             result = {"kind": recipe.kind, "status": "skipped", "reason": "incomplete"}
         result["strategy_decision"] = strategy_payload
         results.append(result)
+        if result.get("status") == "needs_human_gate":
+            break
     return {"provider": pack.provider, "setup": results}
 
 
@@ -169,16 +173,58 @@ def _vercel_project(recipe: SetupRecipe, context: ProviderSetupContext) -> dict[
     project_name = _required_input(context, "vercel_project", recipe.target)
     token = _provider_token(context.vault, "vercel", "VERCEL_TOKEN")
     provider = VercelProvider(token)
-    project = provider.ensure_project(
-        project_name,
-        context.inputs.get("vercel_framework") or None,
-        git_repository=_github_repo_slug_from_context(context),
-        root_directory=context.inputs.get("vercel_root_directory") or None,
-    )
+    try:
+        project = provider.ensure_project(
+            project_name,
+            context.inputs.get("vercel_framework") or None,
+            git_repository=_github_repo_slug_from_context(context),
+            root_directory=context.inputs.get("vercel_root_directory") or None,
+        )
+    except ProviderError as exc:
+        gate = _vercel_github_connection_gate(recipe, exc)
+        if gate:
+            context.audit.record("provider_pack.vercel.project_gate", gate)
+            context.receipt.add_action("vercel.project", "needs_human_gate", gate)
+            return gate
+        raise
     context.inputs["vercel_project_id"] = str(project["id"])
     context.audit.record("provider_pack.vercel.project", project)
     context.receipt.add_action("vercel.project", "ok", project)
     return {"kind": recipe.kind, "status": "ok", **project}
+
+
+def _vercel_github_connection_gate(
+    recipe: SetupRecipe,
+    exc: ProviderError,
+) -> dict[str, Any] | None:
+    message = str(exc)
+    lowered = message.lower()
+    if not (
+        "login connection" in lowered
+        or "connect your github account" in lowered
+        or "failed to link" in lowered
+    ):
+        return None
+    return {
+        "kind": recipe.kind,
+        "status": "needs_human_gate",
+        "strategy": "browser_guided",
+        "reason": (
+            "Vercel needs GitHub connected as a login connection before its API can "
+            "link the requested repository."
+        ),
+        "next_action": (
+            "Open Vercel Login Connections in the VM browser, connect GitHub, approve "
+            "only the FuseKit account/repo access Vercel requests, then resume FuseKit."
+        ),
+        "resume_url": "https://vercel.com/account/settings/login-connections",
+        "follow_steps": (
+            "Use the live VM browser surface, not a local browser tab.",
+            "Open Vercel Login Connections and choose GitHub.",
+            "Complete GitHub login, MFA, CAPTCHA, or consent only for the account/repo FuseKit named.",
+            "Return to FuseKit and mark the gate finished after Vercel confirms the connection.",
+        ),
+    }
 
 
 def _vercel_env(recipe: SetupRecipe, context: ProviderSetupContext) -> dict[str, Any]:

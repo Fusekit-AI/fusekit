@@ -95,6 +95,7 @@ from fusekit.runtime import bootstrap_runtime, doctor
 from fusekit.runtime.bootstrap import openclaw_state_home
 from fusekit.scanner import scan_repo
 from fusekit.security import scan_for_secret_leaks
+from fusekit.security.url import require_safe_url
 from fusekit.source import (
     fetch_github_source_archive,
     is_github_https_source,
@@ -899,6 +900,9 @@ def _cmd_source_fetch(args: argparse.Namespace) -> int:
             handoff,
             include_project=False,
             goal=source_goal,
+            handoff_presented=bool(
+                args.handoff or args.open_browser or args.spine in {"openclaw", "playwright"}
+            ),
         )
         token_label = handoff.token_label
         token_record_id = handoff.token_record_id
@@ -1173,10 +1177,18 @@ def _authorize_provider(
     handoff: ProviderHandoff | None = None,
 ) -> None:
     handoff = handoff or handoff_for(provider)
-    if args.handoff:
+    gate_id = f"provider.{provider}.authorization"
+    should_present_handoff = bool(args.handoff and not _gate_record_exists(args, gate_id))
+    if should_present_handoff:
         _run_handoff(args, provider, handoff, include_project)
 
-    token, source = _await_provider_token(args, provider, handoff, include_project)
+    token, source = _await_provider_token(
+        args,
+        provider,
+        handoff,
+        include_project,
+        handoff_presented=should_present_handoff,
+    )
     if len(token) < 8:
         raise FuseKitError("Provider token is too short to capture.")
     passphrase = _passphrase(args)
@@ -2443,6 +2455,9 @@ def _run_handoff(
     goal: str = "",
 ) -> None:
     _print_handoff(handoff, include_project=include_project)
+    if _open_handoff_in_shared_visual_browser(args, handoff, include_project):
+        print("Opened provider gate in the shared VM browser session.")
+        return
     if _use_playwright_browser_spine(args):
         playwright_spine = PlaywrightBrowserSpine(
             headless=_playwright_headless(args),
@@ -2522,6 +2537,62 @@ def _run_handoff(
             webbrowser.open(url)
 
 
+def _open_handoff_in_shared_visual_browser(
+    args: argparse.Namespace,
+    handoff: ProviderHandoff,
+    include_project: bool,
+) -> bool:
+    if getattr(args, "dry_run_spine", False):
+        return False
+    if os.environ.get("FUSEKIT_FORCE_PLAYWRIGHT_PROVIDER_SPINE"):
+        return False
+    display = os.environ.get("FUSEKIT_VISUAL_DISPLAY", "").strip()
+    if not display:
+        return False
+    browser = _visual_chrome_binary()
+    if browser is None:
+        return False
+    profile_dir = _shared_visual_provider_profile(args)
+    if profile_dir is None:
+        return False
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    env = {**os.environ, "DISPLAY": display}
+    opened = False
+    for url in handoff.urls(include_project=include_project):
+        safe_url = require_safe_url(url, label=f"{handoff.provider} provider gate URL")
+        command = [
+            str(browser),
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--start-maximized",
+            f"--user-data-dir={profile_dir}",
+            safe_url,
+        ]
+        try:
+            subprocess.Popen(
+                command,
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        except OSError:
+            return opened
+        opened = True
+    return opened
+
+
+def _shared_visual_provider_profile(args: argparse.Namespace) -> Path | None:
+    configured = os.environ.get("FUSEKIT_PROVIDER_BROWSER_PROFILE", "").strip()
+    if configured:
+        return Path(configured)
+    job_state = getattr(args, "job_state", None)
+    if isinstance(job_state, Path):
+        return job_state.parent.parent / "visual" / "chrome-provider-profile"
+    return None
+
+
 def _gate_state_path(args: argparse.Namespace) -> Path:
     for attr in ("path", "app"):
         value = getattr(args, attr, None)
@@ -2570,6 +2641,12 @@ def _record_gate_passed(
     if gate_id not in service.records:
         service.wait(gate_id, provider=provider, reason=reason, resume_url=resume_url)
     service.pass_gate(gate_id)
+
+
+def _gate_record_exists(args: argparse.Namespace, gate_id: str) -> bool:
+    if not isinstance(getattr(args, "job_state", None), Path):
+        return False
+    return gate_id in GateService.load(_gate_state_path(args)).records
 
 
 def _gate_recorder(args: argparse.Namespace) -> Callable[
@@ -2632,6 +2709,7 @@ def _await_provider_token(
     handoff: ProviderHandoff,
     include_project: bool,
     goal: str = "",
+    handoff_presented: bool = False,
 ) -> tuple[str, str]:
     token_env = args.token_env or handoff.token_env
     gate_id = f"provider.{provider}.authorization"
@@ -2639,9 +2717,22 @@ def _await_provider_token(
     attempt = 0
     while True:
         attempt += 1
+        should_present_handoff = (
+            attempt == 1 and not handoff_presented and not _gate_record_exists(args, gate_id)
+        )
+        vault_token = _provider_token_from_vault(args, handoff)
+        if vault_token:
+            _record_gate_passed(
+                args,
+                gate_id,
+                provider=provider,
+                reason=f"{provider} login/MFA/CAPTCHA/billing/consent/token creation",
+                resume_url=resume_url,
+            )
+            return vault_token, f"vault:{handoff.token_record_id}"
         token = os.environ.get(token_env)
         source = f"env:{token_env}"
-        if not token and args.capture_stdin:
+        if not token and args.capture_stdin and sys.stdin.isatty():
             try:
                 token = getpass.getpass(f"Paste approved {provider} token: ").strip()
                 source = "supervised-hidden-prompt"
@@ -2668,10 +2759,21 @@ def _await_provider_token(
         print(
             f"Waiting: {guidance.title}. {guidance.reassurance} "
             f"When the provider reveals the approved key, provide {token_env}. "
-            "Retrying handoff..."
+            "FuseKit will keep checking for captured credentials."
         )
+        if should_present_handoff:
+            _run_handoff(args, provider, handoff, include_project, goal=goal)
         _sleep_for_gate(args)
-        _run_handoff(args, provider, handoff, include_project, goal=goal)
+
+
+def _provider_token_from_vault(args: argparse.Namespace, handoff: ProviderHandoff) -> str:
+    if not args.vault.exists():
+        return ""
+    try:
+        vault = Vault.open(args.vault, _passphrase(args))
+        return vault.require(handoff.token_record_id).value
+    except FuseKitError:
+        return ""
 
 
 def _await_plan_approval(args: argparse.Namespace) -> None:
@@ -2900,7 +3002,6 @@ def _record_provider_strategy_gates(
     result: dict[str, Any],
 ) -> None:
     provider = str(result.get("provider", pack.provider)).lower()
-    follow_steps = _provider_strategy_follow_steps(pack)
     default_resume_url = _provider_strategy_resume_url(pack)
     for item in result.get("setup", []):
         if not isinstance(item, dict):
@@ -2916,7 +3017,17 @@ def _record_provider_strategy_gates(
             or item.get("next_action")
             or f"{provider} authorization is required for {recipe}."
         )
-        resume_url = default_resume_url or _provider_strategy_decision_url(item)
+        resume_url = (
+            str(item.get("resume_url") or "")
+            or default_resume_url
+            or _provider_strategy_decision_url(item)
+        )
+        item_steps = item.get("follow_steps")
+        follow_steps = (
+            tuple(str(step) for step in item_steps if str(step).strip())
+            if isinstance(item_steps, (list, tuple))
+            else _provider_strategy_follow_steps(pack)
+        )
         gate_id = f"provider.{provider}.{_strategy_gate_slug(recipe)}"
         _record_gate_waiting(
             args,
@@ -3680,6 +3791,11 @@ def _capture_llm(args: argparse.Namespace, vault: Vault, require: bool) -> None:
     if captured:
         return
     mode = getattr(args, "llm_auth_mode", "auto")
+    if mode in {"auto", "openclaw"} and require and _openclaw_llm_profile_available(
+        vault,
+        config,
+    ):
+        return
     if mode in {"auto", "openclaw"} and require:
         _await_openclaw_llm_authorization(args, vault, config)
         return
@@ -3700,6 +3816,16 @@ def _llm_config_from_args(args: argparse.Namespace) -> LlmConfig:
         base_url=args.llm_base_url,
         api_key_env=args.llm_api_key_env,
     )
+
+
+def _openclaw_llm_profile_available(vault: Vault, config: LlmConfig) -> bool:
+    if not config.can_use_openclaw_auth():
+        return False
+    try:
+        vault.require("llm.openai.openclaw_profile")
+    except FuseKitError:
+        return False
+    return True
 
 
 def _ui_navigator_from_vault(args: argparse.Namespace, vault: Vault):
@@ -3748,7 +3874,12 @@ def _await_openclaw_llm_authorization(
                 device_code=bool(getattr(args, "llm_openclaw_device_code", False)),
             )
         except FuseKitError as exc:
-            resume_url, follow_steps = _openclaw_llm_auth_gate_handoff(args, config, exc)
+            resume_url, follow_steps = _openclaw_llm_auth_gate_handoff(
+                args,
+                config,
+                exc,
+                start_terminal=attempt == 1 and not _gate_record_exists(args, gate_id),
+            )
             _record_gate_waiting(
                 args,
                 gate_id,
@@ -3784,12 +3915,16 @@ def _openclaw_llm_auth_gate_handoff(
     args: argparse.Namespace,
     config: LlmConfig,
     error: FuseKitError,
+    *,
+    start_terminal: bool = True,
 ) -> tuple[str, tuple[str, ...]]:
     visual = _current_visual_payload(args)
     novnc_url = str(visual.get("novnc_url", "") or "")
     provider = os.environ.get("FUSEKIT_OPENCLAW_LLM_AUTH_PROVIDER", "openai")
     device_code = bool(getattr(args, "llm_openclaw_device_code", False))
-    terminal_started = _start_openclaw_auth_terminal(provider=provider, device_code=device_code)
+    terminal_started = False
+    if start_terminal:
+        terminal_started = _start_openclaw_auth_terminal(provider=provider, device_code=device_code)
     if terminal_started:
         return (
             novnc_url or config.base_url,

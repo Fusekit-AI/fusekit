@@ -17,62 +17,99 @@ class GateGuidance:
 
 _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
     "github": GateGuidance(
-        title="GitHub is asking for your approval",
+        title="GitHub needs a repo-scoped setup token",
         body=(
-            "FuseKit opened GitHub so the source repo can receive deploy keys and encrypted "
-            "repo secrets. You only need to sign in and approve the provider screens GitHub shows."
+            "FuseKit needs GitHub permission for the target repo so it can create deploy keys "
+            "and encrypted Actions secrets without broad account access."
         ),
         actions=(
             "Sign in or create the GitHub account when GitHub asks.",
-            "Complete the highlighted email, passkey, MFA, CAPTCHA, or consent prompt.",
-            "When GitHub reveals the approved token, paste it into FuseKit's hidden prompt.",
+            (
+                "Create a fine-grained personal access token limited to the target repo named "
+                "by FuseKit."
+            ),
+            (
+                "Grant repository Secrets read/write and Administration read/write, then finish "
+                "highlighted passkey, MFA, CAPTCHA, or consent prompts."
+            ),
+            (
+                "When GitHub reveals the token once, use the VM-local capture path; FuseKit "
+                "stores it only in the encrypted vault."
+            ),
         ),
-        reassurance="FuseKit waits here, then resumes automatically after the token is captured.",
+        reassurance="FuseKit will use GitHub's API and continue once the scoped token is captured.",
     ),
     "vercel": GateGuidance(
-        title="Vercel is checking deploy permission",
+        title="Vercel needs a deployment token",
         body=(
-            "FuseKit is connecting the app repo to Vercel, setting encrypted env vars, and "
-            "starting the deployment. Vercel may need you to confirm account or Git access."
+            "FuseKit needs a Vercel token scoped to the personal account or team that will own "
+            "the project, environment variables, and deployment."
         ),
         actions=(
             "Sign in or create the Vercel account when prompted.",
-            "Approve only the highlighted GitHub, team, billing, MFA, CAPTCHA, or consent prompt.",
-            "When Vercel reveals the approved token, paste it into FuseKit's hidden prompt.",
+            (
+                "If Vercel says GitHub is not connected, open Login Connections and connect "
+                "GitHub before creating or linking the project."
+            ),
+            (
+                "Open Account Settings, choose Tokens, create a token named FuseKit deployment "
+                "for this app, and use a short expiration."
+            ),
+            (
+                "Choose the personal account or team FuseKit named, then finish highlighted "
+                "GitHub, billing, MFA, CAPTCHA, or consent prompts."
+            ),
+            (
+                "When Vercel reveals the token once, use the VM-local capture path; FuseKit "
+                "stores it only in the encrypted vault."
+            ),
         ),
-        reassurance="FuseKit keeps the run alive and continues once Vercel accepts the gate.",
+        reassurance="FuseKit will continue through Vercel's API after capture succeeds.",
     ),
     "cloudflare": GateGuidance(
-        title="Cloudflare is checking domain control",
+        title="Cloudflare needs a scoped DNS token",
         body=(
-            "FuseKit is preparing DNS records for the custom domain. Cloudflare may ask you to "
-            "prove the domain belongs to this account before records can verify."
+            "FuseKit needs one Cloudflare token scoped to this domain so it can create and verify "
+            "only the DNS records named in the setup plan."
         ),
         actions=(
             "Sign in or create the Cloudflare account when prompted.",
             (
-                "Complete the highlighted nameserver, domain ownership, MFA, CAPTCHA, billing, "
-                "or consent prompt."
+                "Open API Tokens, choose Create Token, choose Custom token, and name it "
+                "FuseKit DNS for this domain."
             ),
             (
-                "When Cloudflare reveals the approved DNS token, paste it into FuseKit's hidden "
-                "prompt."
+                "Grant Zone Read and DNS Edit for the specific zone FuseKit named, then continue "
+                "through highlighted Cloudflare MFA, CAPTCHA, consent, or token reveal gates."
+            ),
+            (
+                "When Cloudflare reveals the token once, use the VM-local capture prompt; FuseKit "
+                "stores it only in the encrypted vault."
             ),
         ),
-        reassurance="FuseKit will keep retrying DNS verification instead of giving up early.",
+        reassurance="FuseKit will use the token through Cloudflare's API and keep retrying DNS verification.",
     ),
     "resend": GateGuidance(
-        title="Resend is checking email sending access",
+        title="Resend needs an email API key",
         body=(
-            "FuseKit is preparing email delivery credentials and domain verification records. "
-            "Resend may ask for email, account, billing, or domain verification."
+            "FuseKit needs a Resend API key so it can configure email sending and verify the "
+            "domain records named in the setup plan."
         ),
         actions=(
             "Sign in or create the Resend account when prompted.",
-            "Complete the highlighted email, MFA, CAPTCHA, billing, consent, or domain check.",
-            "When Resend reveals the API key, paste it into FuseKit's hidden prompt.",
+            (
+                "Open API Keys, create a key named FuseKit email for this app, and choose the "
+                "sending/domain access Resend requires."
+            ),
+            (
+                "Finish highlighted email, MFA, CAPTCHA, billing, consent, or domain checks."
+            ),
+            (
+                "When Resend reveals the API key once, use the VM-local capture path; FuseKit "
+                "stores it only in the encrypted vault."
+            ),
         ),
-        reassurance="FuseKit stores the key only in the encrypted vault and then resumes setup.",
+        reassurance="FuseKit will use Resend's API and continue once the email key is captured.",
     ),
     "oci": GateGuidance(
         title="Oracle Cloud is opening the clean room",
