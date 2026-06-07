@@ -223,6 +223,16 @@ def _verify_http_json(
     path_present = True
     if response_path:
         path_present = _path_exists(data, response_path)
+    if auth_secret and status_code in {401, 403}:
+        return _needs_gate(
+            pack,
+            recipe,
+            (
+                f"{pack.display_name} rejected the captured credential with HTTP "
+                f"{status_code}. Create or capture a token that includes the required "
+                "provider access for this check."
+            ),
+        )
     ok = status_code == expected_status and path_present
     return VerificationResult(
         provider=pack.provider,
@@ -596,6 +606,12 @@ def _verify_resend_domain(
     if isinstance(token, VerificationResult):
         return token
     status, data = _api_json("https://api.resend.com", token, "/domains")
+    if status in {401, 403}:
+        return _needs_gate(
+            pack,
+            recipe,
+            "Resend rejected the captured API key for domain access. Create or capture a Resend key with sending/domain access.",
+        )
     if status >= 400:
         raise ProviderError(f"Resend domain verification returned HTTP {status}.")
     domains = data.get("data", []) if isinstance(data, dict) else []

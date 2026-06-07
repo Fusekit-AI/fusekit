@@ -143,6 +143,59 @@ def test_http_json_error_body_is_not_retained(monkeypatch) -> None:
     assert "do-not-keep-secret-body" not in public
 
 
+def test_authenticated_http_json_403_becomes_human_gate(monkeypatch) -> None:
+    vault = Vault.empty()
+    vault.put(
+        "provider.test-provider.test_provider_api_key",
+        "provider_secret",
+        "test-provider",
+        "TEST_PROVIDER_API_KEY",
+        "token",
+    )
+    pack = ProviderCapabilityPack(
+        schema_version="fusekit.provider-pack.v1",
+        provider="test-provider",
+        display_name="Test Provider",
+        category="service",
+        confidence="medium",
+        evidence=("test",),
+        detection=ProviderDetection(),
+        handoff=PackHandoff(
+            signup_url="https://test-provider.example",
+            token_url="https://test-provider.example/tokens",
+            token_env="TEST_PROVIDER_API_KEY",
+            token_record_id="provider.test-provider.token",
+            token_label="Test provider key",
+        ),
+        required_secrets=(),
+        env_vars=(),
+        setup=(),
+        setup_goals=(),
+        verification=(
+            VerificationRecipe(
+                kind="http-json",
+                target="https://api.test-provider.example/me",
+                expected="token can read account",
+                inputs={
+                    "auth_secret": "TEST_PROVIDER_API_KEY",
+                    "expected_status": "200",
+                },
+            ),
+        ),
+        rollback=(),
+    )
+
+    def local_urlopen(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise HTTPError("https://api.test-provider.example/me", 403, "Forbidden", {}, BytesIO(b""))
+
+    monkeypatch.setattr("fusekit.providers.verification.urlopen", local_urlopen)
+
+    result = verify_provider_pack(pack, vault)[0]
+
+    assert result.status == "needs_human_gate"
+    assert result.details["service_gate"] is True
+
+
 def test_url_health_recipe_reports_status(monkeypatch) -> None:
     vault = Vault.empty()
     pack = ProviderCapabilityPack(
@@ -321,6 +374,29 @@ def test_resend_pending_domain_is_pending_safe(monkeypatch) -> None:
 
     assert result.status == "pending"
     assert result.details["pending_safe"] is True
+
+
+def test_resend_domain_403_becomes_human_gate(monkeypatch) -> None:
+    vault = Vault.empty()
+    vault.put(
+        "provider.resend.resend_api_key",
+        "provider_secret",
+        "resend",
+        "RESEND_API_KEY",
+        "token",
+    )
+    pack = _pack("resend")
+    recipe = VerificationRecipe(kind="resend-domain", target="moonlite.rsvp")
+
+    monkeypatch.setattr(
+        "fusekit.providers.verification.urlopen",
+        lambda *args, **kwargs: _JsonResponse({"message": "forbidden"}, status=403),
+    )
+
+    result = verify_recipe_with_retries(pack, recipe, vault, attempts=2, retry_seconds=0)
+
+    assert result.status == "needs_human_gate"
+    assert result.details["service_gate"] is True
 
 
 def test_github_missing_secret_reports_failed(monkeypatch) -> None:
