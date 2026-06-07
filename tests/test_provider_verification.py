@@ -5,6 +5,8 @@ from io import BytesIO
 from types import SimpleNamespace
 from urllib.error import HTTPError
 
+import pytest
+
 from fusekit.providers.capability_pack import (
     PackHandoff,
     ProviderCapabilityPack,
@@ -355,6 +357,36 @@ def test_dns_single_attempt_is_pending_safe(monkeypatch) -> None:
 
     assert result.status == "pending"
     assert result.details["pending_safe"] is True
+
+
+def test_pending_safe_result_stops_verification_retries(monkeypatch) -> None:
+    vault = Vault.empty()
+    pack = _pack("cloudflare")
+    recipe = VerificationRecipe(kind="dns-records", target="moonlite.rsvp")
+    calls = {"count": 0}
+
+    def pending_safe(*args, **kwargs):  # type: ignore[no-untyped-def]
+        del args, kwargs
+        calls["count"] += 1
+        return VerificationResult(
+            provider="cloudflare",
+            kind="dns-records",
+            target="moonlite.rsvp",
+            status="pending",
+            details={"pending_safe": True},
+        )
+
+    monkeypatch.setattr("fusekit.providers.verification.verify_recipe", pending_safe)
+    monkeypatch.setattr(
+        "fusekit.providers.verification.time.sleep",
+        lambda seconds: pytest.fail(f"pending-safe result should not sleep for {seconds}s"),
+    )
+
+    result = verify_recipe_with_retries(pack, recipe, vault, attempts=10, retry_seconds=30)
+
+    assert result.status == "pending"
+    assert result.details["pending_safe"] is True
+    assert calls["count"] == 1
 
 
 def test_cloudflare_dns_api_missing_records_is_pending_safe(monkeypatch) -> None:

@@ -86,7 +86,7 @@ def verify_recipe_with_retries(
     attempts = max(1, attempts)
     last = verify_recipe(pack, recipe, vault, live_url=live_url, inputs=inputs)
     for _attempt in range(1, attempts):
-        if last.status in {"ok", "skipped"}:
+        if _verification_result_is_terminal(last, retry_seconds=retry_seconds):
             return last
         if retry_seconds > 0:
             time.sleep(retry_seconds)
@@ -100,6 +100,20 @@ def verify_recipe_with_retries(
             details={**last.details, "attempts": attempts},
         )
     return last
+
+
+def _verification_result_is_terminal(
+    result: VerificationResult,
+    *,
+    retry_seconds: float,
+) -> bool:
+    if result.status in {"ok", "skipped", "needs_human_gate"}:
+        return True
+    return (
+        retry_seconds > 0
+        and result.status == "pending"
+        and bool(result.details.get("pending_safe"))
+    )
 
 
 def verify_recipe(
