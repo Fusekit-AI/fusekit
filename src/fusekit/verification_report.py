@@ -201,7 +201,7 @@ def _summary(provider: str, check: str, status: str) -> str:
 
 def _repair(provider: str, check: str, status: str) -> str:
     if status == "passed":
-        return "Nothing needed. Snowman gives this check a tiny approving nod."
+        return "Nothing needed."
     if status == "skipped":
         return "No action needed unless this optional check matters for launch proof."
     if status == "pending":
@@ -238,7 +238,7 @@ def _pending_repair(provider: str, check: str) -> str:
 
 def _human_gate_repair(provider: str, check: str) -> str:
     return (
-        f"Snowman is waiting for the {provider} screen that controls {check.replace('_', ' ')}. "
+        f"FuseKit is waiting for the {provider} screen that controls {check.replace('_', ' ')}. "
         "Pass the provider gate when it appears; FuseKit will continue automatically."
     )
 
