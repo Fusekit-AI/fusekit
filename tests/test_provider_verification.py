@@ -329,6 +329,70 @@ def test_dns_pending_then_passing(monkeypatch) -> None:
     assert calls["count"] == 2
 
 
+def test_dns_single_attempt_is_pending_safe(monkeypatch) -> None:
+    vault = Vault.empty()
+    pack = _pack("cloudflare")
+    recipe = VerificationRecipe(
+        kind="dns-records",
+        target="moonlite.rsvp",
+        inputs={
+            "records_json": json.dumps(
+                [{"name": "moonlite.rsvp", "type": "A", "value": "203.0.113.10"}]
+            )
+        },
+    )
+
+    class Resolver:
+        def resolve(self, name: str, record_type: str):  # type: ignore[no-untyped-def]
+            raise RuntimeError("not propagated")
+
+    monkeypatch.setattr(
+        "fusekit.providers.verification.import_module",
+        lambda name: Resolver() if name == "dns.resolver" else SimpleNamespace(),
+    )
+
+    result = verify_recipe_with_retries(pack, recipe, vault, attempts=1, retry_seconds=0)
+
+    assert result.status == "pending"
+    assert result.details["pending_safe"] is True
+
+
+def test_cloudflare_dns_api_missing_records_is_pending_safe(monkeypatch) -> None:
+    vault = Vault.empty()
+    vault.put(
+        "provider.cloudflare.token",
+        "provider_token",
+        "cloudflare",
+        "CLOUDFLARE_API_TOKEN",
+        "token",
+    )
+    pack = _pack("cloudflare")
+    recipe = VerificationRecipe(
+        kind="cloudflare-dns-api",
+        target="moonlite.rsvp",
+        inputs={
+            "records_json": json.dumps(
+                [{"name": "moonlite.rsvp", "type": "A", "value": "203.0.113.10"}]
+            )
+        },
+    )
+    object.__setattr__(pack, "verification", (recipe,))
+
+    def local_urlopen(request, timeout=30):  # type: ignore[no-untyped-def]
+        url = request.full_url
+        if "/zones?" in url:
+            return _JsonResponse({"result": [{"id": "zone-id"}]})
+        return _JsonResponse({"result": []})
+
+    monkeypatch.setattr("fusekit.providers.verification.urlopen", local_urlopen)
+
+    result = verify_provider_pack(pack, vault)[0]
+
+    assert result.status == "pending"
+    assert result.details["pending_safe"] is True
+    assert result.details["missing"] == [{"name": "moonlite.rsvp", "type": "A"}]
+
+
 def test_vercel_deploy_lag_reports_pending_then_ready(monkeypatch) -> None:
     vault = Vault.empty()
     vault.put("provider.vercel.token", "provider_secret", "vercel", "VERCEL_TOKEN", "token")

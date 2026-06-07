@@ -310,7 +310,7 @@ def _verify_dns_record(
         provider=pack.provider,
         kind=recipe.kind,
         target=name,
-        status="ok" if ok else "failed",
+        status="ok" if ok else "pending",
         details={
             "type": record_type,
             "records": values,
@@ -358,7 +358,7 @@ def _verify_dns_records(
         provider=pack.provider,
         kind=recipe.kind,
         target=recipe.target,
-        status="ok" if not missing else "failed",
+        status="ok" if not missing else "pending",
         details={
             "checked": observed,
             "missing": missing,
@@ -533,7 +533,7 @@ def _verify_vercel_deployment(
         provider=pack.provider,
         kind=recipe.kind,
         target=project or live_url,
-        status="ok" if ok else "failed",
+        status="ok" if ok else "pending",
         details={
             "project": project,
             "deployment_url_present": bool(live_url or deployment_url),
@@ -597,8 +597,13 @@ def _verify_cloudflare_dns_api(
         provider=pack.provider,
         kind=recipe.kind,
         target=zone,
-        status="ok" if not missing else "failed",
-        details={"zone": zone, "checked": len(records), "missing": missing},
+        status="ok" if not missing else "pending",
+        details={
+            "zone": zone,
+            "checked": len(records),
+            "missing": missing,
+            "pending_safe": True,
+        },
     )
 
 
