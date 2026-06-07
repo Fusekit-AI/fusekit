@@ -20,6 +20,7 @@ from fusekit.cli import (
     _provider_verification_attempt_config,
     _provider_verification_acceptable,
     _repair_navigation_completed,
+    _rebase_setup_artifacts,
     _run_handoff,
     _start_openclaw_auth_terminal,
     _ui_navigator_from_vault,
@@ -42,6 +43,25 @@ from fusekit.runner.oci_live import OciWorkspace
 from fusekit.spine.playbooks import BrowserPlaybookEvent
 from fusekit.vault import Vault
 from fusekit.verification_report import VerificationReport
+
+
+def test_rebase_setup_artifacts_rebases_report_and_rollback(tmp_path) -> None:
+    args = argparse.Namespace(
+        vault=Path(".fusekit/fusekit.vault.json"),
+        audit_log=Path(".fusekit/audit.jsonl"),
+        receipt_json=Path(".fusekit/setup_receipt.json"),
+        receipt_md=Path(".fusekit/setup_receipt.md"),
+        rollback_json=Path(".fusekit/rollback_plan.json"),
+        verification_report=Path(".fusekit/verification_report.json"),
+        plan_json=Path(".fusekit/setup_plan.json"),
+        job_state=Path(".fusekit/job.json"),
+    )
+    app = tmp_path / "app"
+
+    _rebase_setup_artifacts(args, app)
+
+    assert args.verification_report == app / ".fusekit" / "verification_report.json"
+    assert args.rollback_json == app / ".fusekit" / "rollback_plan.json"
 
 
 def test_install_writes_one_click_entrypoint(tmp_path) -> None:

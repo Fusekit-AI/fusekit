@@ -3777,6 +3777,10 @@ def _rebase_setup_artifacts(args: argparse.Namespace, app_path: Path) -> None:
         args.receipt_json = fusekit_dir / "setup_receipt.json"
     if args.receipt_md == Path(".fusekit/setup_receipt.md"):
         args.receipt_md = fusekit_dir / "setup_receipt.md"
+    if args.rollback_json == Path(".fusekit/rollback_plan.json"):
+        args.rollback_json = fusekit_dir / "rollback_plan.json"
+    if args.verification_report == Path(".fusekit/verification_report.json"):
+        args.verification_report = fusekit_dir / "verification_report.json"
     if getattr(args, "plan_json", None) == Path(".fusekit/setup_plan.json"):
         args.plan_json = fusekit_dir / "setup_plan.json"
     if getattr(args, "job_state", None) == Path(".fusekit/job.json"):
