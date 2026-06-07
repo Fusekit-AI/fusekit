@@ -394,6 +394,15 @@ def _verify_github_repo_secret(
             missing.append(name)
         elif status >= 400:
             raise ProviderError(f"GitHub secret verification returned HTTP {status}.")
+    unavailable = [name for name in missing if not _secret_available_any_provider(vault, name)]
+    if unavailable:
+        return _needs_gate(
+            pack,
+            recipe,
+            "GitHub repository secrets are waiting on provider values FuseKit has not captured yet: "
+            + ", ".join(unavailable)
+            + ".",
+        )
     return VerificationResult(
         provider=pack.provider,
         kind=recipe.kind,
@@ -650,6 +659,12 @@ def _secret_available(vault: Vault, provider: str, name: str) -> bool:
     except ProviderError:
         return False
     return True
+
+
+def _secret_available_any_provider(vault: Vault, name: str) -> bool:
+    if os.environ.get(name):
+        return True
+    return any(record.label == name for record in vault.records.values())
 
 
 def _secret_value(vault: Vault, provider: str, name: str) -> str:

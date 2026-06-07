@@ -402,6 +402,13 @@ def test_resend_domain_403_becomes_human_gate(monkeypatch) -> None:
 def test_github_missing_secret_reports_failed(monkeypatch) -> None:
     vault = Vault.empty()
     vault.put("provider.github.token", "provider_secret", "github", "GITHUB_TOKEN", "token")
+    vault.put(
+        "provider.resend.resend_api_key",
+        "provider_secret",
+        "resend",
+        "RESEND_API_KEY",
+        "resend-token",
+    )
     pack = _pack("github")
     recipe = VerificationRecipe(
         kind="github-repo-secret",
@@ -423,6 +430,32 @@ def test_github_missing_secret_reports_failed(monkeypatch) -> None:
 
     assert result.status == "failed"
     assert result.details["missing"] == ["RESEND_API_KEY"]
+
+
+def test_github_missing_secret_waits_for_uncaptured_provider_value(monkeypatch) -> None:
+    vault = Vault.empty()
+    vault.put("provider.github.token", "provider_secret", "github", "GITHUB_TOKEN", "token")
+    pack = _pack("github")
+    recipe = VerificationRecipe(
+        kind="github-repo-secret",
+        target="${input:github_repo}",
+        inputs={"names": "RESEND_API_KEY"},
+    )
+    object.__setattr__(pack, "verification", (recipe,))
+
+    def local_urlopen(request, timeout=30):  # type: ignore[no-untyped-def]
+        raise HTTPError(request.full_url, 404, "missing", {}, BytesIO())
+
+    monkeypatch.setattr("fusekit.providers.verification.urlopen", local_urlopen)
+
+    result = verify_provider_pack(
+        pack,
+        vault,
+        inputs={"github_repo": "fusekitdemo/moonlite"},
+    )[0]
+
+    assert result.status == "needs_human_gate"
+    assert result.details["service_gate"] is True
 
 
 def test_live_url_500_then_200(monkeypatch) -> None:
