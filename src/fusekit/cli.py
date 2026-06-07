@@ -67,7 +67,7 @@ from fusekit.runner import JobState, RunnerResolution, resolve_runner
 from fusekit.runner.cloud_shell import build_cloud_shell_launch_plan, write_cloud_shell_launcher
 from fusekit.runner.control_room import write_control_room
 from fusekit.runner.gate_guidance import provider_gate_guidance
-from fusekit.runner.gates import GateService
+from fusekit.runner.gates import GateRecord, GateService
 from fusekit.runner.oci import (
     OCI_API_KEYS_URL,
     OCI_CONSOLE_URL,
@@ -1419,16 +1419,26 @@ def _verify_apply_live_url(
 
 
 def _has_pending_provider_gate(args: argparse.Namespace) -> bool:
+    return _pending_provider_gate(args) is not None
+
+
+def _pending_provider_gate(
+    args: argparse.Namespace,
+    provider: str = "",
+) -> GateRecord | None:
     try:
         records = GateService.load(_gate_state_path(args)).records.values()
     except (OSError, ValueError):
-        return False
-    return any(
-        record.provider
-        and record.provider not in {"dns", "oci"}
-        and record.status in {"waiting", "resurfaced"}
-        for record in records
-    )
+        return None
+    provider = provider.lower()
+    for record in records:
+        if not record.provider or record.provider in {"dns", "oci"}:
+            continue
+        if provider and record.provider.lower() != provider:
+            continue
+        if record.status in {"waiting", "resurfaced"}:
+            return record
+    return None
 
 
 def _attach_local_survivor_artifacts(args: argparse.Namespace, job: JobState) -> None:
@@ -3252,15 +3262,31 @@ def _verify_provider_packs(
             pack = synthesize_provider_pack(provider, app_path)
             write_provider_pack(pack, pack_path)
         pack = load_provider_pack(pack_path)
-        verify_attempts, verify_retry_seconds = _provider_verification_attempt_config(args)
-        results = verify_provider_pack(
-            pack,
-            vault,
-            live_url=getattr(args, "live_url", ""),
-            inputs=_verification_inputs(args, manifest),
-            attempts=verify_attempts,
-            retry_seconds=verify_retry_seconds,
-        )
+        pending_gate = _pending_provider_gate(args, provider)
+        if pending_gate is not None:
+            results = [
+                VerificationResult(
+                    provider=pack.provider,
+                    kind="provider-gate",
+                    target=pending_gate.id,
+                    status="needs_human_gate",
+                    details={
+                        "reason": pending_gate.reason,
+                        "resume_url": pending_gate.resume_url,
+                        "service_gate": True,
+                    },
+                )
+            ]
+        else:
+            verify_attempts, verify_retry_seconds = _provider_verification_attempt_config(args)
+            results = verify_provider_pack(
+                pack,
+                vault,
+                live_url=getattr(args, "live_url", ""),
+                inputs=_verification_inputs(args, manifest),
+                attempts=verify_attempts,
+                retry_seconds=verify_retry_seconds,
+            )
         payload = {"provider": pack.provider, "results": [result.to_dict() for result in results]}
         audit.record("provider_pack.verify", payload)
         overall = _provider_verification_overall(results)
@@ -3380,10 +3406,10 @@ def _provider_verification_acceptable(results: list[VerificationResult]) -> bool
 def _provider_verification_overall(results: list[VerificationResult]) -> str:
     if all(result.status in {"ok", "skipped"} for result in results):
         return "ok"
-    if _provider_verification_acceptable(results):
-        return "pending-safe"
     if any(result.status == "needs_human_gate" for result in results):
         return "needs_human_gate"
+    if _provider_verification_acceptable(results):
+        return "pending-safe"
     if any(result.status == "pending" for result in results):
         return "pending"
     return "failed"

@@ -24,6 +24,7 @@ from fusekit.cli import (
     _start_openclaw_auth_terminal,
     _ui_navigator_from_vault,
     _verify_apply_live_url,
+    _verify_provider_packs,
     main,
 )
 from fusekit.detonation.preflight import verification_report_allows_detonation
@@ -2076,6 +2077,54 @@ def test_provider_verification_accepts_human_gate_as_parked_state() -> None:
             )
         ]
     )
+
+
+def test_provider_verification_parks_provider_with_pending_gate(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    args = argparse.Namespace(
+        app=app,
+        live_url="https://moonlite.rsvp",
+        verify_attempts=10,
+        verify_retry_seconds=30,
+    )
+    GateService.load(app / ".fusekit" / "gates.json").wait(
+        "provider.vercel.vercel-project",
+        provider="vercel",
+        reason="Vercel needs GitHub connected",
+        resume_url="https://vercel.com/account/settings/login-connections",
+    )
+    manifest = SetupManifest(
+        app_name="app",
+        app_path=str(app),
+        services=(
+            ServiceRequirement(
+                provider="vercel",
+                kind="deployment",
+                name="web",
+                capabilities=("capability_pack",),
+                secrets=("VERCEL_TOKEN",),
+            ),
+        ),
+    )
+    audit = AuditLog(tmp_path / "audit.jsonl")
+    receipt = Receipt(app_name="app")
+    report = VerificationReport(app_name="app", live_url=args.live_url)
+
+    monkeypatch.setattr(
+        "fusekit.cli.verify_provider_pack",
+        lambda *args, **kwargs: pytest.fail("pending provider gate should park verification"),
+    )
+
+    _verify_provider_packs(args, manifest, Vault.empty(), audit, receipt, report)
+
+    assert receipt.actions[0]["status"] == "needs_human_gate"
+    payload = report.to_dict()
+    assert payload["overall"] == "needs_human_gate"
+    assert payload["counts"]["needs_human_gate"] == 1
 
 
 def test_strict_live_url_failure_still_fails(monkeypatch, tmp_path) -> None:
