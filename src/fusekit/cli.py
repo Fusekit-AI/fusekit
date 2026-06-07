@@ -3409,6 +3409,9 @@ def _verification_inputs(args: argparse.Namespace, manifest: SetupManifest) -> d
         {
             "app_env_names": ",".join(app_env_names),
             "dns_records_json": json.dumps(records, sort_keys=True),
+            "live_url_dns_pending_safe": (
+                "true" if _live_url_waiting_on_dns_approval(args, manifest) else "false"
+            ),
             "resend_domain": default_domain,
         }
     )

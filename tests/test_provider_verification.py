@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from io import BytesIO
 from types import SimpleNamespace
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 import pytest
 
@@ -250,6 +250,32 @@ def test_url_health_recipe_reports_status(monkeypatch) -> None:
 
     assert result.status == "ok"
     assert result.target == "https://app.example"
+
+
+def test_live_url_health_is_pending_safe_when_custom_dns_is_pending(monkeypatch) -> None:
+    vault = Vault.empty()
+    pack = _pack("vercel")
+    recipe = VerificationRecipe(kind="url-health", target="$live_url", expected="2xx/3xx")
+    object.__setattr__(pack, "verification", (recipe,))
+
+    def local_urlopen(*args, **kwargs):  # type: ignore[no-untyped-def]
+        del args, kwargs
+        raise URLError("Name or service not known")
+
+    monkeypatch.setattr("fusekit.providers.verification.urlopen", local_urlopen)
+
+    result = verify_provider_pack(
+        pack,
+        vault,
+        live_url="https://moonlite.rsvp",
+        inputs={"live_url_dns_pending_safe": "true"},
+        attempts=10,
+        retry_seconds=30,
+    )[0]
+
+    assert result.status == "pending"
+    assert result.details["pending_safe"] is True
+    assert result.details["reason"] == "custom DNS apply is waiting for approval or propagation"
 
 
 def test_verification_retry_reports_pending_after_failures() -> None:

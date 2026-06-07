@@ -132,7 +132,7 @@ def verify_recipe(
         if recipe.kind == "http-json":
             return _verify_http_json(pack, recipe, vault)
         if recipe.kind == "url-health":
-            return _verify_url_health(pack, recipe, vault, live_url=live_url)
+            return _verify_url_health(pack, recipe, vault, live_url=live_url, inputs=inputs or {})
         if recipe.kind == "dns-record":
             return _verify_dns_record(pack, recipe)
         if recipe.kind == "dns-records":
@@ -270,9 +270,11 @@ def _verify_url_health(
     vault: Vault,
     *,
     live_url: str,
+    inputs: dict[str, str],
 ) -> VerificationResult:
     del vault
     url = recipe.target or live_url
+    is_live_url_target = url == "$live_url"
     if url == "$live_url":
         url = live_url
     if not url:
@@ -290,8 +292,34 @@ def _verify_url_health(
     except HTTPError as exc:
         status_code = int(exc.code)
     except URLError as exc:
+        if is_live_url_target and inputs.get("live_url_dns_pending_safe") == "true":
+            return VerificationResult(
+                provider=pack.provider,
+                kind=recipe.kind,
+                target=url,
+                status="pending",
+                details={
+                    "error": str(exc.reason),
+                    "expected": recipe.expected or "2xx/3xx",
+                    "pending_safe": True,
+                    "reason": "custom DNS apply is waiting for approval or propagation",
+                },
+            )
         raise ProviderError(f"URL health verification failed: {exc.reason}") from exc
     ok = 200 <= status_code < 400
+    if not ok and is_live_url_target and inputs.get("live_url_dns_pending_safe") == "true":
+        return VerificationResult(
+            provider=pack.provider,
+            kind=recipe.kind,
+            target=url,
+            status="pending",
+            details={
+                "status_code": status_code,
+                "expected": recipe.expected or "2xx/3xx",
+                "pending_safe": True,
+                "reason": "custom DNS apply is waiting for approval or propagation",
+            },
+        )
     return VerificationResult(
         provider=pack.provider,
         kind=recipe.kind,
