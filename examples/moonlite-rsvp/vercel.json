@@ -1,4 +1,7 @@
 {
   "framework": "vite",
-  "domains": ["moonlite.rsvp"]
+  "domains": [
+    "moonlite.rsvp",
+    "www.moonlite.rsvp"
+  ]
 }

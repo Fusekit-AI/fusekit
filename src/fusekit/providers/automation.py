@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from shutil import which
 from typing import Any
 
@@ -258,18 +259,33 @@ def _vercel_git_deployment(recipe: SetupRecipe, context: ProviderSetupContext) -
     token = _provider_token(context.vault, "vercel", "VERCEL_TOKEN")
     provider = VercelProvider(token)
     org, repo = _split_repo_slug(github_repo) if github_repo else ("", "")
-    deployment = provider.create_git_deployment(
-        project_name,
-        git_repo_id=git_repo_id,
-        ref=context.inputs.get("vercel_git_ref", "main"),
-        org=org or None,
-        repo=repo or None,
-    )
+    try:
+        deployment = provider.create_git_deployment(
+            project_name,
+            git_repo_id=git_repo_id,
+            ref=context.inputs.get("vercel_git_ref", "main"),
+            org=org or None,
+            repo=repo or None,
+        )
+    except ProviderError as exc:
+        if not _vercel_config_file_rejected(exc):
+            raise
+        deployment = provider.create_file_deployment(
+            project_name,
+            Path(context.manifest.app_path),
+            framework=context.inputs.get("vercel_framework") or None,
+        )
+        deployment["fallback"] = "vercel-files"
     if deployment.get("url"):
         context.receipt.live_url = str(deployment["url"])
     context.audit.record("provider_pack.vercel.deployment", deployment)
     context.receipt.add_action("vercel.deployment", "ok", deployment)
     return {"kind": recipe.kind, "status": "ok", **deployment}
+
+
+def _vercel_config_file_rejected(exc: ProviderError) -> bool:
+    lowered = str(exc).lower()
+    return "additional property" in lowered and "domains" in lowered
 
 
 def _github_repo_slug_from_context(context: ProviderSetupContext) -> str:

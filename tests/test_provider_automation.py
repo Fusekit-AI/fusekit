@@ -256,6 +256,136 @@ def test_vercel_pack_connects_project_and_deploys_from_github_repo(
     assert_no_secret_text(public, ["webhook-secret-value", "test-vercel-token-hidden"])
 
 
+def test_vercel_pack_falls_back_to_file_deployment_when_git_config_is_rejected(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    calls: list[tuple[str, dict[str, str]]] = []
+
+    class FakeVercelProvider:
+        def __init__(self, token: str) -> None:
+            self.token = token
+
+        def ensure_project(
+            self,
+            name: str,
+            framework: str | None = None,
+            git_repository: str | None = None,
+            root_directory: str | None = None,
+        ) -> dict[str, object]:
+            calls.append(
+                (
+                    "project",
+                    {
+                        "name": name,
+                        "framework": framework or "",
+                        "git_repository": git_repository or "",
+                        "root_directory": root_directory or "",
+                    },
+                )
+            )
+            return {"id": "prj_123", "name": name, "created": False, "git_connected": True}
+
+        def put_env(
+            self,
+            project_id_or_name: str,
+            key: str,
+            value: str,
+            target: tuple[str, ...],
+        ) -> dict[str, object]:
+            calls.append(
+                (
+                    "env",
+                    {
+                        "project": project_id_or_name,
+                        "key": key,
+                        "value": value,
+                        "target": ",".join(target),
+                    },
+                )
+            )
+            return {"project": project_id_or_name, "env": key}
+
+        def create_git_deployment(
+            self,
+            project_name: str,
+            git_repo_id: str | None = None,
+            ref: str = "main",
+            repo_type: str = "github",
+            org: str | None = None,
+            repo: str | None = None,
+        ) -> dict[str, object]:
+            del project_name, git_repo_id, ref, repo_type, org, repo
+            calls.append(("git_deployment", {}))
+            raise ProviderError(
+                "POST /v13/deployments failed with HTTP 400: "
+                "message=Invalid request: should NOT have additional property 'domains'."
+            )
+
+        def create_file_deployment(
+            self,
+            project_name: str,
+            app_path,
+            *,
+            framework: str | None = None,
+        ) -> dict[str, object]:
+            calls.append(
+                (
+                    "file_deployment",
+                    {
+                        "project": project_name,
+                        "app_path": str(app_path),
+                        "framework": framework or "",
+                    },
+                )
+            )
+            return {
+                "deployment_id": "dpl_file",
+                "url": "https://moonlite-rsvp.vercel.app",
+                "source": {"type": "files"},
+            }
+
+    monkeypatch.setattr("fusekit.providers.automation.VercelProvider", FakeVercelProvider)
+    vault = Vault.empty()
+    vault.put(
+        "provider.vercel.token",
+        "provider_token",
+        "vercel",
+        "Vercel token",
+        "test-vercel-token-hidden",
+    )
+    receipt = Receipt(app_name="app")
+    context = ProviderSetupContext(
+        manifest=SetupManifest(app_name="app", app_path=str(app)),
+        vault=vault,
+        audit=AuditLog(tmp_path / "audit.jsonl"),
+        receipt=receipt,
+        secrets={"WEBHOOK_SECRET": "webhook-secret-value"},
+        provider_names={"vercel"},
+        inputs={
+            "github_repo": "owner/moonlite-rsvp",
+            "vercel_project": "moonlite-rsvp",
+            "vercel_framework": "vite",
+        },
+    )
+    pack = synthesize_provider_pack("vercel", tmp_path)
+
+    result = run_provider_pack_setup(pack, context)
+
+    assert ("git_deployment", {}) in calls
+    assert ("file_deployment", {
+        "project": "moonlite-rsvp",
+        "app_path": str(app),
+        "framework": "vite",
+    }) in calls
+    deployment = next(item for item in result["setup"] if item["kind"] == "vercel-git-deployment")
+    assert deployment["source"] == {"type": "files"}
+    assert deployment["fallback"] == "vercel-files"
+    assert context.receipt.live_url == "https://moonlite-rsvp.vercel.app"
+
+
 def test_vercel_pack_pauses_for_github_login_connection_gate(
     monkeypatch,
     tmp_path,

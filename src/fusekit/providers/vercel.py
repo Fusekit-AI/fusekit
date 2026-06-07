@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import base64
+import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
@@ -116,6 +119,35 @@ class VercelProvider:
             "source": source,
         }
 
+    def create_file_deployment(
+        self,
+        project_name: str,
+        app_path: Path,
+        *,
+        framework: str | None = None,
+    ) -> dict[str, Any]:
+        """Trigger a Vercel deployment from a sanitized local file tree."""
+
+        payload: dict[str, Any] = {
+            "name": project_name,
+            "project": project_name,
+            "target": "production",
+            "files": _deployment_files(app_path),
+        }
+        if framework:
+            payload["projectSettings"] = {"framework": framework}
+        response = self._client().request(
+            "POST",
+            "/v13/deployments?skipAutoDetectionConfirmation=1",
+            payload,
+        )
+        url = str(response.get("url", ""))
+        return {
+            "deployment_id": str(response.get("id", "")),
+            "url": f"https://{url}" if url else "",
+            "source": {"type": "files"},
+        }
+
     def delete_project(self, project_id_or_name: str) -> dict[str, Any]:
         """Delete a Vercel project created by FuseKit when rollback is requested."""
 
@@ -164,3 +196,41 @@ def verify_live_url(url: str, expected_status: int = 200) -> dict[str, Any]:
     except URLError as exc:
         raise ProviderError(f"Live URL verification failed: {url}") from exc
     return {"url": url, "status": status, "ok": status == expected_status}
+
+
+def _deployment_files(app_path: Path) -> list[dict[str, str]]:
+    root = app_path.resolve()
+    files: list[dict[str, str]] = []
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or _excluded_from_deployment(root, path):
+            continue
+        rel = path.relative_to(root).as_posix()
+        data = path.read_bytes()
+        if rel == "vercel.json":
+            data = _sanitized_vercel_json(data)
+        files.append(
+            {
+                "file": rel,
+                "data": base64.b64encode(data).decode("ascii"),
+                "encoding": "base64",
+            }
+        )
+    return files
+
+
+def _excluded_from_deployment(root: Path, path: Path) -> bool:
+    rel_parts = path.relative_to(root).parts
+    blocked_dirs = {".git", ".fusekit", "node_modules", ".venv", "__pycache__"}
+    return any(part in blocked_dirs for part in rel_parts)
+
+
+def _sanitized_vercel_json(data: bytes) -> bytes:
+    try:
+        raw = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return data
+    if not isinstance(raw, dict) or "domains" not in raw:
+        return data
+    cleaned = dict(raw)
+    cleaned.pop("domains", None)
+    return (json.dumps(cleaned, indent=2, sort_keys=True) + "\n").encode("utf-8")
