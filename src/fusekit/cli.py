@@ -1397,7 +1397,9 @@ def _verify_apply_live_url(
     try:
         result = verify_live_url(url)
     except ProviderError as exc:
-        if not bool(getattr(args, "allow_incomplete", False)):
+        if not bool(getattr(args, "allow_incomplete", False)) and not _has_pending_provider_gate(
+            args
+        ):
             raise
         result = {
             "url": url,
@@ -1413,6 +1415,19 @@ def _verify_apply_live_url(
         "verify.live_url",
         "ok" if result["ok"] else "pending" if result.get("pending_safe") else "failed",
         result,
+    )
+
+
+def _has_pending_provider_gate(args: argparse.Namespace) -> bool:
+    try:
+        records = GateService.load(_gate_state_path(args)).records.values()
+    except (OSError, ValueError):
+        return False
+    return any(
+        record.provider
+        and record.provider not in {"dns", "oci"}
+        and record.status in {"waiting", "resurfaced"}
+        for record in records
     )
 
 

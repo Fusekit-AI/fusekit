@@ -2013,6 +2013,38 @@ def test_allow_incomplete_live_url_failure_is_pending_safe(monkeypatch, tmp_path
     assert receipt.actions[0]["status"] == "pending"
 
 
+def test_pending_provider_gate_makes_live_url_failure_pending_safe(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    args = argparse.Namespace(
+        app=tmp_path,
+        live_url="https://moonlite.rsvp",
+        allow_incomplete=False,
+    )
+    GateService.load(tmp_path / ".fusekit" / "gates.json").wait(
+        "provider.vercel.vercel-project",
+        provider="vercel",
+        reason="Vercel needs GitHub connected",
+        resume_url="https://vercel.com/account/settings/login-connections",
+    )
+    audit = AuditLog(tmp_path / "audit.jsonl")
+    receipt = Receipt(app_name="app", vault_path="vault.json")
+    report = VerificationReport(app_name="app", live_url=args.live_url)
+
+    def fail_live_url(url: str) -> dict[str, object]:
+        raise ProviderError(f"Live URL verification failed: {url}")
+
+    monkeypatch.setattr("fusekit.cli.verify_live_url", fail_live_url)
+
+    _verify_apply_live_url(args, audit, receipt, report)
+
+    payload = report.to_dict()
+    assert payload["checks"][0]["status"] == "pending"
+    assert payload["checks"][0]["details"]["pending_safe"] is True
+    assert receipt.actions[0]["status"] == "pending"
+
+
 def test_strict_live_url_failure_still_fails(monkeypatch, tmp_path) -> None:
     args = argparse.Namespace(live_url="https://moonlite.rsvp", allow_incomplete=False)
     audit = AuditLog(tmp_path / "audit.jsonl")
