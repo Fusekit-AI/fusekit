@@ -97,7 +97,7 @@ def _verification_failures(
         check = str(item.get("check", "check"))
         status = str(item.get("status", ""))
         details = item.get("details", {})
-        pending_safe = bool(details.get("pending_safe")) if isinstance(details, dict) else False
+        pending_safe = _check_pending_safe(details)
         if status in {"passed", "skipped"}:
             continue
         if status == "pending" and (pending_safe or check in PENDING_SAFE_CHECKS):
@@ -106,6 +106,15 @@ def _verification_failures(
             continue
         failures.append(f"{provider}.{check} is {status or 'unknown'}")
     return failures
+
+
+def _check_pending_safe(details: Any) -> bool:
+    if not isinstance(details, dict):
+        return False
+    if bool(details.get("pending_safe")):
+        return True
+    nested = details.get("details")
+    return isinstance(nested, dict) and bool(nested.get("pending_safe"))
 
 
 def _rollback_failures(payload: dict[str, Any]) -> list[str]:

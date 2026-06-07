@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 
-from fusekit.detonation.preflight import run_detonation_preflight
+from fusekit.detonation.preflight import (
+    run_detonation_preflight,
+    verification_report_allows_launch_progress,
+)
 
 
 def test_detonation_preflight_allows_passed_and_pending_safe_checks(tmp_path) -> None:
@@ -47,6 +50,27 @@ def test_detonation_preflight_allows_passed_and_pending_safe_checks(tmp_path) ->
     )
 
     assert result.ok
+
+
+def test_launch_progress_allows_nested_pending_safe_checks() -> None:
+    assert verification_report_allows_launch_progress(
+        {
+            "checks": [
+                {
+                    "provider": "vercel",
+                    "check": "live_url_healthy",
+                    "status": "pending",
+                    "details": {"details": {"pending_safe": True}},
+                },
+                {
+                    "provider": "vercel",
+                    "check": "env_vars_configured",
+                    "status": "needs_human_gate",
+                    "details": {"details": {"service_gate": True}},
+                },
+            ]
+        }
+    )
 
 
 def test_detonation_preflight_blocks_human_gate_checks(tmp_path) -> None:
