@@ -17,6 +17,7 @@ from fusekit.cli import (
     _has_pack_provider_token,
     _local_verification_job_result,
     _playwright_headless,
+    _provider_verification_attempt_config,
     _repair_navigation_completed,
     _run_handoff,
     _start_openclaw_auth_terminal,
@@ -2043,6 +2044,22 @@ def test_pending_provider_gate_makes_live_url_failure_pending_safe(
     assert payload["checks"][0]["status"] == "pending"
     assert payload["checks"][0]["details"]["pending_safe"] is True
     assert receipt.actions[0]["status"] == "pending"
+
+
+def test_pending_provider_gate_disables_verification_retries(tmp_path) -> None:
+    args = argparse.Namespace(
+        app=tmp_path,
+        verify_attempts=10,
+        verify_retry_seconds=30,
+    )
+    GateService.load(tmp_path / ".fusekit" / "gates.json").wait(
+        "provider.vercel.vercel-project",
+        provider="vercel",
+        reason="Vercel needs GitHub connected",
+        resume_url="https://vercel.com/account/settings/login-connections",
+    )
+
+    assert _provider_verification_attempt_config(args) == (1, 0.0)
 
 
 def test_strict_live_url_failure_still_fails(monkeypatch, tmp_path) -> None:

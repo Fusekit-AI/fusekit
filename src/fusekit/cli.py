@@ -3252,13 +3252,14 @@ def _verify_provider_packs(
             pack = synthesize_provider_pack(provider, app_path)
             write_provider_pack(pack, pack_path)
         pack = load_provider_pack(pack_path)
+        verify_attempts, verify_retry_seconds = _provider_verification_attempt_config(args)
         results = verify_provider_pack(
             pack,
             vault,
             live_url=getattr(args, "live_url", ""),
             inputs=_verification_inputs(args, manifest),
-            attempts=int(getattr(args, "verify_attempts", 1)),
-            retry_seconds=float(getattr(args, "verify_retry_seconds", 0.0)),
+            attempts=verify_attempts,
+            retry_seconds=verify_retry_seconds,
         )
         payload = {"provider": pack.provider, "results": [result.to_dict() for result in results]}
         audit.record("provider_pack.verify", payload)
@@ -3339,19 +3340,29 @@ def _verification_inputs(args: argparse.Namespace, manifest: SetupManifest) -> d
     return inputs
 
 
+def _provider_verification_attempt_config(args: argparse.Namespace) -> tuple[int, float]:
+    if _has_pending_provider_gate(args):
+        return 1, 0.0
+    return (
+        int(getattr(args, "verify_attempts", 1)),
+        float(getattr(args, "verify_retry_seconds", 0.0)),
+    )
+
+
 def _rerun_provider_verification(
     args: argparse.Namespace,
     manifest: SetupManifest,
     pack: ProviderCapabilityPack,
     vault: Vault,
 ) -> list[VerificationResult]:
+    verify_attempts, verify_retry_seconds = _provider_verification_attempt_config(args)
     return verify_provider_pack(
         pack,
         vault,
         live_url=getattr(args, "live_url", ""),
         inputs=_verification_inputs(args, manifest),
-        attempts=int(getattr(args, "verify_attempts", 1)),
-        retry_seconds=float(getattr(args, "verify_retry_seconds", 0.0)),
+        attempts=verify_attempts,
+        retry_seconds=verify_retry_seconds,
     )
 
 
