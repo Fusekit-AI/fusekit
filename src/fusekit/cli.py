@@ -1346,8 +1346,7 @@ def _apply_loaded_manifest(args: argparse.Namespace, manifest: SetupManifest) ->
         app_name=manifest.app_name,
         live_url=str(getattr(args, "live_url", "")),
     )
-    secrets = _collect_secrets(args.secret)
-    secrets.update(_collect_manifest_env_secrets(manifest))
+    secrets = _runtime_env_secrets(args, manifest, vault)
 
     try:
         _capture_provider_tokens(vault, manifest)
@@ -2488,6 +2487,56 @@ def _collect_manifest_env_secrets(manifest: SetupManifest) -> dict[str, str]:
     return secrets
 
 
+def _runtime_env_secrets(
+    args: argparse.Namespace,
+    manifest: SetupManifest,
+    vault: Vault,
+) -> dict[str, str]:
+    """Collect runtime env values from derivable inputs, vault, env, and explicit refs."""
+
+    secrets = _derived_runtime_env_secrets(args, manifest)
+    secrets.update(_collect_vault_runtime_env_secrets(manifest, vault))
+    secrets.update(_collect_manifest_env_secrets(manifest))
+    secrets.update(_collect_secrets(getattr(args, "secret", [])))
+    return secrets
+
+
+def _derived_runtime_env_secrets(
+    args: argparse.Namespace,
+    manifest: SetupManifest,
+) -> dict[str, str]:
+    names = set(_app_env_names_for_verification(manifest, _required_providers(manifest)))
+    live_url = str(getattr(args, "live_url", "")).strip()
+    if live_url and "NEXT_PUBLIC_APP_URL" in names:
+        return {"NEXT_PUBLIC_APP_URL": live_url}
+    return {}
+
+
+def _collect_vault_runtime_env_secrets(
+    manifest: SetupManifest,
+    vault: Vault,
+) -> dict[str, str]:
+    names = set(_app_env_names_for_verification(manifest, _required_providers(manifest)))
+    secrets: dict[str, str] = {}
+    for name in sorted(names):
+        record = _vault_record_for_env_name(vault, name)
+        if record is not None:
+            secrets[name] = record.value
+    return secrets
+
+
+def _vault_record_for_env_name(vault: Vault, name: str) -> Any:
+    wanted = name.upper()
+    wanted_suffix = "." + wanted.lower()
+    for record in vault.records.values():
+        metadata_env = record.metadata.get("env", "").upper()
+        if metadata_env == wanted or record.label.upper() == wanted:
+            return record
+        if record.id.lower().endswith(wanted_suffix):
+            return record
+    return None
+
+
 def _required_providers(manifest: SetupManifest) -> set[str]:
     providers = {service.provider.lower() for service in manifest.services}
     if manifest.domains:
@@ -3544,10 +3593,7 @@ def _attempt_provider_api_fallback(
             vault=vault,
             audit=audit,
             receipt=receipt,
-            secrets={
-                **_collect_secrets(getattr(args, "secret", [])),
-                **_collect_manifest_env_secrets(manifest),
-            },
+            secrets=_runtime_env_secrets(args, manifest, vault),
             provider_names=_required_providers(manifest),
             inputs=_provider_setup_inputs(args),
             approve_dns=bool(getattr(args, "approve_dns", False)),

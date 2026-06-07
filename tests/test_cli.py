@@ -22,6 +22,7 @@ from fusekit.cli import (
     _repair_navigation_completed,
     _rebase_setup_artifacts,
     _run_handoff,
+    _runtime_env_secrets,
     _start_openclaw_auth_terminal,
     _ui_navigator_from_vault,
     _verify_apply_live_url,
@@ -77,6 +78,30 @@ def test_install_writes_one_click_entrypoint(tmp_path) -> None:
     assert "fusekit launch . --manifest fusekit.yaml" in setup_script.read_text(encoding="utf-8")
     gitignore = (app / ".gitignore").read_text(encoding="utf-8")
     assert ".fusekit/*.vault.json" in gitignore
+
+
+def test_runtime_env_secrets_derive_live_url_and_use_matching_vault_records() -> None:
+    vault = Vault.empty()
+    vault.put(
+        "provider.resend.resend_api_key",
+        "provider_token",
+        "resend",
+        "RESEND_API_KEY",
+        "resend-runtime-key",
+        {"env": "RESEND_API_KEY"},
+    )
+    manifest = SetupManifest(
+        app_name="app",
+        required_env=("NEXT_PUBLIC_APP_URL", "RESEND_API_KEY", "RESEND_FROM_EMAIL"),
+        services=(ServiceRequirement(provider="resend", kind="email", name="email"),),
+    )
+    args = argparse.Namespace(live_url="https://moonlite.rsvp", secret=[])
+
+    secrets = _runtime_env_secrets(args, manifest, vault)
+
+    assert secrets["NEXT_PUBLIC_APP_URL"] == "https://moonlite.rsvp"
+    assert secrets["RESEND_API_KEY"] == "resend-runtime-key"
+    assert "RESEND_FROM_EMAIL" not in secrets
 
 
 def test_playwright_fallback_is_headless_without_display(monkeypatch) -> None:

@@ -606,6 +606,29 @@ def test_live_url_500_then_200(monkeypatch) -> None:
     assert result.status == "ok"
 
 
+def test_vercel_env_missing_runtime_values_needs_human_gate(monkeypatch) -> None:
+    vault = Vault.empty()
+    vault.put("provider.vercel.token", "provider_secret", "vercel", "VERCEL_TOKEN", "token")
+    pack = _pack("vercel")
+    recipe = VerificationRecipe(
+        kind="vercel-env",
+        target="moonlite",
+        inputs={"names": "WEBHOOK_SECRET,RESEND_FROM_EMAIL"},
+    )
+
+    def local_urlopen(request, timeout=30):  # type: ignore[no-untyped-def]
+        del request, timeout
+        return _JsonResponse({"envs": [{"id": "env_1", "key": "WEBHOOK_SECRET"}]})
+
+    monkeypatch.setattr("fusekit.providers.verification.urlopen", local_urlopen)
+
+    result = verify_recipe_with_retries(pack, recipe, vault, attempts=10, retry_seconds=30)
+
+    assert result.status == "needs_human_gate"
+    assert result.details["service_gate"] is True
+    assert "RESEND_FROM_EMAIL" in result.details["reason"]
+
+
 def test_webhook_secret_mismatch_reports_failed() -> None:
     vault = Vault.empty()
     pack = _pack("webhook")

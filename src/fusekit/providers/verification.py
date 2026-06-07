@@ -538,11 +538,21 @@ def _verify_vercel_env(
         if isinstance(item, dict) and item.get("key")
     }
     missing = [name for name in names if name not in present]
+    if missing:
+        return _needs_gate(
+            pack,
+            recipe,
+            (
+                "Vercel is missing required app runtime environment variables: "
+                + ", ".join(missing)
+                + ". Capture or derive these values before verifying the deployment."
+            ),
+        )
     return VerificationResult(
         provider=pack.provider,
         kind=recipe.kind,
         target=project,
-        status="ok" if not missing else "failed",
+        status="ok",
         details={"project": project, "checked": names, "missing": missing},
     )
 
