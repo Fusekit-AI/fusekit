@@ -74,7 +74,17 @@ def verification_report_allows_detonation(report: dict[str, Any]) -> bool:
     return not verification_report_failures(report)
 
 
-def _verification_failures(report: dict[str, Any]) -> list[str]:
+def verification_report_allows_launch_progress(report: dict[str, Any]) -> bool:
+    """Return true when a launch can safely pause without treating human gates as failure."""
+
+    return not _verification_failures(report, allow_human_gate=True)
+
+
+def _verification_failures(
+    report: dict[str, Any],
+    *,
+    allow_human_gate: bool = False,
+) -> list[str]:
     checks = report.get("checks", [])
     if not isinstance(checks, list) or not checks:
         return ["verification report has no checks"]
@@ -91,6 +101,8 @@ def _verification_failures(report: dict[str, Any]) -> list[str]:
         if status in {"passed", "skipped"}:
             continue
         if status == "pending" and (pending_safe or check in PENDING_SAFE_CHECKS):
+            continue
+        if allow_human_gate and status == "needs_human_gate":
             continue
         failures.append(f"{provider}.{check} is {status or 'unknown'}")
     return failures

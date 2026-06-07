@@ -32,6 +32,7 @@ from fusekit.detonation.cleanup import detonate as detonate_paths
 from fusekit.detonation.preflight import (
     run_detonation_preflight,
     verification_report_allows_detonation,
+    verification_report_allows_launch_progress,
 )
 from fusekit.errors import ApprovalRequired, FuseKitError, ProviderError
 from fusekit.harness import run_acceptance
@@ -1284,7 +1285,10 @@ def _cmd_setup(args: argparse.Namespace) -> int:
         job.mark("verify.live", verification_status, verification_detail)
         job.mark("setup.execute", "done", "local setup worker completed")
         job.mark("artifacts.retrieve", "done", "encrypted/redacted artifacts were written locally")
-        if not args.no_detonate:
+        verification_detonation_safe = _verification_report_path_allows_detonation(
+            args.verification_report
+        )
+        if not args.no_detonate and verification_detonation_safe:
             _run_local_detonation_preflight(args, app_path)
             detonation_targets = [app_path / ".fusekit" / "worker", app_path / ".fusekit" / "tmp"]
             if bool(getattr(args, "_detonate_openclaw_state", False)):
@@ -1302,6 +1306,12 @@ def _cmd_setup(args: argparse.Namespace) -> int:
             )
             job.mark("detonate.workspace", "done", "local worker scratch state detonated")
             print(json.dumps({"detonated": removed}, indent=2, sort_keys=True))
+        elif not args.no_detonate:
+            job.mark(
+                "detonate.workspace",
+                "skipped",
+                "worker scratch state retained while provider verification waits",
+            )
         else:
             job.mark(
                 "detonate.workspace",
@@ -1363,15 +1373,15 @@ def _apply_loaded_manifest(args: argparse.Namespace, manifest: SetupManifest) ->
             _verify_apply_live_url(args, audit, receipt, verification_report)
 
         _verify_provider_packs(args, manifest, vault, audit, receipt, verification_report)
-        provider_checks_safe = verification_report_allows_detonation(
+        provider_checks_ready = verification_report_allows_launch_progress(
             verification_report.to_dict()
         )
         if hasattr(args, "job_state"):
             _mark_run_state(
                 args,
-                provider_checks_passed_or_pending_safe=provider_checks_safe,
+                provider_checks_passed_or_pending_safe=provider_checks_ready,
             )
-        if not provider_checks_safe and not args.allow_incomplete:
+        if not provider_checks_ready and not args.allow_incomplete:
             raise FuseKitError(
                 "Verification did not reach a passed or pending-safe state."
             )
@@ -1465,6 +1475,8 @@ def _local_verification_job_result(path: Path) -> tuple[str, str]:
     checks = raw.get("checks", [])
     if verification_report_allows_detonation(raw):
         return "done", "verification is passed or pending-safe"
+    if verification_report_allows_launch_progress(raw):
+        return "pending", "verification is waiting on provider human gates"
     if isinstance(checks, list) and checks:
         return "failed", "verification report contains failed or blocked checks"
     return "skipped", "local rehearsal did not require live verification"
@@ -2110,9 +2122,13 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
         Path(artifacts["output_dir"]) / ".fusekit" / "verification_report.json"
     )
     provider_checks_safe = False
+    provider_checks_ready = False
     if verification_report.exists():
         job.add_artifact("verification_report", verification_report)
         provider_checks_safe = _verification_report_path_allows_detonation(verification_report)
+        provider_checks_ready = _verification_report_path_allows_launch_progress(
+            verification_report
+        )
     rollback_plan = Path(artifacts["output_dir"]) / ".fusekit" / "rollback_plan.json"
     if rollback_plan.exists():
         job.add_artifact("rollback_plan", rollback_plan)
@@ -2125,10 +2141,10 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
     _mark_run_state(
         args,
         secrets_captured=True,
-        provider_checks_passed_or_pending_safe=provider_checks_safe,
+        provider_checks_passed_or_pending_safe=provider_checks_ready,
         receipt_written=receipt_path.exists(),
     )
-    if not provider_checks_safe:
+    if not provider_checks_ready:
         job.mark(
             "verify.live",
             "failed",
@@ -2147,9 +2163,18 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
         raise FuseKitError(
             "Remote verification did not reach a passed or pending-safe state."
         )
-    job.mark("verify.live", "done", "remote verification is passed or pending-safe")
+    if provider_checks_safe:
+        job.mark("verify.live", "done", "remote verification is passed or pending-safe")
+    else:
+        job.mark("verify.live", "pending", "remote verification is waiting on provider gates")
     if args.no_detonate:
         job.mark("detonate.workspace", "skipped", "workspace retained by --no-detonate")
+    elif not provider_checks_safe:
+        job.mark(
+            "detonate.workspace",
+            "skipped",
+            "workspace retained while provider verification waits",
+        )
     else:
         _run_remote_detonation_preflight(args, Path(artifacts["output_dir"]))
         _mark_run_state(args, detonation_safe=True)
@@ -2178,6 +2203,14 @@ def _verification_report_path_allows_detonation(path: Path) -> bool:
     except (OSError, json.JSONDecodeError):
         return False
     return isinstance(raw, dict) and verification_report_allows_detonation(raw)
+
+
+def _verification_report_path_allows_launch_progress(path: Path) -> bool:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(raw, dict) and verification_report_allows_launch_progress(raw)
 
 
 def _detonate_oci_workspace(

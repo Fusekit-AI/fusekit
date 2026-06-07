@@ -1906,7 +1906,10 @@ def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch)
 
 
 def test_remote_verification_path_must_be_passed_or_pending_safe(tmp_path) -> None:
-    from fusekit.cli import _verification_report_path_allows_detonation
+    from fusekit.cli import (
+        _verification_report_path_allows_detonation,
+        _verification_report_path_allows_launch_progress,
+    )
 
     report = tmp_path / "verification_report.json"
     report.write_text(
@@ -1941,6 +1944,37 @@ def test_remote_verification_path_must_be_passed_or_pending_safe(tmp_path) -> No
         encoding="utf-8",
     )
     assert _verification_report_path_allows_detonation(report) is True
+    assert _verification_report_path_allows_launch_progress(report) is True
+
+
+def test_local_verification_job_result_pauses_for_human_gate_report(tmp_path) -> None:
+    report = tmp_path / "verification_report.json"
+    report.write_text(
+        json.dumps(
+            {
+                "checks": [
+                    {
+                        "provider": "vercel",
+                        "check": "project_exists",
+                        "status": "needs_human_gate",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert _local_verification_job_result(report) == (
+        "pending",
+        "verification is waiting on provider human gates",
+    )
+    from fusekit.cli import (
+        _verification_report_path_allows_detonation,
+        _verification_report_path_allows_launch_progress,
+    )
+
+    assert _verification_report_path_allows_detonation(report) is False
+    assert _verification_report_path_allows_launch_progress(report) is True
 
 
 def test_local_verification_job_result_reflects_failed_report(tmp_path) -> None:
@@ -1952,7 +1986,7 @@ def test_local_verification_job_result_reflects_failed_report(tmp_path) -> None:
                     {
                         "provider": "vercel",
                         "check": "project_exists",
-                        "status": "needs_human_gate",
+                        "status": "failed",
                     }
                 ]
             }
