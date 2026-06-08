@@ -253,9 +253,16 @@ def test_resend_ui_playbook_uses_computer_actions_without_secrets() -> None:
     playbook = provider_ui_playbook("resend", include_project=True)
 
     events = execute_provider_ui_playbook(playbook, spine)
+    targets = [step.target for step in playbook.steps]
+    urls = [step.url for step in playbook.steps]
+    notes = " ".join(event.note for event in events)
 
     assert any(event.action == "click_text" for event in events)
-    assert any("DNS" in event.note for event in events)
+    assert "https://resend.com/domains" not in urls
+    assert "Domains" not in targets
+    assert "Add Domain" not in targets
+    assert "Do not create Resend domains" in notes
+    assert "FuseKit creates or reuses them through Resend's API" in notes
     assert "RESEND_API_KEY" in events[-1].note
     assert "VM browser" in events[-1].note
     assert "Capture button" in events[-1].note

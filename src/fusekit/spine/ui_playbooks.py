@@ -51,10 +51,14 @@ class ProviderUiPlaybook:
 def provider_ui_playbook(provider: str, include_project: bool = False) -> ProviderUiPlaybook:
     """Return a provider-specific UI playbook."""
 
-    handoff = handoff_for(provider)
-    common = _common_steps(handoff, include_project=include_project)
+    provider_key = provider.strip().lower()
+    handoff = handoff_for(provider_key)
+    common = _common_steps(
+        handoff,
+        include_project=include_project and provider_key != "resend",
+    )
     specific: tuple[ProviderUiStep, ...]
-    if provider == "github":
+    if provider_key == "github":
         specific = (
             ProviderUiStep("click_text", "Generate new token", note="Start token creation."),
             ProviderUiStep("click_text", "Repository permissions", note="Open repo permissions."),
@@ -69,34 +73,38 @@ def provider_ui_playbook(provider: str, include_project: bool = False) -> Provid
                 note="Grant the highlighted deploy-key access.",
             ),
         )
-    elif provider == "vercel":
+    elif provider_key == "vercel":
         specific = (
             ProviderUiStep("click_text", "Add New", note="Start project import if needed."),
             ProviderUiStep("click_text", "Import", note="Import selected Git repository."),
             ProviderUiStep("click_text", "Environment Variables", note="Open env settings."),
             ProviderUiStep("click_text", "Deploy", note="Trigger deployment if project is ready."),
         )
-    elif provider == "cloudflare":
+    elif provider_key == "cloudflare":
         specific = (
             ProviderUiStep("click_text", "Websites", note="Open zone list."),
             ProviderUiStep("click_text", "DNS", note="Open DNS records."),
             ProviderUiStep("click_text", "Create Token", note="Start scoped DNS token flow."),
         )
-    elif provider == "resend":
+    elif provider_key == "resend":
         specific = (
             ProviderUiStep("click_text", "API Keys", note="Open Resend API key page."),
-            ProviderUiStep("click_text", "Create API Key", note="Create a scoped sending key."),
-            ProviderUiStep("click_text", "Domains", note="Open sending domains."),
-            ProviderUiStep("click_text", "Add Domain", note="Start domain verification."),
             ProviderUiStep(
-                "wait_for_text",
-                "DNS Records",
-                note="Wait for SPF/DKIM/DMARC records to copy into DNS plan.",
+                "click_text",
+                "Create API Key",
+                note=(
+                    "Create a Full access setup key only. Do not create Resend domains "
+                    "or audiences here; FuseKit creates or reuses them through Resend's "
+                    "API after Capture succeeds."
+                ),
             ),
         )
     else:
         specific = ()
-    return ProviderUiPlaybook(provider=provider, steps=common + specific + _capture_steps(handoff))
+    return ProviderUiPlaybook(
+        provider=provider_key,
+        steps=common + specific + _capture_steps(handoff),
+    )
 
 
 def execute_provider_ui_playbook(
