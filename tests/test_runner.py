@@ -17,7 +17,7 @@ from urllib.request import Request, urlopen
 import pytest
 import yaml
 
-from fusekit.errors import FuseKitError
+from fusekit.errors import FuseKitError, VaultError
 from fusekit.rollback import execute_native_rollback, plan_rollback, start_over
 from fusekit.runner.broker import resolve_runner
 from fusekit.runner.cloud_shell import (
@@ -1139,6 +1139,61 @@ def test_control_room_post_captures_vm_clipboard_into_vault(tmp_path, monkeypatc
     assert events[-1]["data"]["target"] == "RESEND_API_KEY"
     assert "re_live_secret" not in json.dumps(payload)
     assert "re_live_secret" not in audit_path.read_text(encoding="utf-8")
+
+
+def test_control_room_capture_canonicalizes_known_provider_token_targets(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    vault_path = tmp_path / "fusekit.vault.json"
+    passphrase_path = tmp_path / "passphrase"
+    passphrase_path.write_text("passphrase\n", encoding="utf-8")
+    Vault.empty().save(vault_path, "passphrase")
+    job.add_artifact("vault", vault_path)
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.dns.cloudflare-token",
+        provider="dns",
+        reason="Cloudflare DNS token",
+        classification="provider-authorization",
+        target="CLOUDFLARE_API_TOKEN",
+    )
+    monkeypatch.setenv("FUSEKIT_PASSPHRASE_FILE", str(passphrase_path))
+    monkeypatch.setattr(
+        "fusekit.runner.control_room.server._vm_clipboard_text",
+        lambda job_state: "cf_live_secret_from_vm_clipboard\n",
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = (
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/gates/provider.dns.cloudflare-token/capture-clipboard"
+        )
+        request = Request(
+            url,
+            data=json.dumps({"target": "CLOUDFLARE_API_TOKEN"}).encode("utf-8"),
+            method="POST",
+            headers=_control_room_post_headers(tmp_path, **{"content-type": "application/json"}),
+        )
+        with urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert payload["record_id"] == "provider.cloudflare.cloudflare_api_token"
+    vault = Vault.open(vault_path, "passphrase")
+    record = vault.require("provider.cloudflare.cloudflare_api_token")
+    assert record.value == "cf_live_secret_from_vm_clipboard"
+    canonical = vault.require("provider.cloudflare.token")
+    assert canonical.value == "cf_live_secret_from_vm_clipboard"
+    assert canonical.metadata["alias_of"] == "provider.cloudflare.cloudflare_api_token"
+    with pytest.raises(VaultError):
+        vault.require("provider.dns.token")
 
 
 def test_control_room_passphrase_uses_job_artifact(tmp_path, monkeypatch) -> None:

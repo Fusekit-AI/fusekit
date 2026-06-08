@@ -29,6 +29,12 @@ from fusekit.security.url import require_safe_url
 from fusekit.vault import Vault
 
 GATE_OPEN_DEBOUNCE_SECONDS = 20.0
+TOKEN_PROVIDER_BY_ENV = {
+    "CLOUDFLARE_API_TOKEN": "cloudflare",
+    "GITHUB_TOKEN": "github",
+    "RESEND_API_KEY": "resend",
+    "VERCEL_TOKEN": "vercel",
+}
 
 
 def serve_control_room(job_state: Path, host: str = "127.0.0.1", port: int = 8765) -> str:
@@ -519,12 +525,20 @@ def _capture_record_for_target(
     gate_provider: str,
     target: str,
 ) -> tuple[str, str, str]:
-    provider = gate_provider.lower() or target.split("_", 1)[0].lower()
+    provider = _capture_provider_for_target(gate_provider, target)
     if target.endswith("_API_KEY") or target.endswith("_TOKEN"):
         record_id = f"provider.{provider}.{target.lower()}"
         return record_id, "provider_token", provider
     record_id = f"app.{provider}.{target.lower()}"
     return record_id, "app_env", provider
+
+
+def _capture_provider_for_target(gate_provider: str, target: str) -> str:
+    normalized_target = target.strip().upper()
+    canonical_provider = TOKEN_PROVIDER_BY_ENV.get(normalized_target)
+    if canonical_provider:
+        return canonical_provider
+    return gate_provider.strip().lower() or target.split("_", 1)[0].lower()
 
 
 def _canonical_provider_token_record(provider: str, target: str) -> str:
