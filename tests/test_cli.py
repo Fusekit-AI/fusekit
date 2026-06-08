@@ -365,6 +365,116 @@ def test_manifest_setup_feeds_resend_dns_records_to_cloudflare(monkeypatch, tmp_
     assert calls == ["resend", "cloudflare"]
 
 
+def test_control_room_dns_approval_waits_after_resend_records_before_cloudflare(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    (app / ".fusekit").mkdir(parents=True)
+    vault_path = app / ".fusekit" / "fusekit.vault.json"
+    vault_path.write_text("{}", encoding="utf-8")
+    calls: list[str] = []
+
+    def fake_run_provider_pack_setup(pack, context):  # type: ignore[no-untyped-def]
+        calls.append(pack.provider)
+        if pack.provider == "resend":
+            context.generated_dns_records.setdefault("moonlite.rsvp", []).append(
+                DnsRecord(
+                    name="send.moonlite.rsvp",
+                    type="MX",
+                    value="feedback-smtp.us-east-1.amazonses.com",
+                    priority=10,
+                )
+            )
+            return {
+                "provider": "resend",
+                "setup": [
+                    {
+                        "kind": "resend-domain",
+                        "status": "ok",
+                        "strategy": "api",
+                        "strategy_decision": {"selected": {"kind": "api"}},
+                    }
+                ],
+            }
+        if pack.provider == "cloudflare":
+            assert context.approve_dns is True
+            return {
+                "provider": "cloudflare",
+                "setup": [
+                    {
+                        "kind": "cloudflare-dns",
+                        "status": "ok",
+                        "strategy": "api",
+                        "strategy_decision": {"selected": {"kind": "api"}},
+                    }
+                ],
+            }
+        raise AssertionError(f"unexpected provider {pack.provider}")
+
+    monkeypatch.setattr("fusekit.cli.run_provider_pack_setup", fake_run_provider_pack_setup)
+    monkeypatch.setattr("builtins.input", lambda *args, **kwargs: "")
+
+    gate_id = "dns.moonlite.rsvp.approval"
+
+    def approve_from_control_room(_seconds: float) -> None:
+        GateService.load(app / ".fusekit" / "gates.json").request_resume(gate_id)
+
+    monkeypatch.setattr("fusekit.cli.time.sleep", approve_from_control_room)
+    manifest = SetupManifest(
+        app_name="app",
+        app_path=str(app),
+        services=(
+            ServiceRequirement(provider="resend", kind="email", name="email"),
+            ServiceRequirement(provider="cloudflare", kind="dns", name="dns"),
+        ),
+        domains=(
+            DomainRequirement(
+                provider="cloudflare",
+                domain="moonlite.rsvp",
+                records=(DnsRecord(name="moonlite.rsvp", type="A", value="76.76.21.21"),),
+            ),
+        ),
+    )
+    args = argparse.Namespace(
+        app=app,
+        vault=vault_path,
+        allow_incomplete=False,
+        fusekit_gates="service-only",
+        github_repo="",
+        vercel_project="",
+        vercel_framework="",
+        vercel_git_repo_id="",
+        vercel_git_ref="main",
+        dns_zone="moonlite.rsvp",
+        approve_dns=False,
+        control_room=True,
+        gate_retry_seconds=10,
+        gate_max_attempts=3,
+    )
+    context = ProviderSetupContext(
+        manifest=manifest,
+        vault=Vault.empty(),
+        audit=AuditLog(tmp_path / "audit.jsonl"),
+        receipt=Receipt(app_name="app"),
+        secrets={},
+        provider_names={"resend", "cloudflare"},
+        inputs={"dns_zone": "moonlite.rsvp"},
+    )
+
+    _run_manifest_provider_pack_setup(args, manifest, context)
+
+    assert calls == ["resend", "cloudflare"]
+    assert args.approve_dns is True
+    gate = GateService.load(app / ".fusekit" / "gates.json").records[gate_id]
+    assert gate.status == "passed"
+    steps = " ".join(gate.follow_steps)
+    assert "App DNS records: A moonlite.rsvp -> 76.76.21.21" in steps
+    assert "Provider-generated DNS records from Resend/API setup" in steps
+    assert "MX send.moonlite.rsvp -> feedback-smtp.us-east-1.amazonses.com priority 10" in steps
+    assert gate.next_action == "No action needed."
+
+
 def test_gate_sleep_wakes_when_control_room_requests_resume(
     monkeypatch,
     tmp_path,

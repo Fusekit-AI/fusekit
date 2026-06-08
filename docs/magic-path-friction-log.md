@@ -109,6 +109,7 @@ guided, or explicitly verified.
 | The rollback planner could emit DNS rollback as a generic `rollback.dns.*` action and omit Resend setup actions, causing fresh runs to fail the provider-coverage proof even after successful setup. | Rollback plans now emit provider-shaped actions for Cloudflare DNS and Resend setup, with legacy DNS rollback names still accepted by the launch-readiness harness. |
 | Shared capture copy could still say "Capture in FuseKit" or "Capture here" while the visible button says `Capture <ENV> from VM clipboard`. | Static, live, Resend-specific, and generic gate fallback copy now tells users to click the matching `Capture from VM clipboard` button. |
 | Live acceptance could treat a gate as guided with only a next-action sentence, and its redacted gate proof still serialized raw `target` text. | Live acceptance now requires non-empty follow-me steps for each durable gate and redacts gate targets in public acceptance artifacts. |
+| DNS apply approval could still depend on an upfront `--approve-dns` flag or pending-safe skip, so a control-room run might reach Cloudflare without a clear post-Resend approval moment showing the exact app and Resend-generated records. | Control-room launches now pause after Resend emits DNS records and before Cloudflare runs, render the app and provider-generated DNS record summaries in the approval gate, then continue Cloudflare apply/verify after the launcher approval is recorded. |
 
 ## Open Acceptance Items
 

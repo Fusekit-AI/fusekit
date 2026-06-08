@@ -3085,7 +3085,13 @@ def _await_plan_approval(args: argparse.Namespace) -> None:
         _sleep_for_gate(args, gate_id=gate_id)
 
 
-def _await_dns_approval(args: argparse.Namespace, domain: str) -> None:
+def _await_dns_approval(
+    args: argparse.Namespace,
+    domain: str,
+    *,
+    manifest: SetupManifest | None = None,
+    context: ProviderSetupContext | None = None,
+) -> None:
     gate_id = f"dns.{domain}.approval"
     attempt = 0
     while True:
@@ -3118,11 +3124,11 @@ def _await_dns_approval(args: argparse.Namespace, domain: str) -> None:
             provider="dns",
             reason=f"explicit DNS apply approval for {domain}",
             classification="dns-approval",
-            follow_steps=_dns_approval_follow_steps(domain),
-            next_action=f"Approve applying the DNS records for {domain}.",
+            follow_steps=_dns_approval_follow_steps(domain, manifest=manifest, context=context),
+            next_action=_dns_approval_next_action(domain, manifest=manifest, context=context),
             resume_hint=(
-                "FuseKit will apply the approved records through the DNS provider API "
-                "and keep verifying propagation."
+                "FuseKit will apply the approved app and provider-generated DNS records "
+                "through the DNS provider API and keep verifying propagation."
             ),
         )
         _ensure_gate_attempt_allowed(args, attempt, f"DNS approval for {domain}")
@@ -3130,12 +3136,88 @@ def _await_dns_approval(args: argparse.Namespace, domain: str) -> None:
         _sleep_for_gate(args, gate_id=gate_id)
 
 
-def _dns_approval_follow_steps(domain: str) -> tuple[str, ...]:
-    return (
+def _dns_approval_follow_steps(
+    domain: str,
+    *,
+    manifest: SetupManifest | None = None,
+    context: ProviderSetupContext | None = None,
+) -> tuple[str, ...]:
+    steps = [
         f"Review the DNS plan for {domain} in the control room.",
         "Approve only records that match the app, Resend, Vercel, and domain named by FuseKit.",
         "Click Approve DNS apply; FuseKit will apply the records and verify propagation.",
+    ]
+    steps.extend(_dns_approval_record_steps(domain, manifest=manifest, context=context))
+    return tuple(steps)
+
+
+def _dns_approval_next_action(
+    domain: str,
+    *,
+    manifest: SetupManifest | None = None,
+    context: ProviderSetupContext | None = None,
+) -> str:
+    count = len(_dns_approval_records(domain, manifest=manifest, context=context))
+    if count:
+        return f"Approve applying {count} DNS record(s) for {domain}."
+    return f"Approve applying the DNS records for {domain}."
+
+
+def _dns_approval_record_steps(
+    domain: str,
+    *,
+    manifest: SetupManifest | None,
+    context: ProviderSetupContext | None,
+) -> tuple[str, ...]:
+    app_records = _dns_approval_records(
+        domain,
+        manifest=manifest,
+        context=context,
+        generated=False,
     )
+    generated_records = _dns_approval_records(
+        domain,
+        manifest=manifest,
+        context=context,
+        app=False,
+    )
+    steps: list[str] = []
+    if app_records:
+        steps.append(
+            "App DNS records: "
+            + "; ".join(_dns_record_summary(record) for record in app_records)
+            + "."
+        )
+    if generated_records:
+        steps.append(
+            "Provider-generated DNS records from Resend/API setup: "
+            + "; ".join(_dns_record_summary(record) for record in generated_records)
+            + "."
+        )
+    return tuple(steps)
+
+
+def _dns_approval_records(
+    domain: str,
+    *,
+    manifest: SetupManifest | None,
+    context: ProviderSetupContext | None,
+    app: bool = True,
+    generated: bool = True,
+) -> tuple[DnsRecord, ...]:
+    records: list[DnsRecord] = []
+    if app and manifest is not None:
+        for requirement in manifest.domains:
+            if requirement.domain == domain:
+                records.extend(requirement.records)
+    if generated and context is not None:
+        records.extend(context.generated_dns_records.get(domain, ()))
+    return tuple(records)
+
+
+def _dns_record_summary(record: DnsRecord) -> str:
+    priority = f" priority {record.priority}" if record.priority is not None else ""
+    return f"{record.type} {record.name} -> {record.value}{priority}"
 
 
 def _ensure_gate_attempt_allowed(args: argparse.Namespace, attempt: int, label: str) -> None:
@@ -3271,6 +3353,8 @@ def _run_manifest_provider_pack_setup(
             settings={"capability_pack": str(pack_default_path(app_path, "cloudflare"))},
         )
     for provider, service in _ordered_provider_services(providers):
+        if provider in {"cloudflare", "dns"}:
+            _maybe_await_control_room_dns_approval(args, manifest, context)
         pack_path = _provider_pack_path(app_path, provider, service)
         if not pack_path.exists():
             write_provider_pack(synthesize_provider_pack(provider, app_path), pack_path)
@@ -3304,6 +3388,23 @@ def _run_manifest_provider_pack_setup(
             break
     if not strategy_runs:
         _write_provider_strategy_artifact(args, strategy_runs)
+
+
+def _maybe_await_control_room_dns_approval(
+    args: argparse.Namespace,
+    manifest: SetupManifest,
+    context: ProviderSetupContext,
+) -> None:
+    if context.approve_dns or bool(getattr(args, "approve_dns", False)):
+        context.approve_dns = True
+        return
+    if not bool(getattr(args, "control_room", False)):
+        return
+    if not manifest.domains:
+        return
+    domain = str(getattr(args, "dns_zone", "") or manifest.domains[0].domain)
+    _await_dns_approval(args, domain, manifest=manifest, context=context)
+    context.approve_dns = True
 
 
 def _provider_setup_needs_human_gate(result: dict[str, Any]) -> bool:
