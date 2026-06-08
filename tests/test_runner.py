@@ -614,14 +614,28 @@ def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -
         request = Request(url, method="POST", headers={"x-fusekit-control-room": "resume"})
         with urlopen(request, timeout=5) as response:
             payload = json.loads(response.read().decode("utf-8"))
+        request = Request(url, method="POST", headers={"x-fusekit-control-room": "resume"})
+        with urlopen(request, timeout=5) as response:
+            second_payload = json.loads(response.read().decode("utf-8"))
     finally:
         server.shutdown()
         thread.join(timeout=5)
 
     assert payload["ok"] is True
+    assert payload["reused"] is False
+    assert "shared VM browser" in payload["message"]
+    assert second_payload["ok"] is True
+    assert second_payload["reused"] is True
+    assert "already open" in second_payload["message"]
+    assert len(calls) == 1
     assert calls[0]["command"][-1] == "https://dash.cloudflare.com/profile/api-tokens"
     assert calls[0]["env"]["DISPLAY"] == ":99"
     assert calls[0]["command"][0] == "/usr/bin/fake-chrome"
+    gate = GateService.load(tmp_path / "gates.json").records[
+        "provider.cloudflare.authorization"
+    ]
+    assert gate.last_opened_url == "https://dash.cloudflare.com/profile/api-tokens"
+    assert gate.last_opened_at > 0
 
 
 def test_control_room_post_captures_vm_clipboard_into_vault(tmp_path, monkeypatch) -> None:

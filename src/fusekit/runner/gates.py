@@ -55,6 +55,8 @@ class GateRecord:
     target: str = ""
     follow_steps: tuple[str, ...] = ()
     attempts: int = 0
+    last_opened_url: str = ""
+    last_opened_at: float = 0.0
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
 
@@ -71,6 +73,8 @@ class GateRecord:
             "target": self.target,
             "follow_steps": list(self.follow_steps),
             "attempts": self.attempts,
+            "last_opened_url": self.last_opened_url,
+            "last_opened_at": self.last_opened_at,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -89,6 +93,8 @@ class GateRecord:
             target=str(raw.get("target", "")),
             follow_steps=_string_tuple(raw.get("follow_steps", [])),
             attempts=_int_value(raw.get("attempts"), 0),
+            last_opened_url=str(raw.get("last_opened_url", "")),
+            last_opened_at=_float_value(raw.get("last_opened_at"), 0.0),
             created_at=_float_value(raw.get("created_at"), time.time()),
             updated_at=_float_value(raw.get("updated_at"), time.time()),
         )
@@ -144,6 +150,11 @@ class GateService:
             classification = classification or record.classification
             target = target or record.target
             follow_steps = follow_steps or record.follow_steps
+            last_opened_url = record.last_opened_url
+            last_opened_at = record.last_opened_at
+        else:
+            last_opened_url = ""
+            last_opened_at = 0.0
         record = GateRecord(
             id=gate_id,
             provider=provider,
@@ -154,6 +165,8 @@ class GateService:
             target=target,
             follow_steps=follow_steps,
             attempts=attempts,
+            last_opened_url=last_opened_url,
+            last_opened_at=last_opened_at,
             created_at=created_at,
             updated_at=time.time(),
         )
@@ -174,6 +187,15 @@ class GateService:
 
         record = self.records[gate_id]
         record.status = "resume_requested"
+        record.updated_at = time.time()
+        self.save()
+
+    def mark_opened(self, gate_id: str, url: str) -> None:
+        """Record that the provider gate was opened in the shared VM browser."""
+
+        record = self.records[gate_id]
+        record.last_opened_url = url
+        record.last_opened_at = time.time()
         record.updated_at = time.time()
         self.save()
 

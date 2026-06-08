@@ -8,6 +8,7 @@ import re
 import secrets
 import shutil
 import subprocess
+import time
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -25,6 +26,8 @@ from fusekit.runner.gates import GateService
 from fusekit.runner.job import JobState
 from fusekit.security.url import require_safe_url
 from fusekit.vault import Vault
+
+GATE_OPEN_DEBOUNCE_SECONDS = 20.0
 
 
 def serve_control_room(job_state: Path, host: str = "127.0.0.1", port: int = 8765) -> str:
@@ -113,12 +116,35 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                 if gate is None:
                     self._write_json({"ok": False, "error": "gate not found"}, status=404)
                     return
+                safe_url = require_safe_url(gate.resume_url, label="Provider gate URL")
+                if _recently_opened_gate(gate, safe_url):
+                    self._write_json(
+                        {
+                            "ok": True,
+                            "gate_id": gate_id,
+                            "browser": "",
+                            "reused": True,
+                            "message": (
+                                "Provider gate is already open in the shared VM browser."
+                            ),
+                        }
+                    )
+                    return
                 try:
-                    browser = _open_gate_url_in_visual_browser(job_state, gate.resume_url)
+                    browser = _open_gate_url_in_visual_browser(job_state, safe_url)
                 except FuseKitError as exc:
                     self._write_json({"ok": False, "error": str(exc)}, status=400)
                     return
-                self._write_json({"ok": True, "gate_id": gate_id, "browser": browser})
+                service.mark_opened(gate_id, safe_url)
+                self._write_json(
+                    {
+                        "ok": True,
+                        "gate_id": gate_id,
+                        "browser": browser,
+                        "reused": False,
+                        "message": "Provider gate opened inside the shared VM browser.",
+                    }
+                )
                 return
             if route.path.startswith(prefix) and route.path.endswith("/capture-clipboard"):
                 gate_id = unquote(route.path[len(prefix) : -len("/capture-clipboard")])
@@ -274,6 +300,15 @@ def _open_gate_url_in_visual_browser(job_state: Path, url: str) -> str:
     except OSError as exc:
         raise FuseKitError(f"Could not open provider gate in VM browser: {exc}") from exc
     return browser
+
+
+def _recently_opened_gate(gate: Any, safe_url: str) -> bool:
+    """Return whether the same provider gate was already launched moments ago."""
+
+    if str(getattr(gate, "last_opened_url", "") or "") != safe_url:
+        return False
+    opened_at = float(getattr(gate, "last_opened_at", 0.0) or 0.0)
+    return opened_at > 0 and time.time() - opened_at < GATE_OPEN_DEBOUNCE_SECONDS
 
 
 def _capture_gate_clipboard_secret(

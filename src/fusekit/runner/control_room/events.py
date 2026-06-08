@@ -840,8 +840,11 @@ document.addEventListener("click", async (event) => {
           headers: { "x-fusekit-control-room": "resume" },
         },
       );
-      if (!response.ok) throw new Error("gate open failed");
-      setRefreshStatus("Provider gate opened inside the VM browser.");
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error("gate open failed");
+      setRefreshStatus(
+        payload.message || "Provider gate opened inside the shared VM browser.",
+      );
     } catch {
       setRefreshStatus(
         "Could not open the provider gate inside the VM. Use the noVNC browser surface.",
