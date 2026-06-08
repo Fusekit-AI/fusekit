@@ -2000,6 +2000,17 @@ def test_control_room_payload_and_html_include_provider_strategy_routes(tmp_path
                                 "recipe": "github-deploy-key",
                                 "status": "needs_human_gate",
                                 "strategy": "browser_guided",
+                                "next_action": (
+                                    "Click Open provider gate in VM, create the setup token, "
+                                    "then click Capture from VM clipboard."
+                                ),
+                                "resume_hint": (
+                                    "FuseKit will retry this provider route after capture."
+                                ),
+                                "follow_steps": [
+                                    "Open GitHub in the VM browser.",
+                                    "Create the fine-grained FuseKit setup token.",
+                                ],
                                 "decision": {
                                     "selected": {
                                         "kind": "browser_guided",
@@ -2029,6 +2040,8 @@ def test_control_room_payload_and_html_include_provider_strategy_routes(tmp_path
     assert "provider-owned gates" in html
     assert "providerStrategyRouteSummary" in html
     assert "Provider token is missing." in html
+    assert "Click Open provider gate in VM, create the setup token" in html
+    assert "Create the fine-grained FuseKit setup token." in html
 
 
 def test_control_room_explains_deterministic_provider_route(tmp_path) -> None:

@@ -1284,6 +1284,7 @@ button {
 .strategy-card span,
 .strategy-card strong,
 .strategy-card p,
+.strategy-card .strategy-row,
 .strategy-card b,
 .strategy-card em,
 .strategy-card small {
@@ -1304,10 +1305,23 @@ button {
   font-size: 15px;
 }
 
-.strategy-card p {
+.strategy-card p,
+.strategy-card .strategy-row {
   margin: 11px 0 0;
   border-top: 1px solid rgba(0, 21, 42, 0.1);
   padding-top: 10px;
+}
+
+.strategy-card ol {
+  margin: 8px 0 0 18px;
+  padding: 0;
+  color: #253c54;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.strategy-card li + li {
+  margin-top: 4px;
 }
 
 .strategy-card b {

@@ -954,6 +954,16 @@ def _provider_strategy_shape_failures(providers: Any) -> list[str]:
             candidates = decision.get("candidates", [])
             if not isinstance(candidates, list) or not candidates:
                 failures.append(f"{label} is missing considered candidates")
+            if str(strategy.get("status", "")).strip() == "needs_human_gate":
+                follow_steps = strategy.get("follow_steps", [])
+                if not isinstance(follow_steps, list) or not any(
+                    str(step).strip() for step in follow_steps
+                ):
+                    failures.append(f"{label}.follow_steps is missing")
+                if not str(strategy.get("next_action", "")).strip():
+                    failures.append(f"{label}.next_action is missing")
+                if not str(strategy.get("resume_hint", "")).strip():
+                    failures.append(f"{label}.resume_hint is missing")
     return failures
 
 

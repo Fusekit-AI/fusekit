@@ -3452,16 +3452,24 @@ def _provider_strategy_record(result: dict[str, Any]) -> dict[str, object]:
         if not isinstance(decision, dict):
             continue
         selected = decision.get("selected", {})
-        strategies.append(
-            {
-                "recipe": str(item.get("kind", decision.get("recipe_kind", ""))),
-                "status": str(item.get("status", "")),
-                "strategy": str(item.get("strategy", selected.get("kind", "")))
-                if isinstance(selected, dict)
-                else str(item.get("strategy", "")),
-                "decision": decision,
-            }
-        )
+        strategy: dict[str, object] = {
+            "recipe": str(item.get("kind", decision.get("recipe_kind", ""))),
+            "status": str(item.get("status", "")),
+            "strategy": str(item.get("strategy", selected.get("kind", "")))
+            if isinstance(selected, dict)
+            else str(item.get("strategy", "")),
+            "decision": decision,
+        }
+        for key in ("resume_url", "next_action", "resume_hint"):
+            value = str(item.get(key, "") or "").strip()
+            if value:
+                strategy[key] = value
+        follow_steps = item.get("follow_steps")
+        if isinstance(follow_steps, (list, tuple)):
+            steps = [str(step).strip() for step in follow_steps if str(step).strip()]
+            if steps:
+                strategy["follow_steps"] = steps
+        strategies.append(strategy)
     return {"provider": str(result.get("provider", "")), "strategies": strategies}
 
 

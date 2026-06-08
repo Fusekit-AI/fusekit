@@ -592,6 +592,92 @@ def test_live_acceptance_requires_complete_provider_strategy_evidence(tmp_path) 
     assert "complete provider strategy evidence" in report.missing
 
 
+def test_live_acceptance_requires_guided_human_provider_strategy(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "package.json").write_text(
+        json.dumps({"name": "moonlite-rsvp", "dependencies": {"next": "latest"}}),
+        encoding="utf-8",
+    )
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    (remote_fusekit / "audit.jsonl").write_text('{"event":"provider.verify"}\n', "utf-8")
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "live_url": "https://moonlite.example",
+                "raw_secrets_exposed": 0,
+                "actions": [],
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "verification_report.json").write_text(
+        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        "utf-8",
+    )
+    (remote_fusekit / "rollback_plan.json").write_text(
+        json.dumps({"rollback": [{"action": "rollback.github.secret", "status": "planned"}]}),
+        "utf-8",
+    )
+    (remote_fusekit / "provider_strategies.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.provider-strategies.v1",
+                "providers": [
+                    {
+                        "provider": "github",
+                        "strategies": [
+                            {
+                                "recipe": "github-deploy-key",
+                                "strategy": "browser_guided",
+                                "status": "needs_human_gate",
+                                "decision": {
+                                    "selected": {
+                                        "kind": "browser_guided",
+                                        "status": "available",
+                                        "deterministic": False,
+                                        "implemented": False,
+                                        "reason": "Provider token is missing.",
+                                    },
+                                    "candidates": [
+                                        {
+                                            "kind": "browser_guided",
+                                            "status": "available",
+                                        }
+                                    ],
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "gates.json").write_text(json.dumps({"gates": []}), "utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    strategy_check = next(
+        check for check in report.checks if check.id == "provider_strategies.complete"
+    )
+    assert report.launch_ready is False
+    assert strategy_check.status == "failed"
+    assert "github.strategies[0].follow_steps is missing" in strategy_check.detail
+    assert "github.strategies[0].next_action is missing" in strategy_check.detail
+    assert "github.strategies[0].resume_hint is missing" in strategy_check.detail
+    assert "complete provider strategy evidence" in report.missing
+
+
 def test_live_acceptance_requires_strategy_coverage_for_manifest_providers(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()

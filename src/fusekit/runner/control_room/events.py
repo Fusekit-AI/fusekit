@@ -890,13 +890,33 @@ function renderProviderStrategyRow(strategy) {
   const status = String(strategy.status || "pending");
   const reason = String(selected.reason || "");
   const routeSummary = providerStrategyRouteSummary(strategy, selected);
+  const nextAction = publicCopy(strategy.next_action || "").trim();
+  const resumeHint = publicCopy(strategy.resume_hint || "").trim();
+  const followSteps = Array.isArray(strategy.follow_steps) ? strategy.follow_steps : [];
+  const guide = nextAction
+    ? `<small><b>Next:</b> ${escapeHtml(nextAction)}</small>`
+    : "";
+  const hint = resumeHint ? `<small>${escapeHtml(resumeHint)}</small>` : "";
+  const steps = followSteps.length
+    ? [
+        `<ol>`,
+        followSteps
+          .filter((step) => String(step || "").trim())
+          .map((step) => `<li>${escapeHtml(publicCopy(step))}</li>`)
+          .join(""),
+        `</ol>`,
+      ].join("")
+    : "";
   return `
-    <p>
+    <div class="strategy-row">
       <b>${escapeHtml(recipe)}</b>
       <em>${escapeHtml(route)} · ${escapeHtml(status)}</em>
       <small>${escapeHtml(routeSummary)}</small>
       <small>${escapeHtml(reason)}</small>
-    </p>
+      ${guide}
+      ${hint}
+      ${steps}
+    </div>
   `;
 }
 

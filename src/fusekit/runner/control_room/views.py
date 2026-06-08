@@ -660,13 +660,38 @@ def _render_strategy_row(strategy: dict[str, Any]) -> str:
     route = str(strategy.get("strategy", "unknown"))
     status = str(strategy.get("status", "pending"))
     recipe = str(strategy.get("recipe", "setup"))
+    next_action = str(strategy.get("next_action", "") or "").strip()
+    resume_hint = str(strategy.get("resume_hint", "") or "").strip()
+    follow_steps = strategy.get("follow_steps", [])
+    step_items = (
+        "".join(
+            f"<li>{html.escape(_public_copy(str(step)))}</li>"
+            for step in follow_steps
+            if str(step).strip()
+        )
+        if isinstance(follow_steps, list)
+        else ""
+    )
+    guide = (
+        "<small><b>Next:</b> "
+        f"{html.escape(_public_copy(next_action))}</small>"
+        if next_action
+        else ""
+    )
+    hint = (
+        f"<small>{html.escape(_public_copy(resume_hint))}</small>" if resume_hint else ""
+    )
+    steps = f"<ol>{step_items}</ol>" if step_items else ""
     return f"""
-            <p>
+            <div class="strategy-row">
               <b>{html.escape(recipe)}</b>
               <em>{html.escape(route.replace('_', ' '))} · {html.escape(status)}</em>
               <small>{html.escape(route_summary)}</small>
               <small>{html.escape(reason)}</small>
-            </p>
+              {guide}
+              {hint}
+              {steps}
+            </div>
 """
 
 

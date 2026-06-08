@@ -1432,7 +1432,14 @@ def test_apply_records_provider_strategy_gate_when_token_is_missing(
 
     strategies = json.loads((fusekit_dir / "provider_strategies.json").read_text("utf-8"))
     assert strategies["providers"][0]["provider"] == "github"
-    assert strategies["providers"][0]["strategies"][0]["strategy"] == "browser_guided"
+    strategy = strategies["providers"][0]["strategies"][0]
+    assert strategy["strategy"] == "browser_guided"
+    assert strategy["status"] == "needs_human_gate"
+    assert strategy["resume_url"] == "https://github.com/settings/tokens?type=beta"
+    assert "fine-grained token" in " ".join(strategy["follow_steps"])
+    assert "Resource owner" in " ".join(strategy["follow_steps"])
+    assert "matching Capture from VM clipboard button" in strategy["next_action"]
+    assert "visible gate is finished" in strategy["resume_hint"]
 
 
 def test_apply_writes_verification_report_when_provider_check_fails(tmp_path) -> None:
