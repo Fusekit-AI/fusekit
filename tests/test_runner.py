@@ -848,6 +848,21 @@ def test_control_room_post_rejects_cross_site_gate_pass(tmp_path) -> None:
     ].status == "waiting"
 
 
+def test_security_surface_map_documents_control_room_state_routes() -> None:
+    text = Path("docs/security-surface-map.md").read_text(encoding="utf-8")
+
+    for route in (
+        "/api/gates/<gate_id>/pass",
+        "/api/gates/<gate_id>/open",
+        "/api/gates/<gate_id>/capture-clipboard",
+    ):
+        assert route in text
+    assert "x-fusekit-control-room: resume" in text
+    assert "require_safe_url" in text
+    assert "target must match the gate's env-style allowlist" in text
+    assert "never raw secret text" in text
+
+
 def test_control_room_post_rejects_untrusted_origin(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job_path = tmp_path / "job.json"

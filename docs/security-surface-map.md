@@ -15,11 +15,13 @@ Python package is the live control room in `fusekit.runner.control_room.server`.
 | `/index.html` | `GET` | Read-only control-room HTML. | Same as `/`. |
 | `/api/job` | `GET` | Read-only redacted job payload. | Same as `/`. |
 | `/api/gates/<gate_id>/pass` | `POST` | Marks one human gate as passed in `.fusekit/gates.json`. | Requires `x-fusekit-control-room: resume`; rejects untrusted `Origin`; rejects browser-declared cross-site `Sec-Fetch-Site`; remote access requires token via bearer/query/cookie; no CORS headers are emitted. |
+| `/api/gates/<gate_id>/open` | `POST` | Opens the gate's provider URL in the shared VM browser and records debounce metadata. | Same POST protections as `/pass`; URL is read from the durable gate record and validated with `require_safe_url`; launches a fixed browser argv list, not caller-supplied commands; repeated opens are debounced. |
+| `/api/gates/<gate_id>/capture-clipboard` | `POST` | Reads the VM clipboard for one approved capture target, writes it into the encrypted vault, and marks capture progress. | Same POST protections as `/pass`; target must match the gate's env-style allowlist; clipboard value size/text is bounded; response includes only target/record metadata, never raw secret text. |
 | Any route | `OPTIONS` | None. | Returns `405` with security headers and no CORS allow headers, so browser preflights for custom-header POSTs fail closed. |
 
 There is no browser route that accepts a shell command, command arguments,
-provider recipe name, vault path, user name, admin account request, or arbitrary
-state mutation. Unknown GET/POST paths return `404`.
+provider recipe name, vault path, user name, admin account request, raw secret
+value, or arbitrary state mutation. Unknown GET/POST paths return `404`.
 
 ## State-Changing CLI and Provider Actions
 
