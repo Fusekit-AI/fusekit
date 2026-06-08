@@ -576,7 +576,7 @@ function renderTrust(job) {
 }
 
 function acceptanceCards(report) {
-  const blockers = Array.isArray(report.blockers) ? report.blockers : [];
+  const blockers = acceptanceBlockers(report);
   if (report.error) {
     return [
       {
@@ -623,11 +623,26 @@ function acceptanceCards(report) {
   ];
 }
 
+function acceptanceBlockers(report) {
+  const blockers = Array.isArray(report.blockers) ? report.blockers : [];
+  const normalized = blockers.filter((blocker) => blocker && typeof blocker === "object");
+  if (normalized.length) return normalized;
+  const missing = Array.isArray(report.missing) ? report.missing : [];
+  return missing
+    .map((item) => String(item).trim())
+    .filter(Boolean)
+    .map((item) => ({
+      category: "Launch evidence",
+      item,
+      next_action: "Repair this acceptance item, then rerun live acceptance.",
+    }));
+}
+
 function renderAcceptance(job) {
   const root = document.querySelector("[data-acceptance-blockers]");
   if (!root) return;
   const report = job.acceptance && typeof job.acceptance === "object" ? job.acceptance : {};
-  const blockers = Array.isArray(report.blockers) ? report.blockers : [];
+  const blockers = acceptanceBlockers(report);
   const summary = report.error
     ? "acceptance report needs repair"
     : report.launch_ready

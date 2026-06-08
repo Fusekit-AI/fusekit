@@ -336,8 +336,7 @@ def _render_visual_session(visual: Any) -> str:
 
 def _render_acceptance_blockers(report: Any) -> str:
     report = report if isinstance(report, dict) else {}
-    blockers = report.get("blockers", [])
-    blockers = blockers if isinstance(blockers, list) else []
+    blockers = _acceptance_blockers(report)
     error = str(report.get("error", "") or "")
     ready = bool(report.get("launch_ready", False))
     if error:
@@ -401,6 +400,26 @@ def _render_acceptance_blockers(report: Any) -> str:
       <div class="acceptance-grid" data-acceptance-blockers>{cards}</div>
     </section>
 """
+
+
+def _acceptance_blockers(report: dict[str, Any]) -> list[dict[str, Any]]:
+    blockers = report.get("blockers", [])
+    if isinstance(blockers, list):
+        normalized = [blocker for blocker in blockers if isinstance(blocker, dict)]
+        if normalized:
+            return normalized
+    missing = report.get("missing", [])
+    if not isinstance(missing, list):
+        return []
+    return [
+        {
+            "category": "Launch evidence",
+            "item": str(item),
+            "next_action": "Repair this acceptance item, then rerun live acceptance.",
+        }
+        for item in missing
+        if str(item).strip()
+    ]
 
 
 def _render_acceptance_blocker_card(blocker: dict[str, Any]) -> str:

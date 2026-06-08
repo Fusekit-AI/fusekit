@@ -437,6 +437,32 @@ def test_control_room_payload_and_html_include_acceptance_blockers(tmp_path) -> 
     assert "renderAcceptance" in html
 
 
+def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    acceptance_dir = tmp_path / "acceptance"
+    acceptance_dir.mkdir()
+    (acceptance_dir / "report.json").write_text(
+        json.dumps(
+            {
+                "launch_ready": False,
+                "missing": ["audited human gate interventions"],
+                "blockers": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+    payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
+
+    assert payload["acceptance"]["missing"] == ["audited human gate interventions"]
+    assert "Launch evidence" in html
+    assert "audited human gate interventions" in html
+    assert "Repair this acceptance item, then rerun live acceptance." in html
+    assert "1 launch blocker" in html
+    assert "acceptanceBlockers" in html
+
+
 def test_control_room_renders_acceptance_ready_state(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     acceptance_dir = tmp_path / "acceptance"

@@ -70,6 +70,7 @@ guided, or explicitly verified.
 | Private GitHub App source handoff could still tell users FuseKit captures app-issued tokens through a hidden prompt or environment variable. | GitHub App source handoff now uses the same public launcher pattern as provider gates: copy the approved token inside the VM browser, then click the FuseKit Capture button so it lands only in the encrypted vault. |
 | A stale Capture click/request after a secret gate had already auto-resumed could overwrite the vault record before verification finished. | Clipboard capture now fails closed once the gate is `resume_requested`, preserving the first captured value while FuseKit verifies the provider state. |
 | Launch readiness could prove a provider gate was resumed or captured without proving the provider page was opened through the launcher/VM browser. | Live acceptance now requires a matching redacted `control_room.gate_open` audit event for every durable gate with a provider resume URL. |
+| Acceptance reports could contain `missing[]` launch-readiness proof but no structured `blockers[]`, leaving the control room on a vague waiting card instead of telling the user what to fix. | Static and live control rooms now fall back to rendering `missing[]` as launch-evidence blockers with a clear repair-and-rerun action. |
 
 ## Open Acceptance Items
 
