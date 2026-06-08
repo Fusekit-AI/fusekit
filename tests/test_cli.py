@@ -1222,6 +1222,7 @@ def test_provider_api_fallback_runs_pack_setup_when_token_exists(monkeypatch, tm
         args,
         manifest,
         pack,
+        [],
         vault,
         AuditLog(tmp_path / "audit.jsonl"),
         receipt,
@@ -1230,6 +1231,122 @@ def test_provider_api_fallback_runs_pack_setup_when_token_exists(monkeypatch, tm
     assert vault.require("provider.resend.resend_api_key").value == "fallback-secret-hidden"
     public = json.dumps(receipt.to_dict())
     assert_no_secret_text(public, ["provider-token-hidden", "fallback-secret-hidden"])
+
+
+def test_provider_api_fallback_regenerates_resend_values_before_downstream_retry(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    resend_pack = synthesize_provider_pack("resend", app)
+    vercel_pack = synthesize_provider_pack("vercel", app)
+    write_provider_pack(resend_pack, app / ".fusekit" / "provider-packs" / "resend.json")
+    manifest = SetupManifest(
+        app_name="app",
+        app_path=str(app),
+        required_env=("RESEND_FROM_EMAIL", "RESEND_AUDIENCE_ID"),
+        services=(
+            ServiceRequirement(
+                provider="resend",
+                kind="email",
+                name="email",
+                capabilities=("capability_pack",),
+                secrets=("RESEND_API_KEY",),
+            ),
+            ServiceRequirement(
+                provider="vercel",
+                kind="hosting",
+                name="hosting",
+                capabilities=("capability_pack",),
+                secrets=("VERCEL_TOKEN",),
+            ),
+        ),
+    )
+    vault = Vault.empty()
+    vault.put("provider.resend.token", "provider_token", "resend", "RESEND_API_KEY", "resend-token")
+    vault.put("provider.vercel.token", "provider_token", "vercel", "VERCEL_TOKEN", "vercel-token")
+    args = argparse.Namespace(
+        secret=[],
+        approve_dns=False,
+        allow_incomplete=False,
+        fusekit_gates="service-only",
+        app_source="",
+        github_repo="",
+        vercel_project="moonlite-rsvp",
+        vercel_framework="",
+        vercel_git_repo_id="",
+        vercel_git_ref="main",
+        dns_zone="moonlite.rsvp",
+    )
+    calls: list[tuple[str, dict[str, str]]] = []
+
+    def fake_run_provider_pack_setup(pack, context):  # type: ignore[no-untyped-def]
+        calls.append((pack.provider, dict(context.secrets)))
+        if pack.provider == "resend":
+            context.secrets["RESEND_FROM_EMAIL"] = "rsvp@moonlite.rsvp"
+            context.secrets["RESEND_AUDIENCE_ID"] = "audience-123"
+            context.vault.put(
+                "provider.resend.resend_from_email",
+                "provider_setting",
+                "resend",
+                "RESEND_FROM_EMAIL",
+                "rsvp@moonlite.rsvp",
+            )
+            context.vault.put(
+                "provider.resend.resend_audience_id",
+                "provider_setting",
+                "resend",
+                "RESEND_AUDIENCE_ID",
+                "audience-123",
+            )
+        if pack.provider == "vercel":
+            assert context.secrets["RESEND_FROM_EMAIL"] == "rsvp@moonlite.rsvp"
+            assert context.secrets["RESEND_AUDIENCE_ID"] == "audience-123"
+        return {"provider": pack.provider, "setup": [{"kind": "setup", "status": "ok"}]}
+
+    monkeypatch.setattr("fusekit.cli.run_provider_pack_setup", fake_run_provider_pack_setup)
+    results = [
+        VerificationResult(
+            provider="vercel",
+            kind="vercel-env",
+            target="moonlite-rsvp",
+            status="needs_human_gate",
+            details={
+                "reason": (
+                    "Vercel is missing required app runtime environment variables: "
+                    "RESEND_FROM_EMAIL, RESEND_AUDIENCE_ID. Capture or derive these values "
+                    "before verifying the deployment."
+                )
+            },
+        )
+    ]
+    receipt = Receipt(app_name="app", vault_path=str(tmp_path / "vault.json"))
+
+    assert _attempt_provider_api_fallback(
+        args,
+        manifest,
+        vercel_pack,
+        results,
+        vault,
+        AuditLog(tmp_path / "audit.jsonl"),
+        receipt,
+    )
+
+    assert [provider for provider, _secrets in calls] == ["resend", "vercel"]
+    actions = receipt.to_dict()["actions"]
+    assert any(
+        action["action"] == "provider_pack.resend_runtime_regeneration"
+        and action["status"] == "attempted"
+        for action in actions
+    )
+    assert any(
+        action["action"] == "provider_pack.api_fallback"
+        and action["details"]["upstream_resend_runtime_regenerated"] is True
+        for action in actions
+    )
+    public = json.dumps(receipt.to_dict())
+    assert_no_secret_text(public, ["resend-token", "vercel-token"])
 
 
 def test_catalog_pack_env_token_counts_as_provider_token(monkeypatch, tmp_path) -> None:

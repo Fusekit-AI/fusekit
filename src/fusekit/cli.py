@@ -3804,6 +3804,7 @@ def _verify_provider_packs(
                 args,
                 manifest,
                 pack,
+                results,
                 vault,
                 audit,
                 receipt,
@@ -4324,19 +4325,29 @@ def _attempt_provider_api_fallback(
     args: argparse.Namespace,
     manifest: SetupManifest,
     pack: ProviderCapabilityPack,
+    results: list[VerificationResult],
     vault: Vault,
     audit: AuditLog,
     receipt: Receipt,
 ) -> bool:
     """Retry provider-native setup when UI repair is stuck and a token exists."""
 
+    regenerated_resend = _attempt_resend_runtime_generation_before_downstream(
+        args,
+        manifest,
+        pack,
+        results,
+        vault,
+        audit,
+        receipt,
+    )
     if not _has_pack_provider_token(pack, vault):
         receipt.add_action(
             "provider_pack.api_fallback",
             "skipped",
             {"provider": pack.provider, "reason": "provider token is not available"},
         )
-        return False
+        return regenerated_resend
     try:
         context = ProviderSetupContext(
             manifest=manifest,
@@ -4359,11 +4370,108 @@ def _attempt_provider_api_fallback(
         }
         audit.record("provider_pack.api_fallback", payload)
         receipt.add_action("provider_pack.api_fallback", "blocked", payload)
-        return False
-    payload = {"provider": pack.provider, "status": "attempted", "result": result}
+        return regenerated_resend
+    payload = {
+        "provider": pack.provider,
+        "status": "attempted",
+        "upstream_resend_runtime_regenerated": regenerated_resend,
+        "result": result,
+    }
     audit.record("provider_pack.api_fallback", payload)
     receipt.add_action("provider_pack.api_fallback", "attempted", payload)
     return True
+
+
+def _attempt_resend_runtime_generation_before_downstream(
+    args: argparse.Namespace,
+    manifest: SetupManifest,
+    pack: ProviderCapabilityPack,
+    results: list[VerificationResult],
+    vault: Vault,
+    audit: AuditLog,
+    receipt: Receipt,
+) -> bool:
+    """Regenerate API-owned Resend runtime values before downstream provider repair."""
+
+    if pack.provider.lower() == "resend":
+        return False
+    missing = _missing_api_owned_resend_runtime_values(results)
+    if not missing:
+        return False
+    resend_service = next(
+        (service for service in manifest.services if service.provider.lower() == "resend"),
+        None,
+    )
+    if resend_service is None:
+        return False
+    app_path = Path(manifest.app_path)
+    pack_path = _provider_pack_path(app_path, "resend", resend_service)
+    if pack_path.exists():
+        resend_pack = load_provider_pack(pack_path)
+    else:
+        resend_pack = synthesize_provider_pack("resend", app_path)
+        write_provider_pack(resend_pack, pack_path)
+    if not _has_pack_provider_token(resend_pack, vault):
+        receipt.add_action(
+            "provider_pack.resend_runtime_regeneration",
+            "skipped",
+            {
+                "provider": pack.provider,
+                "missing": list(missing),
+                "reason": "Resend setup key is not available",
+            },
+        )
+        return False
+    try:
+        context = ProviderSetupContext(
+            manifest=manifest,
+            vault=vault,
+            audit=audit,
+            receipt=receipt,
+            secrets=_runtime_env_secrets(args, manifest, vault),
+            provider_names=_required_providers(manifest),
+            inputs=_provider_setup_inputs(args),
+            approve_dns=bool(getattr(args, "approve_dns", False)),
+            allow_incomplete=bool(getattr(args, "allow_incomplete", False)),
+            fusekit_gates=str(getattr(args, "fusekit_gates", "service-only")),
+        )
+        result = run_provider_pack_setup(resend_pack, context)
+    except FuseKitError as exc:
+        payload: dict[str, object] = {
+            "provider": pack.provider,
+            "missing": list(missing),
+            "status": "blocked",
+            "error": _redact_cli_error(str(exc)),
+        }
+        audit.record("provider_pack.resend_runtime_regeneration", payload)
+        receipt.add_action("provider_pack.resend_runtime_regeneration", "blocked", payload)
+        return False
+    payload = {
+        "provider": pack.provider,
+        "missing": list(missing),
+        "status": "attempted",
+        "result": result,
+    }
+    audit.record("provider_pack.resend_runtime_regeneration", payload)
+    receipt.add_action("provider_pack.resend_runtime_regeneration", "attempted", payload)
+    return True
+
+
+def _missing_api_owned_resend_runtime_values(
+    results: list[VerificationResult],
+) -> tuple[str, ...]:
+    """Return missing Resend values FuseKit can create from the Resend API key."""
+
+    api_owned = {"RESEND_FROM_EMAIL", "RESEND_AUDIENCE_ID"}
+    missing: list[str] = []
+    for result in results:
+        if result.status in {"ok", "skipped"}:
+            continue
+        reason = str(result.details.get("reason", "") or "")
+        for name in _verification_gate_env_names(reason):
+            if name in api_owned:
+                missing.append(name)
+    return tuple(dict.fromkeys(missing))
 
 
 def _has_pack_provider_token(pack: ProviderCapabilityPack, vault: Vault) -> bool:
