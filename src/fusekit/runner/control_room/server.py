@@ -99,6 +99,21 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                 if gate_id not in service.records:
                     self._write_json({"ok": False, "error": "gate not found"}, status=404)
                     return
+                gate = service.records[gate_id]
+                blocked = _uncaptured_gate_targets(gate.target, gate.captured_targets)
+                if blocked:
+                    self._write_json(
+                        {
+                            "ok": False,
+                            "gate_id": gate_id,
+                            "error": (
+                                "This gate needs safe secret capture before it can resume."
+                            ),
+                            "missing_targets": sorted(blocked),
+                        },
+                        status=400,
+                    )
+                    return
                 service.request_resume(gate_id)
                 self._write_json(
                     {
@@ -381,6 +396,17 @@ def _gate_capture_targets(raw_target: str) -> set[str]:
         for item in (part.strip().upper() for part in raw_target.split(","))
         if re.fullmatch(r"[A-Z][A-Z0-9_]{2,}", item) and "_" in item
     }
+
+
+def _uncaptured_gate_targets(
+    raw_target: str,
+    captured_targets: tuple[str, ...],
+) -> set[str]:
+    """Return capture targets that must exist before a gate can resume."""
+
+    required = _gate_capture_targets(raw_target)
+    captured = {target.strip().upper() for target in captured_targets}
+    return required - captured
 
 
 def _vm_clipboard_text(job_state: Path) -> str:
