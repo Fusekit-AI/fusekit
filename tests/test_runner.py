@@ -486,7 +486,7 @@ def test_control_room_renders_acceptance_ready_state(tmp_path) -> None:
     acceptance_dir = tmp_path / "acceptance"
     acceptance_dir.mkdir()
     (acceptance_dir / "report.json").write_text(
-        json.dumps({"launch_ready": True, "blockers": []}),
+        json.dumps({"mode": "live", "launch_ready": True, "blockers": []}),
         encoding="utf-8",
     )
 
@@ -494,8 +494,33 @@ def test_control_room_renders_acceptance_ready_state(tmp_path) -> None:
     payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
 
     assert payload["acceptance"]["launch_ready"] is True
+    assert payload["acceptance"]["mode"] == "live"
     assert "Acceptance blockers are clear" in html
+    assert "The live run has the required proof to be launch-ready." in html
     assert "launch-ready proof is clear" in html
+
+
+def test_control_room_does_not_treat_rehearsal_ready_as_recordable(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    acceptance_dir = tmp_path / "acceptance"
+    acceptance_dir.mkdir()
+    (acceptance_dir / "report.json").write_text(
+        json.dumps({"mode": "rehearsal", "launch_ready": True, "blockers": []}),
+        encoding="utf-8",
+    )
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+    payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
+
+    assert payload["acceptance"]["launch_ready"] is True
+    assert payload["acceptance"]["mode"] == "rehearsal"
+    static_html = html.split("<script", 1)[0]
+    assert "Live acceptance is still required" in html
+    assert "Local rehearsal proof is clear, but it is not live provider evidence." in html
+    assert "live acceptance still required" in html
+    assert "The live run has the required proof to be launch-ready." not in static_html
+    assert "Record the demo from this clean state." not in static_html
+    assert 'mode === "live"' in html
 
 
 def test_control_room_renders_verification_trust_cards(tmp_path) -> None:

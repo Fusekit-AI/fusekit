@@ -383,6 +383,7 @@ def _render_acceptance_blockers(report: Any) -> str:
     blockers = _acceptance_blockers(report)
     error = str(report.get("error", "") or "")
     ready = bool(report.get("launch_ready", False))
+    mode = str(report.get("mode", "") or "").strip().lower()
     if error:
         cards = f"""
         <article class="trust-card failed">
@@ -396,7 +397,7 @@ def _render_acceptance_blockers(report: Any) -> str:
         </article>
 """
         summary = "acceptance report needs repair"
-    elif ready:
+    elif ready and mode == "live":
         cards = """
         <article class="trust-card passed">
           <div class="trust-snow state-passed" aria-hidden="true"></div>
@@ -409,6 +410,19 @@ def _render_acceptance_blockers(report: Any) -> str:
         </article>
 """
         summary = "launch-ready proof is clear"
+    elif ready:
+        cards = """
+        <article class="trust-card pending">
+          <div class="trust-snow state-checking" aria-hidden="true"></div>
+          <div>
+            <span>Rehearsal passed</span>
+            <strong>Live acceptance is still required</strong>
+            <p>Local rehearsal proof is clear, but it is not live provider evidence.</p>
+            <em>Run live acceptance after the provider run before recording the demo.</em>
+          </div>
+        </article>
+"""
+        summary = "live acceptance still required"
     elif blockers:
         cards = "\n".join(
             _render_acceptance_blocker_card(blocker)

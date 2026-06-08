@@ -663,6 +663,7 @@ function renderTrust(job) {
 
 function acceptanceCards(report) {
   const blockers = acceptanceBlockers(report);
+  const mode = String(report.mode || "").trim().toLowerCase();
   if (report.error) {
     return [
       {
@@ -675,7 +676,7 @@ function acceptanceCards(report) {
       },
     ];
   }
-  if (report.launch_ready) {
+  if (report.launch_ready && mode === "live") {
     return [
       {
         status: "passed",
@@ -684,6 +685,18 @@ function acceptanceCards(report) {
         title: "Acceptance blockers are clear",
         body: "The live run has the required proof to be launch-ready.",
         foot: "Record the demo from this clean state.",
+      },
+    ];
+  }
+  if (report.launch_ready) {
+    return [
+      {
+        status: "pending",
+        snow: "checking",
+        label: "Rehearsal passed",
+        title: "Live acceptance is still required",
+        body: "Local rehearsal proof is clear, but it is not live provider evidence.",
+        foot: "Run live acceptance after the provider run before recording the demo.",
       },
     ];
   }
@@ -765,8 +778,10 @@ function renderAcceptance(job) {
   const blockers = acceptanceBlockers(report);
   const summary = report.error
     ? "acceptance report needs repair"
-    : report.launch_ready
+    : report.launch_ready && String(report.mode || "").trim().toLowerCase() === "live"
       ? "launch-ready proof is clear"
+      : report.launch_ready
+        ? "live acceptance still required"
       : blockers.length
         ? `${blockers.length} launch blocker${blockers.length === 1 ? "" : "s"}`
         : "acceptance proof is waiting";
