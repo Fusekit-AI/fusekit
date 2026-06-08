@@ -11,6 +11,7 @@ from fusekit.audit import AuditLog, Receipt, assert_no_secret_text
 from fusekit.cli import (
     _attempt_provider_api_fallback,
     _authorize_provider,
+    _await_dns_approval,
     _await_provider_token,
     _capture_llm,
     _capture_provider_tokens,
@@ -225,6 +226,39 @@ def test_gate_sleep_wakes_when_control_room_requests_resume(
     _sleep_for_gate(args, gate_id=gate_id)
 
     assert sleeps == [1.0]
+
+
+def test_dns_approval_accepts_control_room_resume(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    gate_id = "dns.moonlite.rsvp.approval"
+    gate_path = app / ".fusekit" / "gates.json"
+    service = GateService.load(gate_path)
+    service.wait(
+        gate_id,
+        provider="dns",
+        reason="explicit DNS apply approval for moonlite.rsvp",
+    )
+    service.request_resume(gate_id)
+    args = argparse.Namespace(
+        app=app,
+        approve_dns=False,
+        gate_max_attempts=1,
+        gate_retry_seconds=0,
+    )
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda *args, **kwargs: pytest.fail("control-room approval should not reprompt"),
+    )
+
+    _await_dns_approval(args, "moonlite.rsvp")
+
+    assert args.approve_dns is True
+    gate = GateService.load(gate_path).records[gate_id]
+    assert gate.status == "passed"
 
 
 def test_playwright_fallback_is_headless_without_display(monkeypatch) -> None:

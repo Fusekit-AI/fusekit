@@ -842,7 +842,7 @@ def _render_gate_help(step: Any) -> str:
     )
     resume_button = (
         f'<button class="gate-done" type="button" data-gate-pass="{html.escape(gate_id)}">'
-        "I finished this step</button>"
+        f"{html.escape(_gate_done_label(step))}</button>"
         if gate_id and not capture_targets
         else ""
     )
@@ -871,6 +871,16 @@ def _render_gate_help(step: Any) -> str:
           {resume_button}
         </div>
 """
+
+
+def _gate_done_label(step: Any) -> str:
+    classification = str(getattr(step, "classification", "") or "").lower()
+    provider = str(getattr(step, "provider", "") or "").lower()
+    if classification == "dns-approval" or provider == "dns":
+        return "Approve DNS apply"
+    if classification == "setup-approval" or provider == "fusekit":
+        return "Approve setup plan"
+    return "I finished this step"
 
 
 def _render_capture_buttons(

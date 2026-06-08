@@ -224,7 +224,7 @@ function renderGateHelp(step) {
   const resumeButton = step.id && !hasCaptureTargets
     ? [
         `<button class="gate-done" type="button" `,
-        `data-gate-pass="${escapeAttr(step.id)}">I finished this step</button>`,
+        `data-gate-pass="${escapeAttr(step.id)}">${escapeHtml(gateDoneLabel(step))}</button>`,
       ].join("")
     : "";
   const captureButtons = renderCaptureButtons(step.id, step.target, step.captured_targets);
@@ -259,6 +259,14 @@ function captureTargets(target) {
     .split(",")
     .map((item) => item.trim().toUpperCase())
     .filter((item) => /^[A-Z][A-Z0-9_]{2,}$/.test(item) && item.includes("_"));
+}
+
+function gateDoneLabel(step) {
+  const classification = String(step.classification || "").toLowerCase();
+  const provider = String(step.provider || "").toLowerCase();
+  if (classification === "dns-approval" || provider === "dns") return "Approve DNS apply";
+  if (classification === "setup-approval" || provider === "fusekit") return "Approve setup plan";
+  return "I finished this step";
 }
 
 function renderCaptureButtons(gateId, target, capturedTargets = []) {
@@ -967,6 +975,7 @@ document.addEventListener("click", async (event) => {
   const gateButton = event.target.closest("[data-gate-pass]");
   if (gateButton) {
     gateButton.disabled = true;
+    const originalText = gateButton.textContent;
     gateButton.textContent = "Checking again...";
     try {
       const response = await fetch(
@@ -985,7 +994,7 @@ document.addEventListener("click", async (event) => {
       await refreshJob({ preserveStatus: true });
     } catch {
       gateButton.disabled = false;
-      gateButton.textContent = "I finished this step";
+      gateButton.textContent = originalText;
       setRefreshStatus(
         "Could not mark the gate done from this snapshot. FuseKit will keep waiting.",
         "stale",

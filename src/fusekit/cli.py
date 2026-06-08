@@ -2936,6 +2936,14 @@ def _await_plan_approval(args: argparse.Namespace) -> None:
     attempt = 0
     while True:
         attempt += 1
+        if _gate_resume_requested(args, gate_id):
+            _record_gate_passed(
+                args,
+                gate_id,
+                provider="fusekit",
+                reason="explicit FuseKit setup-plan approval",
+            )
+            return
         try:
             answer = input("Approve this setup plan and continue? [y/N] ").strip().lower()
         except (EOFError, OSError):
@@ -2953,6 +2961,14 @@ def _await_plan_approval(args: argparse.Namespace) -> None:
             gate_id,
             provider="fusekit",
             reason="explicit FuseKit setup-plan approval",
+            classification="setup-approval",
+            follow_steps=(
+                "Review the setup plan shown by FuseKit.",
+                "Confirm it names only the app, repo, domain, and provider resources you expect.",
+                "Click Approve setup plan to continue.",
+            ),
+            next_action="Approve the setup plan in the control room to continue.",
+            resume_hint="FuseKit will continue immediately after this approval is recorded.",
         )
         _ensure_gate_attempt_allowed(args, attempt, "setup plan approval")
         print("Waiting for setup plan approval. FuseKit will keep this launch alive.")
@@ -2964,6 +2980,15 @@ def _await_dns_approval(args: argparse.Namespace, domain: str) -> None:
     attempt = 0
     while True:
         attempt += 1
+        if _gate_resume_requested(args, gate_id):
+            args.approve_dns = True
+            _record_gate_passed(
+                args,
+                gate_id,
+                provider="dns",
+                reason=f"explicit DNS apply approval for {domain}",
+            )
+            return
         try:
             answer = input(f"Approve DNS apply for {domain}? [y/N] ").strip().lower()
         except (EOFError, OSError):
@@ -2982,10 +3007,25 @@ def _await_dns_approval(args: argparse.Namespace, domain: str) -> None:
             gate_id,
             provider="dns",
             reason=f"explicit DNS apply approval for {domain}",
+            classification="dns-approval",
+            follow_steps=_dns_approval_follow_steps(domain),
+            next_action=f"Approve applying the DNS records for {domain}.",
+            resume_hint=(
+                "FuseKit will apply the approved records through the DNS provider API "
+                "and keep verifying propagation."
+            ),
         )
         _ensure_gate_attempt_allowed(args, attempt, f"DNS approval for {domain}")
         print(f"Waiting for DNS approval for {domain}. FuseKit will retry this gate.")
         _sleep_for_gate(args, gate_id=gate_id)
+
+
+def _dns_approval_follow_steps(domain: str) -> tuple[str, ...]:
+    return (
+        f"Review the DNS plan for {domain} in the control room.",
+        "Approve only records that match the app, Resend, Vercel, and domain named by FuseKit.",
+        "Click Approve DNS apply; FuseKit will apply the records and verify propagation.",
+    )
 
 
 def _ensure_gate_attempt_allowed(args: argparse.Namespace, attempt: int, label: str) -> None:

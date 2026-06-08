@@ -620,6 +620,28 @@ def test_control_room_gate_help_includes_resume_link_and_attempts(tmp_path) -> N
     assert "state-gate" in html
 
 
+def test_control_room_dns_gate_uses_approval_button(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job.mark("setup.execute", "running", "remote setup is running")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "dns.moonlite.rsvp.approval",
+        provider="dns",
+        reason="explicit DNS apply approval for moonlite.rsvp",
+        classification="dns-approval",
+        follow_steps=("Review the DNS records.", "Click Approve DNS apply."),
+        next_action="Approve applying the DNS records for moonlite.rsvp.",
+        resume_hint="FuseKit will apply and verify propagation.",
+    )
+
+    html = render_control_room(JobState.load(job_path), gate_path=tmp_path / "gates.json")
+
+    assert 'data-gate-pass="dns.moonlite.rsvp.approval">Approve DNS apply</button>' in html
+    assert "gateDoneLabel" in html
+    assert "Approve DNS apply" in html
+
+
 def test_control_room_renders_resume_requested_gate_as_rechecking(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job_path = tmp_path / "job.json"
