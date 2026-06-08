@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from fusekit.audit import redact
+from fusekit.security import redact_public_path
 
 
 def _sha256_text(text: str) -> str:
@@ -75,7 +76,7 @@ class HarnessLedger:
             "artifact.snapshot",
             {
                 "name": name,
-                "path": str(path),
+                "path": redact_public_path(path),
                 "sha256": digest,
                 "bytes": len(content.encode("utf-8")),
             },

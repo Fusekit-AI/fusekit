@@ -6,6 +6,7 @@ from pathlib import Path
 from fusekit.cli import main
 from fusekit.harness import run_acceptance
 from fusekit.harness.acceptance import AcceptanceCheck, AcceptanceReport, _acceptance_blockers
+from fusekit.harness.ledger import HarnessLedger
 from fusekit.vault import Vault
 
 
@@ -44,6 +45,41 @@ def test_acceptance_rehearsal_writes_ledger_and_report(tmp_path) -> None:
     assert report_json["launch_ready"] is True
     assert report_json["blockers"] == []
     assert any(check["id"] == "manifest.scanned" for check in report_json["checks"])
+
+
+def test_acceptance_report_serializes_public_paths(tmp_path) -> None:
+    app = tmp_path / "app"
+    artifact = app / ".fusekit" / "acceptance" / "artifacts" / "gates.json"
+    report = AcceptanceReport(
+        mode="live",
+        app_path=str(app),
+        launch_ready=False,
+        checks=(AcceptanceCheck("gates.resolved", "failed", "Needs repair.", str(artifact)),),
+        ledger_path=str(app / ".fusekit" / "acceptance" / "ledger.jsonl"),
+        report_path=str(app / ".fusekit" / "acceptance" / "report.json"),
+    )
+
+    payload = report.to_dict()
+    text = json.dumps(payload)
+
+    assert str(tmp_path) not in text
+    assert payload["app_path"] == "app"
+    assert payload["ledger_path"] == ".fusekit/acceptance/ledger.jsonl"
+    assert payload["report_path"] == ".fusekit/acceptance/report.json"
+    assert payload["checks"][0]["artifact"] == ".fusekit/acceptance/artifacts/gates.json"
+
+
+def test_harness_ledger_records_public_artifact_paths(tmp_path) -> None:
+    ledger = HarnessLedger.create(tmp_path / "app" / ".fusekit" / "acceptance")
+
+    artifact = ledger.snapshot_json("provider proof", {"ok": True})
+    ledger_text = (tmp_path / "app" / ".fusekit" / "acceptance" / "ledger.jsonl").read_text(
+        encoding="utf-8"
+    )
+
+    assert artifact.exists()
+    assert str(tmp_path) not in ledger_text
+    assert ".fusekit/acceptance/artifacts/provider-proof" in ledger_text
 
 
 def test_acceptance_live_requires_real_provider_evidence(tmp_path) -> None:

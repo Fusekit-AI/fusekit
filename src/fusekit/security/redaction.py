@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 
 def redact_public_text(value: object) -> str:
@@ -30,3 +31,19 @@ def redact_public_text(value: object) -> str:
         replacement = r"\1[redacted]" if pattern.startswith("([?&]") else "[redacted]"
         redacted = re.sub(pattern, replacement, redacted, flags=re.IGNORECASE)
     return redacted
+
+
+def redact_public_path(value: object) -> str:
+    """Return a stable public path without local home/tmp prefixes."""
+
+    raw = str(value or "")
+    if not raw:
+        return ""
+    if not Path(raw).is_absolute():
+        return raw
+    path = Path(raw)
+    parts = path.parts
+    if ".fusekit" in parts:
+        index = parts.index(".fusekit")
+        return str(Path(*parts[index:]))
+    return path.name

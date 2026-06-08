@@ -24,7 +24,7 @@ from fusekit.providers.capability_pack import (
     write_provider_pack,
 )
 from fusekit.scanner import scan_repo
-from fusekit.security import redact_public_text, scan_for_secret_leaks
+from fusekit.security import redact_public_path, redact_public_text, scan_for_secret_leaks
 from fusekit.vault.bundle import Vault
 
 
@@ -44,7 +44,7 @@ class AcceptanceCheck:
             "id": self.id,
             "status": self.status,
             "detail": redact_public_text(self.detail),
-            "artifact": self.artifact,
+            "artifact": redact_public_path(self.artifact),
         }
 
 
@@ -67,13 +67,13 @@ class AcceptanceReport:
 
         return {
             "mode": self.mode,
-            "app_path": self.app_path,
+            "app_path": redact_public_path(self.app_path),
             "launch_ready": self.launch_ready,
             "checks": [check.to_dict() for check in self.checks],
             "missing": list(self.missing),
             "blockers": [_redacted_blocker(blocker) for blocker in self.blockers],
-            "ledger_path": self.ledger_path,
-            "report_path": self.report_path,
+            "ledger_path": redact_public_path(self.ledger_path),
+            "report_path": redact_public_path(self.report_path),
             "created_at": self.created_at,
         }
 
@@ -108,7 +108,7 @@ def run_acceptance(
     ledger = HarnessLedger.create(output_dir)
     checks: list[AcceptanceCheck] = []
     missing: list[str] = []
-    ledger.record("acceptance.started", {"mode": mode, "app_path": str(app_path)})
+    ledger.record("acceptance.started", {"mode": mode, "app_path": redact_public_path(app_path)})
     if remote_fusekit_dir is not None:
         _record_remote_artifacts(remote_fusekit_dir, checks, ledger)
 
@@ -258,7 +258,7 @@ def _record_remote_artifacts(
     }
     snapshot = ledger.snapshot_json(
         "remote-artifact-inventory",
-        {"fusekit_dir": str(remote_fusekit_dir), "files": inventory},
+        {"fusekit_dir": redact_public_path(remote_fusekit_dir), "files": inventory},
     )
     checks.append(
         AcceptanceCheck(

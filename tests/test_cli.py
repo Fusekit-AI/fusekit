@@ -38,7 +38,13 @@ from fusekit.cli import (
 )
 from fusekit.detonation.preflight import verification_report_allows_detonation
 from fusekit.errors import ApprovalRequired, FuseKitError, ProviderError
-from fusekit.manifest import DomainRequirement, ServiceRequirement, SetupManifest, write_manifest
+from fusekit.manifest import (
+    DnsRecord,
+    DomainRequirement,
+    ServiceRequirement,
+    SetupManifest,
+    write_manifest,
+)
 from fusekit.providers.automation import ProviderSetupContext
 from fusekit.providers.capability_pack import (
     VerificationRecipe,
@@ -272,6 +278,90 @@ def test_provider_setup_pauses_dns_behind_resend_human_gate(monkeypatch, tmp_pat
     assert actions[-1]["action"] == "provider_pack.setup.paused"
     assert actions[-1]["status"] == "needs_human_gate"
     assert actions[-1]["details"]["provider"] == "resend"
+
+
+def test_manifest_setup_feeds_resend_dns_records_to_cloudflare(monkeypatch, tmp_path) -> None:
+    app = tmp_path / "app"
+    (app / ".fusekit").mkdir(parents=True)
+    vault_path = app / ".fusekit" / "fusekit.vault.json"
+    vault_path.write_text("{}", encoding="utf-8")
+    calls: list[str] = []
+
+    def fake_run_provider_pack_setup(pack, context):  # type: ignore[no-untyped-def]
+        calls.append(pack.provider)
+        if pack.provider == "resend":
+            context.generated_dns_records.setdefault("moonlite.rsvp", []).append(
+                DnsRecord(
+                    name="send.moonlite.rsvp",
+                    type="MX",
+                    value="feedback-smtp.us-east-1.amazonses.com",
+                    priority=10,
+                )
+            )
+            return {
+                "provider": "resend",
+                "setup": [
+                    {
+                        "kind": "resend-domain",
+                        "status": "ok",
+                        "strategy": "api",
+                        "strategy_decision": {"selected": {"kind": "api"}},
+                    }
+                ],
+            }
+        if pack.provider == "cloudflare":
+            generated = context.generated_dns_records.get("moonlite.rsvp", [])
+            assert [(record.name, record.type, record.priority) for record in generated] == [
+                ("send.moonlite.rsvp", "MX", 10)
+            ]
+            return {
+                "provider": "cloudflare",
+                "setup": [
+                    {
+                        "kind": "cloudflare-dns",
+                        "status": "ok",
+                        "strategy": "api",
+                        "strategy_decision": {"selected": {"kind": "api"}},
+                    }
+                ],
+            }
+        raise AssertionError(f"unexpected provider {pack.provider}")
+
+    monkeypatch.setattr("fusekit.cli.run_provider_pack_setup", fake_run_provider_pack_setup)
+    manifest = SetupManifest(
+        app_name="app",
+        app_path=str(app),
+        services=(
+            ServiceRequirement(provider="resend", kind="email", name="email"),
+            ServiceRequirement(provider="cloudflare", kind="dns", name="dns"),
+        ),
+        domains=(DomainRequirement(provider="cloudflare", domain="moonlite.rsvp"),),
+    )
+    args = argparse.Namespace(
+        app=app,
+        vault=vault_path,
+        allow_incomplete=False,
+        fusekit_gates="service-only",
+        github_repo="",
+        vercel_project="",
+        vercel_framework="",
+        vercel_git_repo_id="",
+        vercel_git_ref="main",
+        dns_zone="moonlite.rsvp",
+    )
+    context = ProviderSetupContext(
+        manifest=manifest,
+        vault=Vault.empty(),
+        audit=AuditLog(tmp_path / "audit.jsonl"),
+        receipt=Receipt(app_name="app"),
+        secrets={},
+        provider_names={"resend", "cloudflare"},
+        inputs={"dns_zone": "moonlite.rsvp"},
+    )
+
+    _run_manifest_provider_pack_setup(args, manifest, context)
+
+    assert calls == ["resend", "cloudflare"]
 
 
 def test_gate_sleep_wakes_when_control_room_requests_resume(
