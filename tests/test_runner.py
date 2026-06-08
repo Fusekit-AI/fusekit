@@ -1044,6 +1044,75 @@ def test_control_room_post_captures_vm_clipboard_into_vault(tmp_path, monkeypatc
     assert "re_live_secret" not in audit_path.read_text(encoding="utf-8")
 
 
+def test_control_room_rejects_stale_capture_after_gate_resumes(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    vault_path = tmp_path / "fusekit.vault.json"
+    passphrase_path = tmp_path / "passphrase"
+    passphrase_path.write_text("passphrase\n", encoding="utf-8")
+    Vault.empty().save(vault_path, "passphrase")
+    job.add_artifact("vault", vault_path)
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.resend.api-key-domain-access",
+        provider="resend",
+        reason="Resend API key",
+        classification="provider-authorization",
+        target="RESEND_API_KEY",
+    )
+    clipboard = {"value": "first_secret_from_vm_clipboard\n"}
+    monkeypatch.setenv("FUSEKIT_PASSPHRASE_FILE", str(passphrase_path))
+    monkeypatch.setattr(
+        "fusekit.runner.control_room.server._vm_clipboard_text",
+        lambda job_state: clipboard["value"],
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = (
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/gates/provider.resend.api-key-domain-access/capture-clipboard"
+        )
+        request = Request(
+            url,
+            data=json.dumps({"target": "RESEND_API_KEY"}).encode("utf-8"),
+            method="POST",
+            headers=_control_room_post_headers(tmp_path, **{"content-type": "application/json"}),
+        )
+        with urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        clipboard["value"] = "second_secret_should_not_overwrite\n"
+        stale_request = Request(
+            url,
+            data=json.dumps({"target": "RESEND_API_KEY"}).encode("utf-8"),
+            method="POST",
+            headers=_control_room_post_headers(tmp_path, **{"content-type": "application/json"}),
+        )
+        with pytest.raises(HTTPError) as exc:
+            urlopen(stale_request, timeout=5)
+        stale_payload = json.loads(exc.value.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert payload["status"] == "resume_requested"
+    assert exc.value.code == 400
+    assert stale_payload == {
+        "error": "Gate already captured all required values and is waiting for verification.",
+        "ok": False,
+    }
+    assert GateService.load(tmp_path / "gates.json").records[
+        "provider.resend.api-key-domain-access"
+    ].status == "resume_requested"
+    vault = Vault.open(vault_path, "passphrase")
+    assert vault.require("provider.resend.resend_api_key").value == "first_secret_from_vm_clipboard"
+    assert vault.require("provider.resend.token").value == "first_secret_from_vm_clipboard"
+
+
 def test_control_room_clipboard_capture_waits_for_multi_value_gate(
     tmp_path,
     monkeypatch,

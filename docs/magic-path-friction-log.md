@@ -68,6 +68,7 @@ guided, or explicitly verified.
 | Launch readiness could treat a secret-bearing provider gate as audited just because the gate was opened or resumed, even when the launcher had not proven the token was captured. | Live acceptance now requires a matching redacted `control_room.clipboard_capture` audit event for every secret/env target on a durable gate before the run can be launch-ready. |
 | Resend domain setup retry could say "click I finished this step" while still targeting `RESEND_API_KEY`, causing the control room to render Capture controls instead of the finished/retry button. | Resend domain setup retry gates now have no secret target once the setup key is already valid, so the launcher shows the normal finished/retry action and FuseKit reruns Resend API setup before Cloudflare DNS. |
 | Private GitHub App source handoff could still tell users FuseKit captures app-issued tokens through a hidden prompt or environment variable. | GitHub App source handoff now uses the same public launcher pattern as provider gates: copy the approved token inside the VM browser, then click the FuseKit Capture button so it lands only in the encrypted vault. |
+| A stale Capture click/request after a secret gate had already auto-resumed could overwrite the vault record before verification finished. | Clipboard capture now fails closed once the gate is `resume_requested`, preserving the first captured value while FuseKit verifies the provider state. |
 
 ## Open Acceptance Items
 

@@ -374,7 +374,11 @@ def _capture_gate_clipboard_secret(
     gate = service.records.get(gate_id)
     if gate is None:
         raise FuseKitError("Gate not found.")
-    if gate.status not in {"waiting", "resurfaced", "resume_requested"}:
+    if gate.status == "resume_requested":
+        raise FuseKitError(
+            "Gate already captured all required values and is waiting for verification."
+        )
+    if gate.status not in {"waiting", "resurfaced"}:
         raise FuseKitError("Gate is not waiting for capture.")
     target = target.strip().upper()
     allowed_targets = _gate_capture_targets(gate.target)
