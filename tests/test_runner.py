@@ -280,6 +280,8 @@ def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
     assert plan.launch_args[-1] == "--infer-ui"
     assert "SnowmanAI / FuseKit" in html
     assert "Privacy mode" in html
+    assert "VM clipboard Capture buttons save directly to the encrypted vault" in html
+    assert "hidden Cloud Shell prompts" not in html
     assert "Copy Bootstrap Command" in html
     assert "command: command.value" not in html
     assert "openLink.href = initial.deeplink_url" in html

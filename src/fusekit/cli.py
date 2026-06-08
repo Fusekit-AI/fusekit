@@ -218,7 +218,10 @@ def _parser() -> argparse.ArgumentParser:
     authorize.add_argument(
         "--capture-stdin",
         action="store_true",
-        help="capture the approved provider token from a hidden prompt",
+        help=(
+            "allow supervised terminal fallback capture when launcher/VM clipboard "
+            "Capture is unavailable"
+        ),
     )
     authorize.add_argument(
         "--include-project-page",
@@ -447,7 +450,10 @@ def _parser() -> argparse.ArgumentParser:
         "--capture-stdin",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="capture approved provider secrets through hidden prompts by default",
+        help=(
+            "enable secure provider secret capture; launcher runs use VM clipboard "
+            "Capture buttons, with terminal prompts only as fallback"
+        ),
     )
     launcher.add_argument(
         "--spine",
@@ -640,7 +646,7 @@ def _llm_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--capture-llm-key",
         action="store_true",
-        help="capture the LLM API key from a hidden prompt when it is not in env",
+        help="allow supervised terminal fallback capture for an LLM API key when it is not in env",
     )
 
 

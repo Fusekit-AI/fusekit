@@ -71,6 +71,7 @@ guided, or explicitly verified.
 | A stale Capture click/request after a secret gate had already auto-resumed could overwrite the vault record before verification finished. | Clipboard capture now fails closed once the gate is `resume_requested`, preserving the first captured value while FuseKit verifies the provider state. |
 | Launch readiness could prove a provider gate was resumed or captured without proving the provider page was opened through the launcher/VM browser. | Live acceptance now requires a matching redacted `control_room.gate_open` audit event for every durable gate with a provider resume URL. |
 | Acceptance reports could contain `missing[]` launch-readiness proof but no structured `blockers[]`, leaving the control room on a vague waiting card instead of telling the user what to fix. | Static and live control rooms now fall back to rendering `missing[]` as launch-evidence blockers with a clear repair-and-rerun action. |
+| The local OCI launcher summary still described provider secret capture as hidden Cloud Shell prompts, making the fallback sound like the normal user path. | Launcher and CLI help now describe the public path as VM clipboard Capture into the encrypted vault, with terminal capture reserved as fallback. |
 
 ## Open Acceptance Items
 
