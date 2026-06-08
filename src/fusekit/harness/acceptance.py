@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -1089,12 +1090,17 @@ def _check_gate_audit_events(
         for gate in gates
         if isinstance(gate, dict) and str(gate.get("id", "")).strip()
     ]
+    capture_requirements = _gate_capture_audit_requirements(gates)
     snapshot = ledger.snapshot_json(
         "gate-audit-proof",
         {
             "schema": "fusekit.gate-audit-proof.v1",
             "gate_count": len(gate_ids),
             "gates": [{"id": gate_id} for gate_id in gate_ids],
+            "capture_requirements": [
+                {"gate_id": gate_id, "target": target}
+                for gate_id, target in capture_requirements
+            ],
         },
     )
     if not gate_ids:
@@ -1125,14 +1131,40 @@ def _check_gate_audit_events(
         for event in audit_events
         if isinstance(event.get("data"), dict)
     }
+    captured_targets = {
+        (
+            str(event.get("data", {}).get("gate_id", "")),
+            str(event.get("data", {}).get("target", "")),
+        )
+        for event in audit_events
+        if str(event.get("event", "")) == "control_room.clipboard_capture"
+        and isinstance(event.get("data"), dict)
+    }
     missing_gate_ids = [gate_id for gate_id in gate_ids if gate_id not in audited_gate_ids]
-    if missing_gate_ids:
+    missing_captures = [
+        (gate_id, target)
+        for gate_id, target in capture_requirements
+        if (gate_id, target) not in captured_targets
+    ]
+    if missing_gate_ids or missing_captures:
+        details: list[str] = []
+        if missing_gate_ids:
+            details.append(
+                "missing gate events: " + ", ".join(missing_gate_ids)
+            )
+        if missing_captures:
+            details.append(
+                "missing control_room.clipboard_capture: "
+                + ", ".join(
+                    f"{gate_id}:{target}" for gate_id, target in missing_captures
+                )
+            )
         checks.append(
             AcceptanceCheck(
                 "gates.audited",
                 "failed" if mode == "live" else "skipped",
                 "Control-room gates are missing redacted audit events: "
-                + ", ".join(missing_gate_ids),
+                + "; ".join(details),
                 str(snapshot),
             )
         )
@@ -1147,6 +1179,42 @@ def _check_gate_audit_events(
             str(snapshot),
         )
     )
+
+
+_ENV_TARGET_RE = re.compile(r"^[A-Z][A-Z0-9_]{2,}$")
+
+
+def _gate_capture_audit_requirements(gates: Any) -> list[tuple[str, str]]:
+    """Return gate/target pairs that must prove launcher clipboard capture."""
+
+    if not isinstance(gates, list):
+        return []
+    requirements: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for gate in gates:
+        if not isinstance(gate, dict):
+            continue
+        gate_id = str(gate.get("id", "")).strip()
+        if not gate_id:
+            continue
+        for target in _gate_secret_targets(gate):
+            key = (gate_id, target)
+            if key not in seen:
+                requirements.append(key)
+                seen.add(key)
+    return requirements
+
+
+def _gate_secret_targets(gate: dict[str, Any]) -> list[str]:
+    captured_targets = gate.get("captured_targets", [])
+    if isinstance(captured_targets, list):
+        targets = [str(target).strip() for target in captured_targets]
+        return [target for target in targets if _ENV_TARGET_RE.match(target)]
+    target = str(gate.get("target", "")).strip()
+    if not target:
+        return []
+    targets = [part.strip() for part in target.split(",")]
+    return [part for part in targets if _ENV_TARGET_RE.match(part)]
 
 
 def _control_room_audit_events(audit_log_path: Path) -> tuple[list[dict[str, Any]], str]:

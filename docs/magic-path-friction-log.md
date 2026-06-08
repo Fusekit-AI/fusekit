@@ -65,6 +65,7 @@ guided, or explicitly verified.
 | Inferred and generic provider gates could tell the user to click a generic "resume button" even though the control room button says "I finished this step", and token gates still mentioned hidden capture prompts. | Inferred and shared follow-me gates now use the visible control-room button label and direct token/key gates to the safe VM clipboard Capture button. |
 | Browser/provider playbook events could still describe hidden prompts as an equal capture path, even though public launcher users should stay in the VM browser and control room. | Guided browser playbooks now tell users to copy approved provider secrets inside the VM browser and use the matching Capture button; hidden prompts are documented only as CLI fallback. |
 | Provider strategy gates generated useful next-action copy but the durable gate recorder dropped it, forcing the launcher back to generic instructions. | Provider strategy gates now persist their specific next action and resume hint into `gates.json`, so the control room can show the intended follow-me instruction. |
+| Launch readiness could treat a secret-bearing provider gate as audited just because the gate was opened or resumed, even when the launcher had not proven the token was captured. | Live acceptance now requires a matching redacted `control_room.clipboard_capture` audit event for every secret/env target on a durable gate before the run can be launch-ready. |
 
 ## Open Acceptance Items
 

@@ -266,7 +266,10 @@ def _failed_repair(provider: str, check: str) -> str:
     if provider == "cloudflare" and check == "dns_record_exists":
         return "Cloudflare DNS record is missing. FuseKit will reapply the DNS record."
     if provider == "resend" and check == "domain_verified":
-        return "Resend domain is missing. FuseKit will reopen Resend and add the domain."
+        return (
+            "Resend domain is missing. FuseKit will rerun Resend domain setup first, "
+            "then apply the DNS records Resend returns."
+        )
     if check == "webhook_secret_present":
         return "Webhook signature secret is missing. FuseKit will regenerate and store it."
     if check == "auth_valid":
