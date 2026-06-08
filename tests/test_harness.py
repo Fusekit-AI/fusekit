@@ -92,6 +92,18 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                 '{"event":"provider.verify"}',
                 json.dumps(
                     {
+                        "event": "control_room.gate_open",
+                        "data": {
+                            "gate_id": "provider.openai.authorization",
+                            "provider": "openai",
+                            "reused": False,
+                            "status": "waiting",
+                        },
+                    },
+                    sort_keys=True,
+                ),
+                json.dumps(
+                    {
                         "event": "control_room.clipboard_capture",
                         "data": {
                             "gate_id": "provider.openai.authorization",
@@ -717,6 +729,112 @@ def test_live_acceptance_requires_clipboard_capture_for_secret_gates(tmp_path) -
     assert audit_check.status == "failed"
     assert "control_room.clipboard_capture" in audit_check.detail
     assert "provider.openai.authorization:OPENAI_API_KEY" in audit_check.detail
+    assert "audited human gate interventions" in report.missing
+
+
+def test_live_acceptance_requires_provider_gate_open_audit(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "package.json").write_text(
+        json.dumps({"name": "moonlite-rsvp", "dependencies": {"next": "latest"}}),
+        encoding="utf-8",
+    )
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    (remote_fusekit / "audit.jsonl").write_text(
+        "\n".join(
+            [
+                '{"event":"provider.verify"}',
+                json.dumps(
+                    {
+                        "event": "control_room.gate_resume_requested",
+                        "data": {
+                            "gate_id": "provider.cloudflare.authorization",
+                            "provider": "cloudflare",
+                            "status": "passed",
+                        },
+                    },
+                    sort_keys=True,
+                ),
+            ]
+        )
+        + "\n",
+        "utf-8",
+    )
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "live_url": "https://moonlite.example",
+                "raw_secrets_exposed": 0,
+                "actions": [],
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "verification_report.json").write_text(
+        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        "utf-8",
+    )
+    (remote_fusekit / "rollback_plan.json").write_text(
+        json.dumps({"rollback": [{"action": "rollback.cloudflare.dns", "status": "planned"}]}),
+        "utf-8",
+    )
+    (remote_fusekit / "provider_strategies.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.provider-strategies.v1",
+                "providers": [
+                    {
+                        "provider": "cloudflare",
+                        "strategies": [
+                            {
+                                "recipe": "cloudflare-dns-records",
+                                "strategy": "api",
+                                "status": "ok",
+                                "decision": _strategy_decision(),
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "gates.json").write_text(
+        json.dumps(
+            {
+                "gates": [
+                    {
+                        "id": "provider.cloudflare.authorization",
+                        "provider": "cloudflare",
+                        "reason": "Cloudflare authorization complete",
+                        "status": "passed",
+                        "classification": "provider-authorization",
+                        "resume_url": "https://dash.cloudflare.com/profile/api-tokens",
+                        "next_action": "No action needed.",
+                        "resume_hint": "FuseKit verified this gate as passed.",
+                    }
+                ]
+            }
+        ),
+        "utf-8",
+    )
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    audit_check = next(check for check in report.checks if check.id == "gates.audited")
+    assert report.launch_ready is False
+    assert audit_check.status == "failed"
+    assert "control_room.gate_open" in audit_check.detail
+    assert "provider.cloudflare.authorization" in audit_check.detail
     assert "audited human gate interventions" in report.missing
 
 

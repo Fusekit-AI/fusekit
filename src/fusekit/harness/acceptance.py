@@ -1091,6 +1091,7 @@ def _check_gate_audit_events(
         if isinstance(gate, dict) and str(gate.get("id", "")).strip()
     ]
     capture_requirements = _gate_capture_audit_requirements(gates)
+    open_requirements = _gate_open_audit_requirements(gates)
     snapshot = ledger.snapshot_json(
         "gate-audit-proof",
         {
@@ -1101,6 +1102,7 @@ def _check_gate_audit_events(
                 {"gate_id": gate_id, "target": target}
                 for gate_id, target in capture_requirements
             ],
+            "open_requirements": [{"gate_id": gate_id} for gate_id in open_requirements],
         },
     )
     if not gate_ids:
@@ -1140,17 +1142,28 @@ def _check_gate_audit_events(
         if str(event.get("event", "")) == "control_room.clipboard_capture"
         and isinstance(event.get("data"), dict)
     }
+    opened_gate_ids = {
+        str(event.get("data", {}).get("gate_id", ""))
+        for event in audit_events
+        if str(event.get("event", "")) == "control_room.gate_open"
+        and isinstance(event.get("data"), dict)
+    }
     missing_gate_ids = [gate_id for gate_id in gate_ids if gate_id not in audited_gate_ids]
     missing_captures = [
         (gate_id, target)
         for gate_id, target in capture_requirements
         if (gate_id, target) not in captured_targets
     ]
-    if missing_gate_ids or missing_captures:
+    missing_opens = [gate_id for gate_id in open_requirements if gate_id not in opened_gate_ids]
+    if missing_gate_ids or missing_captures or missing_opens:
         details: list[str] = []
         if missing_gate_ids:
             details.append(
                 "missing gate events: " + ", ".join(missing_gate_ids)
+            )
+        if missing_opens:
+            details.append(
+                "missing control_room.gate_open: " + ", ".join(missing_opens)
             )
         if missing_captures:
             details.append(
@@ -1202,6 +1215,25 @@ def _gate_capture_audit_requirements(gates: Any) -> list[tuple[str, str]]:
             if key not in seen:
                 requirements.append(key)
                 seen.add(key)
+    return requirements
+
+
+def _gate_open_audit_requirements(gates: Any) -> list[str]:
+    """Return gate ids that must prove launch through the control-room VM browser."""
+
+    if not isinstance(gates, list):
+        return []
+    requirements: list[str] = []
+    seen: set[str] = set()
+    for gate in gates:
+        if not isinstance(gate, dict):
+            continue
+        gate_id = str(gate.get("id", "")).strip()
+        if not gate_id or gate_id in seen:
+            continue
+        if str(gate.get("resume_url", "")).strip():
+            requirements.append(gate_id)
+            seen.add(gate_id)
     return requirements
 
 
