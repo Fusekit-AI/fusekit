@@ -393,6 +393,58 @@ def test_control_room_renders_launch_run_state_contract(tmp_path) -> None:
     assert payload["run_state"]["vault_created"] is True
 
 
+def test_control_room_payload_and_html_include_acceptance_blockers(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    acceptance_dir = tmp_path / "acceptance"
+    acceptance_dir.mkdir()
+    (acceptance_dir / "report.json").write_text(
+        json.dumps(
+            {
+                "launch_ready": False,
+                "blockers": [
+                    {
+                        "category": "Provider order",
+                        "item": "Resend-before-DNS provider setup order",
+                        "next_action": (
+                            "Run Resend domain setup before Cloudflare/DNS so records "
+                            "are included."
+                        ),
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+    payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
+
+    assert payload["acceptance"]["blockers"][0]["category"] == "Provider order"
+    assert "Launch blockers" in html
+    assert "What must be fixed before recording" in html
+    assert "Provider order" in html
+    assert "Resend-before-DNS provider setup order" in html
+    assert "Run Resend domain setup before Cloudflare/DNS" in html
+    assert "renderAcceptance" in html
+
+
+def test_control_room_renders_acceptance_ready_state(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    acceptance_dir = tmp_path / "acceptance"
+    acceptance_dir.mkdir()
+    (acceptance_dir / "report.json").write_text(
+        json.dumps({"launch_ready": True, "blockers": []}),
+        encoding="utf-8",
+    )
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+    payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
+
+    assert payload["acceptance"]["launch_ready"] is True
+    assert "Acceptance blockers are clear" in html
+    assert "launch-ready proof is clear" in html
+
+
 def test_control_room_renders_verification_trust_cards(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     report = tmp_path / "verification_report.json"

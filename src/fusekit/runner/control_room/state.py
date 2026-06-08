@@ -21,6 +21,7 @@ def control_room_payload(job: JobState, *, gate_path: Path | None = None) -> dic
     payload["provider_strategies"] = _read_provider_strategies(
         _provider_strategies_path(job, gate_path)
     )
+    payload["acceptance"] = _read_acceptance_report(_acceptance_report_path(job, gate_path))
     if gate_path is None:
         payload.setdefault("gates", [])
         return payload
@@ -125,6 +126,38 @@ def _provider_strategies_path(job: JobState, gate_path: Path | None) -> Path | N
     if gate_path is not None:
         return gate_path.parent / "provider_strategies.json"
     return None
+
+
+def _acceptance_report_path(job: JobState, gate_path: Path | None) -> Path | None:
+    artifact = job.artifacts.get("acceptance_report", "")
+    if artifact:
+        return Path(artifact)
+    if gate_path is not None:
+        return gate_path.parent / "acceptance" / "report.json"
+    return None
+
+
+def _read_acceptance_report(path: Path | None) -> dict[str, Any]:
+    if path is None or not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {
+            "launch_ready": False,
+            "blockers": [],
+            "error": f"Acceptance report could not be read from {path.name}",
+        }
+    if not isinstance(raw, dict):
+        return {
+            "launch_ready": False,
+            "blockers": [],
+            "error": f"Acceptance report from {path.name} was not a JSON object",
+        }
+    blockers = raw.get("blockers", [])
+    if not isinstance(blockers, list):
+        raw["blockers"] = []
+    return raw
 
 
 def _read_provider_strategies(path: Path | None) -> dict[str, Any]:

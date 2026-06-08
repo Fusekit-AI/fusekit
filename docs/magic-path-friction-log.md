@@ -50,6 +50,7 @@ guided, or explicitly verified.
 | Provider gates could tell the user what provider page to use but not the exact next action or what FuseKit would do after the click/capture, making the flow feel stuck even when the worker was alive. | Durable gate records now carry `next_action` and `resume_hint`, static/live control rooms render them, and live acceptance fails if any gate is missing guided next-step proof. |
 | The noVNC password could be duplicated into frontend dataset state just to avoid iframe refreshes. | Live control-room refresh now compares the existing iframe URL instead of copying the password into extra DOM state; the password remains only in the autoconnect URL/copy affordance where needed. |
 | Control-room gate open/resume/capture actions could be recorded in gate state without launch acceptance proving they were also in the audit ledger. | Live acceptance now requires every durable control-room gate to have a matching redacted `control_room.*` audit event before a run can be launch-ready. |
+| Acceptance blockers were only visible in `.fusekit/acceptance/report.json`, so the launcher could still feel stuck when the order-of-operations proof failed. | Static and live control rooms now render `blockers[]` as launch-blocker cards with plain next actions, including Resend-before-DNS ordering failures. |
 
 ## Open Acceptance Items
 

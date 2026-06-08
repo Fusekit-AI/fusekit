@@ -51,6 +51,7 @@ def render_control_room(job: JobState, *, gate_path: Path | None = None) -> str:
     <div data-visual-session>{_render_visual_session(control_payload.get("visual", {}))}</div>
     {_render_recovery(job)}
     {_render_run_state(control_payload.get("run_state", {}))}
+    {_render_acceptance_blockers(control_payload.get("acceptance", {}))}
     {_render_provider_strategies(control_payload.get("provider_strategies", {}))}
     {_render_trust(control_payload.get("verification", {}))}
     <section class="workspace">
@@ -323,6 +324,92 @@ def _render_visual_session(visual: Any) -> str:
         </aside>
       </div>
     </section>
+"""
+
+
+def _render_acceptance_blockers(report: Any) -> str:
+    report = report if isinstance(report, dict) else {}
+    blockers = report.get("blockers", [])
+    blockers = blockers if isinstance(blockers, list) else []
+    error = str(report.get("error", "") or "")
+    ready = bool(report.get("launch_ready", False))
+    if error:
+        cards = f"""
+        <article class="trust-card failed">
+          <div class="trust-snow state-failed" aria-hidden="true"></div>
+          <div>
+            <span>Needs repair</span>
+            <strong>Acceptance report could not load</strong>
+            <p>{html.escape(error)}</p>
+            <em>Rerun acceptance so FuseKit can rebuild launch-readiness proof.</em>
+          </div>
+        </article>
+"""
+        summary = "acceptance report needs repair"
+    elif ready:
+        cards = """
+        <article class="trust-card passed">
+          <div class="trust-snow state-passed" aria-hidden="true"></div>
+          <div>
+            <span>Passed</span>
+            <strong>Acceptance blockers are clear</strong>
+            <p>The live run has the required proof to be launch-ready.</p>
+            <em>Record the demo from this clean state.</em>
+          </div>
+        </article>
+"""
+        summary = "launch-ready proof is clear"
+    elif blockers:
+        cards = "\n".join(
+            _render_acceptance_blocker_card(blocker)
+            for blocker in blockers[:8]
+            if isinstance(blocker, dict)
+        )
+        summary = f"{len(blockers)} launch blocker{'s' if len(blockers) != 1 else ''}"
+    else:
+        cards = """
+        <article class="trust-card pending">
+          <div class="trust-snow state-checking" aria-hidden="true"></div>
+          <div>
+            <span>Waiting</span>
+            <strong>Launch blockers appear after acceptance</strong>
+            <p>
+              FuseKit will list any remaining provider, DNS, vault, audit,
+              or demo blockers here.
+            </p>
+            <em>Keep the control room open while setup and verification run.</em>
+          </div>
+        </article>
+"""
+        summary = "acceptance proof is waiting"
+    return f"""
+    <section class="acceptance-panel" aria-label="Launch-readiness blockers">
+      <div class="section-head compact">
+        <div>
+          <span class="section-kicker">Launch blockers</span>
+          <h2>What must be fixed before recording</h2>
+        </div>
+        <span class="live-pill" data-acceptance-overall>{html.escape(summary)}</span>
+      </div>
+      <div class="acceptance-grid" data-acceptance-blockers>{cards}</div>
+    </section>
+"""
+
+
+def _render_acceptance_blocker_card(blocker: dict[str, Any]) -> str:
+    category = str(blocker.get("category", "Launch blocker") or "Launch blocker")
+    item = str(blocker.get("item", "Acceptance item") or "Acceptance item")
+    next_action = str(blocker.get("next_action", "") or "Run acceptance again after fixing this.")
+    return f"""
+        <article class="trust-card failed">
+          <div class="trust-snow state-failed" aria-hidden="true"></div>
+          <div>
+            <span>{html.escape(category)}</span>
+            <strong>{html.escape(item)}</strong>
+            <p>{html.escape(next_action)}</p>
+            <em>FuseKit will keep this visible until acceptance proof passes.</em>
+          </div>
+        </article>
 """
 
 

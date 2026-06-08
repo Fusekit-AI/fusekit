@@ -79,9 +79,10 @@ FuseKit has a native proof layer:
 - redacted durable gate-state proof that every control-room gate was guided and
   no gate remains unresolved
 - redacted control-room intervention audit proof for every recorded human gate
+- control-room launch-blocker visibility for `blockers[]` recovery actions
 - receipt/audit/detonation/leak-scan gates
 
 The harness only reports whether the run is public-launch ready. It does not
 grant provider access, bypass human gates, or make unverified provider-success claims.
 When the report is not launch-ready, `blockers[]` is the plain-language recovery
-map for the next demo pass.
+map for the next demo pass and must be visible in the control room.

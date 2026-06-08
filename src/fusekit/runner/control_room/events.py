@@ -537,6 +537,83 @@ function renderTrust(job) {
     .join("");
 }
 
+function acceptanceCards(report) {
+  const blockers = Array.isArray(report.blockers) ? report.blockers : [];
+  if (report.error) {
+    return [
+      {
+        status: "failed",
+        snow: "failed",
+        label: "Needs repair",
+        title: "Acceptance report could not load",
+        body: String(report.error),
+        foot: "Rerun acceptance so FuseKit can rebuild launch-readiness proof.",
+      },
+    ];
+  }
+  if (report.launch_ready) {
+    return [
+      {
+        status: "passed",
+        snow: "passed",
+        label: "Passed",
+        title: "Acceptance blockers are clear",
+        body: "The live run has the required proof to be launch-ready.",
+        foot: "Record the demo from this clean state.",
+      },
+    ];
+  }
+  if (blockers.length) {
+    return blockers.slice(0, 8).map((blocker) => ({
+      status: "failed",
+      snow: "failed",
+      label: blocker.category || "Launch blocker",
+      title: blocker.item || "Acceptance item",
+      body: blocker.next_action || "Run acceptance again after fixing this.",
+      foot: "FuseKit will keep this visible until acceptance proof passes.",
+    }));
+  }
+  return [
+    {
+      status: "pending",
+      snow: "checking",
+      label: "Waiting",
+      title: "Launch blockers appear after acceptance",
+      body: "FuseKit will list any remaining provider, DNS, vault, audit, or demo blockers here.",
+      foot: "Keep the control room open while setup and verification run.",
+    },
+  ];
+}
+
+function renderAcceptance(job) {
+  const root = document.querySelector("[data-acceptance-blockers]");
+  if (!root) return;
+  const report = job.acceptance && typeof job.acceptance === "object" ? job.acceptance : {};
+  const blockers = Array.isArray(report.blockers) ? report.blockers : [];
+  const summary = report.error
+    ? "acceptance report needs repair"
+    : report.launch_ready
+      ? "launch-ready proof is clear"
+      : blockers.length
+        ? `${blockers.length} launch blocker${blockers.length === 1 ? "" : "s"}`
+        : "acceptance proof is waiting";
+  const summaryNode = document.querySelector("[data-acceptance-overall]");
+  if (summaryNode) summaryNode.textContent = summary;
+  root.innerHTML = acceptanceCards(report)
+    .map((card) => `
+      <article class="trust-card ${classToken(card.status)}">
+        <div class="trust-snow state-${classToken(card.snow)}" aria-hidden="true"></div>
+        <div>
+          <span>${escapeHtml(card.label)}</span>
+          <strong>${escapeHtml(card.title)}</strong>
+          <p>${escapeHtml(card.body)}</p>
+          <em>${escapeHtml(card.foot)}</em>
+        </div>
+      </article>
+    `)
+    .join("");
+}
+
 function trustCardCopy(check) {
   const details = check && typeof check.details === "object" && check.details
     ? check.details
@@ -775,6 +852,7 @@ function render(job) {
     next?.label || "Artifacts and audit review";
   renderCheckpoints(job);
   renderRunState(job);
+  renderAcceptance(job);
   renderTrust(job);
   renderProviderStrategies(job);
   renderVisual(job);

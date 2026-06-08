@@ -1124,6 +1124,7 @@ button {
 
 .trust-panel,
 .strategy-panel,
+.acceptance-panel,
 .run-state-panel {
   min-width: 0;
   margin-top: 18px;
@@ -1260,6 +1261,7 @@ button {
 
 .trust-grid,
 .strategy-grid,
+.acceptance-grid,
 .run-state-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1600,6 +1602,7 @@ button {
   .checkpoint-grid,
   .trust-grid,
   .strategy-grid,
+  .acceptance-grid,
   .run-state-grid,
   .visual-grid {
     grid-template-columns: 1fr;
@@ -1633,6 +1636,8 @@ button {
   .artifact-panel,
   .recovery-panel,
   .trust-panel,
+  .strategy-panel,
+  .acceptance-panel,
   .run-state-panel,
   .visual-panel {
     width: 100%;
