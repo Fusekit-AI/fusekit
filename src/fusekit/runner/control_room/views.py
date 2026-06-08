@@ -416,6 +416,7 @@ def _render_strategy_row(strategy: dict[str, Any]) -> str:
     decision = strategy.get("decision", {})
     selected = decision.get("selected", {}) if isinstance(decision, dict) else {}
     reason = str(selected.get("reason", "")) if isinstance(selected, dict) else ""
+    route_summary = _strategy_route_summary(strategy, selected)
     route = str(strategy.get("strategy", "unknown"))
     status = str(strategy.get("status", "pending"))
     recipe = str(strategy.get("recipe", "setup"))
@@ -423,9 +424,31 @@ def _render_strategy_row(strategy: dict[str, Any]) -> str:
             <p>
               <b>{html.escape(recipe)}</b>
               <em>{html.escape(route.replace('_', ' '))} · {html.escape(status)}</em>
+              <small>{html.escape(route_summary)}</small>
               <small>{html.escape(reason)}</small>
             </p>
 """
+
+
+def _strategy_route_summary(strategy: dict[str, Any], selected: Any) -> str:
+    selected = selected if isinstance(selected, dict) else {}
+    route = str(strategy.get("strategy", selected.get("kind", "unknown")))
+    deterministic = bool(selected.get("deterministic", False))
+    implemented = bool(selected.get("implemented", False))
+    if route == "api":
+        return "API automation: deterministic provider setup runs after authorization."
+    if route == "official_cli":
+        return "Official CLI route: deterministic when installed and enabled."
+    if route == "local_vault":
+        return "Vault capture: already-approved values move directly into the encrypted vault."
+    if route in {"browser_guided", "human_follow_me"}:
+        return (
+            "VM follow-me: the user passes provider-owned gates, then FuseKit "
+            "continues with verified setup."
+        )
+    if deterministic or implemented:
+        return "Deterministic route selected for this setup step."
+    return "FuseKit recorded the safest available route for this setup step."
 
 
 _RUN_STATE_LABELS = {

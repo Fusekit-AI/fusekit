@@ -591,13 +591,40 @@ function renderProviderStrategyRow(strategy) {
   const route = String(strategy.strategy || "unknown").replaceAll("_", " ");
   const status = String(strategy.status || "pending");
   const reason = String(selected.reason || "");
+  const routeSummary = providerStrategyRouteSummary(strategy, selected);
   return `
     <p>
       <b>${escapeHtml(recipe)}</b>
       <em>${escapeHtml(route)} · ${escapeHtml(status)}</em>
+      <small>${escapeHtml(routeSummary)}</small>
       <small>${escapeHtml(reason)}</small>
     </p>
   `;
+}
+
+function providerStrategyRouteSummary(strategy, selected) {
+  const route = String(strategy.strategy || selected.kind || "unknown");
+  const deterministic = Boolean(selected.deterministic);
+  const implemented = Boolean(selected.implemented);
+  if (route === "api") {
+    return "API automation: deterministic provider setup runs after authorization.";
+  }
+  if (route === "official_cli") {
+    return "Official CLI route: deterministic when installed and enabled.";
+  }
+  if (route === "local_vault") {
+    return "Vault capture: already-approved values move directly into the encrypted vault.";
+  }
+  if (["browser_guided", "human_follow_me"].includes(route)) {
+    return (
+      "VM follow-me: the user passes provider-owned gates, then FuseKit " +
+      "continues with verified setup."
+    );
+  }
+  if (deterministic || implemented) {
+    return "Deterministic route selected for this setup step.";
+  }
+  return "FuseKit recorded the safest available route for this setup step.";
 }
 
 const runStateLabels = {

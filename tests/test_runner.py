@@ -1093,6 +1093,8 @@ def test_control_room_payload_and_html_include_provider_strategy_routes(tmp_path
                                 "decision": {
                                     "selected": {
                                         "kind": "browser_guided",
+                                        "deterministic": False,
+                                        "implemented": False,
                                         "reason": "Provider token is missing.",
                                     }
                                 },
@@ -1113,7 +1115,50 @@ def test_control_room_payload_and_html_include_provider_strategy_routes(tmp_path
     assert "How FuseKit is connecting services" in html
     assert "github-deploy-key" in html
     assert "browser guided" in html
+    assert "VM follow-me" in html
+    assert "provider-owned gates" in html
+    assert "providerStrategyRouteSummary" in html
     assert "Provider token is missing." in html
+
+
+def test_control_room_explains_deterministic_provider_route(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job.save(tmp_path / "job.json")
+    (tmp_path / "provider_strategies.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.provider-strategies.v1",
+                "providers": [
+                    {
+                        "provider": "resend",
+                        "strategies": [
+                            {
+                                "recipe": "resend-domain",
+                                "status": "ok",
+                                "strategy": "api",
+                                "decision": {
+                                    "selected": {
+                                        "kind": "api",
+                                        "deterministic": True,
+                                        "implemented": True,
+                                        "reason": "Provider token is available.",
+                                    }
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+
+    assert "resend-domain" in html
+    assert "api · ok" in html
+    assert "API automation: deterministic provider setup runs after authorization." in html
+    assert "Provider token is available." in html
 
 
 def test_control_room_server_uses_local_only_and_security_headers(tmp_path) -> None:

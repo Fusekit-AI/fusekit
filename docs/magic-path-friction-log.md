@@ -41,6 +41,7 @@ guided, or explicitly verified.
 | The useful "verifying now" message could be replaced immediately by a generic live-refresh message. | Gate-pass refresh now preserves the explicit "Snowman is rechecking the provider now" status until the next real state appears. |
 | Pending-safe DNS verification could look like vague waiting even when the remaining action was DNS approval/apply. | Verification cards now translate pending-safe DNS approval states into plain-language instructions to approve/apply the exact setup-plan records while FuseKit keeps verifying propagation. |
 | Static control-room guidance and live-refresh guidance could drift because provider instructions were duplicated in Python and JavaScript. | Live control-room JavaScript now consumes the serialized Python guidance payload, so provider instructions have one source of truth across static and refreshed views. |
+| Provider route cards exposed raw strategy names without explaining whether FuseKit was using deterministic automation or VM follow-me. | Provider route rows now translate selected strategies into plain-language summaries such as API automation, vault capture, or VM follow-me. |
 
 ## Open Acceptance Items
 
