@@ -763,6 +763,9 @@ def test_control_room_post_captures_vm_clipboard_into_vault(tmp_path, monkeypatc
     record = vault.require("provider.resend.resend_api_key")
     assert record.value == "re_live_secret_from_vm_clipboard"
     assert record.metadata["env"] == "RESEND_API_KEY"
+    canonical = vault.require("provider.resend.token")
+    assert canonical.value == "re_live_secret_from_vm_clipboard"
+    assert canonical.metadata["alias_of"] == "provider.resend.resend_api_key"
     gate = GateService.load(tmp_path / "gates.json").records[
         "provider.resend.api-key-domain-access"
     ]

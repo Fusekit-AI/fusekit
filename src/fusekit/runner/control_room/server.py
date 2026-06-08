@@ -338,6 +338,16 @@ def _capture_gate_clipboard_secret(
     vault = Vault.open(vault_path, passphrase) if vault_path.exists() else Vault.empty()
     record_id, kind, provider = _capture_record_for_target(gate.provider, target)
     vault.put(record_id, kind, provider, target, value, {"env": target, "source": "vm-clipboard"})
+    canonical_record_id = _canonical_provider_token_record(provider, target)
+    if canonical_record_id and canonical_record_id != record_id:
+        vault.put(
+            canonical_record_id,
+            "provider_token",
+            provider,
+            f"{provider} API token",
+            value,
+            {"env": target, "source": "vm-clipboard", "alias_of": record_id},
+        )
     vault.save(vault_path, passphrase)
     service.mark_captured(gate_id, target)
     gate = service.records[gate_id]
@@ -427,6 +437,14 @@ def _capture_record_for_target(
         return record_id, "provider_token", provider
     record_id = f"app.{provider}.{target.lower()}"
     return record_id, "app_env", provider
+
+
+def _canonical_provider_token_record(provider: str, target: str) -> str:
+    """Return the provider token alias older setup loops expect after capture."""
+
+    if target.endswith("_API_KEY") or target.endswith("_TOKEN"):
+        return f"provider.{provider}.token"
+    return ""
 
 
 def _append_capture_audit(

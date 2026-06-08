@@ -1452,6 +1452,12 @@ def test_await_provider_token_presents_handoff_only_once(
         )
 
     assert calls == ["github"]
+    gate = GateService.load(tmp_path / ".fusekit" / "gates.json").records[
+        "provider.github.authorization"
+    ]
+    assert gate.classification == "provider-authorization"
+    assert gate.target == "GITHUB_TOKEN"
+    assert any("Capture GITHUB_TOKEN from VM clipboard" in step for step in gate.follow_steps)
 
 
 def test_await_provider_token_does_not_represent_existing_handoff(

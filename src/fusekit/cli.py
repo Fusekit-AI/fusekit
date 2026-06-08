@@ -2883,6 +2883,9 @@ def _await_provider_token(
             provider=provider,
             reason=f"{provider} login/MFA/CAPTCHA/billing/consent/token creation",
             resume_url=resume_url,
+            classification="provider-authorization",
+            target=token_env,
+            follow_steps=_provider_authorization_follow_steps(handoff, token_env),
         )
         _ensure_gate_attempt_allowed(args, attempt, f"{provider} authorization")
         guidance = provider_gate_guidance(provider)
@@ -2894,6 +2897,24 @@ def _await_provider_token(
         if should_present_handoff:
             _run_handoff(args, provider, handoff, include_project, goal=goal)
         _sleep_for_gate(args)
+
+
+def _provider_authorization_follow_steps(
+    handoff: ProviderHandoff,
+    token_env: str,
+) -> tuple[str, ...]:
+    """Return exact control-room steps for first provider authorization."""
+
+    capture_step = (
+        f"When the provider reveals {token_env}, copy it inside the VM browser and "
+        f"click Capture {token_env} from VM clipboard in FuseKit."
+    )
+    resume_step = "FuseKit resumes automatically after the token is captured into the vault."
+    steps = [step for step in (*handoff.account_steps, *handoff.secret_steps) if step.strip()]
+    if token_env and capture_step not in steps:
+        steps.append(capture_step)
+    steps.append(resume_step)
+    return tuple(steps)
 
 
 def _provider_token_from_vault(args: argparse.Namespace, handoff: ProviderHandoff) -> str:
