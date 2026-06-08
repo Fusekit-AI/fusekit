@@ -1028,6 +1028,128 @@ def test_local_control_room_requires_action_token_for_gate_post(tmp_path) -> Non
     ].status == "waiting"
 
 
+@pytest.mark.parametrize(
+    ("gate_id", "route_suffix", "target", "resume_url"),
+    (
+        ("provider.github.mfa.123", "pass", "", ""),
+        (
+            "provider.cloudflare.authorization",
+            "open",
+            "",
+            "https://dash.cloudflare.com/profile/api-tokens",
+        ),
+        ("provider.resend.api-key-domain-access", "capture-clipboard", "RESEND_API_KEY", ""),
+    ),
+)
+def test_control_room_state_routes_require_action_token(
+    tmp_path,
+    gate_id: str,
+    route_suffix: str,
+    target: str,
+    resume_url: str,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        gate_id,
+        provider="resend" if target else "github",
+        reason="Provider gate",
+        resume_url=resume_url,
+        classification="provider-authorization",
+        target=target,
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/api/gates/{gate_id}/{route_suffix}"
+        request = Request(
+            url,
+            data=json.dumps({"target": target}).encode("utf-8"),
+            method="POST",
+            headers={
+                "x-fusekit-control-room": "resume",
+                "content-type": "application/json",
+            },
+        )
+        with pytest.raises(HTTPError) as exc:
+            urlopen(request, timeout=5)
+        payload = json.loads(exc.value.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert exc.value.code == 403
+    assert payload == {"error": "invalid action token", "ok": False}
+    gate = GateService.load(tmp_path / "gates.json").records[gate_id]
+    assert gate.status == "waiting"
+    assert gate.captured_targets == ()
+    assert gate.last_opened_url == ""
+
+
+@pytest.mark.parametrize(
+    ("gate_id", "route_suffix", "target", "resume_url"),
+    (
+        ("provider.github.mfa.123", "pass", "", ""),
+        (
+            "provider.cloudflare.authorization",
+            "open",
+            "",
+            "https://dash.cloudflare.com/profile/api-tokens",
+        ),
+        ("provider.resend.api-key-domain-access", "capture-clipboard", "RESEND_API_KEY", ""),
+    ),
+)
+def test_control_room_state_routes_reject_cross_site_posts(
+    tmp_path,
+    gate_id: str,
+    route_suffix: str,
+    target: str,
+    resume_url: str,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        gate_id,
+        provider="resend" if target else "github",
+        reason="Provider gate",
+        resume_url=resume_url,
+        classification="provider-authorization",
+        target=target,
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/api/gates/{gate_id}/{route_suffix}"
+        request = Request(
+            url,
+            data=json.dumps({"target": target}).encode("utf-8"),
+            method="POST",
+            headers={
+                **_control_room_post_headers(tmp_path),
+                "content-type": "application/json",
+                "Origin": "https://attacker.example",
+                "Sec-Fetch-Site": "cross-site",
+            },
+        )
+        with pytest.raises(HTTPError) as exc:
+            urlopen(request, timeout=5)
+        payload = json.loads(exc.value.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert exc.value.code == 403
+    assert payload == {"error": "untrusted origin", "ok": False}
+    gate = GateService.load(tmp_path / "gates.json").records[gate_id]
+    assert gate.status == "waiting"
+    assert gate.captured_targets == ()
+    assert gate.last_opened_url == ""
+
+
 def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job_path = tmp_path / "job.json"
