@@ -69,7 +69,7 @@ FuseKit has a native proof layer:
 - acceptance report with rehearsal/live modes
 - provider-pack validation snapshots
 - vault public-index proof without raw secrets
-- durable gate-state proof that no control-room gates remain unresolved
+- redacted durable gate-state proof that no control-room gates remain unresolved
 - receipt/audit/detonation/leak-scan gates
 
 The harness only reports whether the run is public-launch ready. It does not

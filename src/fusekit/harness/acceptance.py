@@ -684,8 +684,21 @@ def _check_gate_state(
         )
         missing.append("resolved human gates")
         return
-    snapshot = ledger.snapshot_json("gates", raw)
-    gates = raw.get("gates", []) if isinstance(raw, dict) else []
+    if not isinstance(raw, dict) or not isinstance(raw.get("gates"), list):
+        snapshot = ledger.snapshot_json("gates", _redacted_gate_state(raw))
+        checks.append(
+            AcceptanceCheck(
+                "gates.resolved",
+                "failed" if mode == "live" else "skipped",
+                "Gate state has an unsupported schema.",
+                str(snapshot),
+            )
+        )
+        if mode == "live":
+            missing.append("resolved human gates")
+        return
+    gates = raw["gates"]
+    snapshot = ledger.snapshot_json("gates", _redacted_gate_state(raw))
     unresolved = [
         {
             "id": str(gate.get("id", "")),
@@ -718,6 +731,52 @@ def _check_gate_state(
             str(snapshot),
         )
     )
+
+
+def _redacted_gate_state(raw: Any) -> dict[str, Any]:
+    """Return non-secret gate proof data for public acceptance artifacts."""
+
+    if not isinstance(raw, dict):
+        return {"schema": "invalid", "gates": []}
+    gates = raw.get("gates", [])
+    if not isinstance(gates, list):
+        return {"schema": "invalid", "gates": []}
+    safe_gates: list[dict[str, Any]] = []
+    for gate in gates:
+        if not isinstance(gate, dict):
+            continue
+        follow_steps = gate.get("follow_steps", [])
+        captured_targets = gate.get("captured_targets", [])
+        safe_gates.append(
+            {
+                "id": str(gate.get("id", "")),
+                "provider": str(gate.get("provider", "")),
+                "status": str(gate.get("status", "")),
+                "classification": str(gate.get("classification", "")),
+                "target": str(gate.get("target", "")),
+                "attempts": _safe_int(gate.get("attempts")),
+                "follow_step_count": len(follow_steps) if isinstance(follow_steps, list) else 0,
+                "captured_count": (
+                    len(captured_targets) if isinstance(captured_targets, list) else 0
+                ),
+                "has_resume_url": bool(str(gate.get("resume_url", ""))),
+                "has_last_opened_url": bool(str(gate.get("last_opened_url", ""))),
+            }
+        )
+    return {"schema": "fusekit.gates.redacted.v1", "gates": safe_gates}
+
+
+def _safe_int(value: Any) -> int:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return 0
+    return 0
 
 
 def _check_rollback_metadata(

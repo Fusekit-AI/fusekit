@@ -45,6 +45,7 @@ guided, or explicitly verified.
 | Provider route cards exposed raw strategy names without explaining whether FuseKit was using deterministic automation or VM follow-me. | Provider route rows now translate selected strategies into plain-language summaries such as API automation, vault capture, or VM follow-me. |
 | First-time provider authorization gates could tell the user a token was needed without rendering the safe Capture button, or capture a token under an ID the next setup loop did not read. | Authorization gates now carry the token env target and exact follow-me steps, and VM clipboard capture writes both the env-specific vault record and the canonical provider token alias used by deterministic setup. |
 | Live launch proof could ignore durable control-room gate state, leaving a run marked ready even though the launcher still had a waiting provider gate. | Live acceptance now requires `gates.json` and fails unless every durable gate is resolved before launch readiness is claimed. |
+| Acceptance proof could snapshot raw gate URLs from provider callbacks even though those URLs might contain provider-owned codes or token-like query parameters. | Live acceptance now writes a minimal redacted gate-state proof instead of raw browser/session URLs while still proving every gate is resolved. |
 
 ## Open Acceptance Items
 

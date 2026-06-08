@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from fusekit.cli import main
 from fusekit.harness import run_acceptance
@@ -129,7 +130,28 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
         ),
         "utf-8",
     )
-    (remote_fusekit / "gates.json").write_text(json.dumps({"gates": []}), "utf-8")
+    (remote_fusekit / "gates.json").write_text(
+        json.dumps(
+            {
+                "gates": [
+                    {
+                        "id": "provider.openai.authorization",
+                        "provider": "openai",
+                        "reason": "OpenAI auth complete",
+                        "status": "passed",
+                        "classification": "provider-authorization",
+                        "target": "OPENAI_API_KEY",
+                        "attempts": 1,
+                        "follow_steps": ["Complete login."],
+                        "captured_targets": ["OPENAI_API_KEY"],
+                        "resume_url": "http://localhost:1455/auth/callback?code=secret-code",
+                        "last_opened_url": "https://provider.example/?token=secret-token",
+                    }
+                ]
+            }
+        ),
+        "utf-8",
+    )
 
     report = run_acceptance(
         app,
@@ -145,6 +167,13 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
     assert "provider_strategies.recorded" in check_ids
     assert "gates.resolved" in check_ids
     assert report.missing == ()
+    gates_check = next(check for check in report.checks if check.id == "gates.resolved")
+    gates_artifact = gates_check.artifact
+    gates_text = Path(gates_artifact).read_text(encoding="utf-8")
+    assert "secret-code" not in gates_text
+    assert "secret-token" not in gates_text
+    assert "has_resume_url" in gates_text
+    assert "captured_count" in gates_text
     report_json = json.loads((app / ".fusekit" / "acceptance" / "report.json").read_text())
     assert report_json["launch_ready"] is True
     assert any(check["id"] == "remote_artifacts.loaded" for check in report_json["checks"])
