@@ -1917,7 +1917,7 @@ def _await_oci_browser_session(
                 "account verification, then FuseKit will reopen the handoff and retry. "
                 f"Last result: {exc}"
             )
-            _sleep_for_gate(args)
+            _sleep_for_gate(args, gate_id=gate_id)
 
 
 def _await_oci_api_key_upload(
@@ -1967,7 +1967,7 @@ def _await_oci_api_key_upload(
             "Waiting for OCI API key authorization. Complete Oracle's API key gate, "
             "then provide a config snippet when prompted or rerun with an OCI config file."
         )
-        _sleep_for_gate(args)
+        _sleep_for_gate(args, gate_id=gate_id)
 
 
 def _run_oci_handoff(args: argparse.Namespace) -> None:
@@ -2900,7 +2900,7 @@ def _await_provider_token(
         )
         if should_present_handoff:
             _run_handoff(args, provider, handoff, include_project, goal=goal)
-        _sleep_for_gate(args)
+        _sleep_for_gate(args, gate_id=gate_id)
 
 
 def _provider_authorization_follow_steps(
@@ -2956,7 +2956,7 @@ def _await_plan_approval(args: argparse.Namespace) -> None:
         )
         _ensure_gate_attempt_allowed(args, attempt, "setup plan approval")
         print("Waiting for setup plan approval. FuseKit will keep this launch alive.")
-        _sleep_for_gate(args)
+        _sleep_for_gate(args, gate_id=gate_id)
 
 
 def _await_dns_approval(args: argparse.Namespace, domain: str) -> None:
@@ -2985,7 +2985,7 @@ def _await_dns_approval(args: argparse.Namespace, domain: str) -> None:
         )
         _ensure_gate_attempt_allowed(args, attempt, f"DNS approval for {domain}")
         print(f"Waiting for DNS approval for {domain}. FuseKit will retry this gate.")
-        _sleep_for_gate(args)
+        _sleep_for_gate(args, gate_id=gate_id)
 
 
 def _ensure_gate_attempt_allowed(args: argparse.Namespace, attempt: int, label: str) -> None:
@@ -2994,10 +2994,24 @@ def _ensure_gate_attempt_allowed(args: argparse.Namespace, attempt: int, label: 
         raise ApprovalRequired(f"{label} was not passed after {attempt} attempt(s).")
 
 
-def _sleep_for_gate(args: argparse.Namespace) -> None:
+def _sleep_for_gate(args: argparse.Namespace, *, gate_id: str = "") -> None:
     retry_seconds = float(getattr(args, "gate_retry_seconds", 300.0))
-    if retry_seconds > 0:
-        time.sleep(retry_seconds)
+    if retry_seconds <= 0:
+        return
+    deadline = time.monotonic() + retry_seconds
+    while True:
+        if gate_id and _gate_resume_requested(args, gate_id):
+            return
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        time.sleep(min(1.0, remaining))
+
+
+def _gate_resume_requested(args: argparse.Namespace, gate_id: str) -> bool:
+    service = GateService.load(_gate_state_path(args))
+    record = service.records.get(gate_id)
+    return bool(record and record.status in {"passed", "resume_requested"})
 
 
 def _has_provider_token(
@@ -4351,7 +4365,7 @@ def _await_openclaw_llm_authorization(
                 "Waiting for OpenAI/OpenClaw LLM authorization. Complete the OpenClaw "
                 "browser/device-code login gate, then FuseKit will retry."
             )
-            _sleep_for_gate(args)
+            _sleep_for_gate(args, gate_id=gate_id)
             continue
         _record_gate_passed(
             args,

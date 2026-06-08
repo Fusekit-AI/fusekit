@@ -26,6 +26,7 @@ from fusekit.cli import (
     _run_handoff,
     _run_manifest_provider_pack_setup,
     _runtime_env_secrets,
+    _sleep_for_gate,
     _start_openclaw_auth_terminal,
     _ui_navigator_from_vault,
     _verify_apply_live_url,
@@ -197,6 +198,33 @@ def test_provider_setup_pauses_dns_behind_resend_human_gate(monkeypatch, tmp_pat
     assert actions[-1]["action"] == "provider_pack.setup.paused"
     assert actions[-1]["status"] == "needs_human_gate"
     assert actions[-1]["details"]["provider"] == "resend"
+
+
+def test_gate_sleep_wakes_when_control_room_requests_resume(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    gate_path = app / ".fusekit" / "gates.json"
+    gate_id = "provider.resend.authorization"
+    GateService.load(gate_path).wait(
+        gate_id,
+        provider="resend",
+        reason="Resend API key capture",
+    )
+    args = argparse.Namespace(app=app, gate_retry_seconds=300.0)
+    sleeps: list[float] = []
+
+    def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        GateService.load(gate_path).request_resume(gate_id)
+
+    monkeypatch.setattr("fusekit.cli.time.sleep", fake_sleep)
+
+    _sleep_for_gate(args, gate_id=gate_id)
+
+    assert sleeps == [1.0]
 
 
 def test_playwright_fallback_is_headless_without_display(monkeypatch) -> None:
