@@ -290,7 +290,9 @@ function gateGuidance(provider) {
 
 function renderGateHelp(step) {
   if (step?.status !== "waiting") return "";
-  const guidance = gateGuidance(inferGateProvider(`${step.id} ${step.label} ${step.detail}`));
+  const provider = String(step.provider || "").trim().toLowerCase() ||
+    inferGateProvider(`${step.id} ${step.label} ${step.detail}`);
+  const guidance = gateGuidance(provider);
   const followSteps = Array.isArray(step.follow_steps) && step.follow_steps.length
     ? step.follow_steps
     : guidance.actions;

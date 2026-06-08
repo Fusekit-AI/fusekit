@@ -783,7 +783,9 @@ def _capture_targets(target: str) -> tuple[str, ...]:
 
 
 def _guidance_for_step(step: Any) -> GateGuidance:
-    provider = infer_gate_provider(f"{step.id} {step.label} {step.detail}")
+    provider = str(getattr(step, "provider", "") or "").strip().lower()
+    if not provider:
+        provider = infer_gate_provider(f"{step.id} {step.label} {step.detail}")
     return provider_gate_guidance(provider)
 
 

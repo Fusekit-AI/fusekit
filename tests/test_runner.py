@@ -474,6 +474,26 @@ def test_control_room_payload_includes_active_gate_records(tmp_path) -> None:
     assert "<strong data-count-waiting>1</strong> gates" in html
 
 
+def test_control_room_uses_gate_provider_for_guidance_when_id_is_generic(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job.mark("setup.execute", "running", "remote setup is running")
+    GateService.load(tmp_path / "gates.json").wait(
+        "authorization",
+        provider="resend",
+        reason="provider authorization required",
+        resume_url="https://resend.com/api-keys",
+        classification="provider-authorization",
+        target="RESEND_API_KEY",
+    )
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+
+    assert "Resend needs an email API key" in html
+    assert "before Cloudflare DNS" in html
+    assert 'data-gate-capture="authorization"' in html
+    assert "step.provider ||" in html
+
+
 def test_control_room_gate_help_includes_resume_link_and_attempts(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job.mark("setup.execute", "running", "remote setup is running")

@@ -35,7 +35,9 @@ guided, or explicitly verified.
 | Missing Vercel/GitHub runtime env values were reported as provider checks rather than guided Resend tasks. | Missing `RESEND_*` runtime values now route to a Resend runtime-values gate with exact capture instructions. |
 | Copy-once provider secrets required side-channel capture after the user clicked Copy inside the VM. | Secret-bearing gates now show VM-clipboard capture buttons that write the selected value directly into the encrypted vault and return only redacted status. |
 | Resend key verification returned `403` even when the key had full access. | Resend API verification now sends a `User-Agent`, avoiding false key-rejection gates. |
-| Resend had no domain or audience after API auth was available. | Live run used the Resend API to create `moonlite.rsvp`, create the Moonlite RSVP audience, store runtime env values, and apply Resend DNS through Cloudflare; this should become deterministic provider setup. |
+| Resend had no domain or audience after API auth was available. | Resend setup now runs before Cloudflare/DNS, creates or reuses the sending domain through Resend's API, creates an audience only when the app requires one, stores runtime values in the encrypted vault, and hands Resend DNS records to Cloudflare for approved apply/verify. |
+| Capture gates still told the user to click "I finished this step" even though the button is hidden for secret capture. | Capture-gate guidance now tells the user to copy inside the VM, click Capture, and let FuseKit auto-resume once every requested value is captured. |
+| Generic gate ids could make the control room show generic provider guidance even when the gate record knew the provider. | Static and live control-room rendering now use the gate's `provider` field as the source of truth for guidance, with text inference only as a fallback. |
 
 ## Open Acceptance Items
 
@@ -43,8 +45,8 @@ guided, or explicitly verified.
   Resend audience/from email, Vercel env vars, GitHub secrets, deployment, and live
   URL health all pass or are pending-safe without side-channel instructions.
 - Add a visible "what Snowman is doing next" message after every gate pass.
-- Move Resend domain/audience creation and Resend DNS proposal/apply into the
-  provider automation path so a valid key is enough for FuseKit to complete it.
 - Reduce VNC usage by preferring provider APIs after login/consent, using the VNC
   only for real human gates such as login, MFA, CAPTCHA, consent, payment, and
   provider-owned copy-once secret screens.
+- Record a clean new-site/new-account rehearsal and compare every human action
+  against the control-room instructions before launch readiness is claimed.
