@@ -927,6 +927,19 @@ async function copyText(text) {
   }
 }
 
+function controlRoomFailureMessage(payload, fallback) {
+  const parts = [];
+  const reason = String(payload?.error || payload?.message || "").trim();
+  if (reason) parts.push(reason);
+  const missingTargets = Array.isArray(payload?.missing_targets)
+    ? payload.missing_targets.map((item) => String(item).trim()).filter(Boolean)
+    : [];
+  if (missingTargets.length) {
+    parts.push(`Missing: ${missingTargets.join(", ")}`);
+  }
+  return parts.join(" ") || fallback;
+}
+
 document.addEventListener("click", async (event) => {
   const gateOpenButton = event.target.closest("[data-gate-open]");
   if (gateOpenButton) {
@@ -942,13 +955,19 @@ document.addEventListener("click", async (event) => {
         },
       );
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload.ok) throw new Error("gate open failed");
+      if (!response.ok || !payload.ok) {
+        throw new Error(controlRoomFailureMessage(
+          payload,
+          "Could not open the provider gate inside the VM. Use the noVNC browser surface.",
+        ));
+      }
       setRefreshStatus(
         payload.message || "Provider gate opened inside the shared VM browser.",
       );
-    } catch {
+    } catch (error) {
       setRefreshStatus(
-        "Could not open the provider gate inside the VM. Use the noVNC browser surface.",
+        error?.message ||
+          "Could not open the provider gate inside the VM. Use the noVNC browser surface.",
         "stale",
       );
     } finally {
@@ -973,12 +992,18 @@ document.addEventListener("click", async (event) => {
         },
       );
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload.ok) throw new Error("capture failed");
+      if (!response.ok || !payload.ok) {
+        throw new Error(controlRoomFailureMessage(
+          payload,
+          `Could not capture ${target} from the VM clipboard. Copy it in the VM and try again.`,
+        ));
+      }
       setRefreshStatus(payload.message || `${target} captured into the encrypted vault.`);
       await refreshJob({ preserveStatus: true });
-    } catch {
+    } catch (error) {
       setRefreshStatus(
-        `Could not capture ${target} from the VM clipboard. Copy it in the VM and try again.`,
+        error?.message ||
+          `Could not capture ${target} from the VM clipboard. Copy it in the VM and try again.`,
         "stale",
       );
     } finally {
@@ -1001,17 +1026,23 @@ document.addEventListener("click", async (event) => {
         },
       );
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload.ok) throw new Error("gate update failed");
+      if (!response.ok || !payload.ok) {
+        throw new Error(controlRoomFailureMessage(
+          payload,
+          "Could not mark the gate done from this snapshot. FuseKit will keep waiting.",
+        ));
+      }
       setRefreshStatus(
         payload.message ||
           "Snowman is rechecking the provider now. The next step will appear here.",
       );
       await refreshJob({ preserveStatus: true });
-    } catch {
+    } catch (error) {
       gateButton.disabled = false;
       gateButton.textContent = originalText;
       setRefreshStatus(
-        "Could not mark the gate done from this snapshot. FuseKit will keep waiting.",
+        error?.message ||
+          "Could not mark the gate done from this snapshot. FuseKit will keep waiting.",
         "stale",
       );
     }
