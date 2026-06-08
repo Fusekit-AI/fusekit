@@ -926,7 +926,7 @@ def _load_oci_config_file(config_file: Path | None) -> OciAuth:
 def _auth_tenancy_id(auth: OciAuth) -> str:
     tenancy = auth.config.get("tenancy")
     if tenancy:
-        return tenancy
+        return str(tenancy)
     signer_tenancy = getattr(auth.signer, "tenancy_id", "")
     if signer_tenancy:
         return str(signer_tenancy)

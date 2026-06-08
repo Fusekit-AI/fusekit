@@ -1243,6 +1243,63 @@ def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -
     assert "dash.cloudflare.com" not in audit_path.read_text(encoding="utf-8")
 
 
+def test_control_room_open_reuses_active_gate_even_after_debounce_window(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.cloudflare.authorization",
+        provider="cloudflare",
+        reason="Cloudflare token creation",
+        resume_url="https://dash.cloudflare.com/profile/api-tokens",
+        classification="provider-authorization",
+    )
+    calls: list[list[str]] = []
+
+    class FakeProcess:
+        pass
+
+    def fake_popen(command, **kwargs):  # type: ignore[no-untyped-def]
+        del kwargs
+        calls.append(command)
+        return FakeProcess()
+
+    fake_chrome = tmp_path / "fake-chrome"
+    fake_chrome.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_chrome.chmod(0o700)
+    monkeypatch.setenv("FUSEKIT_VISUAL_BROWSER", str(fake_chrome))
+    monkeypatch.setattr("fusekit.runner.control_room.server.subprocess.Popen", fake_popen)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = (
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/gates/provider.cloudflare.authorization/open"
+        )
+        request = Request(url, method="POST", headers=_control_room_post_headers(tmp_path))
+        with urlopen(request, timeout=5) as response:
+            first_payload = json.loads(response.read().decode("utf-8"))
+        service = GateService.load(tmp_path / "gates.json")
+        gate = service.records["provider.cloudflare.authorization"]
+        gate.last_opened_at = 1.0
+        service.save()
+        request = Request(url, method="POST", headers=_control_room_post_headers(tmp_path))
+        with urlopen(request, timeout=5) as response:
+            second_payload = json.loads(response.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert first_payload["reused"] is False
+    assert second_payload["reused"] is True
+    assert "Use the live VM browser surface" in second_payload["message"]
+    assert len(calls) == 1
+
+
 def test_control_room_open_rejects_unsafe_gate_url_before_browser_launch(
     tmp_path,
     monkeypatch,

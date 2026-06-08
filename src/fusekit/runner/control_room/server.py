@@ -8,7 +8,6 @@ import re
 import secrets
 import shutil
 import subprocess
-import time
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -28,7 +27,6 @@ from fusekit.runner.job import JobState
 from fusekit.security.url import require_safe_url
 from fusekit.vault import Vault
 
-GATE_OPEN_DEBOUNCE_SECONDS = 20.0
 VISUAL_DISPLAY_PATTERN = re.compile(r"^(?:[A-Za-z0-9_.-]+)?:[0-9]+(?:\.[0-9]+)?$")
 TOKEN_PROVIDER_BY_ENV = {
     "CLOUDFLARE_API_TOKEN": "cloudflare",
@@ -149,17 +147,22 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
             if route.path.startswith(prefix) and route.path.endswith("/open"):
                 gate_id = unquote(route.path[len(prefix) : -len("/open")])
                 service = GateService.load(job_state.parent / "gates.json")
-                gate = service.records.get(gate_id)
-                if gate is None:
+                open_gate = service.records.get(gate_id)
+                if open_gate is None:
                     self._write_json({"ok": False, "error": "gate not found"}, status=404)
                     return
                 try:
-                    safe_url = require_safe_url(gate.resume_url, label="Provider gate URL")
+                    safe_url = require_safe_url(open_gate.resume_url, label="Provider gate URL")
                 except FuseKitError as exc:
                     self._write_json({"ok": False, "error": str(exc)}, status=400)
                     return
-                if _recently_opened_gate(gate, safe_url):
-                    _append_gate_audit(job_state, "control_room.gate_open", gate, reused=True)
+                if _active_gate_url_is_open(open_gate, safe_url):
+                    _append_gate_audit(
+                        job_state,
+                        "control_room.gate_open",
+                        open_gate,
+                        reused=True,
+                    )
                     self._write_json(
                         {
                             "ok": True,
@@ -167,7 +170,8 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                             "browser": "",
                             "reused": True,
                             "message": (
-                                "Provider gate is already open in the shared VM browser."
+                                "Provider gate is already open in the shared VM browser. "
+                                "Use the live VM browser surface instead of opening another tab."
                             ),
                         }
                     )
@@ -379,13 +383,16 @@ def _open_gate_url_in_visual_browser(job_state: Path, url: str) -> str:
     return browser
 
 
-def _recently_opened_gate(gate: Any, safe_url: str) -> bool:
-    """Return whether the same provider gate was already launched moments ago."""
+def _active_gate_url_is_open(gate: Any, safe_url: str) -> bool:
+    """Return whether this active gate already owns the shared VM browser tab."""
 
     if str(getattr(gate, "last_opened_url", "") or "") != safe_url:
         return False
     opened_at = float(getattr(gate, "last_opened_at", 0.0) or 0.0)
-    return opened_at > 0 and time.time() - opened_at < GATE_OPEN_DEBOUNCE_SECONDS
+    if opened_at <= 0:
+        return False
+    status = str(getattr(gate, "status", "") or "").strip().lower()
+    return status in {"waiting", "resurfaced", "resume_requested"}
 
 
 def _capture_gate_clipboard_secret(
@@ -779,7 +786,7 @@ def _trusted_fetch_site(value: str | None) -> bool:
 def _trusted_action_token(value: str | None, expected: str) -> bool:
     """Require explicit action intent for every state-changing request."""
 
-    return bool(value) and secrets.compare_digest(value, expected)
+    return value is not None and secrets.compare_digest(value, expected)
 
 
 def _safe_action_token(value: str) -> bool:

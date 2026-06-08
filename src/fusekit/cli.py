@@ -122,6 +122,7 @@ from fusekit.spine import (
     provider_ui_playbook,
     run_inferred_navigation,
 )
+from fusekit.spine.infer import UiNavigator
 from fusekit.vault.bundle import Vault, open_or_create
 from fusekit.vault.session import (
     create_vault_session,
@@ -4916,7 +4917,7 @@ def _openclaw_llm_profile_available(vault: Vault, config: LlmConfig) -> bool:
     return True
 
 
-def _ui_navigator_from_vault(args: argparse.Namespace, vault: Vault):
+def _ui_navigator_from_vault(args: argparse.Namespace, vault: Vault) -> UiNavigator:
     config = _llm_config_from_args(args)
     try:
         vault.require(config.record_id)
@@ -5233,10 +5234,13 @@ def _start_openclaw_auth_xterm(
         "read -r -p 'Press Enter to close this terminal...' _; "
         "exit $status"
     )
+    log_file = None
+    stdout_target: Any = subprocess.DEVNULL
     try:
         log_file = log_path.open("ab")
+        stdout_target = log_file
     except OSError:
-        log_file = subprocess.DEVNULL
+        pass
     try:
         subprocess.Popen(
             [
@@ -5255,15 +5259,15 @@ def _start_openclaw_auth_xterm(
                 script,
             ],
             env=env,
-            stdout=log_file,
+            stdout=stdout_target,
             stderr=subprocess.STDOUT,
             start_new_session=True,
         )
     except OSError:
-        if hasattr(log_file, "close"):
+        if log_file is not None:
             log_file.close()
         return False
-    if hasattr(log_file, "close"):
+    if log_file is not None:
         log_file.close()
     return True
 
