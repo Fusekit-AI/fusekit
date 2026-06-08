@@ -1001,6 +1001,8 @@ def test_live_acceptance_requires_guided_control_room_gates(tmp_path) -> None:
         in guided_check.detail
     )
     assert "guided human gates" in report.missing
+    blockers = {blocker["item"]: blocker for blocker in report.blockers}
+    assert "follow_steps" in blockers["guided human gates"]["next_action"]
 
 
 def test_live_acceptance_requires_audited_control_room_gates(tmp_path) -> None:

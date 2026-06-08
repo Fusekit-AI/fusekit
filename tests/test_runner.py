@@ -474,6 +474,7 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
                 "launch_ready": False,
                 "missing": [
                     "audited human gate interventions",
+                    "guided human gates",
                     "complete provider strategy coverage",
                     "complete provider verification coverage",
                     "complete rollback coverage",
@@ -489,6 +490,7 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
 
     assert payload["acceptance"]["missing"] == [
         "audited human gate interventions",
+        "guided human gates",
         "complete provider strategy coverage",
         "complete provider verification coverage",
         "complete rollback coverage",
@@ -496,6 +498,8 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
     assert "Human gates" in html
     assert "audited human gate interventions" in html
     assert "Open, capture, or resume each control-room gate through the launcher" in html
+    assert "guided human gates" in html
+    assert "follow-me steps, next action, and resume hint" in html
     assert "Provider routes" in html
     assert "complete provider strategy coverage" in html
     assert "every provider declared by the manifest" in html
@@ -504,7 +508,7 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
     assert "Rollback" in html
     assert "complete rollback coverage" in html
     assert "Record rollback metadata for every provider declared by the manifest" in html
-    assert "4 launch blockers" in html
+    assert "5 launch blockers" in html
     assert "acceptanceBlockers" in html
     assert "missingAcceptanceBlocker" in html
 

@@ -362,7 +362,8 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
         ),
         "guided human gates": (
             "Human gates",
-            "Regenerate gate state with next_action and resume_hint for every control-room gate.",
+            "Regenerate gate state with follow_steps, next_action, and resume_hint "
+            "for every control-room gate.",
         ),
         "audited human gate interventions": (
             "Human gates",

@@ -505,7 +505,8 @@ def _missing_acceptance_guidance(item: str) -> tuple[str, str]:
         ),
         "guided human gates": (
             "Human gates",
-            "Regenerate gate state so every control-room gate has next action and resume hint.",
+            "Regenerate gate state so every control-room gate has follow-me steps, "
+            "next action, and resume hint.",
         ),
         "provider strategy decisions": (
             "Provider routes",
