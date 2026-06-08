@@ -53,6 +53,20 @@ def test_provider_strategy_uses_local_vault_for_capture_recipes(tmp_path) -> Non
     assert decision.executable
 
 
+def test_provider_strategy_uses_api_for_resend_domain_when_token_exists(tmp_path) -> None:
+    pack = synthesize_provider_pack("resend", tmp_path)
+    recipe = SetupRecipe(kind="resend-domain", target="${input:resend_domain}")
+
+    decision = choose_provider_strategy(
+        pack,
+        recipe,
+        StrategySignal(token_available=True),
+    )
+
+    assert decision.selected.kind == "api"
+    assert decision.executable
+
+
 def test_account_creation_strategy_uses_supervised_gate(tmp_path) -> None:
     pack = synthesize_provider_pack("stripe", tmp_path)
 

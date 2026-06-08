@@ -470,7 +470,10 @@ def test_vercel_pack_pauses_for_github_login_connection_gate(
                     "Complete GitHub login, MFA, CAPTCHA, or consent only for the "
                     "account/repo FuseKit named."
                 ),
-                "Return to FuseKit and mark the gate finished after Vercel confirms the connection.",
+                (
+                    "Return to FuseKit and mark the gate finished after Vercel confirms "
+                    "the connection."
+                ),
             ),
             "strategy_decision": result["setup"][0]["strategy_decision"],
         }
@@ -620,3 +623,147 @@ def test_cloudflare_dns_apply_requires_explicit_dns_scope(
     actions = receipt.to_dict()["actions"]
     assert any(action["action"] == "dns.apply" and action["status"] == "ok" for action in actions)
     assert any(action["action"] == "dns.verify" and action["status"] == "ok" for action in actions)
+
+
+def test_resend_pack_creates_domain_audience_and_feeds_dns(monkeypatch, tmp_path) -> None:
+    calls: list[str] = []
+
+    class FakeResendProvider:
+        def __init__(self, token: str) -> None:
+            self.token = token
+
+        def ensure_domain(self, domain: str):  # type: ignore[no-untyped-def]
+            calls.append(f"resend-domain:{domain}:{self.token}")
+            return type(
+                "Domain",
+                (),
+                {
+                    "id": "domain-1",
+                    "name": domain,
+                    "status": "pending",
+                    "reused": False,
+                    "records": (
+                        DnsRecord(
+                            name=f"send.{domain}",
+                            type="MX",
+                            value="feedback-smtp.us-east-1.amazonses.com",
+                            priority=10,
+                        ),
+                    ),
+                },
+            )()
+
+        def ensure_audience(self, name: str):  # type: ignore[no-untyped-def]
+            calls.append(f"resend-audience:{name}")
+            return type(
+                "Audience",
+                (),
+                {"id": "audience-1", "name": name, "reused": False},
+            )()
+
+    monkeypatch.setattr("fusekit.providers.automation.ResendProvider", FakeResendProvider)
+    vault = Vault.empty()
+    receipt = Receipt(app_name="app")
+    context = ProviderSetupContext(
+        manifest=SetupManifest(
+            app_name="Moonlite RSVP",
+            required_env=("RESEND_AUDIENCE_ID", "RESEND_FROM_EMAIL"),
+            domains=(
+                DomainRequirement(
+                    domain="moonlite.rsvp",
+                    provider="cloudflare",
+                    records=(DnsRecord(name="moonlite.rsvp", type="A", value="76.76.21.21"),),
+                ),
+            ),
+        ),
+        vault=vault,
+        audit=AuditLog(tmp_path / "audit.jsonl"),
+        receipt=receipt,
+        secrets={"RESEND_API_KEY": "resend-key-hidden"},
+        provider_names={"resend"},
+    )
+    pack = synthesize_provider_pack("resend", tmp_path)
+
+    result = run_provider_pack_setup(pack, context)
+
+    assert calls == [
+        "resend-domain:moonlite.rsvp:resend-key-hidden",
+        "resend-audience:Moonlite RSVP audience",
+    ]
+    assert [item["kind"] for item in result["setup"]] == [
+        "vault-capture-env",
+        "resend-domain",
+        "resend-audience",
+    ]
+    assert context.generated_dns_records["moonlite.rsvp"][0].priority == 10
+    assert context.secrets["RESEND_FROM_EMAIL"] == "rsvp@moonlite.rsvp"
+    assert context.secrets["RESEND_AUDIENCE_ID"] == "audience-1"
+    assert vault.require("provider.resend.resend_audience_id").value == "audience-1"
+    assert vault.require("provider.resend.resend_from_email").value == "rsvp@moonlite.rsvp"
+    public = json.dumps(result) + json.dumps(receipt.to_dict())
+    assert_no_secret_text(public, ["resend-key-hidden"])
+
+
+def test_cloudflare_dns_includes_provider_generated_records(monkeypatch, tmp_path) -> None:
+    calls: list[str] = []
+    seen_records: list[DnsRecord] = []
+
+    class FakeCloudflareDnsProvider:
+        def __init__(self, token: str) -> None:
+            self.token = token
+
+        def propose(self, zone: str, records: tuple[DnsRecord, ...]):  # type: ignore[no-untyped-def]
+            calls.append(f"propose:{zone}:{len(records)}")
+            seen_records.extend(records)
+            return []
+
+        def apply(self, changes):  # type: ignore[no-untyped-def]
+            calls.append(f"apply:{len(changes)}")
+            return []
+
+        def verify(self, zone, records):  # type: ignore[no-untyped-def]
+            calls.append(f"verify:{zone}:{len(records)}")
+            return []
+
+    monkeypatch.setattr(
+        "fusekit.providers.automation.CloudflareDnsProvider",
+        FakeCloudflareDnsProvider,
+    )
+    vault = Vault.empty()
+    vault.put("provider.cloudflare.token", "provider_token", "cloudflare", "token", "hidden")
+    context = ProviderSetupContext(
+        manifest=SetupManifest(
+            app_name="app",
+            domains=(
+                DomainRequirement(
+                    domain="moonlite.rsvp",
+                    provider="cloudflare",
+                    records=(DnsRecord(name="moonlite.rsvp", type="A", value="76.76.21.21"),),
+                ),
+            ),
+        ),
+        vault=vault,
+        audit=AuditLog(tmp_path / "audit.jsonl"),
+        receipt=Receipt(app_name="app"),
+        secrets={},
+        provider_names={"cloudflare"},
+        approve_dns=True,
+        generated_dns_records={
+            "moonlite.rsvp": [
+                DnsRecord(
+                    name="send.moonlite.rsvp",
+                    type="MX",
+                    value="feedback-smtp.us-east-1.amazonses.com",
+                    priority=10,
+                )
+            ]
+        },
+    )
+    pack = synthesize_provider_pack("cloudflare", tmp_path)
+
+    run_provider_pack_setup(pack, context)
+
+    assert calls == ["propose:moonlite.rsvp:2", "apply:0", "verify:moonlite.rsvp:2"]
+    assert ("send.moonlite.rsvp", "MX", 10) in {
+        (record.name, record.type, record.priority) for record in seen_records
+    }

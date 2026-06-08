@@ -39,6 +39,7 @@ class JsonHttpClient:
             headers={
                 "Accept": "application/json",
                 "Content-Type": "application/json",
+                "User-Agent": "FuseKit provider automation",
                 "Authorization": f"{self.auth_header} {self.token}",
                 **(headers or {}),
             },

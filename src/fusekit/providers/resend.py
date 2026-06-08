@@ -1,0 +1,158 @@
+"""Resend API adapter for deterministic email setup."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+from fusekit.errors import ProviderError
+from fusekit.manifest import DnsRecord
+from fusekit.providers.http import JsonHttpClient
+
+
+@dataclass(frozen=True)
+class ResendDomain:
+    """Resend domain state plus DNS records required for verification."""
+
+    id: str
+    name: str
+    status: str
+    records: tuple[DnsRecord, ...]
+    reused: bool = False
+
+
+@dataclass(frozen=True)
+class ResendAudience:
+    """Resend audience state."""
+
+    id: str
+    name: str
+    reused: bool = False
+
+
+@dataclass(frozen=True)
+class ResendProvider:
+    """Small Resend API adapter."""
+
+    token: str
+    api_base: str = "https://api.resend.com"
+
+    def _client(self) -> JsonHttpClient:
+        return JsonHttpClient(self.api_base, self.token, auth_header="Bearer")
+
+    def ensure_domain(self, domain: str) -> ResendDomain:
+        """Create or reuse a Resend sending domain."""
+
+        existing = self._find_domain(domain)
+        if existing:
+            domain_id = _required_id(existing, "domain")
+            data = self._get_domain(domain_id)
+            return _domain_from_response(data or existing, domain, reused=True)
+        created = self._client().request("POST", "/domains", {"name": domain})
+        domain_data = _payload_object(created, "domain")
+        return _domain_from_response(domain_data, domain, reused=False)
+
+    def verify_domain(self, domain_id: str) -> dict[str, Any]:
+        """Ask Resend to verify a domain after DNS records have been applied."""
+
+        return self._client().request("POST", f"/domains/{domain_id}/verify")
+
+    def ensure_audience(self, name: str) -> ResendAudience:
+        """Create or reuse a Resend audience."""
+
+        existing = self._find_audience(name)
+        if existing:
+            return ResendAudience(id=_required_id(existing, "audience"), name=name, reused=True)
+        created = self._client().request("POST", "/audiences", {"name": name})
+        audience_data = _payload_object(created, "audience")
+        return ResendAudience(
+            id=_required_id(audience_data, "audience"),
+            name=str(audience_data.get("name") or name),
+            reused=False,
+        )
+
+    def _find_domain(self, domain: str) -> dict[str, Any] | None:
+        response = self._client().request("GET", "/domains")
+        for item in _data_items(response):
+            if str(item.get("name", "")).lower() == domain.lower():
+                return item
+        return None
+
+    def _get_domain(self, domain_id: str) -> dict[str, Any]:
+        response = self._client().request("GET", f"/domains/{domain_id}")
+        return _payload_object(response, "domain")
+
+    def _find_audience(self, name: str) -> dict[str, Any] | None:
+        response = self._client().request("GET", "/audiences")
+        for item in _data_items(response):
+            if str(item.get("name", "")).lower() == name.lower():
+                return item
+        return None
+
+
+def _payload_object(response: dict[str, Any], label: str) -> dict[str, Any]:
+    """Extract a provider object from common Resend response shapes."""
+
+    data = response.get("data", response)
+    if isinstance(data, dict):
+        return data
+    raise ProviderError(f"Resend {label} response was malformed.")
+
+
+def _data_items(response: dict[str, Any]) -> list[dict[str, Any]]:
+    data = response.get("data", [])
+    if not isinstance(data, list):
+        return []
+    return [item for item in data if isinstance(item, dict)]
+
+
+def _required_id(data: dict[str, Any], label: str) -> str:
+    value = str(data.get("id", "")).strip()
+    if not value:
+        raise ProviderError(f"Resend {label} response did not include an id.")
+    return value
+
+
+def _domain_from_response(data: dict[str, Any], domain: str, *, reused: bool) -> ResendDomain:
+    domain_id = _required_id(data, "domain")
+    records = tuple(_record_from_resend(item, domain) for item in _verification_records(data))
+    return ResendDomain(
+        id=domain_id,
+        name=str(data.get("name") or domain),
+        status=str(data.get("status", "")),
+        records=records,
+        reused=reused,
+    )
+
+
+def _verification_records(data: dict[str, Any]) -> list[dict[str, Any]]:
+    for key in ("records", "dns_records", "verification_records"):
+        value = data.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+    return []
+
+
+def _record_from_resend(raw: dict[str, Any], domain: str) -> DnsRecord:
+    record_type = str(raw.get("type", "TXT")).upper()
+    name = _fqdn(str(raw.get("name", "") or raw.get("host", "")), domain)
+    value = str(raw.get("value", "") or raw.get("content", "")).strip().strip('"')
+    ttl = int(raw.get("ttl", 300) or 300)
+    priority = raw.get("priority")
+    return DnsRecord(
+        name=name,
+        type=record_type,
+        value=value,
+        ttl=ttl,
+        proxied=False,
+        priority=int(priority) if priority is not None else None,
+    )
+
+
+def _fqdn(name: str, domain: str) -> str:
+    cleaned = name.strip().rstrip(".")
+    if not cleaned or cleaned == "@":
+        return domain
+    if cleaned == domain or cleaned.endswith(f".{domain}"):
+        return cleaned
+    return f"{cleaned}.{domain}"

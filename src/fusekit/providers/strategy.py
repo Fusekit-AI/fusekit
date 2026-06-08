@@ -19,6 +19,8 @@ API_SETUP_KINDS = {
     "vercel-env",
     "vercel-git-deployment",
     "cloudflare-dns",
+    "resend-domain",
+    "resend-audience",
 }
 API_ACCOUNT_CREATION_SETUP_KINDS: set[str] = set()
 LOCAL_SETUP_KINDS = {"vault-capture-env"}

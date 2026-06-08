@@ -1189,9 +1189,11 @@ def _cloudflare_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
 
 
 def _resend_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
-    env_names = tuple(name for name in ("RESEND_API_KEY",) if name in evidence.env_names) or (
-        "RESEND_API_KEY",
-    )
+    env_names = tuple(
+        dict.fromkeys(name for name in evidence.env_names if name.startswith("RESEND_"))
+    ) or ("RESEND_API_KEY",)
+    if "RESEND_API_KEY" not in env_names:
+        env_names = ("RESEND_API_KEY", *env_names)
     return ProviderCapabilityPack(
         schema_version="fusekit.provider-pack.v1",
         provider="resend",
@@ -1226,7 +1228,8 @@ def _resend_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
             secret_steps=(
                 "Create a scoped Resend API key.",
                 "Capture RESEND_API_KEY into the encrypted vault.",
-                "Use returned domain verification records as DNS proposals.",
+                "FuseKit creates or reuses the sending domain through Resend's API.",
+                "FuseKit uses returned domain verification records as DNS proposals.",
             ),
             service_gates=(
                 "email verification",
@@ -1245,11 +1248,22 @@ def _resend_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                 target="RESEND_API_KEY",
                 secret_refs=("RESEND_API_KEY",),
             ),
+            SetupRecipe(
+                kind="resend-domain",
+                target="${input:resend_domain}",
+            ),
+            SetupRecipe(
+                kind="resend-audience",
+                target="${input:resend_audience_name}",
+                optional=True,
+            ),
         ),
         setup_goals=(
             "Create or connect the Resend account.",
             "Create or capture a scoped Resend API key into the encrypted vault.",
-            "Add the sending domain and feed verification records into DNS proposals.",
+            "Create or reuse the sending domain through Resend's API.",
+            "Feed Resend verification records into DNS proposals before DNS is applied.",
+            "Create or reuse a Resend audience only when the app requires one.",
         ),
         verification=(
             VerificationRecipe(

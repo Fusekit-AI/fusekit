@@ -12,11 +12,12 @@ from fusekit.audit import AuditLog, Receipt
 from fusekit.crypto.secrets import token_urlsafe
 from fusekit.crypto.sshkeys import generate_ed25519_keypair
 from fusekit.errors import FuseKitError, ProviderError
-from fusekit.manifest import SetupManifest
+from fusekit.manifest import DnsRecord, SetupManifest
 from fusekit.policy import require_allowed
 from fusekit.providers.capability_pack import ProviderCapabilityPack, SetupRecipe
 from fusekit.providers.cloudflare import CloudflareDnsProvider
 from fusekit.providers.github import GitHubProvider
+from fusekit.providers.resend import ResendProvider
 from fusekit.providers.secret_routing import select_app_env_secrets
 from fusekit.providers.strategy import (
     StrategySignal,
@@ -42,6 +43,7 @@ class ProviderSetupContext:
     allow_incomplete: bool = False
     fusekit_gates: str = "service-only"
     available_cli_tools: set[str] = field(default_factory=set)
+    generated_dns_records: dict[str, list[DnsRecord]] = field(default_factory=dict)
 
 
 SetupHandler = Callable[[SetupRecipe, ProviderSetupContext], dict[str, Any]]
@@ -102,6 +104,8 @@ def setup_handler_registry() -> dict[str, SetupHandler]:
         "vercel-env": _vercel_env,
         "vercel-git-deployment": _vercel_git_deployment,
         "cloudflare-dns": _cloudflare_dns_recipe,
+        "resend-domain": _resend_domain,
+        "resend-audience": _resend_audience,
     }
 
 
@@ -222,7 +226,10 @@ def _vercel_github_connection_gate(
         "follow_steps": (
             "Use the live VM browser surface, not a local browser tab.",
             "Open Vercel Login Connections and choose GitHub.",
-            "Complete GitHub login, MFA, CAPTCHA, or consent only for the account/repo FuseKit named.",
+            (
+                "Complete GitHub login, MFA, CAPTCHA, or consent only for the "
+                "account/repo FuseKit named."
+            ),
             "Return to FuseKit and mark the gate finished after Vercel confirms the connection.",
         ),
     }
@@ -331,7 +338,8 @@ def _cloudflare_dns(context: ProviderSetupContext) -> dict[str, Any]:
     summaries: list[dict[str, Any]] = []
     for domain in context.manifest.domains:
         zone = context.inputs.get("dns_zone") or domain.domain
-        changes = provider.propose(zone, domain.records)
+        records = domain.records + tuple(context.generated_dns_records.get(domain.domain, ()))
+        changes = provider.propose(zone, records)
         proposal = [change.to_dict() for change in changes]
         details = {"domain": domain.domain, "changes": proposal}
         context.audit.record("provider_pack.dns.proposed", details)
@@ -347,7 +355,7 @@ def _cloudflare_dns(context: ProviderSetupContext) -> dict[str, Any]:
             continue
         require_allowed("dns.apply", approved=True)
         applied = provider.apply(changes)
-        verified = provider.verify(zone, domain.records)
+        verified = provider.verify(zone, records)
         apply_details = {"domain": domain.domain, "applied": applied, "verified": verified}
         context.audit.record("provider_pack.dns.applied", apply_details)
         context.receipt.add_action("dns.apply", "ok", {"domain": domain.domain, "applied": applied})
@@ -357,6 +365,103 @@ def _cloudflare_dns(context: ProviderSetupContext) -> dict[str, Any]:
         summary.update({"applied": applied, "verified": verified})
         summaries.append(summary)
     return {"kind": "cloudflare-dns", "status": "ok", "domains": summaries}
+
+
+def _resend_domain(recipe: SetupRecipe, context: ProviderSetupContext) -> dict[str, Any]:
+    del recipe
+    domain = context.inputs.get("resend_domain") or _default_domain(context)
+    if not domain:
+        return {"kind": "resend-domain", "status": "skipped", "reason": "no domain"}
+    token = _provider_token(context.vault, "resend", "RESEND_API_KEY")
+    provider = ResendProvider(token)
+    resend_domain = provider.ensure_domain(domain)
+    context.generated_dns_records.setdefault(domain, [])
+    for record in resend_domain.records:
+        if record not in context.generated_dns_records[domain]:
+            context.generated_dns_records[domain].append(record)
+    from_email = context.inputs.get("resend_from_email") or f"rsvp@{domain}"
+    context.secrets.setdefault("RESEND_FROM_EMAIL", from_email)
+    context.vault.put(
+        "provider.resend.resend_from_email",
+        "provider_setting",
+        "resend",
+        "RESEND_FROM_EMAIL",
+        context.secrets["RESEND_FROM_EMAIL"],
+        {"domain": domain},
+    )
+    result = {
+        "kind": "resend-domain",
+        "status": "ok",
+        "domain": resend_domain.name,
+        "domain_id": resend_domain.id,
+        "domain_status": resend_domain.status,
+        "reused": resend_domain.reused,
+        "dns_records": [
+            {
+                "name": record.name,
+                "type": record.type,
+                "value": record.value,
+                "ttl": record.ttl,
+                "priority": record.priority,
+            }
+            for record in resend_domain.records
+        ],
+    }
+    context.inputs["resend_domain_id"] = resend_domain.id
+    context.audit.record("provider_pack.resend.domain", result)
+    context.receipt.add_action("resend.domain", "ok", result)
+    return result
+
+
+def _resend_audience(recipe: SetupRecipe, context: ProviderSetupContext) -> dict[str, Any]:
+    del recipe
+    if not _needs_resend_audience(context):
+        return {"kind": "resend-audience", "status": "skipped", "reason": "not required"}
+    token = _provider_token(context.vault, "resend", "RESEND_API_KEY")
+    provider = ResendProvider(token)
+    name = context.inputs.get("resend_audience_name") or f"{context.manifest.app_name} audience"
+    audience = provider.ensure_audience(name)
+    context.secrets["RESEND_AUDIENCE_ID"] = audience.id
+    context.vault.put(
+        "provider.resend.resend_audience_id",
+        "provider_setting",
+        "resend",
+        "RESEND_AUDIENCE_ID",
+        audience.id,
+        {"name": audience.name},
+    )
+    result = {
+        "kind": "resend-audience",
+        "status": "ok",
+        "audience_id": audience.id,
+        "name": audience.name,
+        "reused": audience.reused,
+    }
+    context.audit.record("provider_pack.resend.audience", result)
+    context.receipt.add_action("resend.audience", "ok", result)
+    return result
+
+
+def _default_domain(context: ProviderSetupContext) -> str:
+    if context.manifest.domains:
+        return context.manifest.domains[0].domain.strip().lower().removeprefix("www.")
+    return ""
+
+
+def _needs_resend_audience(context: ProviderSetupContext) -> bool:
+    if "RESEND_AUDIENCE_ID" in context.manifest.required_env:
+        return True
+    if "RESEND_AUDIENCE_ID" in context.secrets:
+        return True
+    return any(
+        service.provider.lower() == "resend"
+        and (
+            "RESEND_AUDIENCE_ID" in service.secrets
+            or "RESEND_AUDIENCE_ID" in service.env
+            or "audience" in service.capabilities
+        )
+        for service in context.manifest.services
+    )
 
 
 def _selected_secrets(recipe: SetupRecipe, context: ProviderSetupContext) -> dict[str, str]:

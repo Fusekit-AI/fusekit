@@ -29,6 +29,7 @@ class DnsChange:
                 "value": self.record.value,
                 "ttl": self.record.ttl,
                 "proxied": self.record.proxied,
+                "priority": self.record.priority,
             },
             "rollback": self.existing or {"delete_created_record": True},
         }
@@ -66,6 +67,8 @@ class CloudflareDnsProvider:
                 "ttl": change.record.ttl,
                 "proxied": change.record.proxied,
             }
+            if change.record.priority is not None:
+                payload["priority"] = change.record.priority
             if change.existing and change.existing.get("id"):
                 record_id = str(change.existing["id"])
                 result = self._client().request(
@@ -96,7 +99,7 @@ class CloudflareDnsProvider:
                     "name": record.name,
                     "type": record.type,
                     "expected": record.value,
-                    "ok": bool(existing and existing.get("content") == record.value),
+                    "ok": bool(existing and _record_matches(existing, record)),
                 }
             )
         return results
@@ -117,6 +120,11 @@ class CloudflareDnsProvider:
                 value=str(record_raw.get("value", "")),
                 ttl=int(record_raw.get("ttl", 300)),
                 proxied=bool(record_raw.get("proxied", False)),
+                priority=(
+                    int(record_raw["priority"])
+                    if record_raw.get("priority") is not None
+                    else None
+                ),
             )
             if rollback.get("delete_created_record"):
                 existing = self._find_record(zone_id, record)
@@ -134,6 +142,8 @@ class CloudflareDnsProvider:
                     "ttl": int(rollback.get("ttl", record.ttl)),
                     "proxied": bool(rollback.get("proxied", record.proxied)),
                 }
+                if rollback.get("priority") is not None or record.priority is not None:
+                    payload["priority"] = int(rollback.get("priority", record.priority or 0))
                 self._client().request("PUT", f"/zones/{zone_id}/dns_records/{record_id}", payload)
                 results.append({"name": payload["name"], "restored": True})
         return results
@@ -158,4 +168,17 @@ class CloudflareDnsProvider:
         item = result[0]
         if not isinstance(item, dict):
             return None
+        for candidate in result:
+            if isinstance(candidate, dict) and _record_matches(candidate, record):
+                return candidate
         return item
+
+
+def _record_matches(existing: dict[str, Any], record: DnsRecord) -> bool:
+    """Return whether a Cloudflare DNS record matches the desired state."""
+
+    if existing.get("content") != record.value:
+        return False
+    if record.priority is not None and int(existing.get("priority", -1)) != record.priority:
+        return False
+    return True

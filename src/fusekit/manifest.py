@@ -33,6 +33,7 @@ class DnsRecord:
     value: str
     ttl: int = 300
     proxied: bool = False
+    priority: int | None = None
 
 
 @dataclass(frozen=True)
@@ -97,6 +98,7 @@ class SetupManifest:
                             "value": record.value,
                             "ttl": record.ttl,
                             "proxied": record.proxied,
+                            "priority": record.priority,
                         }
                         for record in domain.records
                     ],
@@ -201,6 +203,7 @@ def _dns_record(raw: Any) -> DnsRecord:
         value=_string(raw, "value"),
         ttl=int(raw.get("ttl", 300)),
         proxied=bool(raw.get("proxied", False)),
+        priority=int(raw["priority"]) if raw.get("priority") is not None else None,
     )
 
 

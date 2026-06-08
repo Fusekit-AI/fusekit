@@ -662,8 +662,14 @@ def _verify_cloudflare_dns_api(
         if status >= 400:
             raise ProviderError(f"Cloudflare DNS lookup returned HTTP {status}.")
         items = data.get("result", []) if isinstance(data, dict) else []
+        priority = record.get("priority")
         if not any(
-            isinstance(item, dict) and str(item.get("content", "")) == value
+            isinstance(item, dict)
+            and str(item.get("content", "")) == value
+            and (
+                priority is None
+                or str(item.get("priority", "")) == str(priority)
+            )
             for item in items
         ):
             missing.append({"name": name, "type": record_type})

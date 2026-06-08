@@ -37,7 +37,13 @@ from fusekit.detonation.preflight import (
 from fusekit.errors import ApprovalRequired, FuseKitError, ProviderError
 from fusekit.harness import run_acceptance
 from fusekit.llm import LlmConfig, authorize_openclaw_llm, capture_llm_config
-from fusekit.manifest import ServiceRequirement, SetupManifest, load_manifest, write_manifest
+from fusekit.manifest import (
+    DnsRecord,
+    ServiceRequirement,
+    SetupManifest,
+    load_manifest,
+    write_manifest,
+)
 from fusekit.planner import build_plan
 from fusekit.providers.automation import (
     ProviderSetupContext,
@@ -1367,6 +1373,7 @@ def _apply_loaded_manifest(args: argparse.Namespace, manifest: SetupManifest) ->
         )
         ensure_webhook_secrets(manifest, context)
         _run_manifest_provider_pack_setup(args, manifest, context)
+        _attach_generated_dns_records(args, context)
 
         if args.live_url:
             _verify_apply_live_url(args, audit, receipt, verification_report, manifest=manifest)
@@ -3074,7 +3081,7 @@ def _run_manifest_provider_pack_setup(
             secrets=("CLOUDFLARE_API_TOKEN",),
             settings={"capability_pack": str(pack_default_path(app_path, "cloudflare"))},
         )
-    for provider, service in sorted(providers.items()):
+    for provider, service in _ordered_provider_services(providers):
         pack_path = _provider_pack_path(app_path, provider, service)
         if not pack_path.exists():
             write_provider_pack(synthesize_provider_pack(provider, app_path), pack_path)
@@ -3095,6 +3102,35 @@ def _run_manifest_provider_pack_setup(
         context.receipt.add_action("provider_pack.setup", "ok", result)
     if not strategy_runs:
         _write_provider_strategy_artifact(args, strategy_runs)
+
+
+def _ordered_provider_services(
+    providers: dict[str, ServiceRequirement],
+) -> list[tuple[str, ServiceRequirement]]:
+    """Return provider setup order with DNS after providers that emit records/env."""
+
+    priority = {
+        "github": 10,
+        "resend": 20,
+        "vercel": 30,
+        "cloudflare": 90,
+        "dns": 90,
+    }
+    return sorted(providers.items(), key=lambda item: (priority.get(item[0], 50), item[0]))
+
+
+def _attach_generated_dns_records(
+    args: argparse.Namespace,
+    context: ProviderSetupContext,
+) -> None:
+    """Expose provider-generated DNS records to later verification steps."""
+
+    records = [
+        _dns_record_to_input(record)
+        for records_for_domain in context.generated_dns_records.values()
+        for record in records_for_domain
+    ]
+    args.generated_dns_records_json = json.dumps(records, sort_keys=True)
 
 
 def _provider_strategy_record(result: dict[str, Any]) -> dict[str, object]:
@@ -3602,15 +3638,13 @@ def _verification_inputs(args: argparse.Namespace, manifest: SetupManifest) -> d
     provider_names = _required_providers(manifest)
     app_env_names = _app_env_names_for_verification(manifest, provider_names)
     default_domain = _default_manifest_domain(manifest)
+    generated = json.loads(str(getattr(args, "generated_dns_records_json", "[]") or "[]"))
+    generated_records = generated if isinstance(generated, list) else []
     records = [
-        {
-            "name": record.name,
-            "type": record.type,
-            "value": record.value,
-        }
+        _dns_record_to_input(record)
         for domain in manifest.domains
         for record in domain.records
-    ]
+    ] + [item for item in generated_records if isinstance(item, dict)]
     inputs.update(
         {
             "app_env_names": ",".join(app_env_names),
@@ -3622,6 +3656,17 @@ def _verification_inputs(args: argparse.Namespace, manifest: SetupManifest) -> d
         }
     )
     return inputs
+
+
+def _dns_record_to_input(record: DnsRecord) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "name": record.name,
+        "type": record.type,
+        "value": record.value,
+    }
+    if record.priority is not None:
+        payload["priority"] = record.priority
+    return payload
 
 
 def _provider_verification_attempt_config(args: argparse.Namespace) -> tuple[int, float]:
@@ -4149,11 +4194,11 @@ def _ui_navigator_from_vault(args: argparse.Namespace, vault: Vault):
         return OpenAiUiNavigator(config, vault)
     try:
         vault.require("llm.openai.openclaw_profile")
-    except FuseKitError:
+    except FuseKitError as exc:
         raise FuseKitError(
             f"UI inference needs {config.record_id} or an OpenClaw OAuth profile. "
             "Authorize OpenClaw/OpenAI or provide an LLM API key."
-        )
+        ) from exc
     return StaticUiNavigator(
         [
             InferredUiAction(
@@ -4242,8 +4287,14 @@ def _openclaw_llm_auth_gate_handoff(
             (
                 "Open the live VM browser surface.",
                 "Enter the noVNC password if prompted.",
-                "Use the visible FuseKit OpenClaw authorization terminal to complete OpenAI login.",
-                "Leave the terminal open after it finishes; FuseKit retries this gate automatically.",
+                (
+                    "Use the visible FuseKit OpenClaw authorization terminal to complete "
+                    "OpenAI login."
+                ),
+                (
+                    "Leave the terminal open after it finishes; FuseKit retries this gate "
+                    "automatically."
+                ),
             ),
         )
     detail = str(error).strip()
@@ -4252,7 +4303,10 @@ def _openclaw_llm_auth_gate_handoff(
             novnc_url or config.base_url,
             (
                 "Open the live VM browser surface if one is available.",
-                "Open a terminal in the VM and run: openclaw models auth login --provider openai --set-default",
+                (
+                    "Open a terminal in the VM and run: openclaw models auth login "
+                    "--provider openai --set-default"
+                ),
                 "FuseKit retries this gate automatically after the configured wait interval.",
             ),
         )
@@ -4442,7 +4496,8 @@ def _start_openclaw_auth_xterm(
         "status=$?; "
         "echo; "
         "echo \"Auth command exited with status $status\"; "
-        "echo 'FuseKit will retry automatically. You can close this terminal after the gate passes.'; "
+        "echo 'FuseKit will retry automatically. You can close this terminal after "
+        "the gate passes.'; "
         "read -r -p 'Press Enter to close this terminal...' _; "
         "exit $status"
     )
