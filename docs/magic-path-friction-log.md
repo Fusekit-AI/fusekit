@@ -99,6 +99,7 @@ guided, or explicitly verified.
 | Vercel's GitHub Login Connection repair gate could say to "resume FuseKit" or "mark the gate finished", which did not match the launcher button label. | The Vercel repair gate now tells users to click `Open provider gate in VM`, approve only the named account/repo access, then click `I finished this step`. |
 | Older or partial acceptance reports with `missing[]` but no `blockers[]` could render a generic "Repair this acceptance item" card in the control room. | Static and live control-room blocker fallbacks now map known missing launch-proof items to the same plain-language categories and next actions as the harness. |
 | Acceptance blockers could know the exact missing proof, such as a skipped VM-browser open or clipboard capture, but hide that detail from the visible control-room card. | Static and live control-room blocker cards now show the redacted acceptance detail so the user can see the exact gate/open/capture proof FuseKit is waiting on. |
+| A rare Resend domain-verification recovery gate could still tell users to add or open a domain, even though the normal magic path creates/reuses domains through the Resend API first. | Resend domain-verification recovery copy now says to review only the existing domain/provider-owned prompt and not create the domain or DNS records by hand. |
 
 ## Open Acceptance Items
 

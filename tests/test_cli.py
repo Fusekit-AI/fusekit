@@ -1576,7 +1576,11 @@ def test_verification_gate_guides_resend_domain_verification(tmp_path) -> None:
     ]
     assert gate.resume_url == "https://resend.com/domains"
     assert gate.target == "moonlite.rsvp"
-    assert "Open Resend Domains" in " ".join(gate.follow_steps)
+    steps = " ".join(gate.follow_steps)
+    assert "Open Resend Domains only to review the existing moonlite.rsvp domain" in steps
+    assert "Do not create the domain or DNS records by hand" in steps
+    assert "keeps Cloudflare DNS behind it" in steps
+    assert "add or open" not in steps
     assert "I finished this step" in gate.next_action
     assert "read any DNS records returned by the API" in gate.resume_hint
     assert "Cloudflare DNS behind Resend" in gate.resume_hint

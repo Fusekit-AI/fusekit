@@ -3952,8 +3952,14 @@ def _resend_domain_follow_steps(domain: str) -> tuple[str, ...]:
     named_domain = domain or "the app sending domain"
     return (
         "Use the live VM browser surface, not a local browser tab.",
-        f"Open Resend Domains and add or open {named_domain}.",
-        "Complete any Resend domain ownership instructions shown there.",
+        (
+            f"Open Resend Domains only to review the existing {named_domain} domain "
+            "and any provider-owned verification prompt shown there."
+        ),
+        (
+            "Do not create the domain or DNS records by hand in this step; FuseKit creates "
+            "or reuses the domain through Resend's API and keeps Cloudflare DNS behind it."
+        ),
         "FuseKit reads Resend DNS records through the API and asks Cloudflare to apply them.",
         (
             "Return here and click I finished this step after Resend shows the "
