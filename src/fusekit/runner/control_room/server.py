@@ -738,8 +738,6 @@ def _query_token(route: Any) -> str:
 
 
 def _should_clean_query_token(route: Any, handler: Any) -> bool:
-    if getattr(route, "path", "") not in {"/", "/index.html"}:
-        return False
     if not _query_token(route):
         return False
     expected = os.environ.get("FUSEKIT_CONTROL_ROOM_TOKEN", "")

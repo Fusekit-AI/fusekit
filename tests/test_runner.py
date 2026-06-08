@@ -1808,7 +1808,7 @@ def test_security_surface_map_documents_control_room_state_routes() -> None:
     assert "clipboard-enabled arbitrary iframe" in text
     assert "Public guided runs use VM clipboard Capture buttons" in text
     assert "CLI-only fallback can use hidden prompts/env handoff" in text
-    assert "redirect back to the clean page URL" in text
+    assert "redirect back to the same route without the token query parameter" in text
     assert "does not stay in the address bar" in text
 
 
@@ -2245,6 +2245,37 @@ def test_control_room_does_not_cookie_unsafe_remote_token(
 
     assert "FuseKit Control Room" in html
     assert "set-cookie" not in headers
+
+
+def test_tokenized_control_room_cleans_query_token_on_api_get(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FUSEKIT_CONTROL_ROOM_TOKEN", "token-123")
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    connection = None
+    try:
+        connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+        connection.request("GET", "/api/job?token=token-123&view=compact")
+        response = connection.getresponse()
+        headers = {key.lower(): value for key, value in response.getheaders()}
+        response.read()
+    finally:
+        if connection is not None:
+            connection.close()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert response.status == 303
+    assert headers["location"] == "/api/job?view=compact"
+    assert "token-123" not in headers["location"]
+    assert "fusekit_control_room=token-123" in headers["set-cookie"]
 
 
 def test_tokenized_control_room_rejects_cross_site_gate_post(

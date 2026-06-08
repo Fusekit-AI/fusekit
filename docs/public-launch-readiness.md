@@ -66,6 +66,14 @@ Use the most reliable path first:
 Plaid should not be the first proof because financial-provider onboarding can
 add compliance and review gates that distract from the core launch story.
 
+For a new-site/new-account recording, the control room must make the provider
+order obvious enough that the user does not have to infer prerequisites. A
+permissioned Resend API key satisfies only the auth gate; FuseKit must then create
+or reuse the Resend sending domain by API, create an audience only when the app
+requires one, carry the returned Resend DNS records into the Cloudflare approval
+plan, and continue without asking the user to manually create Resend domains or
+audiences.
+
 ## Harness Layer
 
 FuseKit has a native proof layer:
