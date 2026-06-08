@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from fusekit.audit import redact
-from fusekit.security import redact_public_path
+from fusekit.security import redact_public_path, redact_public_text
 
 
 def _sha256_text(text: str) -> str:
@@ -18,7 +18,22 @@ def _sha256_text(text: str) -> str:
 
 
 def _stable_json(data: Any) -> str:
-    return json.dumps(redact(data), indent=2, sort_keys=True) + "\n"
+    return json.dumps(_public_redact(redact(data)), indent=2, sort_keys=True) + "\n"
+
+
+def _public_redact(value: Any) -> Any:
+    """Apply public artifact redaction after structured secret-key redaction."""
+
+    if isinstance(value, dict):
+        return {str(key): _public_redact(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_public_redact(item) for item in value]
+    if isinstance(value, tuple):
+        return [_public_redact(item) for item in value]
+    if isinstance(value, str):
+        redacted = redact_public_text(value)
+        return redact_public_path(redacted) if redacted.startswith("/") else redacted
+    return value
 
 
 @dataclass(frozen=True)

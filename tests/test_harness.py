@@ -259,6 +259,29 @@ def test_harness_ledger_records_public_artifact_paths(tmp_path) -> None:
     assert ".fusekit/acceptance/artifacts/provider-proof" in ledger_text
 
 
+def test_harness_ledger_snapshot_redacts_public_token_shapes(tmp_path) -> None:
+    ledger = HarnessLedger.create(tmp_path / "app" / ".fusekit" / "acceptance")
+
+    artifact = ledger.snapshot_json(
+        "provider callback",
+        {
+            "url": "https://provider.example/callback?code=secret-code-1234567890&state=ok",
+            "notes": [
+                "copied github_pat_abcdefghijklmnopqrstuvwxyz1234567890",
+                str(tmp_path / "app" / ".fusekit" / "acceptance" / "report.json"),
+            ],
+        },
+    )
+    text = artifact.read_text(encoding="utf-8")
+
+    assert "secret-code-1234567890" not in text
+    assert "github_pat_abcdefghijklmnopqrstuvwxyz1234567890" not in text
+    assert str(tmp_path) not in text
+    assert "code=[redacted]" in text
+    assert "[redacted]" in text
+    assert ".fusekit/acceptance/report.json" in text
+
+
 def test_acceptance_live_requires_real_provider_evidence(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()

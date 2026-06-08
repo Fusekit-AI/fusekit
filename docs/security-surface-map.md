@@ -112,6 +112,8 @@ or trigger commands:
 - Browser GETs that authenticate with `?token=` set the control-room cookie and
   redirect back to the same route without the token query parameter so the token
   does not stay in the address bar for recordings, screenshots, or browser history.
+- Acceptance ledger snapshots apply both structured secret-key redaction and
+  public token-shape/path redaction before writing proof artifacts.
 - The control room never exposes a route that executes arbitrary shell commands.
 
 ## Current Residual Risk
