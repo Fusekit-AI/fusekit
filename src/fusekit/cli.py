@@ -2747,6 +2747,8 @@ def _record_gate_waiting(
     classification: str = "",
     target: str = "",
     follow_steps: tuple[str, ...] = (),
+    next_action: str = "",
+    resume_hint: str = "",
 ) -> None:
     GateService.load(_gate_state_path(args)).wait(
         gate_id,
@@ -2756,6 +2758,8 @@ def _record_gate_waiting(
         classification=classification,
         target=target,
         follow_steps=follow_steps,
+        next_action=next_action,
+        resume_hint=resume_hint,
     )
 
 
@@ -3228,6 +3232,10 @@ def _record_provider_strategy_gates(
             if isinstance(item_steps, (list, tuple))
             else _provider_strategy_follow_steps(pack)
         )
+        next_action = str(item.get("next_action", "") or "")
+        resume_hint = str(item.get("resume_hint", "") or "") or (
+            "FuseKit will retry this provider route after you finish the gate."
+        )
         gate_id = f"provider.{provider}.{_strategy_gate_slug(recipe)}"
         _record_gate_waiting(
             args,
@@ -3237,6 +3245,8 @@ def _record_provider_strategy_gates(
             resume_url=resume_url,
             classification="provider-authorization",
             follow_steps=follow_steps,
+            next_action=next_action,
+            resume_hint=resume_hint,
         )
 
 

@@ -53,6 +53,7 @@ guided, or explicitly verified.
 | Acceptance blockers were only visible in `.fusekit/acceptance/report.json`, so the launcher could still feel stuck when the order-of-operations proof failed. | Static and live control rooms now render `blockers[]` as launch-blocker cards with plain next actions, including Resend-before-DNS ordering failures. |
 | Provider setup was sorted Resend-before-DNS but could still continue to downstream providers if Resend paused on an API-key gate, risking an incomplete DNS plan. | Provider setup now pauses at the first unresolved authorization gate, records that downstream providers are waiting, and resumes later with complete upstream provider data. |
 | Resend DNS records can return provider-managed TTL values such as `Auto`, which could break parsing before Cloudflare received the record plan. | Resend DNS record parsing now treats provider-managed TTL values as the safe default TTL while preserving record name, type, value, and priority. |
+| Provider strategy gates generated useful next-action copy but the durable gate recorder dropped it, forcing the launcher back to generic instructions. | Provider strategy gates now persist their specific next action and resume hint into `gates.json`, so the control room can show the intended follow-me instruction. |
 
 ## Open Acceptance Items
 
