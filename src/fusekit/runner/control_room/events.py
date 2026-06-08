@@ -318,7 +318,8 @@ function renderGateHelp(step) {
   const target = step.target
     ? `<p class="gate-target">Snowman highlighted: <strong>${escapeHtml(step.target)}</strong></p>`
     : "";
-  const resumeButton = step.id
+  const hasCaptureTargets = captureTargets(step.target).length > 0;
+  const resumeButton = step.id && !hasCaptureTargets
     ? [
         `<button class="gate-done" type="button" `,
         `data-gate-pass="${escapeAttr(step.id)}">I finished this step</button>`,
@@ -344,7 +345,7 @@ function captureTargets(target) {
   return String(target || "")
     .split(",")
     .map((item) => item.trim().toUpperCase())
-    .filter((item) => /^[A-Z][A-Z0-9_]{2,}$/.test(item));
+    .filter((item) => /^[A-Z][A-Z0-9_]{2,}$/.test(item) && item.includes("_"));
 }
 
 function renderCaptureButtons(gateId, target, capturedTargets = []) {

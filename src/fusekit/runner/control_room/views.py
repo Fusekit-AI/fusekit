@@ -698,6 +698,7 @@ def _render_gate_help(step: Any) -> str:
         else ""
     )
     target = str(getattr(step, "target", "") or "")
+    capture_targets = _capture_targets(target)
     captured_targets = tuple(
         str(item).strip().upper()
         for item in getattr(step, "captured_targets", ())
@@ -711,7 +712,7 @@ def _render_gate_help(step: Any) -> str:
     resume_button = (
         f'<button class="gate-done" type="button" data-gate-pass="{html.escape(gate_id)}">'
         "I finished this step</button>"
-        if gate_id
+        if gate_id and not capture_targets
         else ""
     )
     capture_buttons = _render_capture_buttons(gate_id, target, captured_targets)
@@ -777,7 +778,7 @@ def _capture_targets(target: str) -> tuple[str, ...]:
     return tuple(
         item
         for item in (part.strip().upper() for part in target.split(","))
-        if item.isidentifier() and item == item.upper() and len(item) > 2
+        if item.isidentifier() and item == item.upper() and len(item) > 2 and "_" in item
     )
 
 

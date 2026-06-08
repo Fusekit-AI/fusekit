@@ -369,7 +369,7 @@ def _gate_capture_targets(raw_target: str) -> set[str]:
     return {
         item
         for item in (part.strip().upper() for part in raw_target.split(","))
-        if re.fullmatch(r"[A-Z][A-Z0-9_]{2,}", item)
+        if re.fullmatch(r"[A-Z][A-Z0-9_]{2,}", item) and "_" in item
     }
 
 

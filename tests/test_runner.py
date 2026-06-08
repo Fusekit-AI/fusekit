@@ -470,6 +470,7 @@ def test_control_room_payload_includes_active_gate_records(tmp_path) -> None:
     assert "Click Continue" in html
     assert "Snowman highlighted" in html
     assert 'data-gate-pass="provider.vercel.authorization"' in html
+    assert "Capture CONTINUE from VM clipboard" not in html
     assert "<strong data-count-waiting>1</strong> gates" in html
 
 
@@ -551,6 +552,7 @@ def test_control_room_renders_vm_clipboard_capture_for_secret_gate(tmp_path) -> 
     assert "Capture RESEND_API_KEY from VM clipboard" in html
     assert 'data-gate-capture="provider.resend.api-key-domain-access"' in html
     assert 'data-gate-capture-target="RESEND_API_KEY"' in html
+    assert 'data-gate-pass="provider.resend.api-key-domain-access"' not in html
 
 
 def test_control_room_post_requests_human_gate_resume(tmp_path) -> None:
