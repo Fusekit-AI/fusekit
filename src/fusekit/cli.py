@@ -3121,8 +3121,28 @@ def _run_manifest_provider_pack_setup(
         _record_provider_strategy_gates(args, pack, result)
         context.audit.record("provider_pack.setup", result)
         context.receipt.add_action("provider_pack.setup", "ok", result)
+        if _provider_setup_needs_human_gate(result):
+            context.receipt.add_action(
+                "provider_pack.setup.paused",
+                "needs_human_gate",
+                {
+                    "provider": provider,
+                    "reason": (
+                        "Downstream providers are waiting until this provider gate "
+                        "is completed."
+                    ),
+                },
+            )
+            break
     if not strategy_runs:
         _write_provider_strategy_artifact(args, strategy_runs)
+
+
+def _provider_setup_needs_human_gate(result: dict[str, Any]) -> bool:
+    return any(
+        isinstance(item, dict) and item.get("status") == "needs_human_gate"
+        for item in result.get("setup", [])
+    )
 
 
 def _ordered_provider_services(

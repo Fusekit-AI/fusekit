@@ -24,6 +24,7 @@ from fusekit.cli import (
     _record_provider_verification_gates,
     _repair_navigation_completed,
     _run_handoff,
+    _run_manifest_provider_pack_setup,
     _runtime_env_secrets,
     _start_openclaw_auth_terminal,
     _ui_navigator_from_vault,
@@ -34,6 +35,7 @@ from fusekit.cli import (
 from fusekit.detonation.preflight import verification_report_allows_detonation
 from fusekit.errors import FuseKitError, ProviderError
 from fusekit.manifest import DomainRequirement, ServiceRequirement, SetupManifest, write_manifest
+from fusekit.providers.automation import ProviderSetupContext
 from fusekit.providers.capability_pack import (
     VerificationRecipe,
     synthesize_provider_pack,
@@ -117,6 +119,84 @@ def test_provider_setup_orders_resend_before_dns() -> None:
     ordered = [provider for provider, _service in _ordered_provider_services(services)]
 
     assert ordered == ["github", "resend", "vercel", "cloudflare"]
+
+
+def test_provider_setup_pauses_dns_behind_resend_human_gate(monkeypatch, tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    calls: list[str] = []
+
+    def fake_run_provider_pack_setup(pack, context):  # type: ignore[no-untyped-def]
+        del context
+        calls.append(pack.provider)
+        if pack.provider == "resend":
+            return {
+                "provider": "resend",
+                "setup": [
+                    {
+                        "kind": "resend-domain",
+                        "status": "needs_human_gate",
+                        "strategy": "browser_guided",
+                        "reason": "Resend API key is required before DNS records exist.",
+                        "strategy_decision": {
+                            "selected": {
+                                "kind": "browser_guided",
+                                "status": "needs_human_gate",
+                                "deterministic": False,
+                                "implemented": False,
+                                "reason": "Provider token is missing.",
+                            },
+                            "candidates": [{"kind": "browser_guided"}],
+                        },
+                    }
+                ],
+            }
+        raise AssertionError(f"{pack.provider} should wait for the Resend gate")
+
+    monkeypatch.setattr("fusekit.cli.run_provider_pack_setup", fake_run_provider_pack_setup)
+    manifest = SetupManifest(
+        app_name="app",
+        app_path=str(app),
+        services=(
+            ServiceRequirement(provider="resend", kind="email", name="email"),
+            ServiceRequirement(provider="cloudflare", kind="dns", name="dns"),
+        ),
+        domains=(DomainRequirement(provider="cloudflare", domain="moonlite.rsvp"),),
+    )
+    args = argparse.Namespace(
+        app=app,
+        vault=app / ".fusekit" / "fusekit.vault.json",
+        allow_incomplete=False,
+        fusekit_gates="service-only",
+        github_repo="",
+        vercel_project="",
+        vercel_framework="",
+        vercel_git_repo_id="",
+        vercel_git_ref="main",
+        dns_zone="moonlite.rsvp",
+    )
+    context = ProviderSetupContext(
+        manifest=manifest,
+        vault=Vault.empty(),
+        audit=AuditLog(tmp_path / "audit.jsonl"),
+        receipt=Receipt(app_name="app"),
+        secrets={},
+        provider_names={"resend", "cloudflare"},
+        inputs={"dns_zone": "moonlite.rsvp"},
+    )
+
+    _run_manifest_provider_pack_setup(args, manifest, context)
+
+    assert calls == ["resend"]
+    gate = GateService.load(app / ".fusekit" / "gates.json").records[
+        "provider.resend.resend-domain"
+    ]
+    assert gate.provider == "resend"
+    assert "before DNS records exist" in gate.reason
+    actions = context.receipt.to_dict()["actions"]
+    assert actions[-1]["action"] == "provider_pack.setup.paused"
+    assert actions[-1]["status"] == "needs_human_gate"
+    assert actions[-1]["details"]["provider"] == "resend"
 
 
 def test_playwright_fallback_is_headless_without_display(monkeypatch) -> None:

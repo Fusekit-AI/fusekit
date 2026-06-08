@@ -51,6 +51,7 @@ guided, or explicitly verified.
 | The noVNC password could be duplicated into frontend dataset state just to avoid iframe refreshes. | Live control-room refresh now compares the existing iframe URL instead of copying the password into extra DOM state; the password remains only in the autoconnect URL/copy affordance where needed. |
 | Control-room gate open/resume/capture actions could be recorded in gate state without launch acceptance proving they were also in the audit ledger. | Live acceptance now requires every durable control-room gate to have a matching redacted `control_room.*` audit event before a run can be launch-ready. |
 | Acceptance blockers were only visible in `.fusekit/acceptance/report.json`, so the launcher could still feel stuck when the order-of-operations proof failed. | Static and live control rooms now render `blockers[]` as launch-blocker cards with plain next actions, including Resend-before-DNS ordering failures. |
+| Provider setup was sorted Resend-before-DNS but could still continue to downstream providers if Resend paused on an API-key gate, risking an incomplete DNS plan. | Provider setup now pauses at the first unresolved authorization gate, records that downstream providers are waiting, and resumes later with complete upstream provider data. |
 
 ## Open Acceptance Items
 
