@@ -48,6 +48,34 @@ artifacts and removes plaintext worker state.
 - Receipts, audit logs, launcher files, and acceptance reports are public by
   default and must be redacted.
 
+## Control Room Attack Surface
+
+The control room is the only browser-facing surface that can advance a live
+setup run. Its state-changing routes are intentionally small:
+
+- `/api/gates/<gate_id>/pass` records a protected human approval or resume
+  signal after a provider gate is complete.
+- `/api/gates/<gate_id>/open` opens the provider URL inside the VM visual
+  browser, using fixed argv execution rather than shell-evaluated strings.
+- `/api/gates/<gate_id>/capture-clipboard` captures the VM clipboard for the
+  named secret target and writes it to the encrypted vault.
+
+Every state-changing control-room POST must keep all of these protections:
+
+- the `x-fusekit-control-room: resume` header
+- the per-page `x-fusekit-action-token` value
+- same-origin or loopback `Origin` validation
+- `Sec-Fetch-Site` rejection for browser-declared cross-site requests
+- no permissive CORS preflight response
+- remote access disabled unless an explicit remote token is configured
+
+The control room must never expose a route that accepts arbitrary shell
+commands, creates OS or application admin accounts, edits startup files, or
+installs persistence. Provider gate launches must validate the provider URL and
+run the browser with an argv list only. Clipboard capture must validate the
+expected target shape, reject copied page URLs or multi-token blobs, and record
+audit fingerprints instead of raw secret text.
+
 ## Safety Model
 
 ```mermaid

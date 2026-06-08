@@ -1888,6 +1888,30 @@ def test_security_surface_map_documents_control_room_state_routes() -> None:
     assert "does not stay in the address bar" in text
 
 
+def test_threat_model_documents_control_room_state_route_defenses() -> None:
+    text = Path("docs/threat-model.md").read_text(encoding="utf-8")
+
+    for route in (
+        "/api/gates/<gate_id>/pass",
+        "/api/gates/<gate_id>/open",
+        "/api/gates/<gate_id>/capture-clipboard",
+    ):
+        assert route in text
+    assert "x-fusekit-control-room: resume" in text
+    assert "x-fusekit-action-token" in text
+    assert "Origin" in text
+    assert "Sec-Fetch-Site" in text
+    assert "no permissive CORS preflight response" in text
+    assert "remote access disabled unless an explicit remote token is configured" in text
+    assert "must never expose a route" in text
+    assert "arbitrary shell" in text
+    assert "creates OS or application admin accounts" in text
+    assert "installs persistence" in text
+    assert "fixed argv execution rather than shell-evaluated strings" in text
+    assert "reject copied page URLs or multi-token blobs" in text
+    assert "audit fingerprints instead of raw secret text" in text
+
+
 def test_control_room_post_rejects_untrusted_origin(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job_path = tmp_path / "job.json"
