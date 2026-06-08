@@ -9,8 +9,9 @@ def test_provider_gate_guidance_is_plain_language_and_non_secret() -> None:
     guidance = provider_gate_guidance("vercel")
 
     assert "Vercel" in guidance.title
-    assert "Sign in" in " ".join(guidance.actions)
-    assert "VM-local capture" in " ".join(guidance.actions)
+    assert "sign in" in " ".join(guidance.actions).lower()
+    assert "VM browser" in " ".join(guidance.actions)
+    assert "Capture in FuseKit" in " ".join(guidance.actions)
     assert "token" not in guidance.reassurance.lower()
     assert "secret" not in guidance.reassurance.lower()
 
@@ -23,6 +24,9 @@ def test_provider_gate_guidance_leads_instead_of_delegating_interpretation() -> 
         lowered = text.lower()
         assert all(re.search(rf"\b{re.escape(phrase)}\b", lowered) is None for phrase in forbidden)
         assert any(anchor in lowered for anchor in ("highlighted", "open provider gate"))
+        if provider in {"github", "vercel", "cloudflare", "resend"}:
+            assert "vm browser" in lowered
+            assert "capture" in lowered
 
 
 def test_cloudflare_guidance_names_scoped_token_path() -> None:
@@ -31,9 +35,9 @@ def test_cloudflare_guidance_names_scoped_token_path() -> None:
 
     assert "Create Token" in text
     assert "Custom token" in text
-    assert "Zone Read" in text
-    assert "DNS Edit" in text
-    assert "specific zone" in text
+    assert "Zone / Zone / Read" in text
+    assert "Zone / DNS / Edit" in text
+    assert "Specific zone" in text
     assert "encrypted vault" in text
 
 
@@ -42,9 +46,11 @@ def test_github_guidance_names_repo_scoped_permissions() -> None:
     text = " ".join((guidance.title, guidance.body, *guidance.actions, guidance.reassurance))
 
     assert "fine-grained personal access token" in text
-    assert "target repo" in text
+    assert "Only select repositories" in text
+    assert "exact target repo" in text
     assert "Secrets read/write" in text
     assert "Administration read/write" in text
+    assert "Metadata read-only" in text
     assert "encrypted vault" in text
 
 
@@ -52,8 +58,7 @@ def test_vercel_guidance_names_token_path() -> None:
     guidance = provider_gate_guidance("vercel")
     text = " ".join((guidance.title, guidance.body, *guidance.actions, guidance.reassurance))
 
-    assert "Account Settings" in text
-    assert "Tokens" in text
+    assert "Account Settings > Tokens" in text
     assert "Login Connections" in text
     assert "GitHub" in text
     assert "short expiration" in text
@@ -66,8 +71,11 @@ def test_resend_guidance_names_api_key_path() -> None:
     text = " ".join((guidance.title, guidance.body, *guidance.actions, guidance.reassurance))
 
     assert "API Keys" in text
-    assert "FuseKit email" in text
-    assert "sending/domain access" in text
+    assert "FuseKit email setup" in text
+    assert "Full access" in text
+    assert "before Cloudflare DNS" in text
+    assert "creates or reuses the Resend domain" in text
+    assert "domain and audience" in text
     assert "encrypted vault" in text
 
 

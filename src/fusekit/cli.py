@@ -3550,7 +3550,10 @@ def _provider_verification_gate(
             "id": "provider.resend.api-key-domain-access",
             "provider": "resend",
             "reason": reason
-            or "Resend rejected the captured API key for the required domain/API access.",
+            or (
+                "Resend rejected the captured setup key. Create a Resend API key with Full "
+                "access for the first setup so FuseKit can create or reuse domains and audiences."
+            ),
             "resume_url": "https://resend.com/api-keys",
             "classification": "provider-authorization",
             "target": "RESEND_API_KEY",
@@ -3587,10 +3590,17 @@ def _resend_api_key_follow_steps(domain: str) -> tuple[str, ...]:
     domain_note = f" for {domain}" if domain else ""
     return (
         "Use the live VM browser surface, not a local browser tab.",
-        "Open Resend API Keys and create a new key named FuseKit email.",
-        f"Choose permissions that allow sending email and reading/managing domains{domain_note}.",
-        "Copy the API key only inside the VM browser; FuseKit stores it in the encrypted vault.",
-        "Return here and click I finished this step after the key has been captured.",
+        "Open Resend API Keys and create a new key named FuseKit email setup.",
+        (
+            "Choose Full access for this first setup key so FuseKit can create or reuse "
+            f"the sending domain and audience{domain_note}."
+        ),
+        "Copy the API key only inside the VM browser, then click Capture in FuseKit.",
+        (
+            "FuseKit stores the key in the encrypted vault and uses Resend's API before "
+            "DNS is applied."
+        ),
+        "Return here and click I finished this step after Capture reports success.",
     )
 
 
@@ -3600,7 +3610,7 @@ def _resend_domain_follow_steps(domain: str) -> tuple[str, ...]:
         "Use the live VM browser surface, not a local browser tab.",
         f"Open Resend Domains and add or open {named_domain}.",
         "Complete any Resend domain ownership instructions shown there.",
-        "If Resend shows DNS records, approve them in FuseKit so Cloudflare can apply them.",
+        "FuseKit reads Resend DNS records through the API and asks Cloudflare to apply them.",
         (
             "Return here and click I finished this step after Resend shows the "
             "domain as verified or pending DNS."
@@ -4205,9 +4215,9 @@ def _ui_navigator_from_vault(args: argparse.Namespace, vault: Vault):
                 "gate",
                 reason=(
                     "OpenClaw/OpenAI OAuth is authorized, but local OpenClaw model "
-                    "inference is not available to FuseKit in this runtime. Complete "
-                    "the visible provider setup step manually; FuseKit will keep the "
-                    "gate durable and verify afterward."
+                    "inference is not available to FuseKit in this runtime. Follow "
+                    "the visible provider checklist in the VM browser; FuseKit will "
+                    "keep the gate durable and verify afterward."
                 ),
             )
         ]

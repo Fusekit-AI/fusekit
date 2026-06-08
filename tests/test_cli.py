@@ -17,11 +17,11 @@ from fusekit.cli import (
     _has_pack_provider_token,
     _local_verification_job_result,
     _playwright_headless,
-    _provider_verification_attempt_config,
     _provider_verification_acceptable,
+    _provider_verification_attempt_config,
+    _rebase_setup_artifacts,
     _record_provider_verification_gates,
     _repair_navigation_completed,
-    _rebase_setup_artifacts,
     _run_handoff,
     _runtime_env_secrets,
     _start_openclaw_auth_terminal,
@@ -1083,8 +1083,9 @@ def test_verification_gate_records_resend_api_key_follow_me(tmp_path) -> None:
         status="needs_human_gate",
         details={
             "reason": (
-                "Resend rejected the captured API key for domain access. "
-                "Create or capture a Resend key with sending/domain access."
+                "Resend rejected the captured setup key. Create or capture a Resend API key "
+                "with Full access for the first setup so FuseKit can create or reuse domains "
+                "and audiences."
             ),
             "service_gate": True,
         },
@@ -1105,7 +1106,8 @@ def test_verification_gate_records_resend_api_key_follow_me(tmp_path) -> None:
     ]
     assert gate.resume_url == "https://resend.com/api-keys"
     assert "live VM browser" in " ".join(gate.follow_steps)
-    assert "domains for moonlite.rsvp" in " ".join(gate.follow_steps)
+    assert "Full access" in " ".join(gate.follow_steps)
+    assert "sending domain and audience for moonlite.rsvp" in " ".join(gate.follow_steps)
 
 
 def test_verification_gate_routes_resend_runtime_values_from_vercel(tmp_path) -> None:

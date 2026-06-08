@@ -977,14 +977,17 @@ def _github_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                 "repository Administration read/write",
             ),
             account_steps=(
-                "Create or sign in to a GitHub account.",
+                "Open GitHub in the VM browser and create or sign in to the account.",
                 "Complete the highlighted email, passkey, MFA, CAPTCHA, or consent gate.",
-                "Create or choose the repository that will receive secrets and deploy keys.",
+                "Create or choose the exact repository that will receive secrets and deploy keys.",
             ),
             secret_steps=(
-                "Create a fine-grained token for the target repository.",
-                "Grant only repository Secrets read/write and Administration read/write.",
-                "Capture the token into the encrypted vault.",
+                "Create a fine-grained token named FuseKit setup for only the target repository.",
+                "Grant repository Secrets read/write and Administration read/write.",
+                (
+                    "Copy the token once inside the VM browser; FuseKit captures it into the "
+                    "encrypted vault."
+                ),
             ),
             service_gates=("email verification", "passkey", "MFA", "CAPTCHA", "consent"),
         ),
@@ -1049,14 +1052,20 @@ def _vercel_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
             token_label="Vercel API token",
             required_scopes=("project access", "environment variables", "deployments"),
             account_steps=(
-                "Create or sign in to a Vercel account.",
+                "Open Vercel in the VM browser and create or sign in to the account.",
                 "Complete the highlighted SSO, MFA, CAPTCHA, billing, payment, or consent gate.",
-                "Connect GitHub under Login Connections if Vercel requires it before API project linking.",
-                "Choose an existing project if required.",
+                (
+                    "Connect only the named GitHub account/repo under Login Connections when "
+                    "Vercel asks."
+                ),
             ),
             secret_steps=(
-                "Create an account token with access to the target team or project.",
-                "Capture the token into the encrypted vault.",
+                "Create an Account Settings > Tokens token named FuseKit deployment.",
+                "Use a short expiration and choose the personal account or team FuseKit named.",
+                (
+                    "Copy the token once inside the VM browser; FuseKit captures it into the "
+                    "encrypted vault."
+                ),
             ),
             service_gates=("SSO", "MFA", "CAPTCHA", "billing/payment verification", "consent"),
         ),
@@ -1132,18 +1141,23 @@ def _cloudflare_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
             token_env="CLOUDFLARE_API_TOKEN",
             token_record_id="provider.cloudflare.token",
             token_label="Cloudflare API token",
-            required_scopes=("zone read", "DNS edit for the target zone"),
+            required_scopes=("Zone / Zone / Read", "Zone / DNS / Edit for the target zone"),
             account_steps=(
-                "Create or sign in to a Cloudflare account.",
-                "Add or choose the DNS zone that owns the target domain.",
+                "Open Cloudflare in the VM browser and create or sign in to the account.",
+                "Add or choose the exact DNS zone that owns the target domain.",
                 (
                     "Complete the highlighted nameserver, domain ownership, MFA, CAPTCHA, "
                     "billing, or consent gate."
                 ),
             ),
             secret_steps=(
-                "Create a scoped API token limited to DNS edit on the target zone.",
-                "Capture the token into the encrypted vault.",
+                "Create a Custom token named FuseKit DNS for this domain.",
+                "Grant Zone / Zone / Read and Zone / DNS / Edit.",
+                "Set Zone Resources to Include / Specific zone and choose the zone FuseKit named.",
+                (
+                    "Copy the token once inside the VM browser; FuseKit captures it into the "
+                    "encrypted vault."
+                ),
             ),
             service_gates=(
                 "domain ownership verification",
@@ -1216,18 +1230,24 @@ def _resend_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
             token_env="RESEND_API_KEY",
             token_record_id="provider.resend.token",
             token_label="Resend API key",
-            required_scopes=("email send", "domain read/verification"),
+            required_scopes=("Full access for first setup", "domain and audience setup"),
             account_steps=(
-                "Create or sign in to a Resend account.",
+                "Open Resend in the VM browser and create or sign in to the account.",
                 (
                     "Complete the highlighted email verification, MFA, CAPTCHA, billing, "
                     "consent, or domain ownership gate."
                 ),
-                "Add the sending domain when the app uses a custom From address.",
+                "Let FuseKit create or reuse the sending domain and audience after key capture.",
             ),
             secret_steps=(
-                "Create a scoped Resend API key.",
-                "Capture RESEND_API_KEY into the encrypted vault.",
+                (
+                    "Create an API key named FuseKit email setup with Full access for this "
+                    "first setup."
+                ),
+                (
+                    "Copy RESEND_API_KEY once inside the VM browser; FuseKit captures it into "
+                    "the encrypted vault."
+                ),
                 "FuseKit creates or reuses the sending domain through Resend's API.",
                 "FuseKit uses returned domain verification records as DNS proposals.",
             ),
@@ -1260,7 +1280,7 @@ def _resend_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
         ),
         setup_goals=(
             "Create or connect the Resend account.",
-            "Create or capture a scoped Resend API key into the encrypted vault.",
+            "Create or capture a Full access setup Resend API key into the encrypted vault.",
             "Create or reuse the sending domain through Resend's API.",
             "Feed Resend verification records into DNS proposals before DNS is applied.",
             "Create or reuse a Resend audience only when the app requires one.",

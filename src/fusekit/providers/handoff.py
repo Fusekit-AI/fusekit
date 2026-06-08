@@ -46,14 +46,17 @@ HANDOFFS: dict[str, ProviderHandoff] = {
             "repository Administration read/write",
         ),
         account_steps=(
-            "Create or sign in to a GitHub account.",
+            "Open GitHub in the VM browser and create or sign in to the account.",
             "Complete the highlighted email, passkey, MFA, CAPTCHA, or consent challenge.",
-            "Create or choose the repository that will receive secrets and deploy keys.",
+            "Create or choose the exact repository that will receive secrets and deploy keys.",
         ),
         secret_steps=(
-            "Create a fine-grained token for the target repository.",
-            "Grant only repository Secrets read/write and Administration read/write.",
-            "Copy the token once; FuseKit will capture it into the encrypted vault.",
+            "Create a fine-grained token named FuseKit setup for only the target repository.",
+            "Grant repository Secrets read/write and Administration read/write.",
+            (
+                "Copy the token once inside the VM browser; FuseKit captures it into the "
+                "encrypted vault."
+            ),
         ),
     ),
     "vercel": ProviderHandoff(
@@ -66,14 +69,17 @@ HANDOFFS: dict[str, ProviderHandoff] = {
         token_label="Vercel API token",
         required_scopes=("project access", "environment variables", "deployments"),
         account_steps=(
-            "Create or sign in to a Vercel account.",
+            "Open Vercel in the VM browser and create or sign in to the account.",
             "Complete the highlighted email, SSO, MFA, CAPTCHA, billing, or consent step.",
-            "Connect GitHub under Login Connections if Vercel requires it before project linking.",
-            "Choose an existing project if Vercel requires it.",
+            "Connect only the named GitHub account/repo under Login Connections when Vercel asks.",
         ),
         secret_steps=(
-            "Create an account token with access to the target team or project.",
-            "Copy the token once; FuseKit will capture it into the encrypted vault.",
+            "Create an Account Settings > Tokens token named FuseKit deployment.",
+            "Use a short expiration and choose the personal account or team FuseKit named.",
+            (
+                "Copy the token once inside the VM browser; FuseKit captures it into the "
+                "encrypted vault."
+            ),
         ),
     ),
     "cloudflare": ProviderHandoff(
@@ -84,18 +90,23 @@ HANDOFFS: dict[str, ProviderHandoff] = {
         token_env="CLOUDFLARE_API_TOKEN",
         token_record_id="provider.cloudflare.token",
         token_label="Cloudflare API token",
-        required_scopes=("zone read", "DNS edit for the target zone"),
+        required_scopes=("Zone / Zone / Read", "Zone / DNS / Edit for the target zone"),
         account_steps=(
-            "Create or sign in to a Cloudflare account.",
-            "Add or choose the zone that owns the target domain.",
+            "Open Cloudflare in the VM browser and create or sign in to the account.",
+            "Add or choose the exact zone that owns the target domain.",
             (
                 "Complete the highlighted nameserver, domain ownership, MFA, CAPTCHA, billing, "
                 "or consent step."
             ),
         ),
         secret_steps=(
-            "Create a scoped API token limited to DNS edit on the target zone.",
-            "Copy the token once; FuseKit will capture it into the encrypted vault.",
+            "Create a Custom token named FuseKit DNS for this domain.",
+            "Grant Zone / Zone / Read and Zone / DNS / Edit.",
+            "Set Zone Resources to Include / Specific zone and choose the zone FuseKit named.",
+            (
+                "Copy the token once inside the VM browser; FuseKit captures it into the "
+                "encrypted vault."
+            ),
         ),
     ),
     "resend": ProviderHandoff(
@@ -106,16 +117,19 @@ HANDOFFS: dict[str, ProviderHandoff] = {
         token_env="RESEND_API_KEY",
         token_record_id="provider.resend.token",
         token_label="Resend API key",
-        required_scopes=("email send", "domain verification"),
+        required_scopes=("Full access for first setup", "domain and audience setup"),
         account_steps=(
-            "Create or sign in to a Resend account.",
+            "Open Resend in the VM browser and create or sign in to the account.",
             "Complete the highlighted email, MFA, CAPTCHA, billing, or consent step.",
-            "Add or choose the sending domain if the app uses a custom sender.",
+            "Let FuseKit create or reuse the sending domain and audience after key capture.",
         ),
         secret_steps=(
-            "Create a scoped API key for sending email.",
-            "Copy the API key once; FuseKit will capture it into the encrypted vault.",
-            "Copy DNS verification records so FuseKit can add them to the DNS plan.",
+            "Create an API key named FuseKit email setup with Full access for this first setup.",
+            (
+                "Copy the API key once inside the VM browser; FuseKit captures it into the "
+                "encrypted vault."
+            ),
+            "FuseKit reads Resend DNS verification records and adds them to the DNS plan.",
         ),
     ),
 }

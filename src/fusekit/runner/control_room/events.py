@@ -171,15 +171,20 @@ function gateGuidance(provider) {
       title: "GitHub needs a repo-scoped setup token",
       body:
         "FuseKit needs GitHub permission for the target repo so it can create deploy " +
-        "keys and encrypted Actions secrets without broad account access.",
+        "keys and encrypted Actions secrets without broad account access. You only approve " +
+        "login, MFA, CAPTCHA, consent, or token reveal gates; FuseKit does the wiring " +
+        "after capture.",
       actions: [
-        "Sign in or create the GitHub account when GitHub asks.",
-        "Create a fine-grained personal access token limited to the target repo named " +
-          "by FuseKit.",
-        "Grant repository Secrets read/write and Administration read/write, then finish " +
-          "highlighted passkey, MFA, CAPTCHA, or consent prompts.",
-        "When GitHub reveals the token once, use the VM-local capture path; FuseKit " +
-          "stores it only in the encrypted vault.",
+        "Use the Open provider gate button so GitHub opens in the VM browser, then sign " +
+          "in or create the account when GitHub asks.",
+        "Open Settings > Developer settings > Personal access tokens > Fine-grained " +
+          "tokens and create a fine-grained personal access token named FuseKit setup.",
+        "Set Repository access to Only select repositories and choose the exact target " +
+          "repo named by FuseKit.",
+        "Grant repository permissions Secrets read/write and Administration read/write; " +
+          "leave Metadata read-only, which GitHub includes automatically.",
+        "When GitHub reveals the token once, copy it inside the VM browser and click " +
+          "Capture in FuseKit; FuseKit stores it only in the encrypted vault.",
       ],
       reassurance: "FuseKit will use GitHub's API and continue once the scoped token is captured.",
     },
@@ -187,17 +192,19 @@ function gateGuidance(provider) {
       title: "Vercel needs a deployment token",
       body:
         "FuseKit needs a Vercel token scoped to the personal account or team that " +
-        "will own the project, environment variables, and deployment.",
+        "will own the project, environment variables, and deployment. You only approve " +
+        "login, billing, MFA, CAPTCHA, consent, GitHub connection, or token reveal gates.",
       actions: [
-        "Sign in or create the Vercel account when prompted.",
-        "If Vercel says GitHub is not connected, open Login Connections and connect " +
-          "GitHub before creating or linking the project.",
-        "Open Account Settings, choose Tokens, create a token named FuseKit deployment " +
-          "for this app, and use a short expiration.",
-        "Choose the personal account or team FuseKit named, then finish highlighted " +
-          "GitHub, billing, MFA, CAPTCHA, or consent prompts.",
-        "When Vercel reveals the token once, use the VM-local capture path; FuseKit " +
-          "stores it only in the encrypted vault.",
+        "Use the Open provider gate button so Vercel opens in the VM browser, then sign " +
+          "in or create the account when prompted.",
+        "Open Account Settings > Tokens and create a token named FuseKit deployment " +
+          "for the personal account or team FuseKit named.",
+        "Use a short expiration. FuseKit will create or connect the project, push " +
+          "environment variables, and deploy after capture.",
+        "If Vercel asks for GitHub Login Connections, connect only the GitHub account " +
+          "and repo FuseKit named, then return to the token page.",
+        "When Vercel reveals the token once, copy it inside the VM browser and click " +
+          "Capture in FuseKit; FuseKit stores it only in the encrypted vault.",
       ],
       reassurance: "FuseKit will continue through Vercel's API after capture succeeds.",
     },
@@ -205,16 +212,19 @@ function gateGuidance(provider) {
       title: "Cloudflare needs a scoped DNS token",
       body:
         "FuseKit needs one Cloudflare token scoped to this domain so it can create " +
-        "and verify only the DNS records named in the setup plan.",
+        "and verify only the DNS records named in the setup plan. You approve account, " +
+        "domain, MFA, CAPTCHA, consent, nameserver, billing, or token reveal gates; " +
+        "FuseKit applies DNS.",
       actions: [
-        "Sign in or create the Cloudflare account when prompted.",
-        "Open API Tokens, choose Create Token, choose Custom token, and name it " +
-          "FuseKit DNS for this domain.",
-        "Grant Zone Read and DNS Edit for the specific zone FuseKit named, then " +
-          "continue through highlighted Cloudflare MFA, CAPTCHA, consent, or token " +
-          "reveal gates.",
-        "When Cloudflare reveals the token once, use the VM-local capture prompt; " +
-          "FuseKit stores it only in the encrypted vault.",
+        "Use the Open provider gate button so Cloudflare opens in the VM browser, then " +
+          "sign in or create the account when prompted.",
+        "Open My Profile > API Tokens, choose Create Token, choose Custom token, and " +
+          "name it FuseKit DNS for this domain.",
+        "Add permissions Zone / Zone / Read and Zone / DNS / Edit.",
+        "Set Zone Resources to Include / Specific zone and choose the exact zone " +
+          "FuseKit named.",
+        "When Cloudflare reveals the token once, copy it inside the VM browser and click " +
+          "Capture in FuseKit; FuseKit stores it only in the encrypted vault.",
       ],
       reassurance:
         "FuseKit will use the token through Cloudflare's API and keep retrying " +
@@ -223,15 +233,22 @@ function gateGuidance(provider) {
     resend: {
       title: "Resend needs an email API key",
       body:
-        "FuseKit needs a Resend API key so it can configure email sending and verify " +
-        "the domain records named in the setup plan.",
+        "FuseKit needs the first Resend setup key before any Resend domain exists. " +
+        "That is why this gate comes before Cloudflare DNS: FuseKit creates or reuses " +
+        "the Resend domain, reads the DNS records Resend returns, then asks Cloudflare " +
+        "to apply them.",
       actions: [
-        "Sign in or create the Resend account when prompted.",
-        "Open API Keys, create a key named FuseKit email for this app, and choose " +
-          "the sending/domain access Resend requires.",
-        "Finish highlighted email, MFA, CAPTCHA, billing, consent, or domain checks.",
-        "When Resend reveals the API key once, use the VM-local capture path; " +
-          "FuseKit stores it only in the encrypted vault.",
+        "Use the Open provider gate button so Resend opens in the VM browser, then sign " +
+          "in or create the account when prompted.",
+        "Open API Keys, create a key named FuseKit email setup, and choose Full access " +
+          "for this first setup key.",
+        "Do not create Resend domains or audiences by hand unless FuseKit asks. After " +
+          "capture, FuseKit uses Resend's API to create or reuse the sending domain and " +
+          "audience required by the app.",
+        "When Resend reveals the API key once, copy it inside the VM browser and click " +
+          "Capture in FuseKit; FuseKit stores it only in the encrypted vault.",
+        "After the demo or setup, rotate or revoke the setup key from Resend if you want " +
+          "a narrower long-term key.",
       ],
       reassurance: "FuseKit will use Resend's API and continue once the email key is captured.",
     },

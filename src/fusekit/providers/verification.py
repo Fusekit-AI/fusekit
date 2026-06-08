@@ -449,7 +449,10 @@ def _verify_github_repo_secret(
         return _needs_gate(
             pack,
             recipe,
-            "GitHub repository secrets are waiting on provider values FuseKit has not captured yet: "
+            (
+                "GitHub repository secrets are waiting on provider values FuseKit has not "
+                "captured yet: "
+            )
             + ", ".join(unavailable)
             + ".",
         )
@@ -704,7 +707,11 @@ def _verify_resend_domain(
         return _needs_gate(
             pack,
             recipe,
-            "Resend rejected the captured API key for domain access. Create or capture a Resend key with sending/domain access.",
+            (
+                "Resend rejected the captured setup key. Create or capture a Resend API key "
+                "with Full access for the first setup so FuseKit can create or reuse domains "
+                "and audiences."
+            ),
         )
     if status >= 400:
         raise ProviderError(f"Resend domain verification returned HTTP {status}.")
