@@ -365,6 +365,11 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
             "Rerun setup so the receipt proves Resend created/reused the sending domain "
             "and Cloudflare/DNS proposed the exact Resend verification records.",
         ),
+        "Resend runtime env in Vercel receipt": (
+            "Deployment env",
+            "Rerun setup so Vercel env setup records every app-required RESEND_* runtime "
+            "key after FuseKit captures or generates those values.",
+        ),
         "guided human gates": (
             "Human gates",
             "Regenerate gate state with follow_steps, next_action, and resume_hint "
@@ -618,6 +623,7 @@ def _check_receipt(
             )
         )
     _check_receipt_resend_dns_flow(raw, manifest, mode, checks, missing, str(snapshot))
+    _check_receipt_resend_vercel_env_flow(raw, manifest, mode, checks, missing, str(snapshot))
 
 
 def _check_receipt_resend_dns_flow(
@@ -760,6 +766,95 @@ def _receipt_dns_record_key(record: dict[str, Any]) -> tuple[str, str, str]:
         str(record.get("name", "")).strip().lower(),
         str(record.get("value", "")).strip(),
     )
+
+
+def _check_receipt_resend_vercel_env_flow(
+    raw: Any,
+    manifest: SetupManifest,
+    mode: str,
+    checks: list[AcceptanceCheck],
+    missing: list[str],
+    artifact: str,
+) -> None:
+    """Prove Resend runtime env keys were pushed to Vercel when the app requires them."""
+
+    required = _manifest_resend_runtime_env_names(manifest)
+    if mode != "live" or not required:
+        return
+    actions = raw.get("actions", []) if isinstance(raw, dict) else []
+    if not isinstance(actions, list):
+        _fail_resend_vercel_env_receipt(
+            checks,
+            missing,
+            "Receipt actions are missing or malformed.",
+            artifact,
+        )
+        return
+    configured = _receipt_vercel_env_names(actions)
+    missing_env = sorted(required - configured)
+    if missing_env:
+        _fail_resend_vercel_env_receipt(
+            checks,
+            missing,
+            "Receipt Vercel env setup is missing Resend runtime keys: "
+            + ", ".join(missing_env),
+            artifact,
+        )
+        return
+    checks.append(
+        AcceptanceCheck(
+            "receipt.resend_vercel_env",
+            "ok",
+            "Receipt proves required Resend runtime env keys were configured in Vercel.",
+            artifact,
+        )
+    )
+
+
+def _manifest_resend_runtime_env_names(manifest: SetupManifest) -> set[str]:
+    providers = _manifest_provider_names(manifest)
+    if not {"resend", "vercel"} <= providers:
+        return set()
+    names: set[str] = set(manifest.required_env)
+    for service in manifest.services:
+        names.update(service.secrets)
+        names.update(service.env)
+    return {name.upper() for name in names if name.upper().startswith("RESEND_")}
+
+
+def _receipt_vercel_env_names(actions: list[Any]) -> set[str]:
+    configured: set[str] = set()
+    for action in actions:
+        if not isinstance(action, dict):
+            continue
+        if str(action.get("action", "")) != "vercel.env":
+            continue
+        if str(action.get("status", "")) != "ok":
+            continue
+        details = action.get("details", {})
+        if not isinstance(details, dict):
+            continue
+        env_name = str(details.get("env", "")).strip().upper()
+        if env_name:
+            configured.add(env_name)
+    return configured
+
+
+def _fail_resend_vercel_env_receipt(
+    checks: list[AcceptanceCheck],
+    missing: list[str],
+    detail: str,
+    artifact: str,
+) -> None:
+    checks.append(
+        AcceptanceCheck(
+            "receipt.resend_vercel_env",
+            "failed",
+            detail,
+            artifact,
+        )
+    )
+    missing.append("Resend runtime env in Vercel receipt")
 
 
 def _check_audit_log(
