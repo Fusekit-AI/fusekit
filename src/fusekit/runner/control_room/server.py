@@ -611,7 +611,7 @@ def _visual_browser_binary() -> str:
         for candidate in sorted(root.glob("chromium-*/chrome-linux*/chrome")):
             if candidate.is_file() and os.access(candidate, os.X_OK):
                 return str(candidate)
-    for name in ("google-chrome", "chromium-browser", "chromium", "xdg-open"):
+    for name in ("google-chrome", "google-chrome-stable", "chromium-browser", "chromium"):
         resolved = shutil.which(name)
         if resolved:
             return resolved

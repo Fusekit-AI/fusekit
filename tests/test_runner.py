@@ -28,7 +28,10 @@ from fusekit.runner.control_room import (
     control_room_payload as static_control_room_payload,
 )
 from fusekit.runner.control_room import render_control_room
-from fusekit.runner.control_room.server import _control_room_vault_passphrase
+from fusekit.runner.control_room.server import (
+    _control_room_vault_passphrase,
+    _visual_browser_binary,
+)
 from fusekit.runner.gates import GateService
 from fusekit.runner.job import JobState
 from fusekit.runner.loop import run_remote_loop
@@ -1022,6 +1025,39 @@ def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -
     assert events[-1]["data"]["reused"] is True
     assert events[-1]["data"]["has_resume_url"] is True
     assert "dash.cloudflare.com" not in audit_path.read_text(encoding="utf-8")
+
+
+def test_control_room_visual_browser_requires_profile_capable_binary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("FUSEKIT_VISUAL_BROWSER", raising=False)
+    monkeypatch.delenv("PLAYWRIGHT_BROWSERS_PATH", raising=False)
+    monkeypatch.setattr("fusekit.runner.control_room.server.Path.glob", lambda *_args: [])
+    monkeypatch.setattr(
+        "fusekit.runner.control_room.server.shutil.which",
+        lambda name: "/usr/bin/xdg-open" if name == "xdg-open" else None,
+    )
+
+    assert _visual_browser_binary() == ""
+
+
+def test_control_room_visual_browser_prefers_chrome_family_binary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("FUSEKIT_VISUAL_BROWSER", raising=False)
+    monkeypatch.delenv("PLAYWRIGHT_BROWSERS_PATH", raising=False)
+    monkeypatch.setattr("fusekit.runner.control_room.server.Path.glob", lambda *_args: [])
+
+    def fake_which(name: str) -> str | None:
+        if name == "google-chrome-stable":
+            return "/usr/bin/google-chrome-stable"
+        if name == "xdg-open":
+            return "/usr/bin/xdg-open"
+        return None
+
+    monkeypatch.setattr("fusekit.runner.control_room.server.shutil.which", fake_which)
+
+    assert _visual_browser_binary() == "/usr/bin/google-chrome-stable"
 
 
 def test_control_room_post_captures_vm_clipboard_into_vault(tmp_path, monkeypatch) -> None:
