@@ -3619,6 +3619,9 @@ def test_rollback_and_start_over_are_redacted_and_preserve_vault(tmp_path) -> No
                 "actions": [
                     {"action": "github.secret", "status": "ok"},
                     {"action": "vercel.env", "status": "ok"},
+                    {"action": "resend.domain", "status": "ok"},
+                    {"action": "dns.propose", "status": "ok"},
+                    {"action": "dns.apply", "status": "ok"},
                 ]
             }
         ),
@@ -3631,6 +3634,9 @@ def test_rollback_and_start_over_are_redacted_and_preserve_vault(tmp_path) -> No
     result = start_over(app)
 
     assert any(action.action == "rollback.github.secret" for action in rollback)
+    assert any(action.action == "rollback.resend.domain" for action in rollback)
+    assert any(action.action == "rollback.cloudflare.dns" for action in rollback)
+    assert sum(action.action == "rollback.cloudflare.dns" for action in rollback) == 1
     assert "job.json" in " ".join(result["removed"])
     assert (fusekit / "fusekit.vault.json").exists()
 

@@ -5,7 +5,12 @@ from pathlib import Path
 
 from fusekit.cli import main
 from fusekit.harness import run_acceptance
-from fusekit.harness.acceptance import AcceptanceCheck, AcceptanceReport, _acceptance_blockers
+from fusekit.harness.acceptance import (
+    AcceptanceCheck,
+    AcceptanceReport,
+    _acceptance_blockers,
+    _rollback_provider_names,
+)
 from fusekit.harness.ledger import HarnessLedger
 from fusekit.vault import Vault
 
@@ -29,6 +34,18 @@ def _strategy_decision(kind: str = "api", status: str = "available") -> dict[str
             }
         ],
     }
+
+
+def test_rollback_provider_names_accepts_current_and_legacy_dns_actions() -> None:
+    providers = _rollback_provider_names(
+        [
+            {"action": "rollback.cloudflare.dns", "status": "planned"},
+            {"action": "rollback.dns.cloudflare", "status": "planned"},
+            {"action": "rollback.resend.domain", "status": "planned"},
+        ]
+    )
+
+    assert providers == {"cloudflare", "resend"}
 
 
 def test_acceptance_rehearsal_writes_ledger_and_report(tmp_path) -> None:

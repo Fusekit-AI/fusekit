@@ -1538,6 +1538,9 @@ def _rollback_provider_names(actions: list[Any]) -> set[str]:
             continue
         action = str(item.get("action", "")).strip().lower()
         parts = action.split(".")
+        if len(parts) >= 3 and parts[0] == "rollback" and parts[1] == "dns":
+            providers.add(parts[2])
+            continue
         if len(parts) >= 2 and parts[0] == "rollback" and parts[1]:
             providers.add(parts[1])
     return providers

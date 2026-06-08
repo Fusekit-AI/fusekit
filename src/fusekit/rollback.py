@@ -33,14 +33,17 @@ def plan_rollback(receipt_path: Path) -> list[RollbackAction]:
         return [RollbackAction("receipt.read", "missing", str(receipt_path))]
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
     actions: list[RollbackAction] = []
+    seen: set[str] = set()
     for item in list(receipt.get("actions", [])):
         if not isinstance(item, dict):
             continue
         action = str(item.get("action", "unknown"))
-        if any(marker in action for marker in ("github.", "vercel.", "dns.", "webhook.")):
+        rollback_action = _planned_provider_rollback_action(action)
+        if rollback_action and rollback_action not in seen:
+            seen.add(rollback_action)
             actions.append(
                 RollbackAction(
-                    action=f"rollback.{action}",
+                    action=rollback_action,
                     status="planned",
                     detail="provider-native rollback/revoke/delete where supported",
                 )
@@ -53,6 +56,15 @@ def plan_rollback(receipt_path: Path) -> list[RollbackAction]:
         )
     )
     return actions
+
+
+def _planned_provider_rollback_action(action: str) -> str:
+    normalized = action.strip().lower()
+    if normalized.startswith(("github.", "vercel.", "resend.", "webhook.")):
+        return f"rollback.{normalized}"
+    if normalized.startswith("dns."):
+        return "rollback.cloudflare.dns"
+    return ""
 
 
 def plan_pack_rollback(pack_path: Path) -> list[RollbackAction]:
@@ -174,7 +186,7 @@ def _rollback_cloudflare_dns(vault: Vault, proposals: list[dict[str, Any]]) -> R
     results = CloudflareDnsProvider(
         _provider_token(vault, "cloudflare", "CLOUDFLARE_API_TOKEN")
     ).rollback_proposals(proposals)
-    return RollbackAction("rollback.dns.cloudflare", "done", f"{len(results)} change(s)")
+    return RollbackAction("rollback.cloudflare.dns", "done", f"{len(results)} change(s)")
 
 
 def _provider_token(vault: Vault, provider: str, env_name: str) -> str:
