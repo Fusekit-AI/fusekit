@@ -2486,11 +2486,11 @@ def _collect_manifest_env_secrets(manifest: SetupManifest) -> dict[str, str]:
     """Collect detected env secrets from the current environment without printing values."""
 
     secrets: dict[str, str] = {}
-    for service in manifest.services:
-        for name in service.secrets:
-            value = os.environ.get(name)
-            if value:
-                secrets[name] = value
+    names = set(_app_env_names_for_verification(manifest, _required_providers(manifest)))
+    for name in sorted(names):
+        value = os.environ.get(name)
+        if value:
+            secrets[name] = value
     return secrets
 
 
@@ -4379,7 +4379,7 @@ def _handoff_for_manifest_service(
 def _capture_manifest_provider_env(vault: Vault, manifest: SetupManifest) -> None:
     for service in manifest.services:
         provider = service.provider.lower()
-        for env_name in service.secrets:
+        for env_name in sorted({*service.secrets, *service.env}):
             value = os.environ.get(env_name)
             if value:
                 vault.put(

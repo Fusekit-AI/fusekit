@@ -14,6 +14,7 @@ from fusekit.cli import (
     _await_dns_approval,
     _await_provider_token,
     _capture_llm,
+    _capture_manifest_provider_env,
     _capture_provider_tokens,
     _has_pack_provider_token,
     _local_verification_job_result,
@@ -108,6 +109,77 @@ def test_runtime_env_secrets_derive_live_url_and_use_matching_vault_records() ->
     assert secrets["NEXT_PUBLIC_APP_URL"] == "https://moonlite.rsvp"
     assert secrets["RESEND_API_KEY"] == "resend-runtime-key"
     assert "RESEND_FROM_EMAIL" not in secrets
+
+
+def test_runtime_env_secrets_use_provider_generated_resend_settings() -> None:
+    vault = Vault.empty()
+    vault.put(
+        "provider.resend.resend_from_email",
+        "provider_setting",
+        "resend",
+        "RESEND_FROM_EMAIL",
+        "rsvp@moonlite.rsvp",
+        {"domain": "moonlite.rsvp"},
+    )
+    vault.put(
+        "provider.resend.resend_audience_id",
+        "provider_setting",
+        "resend",
+        "RESEND_AUDIENCE_ID",
+        "audience-123",
+        {"name": "Moonlite RSVP audience"},
+    )
+    manifest = SetupManifest(
+        app_name="app",
+        required_env=("RESEND_FROM_EMAIL", "RESEND_AUDIENCE_ID"),
+        services=(ServiceRequirement(provider="resend", kind="email", name="email"),),
+    )
+    args = argparse.Namespace(live_url="", secret=[])
+
+    secrets = _runtime_env_secrets(args, manifest, vault)
+
+    assert secrets["RESEND_FROM_EMAIL"] == "rsvp@moonlite.rsvp"
+    assert secrets["RESEND_AUDIENCE_ID"] == "audience-123"
+
+
+def test_runtime_env_secrets_collect_required_env_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RESEND_FROM_EMAIL", "rsvp@moonlite.rsvp")
+    manifest = SetupManifest(
+        app_name="app",
+        required_env=("RESEND_FROM_EMAIL",),
+        services=(ServiceRequirement(provider="resend", kind="email", name="email"),),
+    )
+    args = argparse.Namespace(live_url="", secret=[])
+
+    secrets = _runtime_env_secrets(args, manifest, Vault.empty())
+
+    assert secrets["RESEND_FROM_EMAIL"] == "rsvp@moonlite.rsvp"
+
+
+def test_capture_manifest_provider_env_includes_service_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RESEND_FROM_EMAIL", "rsvp@moonlite.rsvp")
+    vault = Vault.empty()
+    manifest = SetupManifest(
+        app_name="app",
+        services=(
+            ServiceRequirement(
+                provider="resend",
+                kind="email",
+                name="email",
+                env=("RESEND_FROM_EMAIL",),
+            ),
+        ),
+    )
+
+    _capture_manifest_provider_env(vault, manifest)
+
+    record = vault.require("provider.resend.resend_from_email")
+    assert record.value == "rsvp@moonlite.rsvp"
+    assert record.metadata["source"] == "env:RESEND_FROM_EMAIL"
 
 
 def test_provider_setup_orders_resend_before_dns() -> None:
