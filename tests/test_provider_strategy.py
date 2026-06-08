@@ -7,6 +7,7 @@ from fusekit.providers.strategy import (
     StrategySignal,
     choose_account_creation_strategy,
     choose_provider_strategy,
+    summarize_strategy_action,
 )
 
 
@@ -37,6 +38,27 @@ def test_provider_strategy_selects_browser_gate_when_api_token_is_missing(tmp_pa
     assert not decision.executable
     assert decision.selected.status == "available"
     assert decision.selected.evidence["handoff_url"].startswith("https://")
+
+
+def test_provider_strategy_does_not_dead_end_on_unimplemented_cli(tmp_path) -> None:
+    pack = synthesize_provider_pack("github", tmp_path)
+    recipe = SetupRecipe(kind="github-deploy-key", target="${input:github_repo}")
+
+    decision = choose_provider_strategy(
+        pack,
+        recipe,
+        StrategySignal(token_available=False, cli_tools=frozenset({"gh"})),
+    )
+
+    cli_candidate = next(
+        candidate for candidate in decision.candidates if candidate.kind == "official_cli"
+    )
+    action = summarize_strategy_action(decision)
+    assert cli_candidate.status == "unavailable"
+    assert cli_candidate.implemented is False
+    assert decision.selected.kind == "browser_guided"
+    assert action["status"] == "needs_human_gate"
+    assert "Open the provider gate" in action["next_action"]
 
 
 def test_provider_strategy_uses_local_vault_for_capture_recipes(tmp_path) -> None:

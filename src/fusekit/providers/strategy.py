@@ -229,14 +229,15 @@ def _candidate_strategies(
     cli_tool = CLI_BY_PROVIDER.get(provider, "")
     if cli_tool:
         cli_available = cli_tool in signal.cli_tools
+        cli_implemented = False
         candidates.append(
             ProviderStrategy(
                 kind="official_cli",
                 label=f"Official {cli_tool} CLI",
                 priority=20,
-                status="available" if cli_available else "unavailable",
+                status="available" if cli_available and cli_implemented else "unavailable",
                 deterministic=True,
-                implemented=False,
+                implemented=cli_implemented,
                 reason=(
                     f"{cli_tool} is installed, but CLI execution is not enabled "
                     "for this recipe yet."
