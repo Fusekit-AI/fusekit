@@ -2916,10 +2916,15 @@ def _await_provider_token(
             "FuseKit will keep checking for captured credentials."
         )
         if prelaunch_control_room is not None:
+            prelaunch_job_state = prelaunch_control_room.parent / "source-fetch-job.json"
+            serve_command = (
+                "fusekit control-room --serve --job-state "
+                f"{shlex_quote(str(prelaunch_job_state))}"
+            )
             print(
                 "Guided source-fetch control room: "
-                f"{prelaunch_control_room}. Open this file and use the VM-browser "
-                "Capture controls instead of guessing from the terminal."
+                f"{prelaunch_control_room}. Open this file for exact steps, or run "
+                f"{serve_command} for live VM-browser open and Capture controls."
             )
         _ensure_gate_attempt_allowed(args, attempt, f"{provider} authorization")
         if should_present_handoff:

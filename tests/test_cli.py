@@ -1739,7 +1739,10 @@ def test_source_fetch_waiting_token_writes_guided_control_room(
     assert "Capture GITHUB_TOKEN from VM clipboard" in html
     assert "full setup worker has not started yet" in html
     assert f"Guided source-fetch control room: {control_room}" in output
-    assert "use the VM-browser Capture controls" in output
+    assert "Open this file for exact steps" in output
+    assert "fusekit control-room --serve --job-state" in output
+    assert str(job_state) in output
+    assert "live VM-browser open and Capture controls" in output
 
 
 def test_github_app_source_handoff_uses_launcher_capture_copy() -> None:
