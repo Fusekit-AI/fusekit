@@ -93,6 +93,9 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
             if not _trusted_fetch_site(self.headers.get("Sec-Fetch-Site")):
                 self._write_json({"ok": False, "error": "cross-site request"}, status=403)
                 return
+            if not _trusted_action_token(self.headers.get("x-fusekit-action-token")):
+                self._write_json({"ok": False, "error": "invalid action token"}, status=403)
+                return
             prefix = "/api/gates/"
             if route.path.startswith(prefix) and route.path.endswith("/pass"):
                 gate_id = unquote(route.path[len(prefix) : -len("/pass")])
@@ -605,6 +608,15 @@ def _trusted_fetch_site(value: str | None) -> bool:
     if not value:
         return True
     return value.strip().lower() in {"same-origin", "none"}
+
+
+def _trusted_action_token(value: str | None) -> bool:
+    """Require explicit action intent when the remote control room is tokenized."""
+
+    expected = os.environ.get("FUSEKIT_CONTROL_ROOM_TOKEN", "")
+    if not expected:
+        return True
+    return bool(value) and secrets.compare_digest(value, expected)
 
 
 def _safe_cookie_value(value: str) -> bool:

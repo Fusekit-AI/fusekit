@@ -309,6 +309,21 @@ function classToken(value) {
   return String(value || "").replace(/[^a-zA-Z0-9_-]/g, "");
 }
 
+function controlRoomActionToken() {
+  try {
+    return new URLSearchParams(window.location.search).get("token") || "";
+  } catch {
+    return "";
+  }
+}
+
+function controlRoomHeaders(extra = {}) {
+  const headers = { "x-fusekit-control-room": "resume", ...extra };
+  const token = controlRoomActionToken();
+  if (token) headers["x-fusekit-action-token"] = token;
+  return headers;
+}
+
 function renderSteps(job) {
   const root = document.querySelector("[data-steps]");
   root.innerHTML = (job.steps || [])
@@ -900,7 +915,7 @@ document.addEventListener("click", async (event) => {
         `/api/gates/${encodeURIComponent(gateOpenButton.dataset.gateOpen)}/open`,
         {
           method: "POST",
-          headers: { "x-fusekit-control-room": "resume" },
+          headers: controlRoomHeaders(),
         },
       );
       const payload = await response.json().catch(() => ({}));
@@ -930,10 +945,7 @@ document.addEventListener("click", async (event) => {
         `/api/gates/${encodeURIComponent(captureButton.dataset.gateCapture)}/capture-clipboard`,
         {
           method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-fusekit-control-room": "resume",
-          },
+          headers: controlRoomHeaders({ "content-type": "application/json" }),
           body: JSON.stringify({ target }),
         },
       );
@@ -961,7 +973,7 @@ document.addEventListener("click", async (event) => {
         `/api/gates/${encodeURIComponent(gateButton.dataset.gatePass)}/pass`,
         {
           method: "POST",
-          headers: { "x-fusekit-control-room": "resume" },
+          headers: controlRoomHeaders(),
         },
       );
       const payload = await response.json().catch(() => ({}));

@@ -1127,6 +1127,7 @@ def test_security_surface_map_documents_control_room_state_routes() -> None:
     ):
         assert route in text
     assert "x-fusekit-control-room: resume" in text
+    assert "x-fusekit-action-token" in text
     assert "require_safe_url" in text
     assert "target must match the gate's env-style allowlist" in text
     assert "never raw secret text" in text
@@ -1493,6 +1494,104 @@ def test_tokenized_control_room_rejects_cross_site_gate_post(
     assert GateService.load(tmp_path / "gates.json").records[
         "provider.github.mfa.123"
     ].status == "waiting"
+
+
+def test_tokenized_control_room_requires_action_token_for_gate_post(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FUSEKIT_CONTROL_ROOM_TOKEN", "token-123")
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.github.mfa.123",
+        provider="github",
+        reason="MFA required",
+        classification="mfa",
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_port}"
+        with urlopen(f"{base}/?token=token-123", timeout=5) as response:
+            cookie = response.headers["set-cookie"]
+            html = response.read().decode("utf-8")
+        url = f"{base}/api/gates/provider.github.mfa.123/pass"
+        request = Request(
+            url,
+            method="POST",
+            headers={
+                "Cookie": cookie,
+                "x-fusekit-control-room": "resume",
+                "Origin": base,
+                "Sec-Fetch-Site": "same-origin",
+            },
+        )
+        with pytest.raises(HTTPError) as exc:
+            urlopen(request, timeout=5)
+        payload = json.loads(exc.value.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert "controlRoomActionToken" in html
+    assert "x-fusekit-action-token" in html
+    assert exc.value.code == 403
+    assert payload == {"error": "invalid action token", "ok": False}
+    assert GateService.load(tmp_path / "gates.json").records[
+        "provider.github.mfa.123"
+    ].status == "waiting"
+
+
+def test_tokenized_control_room_accepts_action_token_for_gate_post(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FUSEKIT_CONTROL_ROOM_TOKEN", "token-123")
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.github.mfa.123",
+        provider="github",
+        reason="MFA required",
+        classification="mfa",
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_port}"
+        with urlopen(f"{base}/?token=token-123", timeout=5) as response:
+            cookie = response.headers["set-cookie"]
+            response.read()
+        url = f"{base}/api/gates/provider.github.mfa.123/pass"
+        request = Request(
+            url,
+            method="POST",
+            headers={
+                "Cookie": cookie,
+                "x-fusekit-control-room": "resume",
+                "x-fusekit-action-token": "token-123",
+                "Origin": base,
+                "Sec-Fetch-Site": "same-origin",
+            },
+        )
+        with urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert payload["ok"] is True
+    assert payload["status"] == "resume_requested"
+    assert GateService.load(tmp_path / "gates.json").records[
+        "provider.github.mfa.123"
+    ].status == "resume_requested"
 
 
 def test_control_room_remote_bind_requires_allow_flag_and_token(
