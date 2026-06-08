@@ -153,6 +153,7 @@ def run_acceptance(
     _check_audit_log(audit_log_path, mode, checks, missing)
     _check_verification_report(
         evidence_fusekit_dir / "verification_report.json",
+        manifest,
         mode,
         checks,
         missing,
@@ -327,6 +328,10 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
         "safe verification report": (
             "Verification",
             "Run provider verification until checks pass or are explicitly pending-safe.",
+        ),
+        "complete provider verification coverage": (
+            "Verification",
+            "Record verification checks for every provider declared by the manifest.",
         ),
         "rollback metadata": (
             "Rollback",
@@ -619,6 +624,7 @@ def _check_audit_log(
 
 def _check_verification_report(
     report_path: Path,
+    manifest: SetupManifest,
     mode: str,
     checks: list[AcceptanceCheck],
     missing: list[str],
@@ -662,6 +668,14 @@ def _check_verification_report(
         if mode == "live":
             missing.append("safe verification report")
         return
+    _check_verification_provider_coverage(
+        raw if isinstance(raw, dict) else {},
+        manifest,
+        mode,
+        checks,
+        missing,
+        str(snapshot),
+    )
     checks.append(
         AcceptanceCheck(
             "verification_report.safe",
@@ -670,6 +684,54 @@ def _check_verification_report(
             str(snapshot),
         )
     )
+
+
+def _check_verification_provider_coverage(
+    report: dict[str, Any],
+    manifest: SetupManifest,
+    mode: str,
+    checks: list[AcceptanceCheck],
+    missing: list[str],
+    artifact: str,
+) -> None:
+    """Require verification evidence for every provider requested by the manifest."""
+
+    required = _manifest_provider_names(manifest)
+    if not required:
+        return
+    recorded = _verification_provider_names(report)
+    absent = sorted(required - recorded)
+    if absent:
+        checks.append(
+            AcceptanceCheck(
+                "verification_report.coverage",
+                "failed" if mode == "live" else "skipped",
+                "Verification report is missing manifest providers: " + ", ".join(absent),
+                artifact,
+            )
+        )
+        if mode == "live":
+            missing.append("complete provider verification coverage")
+        return
+    checks.append(
+        AcceptanceCheck(
+            "verification_report.coverage",
+            "ok",
+            "Verification report covers every provider declared by the manifest.",
+            artifact,
+        )
+    )
+
+
+def _verification_provider_names(report: dict[str, Any]) -> set[str]:
+    checks = report.get("checks", [])
+    if not isinstance(checks, list):
+        return set()
+    return {
+        str(check.get("provider", "")).strip().lower()
+        for check in checks
+        if isinstance(check, dict) and str(check.get("provider", "")).strip()
+    }
 
 
 def _check_provider_strategies(

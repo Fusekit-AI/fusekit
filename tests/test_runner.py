@@ -465,6 +465,7 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
                 "missing": [
                     "audited human gate interventions",
                     "complete provider strategy coverage",
+                    "complete provider verification coverage",
                 ],
                 "blockers": [],
             }
@@ -478,6 +479,7 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
     assert payload["acceptance"]["missing"] == [
         "audited human gate interventions",
         "complete provider strategy coverage",
+        "complete provider verification coverage",
     ]
     assert "Human gates" in html
     assert "audited human gate interventions" in html
@@ -485,7 +487,9 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
     assert "Provider routes" in html
     assert "complete provider strategy coverage" in html
     assert "every provider declared by the manifest" in html
-    assert "2 launch blockers" in html
+    assert "Verification" in html
+    assert "complete provider verification coverage" in html
+    assert "3 launch blockers" in html
     assert "acceptanceBlockers" in html
     assert "missingAcceptanceBlocker" in html
 

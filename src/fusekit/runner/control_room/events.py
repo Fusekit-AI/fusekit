@@ -762,6 +762,10 @@ function missingAcceptanceBlocker(item) {
       "Provider routes",
       "Record provider strategy evidence for every provider declared by the manifest.",
     ],
+    "complete provider verification coverage": [
+      "Verification",
+      "Record verification checks for every provider declared by the manifest.",
+    ],
     "Resend-before-DNS provider setup order": [
       "Provider order",
       "Run Resend domain setup before Cloudflare/DNS so Resend DNS records are included.",

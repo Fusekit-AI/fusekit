@@ -104,6 +104,7 @@ guided, or explicitly verified.
 | Custom-provider fallback gates still asked users to decide whether a revealed copy-once token meant Capture or "I finished this step." | Generic strategy gates now tie the action to the visible FuseKit controls: use Capture only when named Capture buttons are rendered, otherwise click `I finished this step` after provider confirmation. |
 | A green rehearsal acceptance report could make the control room say the live run was launch-ready and safe to record. | Acceptance cards now distinguish rehearsal proof from live proof: only `mode: live` with `launch_ready: true` tells the user to record the demo. |
 | Live acceptance could prove that some provider strategy existed without proving strategy coverage for every provider declared by the manifest. | Live acceptance now fails with a specific Provider routes blocker when manifest providers are missing from `provider_strategies.json`. |
+| Live acceptance could prove that present verification checks were safe without proving every manifest provider had a verification check. | Live acceptance now fails with a specific Verification blocker when manifest providers are missing from `verification_report.json`. |
 
 ## Open Acceptance Items
 
