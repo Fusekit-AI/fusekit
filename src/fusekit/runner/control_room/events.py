@@ -922,19 +922,21 @@ function renderProviderStrategyCard(providerRecord) {
     <article class="strategy-card">
       <span>${escapeHtml(provider)}</span>
       <strong>${strategies.length} setup route${strategies.length === 1 ? "" : "s"}</strong>
-      <div>${strategies.map(renderProviderStrategyRow).join("")}</div>
+      <div>
+        ${strategies.map((strategy) => renderProviderStrategyRow(provider, strategy)).join("")}
+      </div>
     </article>
   `;
 }
 
-function renderProviderStrategyRow(strategy) {
+function renderProviderStrategyRow(provider, strategy) {
   const decision = strategy.decision || {};
   const selected = decision.selected || {};
   const recipe = String(strategy.recipe || "setup");
   const route = String(strategy.strategy || "unknown").replaceAll("_", " ");
   const status = String(strategy.status || "pending");
   const reason = String(selected.reason || "");
-  const routeSummary = providerStrategyRouteSummary(strategy, selected);
+  const routeSummary = providerStrategyRouteSummary(provider, strategy, selected);
   const nextAction = publicCopy(strategy.next_action || "").trim();
   const resumeHint = publicCopy(strategy.resume_hint || "").trim();
   const followSteps = Array.isArray(strategy.follow_steps) ? strategy.follow_steps : [];
@@ -965,11 +967,35 @@ function renderProviderStrategyRow(strategy) {
   `;
 }
 
-function providerStrategyRouteSummary(strategy, selected) {
+function providerStrategyRouteSummary(provider, strategy, selected) {
   const route = String(strategy.strategy || selected.kind || "unknown");
+  const recipe = String(strategy.recipe || "");
+  const evidence = selected.evidence && typeof selected.evidence === "object"
+    ? selected.evidence
+    : {};
   const deterministic = Boolean(selected.deterministic);
   const implemented = Boolean(selected.implemented);
   if (route === "api") {
+    if (
+      String(provider || "").toLowerCase() === "resend" &&
+      recipe === "resend-domain" &&
+      evidence.downstream_order === "before_dns_apply"
+    ) {
+      return (
+        "API automation: FuseKit creates or reuses the Resend domain, " +
+        "collects DNS records, then waits for DNS approval."
+      );
+    }
+    if (
+      String(provider || "").toLowerCase() === "resend" &&
+      recipe === "resend-audience" &&
+      evidence.conditional === "only_when_app_requires_audience"
+    ) {
+      return (
+        "API automation: FuseKit creates or reuses a Resend audience only " +
+        "when this app requires one."
+      );
+    }
     return "API automation: deterministic provider setup runs after authorization.";
   }
   if (route === "official_cli") {

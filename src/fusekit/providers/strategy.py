@@ -217,12 +217,8 @@ def _candidate_strategies(
                 status="available" if signal.token_available else "blocked",
                 deterministic=True,
                 implemented=True,
-                reason=(
-                    "Provider token is available for deterministic setup."
-                    if signal.token_available
-                    else "Provider token is missing; a human authorization gate must run first."
-                ),
-                evidence={"token_available": str(signal.token_available).lower()},
+                reason=_api_strategy_reason(provider, recipe.kind, signal),
+                evidence=_api_strategy_evidence(provider, recipe.kind, signal),
             )
         )
 
@@ -294,6 +290,60 @@ def _candidate_strategies(
             )
         )
     return candidates
+
+
+def _api_strategy_reason(provider: str, recipe_kind: str, signal: StrategySignal) -> str:
+    if provider == "resend":
+        if recipe_kind == "resend-domain":
+            if signal.token_available:
+                return (
+                    "RESEND_API_KEY is available; FuseKit will create or reuse the "
+                    "sending domain through Resend's API and hand DNS records to DNS."
+                )
+            return (
+                "RESEND_API_KEY is missing; capture a Full access setup key before "
+                "FuseKit creates or reuses the Resend sending domain."
+            )
+        if recipe_kind == "resend-audience":
+            if signal.token_available:
+                return (
+                    "RESEND_API_KEY is available; FuseKit will create or reuse a "
+                    "Resend audience only if the app requires one."
+                )
+            return (
+                "RESEND_API_KEY is missing; capture the setup key before FuseKit can "
+                "create or reuse a required Resend audience."
+            )
+    return (
+        "Provider token is available for deterministic setup."
+        if signal.token_available
+        else "Provider token is missing; a human authorization gate must run first."
+    )
+
+
+def _api_strategy_evidence(
+    provider: str,
+    recipe_kind: str,
+    signal: StrategySignal,
+) -> dict[str, str]:
+    evidence = {"token_available": str(signal.token_available).lower()}
+    if provider == "resend" and recipe_kind == "resend-domain":
+        evidence.update(
+            {
+                "api_owns": "domain",
+                "user_manual_domain_step": "false",
+                "downstream_order": "before_dns_apply",
+            }
+        )
+    elif provider == "resend" and recipe_kind == "resend-audience":
+        evidence.update(
+            {
+                "api_owns": "audience",
+                "user_manual_audience_step": "false",
+                "conditional": "only_when_app_requires_audience",
+            }
+        )
+    return evidence
 
 
 def _select_candidate(candidates: list[ProviderStrategy]) -> ProviderStrategy:

@@ -697,7 +697,11 @@ def _render_strategy_card(provider_record: Any) -> str:
           <p>FuseKit is still preparing provider setup.</p>
         </article>
 """
-    rows = "\n".join(_render_strategy_row(item) for item in strategies if isinstance(item, dict))
+    rows = "\n".join(
+        _render_strategy_row(provider, item)
+        for item in strategies
+        if isinstance(item, dict)
+    )
     return f"""
         <article class="strategy-card">
           <span>{html.escape(provider)}</span>
@@ -707,11 +711,11 @@ def _render_strategy_card(provider_record: Any) -> str:
 """
 
 
-def _render_strategy_row(strategy: dict[str, Any]) -> str:
+def _render_strategy_row(provider: str, strategy: dict[str, Any]) -> str:
     decision = strategy.get("decision", {})
     selected = decision.get("selected", {}) if isinstance(decision, dict) else {}
     reason = str(selected.get("reason", "")) if isinstance(selected, dict) else ""
-    route_summary = _strategy_route_summary(strategy, selected)
+    route_summary = _strategy_route_summary(provider, strategy, selected)
     route = str(strategy.get("strategy", "unknown"))
     status = str(strategy.get("status", "pending"))
     recipe = str(strategy.get("recipe", "setup"))
@@ -750,12 +754,27 @@ def _render_strategy_row(strategy: dict[str, Any]) -> str:
 """
 
 
-def _strategy_route_summary(strategy: dict[str, Any], selected: Any) -> str:
+def _strategy_route_summary(provider: str, strategy: dict[str, Any], selected: Any) -> str:
     selected = selected if isinstance(selected, dict) else {}
     route = str(strategy.get("strategy", selected.get("kind", "unknown")))
+    recipe = str(strategy.get("recipe", ""))
+    evidence = selected.get("evidence", {})
+    evidence = evidence if isinstance(evidence, dict) else {}
     deterministic = bool(selected.get("deterministic", False))
     implemented = bool(selected.get("implemented", False))
     if route == "api":
+        if provider.lower() == "resend" and recipe == "resend-domain":
+            if evidence.get("downstream_order") == "before_dns_apply":
+                return (
+                    "API automation: FuseKit creates or reuses the Resend domain, "
+                    "collects DNS records, then waits for DNS approval."
+                )
+        if provider.lower() == "resend" and recipe == "resend-audience":
+            if evidence.get("conditional") == "only_when_app_requires_audience":
+                return (
+                    "API automation: FuseKit creates or reuses a Resend audience only "
+                    "when this app requires one."
+                )
         return "API automation: deterministic provider setup runs after authorization."
     if route == "official_cli":
         return "Official CLI route: deterministic when installed and enabled."

@@ -2151,7 +2151,17 @@ def test_control_room_explains_deterministic_provider_route(tmp_path) -> None:
                                         "kind": "api",
                                         "deterministic": True,
                                         "implemented": True,
-                                        "reason": "Provider token is available.",
+                                        "reason": (
+                                            "RESEND_API_KEY is available; FuseKit will create "
+                                            "or reuse the sending domain through Resend's API "
+                                            "and hand DNS records to DNS."
+                                        ),
+                                        "evidence": {
+                                            "api_owns": "domain",
+                                            "downstream_order": "before_dns_apply",
+                                            "token_available": "true",
+                                            "user_manual_domain_step": "false",
+                                        },
                                     }
                                 },
                             }
@@ -2167,8 +2177,9 @@ def test_control_room_explains_deterministic_provider_route(tmp_path) -> None:
 
     assert "resend-domain" in html
     assert "api · ok" in html
-    assert "API automation: deterministic provider setup runs after authorization." in html
-    assert "Provider token is available." in html
+    assert "FuseKit creates or reuses the Resend domain" in html
+    assert "then waits for DNS approval" in html
+    assert "hand DNS records to DNS" in html
 
 
 def test_control_room_server_uses_local_only_and_security_headers(tmp_path) -> None:

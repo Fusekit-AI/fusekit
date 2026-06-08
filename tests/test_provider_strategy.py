@@ -28,6 +28,25 @@ def test_provider_strategy_prefers_api_when_token_is_available(tmp_path) -> None
     assert any(candidate.kind == "browser_guided" for candidate in decision.candidates)
 
 
+def test_provider_strategy_marks_resend_audience_as_conditional_api_owned(
+    tmp_path,
+) -> None:
+    pack = synthesize_provider_pack("resend", tmp_path)
+    recipe = SetupRecipe(kind="resend-audience", target="${input:resend_audience_name}")
+
+    decision = choose_provider_strategy(
+        pack,
+        recipe,
+        StrategySignal(token_available=True),
+    )
+
+    assert decision.selected.kind == "api"
+    assert decision.executable
+    assert decision.selected.evidence["api_owns"] == "audience"
+    assert decision.selected.evidence["conditional"] == "only_when_app_requires_audience"
+    assert "only if the app requires one" in decision.selected.reason
+
+
 def test_provider_strategy_selects_browser_gate_when_api_token_is_missing(tmp_path) -> None:
     pack = synthesize_provider_pack("github", tmp_path)
     recipe = SetupRecipe(kind="github-deploy-key", target="${input:github_repo}")
@@ -136,6 +155,9 @@ def test_provider_strategy_uses_api_for_resend_domain_when_token_exists(tmp_path
 
     assert decision.selected.kind == "api"
     assert decision.executable
+    assert decision.selected.evidence["api_owns"] == "domain"
+    assert decision.selected.evidence["downstream_order"] == "before_dns_apply"
+    assert "create or reuse the sending domain" in decision.selected.reason
 
 
 def test_account_creation_strategy_uses_supervised_gate(tmp_path) -> None:
