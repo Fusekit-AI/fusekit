@@ -60,8 +60,11 @@ later passed. Human-gate guidance must be launcher-actionable: provider gates
 must carry an openable provider URL for `Open provider gate in VM`, provider gates
 with URLs must send the user through the VM browser path, copy-once env/token
 targets must name `Capture from VM clipboard`, and public proof must reject
-hidden-prompt, side-channel, manual, or figure-it-out wording. Detonation proof
-must cover worker/temp state plus browser profile,
+hidden-prompt, side-channel, manual, or figure-it-out wording. Non-secret provider
+gates plus setup/DNS approval gates must also prove the visible
+`I finished this step`, `Approve setup plan`, or `Approve DNS apply` click through
+redacted `control_room.gate_resume_requested` audit events. Detonation proof must
+cover worker/temp state plus browser profile,
 visual-session scratch, OpenClaw/auth state, passphrase files, uploaded app archives,
 and FuseKit-controlled control-room/gateway logs; only encrypted or redacted proof
 artifacts may survive.

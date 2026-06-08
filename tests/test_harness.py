@@ -10,6 +10,7 @@ from fusekit.harness.acceptance import (
     AcceptanceReport,
     _acceptance_blockers,
     _check_detonation,
+    _gate_resume_audit_requirements,
     _provider_strategy_shape_failures,
     _rollback_provider_names,
     _unguided_gates,
@@ -378,6 +379,36 @@ def test_acceptance_provider_gates_require_openable_resume_url() -> None:
     )
 
     assert "provider.github.authorization missing resume_url" in failures
+
+
+def test_acceptance_resume_audit_is_required_for_non_secret_gate_clicks() -> None:
+    requirements = _gate_resume_audit_requirements(
+        [
+            {
+                "id": "provider.cloudflare.domain-review",
+                "provider": "cloudflare",
+                "classification": "provider-verification",
+                "target": "",
+            },
+            {
+                "id": "dns.moonlite.rsvp.approval",
+                "provider": "dns",
+                "classification": "dns-approval",
+                "target": "",
+            },
+            {
+                "id": "provider.resend.api-key",
+                "provider": "resend",
+                "classification": "provider-authorization",
+                "target": "RESEND_API_KEY",
+            },
+        ]
+    )
+
+    assert requirements == [
+        "provider.cloudflare.domain-review",
+        "dns.moonlite.rsvp.approval",
+    ]
 
 
 def test_acceptance_human_strategy_guidance_must_be_launcher_actionable() -> None:

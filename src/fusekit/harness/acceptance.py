@@ -1622,6 +1622,7 @@ def _check_gate_audit_events(
     ]
     capture_requirements = _gate_capture_audit_requirements(gates)
     open_requirements = _gate_open_audit_requirements(gates)
+    resume_requirements = _gate_resume_audit_requirements(gates)
     snapshot = ledger.snapshot_json(
         "gate-audit-proof",
         {
@@ -1633,6 +1634,9 @@ def _check_gate_audit_events(
                 for gate_id, target in capture_requirements
             ],
             "open_requirements": [{"gate_id": gate_id} for gate_id in open_requirements],
+            "resume_requirements": [
+                {"gate_id": gate_id} for gate_id in resume_requirements
+            ],
         },
     )
     if not gate_ids:
@@ -1678,6 +1682,12 @@ def _check_gate_audit_events(
         if str(event.get("event", "")) == "control_room.gate_open"
         and isinstance(event.get("data"), dict)
     }
+    resumed_gate_ids = {
+        str(event.get("data", {}).get("gate_id", ""))
+        for event in audit_events
+        if str(event.get("event", "")) == "control_room.gate_resume_requested"
+        and isinstance(event.get("data"), dict)
+    }
     missing_gate_ids = [gate_id for gate_id in gate_ids if gate_id not in audited_gate_ids]
     missing_captures = [
         (gate_id, target)
@@ -1685,7 +1695,10 @@ def _check_gate_audit_events(
         if (gate_id, target) not in captured_targets
     ]
     missing_opens = [gate_id for gate_id in open_requirements if gate_id not in opened_gate_ids]
-    if missing_gate_ids or missing_captures or missing_opens:
+    missing_resumes = [
+        gate_id for gate_id in resume_requirements if gate_id not in resumed_gate_ids
+    ]
+    if missing_gate_ids or missing_captures or missing_opens or missing_resumes:
         details: list[str] = []
         if missing_gate_ids:
             details.append(
@@ -1701,6 +1714,11 @@ def _check_gate_audit_events(
                 + ", ".join(
                     f"{gate_id}:{target}" for gate_id, target in missing_captures
                 )
+            )
+        if missing_resumes:
+            details.append(
+                "missing control_room.gate_resume_requested: "
+                + ", ".join(missing_resumes)
             )
         checks.append(
             AcceptanceCheck(
@@ -1765,6 +1783,37 @@ def _gate_open_audit_requirements(gates: Any) -> list[str]:
             requirements.append(gate_id)
             seen.add(gate_id)
     return requirements
+
+
+def _gate_resume_audit_requirements(gates: Any) -> list[str]:
+    """Return gate ids that must prove a visible approve/finished click."""
+
+    if not isinstance(gates, list):
+        return []
+    requirements: list[str] = []
+    seen: set[str] = set()
+    for gate in gates:
+        if not isinstance(gate, dict):
+            continue
+        gate_id = str(gate.get("id", "")).strip()
+        if not gate_id or gate_id in seen:
+            continue
+        if _gate_secret_targets(gate):
+            continue
+        if _gate_requires_visible_resume(gate):
+            requirements.append(gate_id)
+            seen.add(gate_id)
+    return requirements
+
+
+def _gate_requires_visible_resume(gate: dict[str, Any]) -> bool:
+    classification = str(gate.get("classification", "")).strip().lower()
+    if classification in {"dns-approval", "setup-approval"} | _PROVIDER_GATE_CLASSIFICATIONS:
+        return True
+    provider = str(gate.get("provider", "")).strip().lower()
+    if provider in {"dns", "fusekit"}:
+        return True
+    return str(gate.get("id", "")).startswith("provider.")
 
 
 def _gate_secret_targets(gate: dict[str, Any]) -> list[str]:
