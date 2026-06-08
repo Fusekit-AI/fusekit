@@ -1473,7 +1473,8 @@ def test_control_room_uses_privacy_mascot_for_secret_gates(tmp_path) -> None:
     assert "privacy-mitten" in html
     assert "covering his eyes while secrets stay private" in html
     assert "isPrivacyStep" in html
-    assert "hidden prompt" in html
+    assert "copy it inside the VM browser, then click Capture in FuseKit" in html
+    assert "paste it into FuseKit&#x27;s hidden prompt" not in html
 
 
 def test_control_room_payload_reports_corrupt_gate_state(tmp_path) -> None:

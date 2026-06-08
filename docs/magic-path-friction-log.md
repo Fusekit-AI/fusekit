@@ -72,6 +72,7 @@ guided, or explicitly verified.
 | Launch readiness could prove a provider gate was resumed or captured without proving the provider page was opened through the launcher/VM browser. | Live acceptance now requires a matching redacted `control_room.gate_open` audit event for every durable gate with a provider resume URL. |
 | Acceptance reports could contain `missing[]` launch-readiness proof but no structured `blockers[]`, leaving the control room on a vague waiting card instead of telling the user what to fix. | Static and live control rooms now fall back to rendering `missing[]` as launch-evidence blockers with a clear repair-and-rerun action. |
 | The local OCI launcher summary still described provider secret capture as hidden Cloud Shell prompts, making the fallback sound like the normal user path. | Launcher and CLI help now describe the public path as VM clipboard Capture into the encrypted vault, with terminal capture reserved as fallback. |
+| Legacy worker status could still render "hidden prompt" instructions inside the control room, even though the public launcher path uses VM clipboard Capture. | Static and live control-room rendering now rewrites stale fallback wording into VM-browser Capture instructions before displaying or bootstrapping the page. |
 
 ## Open Acceptance Items
 

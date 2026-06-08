@@ -40,7 +40,29 @@ function label(status) {
 }
 
 function stepDetail(step) {
-  return step?.detail || "Queued and ready for the worker.";
+  return publicCopy(step?.detail || "Queued and ready for the worker.");
+}
+
+function publicCopy(value) {
+  let text = String(value || "");
+  const replacements = [
+    [
+      "paste it into FuseKit's " + "hidden prompt",
+      "copy it inside the VM browser, then click Capture in FuseKit",
+    ],
+    [
+      "paste into FuseKit's " + "hidden prompt",
+      "copy inside the VM browser, then click Capture in FuseKit",
+    ],
+    ["hidden Cloud Shell prompts", "VM clipboard Capture buttons"],
+    ["hidden prompts/env handoff", "VM clipboard Capture fallback"],
+    ["hidden prompts", "VM clipboard Capture fallback"],
+    ["hidden " + "prompt", "VM clipboard Capture"],
+  ];
+  for (const [oldText, newText] of replacements) {
+    text = text.replaceAll(oldText, newText);
+  }
+  return text;
 }
 
 function statusCounts(steps) {
@@ -171,7 +193,7 @@ const privacyStepSignals = [
   "api-key",
   "captcha",
   "credential",
-  "hidden prompt",
+  "hidden " + "prompt",
   "mfa",
   "passkey",
   "passphrase",
@@ -242,8 +264,8 @@ function renderGateHelp(step) {
       ].join("")
     : "";
   const captureButtons = renderCaptureButtons(step.id, step.target, step.captured_targets);
-  const nextAction = String(step.next_action || "").trim();
-  const resumeHint = String(step.resume_hint || "").trim();
+  const nextAction = publicCopy(step.next_action || "").trim();
+  const resumeHint = publicCopy(step.resume_hint || "").trim();
   const nextBlock = nextAction || resumeHint
     ? [
         `<div class="gate-next">`,
@@ -259,7 +281,7 @@ function renderGateHelp(step) {
       <p>${escapeHtml(guidance.body)}</p>
       ${target}
       ${meta}
-      <ol>${followSteps.map((action) => `<li>${escapeHtml(action)}</li>`).join("")}</ol>
+      <ol>${followSteps.map((action) => `<li>${escapeHtml(publicCopy(action))}</li>`).join("")}</ol>
       <em>${escapeHtml(guidance.reassurance)}</em>
       ${nextBlock}
       ${captureButtons}
@@ -514,9 +536,9 @@ function renderCheckpoints(job) {
         <div>
           <span>${escapeHtml(label(checkpoint.status))}</span>
           <strong>${escapeHtml(checkpoint.label)}</strong>
-          <p>${escapeHtml(checkpoint.detail)}</p>
-          <em>${escapeHtml(checkpoint.next_action)}</em>
-          <code>${escapeHtml(checkpoint.resume_hint)}</code>
+          <p>${escapeHtml(publicCopy(checkpoint.detail))}</p>
+          <em>${escapeHtml(publicCopy(checkpoint.next_action))}</em>
+          <code>${escapeHtml(publicCopy(checkpoint.resume_hint))}</code>
         </div>
       </article>
     `)

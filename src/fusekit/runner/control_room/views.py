@@ -39,7 +39,7 @@ def render_control_room(
     control_payload = control_room_payload(job, gate_path=gate_path)
     if action_token:
         control_payload["control_room_action_token"] = action_token
-    payload = _safe_json(control_payload)
+    payload = _safe_json(_public_payload(control_payload))
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -195,6 +195,43 @@ def _render_step(step: JobStep, index: int) -> str:
             <span class="badge {status}">{step_status_label}</span>
           </li>
 """
+
+
+def _public_copy(value: Any) -> str:
+    """Translate stale internal/fallback wording into launcher-safe user copy."""
+
+    text = str(value or "")
+    replacements = (
+        (
+            "paste it into FuseKit's hidden prompt",
+            "copy it inside the VM browser, then click Capture in FuseKit",
+        ),
+        (
+            "paste into FuseKit's hidden prompt",
+            "copy inside the VM browser, then click Capture in FuseKit",
+        ),
+        ("hidden Cloud Shell prompts", "VM clipboard Capture buttons"),
+        ("hidden prompts/env handoff", "VM clipboard Capture fallback"),
+        ("hidden prompts", "VM clipboard Capture fallback"),
+        ("hidden prompt", "VM clipboard Capture"),
+    )
+    for old, new in replacements:
+        text = text.replace(old, new)
+    return text
+
+
+def _public_payload(value: Any) -> Any:
+    """Return a display-safe payload for the static control-room bootstrap JSON."""
+
+    if isinstance(value, dict):
+        return {key: _public_payload(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_public_payload(item) for item in value]
+    if isinstance(value, tuple):
+        return [_public_payload(item) for item in value]
+    if isinstance(value, str):
+        return _public_copy(value)
+    return value
 
 
 def _render_artifacts(job: JobState) -> str:
@@ -743,9 +780,9 @@ def _render_checkpoint_card(checkpoint: Any) -> str:
           <div>
             <span>{html.escape(status_label(checkpoint.status))}</span>
             <strong>{html.escape(checkpoint.label)}</strong>
-            <p>{html.escape(checkpoint.detail)}</p>
-            <em>{html.escape(checkpoint.next_action)}</em>
-            <code>{html.escape(checkpoint.resume_hint)}</code>
+            <p>{html.escape(_public_copy(checkpoint.detail))}</p>
+            <em>{html.escape(_public_copy(checkpoint.next_action))}</em>
+            <code>{html.escape(_public_copy(checkpoint.resume_hint))}</code>
           </div>
         </article>
 """
@@ -814,7 +851,7 @@ def _focus_kicker(step: Any) -> str:
 def _step_detail(step: Any) -> str:
     if step is None:
         return "FuseKit is preserving encrypted and redacted artifacts."
-    return step.detail or "Queued and ready for the worker."
+    return _public_copy(step.detail or "Queued and ready for the worker.")
 
 
 def _render_gate_help(step: Any) -> str:
@@ -827,7 +864,7 @@ def _render_gate_help(step: Any) -> str:
         if isinstance(follow_steps, list) and follow_steps
         else guidance.actions
     )
-    actions = "".join(f"<li>{html.escape(str(action))}</li>" for action in actions_source)
+    actions = "".join(f"<li>{html.escape(_public_copy(action))}</li>" for action in actions_source)
     resume_url = str(getattr(step, "resume_url", "") or "")
     gate_id = str(getattr(step, "id", "") or "")
     resume_link = (
@@ -877,8 +914,8 @@ def _render_gate_help(step: Any) -> str:
     resume_hint = str(getattr(step, "resume_hint", "") or "").strip()
     next_block = (
         "<div class=\"gate-next\">"
-        f"<strong>Next</strong><p>{html.escape(next_action)}</p>"
-        f"<em>{html.escape(resume_hint)}</em>"
+        f"<strong>Next</strong><p>{html.escape(_public_copy(next_action))}</p>"
+        f"<em>{html.escape(_public_copy(resume_hint))}</em>"
         "</div>"
         if next_action or resume_hint
         else ""
