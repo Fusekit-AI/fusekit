@@ -76,6 +76,7 @@ guided, or explicitly verified.
 | Provider guidance used generic button names like "Open provider gate button" and "Capture in FuseKit" while the control room rendered "Open provider gate in VM" and target-specific Capture buttons. | Provider guidance now names the exact visible controls: Open provider gate in VM and the matching Capture from VM clipboard button. |
 | Private GitHub app-source authorization could pause before the full launch control room existed, leaving the user with terminal-only waiting during the first provider gate. | Source-fetch authorization gates now write a minimal guided control-room artifact beside `gates.json`, showing the GitHub gate, VM-browser open action, and Capture button before full launch starts. |
 | The prelaunch source-fetch control room could be written but not named in the terminal waiting message, so a user still might not know where to click or how to activate live controls. | Source-fetch waiting output now prints the exact guided control-room path plus the `fusekit control-room --serve` command for live VM-browser open and Capture controls. |
+| The prelaunch source-fetch live control room could show Capture controls without carrying enough vault state for the server to save the copied token. | Source-fetch job state now includes the vault and passphrase-file artifacts, and live Capture reads the passphrase artifact before falling back. |
 
 ## Open Acceptance Items
 

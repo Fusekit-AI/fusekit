@@ -499,10 +499,16 @@ def _job_vault_path(job_state: Path) -> Path:
 
 
 def _control_room_vault_passphrase(job_state: Path) -> str:
-    candidates = [
-        Path(os.environ.get("FUSEKIT_PASSPHRASE_FILE", "")),
-        job_state.parent.parent.parent / "passphrase",
-    ]
+    candidates = [Path(os.environ.get("FUSEKIT_PASSPHRASE_FILE", ""))]
+    try:
+        job = JobState.load(job_state)
+    except (OSError, ValueError):
+        job = None
+    if job is not None:
+        passphrase_file = job.artifacts.get("passphrase_file")
+        if passphrase_file:
+            candidates.append(Path(passphrase_file))
+    candidates.append(job_state.parent.parent.parent / "passphrase")
     for path in candidates:
         if str(path) and path.is_file():
             return path.read_text(encoding="utf-8").strip()

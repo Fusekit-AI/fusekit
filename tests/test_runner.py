@@ -28,6 +28,7 @@ from fusekit.runner.control_room import (
     control_room_payload as static_control_room_payload,
 )
 from fusekit.runner.control_room import render_control_room
+from fusekit.runner.control_room.server import _control_room_vault_passphrase
 from fusekit.runner.gates import GateService
 from fusekit.runner.job import JobState
 from fusekit.runner.loop import run_remote_loop
@@ -1072,6 +1073,18 @@ def test_control_room_post_captures_vm_clipboard_into_vault(tmp_path, monkeypatc
     assert events[-1]["data"]["target"] == "RESEND_API_KEY"
     assert "re_live_secret" not in json.dumps(payload)
     assert "re_live_secret" not in audit_path.read_text(encoding="utf-8")
+
+
+def test_control_room_passphrase_uses_job_artifact(tmp_path, monkeypatch) -> None:
+    job = JobState.create("fk-test", tmp_path, "source-fetch")
+    job_path = tmp_path / "source-fetch-job.json"
+    passphrase_path = tmp_path / "passphrase.txt"
+    passphrase_path.write_text("passphrase\n", encoding="utf-8")
+    job.add_artifact("passphrase_file", passphrase_path)
+    job.save(job_path)
+    monkeypatch.delenv("FUSEKIT_PASSPHRASE_FILE", raising=False)
+
+    assert _control_room_vault_passphrase(job_path) == "passphrase"
 
 
 def test_control_room_rejects_stale_capture_after_gate_resumes(

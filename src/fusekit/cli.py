@@ -2952,6 +2952,14 @@ def _write_source_fetch_control_room(
         f"{provider_label} authorization is required before FuseKit can fetch {source}. "
         "Use the control-room gate below so this prelaunch step stays guided."
     )
+    artifacts = {"gates": str(gate_path)}
+    vault_path = getattr(args, "vault", None)
+    if vault_path:
+        artifacts["vault"] = str(vault_path)
+    passphrase_file = getattr(args, "passphrase_file", None)
+    if passphrase_file:
+        artifacts["passphrase_file"] = str(passphrase_file)
+
     job = JobState(
         id=f"fk-source-{uuid.uuid4().hex[:12]}",
         app_path=str(dest),
@@ -2996,7 +3004,7 @@ def _write_source_fetch_control_room(
                 resume_hint="The normal launch control room appears after source fetch succeeds.",
             ),
         ],
-        artifacts={"gates": str(gate_path)},
+        artifacts=artifacts,
     )
     control_room_path = root / "control-room.html"
     job.add_artifact("control_room", control_room_path)
