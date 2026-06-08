@@ -898,9 +898,7 @@ document.addEventListener("click", async (event) => {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) throw new Error("capture failed");
       setRefreshStatus(payload.message || `${target} captured into the encrypted vault.`);
-      if (payload.status === "resume_requested") {
-        await refreshJob();
-      }
+      await refreshJob({ preserveStatus: true });
     } catch {
       setRefreshStatus(
         `Could not capture ${target} from the VM clipboard. Copy it in the VM and try again.`,
@@ -982,7 +980,8 @@ function setRefreshStatus(text, tone = "ok") {
   node.className = `pill ${tone === "stale" ? "refresh-stale" : "refresh-ok"}`;
 }
 
-async function refreshJob() {
+async function refreshJob(options = {}) {
+  const preserveStatus = Boolean(options.preserveStatus);
   try {
     const response = await fetch("/api/job", { cache: "no-store" });
     if (!response.ok) {
@@ -990,7 +989,9 @@ async function refreshJob() {
       return;
     }
     render(await response.json());
-    setRefreshStatus("Live refresh connected");
+    if (!preserveStatus) {
+      setRefreshStatus("Live refresh connected");
+    }
   } catch {
     setRefreshStatus(
       location.protocol.startsWith("http")

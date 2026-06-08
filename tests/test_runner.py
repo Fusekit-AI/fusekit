@@ -553,6 +553,8 @@ def test_control_room_renders_vm_clipboard_capture_for_secret_gate(tmp_path) -> 
     assert 'data-gate-capture="provider.resend.api-key-domain-access"' in html
     assert 'data-gate-capture-target="RESEND_API_KEY"' in html
     assert 'data-gate-pass="provider.resend.api-key-domain-access"' not in html
+    assert "await refreshJob({ preserveStatus: true });" in html
+    assert "function refreshJob(options = {})" in html
 
 
 def test_control_room_post_requests_human_gate_resume(tmp_path) -> None:
