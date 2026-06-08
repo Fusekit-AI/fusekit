@@ -39,6 +39,7 @@ guided, or explicitly verified.
 | Capture gates still told the user to click "I finished this step" even though the button is hidden for secret capture. | Capture-gate guidance now tells the user to copy inside the VM, click Capture, and let FuseKit auto-resume once every requested value is captured. |
 | Generic gate ids could make the control room show generic provider guidance even when the gate record knew the provider. | Static and live control-room rendering now use the gate's `provider` field as the source of truth for guidance, with text inference only as a fallback. |
 | The useful "verifying now" message could be replaced immediately by a generic live-refresh message. | Gate-pass refresh now preserves the explicit "Snowman is rechecking the provider now" status until the next real state appears. |
+| Pending-safe DNS verification could look like vague waiting even when the remaining action was DNS approval/apply. | Verification cards now translate pending-safe DNS approval states into plain-language instructions to approve/apply the exact setup-plan records while FuseKit keeps verifying propagation. |
 
 ## Open Acceptance Items
 

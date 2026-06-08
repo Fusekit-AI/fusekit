@@ -432,6 +432,39 @@ def test_control_room_renders_verification_trust_cards(tmp_path) -> None:
     assert payload["verification"]["overall"] == "pending"
 
 
+def test_control_room_explains_pending_safe_dns_approval(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    report = tmp_path / "verification_report.json"
+    report.write_text(
+        json.dumps(
+            {
+                "overall": "pending-safe",
+                "checks": [
+                    {
+                        "provider": "live_app",
+                        "check": "live_url_healthy",
+                        "status": "pending",
+                        "summary": "live URL is still pending.",
+                        "repair": "Keep waiting.",
+                        "details": {
+                            "pending_safe": True,
+                            "reason": "custom DNS apply is waiting for approval or propagation",
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    job.add_artifact("verification_report", report)
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+
+    assert "DNS changes are waiting for approval or propagation." in html
+    assert "Approve/apply the exact DNS records in the setup plan" in html
+    assert "trustCardCopy" in html
+
+
 def test_control_room_reports_invalid_verification_report_as_failed(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     report = tmp_path / "verification_report.json"

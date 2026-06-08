@@ -536,17 +536,38 @@ def _render_trust_card(check: dict[str, Any]) -> str:
     status = str(check.get("status", "pending"))
     snow = _trust_snow_state(status)
     title = f"{check.get('provider', 'provider')} · {check.get('check', 'check')}"
+    summary, repair = _trust_card_copy(check)
     return f"""
         <article class="trust-card {html.escape(status)}">
           <div class="trust-snow state-{html.escape(snow)}" aria-hidden="true"></div>
           <div>
             <span>{html.escape(status_label(status))}</span>
             <strong>{html.escape(title.replace('_', ' '))}</strong>
-            <p>{html.escape(str(check.get('summary', 'Verification is running.')))}</p>
-            <em>{html.escape(str(check.get('repair', 'Keep the control room open.')))}</em>
+            <p>{html.escape(summary)}</p>
+            <em>{html.escape(repair)}</em>
           </div>
         </article>
 """
+
+
+def _trust_card_copy(check: dict[str, Any]) -> tuple[str, str]:
+    details = check.get("details", {})
+    details = details if isinstance(details, dict) else {}
+    reason = str(details.get("reason", "") or "")
+    if (
+        str(check.get("status", "")) == "pending"
+        and bool(details.get("pending_safe", False))
+        and "dns" in reason.lower()
+        and "approval" in reason.lower()
+    ):
+        return (
+            "DNS changes are waiting for approval or propagation.",
+            "Approve/apply the exact DNS records in the setup plan; FuseKit will keep verifying.",
+        )
+    return (
+        str(check.get("summary", "Verification is running.")),
+        str(check.get("repair", "Keep the control room open.")),
+    )
 
 
 def _trust_snow_state(status: str) -> str:

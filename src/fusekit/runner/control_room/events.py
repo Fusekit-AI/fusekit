@@ -610,19 +610,43 @@ function renderTrust(job) {
         "_",
         " ",
       );
+      const copy = trustCardCopy(check);
       return `
         <article class="trust-card ${status}">
           <div class="trust-snow state-${classToken(snow)}" aria-hidden="true"></div>
           <div>
             <span>${escapeHtml(label(status))}</span>
             <strong>${escapeHtml(title)}</strong>
-            <p>${escapeHtml(check.summary || "Verification is running.")}</p>
-            <em>${escapeHtml(check.repair || "Keep the control room open.")}</em>
+            <p>${escapeHtml(copy.summary)}</p>
+            <em>${escapeHtml(copy.repair)}</em>
           </div>
         </article>
       `;
     })
     .join("");
+}
+
+function trustCardCopy(check) {
+  const details = check && typeof check.details === "object" && check.details
+    ? check.details
+    : {};
+  const reason = String(details.reason || "").toLowerCase();
+  if (
+    check?.status === "pending" &&
+    Boolean(details.pending_safe) &&
+    reason.includes("dns") &&
+    reason.includes("approval")
+  ) {
+    return {
+      summary: "DNS changes are waiting for approval or propagation.",
+      repair:
+        "Approve/apply the exact DNS records in the setup plan; FuseKit will keep verifying.",
+    };
+  }
+  return {
+    summary: check?.summary || "Verification is running.",
+    repair: check?.repair || "Keep the control room open.",
+  };
 }
 
 function renderProviderStrategies(job) {
