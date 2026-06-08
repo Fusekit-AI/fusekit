@@ -362,11 +362,12 @@ function renderVisual(job) {
   const status = String(visual.status || "ready");
   const password = String(visual.novnc_password || "");
   const iframeUrl = withQueryParam(novncUrl, "password", password);
+  const existingFrame = root.querySelector("iframe.visual-frame");
   const sameVisualSession =
     root.dataset.novncUrl === novncUrl &&
     root.dataset.controlRoomUrl === controlRoomUrl &&
-    root.dataset.novncPassword === password;
-  if (sameVisualSession && root.querySelector("iframe.visual-frame")) {
+    existingFrame?.getAttribute("src") === iframeUrl;
+  if (sameVisualSession && existingFrame) {
     const statusNode = root.querySelector("[data-visual-status]");
     if (statusNode) {
       statusNode.textContent = `Visual session: ${status}`;
@@ -375,7 +376,6 @@ function renderVisual(job) {
   }
   root.dataset.novncUrl = novncUrl;
   root.dataset.controlRoomUrl = controlRoomUrl;
-  root.dataset.novncPassword = password;
   const passwordRow = password
     ? `
         <div class="visual-secret-row">

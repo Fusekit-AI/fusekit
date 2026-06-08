@@ -1126,6 +1126,7 @@ def test_control_room_payload_and_html_include_visual_session(tmp_path) -> None:
     assert "data-visual-status" in html
     assert "sameVisualSession" in html
     assert "root.dataset.novncUrl" in html
+    assert "novncPassword" not in html
 
 
 def test_control_room_payload_and_html_include_provider_strategy_routes(tmp_path) -> None:

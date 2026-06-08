@@ -54,6 +54,9 @@ SSH session provisioned by FuseKit, or an encrypted vault/passphrase boundary.
   `fusekit launch` are quoted with `shlex.quote` before entering the remote shell.
 - Remote visual/control-room tokens are generated with `secrets.token_urlsafe` and quoted
   before entering remote shell snippets.
+- Live control-room refresh avoids duplicating the noVNC password into extra frontend
+  dataset state; the visual credential is used only for the iframe autoconnect URL and
+  explicit copy affordance.
 - Source archive extraction validates paths and single-root layout before replacing the
   destination; remote artifact extraction validates target paths and does not use
   `tar.extractall`.

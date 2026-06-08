@@ -48,6 +48,7 @@ guided, or explicitly verified.
 | Acceptance proof could snapshot raw gate URLs from provider callbacks even though those URLs might contain provider-owned codes or token-like query parameters. | Live acceptance now writes a minimal redacted gate-state proof instead of raw browser/session URLs while still proving every gate is resolved. |
 | Provider strategy proof could be too shallow to explain whether FuseKit used deterministic API automation, secure vault capture, or VM follow-me, making the control room feel like it skipped the important reasoning. | Live acceptance now requires complete selected-route evidence and considered candidates for every provider strategy decision before a run can be marked launch-ready. |
 | Provider gates could tell the user what provider page to use but not the exact next action or what FuseKit would do after the click/capture, making the flow feel stuck even when the worker was alive. | Durable gate records now carry `next_action` and `resume_hint`, static/live control rooms render them, and live acceptance fails if any gate is missing guided next-step proof. |
+| The noVNC password could be duplicated into frontend dataset state just to avoid iframe refreshes. | Live control-room refresh now compares the existing iframe URL instead of copying the password into extra DOM state; the password remains only in the autoconnect URL/copy affordance where needed. |
 
 ## Open Acceptance Items
 
