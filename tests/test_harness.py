@@ -355,6 +355,31 @@ def test_acceptance_gate_guidance_rejects_hidden_prompt_or_wrong_button() -> Non
     assert any("secret targets at I finished this step" in item for item in failures)
 
 
+def test_acceptance_provider_gates_require_openable_resume_url() -> None:
+    failures = _unguided_gates(
+        [
+            {
+                "id": "provider.github.authorization",
+                "provider": "github",
+                "status": "passed",
+                "classification": "provider-authorization",
+                "target": "GITHUB_TOKEN",
+                "follow_steps": [
+                    "Click Open provider gate in VM so GitHub opens in the VM browser.",
+                    (
+                        "Copy the token inside the VM browser and click "
+                        "Capture from VM clipboard."
+                    ),
+                ],
+                "next_action": "No action needed.",
+                "resume_hint": "FuseKit verified this gate as passed.",
+            }
+        ]
+    )
+
+    assert "provider.github.authorization missing resume_url" in failures
+
+
 def test_acceptance_human_strategy_guidance_must_be_launcher_actionable() -> None:
     failures = _provider_strategy_shape_failures(
         [
@@ -499,6 +524,18 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                 ),
                 json.dumps(
                     {
+                        "event": "control_room.gate_open",
+                        "data": {
+                            "gate_id": "provider.callback.review",
+                            "provider": "provider",
+                            "reused": False,
+                            "status": "waiting",
+                        },
+                    },
+                    sort_keys=True,
+                ),
+                json.dumps(
+                    {
                         "event": "control_room.gate_resume_requested",
                         "data": {
                             "gate_id": "provider.callback.review",
@@ -637,6 +674,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                         "follow_steps": ["Review the highlighted callback."],
                         "next_action": "No action needed.",
                         "resume_hint": "FuseKit verified this gate as passed.",
+                        "resume_url": "https://provider.example/review",
                     }
                 ]
             }
@@ -2121,7 +2159,14 @@ def test_live_acceptance_requires_resolved_control_room_gates(tmp_path) -> None:
                         "provider": "cloudflare",
                         "reason": "Cloudflare token creation",
                         "status": "waiting",
-                        "follow_steps": ["Finish Cloudflare login in the VM browser."],
+                        "classification": "provider-authorization",
+                        "resume_url": "https://dash.cloudflare.com/profile/api-tokens",
+                        "follow_steps": [
+                            (
+                                "Click Open provider gate in VM so Cloudflare opens "
+                                "in the VM browser."
+                            )
+                        ],
                         "next_action": "Finish Cloudflare login in the VM browser.",
                         "resume_hint": "FuseKit will retry verification after resume.",
                     }

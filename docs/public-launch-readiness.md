@@ -57,6 +57,7 @@ and declares `RESEND_*` runtime variables, the receipt must also prove that
 recorded during the run must include follow-me steps, a plain next action, and a
 resume hint, plus matching redacted control-room audit proof, even if the gate
 later passed. Human-gate guidance must be launcher-actionable: provider gates
+must carry an openable provider URL for `Open provider gate in VM`, provider gates
 with URLs must send the user through the VM browser path, copy-once env/token
 targets must name `Capture from VM clipboard`, and public proof must reject
 hidden-prompt, side-channel, manual, or figure-it-out wording. Detonation proof

@@ -1433,6 +1433,8 @@ def _unguided_gates(gates: Any) -> list[str]:
             str(step).strip() for step in follow_steps
         ):
             missing_fields.append("follow_steps")
+        if _gate_requires_resume_url(gate) and not str(gate.get("resume_url", "")).strip():
+            missing_fields.append("resume_url")
         if missing_fields:
             missing.append(f"{gate_id} missing {', '.join(missing_fields)}")
             continue
@@ -1446,6 +1448,25 @@ def _unguided_gates(gates: Any) -> list[str]:
         )
         missing.extend(quality_failures)
     return missing
+
+
+_PROVIDER_GATE_CLASSIFICATIONS = {
+    "provider-authorization",
+    "provider-domain",
+    "provider-runtime-values",
+    "provider-setup-retry",
+    "provider-verification",
+}
+
+
+def _gate_requires_resume_url(gate: dict[str, Any]) -> bool:
+    classification = str(gate.get("classification", "")).strip().lower()
+    if classification in _PROVIDER_GATE_CLASSIFICATIONS:
+        return True
+    provider = str(gate.get("provider", "")).strip().lower()
+    if provider in {"", "dns", "fusekit"}:
+        return False
+    return str(gate.get("id", "")).startswith("provider.")
 
 
 _FORBIDDEN_GUIDANCE_PHRASES = (
