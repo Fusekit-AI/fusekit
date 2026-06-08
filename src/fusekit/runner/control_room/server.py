@@ -413,6 +413,7 @@ def _capture_gate_clipboard_secret(
         raise FuseKitError("The VM clipboard value is too large to capture.")
     if "\x00" in value:
         raise FuseKitError("The VM clipboard value is not valid text.")
+    _validate_clipboard_capture_value(target, value)
     vault_path = _job_vault_path(job_state)
     passphrase = _control_room_vault_passphrase(job_state)
     vault = Vault.open(vault_path, passphrase) if vault_path.exists() else Vault.empty()
@@ -474,6 +475,29 @@ def _gate_capture_targets(raw_target: str) -> set[str]:
         for item in (part.strip().upper() for part in raw_target.split(","))
         if re.fullmatch(r"[A-Z][A-Z0-9_]{2,}", item) and "_" in item
     }
+
+
+def _validate_clipboard_capture_value(target: str, value: str) -> None:
+    """Reject obvious wrong clipboard values before they enter the encrypted vault."""
+
+    normalized_target = target.strip().upper()
+    if normalized_target.endswith(("_API_KEY", "_TOKEN")):
+        if re.search(r"\s", value):
+            raise FuseKitError(
+                f"{normalized_target} must be one copied token with no spaces or line breaks."
+            )
+        if value.startswith(("http://", "https://")):
+            raise FuseKitError(
+                f"{normalized_target} looks like a URL. Copy the provider key value itself."
+            )
+        if len(value) < 8:
+            raise FuseKitError(f"{normalized_target} is too short to be a provider token.")
+    if normalized_target == "RESEND_FROM_EMAIL":
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value):
+            raise FuseKitError("RESEND_FROM_EMAIL must be a single sender email address.")
+    if normalized_target == "RESEND_AUDIENCE_ID":
+        if re.search(r"\s", value) or len(value) < 3:
+            raise FuseKitError("RESEND_AUDIENCE_ID must be one copied audience id.")
 
 
 def _uncaptured_gate_targets(

@@ -1521,6 +1521,69 @@ def test_control_room_capture_canonicalizes_known_provider_token_targets(
         vault.require("provider.dns.token")
 
 
+def test_control_room_clipboard_capture_rejects_wrong_token_clipboard_value(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    vault_path = tmp_path / "fusekit.vault.json"
+    audit_path = tmp_path / "audit.jsonl"
+    passphrase_path = tmp_path / "passphrase"
+    passphrase_path.write_text("passphrase\n", encoding="utf-8")
+    Vault.empty().save(vault_path, "passphrase")
+    job.add_artifact("vault", vault_path)
+    job.add_artifact("audit_log", audit_path)
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.resend.api-key-domain-access",
+        provider="resend",
+        reason="Resend API key",
+        classification="provider-authorization",
+        target="RESEND_API_KEY",
+    )
+    monkeypatch.setenv("FUSEKIT_PASSPHRASE_FILE", str(passphrase_path))
+    monkeypatch.setattr(
+        "fusekit.runner.control_room.server._vm_clipboard_text",
+        lambda job_state: "https://resend.com/api-keys\n",
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = (
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/gates/provider.resend.api-key-domain-access/capture-clipboard"
+        )
+        request = Request(
+            url,
+            data=json.dumps({"target": "RESEND_API_KEY"}).encode("utf-8"),
+            method="POST",
+            headers=_control_room_post_headers(tmp_path, **{"content-type": "application/json"}),
+        )
+        with pytest.raises(HTTPError) as exc:
+            urlopen(request, timeout=5)
+        payload = json.loads(exc.value.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert exc.value.code == 400
+    assert payload == {
+        "error": "RESEND_API_KEY looks like a URL. Copy the provider key value itself.",
+        "ok": False,
+    }
+    gate = GateService.load(tmp_path / "gates.json").records[
+        "provider.resend.api-key-domain-access"
+    ]
+    assert gate.status == "waiting"
+    assert gate.captured_targets == ()
+    vault = Vault.open(vault_path, "passphrase")
+    with pytest.raises(VaultError):
+        vault.require("provider.resend.resend_api_key")
+    assert not audit_path.exists()
+
+
 def test_control_room_passphrase_uses_job_artifact(tmp_path, monkeypatch) -> None:
     job = JobState.create("fk-test", tmp_path, "source-fetch")
     job_path = tmp_path / "source-fetch-job.json"
