@@ -129,6 +129,7 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                                 "This gate needs safe secret capture before it can resume."
                             ),
                             "missing_targets": sorted(blocked),
+                            "next_action": _blocked_capture_next_action(blocked),
                         },
                         status=400,
                     )
@@ -527,6 +528,21 @@ def _uncaptured_gate_targets(
     required = _gate_capture_targets(raw_target)
     captured = {target.strip().upper() for target in captured_targets}
     return required - captured
+
+
+def _blocked_capture_next_action(missing_targets: set[str]) -> str:
+    """Return visible launcher guidance when a user clicks resume too early."""
+
+    targets = sorted(missing_targets)
+    if not targets:
+        return "Use the matching launcher control to continue this gate."
+    if len(targets) == 1:
+        return f"Click Capture {targets[0]} from VM clipboard, then FuseKit will continue."
+    return (
+        "Click each missing Capture button from the VM clipboard: "
+        + ", ".join(targets)
+        + ". FuseKit continues after every required value is captured."
+    )
 
 
 def _vm_clipboard_text(job_state: Path) -> str:

@@ -999,6 +999,9 @@ def test_control_room_post_rejects_capture_gate_resume_before_capture(tmp_path) 
         "error": "This gate needs safe secret capture before it can resume.",
         "gate_id": "provider.resend.api-key-domain-access",
         "missing_targets": ["RESEND_API_KEY"],
+        "next_action": (
+            "Click Capture RESEND_API_KEY from VM clipboard, then FuseKit will continue."
+        ),
         "ok": False,
     }
     gate = GateService.load(tmp_path / "gates.json").records[

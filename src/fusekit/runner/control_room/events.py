@@ -1198,6 +1198,8 @@ function controlRoomFailureMessage(payload, fallback) {
   if (missingTargets.length) {
     parts.push(`Missing: ${missingTargets.join(", ")}`);
   }
+  const nextAction = String(payload?.next_action || "").trim();
+  if (nextAction) parts.push(nextAction);
   return parts.join(" ") || fallback;
 }
 
