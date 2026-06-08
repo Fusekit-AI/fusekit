@@ -1174,7 +1174,10 @@ def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -
         calls.append({"command": command, **kwargs})
         return FakeProcess()
 
-    monkeypatch.setenv("FUSEKIT_VISUAL_BROWSER", "/usr/bin/fake-chrome")
+    fake_chrome = tmp_path / "fake-chrome"
+    fake_chrome.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_chrome.chmod(0o700)
+    monkeypatch.setenv("FUSEKIT_VISUAL_BROWSER", str(fake_chrome))
     monkeypatch.setattr("fusekit.runner.control_room.server.subprocess.Popen", fake_popen)
     server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -1203,7 +1206,7 @@ def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -
     assert len(calls) == 1
     assert calls[0]["command"][-1] == "https://dash.cloudflare.com/profile/api-tokens"
     assert calls[0]["env"]["DISPLAY"] == ":99"
-    assert calls[0]["command"][0] == "/usr/bin/fake-chrome"
+    assert calls[0]["command"][0] == str(fake_chrome)
     gate = GateService.load(tmp_path / "gates.json").records[
         "provider.cloudflare.authorization"
     ]
@@ -1291,6 +1294,36 @@ def test_control_room_visual_browser_rejects_configured_non_browser(
     monkeypatch.setattr("fusekit.runner.control_room.server.shutil.which", lambda _name: None)
 
     assert _visual_browser_binary() == ""
+
+
+def test_control_room_visual_browser_rejects_nonexecutable_configured_browser(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_chrome = tmp_path / "fake-chrome"
+    fake_chrome.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_chrome.chmod(0o600)
+    monkeypatch.setenv("FUSEKIT_VISUAL_BROWSER", str(fake_chrome))
+    monkeypatch.delenv("PLAYWRIGHT_BROWSERS_PATH", raising=False)
+    monkeypatch.setattr("fusekit.runner.control_room.server.Path.glob", lambda *_args: [])
+    monkeypatch.setattr("fusekit.runner.control_room.server.shutil.which", lambda _name: None)
+
+    assert _visual_browser_binary() == ""
+
+
+def test_control_room_visual_browser_accepts_executable_configured_browser(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_chrome = tmp_path / "fake-chrome"
+    fake_chrome.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_chrome.chmod(0o700)
+    monkeypatch.setenv("FUSEKIT_VISUAL_BROWSER", str(fake_chrome))
+    monkeypatch.delenv("PLAYWRIGHT_BROWSERS_PATH", raising=False)
+    monkeypatch.setattr("fusekit.runner.control_room.server.Path.glob", lambda *_args: [])
+    monkeypatch.setattr("fusekit.runner.control_room.server.shutil.which", lambda _name: None)
+
+    assert _visual_browser_binary() == str(fake_chrome)
 
 
 def test_control_room_visual_browser_prefers_chrome_family_binary(

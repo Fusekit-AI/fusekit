@@ -630,8 +630,9 @@ def _append_control_room_audit(
 
 def _visual_browser_binary() -> str:
     configured = os.environ.get("FUSEKIT_VISUAL_BROWSER", "").strip()
-    if configured and _is_supported_visual_browser_binary(configured):
-        return configured
+    configured_binary = _configured_visual_browser_binary(configured)
+    if configured_binary:
+        return configured_binary
     for root in (
         Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "")),
         Path("/opt/fusekit-playwright-browsers"),
@@ -645,6 +646,18 @@ def _visual_browser_binary() -> str:
         resolved = shutil.which(name)
         if resolved and _is_supported_visual_browser_binary(resolved):
             return resolved
+    return ""
+
+
+def _configured_visual_browser_binary(configured: str) -> str:
+    if not configured or not _is_supported_visual_browser_binary(configured):
+        return ""
+    if os.sep in configured or (os.altsep and os.altsep in configured):
+        candidate = Path(configured)
+        return str(candidate) if candidate.is_file() and os.access(candidate, os.X_OK) else ""
+    resolved = shutil.which(configured)
+    if resolved and _is_supported_visual_browser_binary(resolved):
+        return resolved
     return ""
 
 
