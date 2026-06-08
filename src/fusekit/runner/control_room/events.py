@@ -16,6 +16,7 @@ const labels = {
   passed: "Passed",
   repairing: "Repairing",
   needs_human_gate: "Needs human gate",
+  resume_requested: "Retrying gate",
 };
 
 function label(status) {
@@ -36,7 +37,8 @@ function statusCounts(steps) {
 }
 
 function activeGate(job) {
-  return (job.gates || []).find((gate) => ["waiting", "resurfaced"].includes(gate.status));
+  return (job.gates || []).find((gate) =>
+    ["waiting", "resurfaced", "resume_requested"].includes(gate.status));
 }
 
 function gateStateErrorStep(job) {
@@ -51,11 +53,16 @@ function gateStateErrorStep(job) {
 
 function gateStep(gate) {
   if (!gate) return null;
+  const retrying = gate.status === "resume_requested";
   return {
     id: gate.id || "provider.gate",
-    label: `${gate.provider || "Provider"} needs your approval`,
-    status: "waiting",
-    detail: gate.reason || "A provider-created human gate is waiting.",
+    label: retrying
+      ? `${gate.provider || "Provider"} gate is being rechecked`
+      : `${gate.provider || "Provider"} needs your approval`,
+    status: retrying ? "running" : "waiting",
+    detail: retrying
+      ? "You marked this step finished. FuseKit is retrying provider verification now."
+      : gate.reason || "A provider-created human gate is waiting.",
     provider: gate.provider || "",
     resume_url: gate.resume_url || "",
     classification: gate.classification || "",
@@ -163,49 +170,68 @@ function gateGuidance(provider) {
     github: {
       title: "GitHub needs a repo-scoped setup token",
       body:
-        "FuseKit needs GitHub permission for the target repo so it can create deploy keys and encrypted Actions secrets without broad account access.",
+        "FuseKit needs GitHub permission for the target repo so it can create deploy " +
+        "keys and encrypted Actions secrets without broad account access.",
       actions: [
         "Sign in or create the GitHub account when GitHub asks.",
-        "Create a fine-grained personal access token limited to the target repo named by FuseKit.",
-        "Grant repository Secrets read/write and Administration read/write, then finish highlighted passkey, MFA, CAPTCHA, or consent prompts.",
-        "When GitHub reveals the token once, use the VM-local capture path; FuseKit stores it only in the encrypted vault.",
+        "Create a fine-grained personal access token limited to the target repo named " +
+          "by FuseKit.",
+        "Grant repository Secrets read/write and Administration read/write, then finish " +
+          "highlighted passkey, MFA, CAPTCHA, or consent prompts.",
+        "When GitHub reveals the token once, use the VM-local capture path; FuseKit " +
+          "stores it only in the encrypted vault.",
       ],
       reassurance: "FuseKit will use GitHub's API and continue once the scoped token is captured.",
     },
     vercel: {
       title: "Vercel needs a deployment token",
       body:
-        "FuseKit needs a Vercel token scoped to the personal account or team that will own the project, environment variables, and deployment.",
+        "FuseKit needs a Vercel token scoped to the personal account or team that " +
+        "will own the project, environment variables, and deployment.",
       actions: [
         "Sign in or create the Vercel account when prompted.",
-        "If Vercel says GitHub is not connected, open Login Connections and connect GitHub before creating or linking the project.",
-        "Open Account Settings, choose Tokens, create a token named FuseKit deployment for this app, and use a short expiration.",
-        "Choose the personal account or team FuseKit named, then finish highlighted GitHub, billing, MFA, CAPTCHA, or consent prompts.",
-        "When Vercel reveals the token once, use the VM-local capture path; FuseKit stores it only in the encrypted vault.",
+        "If Vercel says GitHub is not connected, open Login Connections and connect " +
+          "GitHub before creating or linking the project.",
+        "Open Account Settings, choose Tokens, create a token named FuseKit deployment " +
+          "for this app, and use a short expiration.",
+        "Choose the personal account or team FuseKit named, then finish highlighted " +
+          "GitHub, billing, MFA, CAPTCHA, or consent prompts.",
+        "When Vercel reveals the token once, use the VM-local capture path; FuseKit " +
+          "stores it only in the encrypted vault.",
       ],
       reassurance: "FuseKit will continue through Vercel's API after capture succeeds.",
     },
     cloudflare: {
       title: "Cloudflare needs a scoped DNS token",
       body:
-        "FuseKit needs one Cloudflare token scoped to this domain so it can create and verify only the DNS records named in the setup plan.",
+        "FuseKit needs one Cloudflare token scoped to this domain so it can create " +
+        "and verify only the DNS records named in the setup plan.",
       actions: [
         "Sign in or create the Cloudflare account when prompted.",
-        "Open API Tokens, choose Create Token, choose Custom token, and name it FuseKit DNS for this domain.",
-        "Grant Zone Read and DNS Edit for the specific zone FuseKit named, then continue through highlighted Cloudflare MFA, CAPTCHA, consent, or token reveal gates.",
-        "When Cloudflare reveals the token once, use the VM-local capture prompt; FuseKit stores it only in the encrypted vault.",
+        "Open API Tokens, choose Create Token, choose Custom token, and name it " +
+          "FuseKit DNS for this domain.",
+        "Grant Zone Read and DNS Edit for the specific zone FuseKit named, then " +
+          "continue through highlighted Cloudflare MFA, CAPTCHA, consent, or token " +
+          "reveal gates.",
+        "When Cloudflare reveals the token once, use the VM-local capture prompt; " +
+          "FuseKit stores it only in the encrypted vault.",
       ],
-      reassurance: "FuseKit will use the token through Cloudflare's API and keep retrying DNS verification.",
+      reassurance:
+        "FuseKit will use the token through Cloudflare's API and keep retrying " +
+        "DNS verification.",
     },
     resend: {
       title: "Resend needs an email API key",
       body:
-        "FuseKit needs a Resend API key so it can configure email sending and verify the domain records named in the setup plan.",
+        "FuseKit needs a Resend API key so it can configure email sending and verify " +
+        "the domain records named in the setup plan.",
       actions: [
         "Sign in or create the Resend account when prompted.",
-        "Open API Keys, create a key named FuseKit email for this app, and choose the sending/domain access Resend requires.",
+        "Open API Keys, create a key named FuseKit email for this app, and choose " +
+          "the sending/domain access Resend requires.",
         "Finish highlighted email, MFA, CAPTCHA, billing, consent, or domain checks.",
-        "When Resend reveals the API key once, use the VM-local capture path; FuseKit stores it only in the encrypted vault.",
+        "When Resend reveals the API key once, use the VM-local capture path; " +
+          "FuseKit stores it only in the encrypted vault.",
       ],
       reassurance: "FuseKit will use Resend's API and continue once the email key is captured.",
     },
@@ -706,7 +732,12 @@ function renderRunState(job) {
 function render(job) {
   const prog = progress(job);
   const counts = statusCounts(job.steps);
-  if (activeGate(job) && !(job.steps || []).some((step) => step.status === "waiting")) {
+  const gate = activeGate(job);
+  if (
+    gate &&
+    gate.status !== "resume_requested" &&
+    !(job.steps || []).some((step) => step.status === "waiting")
+  ) {
     counts.waiting += 1;
   }
   if (job.gate_state_error && !(job.steps || []).some((step) => step.status === "failed")) {
@@ -823,8 +854,12 @@ document.addEventListener("click", async (event) => {
           body: JSON.stringify({ target }),
         },
       );
-      if (!response.ok) throw new Error("capture failed");
-      setRefreshStatus(`${target} captured into the encrypted vault.`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error("capture failed");
+      setRefreshStatus(payload.message || `${target} captured into the encrypted vault.`);
+      if (payload.status === "resume_requested") {
+        await refreshJob();
+      }
     } catch {
       setRefreshStatus(
         `Could not capture ${target} from the VM clipboard. Copy it in the VM and try again.`,
@@ -848,8 +883,9 @@ document.addEventListener("click", async (event) => {
           headers: { "x-fusekit-control-room": "resume" },
         },
       );
-      if (!response.ok) throw new Error("gate update failed");
-      setRefreshStatus("Gate marked done. Snowman is verifying now.");
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error("gate update failed");
+      setRefreshStatus(payload.message || "Resume requested. FuseKit is verifying now.");
       await refreshJob();
     } catch {
       gateButton.disabled = false;

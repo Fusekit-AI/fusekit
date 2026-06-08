@@ -103,7 +103,12 @@ def _render_header(job: JobState) -> str:
 def _render_progress(job: JobState, payload: dict[str, Any]) -> str:
     done, total, percent = progress(job.steps)
     counts = status_counts(job.steps)
-    if _active_gate(payload) and not any(step.status == "waiting" for step in job.steps):
+    active_gate = _active_gate(payload)
+    if (
+        active_gate
+        and active_gate.get("status") != "resume_requested"
+        and not any(step.status == "waiting" for step in job.steps)
+    ):
         counts["waiting"] += 1
     if payload.get("gate_state_error") and not any(step.status == "failed" for step in job.steps):
         counts["failed"] += 1
@@ -754,18 +759,31 @@ def _active_gate(payload: dict[str, Any]) -> dict[str, Any] | None:
     if not isinstance(gates, list):
         return None
     for gate in gates:
-        if isinstance(gate, dict) and str(gate.get("status", "")) in {"waiting", "resurfaced"}:
+        if isinstance(gate, dict) and str(gate.get("status", "")) in {
+            "waiting",
+            "resurfaced",
+            "resume_requested",
+        }:
             return gate
     return None
 
 
 def _gate_step(gate: dict[str, Any]) -> Any:
     provider = str(gate.get("provider", "") or "Provider")
+    retrying = str(gate.get("status", "")) == "resume_requested"
     return SimpleNamespace(
         id=str(gate.get("id", "") or "provider.gate"),
-        label=f"{provider} needs your approval",
-        status="waiting",
-        detail=str(gate.get("reason", "") or "A provider-created human gate is waiting."),
+        label=(
+            f"{provider} gate is being rechecked"
+            if retrying
+            else f"{provider} needs your approval"
+        ),
+        status="running" if retrying else "waiting",
+        detail=(
+            "You marked this step finished. FuseKit is retrying provider verification now."
+            if retrying
+            else str(gate.get("reason", "") or "A provider-created human gate is waiting.")
+        ),
         provider=provider,
         resume_url=str(gate.get("resume_url", "") or ""),
         classification=str(gate.get("classification", "") or ""),

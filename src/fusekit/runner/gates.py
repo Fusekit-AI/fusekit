@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-GateStatus = Literal["waiting", "resurfaced", "passed", "failed"]
+GateStatus = Literal["waiting", "resurfaced", "resume_requested", "passed", "failed"]
 
 
 def _int_value(value: object, default: int) -> int:
@@ -166,6 +166,14 @@ class GateService:
 
         record = self.records[gate_id]
         record.status = "passed"
+        record.updated_at = time.time()
+        self.save()
+
+    def request_resume(self, gate_id: str) -> None:
+        """Mark a gate as ready for FuseKit to retry verification."""
+
+        record = self.records[gate_id]
+        record.status = "resume_requested"
         record.updated_at = time.time()
         self.save()
 

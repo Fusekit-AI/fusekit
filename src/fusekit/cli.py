@@ -2811,7 +2811,7 @@ def _gate_passed_checker(args: argparse.Namespace) -> Callable[[str], bool]:
     def is_passed(gate_id: str) -> bool:
         service = GateService.load(_gate_state_path(args))
         record = service.records.get(gate_id)
-        return bool(record and record.status == "passed")
+        return bool(record and record.status in {"passed", "resume_requested"})
 
     return is_passed
 

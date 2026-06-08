@@ -96,8 +96,15 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                 if gate_id not in service.records:
                     self._write_json({"ok": False, "error": "gate not found"}, status=404)
                     return
-                service.pass_gate(gate_id)
-                self._write_json({"ok": True, "gate_id": gate_id})
+                service.request_resume(gate_id)
+                self._write_json(
+                    {
+                        "ok": True,
+                        "gate_id": gate_id,
+                        "status": "resume_requested",
+                        "message": "Resume requested. FuseKit will retry provider verification.",
+                    }
+                )
                 return
             if route.path.startswith(prefix) and route.path.endswith("/open"):
                 gate_id = unquote(route.path[len(prefix) : -len("/open")])
@@ -278,7 +285,7 @@ def _capture_gate_clipboard_secret(
     gate = service.records.get(gate_id)
     if gate is None:
         raise FuseKitError("Gate not found.")
-    if gate.status not in {"waiting", "resurfaced"}:
+    if gate.status not in {"waiting", "resurfaced", "resume_requested"}:
         raise FuseKitError("Gate is not waiting for capture.")
     target = target.strip().upper()
     allowed_targets = _gate_capture_targets(gate.target)
@@ -297,12 +304,22 @@ def _capture_gate_clipboard_secret(
     record_id, kind, provider = _capture_record_for_target(gate.provider, target)
     vault.put(record_id, kind, provider, target, value, {"env": target, "source": "vm-clipboard"})
     vault.save(vault_path, passphrase)
+    status = "captured"
+    message = f"{target} captured into the encrypted vault."
+    if len(allowed_targets) == 1:
+        service.request_resume(gate_id)
+        status = "resume_requested"
+        message = (
+            f"{target} captured into the encrypted vault. "
+            "FuseKit will retry provider verification."
+        )
     _append_capture_audit(job_state, gate_id, target, record_id)
     return {
         "gate_id": gate_id,
         "target": target,
         "record_id": record_id,
-        "status": "captured",
+        "status": status,
+        "message": message,
     }
 
 

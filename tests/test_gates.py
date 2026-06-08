@@ -37,3 +37,24 @@ def test_gate_service_does_not_resurface_passed_gate(tmp_path) -> None:
     assert resurfaced.status == "passed"
     assert resurfaced.attempts == 1
     assert GateService.load(path).records["cloudflare-auth"].status == "passed"
+
+
+def test_gate_service_resume_request_can_resurface_after_failed_recheck(tmp_path) -> None:
+    path = tmp_path / "gates.json"
+    service = GateService.load(path)
+    service.wait("resend-auth", provider="resend", reason="token", resume_url="https://x")
+    service.request_resume("resend-auth")
+
+    retrying = GateService.load(path).records["resend-auth"]
+    assert retrying.status == "resume_requested"
+
+    resurfaced = GateService.load(path).wait(
+        "resend-auth",
+        provider="resend",
+        reason="token still missing",
+        resume_url="https://x",
+    )
+
+    assert resurfaced.status == "resurfaced"
+    assert resurfaced.attempts == 2
+    assert resurfaced.reason == "token still missing"

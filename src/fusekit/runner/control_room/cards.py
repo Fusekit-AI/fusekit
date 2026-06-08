@@ -15,6 +15,7 @@ STATUS_LABELS = {
     "passed": "Passed",
     "repairing": "Repairing",
     "needs_human_gate": "Needs human gate",
+    "resume_requested": "Retrying gate",
 }
 
 TERMINAL_STEP_STATUSES = {"done", "skipped"}

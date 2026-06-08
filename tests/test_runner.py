@@ -38,8 +38,8 @@ from fusekit.runner.oci import (
     prepare_oci_api_signing_key,
 )
 from fusekit.runner.oci_live import (
-    OciProvisioner,
     OciAuth,
+    OciProvisioner,
     OciWorkspace,
     _load_oci_config_file,
     _oci_client_kwargs,
@@ -507,6 +507,28 @@ def test_control_room_gate_help_includes_resume_link_and_attempts(tmp_path) -> N
     assert "state-gate" in html
 
 
+def test_control_room_renders_resume_requested_gate_as_rechecking(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    service = GateService.load(tmp_path / "gates.json")
+    service.wait(
+        "provider.cloudflare.authorization",
+        provider="cloudflare",
+        reason="Cloudflare token creation",
+        resume_url="https://dash.cloudflare.com/profile/api-tokens",
+    )
+    service.request_resume("provider.cloudflare.authorization")
+
+    html = render_control_room(JobState.load(job_path), gate_path=tmp_path / "gates.json")
+    payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
+
+    assert payload["gates"][0]["status"] == "resume_requested"
+    assert "cloudflare gate is being rechecked" in html.lower()
+    assert "retrying provider verification now" in html
+    assert 'data-gate-pass="provider.cloudflare.authorization"' not in html
+
+
 def test_control_room_renders_vm_clipboard_capture_for_secret_gate(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job_path = tmp_path / "job.json"
@@ -527,7 +549,7 @@ def test_control_room_renders_vm_clipboard_capture_for_secret_gate(tmp_path) -> 
     assert 'data-gate-capture-target="RESEND_API_KEY"' in html
 
 
-def test_control_room_post_marks_human_gate_passed(tmp_path) -> None:
+def test_control_room_post_requests_human_gate_resume(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job_path = tmp_path / "job.json"
     job.save(job_path)
@@ -551,9 +573,11 @@ def test_control_room_post_marks_human_gate_passed(tmp_path) -> None:
         thread.join(timeout=5)
 
     assert payload["ok"] is True
+    assert payload["status"] == "resume_requested"
+    assert "retry provider verification" in payload["message"]
     assert GateService.load(tmp_path / "gates.json").records[
         "provider.github.mfa.123"
-    ].status == "passed"
+    ].status == "resume_requested"
 
 
 def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -> None:
@@ -648,17 +672,78 @@ def test_control_room_post_captures_vm_clipboard_into_vault(tmp_path, monkeypatc
 
     assert payload == {
         "gate_id": "provider.resend.api-key-domain-access",
+        "message": (
+            "RESEND_API_KEY captured into the encrypted vault. "
+            "FuseKit will retry provider verification."
+        ),
         "ok": True,
         "record_id": "provider.resend.resend_api_key",
-        "status": "captured",
+        "status": "resume_requested",
         "target": "RESEND_API_KEY",
     }
     vault = Vault.open(vault_path, "passphrase")
     record = vault.require("provider.resend.resend_api_key")
     assert record.value == "re_live_secret_from_vm_clipboard"
     assert record.metadata["env"] == "RESEND_API_KEY"
+    assert GateService.load(tmp_path / "gates.json").records[
+        "provider.resend.api-key-domain-access"
+    ].status == "resume_requested"
     assert "re_live_secret" not in json.dumps(payload)
     assert "re_live_secret" not in audit_path.read_text(encoding="utf-8")
+
+
+def test_control_room_clipboard_capture_waits_for_multi_value_gate(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    vault_path = tmp_path / "fusekit.vault.json"
+    passphrase_path = tmp_path / "passphrase"
+    passphrase_path.write_text("passphrase\n", encoding="utf-8")
+    Vault.empty().save(vault_path, "passphrase")
+    job.add_artifact("vault", vault_path)
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.resend.runtime-values",
+        provider="resend",
+        reason="Resend runtime values",
+        classification="provider-runtime-values",
+        target="RESEND_AUDIENCE_ID,RESEND_FROM_EMAIL",
+    )
+    monkeypatch.setenv("FUSEKIT_PASSPHRASE_FILE", str(passphrase_path))
+    monkeypatch.setattr(
+        "fusekit.runner.control_room.server._vm_clipboard_text",
+        lambda job_state: "audience-123\n",
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = (
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/gates/provider.resend.runtime-values/capture-clipboard"
+        )
+        request = Request(
+            url,
+            data=json.dumps({"target": "RESEND_AUDIENCE_ID"}).encode("utf-8"),
+            method="POST",
+            headers={
+                "content-type": "application/json",
+                "x-fusekit-control-room": "resume",
+            },
+        )
+        with urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert payload["status"] == "captured"
+    assert payload["message"] == "RESEND_AUDIENCE_ID captured into the encrypted vault."
+    assert GateService.load(tmp_path / "gates.json").records[
+        "provider.resend.runtime-values"
+    ].status == "waiting"
 
 
 def test_control_room_post_rejects_cross_site_gate_pass(tmp_path) -> None:
