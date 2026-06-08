@@ -96,8 +96,8 @@ or trigger commands:
   accepting cookie-authenticated or loopback POSTs alone.
 - Tokenized remote control rooms still reject attacker-origin gate POSTs before
   mutating gate state.
-- Remote control rooms require an unguessable token; token cookies are `HttpOnly` and
-  `SameSite=Lax`.
+- Remote control rooms require an unguessable token; token cookies are emitted only
+  for token-url-safe values and are `HttpOnly` and `SameSite=Strict`.
 - The control room never exposes a route that executes arbitrary shell commands.
 
 ## Current Residual Risk

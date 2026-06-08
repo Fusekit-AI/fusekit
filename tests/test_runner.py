@@ -1759,7 +1759,35 @@ def test_control_room_server_requires_remote_token(
 
     assert "FuseKit Control Room" in html
     assert "fusekit_control_room=token-123" in cookie
+    assert "HttpOnly" in cookie
+    assert "SameSite=Strict" in cookie
+    assert "Path=/" in cookie
     assert payload["id"] == "fk-test"
+
+
+def test_control_room_does_not_cookie_unsafe_remote_token(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FUSEKIT_CONTROL_ROOM_TOKEN", "token with spaces")
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_port}"
+        with urlopen(f"{base}/?token=token%20with%20spaces", timeout=5) as response:
+            headers = {key.lower(): value for key, value in response.headers.items()}
+            html = response.read().decode("utf-8")
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert "FuseKit Control Room" in html
+    assert "set-cookie" not in headers
 
 
 def test_tokenized_control_room_rejects_cross_site_gate_post(

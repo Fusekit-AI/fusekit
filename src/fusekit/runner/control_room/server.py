@@ -273,7 +273,7 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                 return
             self.send_header(
                 "set-cookie",
-                f"fusekit_control_room={expected}; HttpOnly; SameSite=Lax; Path=/",
+                f"fusekit_control_room={expected}; HttpOnly; SameSite=Strict; Path=/",
             )
 
         def _write_security_headers(self) -> None:
@@ -670,7 +670,7 @@ def _safe_action_token(value: str) -> bool:
 
 
 def _safe_cookie_value(value: str) -> bool:
-    return not any(char in value for char in ("\r", "\n", ";", ","))
+    return bool(re.fullmatch(r"[A-Za-z0-9_-]{8,512}", value))
 
 
 def _query_token(route: Any) -> str:
