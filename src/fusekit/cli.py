@@ -3732,11 +3732,11 @@ def _provider_verification_gate(
                 ),
                 "resume_url": "https://resend.com/api-keys",
                 "classification": "provider-setup-retry",
-                "target": "RESEND_API_KEY",
+                "target": "",
                 "follow_steps": _resend_domain_setup_retry_follow_steps(target or domain),
                 "next_action": (
-                    "Confirm the Resend setup key has Full access, then let FuseKit retry "
-                    "Resend domain setup through the API."
+                    "No manual Resend domain work is needed. Click I finished this step so "
+                    "FuseKit retries Resend domain setup through the API."
                 ),
                 "resume_hint": (
                     "FuseKit will rerun Resend API setup, pull the returned DNS records, "
@@ -3805,17 +3805,16 @@ def _resend_domain_setup_retry_follow_steps(domain: str) -> tuple[str, ...]:
     return (
         "Use the live VM browser surface, not a local browser tab.",
         (
-            "Open Resend API Keys only if you need to confirm the captured setup key still "
-            "has Full access."
+            "No manual Resend domain or DNS step is needed here; FuseKit already has a "
+            "valid setup key and needs a retry wake-up."
         ),
         (
             f"Do not manually create {named_domain} in Resend for this step; FuseKit is "
             "supposed to create or reuse it through Resend's API."
         ),
         (
-            "Click I finished this step after confirming the setup key. FuseKit will retry "
-            "the Resend API setup, capture the domain DNS records, and pass those records "
-            "to Cloudflare."
+            "Click I finished this step. FuseKit will retry the Resend API setup, capture "
+            "the domain DNS records, and pass those records to Cloudflare."
         ),
     )
 

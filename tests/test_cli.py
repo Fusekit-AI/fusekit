@@ -1376,7 +1376,7 @@ def test_verification_gate_routes_missing_resend_domain_to_api_retry(tmp_path) -
             "id": "provider.resend.domain-setup-retry",
             "provider": "resend",
             "classification": "provider-setup-retry",
-            "target": "RESEND_API_KEY",
+            "target": "",
         }
     ]
     gate = GateService.load(app / ".fusekit" / "gates.json").records[
@@ -1384,10 +1384,14 @@ def test_verification_gate_routes_missing_resend_domain_to_api_retry(tmp_path) -
     ]
     steps = " ".join(gate.follow_steps)
     assert gate.resume_url == "https://resend.com/api-keys"
+    assert gate.target == ""
+    assert "No manual Resend domain or DNS step" in steps
     assert "Do not manually create moonlite.rsvp" in steps
+    assert "Click I finished this step" in steps
     assert "Resend API setup" in gate.resume_hint
     assert "Cloudflare DNS" in gate.resume_hint
-    assert "Full access" in gate.next_action
+    assert "Click I finished this step" in gate.next_action
+    assert "Capture" not in steps
 
 
 def test_verification_gate_routes_resend_runtime_values_from_vercel(tmp_path) -> None:

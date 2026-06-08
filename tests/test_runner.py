@@ -595,6 +595,42 @@ def test_control_room_uses_gate_provider_for_guidance_when_id_is_generic(tmp_pat
     assert "step.provider ||" in html
 
 
+def test_control_room_resend_setup_retry_uses_finished_button_not_capture(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job.mark("setup.execute", "running", "remote setup is running")
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.resend.domain-setup-retry",
+        provider="resend",
+        reason=(
+            "Resend has a valid setup key, but the sending domain does not exist yet. "
+            "FuseKit should create or reuse the domain through Resend's API before DNS is applied."
+        ),
+        resume_url="https://resend.com/api-keys",
+        classification="provider-setup-retry",
+        target="",
+        follow_steps=(
+            "No manual Resend domain or DNS step is needed here.",
+            "Click I finished this step.",
+        ),
+        next_action=(
+            "No manual Resend domain work is needed. Click I finished this step so "
+            "FuseKit retries Resend domain setup through the API."
+        ),
+        resume_hint=(
+            "FuseKit will rerun Resend API setup, pull the returned DNS records, "
+            "and only then continue to Cloudflare DNS."
+        ),
+    )
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+
+    assert "No manual Resend domain work is needed" in html
+    assert "Click I finished this step" in html
+    assert 'data-gate-pass="provider.resend.domain-setup-retry"' in html
+    assert 'data-gate-capture="provider.resend.domain-setup-retry"' not in html
+    assert "Capture RESEND_API_KEY from VM clipboard" not in html
+
+
 def test_control_room_gate_help_includes_resume_link_and_attempts(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job.mark("setup.execute", "running", "remote setup is running")
