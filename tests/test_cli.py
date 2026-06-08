@@ -1341,6 +1341,10 @@ def test_verification_gate_records_resend_api_key_follow_me(tmp_path) -> None:
     assert "Full access" in " ".join(gate.follow_steps)
     assert "sending domain and audience for moonlite.rsvp" in " ".join(gate.follow_steps)
     assert "resumes automatically" in " ".join(gate.follow_steps)
+    assert "Capture RESEND_API_KEY" in gate.next_action
+    assert "copy-once secrets" in gate.next_action
+    assert "creates or reuses the Resend sending domain" in gate.resume_hint
+    assert "Cloudflare DNS" in gate.resume_hint
     assert "I finished this step" not in " ".join(gate.follow_steps)
 
 
@@ -1395,6 +1399,48 @@ def test_verification_gate_routes_missing_resend_domain_to_api_retry(tmp_path) -
     assert "Capture" not in steps
 
 
+def test_verification_gate_guides_resend_domain_verification(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    args = argparse.Namespace(app=app)
+    manifest = SetupManifest(
+        app_name="app",
+        app_path=str(app),
+        domains=(DomainRequirement(provider="cloudflare", domain="moonlite.rsvp"),),
+    )
+    pack = synthesize_provider_pack("resend", app)
+    result = VerificationResult(
+        provider="resend",
+        kind="resend-domain",
+        target="moonlite.rsvp",
+        status="needs_human_gate",
+        details={
+            "reason": "Resend domain moonlite.rsvp is pending provider verification.",
+            "service_gate": True,
+        },
+    )
+
+    recorded = _record_provider_verification_gates(args, manifest, pack, [result])
+
+    assert recorded == [
+        {
+            "id": "provider.resend.domain-verification",
+            "provider": "resend",
+            "classification": "provider-domain",
+            "target": "moonlite.rsvp",
+        }
+    ]
+    gate = GateService.load(app / ".fusekit" / "gates.json").records[
+        "provider.resend.domain-verification"
+    ]
+    assert gate.resume_url == "https://resend.com/domains"
+    assert gate.target == "moonlite.rsvp"
+    assert "Open Resend Domains" in " ".join(gate.follow_steps)
+    assert "I finished this step" in gate.next_action
+    assert "read any DNS records returned by the API" in gate.resume_hint
+    assert "Cloudflare DNS behind Resend" in gate.resume_hint
+
+
 def test_verification_gate_routes_resend_runtime_values_from_vercel(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()
@@ -1439,6 +1485,8 @@ def test_verification_gate_routes_resend_runtime_values_from_vercel(tmp_path) ->
     assert "Open Resend Audiences" in steps
     assert "Capture button" in steps
     assert "resumes automatically" in steps
+    assert "Capture RESEND_AUDIENCE_ID, RESEND_FROM_EMAIL" in gate.next_action
+    assert "Vercel and GitHub" in gate.resume_hint
     assert "I finished this step" not in steps
 
 
@@ -1487,6 +1535,8 @@ def test_verification_gate_routes_only_missing_resend_runtime_values(tmp_path) -
     assert "rsvp@moonlite.rsvp" in steps
     assert "Open Resend Audiences" not in steps
     assert "unless RESEND_AUDIENCE_ID is listed" in steps
+    assert "Capture RESEND_FROM_EMAIL" in gate.next_action
+    assert "every requested Resend value" in gate.resume_hint
 
 
 def test_cli_refuses_raw_secret_argument(tmp_path) -> None:

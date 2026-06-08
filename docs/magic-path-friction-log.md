@@ -77,6 +77,7 @@ guided, or explicitly verified.
 | Private GitHub app-source authorization could pause before the full launch control room existed, leaving the user with terminal-only waiting during the first provider gate. | Source-fetch authorization gates now write a minimal guided control-room artifact beside `gates.json`, showing the GitHub gate, VM-browser open action, and Capture button before full launch starts. |
 | The prelaunch source-fetch control room could be written but not named in the terminal waiting message, so a user still might not know where to click or how to activate live controls. | Source-fetch waiting output now prints the exact guided control-room path plus the `fusekit control-room --serve` command for live VM-browser open and Capture controls. |
 | The prelaunch source-fetch live control room could show Capture controls without carrying enough vault state for the server to save the copied token. | Source-fetch job state now includes the vault and passphrase-file artifacts, and live Capture reads the passphrase artifact before falling back. |
+| Verification-time Resend gates could include follow-me steps but omit the durable next action/resume hint that tells the user exactly whether to Capture or click I finished this step. | Resend API-key, runtime-value, and domain-verification gates now persist exact next actions and resume hints, including auto-resume for Capture gates and Resend-before-Cloudflare retry copy. |
 
 ## Open Acceptance Items
 

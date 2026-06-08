@@ -3810,6 +3810,14 @@ def _provider_verification_gate(
             "classification": "provider-runtime-values",
             "target": ",".join(resend_env_names),
             "follow_steps": _resend_runtime_follow_steps(domain, resend_env_names),
+            "next_action": (
+                f"Capture {missing} from the VM clipboard so FuseKit can update the "
+                "provider environment without exposing the values."
+            ),
+            "resume_hint": (
+                "FuseKit resumes automatically after every requested Resend value is "
+                "captured, then reapplies the values to Vercel and GitHub as needed."
+            ),
         }
     if pack.provider == "resend" and result.kind == "http-json":
         return {
@@ -3824,6 +3832,14 @@ def _provider_verification_gate(
             "classification": "provider-authorization",
             "target": "RESEND_API_KEY",
             "follow_steps": _resend_api_key_follow_steps(domain),
+            "next_action": (
+                "Capture RESEND_API_KEY from the VM clipboard; do not click I finished "
+                "this step for copy-once secrets."
+            ),
+            "resume_hint": (
+                "FuseKit resumes automatically after Capture succeeds, then creates or "
+                "reuses the Resend sending domain before Cloudflare DNS runs."
+            ),
         }
     if pack.provider == "resend" and result.kind == "resend-domain":
         target = result.target if "${input:" not in result.target else domain
@@ -3862,6 +3878,14 @@ def _provider_verification_gate(
             "classification": "provider-domain",
             "target": target,
             "follow_steps": _resend_domain_follow_steps(target or domain),
+            "next_action": (
+                f"Finish the Resend domain gate for {target or domain}, then click "
+                "I finished this step."
+            ),
+            "resume_hint": (
+                "FuseKit will recheck Resend, read any DNS records returned by the API, "
+                "and keep Cloudflare DNS behind Resend until the records are known."
+            ),
         }
     return {
         "id": f"provider.{pack.provider}.{_strategy_gate_slug(result.kind)}",
@@ -3871,6 +3895,8 @@ def _provider_verification_gate(
         "classification": "provider-verification",
         "target": result.target,
         "follow_steps": _provider_strategy_follow_steps(pack),
+        "next_action": "Complete the highlighted provider gate, then click I finished this step.",
+        "resume_hint": "FuseKit will recheck the provider state before continuing.",
     }
 
 
