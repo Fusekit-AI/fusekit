@@ -138,6 +138,11 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
                 "for this first setup key."
             ),
             (
+                "An existing key card that says Full access is not enough unless you already "
+                "have the raw key value. Resend does not reveal old key secrets again; create "
+                "a new setup key if you cannot copy the existing value."
+            ),
+            (
                 "Do not create Resend domains or audiences by hand unless FuseKit asks. After "
                 "capture, FuseKit uses Resend's API to create or reuse the sending domain and "
                 "audience required by the app."

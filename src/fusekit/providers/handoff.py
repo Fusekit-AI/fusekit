@@ -139,6 +139,10 @@ HANDOFFS: dict[str, ProviderHandoff] = {
         secret_steps=(
             "Create an API key named FuseKit email setup with Full access for this first setup.",
             (
+                "If an existing key already has Full access but the raw value is not available, "
+                "create a new setup key because Resend does not reveal old key secrets again."
+            ),
+            (
                 "Copy the API key once inside the VM browser; FuseKit captures it into the "
                 "encrypted vault."
             ),

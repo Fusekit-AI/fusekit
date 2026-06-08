@@ -1258,6 +1258,11 @@ def _resend_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                     "first setup."
                 ),
                 (
+                    "If an existing key already has Full access but the raw value is not "
+                    "available, create a new setup key because Resend does not reveal old "
+                    "key secrets again."
+                ),
+                (
                     "Copy RESEND_API_KEY once inside the VM browser; FuseKit captures it into "
                     "the encrypted vault."
                 ),

@@ -251,6 +251,17 @@ def test_cloudflare_pack_handoff_names_exact_token_wizard_choices(tmp_path) -> N
     assert "Copy the token once inside the VM browser" in text
 
 
+def test_resend_pack_handoff_explains_existing_key_secret_value(tmp_path) -> None:
+    pack = synthesize_provider_pack("resend", tmp_path)
+
+    text = " ".join((*pack.handoff.account_steps, *pack.handoff.secret_steps))
+
+    assert "Full access" in text
+    assert "raw value" in text
+    assert "does not reveal old key secrets again" in text
+    assert "Copy RESEND_API_KEY once inside the VM browser" in text
+
+
 def test_common_provider_catalog_synthesizes_valid_specific_packs(tmp_path) -> None:
     providers = {"stripe", "supabase", "clerk", "neon", "upstash", "openai"}
 
