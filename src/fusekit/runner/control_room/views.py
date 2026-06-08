@@ -28,10 +28,17 @@ from fusekit.runner.gate_guidance import GateGuidance, infer_gate_provider, prov
 from fusekit.runner.job import JobState, JobStep
 
 
-def render_control_room(job: JobState, *, gate_path: Path | None = None) -> str:
+def render_control_room(
+    job: JobState,
+    *,
+    gate_path: Path | None = None,
+    action_token: str = "",
+) -> str:
     """Render a standalone HTML control-room page."""
 
     control_payload = control_room_payload(job, gate_path=gate_path)
+    if action_token:
+        control_payload["control_room_action_token"] = action_token
     payload = _safe_json(control_payload)
     return f"""<!doctype html>
 <html lang="en">

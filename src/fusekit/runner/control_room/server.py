@@ -60,6 +60,8 @@ def control_room_payload(job_state: Path) -> dict[str, Any]:
 
 
 def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
+    action_token = _control_room_action_token(job_state)
+
     class ControlRoomHandler(BaseHTTPRequestHandler):
         def do_OPTIONS(self) -> None:  # noqa: N802
             self.send_response(405)
@@ -93,7 +95,10 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
             if not _trusted_fetch_site(self.headers.get("Sec-Fetch-Site")):
                 self._write_json({"ok": False, "error": "cross-site request"}, status=403)
                 return
-            if not _trusted_action_token(self.headers.get("x-fusekit-action-token")):
+            if not _trusted_action_token(
+                self.headers.get("x-fusekit-action-token"),
+                action_token,
+            ):
                 self._write_json({"ok": False, "error": "invalid action token"}, status=403)
                 return
             prefix = "/api/gates/"
@@ -293,7 +298,28 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
 
 
 def _live_html(job: JobState, job_state: Path) -> str:
-    return render_control_room(job, gate_path=job_state.parent / "gates.json")
+    return render_control_room(
+        job,
+        gate_path=job_state.parent / "gates.json",
+        action_token=_control_room_action_token(job_state),
+    )
+
+
+def _control_room_action_token(job_state: Path) -> str:
+    token_path = job_state.parent / "control-room-action-token"
+    try:
+        existing = token_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        existing = ""
+    if _safe_action_token(existing):
+        return existing
+    token = secrets.token_urlsafe(32)
+    try:
+        token_path.write_text(token, encoding="utf-8")
+        os.chmod(token_path, 0o600)
+    except OSError:
+        return token
+    return token
 
 
 def _open_gate_url_in_visual_browser(job_state: Path, url: str) -> str:
@@ -623,13 +649,14 @@ def _trusted_fetch_site(value: str | None) -> bool:
     return value.strip().lower() in {"same-origin", "none"}
 
 
-def _trusted_action_token(value: str | None) -> bool:
-    """Require explicit action intent when the remote control room is tokenized."""
+def _trusted_action_token(value: str | None, expected: str) -> bool:
+    """Require explicit action intent for every state-changing request."""
 
-    expected = os.environ.get("FUSEKIT_CONTROL_ROOM_TOKEN", "")
-    if not expected:
-        return True
     return bool(value) and secrets.compare_digest(value, expected)
+
+
+def _safe_action_token(value: str) -> bool:
+    return bool(re.fullmatch(r"[A-Za-z0-9_-]{32,256}", value))
 
 
 def _safe_cookie_value(value: str) -> bool:

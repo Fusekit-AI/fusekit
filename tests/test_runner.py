@@ -60,6 +60,15 @@ from fusekit.security import scan_for_secret_leaks
 from fusekit.vault import Vault
 
 
+def _control_room_post_headers(root: Path, **extra: str) -> dict[str, str]:
+    token = (root / "control-room-action-token").read_text(encoding="utf-8").strip()
+    return {
+        "x-fusekit-control-room": "resume",
+        "x-fusekit-action-token": token,
+        **extra,
+    }
+
+
 def test_runner_auto_uses_local_for_explicit_rehearsal(tmp_path) -> None:
     resolution = resolve_runner("auto", allow_incomplete=True, oci_config_file=tmp_path / "nope")
 
@@ -718,7 +727,7 @@ def test_control_room_post_requests_human_gate_resume(tmp_path) -> None:
     thread.start()
     try:
         url = f"http://127.0.0.1:{server.server_port}/api/gates/provider.github.mfa.123/pass"
-        request = Request(url, method="POST", headers={"x-fusekit-control-room": "resume"})
+        request = Request(url, method="POST", headers=_control_room_post_headers(tmp_path))
         with urlopen(request, timeout=5) as response:
             payload = json.loads(response.read().decode("utf-8"))
     finally:
@@ -759,7 +768,7 @@ def test_control_room_post_dns_approval_reports_dns_apply(tmp_path) -> None:
     thread.start()
     try:
         url = f"http://127.0.0.1:{server.server_port}/api/gates/dns.moonlite.rsvp.approval/pass"
-        request = Request(url, method="POST", headers={"x-fusekit-control-room": "resume"})
+        request = Request(url, method="POST", headers=_control_room_post_headers(tmp_path))
         with urlopen(request, timeout=5) as response:
             payload = json.loads(response.read().decode("utf-8"))
     finally:
@@ -791,7 +800,7 @@ def test_control_room_post_rejects_capture_gate_resume_before_capture(tmp_path) 
             f"http://127.0.0.1:{server.server_port}"
             "/api/gates/provider.resend.api-key-domain-access/pass"
         )
-        request = Request(url, method="POST", headers={"x-fusekit-control-room": "resume"})
+        request = Request(url, method="POST", headers=_control_room_post_headers(tmp_path))
         with pytest.raises(HTTPError) as exc:
             urlopen(request, timeout=5)
         payload = json.loads(exc.value.read().decode("utf-8"))
@@ -811,6 +820,40 @@ def test_control_room_post_rejects_capture_gate_resume_before_capture(tmp_path) 
     ]
     assert gate.status == "waiting"
     assert gate.captured_targets == ()
+
+
+def test_local_control_room_requires_action_token_for_gate_post(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.github.mfa.123",
+        provider="github",
+        reason="MFA required",
+        classification="mfa",
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/api/gates/provider.github.mfa.123/pass"
+        request = Request(
+            url,
+            method="POST",
+            headers={"x-fusekit-control-room": "resume"},
+        )
+        with pytest.raises(HTTPError) as exc:
+            urlopen(request, timeout=5)
+        payload = json.loads(exc.value.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert exc.value.code == 403
+    assert payload == {"error": "invalid action token", "ok": False}
+    assert GateService.load(tmp_path / "gates.json").records[
+        "provider.github.mfa.123"
+    ].status == "waiting"
 
 
 def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -> None:
@@ -846,10 +889,10 @@ def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -
             f"http://127.0.0.1:{server.server_port}"
             "/api/gates/provider.cloudflare.authorization/open"
         )
-        request = Request(url, method="POST", headers={"x-fusekit-control-room": "resume"})
+        request = Request(url, method="POST", headers=_control_room_post_headers(tmp_path))
         with urlopen(request, timeout=5) as response:
             payload = json.loads(response.read().decode("utf-8"))
-        request = Request(url, method="POST", headers={"x-fusekit-control-room": "resume"})
+        request = Request(url, method="POST", headers=_control_room_post_headers(tmp_path))
         with urlopen(request, timeout=5) as response:
             second_payload = json.loads(response.read().decode("utf-8"))
     finally:
@@ -921,10 +964,7 @@ def test_control_room_post_captures_vm_clipboard_into_vault(tmp_path, monkeypatc
             url,
             data=json.dumps({"target": "RESEND_API_KEY"}).encode("utf-8"),
             method="POST",
-            headers={
-                "content-type": "application/json",
-                "x-fusekit-control-room": "resume",
-            },
+            headers=_control_room_post_headers(tmp_path, **{"content-type": "application/json"}),
         )
         with urlopen(request, timeout=5) as response:
             payload = json.loads(response.read().decode("utf-8"))
@@ -1005,10 +1045,7 @@ def test_control_room_clipboard_capture_waits_for_multi_value_gate(
             url,
             data=json.dumps({"target": "RESEND_AUDIENCE_ID"}).encode("utf-8"),
             method="POST",
-            headers={
-                "content-type": "application/json",
-                "x-fusekit-control-room": "resume",
-            },
+            headers=_control_room_post_headers(tmp_path, **{"content-type": "application/json"}),
         )
         with urlopen(request, timeout=5) as response:
             payload = json.loads(response.read().decode("utf-8"))
@@ -1018,10 +1055,7 @@ def test_control_room_clipboard_capture_waits_for_multi_value_gate(
             url,
             data=json.dumps({"target": "RESEND_FROM_EMAIL"}).encode("utf-8"),
             method="POST",
-            headers={
-                "content-type": "application/json",
-                "x-fusekit-control-room": "resume",
-            },
+            headers=_control_room_post_headers(tmp_path, **{"content-type": "application/json"}),
         )
         with urlopen(request, timeout=5) as response:
             second_payload = json.loads(response.read().decode("utf-8"))
@@ -1074,10 +1108,10 @@ def test_control_room_clipboard_capture_requires_json_content_type(tmp_path) -> 
             url,
             data=b"target=RESEND_API_KEY",
             method="POST",
-            headers={
-                "content-type": "application/x-www-form-urlencoded",
-                "x-fusekit-control-room": "resume",
-            },
+            headers=_control_room_post_headers(
+                tmp_path,
+                **{"content-type": "application/x-www-form-urlencoded"},
+            ),
         )
         with pytest.raises(HTTPError) as exc:
             urlopen(request, timeout=5)
@@ -1123,10 +1157,7 @@ def test_control_room_clipboard_capture_rejects_large_json_body(tmp_path) -> Non
                 "utf-8"
             ),
             method="POST",
-            headers={
-                "content-type": "application/json",
-                "x-fusekit-control-room": "resume",
-            },
+            headers=_control_room_post_headers(tmp_path, **{"content-type": "application/json"}),
         )
         with pytest.raises(HTTPError) as exc:
             urlopen(request, timeout=5)
@@ -1184,6 +1215,7 @@ def test_security_surface_map_documents_control_room_state_routes() -> None:
         assert route in text
     assert "x-fusekit-control-room: resume" in text
     assert "x-fusekit-action-token" in text
+    assert "every state-changing POST must echo the page's per-control-room" in text
     assert "resume_requested" in text
     assert "protected control-room approval signal" in text
     assert "Setup-plan and DNS approvals use the same protected `/pass` route" in text
@@ -1213,10 +1245,10 @@ def test_control_room_post_rejects_untrusted_origin(tmp_path) -> None:
         request = Request(
             url,
             method="POST",
-            headers={
-                "x-fusekit-control-room": "resume",
-                "Origin": "https://evil.example",
-            },
+            headers=_control_room_post_headers(
+                tmp_path,
+                **{"Origin": "https://evil.example"},
+            ),
         )
         with pytest.raises(HTTPError):
             urlopen(request, timeout=5)
@@ -1247,10 +1279,10 @@ def test_control_room_post_rejects_cross_site_fetch_metadata(tmp_path) -> None:
         request = Request(
             url,
             method="POST",
-            headers={
-                "x-fusekit-control-room": "resume",
-                "Sec-Fetch-Site": "cross-site",
-            },
+            headers=_control_room_post_headers(
+                tmp_path,
+                **{"Sec-Fetch-Site": "cross-site"},
+            ),
         )
         with pytest.raises(HTTPError):
             urlopen(request, timeout=5)
@@ -1542,6 +1574,9 @@ def test_tokenized_control_room_rejects_cross_site_gate_post(
             headers={
                 "Authorization": "Bearer token-123",
                 "x-fusekit-control-room": "resume",
+                "x-fusekit-action-token": (
+                    tmp_path / "control-room-action-token"
+                ).read_text(encoding="utf-8").strip(),
                 "Origin": "https://evil.example",
                 "Sec-Fetch-Site": "cross-site",
             },
@@ -1637,7 +1672,9 @@ def test_tokenized_control_room_accepts_action_token_for_gate_post(
             headers={
                 "Cookie": cookie,
                 "x-fusekit-control-room": "resume",
-                "x-fusekit-action-token": "token-123",
+                "x-fusekit-action-token": (
+                    tmp_path / "control-room-action-token"
+                ).read_text(encoding="utf-8").strip(),
                 "Origin": base,
                 "Sec-Fetch-Site": "same-origin",
             },
