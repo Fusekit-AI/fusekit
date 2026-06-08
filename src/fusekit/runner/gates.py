@@ -215,11 +215,8 @@ class GateService:
 
         record = self.records[gate_id]
         record.status = "resume_requested"
-        record.next_action = "FuseKit is retrying provider verification now."
-        record.resume_hint = (
-            "Keep this control room open; the next guided blocker or success state "
-            "will appear after the provider check finishes."
-        )
+        record.next_action = _resume_next_action(record)
+        record.resume_hint = _resume_hint(record)
         record.updated_at = time.time()
         self.save()
 
@@ -306,7 +303,7 @@ def _capture_targets(target: str) -> set[str]:
 
 def _default_next_action(record: GateRecord) -> str:
     if record.status == "resume_requested":
-        return "FuseKit is retrying provider verification now."
+        return _resume_next_action(record)
     if record.status == "passed":
         return "No action needed."
     if record.status == "failed":
@@ -330,10 +327,7 @@ def _default_next_action(record: GateRecord) -> str:
 
 def _default_resume_hint(record: GateRecord) -> str:
     if record.status == "resume_requested":
-        return (
-            "Keep this control room open; the next guided blocker or success state "
-            "will appear after the provider check finishes."
-        )
+        return _resume_hint(record)
     if record.status == "passed":
         return "FuseKit verified this gate as passed."
     if record.status == "failed":
@@ -341,3 +335,29 @@ def _default_resume_hint(record: GateRecord) -> str:
     if _capture_targets(record.target):
         return "FuseKit will resume automatically after every target is captured."
     return "FuseKit will retry verification after you click I finished this step."
+
+
+def _resume_next_action(record: GateRecord) -> str:
+    classification = record.classification.strip().lower()
+    provider = record.provider.strip().lower()
+    if classification == "dns-approval" or provider == "dns":
+        return "FuseKit is applying the approved DNS records now."
+    if classification == "setup-approval" or provider == "fusekit":
+        return "FuseKit is continuing with the approved setup plan now."
+    return "FuseKit is retrying provider verification now."
+
+
+def _resume_hint(record: GateRecord) -> str:
+    classification = record.classification.strip().lower()
+    provider = record.provider.strip().lower()
+    if classification == "dns-approval" or provider == "dns":
+        return (
+            "Keep this control room open; DNS apply and propagation status will appear "
+            "after the provider API finishes."
+        )
+    if classification == "setup-approval" or provider == "fusekit":
+        return "Keep this control room open; provider setup will start from the approved plan."
+    return (
+        "Keep this control room open; the next guided blocker or success state "
+        "will appear after the provider check finishes."
+    )

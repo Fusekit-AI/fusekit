@@ -640,6 +640,10 @@ def test_control_room_dns_gate_uses_approval_button(tmp_path) -> None:
     assert 'data-gate-pass="dns.moonlite.rsvp.approval">Approve DNS apply</button>' in html
     assert "gateDoneLabel" in html
     assert "Approve DNS apply" in html
+    GateService.load(tmp_path / "gates.json").request_resume("dns.moonlite.rsvp.approval")
+    html = render_control_room(JobState.load(job_path), gate_path=tmp_path / "gates.json")
+    assert "FuseKit is applying the approved DNS records now." in html
+    assert "gateRetryDetail" in html
 
 
 def test_control_room_renders_resume_requested_gate_as_rechecking(tmp_path) -> None:
@@ -723,7 +727,7 @@ def test_control_room_post_requests_human_gate_resume(tmp_path) -> None:
 
     assert payload["ok"] is True
     assert payload["status"] == "resume_requested"
-    assert "retry provider verification" in payload["message"]
+    assert payload["message"] == "FuseKit is retrying provider verification now."
     assert GateService.load(tmp_path / "gates.json").records[
         "provider.github.mfa.123"
     ].status == "resume_requested"
@@ -736,6 +740,36 @@ def test_control_room_post_requests_human_gate_resume(tmp_path) -> None:
     assert events[-1]["data"]["gate_id"] == "provider.github.mfa.123"
     assert events[-1]["data"]["provider"] == "github"
     assert events[-1]["data"]["status"] == "resume_requested"
+
+
+def test_control_room_post_dns_approval_reports_dns_apply(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    audit_path = tmp_path / "audit.jsonl"
+    job.add_artifact("audit_log", audit_path)
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "dns.moonlite.rsvp.approval",
+        provider="dns",
+        reason="explicit DNS apply approval for moonlite.rsvp",
+        classification="dns-approval",
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/api/gates/dns.moonlite.rsvp.approval/pass"
+        request = Request(url, method="POST", headers={"x-fusekit-control-room": "resume"})
+        with urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert payload["ok"] is True
+    assert payload["status"] == "resume_requested"
+    assert payload["message"] == "FuseKit is applying the approved DNS records now."
+    assert "provider verification" not in json.dumps(payload)
 
 
 def test_control_room_post_rejects_capture_gate_resume_before_capture(tmp_path) -> None:

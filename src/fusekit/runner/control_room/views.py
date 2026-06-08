@@ -967,7 +967,7 @@ def _gate_step(gate: dict[str, Any]) -> Any:
         ),
         status="running" if retrying else "waiting",
         detail=(
-            "You marked this step finished. FuseKit is retrying provider verification now."
+            _gate_retry_detail(gate)
             if retrying
             else str(gate.get("reason", "") or "A provider-created human gate is waiting.")
         ),
@@ -981,6 +981,19 @@ def _gate_step(gate: dict[str, Any]) -> Any:
         attempts=int(gate.get("attempts", 0) or 0),
         captured_targets=gate.get("captured_targets", []),
     )
+
+
+def _gate_retry_detail(gate: dict[str, Any]) -> str:
+    next_action = str(gate.get("next_action", "") or "").strip()
+    if next_action:
+        return next_action
+    classification = str(gate.get("classification", "") or "").lower()
+    provider = str(gate.get("provider", "") or "").lower()
+    if classification == "dns-approval" or provider == "dns":
+        return "FuseKit is applying the approved DNS records now."
+    if classification == "setup-approval" or provider == "fusekit":
+        return "FuseKit is continuing with the approved setup plan now."
+    return "You marked this step finished. FuseKit is retrying provider verification now."
 
 
 def _url_with_query_param(url: str, key: str, value: str) -> str:

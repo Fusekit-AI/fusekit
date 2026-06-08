@@ -77,7 +77,7 @@ function gateStep(gate) {
       : `${gate.provider || "Provider"} needs your approval`,
     status: retrying ? "running" : "waiting",
     detail: retrying
-      ? "You marked this step finished. FuseKit is retrying provider verification now."
+      ? gateRetryDetail(gate)
       : gate.reason || "A provider-created human gate is waiting.",
     provider: gate.provider || "",
     resume_url: gate.resume_url || "",
@@ -90,6 +90,20 @@ function gateStep(gate) {
     captured_targets: gate.captured_targets || [],
     updated_at: gate.updated_at,
   };
+}
+
+function gateRetryDetail(gate) {
+  const nextAction = String(gate.next_action || "").trim();
+  if (nextAction) return nextAction;
+  const classification = String(gate.classification || "").toLowerCase();
+  const provider = String(gate.provider || "").toLowerCase();
+  if (classification === "dns-approval" || provider === "dns") {
+    return "FuseKit is applying the approved DNS records now.";
+  }
+  if (classification === "setup-approval" || provider === "fusekit") {
+    return "FuseKit is continuing with the approved setup plan now.";
+  }
+  return "You marked this step finished. FuseKit is retrying provider verification now.";
 }
 
 function progress(job) {

@@ -68,3 +68,31 @@ def test_gate_service_resume_request_can_resurface_after_failed_recheck(tmp_path
     assert resurfaced.attempts == 2
     assert resurfaced.reason == "token still missing"
     assert resurfaced.captured_targets == ()
+
+
+def test_gate_service_resume_request_uses_approval_specific_copy(tmp_path) -> None:
+    path = tmp_path / "gates.json"
+    service = GateService.load(path)
+    service.wait(
+        "dns.example.com.approval",
+        provider="dns",
+        reason="DNS approval",
+        classification="dns-approval",
+    )
+    service.wait(
+        "fusekit.plan-approval",
+        provider="fusekit",
+        reason="Plan approval",
+        classification="setup-approval",
+    )
+
+    service.request_resume("dns.example.com.approval")
+    service.request_resume("fusekit.plan-approval")
+
+    loaded = GateService.load(path)
+    dns = loaded.records["dns.example.com.approval"]
+    plan = loaded.records["fusekit.plan-approval"]
+    assert dns.next_action == "FuseKit is applying the approved DNS records now."
+    assert "propagation status" in dns.resume_hint
+    assert plan.next_action == "FuseKit is continuing with the approved setup plan now."
+    assert "provider setup" in plan.resume_hint

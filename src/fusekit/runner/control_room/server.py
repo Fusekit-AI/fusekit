@@ -126,7 +126,7 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                         "ok": True,
                         "gate_id": gate_id,
                         "status": "resume_requested",
-                        "message": "Resume requested. FuseKit will retry provider verification.",
+                        "message": _gate_resume_message(gate),
                     }
                 )
                 return
@@ -401,6 +401,19 @@ def _capture_gate_clipboard_secret(
         "captured_targets": sorted(captured_targets),
         "message": message,
     }
+
+
+def _gate_resume_message(gate: Any) -> str:
+    next_action = str(getattr(gate, "next_action", "") or "").strip()
+    if next_action:
+        return next_action
+    classification = str(getattr(gate, "classification", "") or "").lower()
+    provider = str(getattr(gate, "provider", "") or "").lower()
+    if classification == "dns-approval" or provider == "dns":
+        return "FuseKit is applying the approved DNS records now."
+    if classification == "setup-approval" or provider == "fusekit":
+        return "FuseKit is continuing with the approved setup plan now."
+    return "Resume requested. FuseKit will retry provider verification."
 
 
 def _gate_capture_targets(raw_target: str) -> set[str]:
