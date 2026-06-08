@@ -49,7 +49,8 @@ FuseKit used API automation, secure vault capture, or VM follow-me. When both
 Resend and DNS are present, the provider strategy artifact must prove Resend ran
 before Cloudflare/DNS so Resend-generated domain records are included in the
 approved DNS changes. Any durable human gate recorded during the run must include
-a plain next action and resume hint, even if the gate later passed.
+a plain next action and resume hint, plus matching redacted control-room audit
+proof, even if the gate later passed.
 
 ## Acceptance Path
 
@@ -76,6 +77,7 @@ FuseKit has a native proof layer:
 - complete provider-route proof for the chosen automation or follow-me path
 - redacted durable gate-state proof that every control-room gate was guided and
   no gate remains unresolved
+- redacted control-room intervention audit proof for every recorded human gate
 - receipt/audit/detonation/leak-scan gates
 
 The harness only reports whether the run is public-launch ready. It does not

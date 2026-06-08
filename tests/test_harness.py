@@ -80,7 +80,28 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
         "ghp_secret_for_harness",
     )
     vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
-    (remote_fusekit / "audit.jsonl").write_text('{"event":"provider.verify"}\n', "utf-8")
+    (remote_fusekit / "audit.jsonl").write_text(
+        "\n".join(
+            [
+                '{"event":"provider.verify"}',
+                json.dumps(
+                    {
+                        "event": "control_room.clipboard_capture",
+                        "data": {
+                            "gate_id": "provider.openai.authorization",
+                            "provider": "openai",
+                            "status": "passed",
+                            "target": "OPENAI_API_KEY",
+                            "record_id": "provider.openai.token",
+                        },
+                    },
+                    sort_keys=True,
+                ),
+            ]
+        )
+        + "\n",
+        "utf-8",
+    )
     (remote_fusekit / "setup_receipt.json").write_text(
         json.dumps(
             {
@@ -189,6 +210,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
     assert "verification_report.safe" in check_ids
     assert "provider_strategies.recorded" in check_ids
     assert "gates.resolved" in check_ids
+    assert "gates.audited" in check_ids
     assert report.missing == ()
     gates_check = next(check for check in report.checks if check.id == "gates.resolved")
     gates_artifact = gates_check.artifact
@@ -197,6 +219,11 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
     assert "secret-token" not in gates_text
     assert "has_resume_url" in gates_text
     assert "captured_count" in gates_text
+    audit_check = next(check for check in report.checks if check.id == "gates.audited")
+    audit_text = Path(audit_check.artifact).read_text(encoding="utf-8")
+    assert "secret-code" not in audit_text
+    assert "secret-token" not in audit_text
+    assert "provider.openai.authorization" in audit_text
     report_json = json.loads((app / ".fusekit" / "acceptance" / "report.json").read_text())
     assert report_json["launch_ready"] is True
     assert any(check["id"] == "remote_artifacts.loaded" for check in report_json["checks"])
@@ -485,6 +512,90 @@ def test_live_acceptance_requires_guided_control_room_gates(tmp_path) -> None:
     assert guided_check.status == "failed"
     assert "provider.github.authorization missing next_action, resume_hint" in guided_check.detail
     assert "guided human gates" in report.missing
+
+
+def test_live_acceptance_requires_audited_control_room_gates(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "package.json").write_text(
+        json.dumps({"name": "moonlite-rsvp", "dependencies": {"next": "latest"}}),
+        encoding="utf-8",
+    )
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    (remote_fusekit / "audit.jsonl").write_text('{"event":"provider.verify"}\n', "utf-8")
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "live_url": "https://moonlite.example",
+                "raw_secrets_exposed": 0,
+                "actions": [],
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "verification_report.json").write_text(
+        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        "utf-8",
+    )
+    (remote_fusekit / "rollback_plan.json").write_text(
+        json.dumps({"rollback": [{"action": "rollback.github.secret", "status": "planned"}]}),
+        "utf-8",
+    )
+    (remote_fusekit / "provider_strategies.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.provider-strategies.v1",
+                "providers": [
+                    {
+                        "provider": "github",
+                        "strategies": [
+                            {
+                                "recipe": "github-repo-secrets",
+                                "strategy": "api",
+                                "status": "ok",
+                                "decision": _strategy_decision(),
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "gates.json").write_text(
+        json.dumps(
+            {
+                "gates": [
+                    {
+                        "id": "provider.github.authorization",
+                        "provider": "github",
+                        "reason": "GitHub token captured",
+                        "status": "passed",
+                        "next_action": "No action needed.",
+                        "resume_hint": "FuseKit verified this gate as passed.",
+                    }
+                ]
+            }
+        ),
+        "utf-8",
+    )
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    audit_check = next(check for check in report.checks if check.id == "gates.audited")
+    assert report.launch_ready is False
+    assert audit_check.status == "failed"
+    assert "provider.github.authorization" in audit_check.detail
+    assert "audited human gate interventions" in report.missing
 
 
 def test_live_acceptance_requires_resolved_control_room_gates(tmp_path) -> None:

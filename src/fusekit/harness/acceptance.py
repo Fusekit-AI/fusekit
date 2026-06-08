@@ -169,6 +169,14 @@ def run_acceptance(
         missing,
         ledger,
     )
+    _check_gate_audit_events(
+        evidence_fusekit_dir / "gates.json",
+        audit_log_path,
+        mode,
+        checks,
+        missing,
+        ledger,
+    )
     _check_rollback_metadata(
         evidence_fusekit_dir / "rollback_plan.json",
         mode,
@@ -909,6 +917,131 @@ def _safe_int(value: Any) -> int:
         except ValueError:
             return 0
     return 0
+
+
+def _check_gate_audit_events(
+    gates_path: Path,
+    audit_log_path: Path,
+    mode: str,
+    checks: list[AcceptanceCheck],
+    missing: list[str],
+    ledger: HarnessLedger,
+) -> None:
+    """Require control-room human interventions to leave redacted audit proof."""
+
+    if not gates_path.exists() or not audit_log_path.exists():
+        checks.append(
+            AcceptanceCheck(
+                "gates.audited",
+                "skipped" if mode == "rehearsal" else "missing",
+                "Gate/audit artifacts were not both available for intervention audit proof.",
+            )
+        )
+        if mode == "live":
+            missing.append("audited human gate interventions")
+        return
+    try:
+        gate_raw = json.loads(gates_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        checks.append(
+            AcceptanceCheck(
+                "gates.audited",
+                "failed" if mode == "live" else "skipped",
+                "Gate state could not be read for audit proof.",
+            )
+        )
+        if mode == "live":
+            missing.append("audited human gate interventions")
+        return
+    gates = gate_raw.get("gates", []) if isinstance(gate_raw, dict) else []
+    gate_ids = [
+        str(gate.get("id", ""))
+        for gate in gates
+        if isinstance(gate, dict) and str(gate.get("id", "")).strip()
+    ]
+    snapshot = ledger.snapshot_json(
+        "gate-audit-proof",
+        {
+            "schema": "fusekit.gate-audit-proof.v1",
+            "gate_count": len(gate_ids),
+            "gates": [{"id": gate_id} for gate_id in gate_ids],
+        },
+    )
+    if not gate_ids:
+        checks.append(
+            AcceptanceCheck(
+                "gates.audited",
+                "ok",
+                "No control-room gates required intervention audit proof.",
+                str(snapshot),
+            )
+        )
+        return
+    audit_events, audit_error = _control_room_audit_events(audit_log_path)
+    if audit_error:
+        checks.append(
+            AcceptanceCheck(
+                "gates.audited",
+                "failed" if mode == "live" else "skipped",
+                audit_error,
+                str(snapshot),
+            )
+        )
+        if mode == "live":
+            missing.append("audited human gate interventions")
+        return
+    audited_gate_ids = {
+        str(event.get("data", {}).get("gate_id", ""))
+        for event in audit_events
+        if isinstance(event.get("data"), dict)
+    }
+    missing_gate_ids = [gate_id for gate_id in gate_ids if gate_id not in audited_gate_ids]
+    if missing_gate_ids:
+        checks.append(
+            AcceptanceCheck(
+                "gates.audited",
+                "failed" if mode == "live" else "skipped",
+                "Control-room gates are missing redacted audit events: "
+                + ", ".join(missing_gate_ids),
+                str(snapshot),
+            )
+        )
+        if mode == "live":
+            missing.append("audited human gate interventions")
+        return
+    checks.append(
+        AcceptanceCheck(
+            "gates.audited",
+            "ok",
+            "Every durable control-room gate has redacted intervention audit proof.",
+            str(snapshot),
+        )
+    )
+
+
+def _control_room_audit_events(audit_log_path: Path) -> tuple[list[dict[str, Any]], str]:
+    allowed_events = {
+        "control_room.gate_open",
+        "control_room.gate_resume_requested",
+        "control_room.clipboard_capture",
+    }
+    events: list[dict[str, Any]] = []
+    try:
+        lines = audit_log_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return [], "Audit log could not be read for gate intervention proof."
+    for line_number, line in enumerate(lines, start=1):
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            return [], f"Audit log contains malformed JSONL at line {line_number}."
+        if not isinstance(event, dict):
+            return [], f"Audit log line {line_number} is not a JSON object."
+        if str(event.get("event", "")) in allowed_events:
+            events.append(event)
+    return events, ""
 
 
 def _check_rollback_metadata(
