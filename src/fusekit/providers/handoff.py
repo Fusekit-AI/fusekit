@@ -100,9 +100,22 @@ HANDOFFS: dict[str, ProviderHandoff] = {
             ),
         ),
         secret_steps=(
-            "Create a Custom token named FuseKit DNS for this domain.",
-            "Grant Zone / Zone / Read and Zone / DNS / Edit.",
-            "Set Zone Resources to Include / Specific zone and choose the zone FuseKit named.",
+            (
+                "Open My Profile > API Tokens, choose Create Token, choose Custom token, "
+                "and name it FuseKit DNS for this domain."
+            ),
+            (
+                "In Permissions, add exactly two rows: Zone / Zone / Read and "
+                "Zone / DNS / Edit."
+            ),
+            (
+                "In Zone Resources, choose Include / Specific zone and select only the "
+                "exact zone FuseKit named."
+            ),
+            (
+                "Leave Client IP Address Filtering and TTL blank unless your organization "
+                "requires them, then choose Continue to summary and Create Token."
+            ),
             (
                 "Copy the token once inside the VM browser; FuseKit captures it into the "
                 "encrypted vault."

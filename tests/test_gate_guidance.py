@@ -54,7 +54,11 @@ def test_cloudflare_guidance_names_scoped_token_path() -> None:
     assert "Custom token" in text
     assert "Zone / Zone / Read" in text
     assert "Zone / DNS / Edit" in text
+    assert "exactly two rows" in text
     assert "Specific zone" in text
+    assert "Client IP Address Filtering" in text
+    assert "TTL blank" in text
+    assert "Continue to summary" in text
     assert "encrypted vault" in text
 
 

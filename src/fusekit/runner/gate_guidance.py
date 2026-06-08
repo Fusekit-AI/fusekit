@@ -99,11 +99,16 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
                 "name it FuseKit DNS for this domain."
             ),
             (
-                "Add permissions Zone / Zone / Read and Zone / DNS / Edit."
+                "In Permissions, add exactly two rows: Zone / Zone / Read and "
+                "Zone / DNS / Edit."
             ),
             (
-                "Set Zone Resources to Include / Specific zone and choose the exact zone "
-                "FuseKit named."
+                "In Zone Resources, choose Include / Specific zone and select only the "
+                "exact zone FuseKit named."
+            ),
+            (
+                "Leave Client IP Address Filtering and TTL blank unless your organization "
+                "requires them, then choose Continue to summary and Create Token."
             ),
             (
                 "When Cloudflare reveals the token once, copy it inside the VM browser and click "

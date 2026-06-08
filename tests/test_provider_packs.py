@@ -234,6 +234,23 @@ def test_inferred_pack_billing_language_has_matching_service_gate(tmp_path) -> N
     assert "billing" in " ".join(pack.handoff.service_gates).lower()
 
 
+def test_cloudflare_pack_handoff_names_exact_token_wizard_choices(tmp_path) -> None:
+    pack = synthesize_provider_pack("cloudflare", tmp_path)
+
+    text = " ".join((*pack.handoff.account_steps, *pack.handoff.secret_steps))
+
+    assert "Create Token" in text
+    assert "Custom token" in text
+    assert "exactly two rows" in text
+    assert "Zone / Zone / Read" in text
+    assert "Zone / DNS / Edit" in text
+    assert "Include / Specific zone" in text
+    assert "Client IP Address Filtering" in text
+    assert "TTL blank" in text
+    assert "Continue to summary" in text
+    assert "Copy the token once inside the VM browser" in text
+
+
 def test_common_provider_catalog_synthesizes_valid_specific_packs(tmp_path) -> None:
     providers = {"stripe", "supabase", "clerk", "neon", "upstash", "openai"}
 
