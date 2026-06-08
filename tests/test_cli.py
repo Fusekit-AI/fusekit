@@ -1315,8 +1315,8 @@ def test_apply_records_provider_strategy_gate_when_token_is_missing(
     assert gate.resume_url == "https://github.com/settings/tokens?type=beta"
     assert gate.classification == "provider-authorization"
     assert "fine-grained token" in " ".join(gate.follow_steps)
-    assert "Open the provider gate" in gate.next_action
-    assert "let FuseKit capture the approved capability" in gate.next_action
+    assert "Click Open provider gate in VM" in gate.next_action
+    assert "matching Capture from VM clipboard button" in gate.next_action
     assert "retry this provider route" in gate.resume_hint
 
     strategies = json.loads((fusekit_dir / "provider_strategies.json").read_text("utf-8"))

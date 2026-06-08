@@ -344,8 +344,9 @@ def summarize_strategy_action(decision: ProviderStrategyDecision) -> dict[str, A
         "reason": selected.reason,
         "resume_url": resume_url,
         "next_action": (
-            "Open the provider gate, complete login/MFA/CAPTCHA/consent/token creation, "
-            "then let FuseKit capture the approved capability."
+            "Click Open provider gate in VM, complete login/MFA/CAPTCHA/consent/token "
+            "creation in the VM browser, then copy any revealed token and click the "
+            "matching Capture from VM clipboard button."
             if selected.kind in {"browser_guided", "human_follow_me"}
             else "Install or authorize a deterministic provider route, then retry."
         ),

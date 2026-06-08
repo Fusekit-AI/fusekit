@@ -87,7 +87,8 @@ def test_provider_strategy_does_not_dead_end_on_unimplemented_cli(tmp_path) -> N
     assert cli_candidate.implemented is False
     assert decision.selected.kind == "browser_guided"
     assert action["status"] == "needs_human_gate"
-    assert "Open the provider gate" in action["next_action"]
+    assert "Click Open provider gate in VM" in action["next_action"]
+    assert "matching Capture from VM clipboard button" in action["next_action"]
     assert action["resume_url"] == "https://github.com/settings/tokens?type=beta"
 
 

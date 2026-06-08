@@ -256,7 +256,9 @@ class GateService:
 
         record = self.records[gate_id]
         record.status = "failed"
-        record.next_action = "Open the provider gate again and follow the latest instruction."
+        record.next_action = (
+            "Click Open provider gate in VM again and follow the latest visible instruction."
+        )
         record.resume_hint = "FuseKit will keep this as a repairable gate instead of hiding it."
         record.updated_at = time.time()
         self.save()
@@ -307,7 +309,7 @@ def _default_next_action(record: GateRecord) -> str:
     if record.status == "passed":
         return "No action needed."
     if record.status == "failed":
-        return "Open the provider gate again and follow the latest instruction."
+        return "Click Open provider gate in VM again and follow the latest visible instruction."
     targets = _capture_targets(record.target)
     if targets:
         missing = targets - set(record.captured_targets)
