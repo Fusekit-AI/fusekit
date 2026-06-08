@@ -19,7 +19,12 @@ from fusekit.harness.ledger import HarnessLedger
 from fusekit.vault import Vault
 
 
-def _strategy_decision(kind: str = "api", status: str = "available") -> dict[str, object]:
+def _strategy_decision(
+    kind: str = "api",
+    status: str = "available",
+    *,
+    evidence: dict[str, str] | None = None,
+) -> dict[str, object]:
     return {
         "selected": {
             "kind": kind,
@@ -27,6 +32,7 @@ def _strategy_decision(kind: str = "api", status: str = "available") -> dict[str
             "deterministic": True,
             "implemented": True,
             "reason": "deterministic provider API is available",
+            "evidence": evidence or {},
         },
         "candidates": [
             {
@@ -38,6 +44,26 @@ def _strategy_decision(kind: str = "api", status: str = "available") -> dict[str
             }
         ],
     }
+
+
+def _resend_domain_strategy_decision() -> dict[str, object]:
+    return _strategy_decision(
+        evidence={
+            "api_owns": "domain",
+            "user_manual_domain_step": "false",
+            "downstream_order": "before_dns_apply",
+        }
+    )
+
+
+def _resend_audience_strategy_decision() -> dict[str, object]:
+    return _strategy_decision(
+        evidence={
+            "api_owns": "audience",
+            "user_manual_audience_step": "false",
+            "conditional": "only_when_app_requires_audience",
+        }
+    )
 
 
 def _write_resend_cloudflare_manifest(app: Path) -> None:
@@ -117,7 +143,7 @@ def _write_minimum_live_artifacts(remote_fusekit: Path) -> None:
                                 "recipe": "resend-domain",
                                 "strategy": "api",
                                 "status": "ok",
-                                "decision": _strategy_decision(),
+                                "decision": _resend_domain_strategy_decision(),
                             }
                         ],
                     },
@@ -177,7 +203,7 @@ def _write_minimum_resend_vercel_live_artifacts(remote_fusekit: Path) -> None:
                                 "recipe": "resend-domain",
                                 "strategy": "api",
                                 "status": "ok",
-                                "decision": _strategy_decision(),
+                                "decision": _resend_domain_strategy_decision(),
                             }
                         ],
                     },
@@ -537,6 +563,54 @@ def test_acceptance_blockers_use_launcher_actionable_check_guidance() -> None:
     ]["next_action"]
 
 
+def test_resend_api_strategy_requires_domain_ownership_evidence() -> None:
+    failures = _provider_strategy_shape_failures(
+        [
+            {
+                "provider": "resend",
+                "strategies": [
+                    {
+                        "recipe": "resend-domain",
+                        "strategy": "api",
+                        "status": "ok",
+                        "decision": _strategy_decision(),
+                    }
+                ],
+            }
+        ]
+    )
+
+    assert "resend.strategies[0].selected.evidence.api_owns must be domain" in failures
+    assert (
+        "resend.strategies[0].selected.evidence.downstream_order must be before_dns_apply"
+        in failures
+    )
+
+
+def test_resend_audience_strategy_requires_conditional_api_evidence() -> None:
+    failures = _provider_strategy_shape_failures(
+        [
+            {
+                "provider": "resend",
+                "strategies": [
+                    {
+                        "recipe": "resend-audience",
+                        "strategy": "api",
+                        "status": "ok",
+                        "decision": _strategy_decision(),
+                    }
+                ],
+            }
+        ]
+    )
+
+    assert "resend.strategies[0].selected.evidence.api_owns must be audience" in failures
+    assert (
+        "resend.strategies[0].selected.evidence.conditional must be "
+        "only_when_app_requires_audience"
+    ) in failures
+
+
 def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()
@@ -891,7 +965,7 @@ domains:
                                 "recipe": "resend-domain",
                                 "strategy": "api",
                                 "status": "ok",
-                                "decision": _strategy_decision(),
+                                "decision": _resend_domain_strategy_decision(),
                             }
                         ],
                     },
@@ -1389,7 +1463,7 @@ domains:
                                 "recipe": "resend-domain",
                                 "strategy": "api",
                                 "status": "ok",
-                                "decision": _strategy_decision(),
+                                "decision": _resend_domain_strategy_decision(),
                             }
                         ],
                     }
@@ -1492,7 +1566,7 @@ domains:
                                 "recipe": "resend-domain",
                                 "strategy": "api",
                                 "status": "ok",
-                                "decision": _strategy_decision(),
+                                "decision": _resend_domain_strategy_decision(),
                             }
                         ],
                     },
@@ -1611,7 +1685,7 @@ domains:
                                 "recipe": "resend-domain",
                                 "strategy": "api",
                                 "status": "ok",
-                                "decision": _strategy_decision(),
+                                "decision": _resend_domain_strategy_decision(),
                             }
                         ],
                     },

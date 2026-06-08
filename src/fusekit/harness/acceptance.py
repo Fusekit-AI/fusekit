@@ -489,6 +489,14 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
             "Run Resend domain setup before Cloudflare/DNS so Resend DNS records are available.",
         )
     if check.id.startswith("provider_strategies."):
+        if "resend.strategies" in check.detail.lower() and "evidence" in check.detail.lower():
+            return (
+                "Provider routes",
+                (
+                    "Rerun Resend setup so strategy proof records that FuseKit owns "
+                    "domain/audience API setup after key capture."
+                ),
+            )
         return (
             "Provider routes",
             "Rerun provider setup so strategy decisions are recorded and ordered correctly.",
@@ -1312,6 +1320,67 @@ def _provider_strategy_shape_failures(providers: Any) -> list[str]:
                         requires_vm=True,
                     )
                 )
+            failures.extend(
+                _provider_specific_strategy_shape_failures(
+                    provider_name,
+                    strategy,
+                    selected,
+                    label,
+                )
+            )
+    return failures
+
+
+def _provider_specific_strategy_shape_failures(
+    provider_name: str,
+    strategy: dict[str, Any],
+    selected: dict[str, Any],
+    label: str,
+) -> list[str]:
+    """Require provider-specific proof that keeps public guidance honest."""
+
+    if provider_name.lower() != "resend":
+        return []
+    if str(strategy.get("strategy", selected.get("kind", ""))) != "api":
+        return []
+    if str(strategy.get("status", "")).strip() != "ok":
+        return []
+    recipe = str(strategy.get("recipe", "")).strip()
+    evidence = selected.get("evidence", {})
+    if not isinstance(evidence, dict):
+        return [f"{label}.selected.evidence is missing"]
+    if recipe == "resend-domain":
+        return _required_strategy_evidence(
+            evidence,
+            label,
+            {
+                "api_owns": "domain",
+                "user_manual_domain_step": "false",
+                "downstream_order": "before_dns_apply",
+            },
+        )
+    if recipe == "resend-audience":
+        return _required_strategy_evidence(
+            evidence,
+            label,
+            {
+                "api_owns": "audience",
+                "user_manual_audience_step": "false",
+                "conditional": "only_when_app_requires_audience",
+            },
+        )
+    return []
+
+
+def _required_strategy_evidence(
+    evidence: dict[str, Any],
+    label: str,
+    required: dict[str, str],
+) -> list[str]:
+    failures: list[str] = []
+    for key, expected in required.items():
+        if str(evidence.get(key, "")).strip() != expected:
+            failures.append(f"{label}.selected.evidence.{key} must be {expected}")
     return failures
 
 
