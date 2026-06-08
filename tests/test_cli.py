@@ -2460,6 +2460,71 @@ def test_provider_verification_parks_provider_with_pending_gate(
     assert payload["counts"]["needs_human_gate"] == 1
 
 
+def test_provider_verification_parks_downstream_dns_behind_resend_gate(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    args = argparse.Namespace(
+        app=app,
+        live_url="https://moonlite.rsvp",
+        verify_attempts=10,
+        verify_retry_seconds=30,
+    )
+    GateService.load(app / ".fusekit" / "gates.json").wait(
+        "provider.resend.resend-domain",
+        provider="resend",
+        reason="Resend API key is required before DNS records exist.",
+        resume_url="https://resend.com/api-keys",
+    )
+    manifest = SetupManifest(
+        app_name="app",
+        app_path=str(app),
+        services=(
+            ServiceRequirement(
+                provider="cloudflare",
+                kind="dns",
+                name="dns",
+                capabilities=("capability_pack",),
+                secrets=("CLOUDFLARE_API_TOKEN",),
+            ),
+            ServiceRequirement(
+                provider="resend",
+                kind="email",
+                name="email",
+                capabilities=("capability_pack",),
+                secrets=("RESEND_API_KEY",),
+            ),
+        ),
+        domains=(DomainRequirement(provider="cloudflare", domain="moonlite.rsvp"),),
+    )
+    audit = AuditLog(tmp_path / "audit.jsonl")
+    receipt = Receipt(app_name="app")
+    report = VerificationReport(app_name="app", live_url=args.live_url)
+
+    monkeypatch.setattr(
+        "fusekit.cli.verify_provider_pack",
+        lambda *args, **kwargs: pytest.fail("downstream DNS should wait for Resend gate"),
+    )
+
+    _verify_provider_packs(args, manifest, Vault.empty(), audit, receipt, report)
+
+    actions = receipt.to_dict()["actions"]
+    assert [action["details"]["provider"] for action in actions] == ["resend", "cloudflare"]
+    assert [action["status"] for action in actions] == ["needs_human_gate", "pending-safe"]
+    payload = report.to_dict()
+    assert payload["overall"] == "needs_human_gate"
+    checks = {(check["provider"], check["check"]): check for check in payload["checks"]}
+    assert checks[("resend", "provider_gate")]["status"] == "needs_human_gate"
+    cloudflare = checks[("cloudflare", "provider_gate")]
+    assert cloudflare["status"] == "pending"
+    details = cloudflare["details"]["details"]
+    assert details["pending_safe"] is True
+    assert details["blocked_by_provider"] == "resend"
+    assert "active upstream provider gate" in cloudflare["repair"]
+
+
 def test_strict_live_url_failure_still_fails(monkeypatch, tmp_path) -> None:
     args = argparse.Namespace(live_url="https://moonlite.rsvp", allow_incomplete=False)
     audit = AuditLog(tmp_path / "audit.jsonl")

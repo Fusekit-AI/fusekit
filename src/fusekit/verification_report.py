@@ -181,6 +181,7 @@ def _check_name(kind: str) -> str:
         "cloudflare-dns-api": "dns_record_exists",
         "resend-domain": "domain_verified",
         "webhook-secret": "webhook_secret_present",
+        "provider-gate": "provider_gate",
     }.get(kind, "resource_exists")
 
 
@@ -217,6 +218,11 @@ def _repair(provider: str, check: str, status: str) -> str:
 
 
 def _pending_repair(provider: str, check: str) -> str:
+    if check == "provider_gate":
+        return (
+            "Finish the active upstream provider gate in the control room; FuseKit will "
+            f"verify {provider} after that gate is resolved."
+        )
     if check == "dns_record_exists":
         return (
             "Cloudflare DNS record exists in Cloudflare but has not propagated yet. "

@@ -3428,20 +3428,28 @@ def _verify_provider_packs(
     verification_report: VerificationReport,
 ) -> None:
     app_path = Path(manifest.app_path)
-    services = list(manifest.services)
-    has_dns_service = any(service.provider in {"cloudflare", "dns"} for service in services)
+    services_by_provider = {service.provider.lower(): service for service in manifest.services}
+    has_dns_service = any(provider in {"cloudflare", "dns"} for provider in services_by_provider)
     if manifest.domains and not has_dns_service:
-        services.append(
-            ServiceRequirement(
-                provider="cloudflare",
-                kind="dns",
-                name="dns",
-                capabilities=("capability_pack", "dns"),
-                settings={"capability_pack": str(pack_default_path(app_path, "cloudflare"))},
-            )
+        services_by_provider["cloudflare"] = ServiceRequirement(
+            provider="cloudflare",
+            kind="dns",
+            name="dns",
+            capabilities=("capability_pack", "dns"),
+            settings={"capability_pack": str(pack_default_path(app_path, "cloudflare"))},
         )
-    for service in services:
-        provider = service.provider.lower()
+    ordered_services = _ordered_provider_services(services_by_provider)
+    active_gate = _pending_provider_gate(args)
+    active_gate_provider = active_gate.provider.lower() if active_gate is not None else ""
+    active_gate_index = next(
+        (
+            index
+            for index, (ordered_provider, _service) in enumerate(ordered_services)
+            if ordered_provider == active_gate_provider
+        ),
+        None,
+    )
+    for index, (provider, service) in enumerate(ordered_services):
         pack_path = _provider_pack_path(app_path, provider, service)
         if not pack_path.exists():
             pack = synthesize_provider_pack(provider, app_path)
@@ -3462,6 +3470,12 @@ def _verify_provider_packs(
                     },
                 )
             ]
+        elif (
+            active_gate is not None
+            and active_gate_index is not None
+            and index > active_gate_index
+        ):
+            results = [_provider_waiting_on_upstream_gate_result(pack.provider, active_gate)]
         else:
             verify_attempts, verify_retry_seconds = _provider_verification_attempt_config(args)
             results = verify_provider_pack(
@@ -3536,6 +3550,28 @@ def _verify_provider_packs(
                 f"Provider verification failed for {pack.provider}. See redacted receipt/audit."
             )
     _verify_webhook_secret_checks(manifest, vault, verification_report)
+
+
+def _provider_waiting_on_upstream_gate_result(
+    provider: str,
+    gate: GateRecord,
+) -> VerificationResult:
+    gate_provider = gate.provider.lower() or "provider"
+    return VerificationResult(
+        provider=provider,
+        kind="provider-gate",
+        target=gate.id,
+        status="pending",
+        details={
+            "pending_safe": True,
+            "service_gate": True,
+            "blocked_by_gate": gate.id,
+            "blocked_by_provider": gate_provider,
+            "reason": (
+                f"Waiting for the {gate_provider} gate before verifying {provider}."
+            ),
+        },
+    )
 
 
 def _record_provider_verification_gates(
