@@ -456,14 +456,61 @@ def _acceptance_blockers(report: dict[str, Any]) -> list[dict[str, Any]]:
     if not isinstance(missing, list):
         return []
     return [
-        {
-            "category": "Launch evidence",
-            "item": str(item),
-            "next_action": "Repair this acceptance item, then rerun live acceptance.",
-        }
+        _missing_acceptance_blocker(str(item))
         for item in missing
         if str(item).strip()
     ]
+
+
+def _missing_acceptance_blocker(item: str) -> dict[str, str]:
+    category, next_action = _missing_acceptance_guidance(item)
+    return {
+        "category": category,
+        "item": item,
+        "next_action": next_action,
+    }
+
+
+def _missing_acceptance_guidance(item: str) -> tuple[str, str]:
+    guidance = {
+        "audited human gate interventions": (
+            "Human gates",
+            (
+                "Open, capture, or resume each control-room gate through the launcher so "
+                "redacted audit events are written."
+            ),
+        ),
+        "resolved human gates": (
+            "Human gates",
+            (
+                "Finish or repair every waiting, resurfaced, or retrying control-room gate "
+                "before recording."
+            ),
+        ),
+        "guided human gates": (
+            "Human gates",
+            "Regenerate gate state so every control-room gate has next action and resume hint.",
+        ),
+        "provider strategy decisions": (
+            "Provider routes",
+            (
+                "Run provider setup through the strategy recorder so API, vault, or "
+                "VM follow-me choices are proven."
+            ),
+        ),
+        "complete provider strategy evidence": (
+            "Provider routes",
+            "Record selected-route kind, status, deterministic flags, reason, and candidates.",
+        ),
+        "Resend-before-DNS provider setup order": (
+            "Provider order",
+            "Run Resend domain setup before Cloudflare/DNS so Resend DNS records are included.",
+        ),
+    }
+    return guidance.get(
+        item,
+        ("Launch evidence", "Repair this acceptance item, then rerun live acceptance."),
+    )
 
 
 def _render_acceptance_blocker_card(blocker: dict[str, Any]) -> str:

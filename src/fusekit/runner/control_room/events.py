@@ -717,11 +717,44 @@ function acceptanceBlockers(report) {
   return missing
     .map((item) => String(item).trim())
     .filter(Boolean)
-    .map((item) => ({
-      category: "Launch evidence",
-      item,
-      next_action: "Repair this acceptance item, then rerun live acceptance.",
-    }));
+    .map((item) => missingAcceptanceBlocker(item));
+}
+
+function missingAcceptanceBlocker(item) {
+  const guidance = {
+    "audited human gate interventions": [
+      "Human gates",
+      "Open, capture, or resume each control-room gate through the launcher so " +
+        "redacted audit events are written.",
+    ],
+    "resolved human gates": [
+      "Human gates",
+      "Finish or repair every waiting, resurfaced, or retrying control-room gate before recording.",
+    ],
+    "guided human gates": [
+      "Human gates",
+      "Regenerate gate state so every control-room gate has next action and resume hint.",
+    ],
+    "provider strategy decisions": [
+      "Provider routes",
+      "Run provider setup through the strategy recorder so API, vault, or " +
+        "VM follow-me choices are proven.",
+    ],
+    "complete provider strategy evidence": [
+      "Provider routes",
+      "Record selected-route kind, status, deterministic flags, reason, and candidates.",
+    ],
+    "Resend-before-DNS provider setup order": [
+      "Provider order",
+      "Run Resend domain setup before Cloudflare/DNS so Resend DNS records are included.",
+    ],
+  };
+  const fallback = [
+    "Launch evidence",
+    "Repair this acceptance item, then rerun live acceptance.",
+  ];
+  const [category, nextAction] = guidance[item] || fallback;
+  return { category, item, next_action: nextAction };
 }
 
 function renderAcceptance(job) {

@@ -462,11 +462,12 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
     payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
 
     assert payload["acceptance"]["missing"] == ["audited human gate interventions"]
-    assert "Launch evidence" in html
+    assert "Human gates" in html
     assert "audited human gate interventions" in html
-    assert "Repair this acceptance item, then rerun live acceptance." in html
+    assert "Open, capture, or resume each control-room gate through the launcher" in html
     assert "1 launch blocker" in html
     assert "acceptanceBlockers" in html
+    assert "missingAcceptanceBlocker" in html
 
 
 def test_control_room_renders_acceptance_ready_state(tmp_path) -> None:
