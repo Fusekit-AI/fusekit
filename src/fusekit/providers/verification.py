@@ -730,7 +730,16 @@ def _verify_resend_domain(
             kind=recipe.kind,
             target=domain,
             status="failed",
-            details={"domain": domain, "missing": True},
+            details={
+                "domain": domain,
+                "missing": True,
+                "repair": "rerun_resend_domain_setup",
+                "reason": (
+                    "Resend has a valid setup key, but the sending domain does not exist yet. "
+                    "FuseKit should create or reuse the domain through Resend's API before DNS "
+                    "is applied."
+                ),
+            },
         )
     domain_status = str(match.get("status", "")).lower()
     ok = domain_status in {"verified", "success", "active"}

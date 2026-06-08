@@ -1271,6 +1271,53 @@ def test_verification_gate_records_resend_api_key_follow_me(tmp_path) -> None:
     assert "I finished this step" not in " ".join(gate.follow_steps)
 
 
+def test_verification_gate_routes_missing_resend_domain_to_api_retry(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    args = argparse.Namespace(app=app)
+    manifest = SetupManifest(
+        app_name="app",
+        app_path=str(app),
+        domains=(DomainRequirement(provider="cloudflare", domain="moonlite.rsvp"),),
+    )
+    pack = synthesize_provider_pack("resend", app)
+    result = VerificationResult(
+        provider="resend",
+        kind="resend-domain",
+        target="moonlite.rsvp",
+        status="failed",
+        details={
+            "reason": (
+                "Resend has a valid setup key, but the sending domain does not exist yet. "
+                "FuseKit should create or reuse the domain through Resend's API before DNS "
+                "is applied."
+            ),
+            "missing": True,
+            "repair": "rerun_resend_domain_setup",
+        },
+    )
+
+    recorded = _record_provider_verification_gates(args, manifest, pack, [result])
+
+    assert recorded == [
+        {
+            "id": "provider.resend.domain-setup-retry",
+            "provider": "resend",
+            "classification": "provider-setup-retry",
+            "target": "RESEND_API_KEY",
+        }
+    ]
+    gate = GateService.load(app / ".fusekit" / "gates.json").records[
+        "provider.resend.domain-setup-retry"
+    ]
+    steps = " ".join(gate.follow_steps)
+    assert gate.resume_url == "https://resend.com/api-keys"
+    assert "Do not manually create moonlite.rsvp" in steps
+    assert "Resend API setup" in gate.resume_hint
+    assert "Cloudflare DNS" in gate.resume_hint
+    assert "Full access" in gate.next_action
+
+
 def test_verification_gate_routes_resend_runtime_values_from_vercel(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()

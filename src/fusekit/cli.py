@@ -3638,7 +3638,10 @@ def _record_provider_verification_gates(
 
     recorded: list[dict[str, object]] = []
     for result in results:
-        if result.status != "needs_human_gate" or result.kind == "provider-gate":
+        if (
+            result.status != "needs_human_gate"
+            and not _failed_provider_result_has_guided_repair(result)
+        ) or result.kind == "provider-gate":
             continue
         gate = _provider_verification_gate(args, manifest, pack, result)
         _record_gate_waiting(
@@ -3650,6 +3653,8 @@ def _record_provider_verification_gates(
             classification=gate["classification"],
             target=gate["target"],
             follow_steps=gate["follow_steps"],
+            next_action=gate.get("next_action", ""),
+            resume_hint=gate.get("resume_hint", ""),
         )
         recorded.append(
             {
@@ -3660,6 +3665,15 @@ def _record_provider_verification_gates(
             }
         )
     return recorded
+
+
+def _failed_provider_result_has_guided_repair(result: VerificationResult) -> bool:
+    return (
+        result.status == "failed"
+        and result.provider == "resend"
+        and result.kind == "resend-domain"
+        and result.details.get("repair") == "rerun_resend_domain_setup"
+    )
 
 
 def _provider_verification_gate(
@@ -3703,6 +3717,32 @@ def _provider_verification_gate(
         }
     if pack.provider == "resend" and result.kind == "resend-domain":
         target = result.target if "${input:" not in result.target else domain
+        needs_setup_retry = (
+            result.details.get("missing")
+            or result.details.get("repair") == "rerun_resend_domain_setup"
+        )
+        if needs_setup_retry:
+            return {
+                "id": "provider.resend.domain-setup-retry",
+                "provider": "resend",
+                "reason": reason
+                or (
+                    f"FuseKit has a valid Resend setup key, but {target or domain} was not "
+                    "created yet."
+                ),
+                "resume_url": "https://resend.com/api-keys",
+                "classification": "provider-setup-retry",
+                "target": "RESEND_API_KEY",
+                "follow_steps": _resend_domain_setup_retry_follow_steps(target or domain),
+                "next_action": (
+                    "Confirm the Resend setup key has Full access, then let FuseKit retry "
+                    "Resend domain setup through the API."
+                ),
+                "resume_hint": (
+                    "FuseKit will rerun Resend API setup, pull the returned DNS records, "
+                    "and only then continue to Cloudflare DNS."
+                ),
+            }
         return {
             "id": "provider.resend.domain-verification",
             "provider": "resend",
@@ -3756,6 +3796,26 @@ def _resend_domain_follow_steps(domain: str) -> tuple[str, ...]:
         (
             "Return here and click I finished this step after Resend shows the "
             "domain as verified or pending DNS."
+        ),
+    )
+
+
+def _resend_domain_setup_retry_follow_steps(domain: str) -> tuple[str, ...]:
+    named_domain = domain or "the app sending domain"
+    return (
+        "Use the live VM browser surface, not a local browser tab.",
+        (
+            "Open Resend API Keys only if you need to confirm the captured setup key still "
+            "has Full access."
+        ),
+        (
+            f"Do not manually create {named_domain} in Resend for this step; FuseKit is "
+            "supposed to create or reuse it through Resend's API."
+        ),
+        (
+            "Click I finished this step after confirming the setup key. FuseKit will retry "
+            "the Resend API setup, capture the domain DNS records, and pass those records "
+            "to Cloudflare."
         ),
     )
 

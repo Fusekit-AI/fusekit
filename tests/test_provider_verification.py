@@ -671,6 +671,8 @@ def test_resend_domain_check_sends_user_agent_and_allows_empty_domains(monkeypat
 
     assert result.status == "failed"
     assert result.details["missing"] is True
+    assert result.details["repair"] == "rerun_resend_domain_setup"
+    assert "create or reuse the domain through Resend's API" in result.details["reason"]
     assert captured["headers"]["User-agent"] == "FuseKit provider verification"
     assert captured["url"] == "https://api.resend.com/domains"
 
