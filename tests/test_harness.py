@@ -503,6 +503,40 @@ def test_acceptance_report_redacts_check_and_blocker_details(tmp_path) -> None:
     assert payload["blockers"][1]["detail"].endswith("?code=[redacted]&state=ok")
 
 
+def test_acceptance_blockers_use_launcher_actionable_check_guidance() -> None:
+    checks = [
+        AcceptanceCheck(
+            "gates.guided",
+            "failed",
+            "provider.cloudflare.authorization missing resume_url",
+        ),
+        AcceptanceCheck(
+            "gates.audited",
+            "failed",
+            "missing control_room.gate_resume_requested: provider.cloudflare.authorization",
+        ),
+        AcceptanceCheck(
+            "receipt.resend_dns_flow",
+            "failed",
+            "Receipt DNS proposal is missing Resend-generated records: MX send.moonlite.rsvp",
+        ),
+        AcceptanceCheck(
+            "detonation.worker_state",
+            "failed",
+            "Plaintext worker/browser/visual state still exists: .fusekit/browser",
+        ),
+    ]
+
+    blockers = {blocker["item"]: blocker for blocker in _acceptance_blockers(checks, [])}
+
+    assert "Open provider gate in VM URL" in blockers["gates.guided"]["next_action"]
+    assert "I finished this step" in blockers["gates.audited"]["next_action"]
+    assert "approve the DNS apply gate" in blockers["receipt.resend_dns_flow"]["next_action"]
+    assert "plaintext worker, browser, visual, and auth scratch state" in blockers[
+        "detonation.worker_state"
+    ]["next_action"]
+
+
 def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()

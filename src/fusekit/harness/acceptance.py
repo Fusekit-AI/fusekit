@@ -432,9 +432,61 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
 
 def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
     if check.id.startswith("gates."):
+        detail = check.detail.lower()
+        if check.id == "gates.guided":
+            if "missing resume_url" in detail:
+                return (
+                    "Human gates",
+                    "Regenerate the provider gate with an Open provider gate in VM URL.",
+                )
+            if "non-launcher wording" in detail:
+                return (
+                    "Human gates",
+                    "Regenerate gate guidance so it names only visible launcher controls.",
+                )
+            if "capture from vm clipboard" in detail:
+                return (
+                    "Human gates",
+                    "Regenerate copy-once secret gates so they name Capture from VM clipboard.",
+                )
+            if "vm browser path" in detail:
+                return (
+                    "Human gates",
+                    "Regenerate provider gates so follow-me steps name the VM browser path.",
+                )
+        if check.id == "gates.audited":
+            if "control_room.gate_open" in detail:
+                return (
+                    "Human gates",
+                    "Open each provider gate through Open provider gate in VM so "
+                    "FuseKit can audit it.",
+                )
+            if "control_room.clipboard_capture" in detail:
+                return (
+                    "Human gates",
+                    "Copy the provider token in the VM browser, then click the matching "
+                    "Capture from VM clipboard button.",
+                )
+            if "control_room.gate_resume_requested" in detail:
+                return (
+                    "Human gates",
+                    "After the provider confirms the step, click the visible I finished "
+                    "this step or approval button.",
+                )
+        if check.id == "gates.resolved":
+            return (
+                "Human gates",
+                "Finish the visible VM-browser gate, then use the matching Capture "
+                "or resume button.",
+            )
         return (
             "Human gates",
             "Repair the control-room gate artifact, then rerun live acceptance.",
+        )
+    if check.id == "provider_strategies.order":
+        return (
+            "Provider order",
+            "Run Resend domain setup before Cloudflare/DNS so Resend DNS records are available.",
         )
     if check.id.startswith("provider_strategies."):
         return (
@@ -449,7 +501,28 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
     if check.id.startswith("vault."):
         return ("Vault", "Regenerate or unlock the encrypted vault evidence.")
     if check.id.startswith("receipt."):
+        if check.id == "receipt.resend_dns_flow":
+            return (
+                "Provider order",
+                "Create or reuse the Resend domain first, then approve the DNS apply gate.",
+            )
+        if check.id == "receipt.resend_vercel_env":
+            return (
+                "Deployment env",
+                "Capture or generate the required RESEND_* values before Vercel env setup runs.",
+            )
         return ("Receipt", "Regenerate the redacted setup receipt.")
+    if check.id == "detonation.worker_state":
+        return (
+            "Detonation",
+            "Run detonation so plaintext worker, browser, visual, and auth scratch "
+            "state is removed.",
+        )
+    if check.id == "leak_scan.clean":
+        return (
+            "Security",
+            "Remove plaintext setup secrets from app files, then rerun the launch leak scan.",
+        )
     return ("Launch evidence", f"Repair failed acceptance check {check.id}.")
 
 

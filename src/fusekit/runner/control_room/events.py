@@ -737,6 +737,24 @@ function acceptanceBlockers(report) {
 
 function missingAcceptanceBlocker(item) {
   const guidance = {
+    "encrypted vault": [
+      "Vault",
+      "Run the launcher with vault capture enabled so FuseKit stores secrets " +
+        "only in the encrypted vault.",
+    ],
+    "redacted setup receipt": [
+      "Receipt",
+      "Rerun setup so the worker writes a redacted setup receipt with no raw secrets.",
+    ],
+    "safe verification report": [
+      "Verification",
+      "Let FuseKit finish provider verification and resolve any visible provider " +
+        "gate it surfaces in the VM browser.",
+    ],
+    "rollback metadata": [
+      "Rollback",
+      "Let FuseKit generate rollback actions from the redacted setup receipt.",
+    ],
     "audited human gate interventions": [
       "Human gates",
       "Open, capture, or resume each control-room gate through the launcher so " +
@@ -775,6 +793,33 @@ function missingAcceptanceBlocker(item) {
     "Resend-before-DNS provider setup order": [
       "Provider order",
       "Run Resend domain setup before Cloudflare/DNS so Resend DNS records are included.",
+    ],
+    "Resend DNS records in receipt DNS proposal": [
+      "Provider order",
+      "Let FuseKit create or reuse the Resend sending domain first, then approve " +
+        "the DNS apply gate so Cloudflare receives the exact Resend records.",
+    ],
+    "Resend runtime env in Vercel receipt": [
+      "Deployment env",
+      "Capture or generate the required RESEND_* values in the launcher, then " +
+        "let FuseKit push them into Vercel before verification.",
+    ],
+    "validated provider capability packs": [
+      "Provider packs",
+      "Regenerate provider capability packs for this app's providers before setup runs.",
+    ],
+    "verified live URL": [
+      "Deployment",
+      "Let FuseKit verify the deployed live URL and write it into the setup receipt.",
+    ],
+    "clean leak scan": [
+      "Security",
+      "Remove plaintext setup secrets from app files and rerun the launch leak scan.",
+    ],
+    "detonated worker state": [
+      "Detonation",
+      "Run detonation so plaintext worker, browser, visual, and auth scratch state " +
+        "is destroyed after encrypted proof is preserved.",
     ],
   };
   const fallback = [

@@ -479,6 +479,9 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
                     "complete provider strategy coverage",
                     "complete provider verification coverage",
                     "complete rollback coverage",
+                    "Resend DNS records in receipt DNS proposal",
+                    "Resend runtime env in Vercel receipt",
+                    "detonated worker state",
                 ],
                 "blockers": [],
             }
@@ -495,6 +498,9 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
         "complete provider strategy coverage",
         "complete provider verification coverage",
         "complete rollback coverage",
+        "Resend DNS records in receipt DNS proposal",
+        "Resend runtime env in Vercel receipt",
+        "detonated worker state",
     ]
     assert "Human gates" in html
     assert "audited human gate interventions" in html
@@ -509,7 +515,14 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
     assert "Rollback" in html
     assert "complete rollback coverage" in html
     assert "Record rollback metadata for every provider declared by the manifest" in html
-    assert "5 launch blockers" in html
+    assert "Provider order" in html
+    assert "Resend DNS records in receipt DNS proposal" in html
+    assert "Cloudflare receives the exact Resend records" in html
+    assert "Deployment env" in html
+    assert "Capture or generate the required RESEND_* values" in html
+    assert "Detonation" in html
+    assert "plaintext worker, browser, visual, and auth scratch state" in html
+    assert "8 launch blockers" in html
     assert "acceptanceBlockers" in html
     assert "missingAcceptanceBlocker" in html
 
