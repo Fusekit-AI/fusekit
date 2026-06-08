@@ -64,7 +64,7 @@ def run_provider_pack_setup(
         decision = choose_provider_strategy(pack, recipe, _strategy_signal(pack, context))
         strategy_payload = decision.to_dict()
         if not decision.executable:
-            action = summarize_strategy_action(decision)
+            action = summarize_strategy_action(decision, pack)
             action.update({"kind": recipe.kind, "strategy_decision": strategy_payload})
             if not context.allow_incomplete and action["status"] != "needs_human_gate":
                 raise FuseKitError(str(action["reason"]))

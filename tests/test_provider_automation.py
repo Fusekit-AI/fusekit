@@ -126,6 +126,9 @@ def test_github_pack_setup_reports_browser_strategy_when_token_missing(tmp_path)
     assert deploy_key["strategy"] == "browser_guided"
     assert deploy_key["strategy_decision"]["selected"]["kind"] == "browser_guided"
     assert "login/MFA/CAPTCHA/consent" in deploy_key["next_action"]
+    assert "fine-grained token named FuseKit setup" in " ".join(deploy_key["follow_steps"])
+    assert "Resource owner" in " ".join(deploy_key["follow_steps"])
+    assert "visible gate is finished" in deploy_key["resume_hint"]
 
 
 def test_vercel_pack_connects_project_and_deploys_from_github_repo(

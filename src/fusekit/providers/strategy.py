@@ -329,25 +329,57 @@ def _account_handoff_url(pack: ProviderCapabilityPack) -> str:
     return ""
 
 
-def summarize_strategy_action(decision: ProviderStrategyDecision) -> dict[str, Any]:
+def summarize_strategy_action(
+    decision: ProviderStrategyDecision,
+    pack: ProviderCapabilityPack | None = None,
+) -> dict[str, Any]:
     """Return a compact next-action payload for blocked provider setup."""
 
     selected = decision.selected
     resume_url = selected.evidence.get("handoff_url", "")
+    needs_human_gate = selected.kind in {"browser_guided", "human_follow_me"}
     return {
         "provider": decision.provider,
         "recipe": decision.recipe_kind,
         "strategy": selected.kind,
-        "status": "needs_human_gate"
-        if selected.kind in {"browser_guided", "human_follow_me"}
-        else selected.status,
+        "status": "needs_human_gate" if needs_human_gate else selected.status,
         "reason": selected.reason,
         "resume_url": resume_url,
         "next_action": (
             "Click Open provider gate in VM, complete login/MFA/CAPTCHA/consent/token "
             "creation in the VM browser, then copy any revealed token and click the "
             "matching Capture from VM clipboard button."
-            if selected.kind in {"browser_guided", "human_follow_me"}
+            if needs_human_gate
             else "Install or authorize a deterministic provider route, then retry."
         ),
+        "follow_steps": _strategy_follow_steps(pack) if needs_human_gate else (),
+        "resume_hint": (
+            "FuseKit will retry this provider route after the visible gate is finished "
+            "or every requested value is captured."
+            if needs_human_gate
+            else "FuseKit will choose the deterministic route once it is available."
+        ),
     }
+
+
+def _strategy_follow_steps(pack: ProviderCapabilityPack | None) -> tuple[str, ...]:
+    if pack is not None:
+        steps = tuple(
+            step
+            for step in (*pack.handoff.account_steps, *pack.handoff.secret_steps)
+            if step.strip()
+        )
+        if steps:
+            return steps
+    return (
+        "Click Open provider gate in VM so the provider opens in the observed VM browser.",
+        "Complete only provider-owned login, MFA, CAPTCHA, consent, billing, or token prompts.",
+        (
+            "If the provider reveals a copy-once token, copy it inside the VM browser and "
+            "click the matching Capture from VM clipboard button."
+        ),
+        (
+            "For non-secret confirmation gates, click I finished this step after the "
+            "provider confirms."
+        ),
+    )
