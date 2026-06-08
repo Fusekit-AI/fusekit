@@ -16,6 +16,7 @@ from fusekit.cli import (
     _capture_llm,
     _capture_manifest_provider_env,
     _capture_provider_tokens,
+    _github_source_handoff,
     _has_pack_provider_token,
     _local_verification_job_result,
     _ordered_provider_services,
@@ -1690,6 +1691,22 @@ def test_source_fetch_guides_private_repo_with_inferred_github_goal(
     assert "owner/private" in goals[0]
     assert "Highlight each provider-screen element" in goals[0]
     assert "Use the gate action with a target" in goals[0]
+
+
+def test_github_app_source_handoff_uses_launcher_capture_copy() -> None:
+    handoff = _github_source_handoff(
+        argparse.Namespace(
+            github_auth="app",
+            github_app_install_url="https://github.com/apps/fusekit/installations/new",
+        )
+    )
+
+    steps = " ".join(handoff.secret_steps)
+    assert "inside the VM browser" in steps
+    assert "Capture button in FuseKit" in steps
+    assert "encrypted vault" in steps
+    assert "hidden prompt" not in steps
+    assert "environment variable" not in steps
 
 
 def test_await_provider_token_picks_up_token_saved_to_vault(

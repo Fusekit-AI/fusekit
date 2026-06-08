@@ -982,8 +982,14 @@ def _github_source_handoff(args: argparse.Namespace) -> ProviderHandoff:
                 ),
             ),
             secret_steps=(
-                "Return the app-issued installation token or approved access token to FuseKit.",
-                "FuseKit captures it through a hidden prompt or environment variable.",
+                (
+                    "When GitHub reveals the app-issued installation token or approved access "
+                    "token, copy it inside the VM browser."
+                ),
+                (
+                    "Click the matching Capture button in FuseKit; FuseKit stores the token "
+                    "only in the encrypted vault."
+                ),
             ),
         )
     return handoff_for("github")
