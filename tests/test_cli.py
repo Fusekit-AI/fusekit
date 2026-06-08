@@ -1551,6 +1551,7 @@ def test_apply_records_provider_strategy_gate_when_token_is_missing(
     assert gate.provider == "github"
     assert gate.resume_url == "https://github.com/settings/tokens?type=beta"
     assert gate.classification == "provider-authorization"
+    assert gate.target == "GITHUB_TOKEN"
     assert "fine-grained token" in " ".join(gate.follow_steps)
     assert "Click Open provider gate in VM" in gate.next_action
     assert "matching Capture from VM clipboard button" in gate.next_action
@@ -1562,6 +1563,7 @@ def test_apply_records_provider_strategy_gate_when_token_is_missing(
     assert strategy["strategy"] == "browser_guided"
     assert strategy["status"] == "needs_human_gate"
     assert strategy["resume_url"] == "https://github.com/settings/tokens?type=beta"
+    assert strategy["target"] == "GITHUB_TOKEN"
     assert "fine-grained token" in " ".join(strategy["follow_steps"])
     assert "Resource owner" in " ".join(strategy["follow_steps"])
     assert "matching Capture from VM clipboard button" in strategy["next_action"]

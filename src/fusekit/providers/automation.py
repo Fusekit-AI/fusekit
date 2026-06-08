@@ -76,17 +76,13 @@ def run_provider_pack_setup(
         if decision.selected.kind == "api" and _recipe_may_touch_provider_api(recipe, context):
             try:
                 _ensure_provider_contract_health(pack, context)
-            except FuseKitError:
+            except FuseKitError as exc:
+                gate = _provider_contract_health_gate(pack, recipe, exc)
+                gate["strategy_decision"] = strategy_payload
                 if not context.allow_incomplete:
-                    raise
-                results.append(
-                    {
-                        "kind": recipe.kind,
-                        "status": "skipped",
-                        "reason": "provider contract health failed",
-                        "strategy_decision": strategy_payload,
-                    }
-                )
+                    results.append(gate)
+                    break
+                results.append(gate)
                 break
         result: dict[str, Any]
         try:
@@ -227,6 +223,71 @@ def _provider_contract_health(
         }
     result = health()
     return {"provider": provider, "checked": True, **result}
+
+
+def _provider_contract_health_gate(
+    pack: ProviderCapabilityPack,
+    recipe: SetupRecipe,
+    exc: FuseKitError,
+) -> dict[str, Any]:
+    """Return a guided token-refresh gate for failed provider API preflight."""
+
+    del exc
+    token_env = pack.handoff.token_env.strip().upper()
+    resume_url = _provider_handoff_url(pack)
+    display = pack.display_name or pack.provider
+    steps = [
+        (
+            f"The existing {display} token failed a read-only API health check, so "
+            "FuseKit stopped before changing provider state."
+        ),
+        "Click Open provider gate in VM so the provider opens in the observed VM browser.",
+    ]
+    steps.extend(step for step in pack.handoff.secret_steps if step.strip())
+    if token_env:
+        steps.append(
+            f"Copy the fresh {token_env} value inside the VM browser and click the matching "
+            "Capture from VM clipboard button."
+        )
+    else:
+        steps.append("Return to FuseKit and click I finished this step after provider approval.")
+    return {
+        "kind": recipe.kind,
+        "provider": pack.provider,
+        "status": "needs_human_gate",
+        "strategy": "browser_guided",
+        "reason": (
+            f"{display} API contract health failed before setup. Refresh or recapture "
+            "the provider setup token before FuseKit retries."
+        ),
+        "resume_url": resume_url,
+        "target": token_env,
+        "next_action": (
+            f"Click Open provider gate in VM, create or reveal a fresh {token_env}, copy it "
+            "inside the VM browser, then click the matching Capture from VM clipboard button."
+            if token_env
+            else "Click Open provider gate in VM, complete the provider-owned authorization, "
+            "then click I finished this step."
+        ),
+        "follow_steps": tuple(steps),
+        "resume_hint": (
+            "FuseKit will retry the read-only provider API health check before attempting "
+            "setup again."
+        ),
+        "contract_health_failed": True,
+    }
+
+
+def _provider_handoff_url(pack: ProviderCapabilityPack) -> str:
+    for value in (
+        pack.handoff.token_url,
+        pack.handoff.login_url,
+        pack.handoff.signup_url,
+        pack.handoff.project_url,
+    ):
+        if value:
+            return value
+    return ""
 
 
 def _vault_capture_env(

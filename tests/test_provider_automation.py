@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from fusekit.audit import AuditLog, Receipt, assert_no_secret_text
-from fusekit.errors import FuseKitError, ProviderError
+from fusekit.errors import ProviderError
 from fusekit.manifest import DnsRecord, DomainRequirement, SetupManifest
 from fusekit.providers.automation import ProviderSetupContext, run_provider_pack_setup
 from fusekit.providers.capability_pack import synthesize_provider_pack
@@ -847,21 +847,26 @@ def test_provider_setup_contract_health_failure_stops_before_mutation(
     )
     pack = synthesize_provider_pack("vercel", tmp_path)
 
-    try:
-        run_provider_pack_setup(pack, context)
-    except FuseKitError as exc:
-        assert "API contract health failed before setup" in str(exc)
-    else:
-        raise AssertionError("expected provider contract health failure")
+    result = run_provider_pack_setup(pack, context)
 
     assert calls == ["health"]
     assert "vercel" not in context.contract_health_checked
+    gate = result["setup"][0]
+    assert gate["kind"] == "vercel-project"
+    assert gate["status"] == "needs_human_gate"
+    assert gate["strategy"] == "browser_guided"
+    assert gate["resume_url"] == "https://vercel.com/account/tokens"
+    assert gate["target"] == "VERCEL_TOKEN"
+    assert gate["contract_health_failed"] is True
+    assert "VERCEL_TOKEN" in gate["next_action"]
+    assert "read-only API health check" in " ".join(gate["follow_steps"])
+    assert "invalid token" not in json.dumps(gate)
     actions = receipt.to_dict()["actions"]
     assert any(
         action["action"] == "vercel.contract_health" and action["status"] == "failed"
         for action in actions
     )
-    public = json.dumps(receipt.to_dict())
+    public = json.dumps(result) + json.dumps(receipt.to_dict())
     assert_no_secret_text(public, ["webhook-secret-value", "test-vercel-token-hidden"])
 
 

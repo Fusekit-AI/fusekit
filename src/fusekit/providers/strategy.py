@@ -388,7 +388,8 @@ def summarize_strategy_action(
     selected = decision.selected
     resume_url = selected.evidence.get("handoff_url", "")
     needs_human_gate = selected.kind in {"browser_guided", "human_follow_me"}
-    return {
+    target = pack.handoff.token_env if pack is not None else ""
+    action = {
         "provider": decision.provider,
         "recipe": decision.recipe_kind,
         "strategy": selected.kind,
@@ -410,6 +411,9 @@ def summarize_strategy_action(
             else "FuseKit will choose the deterministic route once it is available."
         ),
     }
+    if needs_human_gate and target:
+        action["target"] = target
+    return action
 
 
 def _strategy_follow_steps(pack: ProviderCapabilityPack | None) -> tuple[str, ...]:

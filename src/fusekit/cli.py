@@ -3461,7 +3461,7 @@ def _provider_strategy_record(result: dict[str, Any]) -> dict[str, object]:
             else str(item.get("strategy", "")),
             "decision": decision,
         }
-        for key in ("resume_url", "next_action", "resume_hint"):
+        for key in ("resume_url", "target", "next_action", "resume_hint"):
             value = str(item.get(key, "") or "").strip()
             if value:
                 strategy[key] = value
@@ -3510,6 +3510,7 @@ def _record_provider_strategy_gates(
         resume_hint = str(item.get("resume_hint", "") or "") or (
             "FuseKit will retry this provider route after you finish the gate."
         )
+        target = str(item.get("target", "") or "").strip().upper()
         gate_id = f"provider.{provider}.{_strategy_gate_slug(recipe)}"
         _record_gate_waiting(
             args,
@@ -3518,6 +3519,7 @@ def _record_provider_strategy_gates(
             reason=reason,
             resume_url=resume_url,
             classification="provider-authorization",
+            target=target,
             follow_steps=follow_steps,
             next_action=next_action,
             resume_hint=resume_hint,

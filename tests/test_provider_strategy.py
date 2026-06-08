@@ -121,6 +121,7 @@ def test_provider_strategy_action_can_carry_pack_follow_steps(tmp_path) -> None:
     steps = " ".join(action["follow_steps"])
 
     assert action["resume_url"] == "https://resend.com/api-keys"
+    assert action["target"] == "RESEND_API_KEY"
     assert "Open Resend in the VM browser" in steps
     assert "Full access for this first setup" in steps
     assert "does not reveal old key secrets again" in steps
