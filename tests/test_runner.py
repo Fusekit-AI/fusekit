@@ -1191,6 +1191,8 @@ def test_security_surface_map_documents_control_room_state_routes() -> None:
     assert "require_safe_url" in text
     assert "target must match the gate's env-style allowlist" in text
     assert "never raw secret text" in text
+    assert "Public guided runs use VM clipboard Capture buttons" in text
+    assert "CLI-only fallback can use hidden prompts/env handoff" in text
 
 
 def test_control_room_post_rejects_untrusted_origin(tmp_path) -> None:

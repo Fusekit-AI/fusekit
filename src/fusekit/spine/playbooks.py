@@ -91,8 +91,9 @@ def provider_handoff_playbook(
             action="capture",
             status="awaiting-approved-secret",
             note=(
-                f"After creating the scoped token, capture it from {handoff.token_env} "
-                "or the hidden prompt into the encrypted vault."
+                f"After creating the scoped token, copy {handoff.token_env} inside the "
+                "VM browser and click the matching Capture button so FuseKit saves it "
+                "directly into the encrypted vault."
             ),
         )
     )

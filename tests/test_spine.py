@@ -209,6 +209,10 @@ def test_provider_playbook_uses_openclaw_spine_without_secrets() -> None:
     ]
     assert events[1].url == "https://vercel.com/signup"
     assert events[-1].status == "awaiting-approved-secret"
+    assert "VM browser" in events[-1].note
+    assert "Capture button" in events[-1].note
+    assert "encrypted vault" in events[-1].note
+    assert "hidden prompt" not in events[-1].note
 
 
 def test_playwright_spine_dry_run_does_not_need_local_browser() -> None:
@@ -253,6 +257,9 @@ def test_resend_ui_playbook_uses_computer_actions_without_secrets() -> None:
     assert any(event.action == "click_text" for event in events)
     assert any("DNS" in event.note for event in events)
     assert "RESEND_API_KEY" in events[-1].note
+    assert "VM browser" in events[-1].note
+    assert "Capture button" in events[-1].note
+    assert "hidden prompt" not in events[-1].note
 
 
 def test_inferred_navigation_waits_at_gate_then_resumes() -> None:
