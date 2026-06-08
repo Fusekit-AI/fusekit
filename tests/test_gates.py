@@ -43,10 +43,12 @@ def test_gate_service_resume_request_can_resurface_after_failed_recheck(tmp_path
     path = tmp_path / "gates.json"
     service = GateService.load(path)
     service.wait("resend-auth", provider="resend", reason="token", resume_url="https://x")
+    service.mark_captured("resend-auth", "RESEND_API_KEY")
     service.request_resume("resend-auth")
 
     retrying = GateService.load(path).records["resend-auth"]
     assert retrying.status == "resume_requested"
+    assert retrying.captured_targets == ("RESEND_API_KEY",)
 
     resurfaced = GateService.load(path).wait(
         "resend-auth",
@@ -58,3 +60,4 @@ def test_gate_service_resume_request_can_resurface_after_failed_recheck(tmp_path
     assert resurfaced.status == "resurfaced"
     assert resurfaced.attempts == 2
     assert resurfaced.reason == "token still missing"
+    assert resurfaced.captured_targets == ()

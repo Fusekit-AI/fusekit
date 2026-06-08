@@ -161,7 +161,9 @@ class GateService:
             follow_steps = follow_steps or record.follow_steps
             last_opened_url = record.last_opened_url
             last_opened_at = record.last_opened_at
-            captured_targets = record.captured_targets
+            captured_targets = (
+                () if record.status == "resume_requested" else record.captured_targets
+            )
         else:
             last_opened_url = ""
             last_opened_at = 0.0
