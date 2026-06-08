@@ -548,6 +548,8 @@ def test_control_room_renders_resume_requested_gate_as_rechecking(tmp_path) -> N
     assert "cloudflare gate is being rechecked" in html.lower()
     assert "retrying provider verification now" in html
     assert 'data-gate-pass="provider.cloudflare.authorization"' not in html
+    assert "Snowman is rechecking the provider now" in html
+    assert "await refreshJob({ preserveStatus: true });" in html
 
 
 def test_control_room_renders_vm_clipboard_capture_for_secret_gate(tmp_path) -> None:

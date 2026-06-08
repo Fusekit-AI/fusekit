@@ -926,8 +926,11 @@ document.addEventListener("click", async (event) => {
       );
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) throw new Error("gate update failed");
-      setRefreshStatus(payload.message || "Resume requested. FuseKit is verifying now.");
-      await refreshJob();
+      setRefreshStatus(
+        payload.message ||
+          "Snowman is rechecking the provider now. The next step will appear here.",
+      );
+      await refreshJob({ preserveStatus: true });
     } catch {
       gateButton.disabled = false;
       gateButton.textContent = "I finished this step";
