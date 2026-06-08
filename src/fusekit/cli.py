@@ -3925,6 +3925,49 @@ def _provider_verification_gate(
     env_names = _verification_gate_env_names(reason)
     resend_env_names = tuple(name for name in env_names if name.startswith("RESEND_"))
     domain = _default_manifest_domain(manifest)
+    if "RESEND_API_KEY" in resend_env_names:
+        return {
+            "id": "provider.resend.runtime-values",
+            "provider": "resend",
+            "reason": (
+                "Capture the Resend setup key so FuseKit can generate the remaining "
+                "Resend runtime values through the API."
+            ),
+            "resume_url": "https://resend.com/api-keys",
+            "classification": "provider-runtime-values",
+            "target": "RESEND_API_KEY",
+            "follow_steps": _resend_runtime_follow_steps(domain, ("RESEND_API_KEY",)),
+            "next_action": (
+                "Capture RESEND_API_KEY from the VM clipboard; FuseKit will generate "
+                "Resend sender and audience values after the setup key is stored."
+            ),
+            "resume_hint": (
+                "FuseKit resumes automatically after Capture succeeds, then reruns "
+                "Resend API setup before reapplying downstream provider env."
+            ),
+        }
+    if _only_api_owned_resend_runtime_values(resend_env_names):
+        missing = ", ".join(resend_env_names)
+        return {
+            "id": "provider.resend.runtime-setup-retry",
+            "provider": "resend",
+            "reason": (
+                "FuseKit needs to regenerate Resend-owned runtime values before "
+                f"reapplying the downstream provider environment: {missing}."
+            ),
+            "resume_url": "https://resend.com/api-keys",
+            "classification": "provider-setup-retry",
+            "target": "",
+            "follow_steps": _resend_runtime_setup_retry_follow_steps(domain, resend_env_names),
+            "next_action": (
+                "No manual Resend value copy is needed. Click I finished this step so "
+                "FuseKit retries Resend API setup and reapplies the generated values."
+            ),
+            "resume_hint": (
+                "FuseKit will regenerate the Resend sender/audience values through the "
+                "API, then retry Vercel and GitHub environment setup."
+            ),
+        }
     if resend_env_names:
         missing = ", ".join(resend_env_names)
         return {
@@ -4172,6 +4215,36 @@ def _resend_runtime_follow_steps(
         ]
     )
     return tuple(steps)
+
+
+def _resend_runtime_setup_retry_follow_steps(
+    domain: str,
+    env_names: tuple[str, ...],
+) -> tuple[str, ...]:
+    named_domain = domain or "the app sending domain"
+    missing = ", ".join(env_names)
+    return (
+        "Use the live VM browser surface, not a local browser tab.",
+        (
+            f"Do not copy {missing} from Resend for this recovery step; those values "
+            "are FuseKit-owned runtime settings."
+        ),
+        (
+            f"Do not manually create {named_domain}, DNS records, or audiences here. "
+            "FuseKit should create or reuse them through Resend's API."
+        ),
+        (
+            "Click I finished this step so FuseKit reruns Resend setup, stores the "
+            "generated values in the encrypted vault, and reapplies them downstream."
+        ),
+    )
+
+
+def _only_api_owned_resend_runtime_values(env_names: tuple[str, ...]) -> bool:
+    if not env_names:
+        return False
+    names = set(env_names)
+    return "RESEND_API_KEY" not in names and names <= _api_owned_resend_runtime_names()
 
 
 def _resend_runtime_resume_url(env_names: tuple[str, ...]) -> str:
@@ -4462,16 +4535,19 @@ def _missing_api_owned_resend_runtime_values(
 ) -> tuple[str, ...]:
     """Return missing Resend values FuseKit can create from the Resend API key."""
 
-    api_owned = {"RESEND_FROM_EMAIL", "RESEND_AUDIENCE_ID"}
     missing: list[str] = []
     for result in results:
         if result.status in {"ok", "skipped"}:
             continue
         reason = str(result.details.get("reason", "") or "")
         for name in _verification_gate_env_names(reason):
-            if name in api_owned:
+            if name in _api_owned_resend_runtime_names():
                 missing.append(name)
     return tuple(dict.fromkeys(missing))
+
+
+def _api_owned_resend_runtime_names() -> set[str]:
+    return {"RESEND_FROM_EMAIL", "RESEND_AUDIENCE_ID"}
 
 
 def _has_pack_provider_token(pack: ProviderCapabilityPack, vault: Vault) -> bool:

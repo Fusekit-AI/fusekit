@@ -133,6 +133,7 @@ guided, or explicitly verified.
 | A stale strategy artifact could still claim Resend used an API route without proving that the API route owns domain/audience setup and keeps DNS behind Resend. | Launch acceptance now requires Resend API strategy evidence for `api_owns`, no manual domain/audience step, domain-before-DNS order, and audience-only-when-required behavior. |
 | A user could accidentally copy a provider page URL, multi-line page text, or malformed Resend runtime value before clicking Capture, causing FuseKit to encrypt the wrong clipboard value and continue. | Control-room clipboard capture now validates token/key targets, `RESEND_FROM_EMAIL`, and `RESEND_AUDIENCE_ID` before writing the vault; obvious wrong values are rejected without moving the gate or writing audit proof. |
 | Downstream Vercel verification could report missing generated `RESEND_FROM_EMAIL` or `RESEND_AUDIENCE_ID` and route the user back to Resend to copy values that FuseKit should own. | Provider API fallback now regenerates API-owned Resend runtime values first, then retries the downstream provider setup with those generated values before surfacing a human gate. |
+| A mixed downstream failure could ask the user to capture `RESEND_API_KEY` plus generated Resend values in the same gate. | Resend runtime recovery now captures only the copy-once setup key when it is missing; sender and audience values are generated through Resend's API after the key is stored. |
 
 ## Open Acceptance Items
 
