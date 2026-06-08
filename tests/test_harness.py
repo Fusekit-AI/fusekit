@@ -189,3 +189,92 @@ def test_acceptance_cli_checks_vault_without_leaking_secret(tmp_path, capsys) ->
     assert secret not in (app / ".fusekit" / "acceptance" / "ledger.jsonl").read_text(
         encoding="utf-8"
     )
+
+
+def test_live_acceptance_requires_resend_before_dns_when_both_are_present(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "fusekit.yaml").write_text(
+        """
+app_name: app
+app_path: .
+required_env: []
+webhooks: []
+approvals: []
+services:
+  - provider: resend
+    kind: email
+    name: email
+    capabilities: []
+    secrets: []
+    settings: {}
+domains:
+  - domain: moonlite.rsvp
+    provider: cloudflare
+    records: []
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    remote = tmp_path / "remote"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps({"actions": [], "raw_secrets_exposed": 0, "live_url": "https://moonlite.rsvp"}),
+        encoding="utf-8",
+    )
+    (remote_fusekit / "audit.jsonl").write_text("{}", encoding="utf-8")
+    (remote_fusekit / "verification_report.json").write_text(
+        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        encoding="utf-8",
+    )
+    (remote_fusekit / "rollback_plan.json").write_text(
+        json.dumps({"rollback": [{"action": "rollback.cloudflare.dns", "status": "planned"}]}),
+        encoding="utf-8",
+    )
+    (remote_fusekit / "provider_strategies.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.provider-strategies.v1",
+                "providers": [
+                    {
+                        "provider": "cloudflare",
+                        "strategies": [
+                            {
+                                "recipe": "cloudflare-dns",
+                                "strategy": "api",
+                                "status": "ok",
+                                "decision": {"selected": {"kind": "api"}},
+                            }
+                        ],
+                    },
+                    {
+                        "provider": "resend",
+                        "strategies": [
+                            {
+                                "recipe": "resend-domain",
+                                "strategy": "api",
+                                "status": "ok",
+                                "decision": {"selected": {"kind": "api"}},
+                            }
+                        ],
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    order_check = next(check for check in report.checks if check.id == "provider_strategies.order")
+    assert report.launch_ready is False
+    assert order_check.status == "failed"
+    assert "Resend-before-DNS provider setup order" in report.missing

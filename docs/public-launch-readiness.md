@@ -13,7 +13,7 @@ live connected services:
 - app repo scanned
 - setup plan generated
 - provider authorization gates opened through the computer-use spine
-- GitHub, Vercel, DNS, and one app service configured
+- GitHub, Resend, Vercel, and DNS configured in dependency order
 - secrets sealed in the encrypted vault
 - live URL verified
 - redacted receipts and audit ledger written
@@ -41,17 +41,19 @@ The run is launch-ready only when `.fusekit/acceptance/report.json` contains:
 
 Live mode does not claim provider success without proof. It requires the real encrypted vault,
 passphrase unlock proof, redacted setup receipt, redacted audit log, live URL in
-the receipt, validated provider packs, clean leak scan, and detonated worker
-state.
+the receipt, validated provider packs, recorded provider route decisions, clean
+leak scan, and detonated worker state. When both Resend and DNS are present, the
+provider strategy artifact must prove Resend ran before Cloudflare/DNS so
+Resend-generated domain records are included in the approved DNS changes.
 
 ## Acceptance Path
 
 Use the most reliable path first:
 
 1. GitHub repo connection and repo secrets/deploy key.
-2. Vercel project connection or creation, env vars, deploy, live URL.
-3. Cloudflare DNS proposal/apply/verify using a disposable test domain.
-4. Resend domain/API key setup as the provider-pack service target.
+2. Resend API key capture, then Resend domain creation/reuse through the API.
+3. Vercel project connection or creation, env vars, deploy, live URL.
+4. Cloudflare DNS proposal/apply/verify using app DNS plus Resend-generated records.
 5. Optional second segment: Plaid sandbox setup to show broader provider-pack reach.
 
 Plaid should not be the first proof because financial-provider onboarding can

@@ -14,18 +14,21 @@ and detonation.
 1. Show the generated app repo.
 2. Point out that it has code but no real services.
 3. Run `fusekit scan examples/moonlite-rsvp`.
-4. Show the plan: GitHub, Vercel, Cloudflare DNS, Resend, webhook secret.
+4. Show the plan: GitHub, Resend, Vercel, Cloudflare DNS, webhook secret.
 5. Run the real launch against a disposable GitHub repo and domain.
-6. Pass only service-created human gates: login, MFA, consent, domain ownership.
+6. Pass only service-created human gates: login, MFA, consent, domain ownership,
+   and copy-once provider secrets.
 7. Show FuseKit continuing after the gates.
-8. Open the live custom domain.
-9. Submit the RSVP form and show Resend delivered or accepted the email.
-10. Show the encrypted vault file is unreadable.
-11. Show wrong passphrase fails.
-12. Show redacted receipt and audit log.
-13. Run `fusekit acceptance run --mode live`.
-14. Show `"launch_ready": true`.
-15. Show detonation proof.
+8. Show Resend running before DNS: FuseKit captures the setup key, creates or
+   reuses the sending domain, then hands the returned DNS records to Cloudflare.
+9. Open the live custom domain.
+10. Submit the RSVP form and show Resend delivered or accepted the email.
+11. Show the encrypted vault file is unreadable.
+12. Show wrong passphrase fails.
+13. Show redacted receipt and audit log.
+14. Run `fusekit acceptance run --mode live`.
+15. Show `"launch_ready": true`.
+16. Show detonation proof.
 
 ## Real Launch Command Shape
 
@@ -62,6 +65,7 @@ Do not publish the public walkthrough until:
 - the live acceptance report says `launch_ready: true`
 - the custom domain resolves
 - Resend API/domain verification passes
+- provider strategy order proves Resend ran before Cloudflare/DNS
 - Vercel deployment is live
 - GitHub secrets/deploy-key verification passes
 - vault opens only with the right passphrase

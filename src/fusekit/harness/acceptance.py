@@ -577,6 +577,7 @@ def _check_provider_strategies(
             str(snapshot),
         )
     )
+    _check_provider_strategy_order(providers, mode, checks, missing, str(snapshot))
 
 
 def _has_strategy_decisions(providers: Any) -> bool:
@@ -591,6 +592,55 @@ def _has_strategy_decisions(providers: Any) -> bool:
         if any(isinstance(strategy, dict) and strategy.get("decision") for strategy in strategies):
             return True
     return False
+
+
+def _check_provider_strategy_order(
+    providers: Any,
+    mode: str,
+    checks: list[AcceptanceCheck],
+    missing: list[str],
+    artifact: str,
+) -> None:
+    """Assert provider strategy order proves Resend emitted DNS before DNS apply."""
+
+    if not isinstance(providers, list):
+        return
+    ordered = [
+        str(provider.get("provider", "")).lower()
+        for provider in providers
+        if isinstance(provider, dict) and str(provider.get("provider", "")).strip()
+    ]
+    if "resend" not in ordered or not any(
+        provider in ordered for provider in {"cloudflare", "dns"}
+    ):
+        return
+    resend_index = ordered.index("resend")
+    dns_index = min(
+        ordered.index(provider)
+        for provider in ("cloudflare", "dns")
+        if provider in ordered
+    )
+    if resend_index < dns_index:
+        checks.append(
+            AcceptanceCheck(
+                "provider_strategies.order",
+                "ok",
+                "Provider setup order proves Resend ran before DNS so Resend domain "
+                "records can be applied.",
+                artifact,
+            )
+        )
+        return
+    checks.append(
+        AcceptanceCheck(
+            "provider_strategies.order",
+            "failed" if mode == "live" else "skipped",
+            "Provider setup order put DNS before Resend; Resend domain DNS records may be missing.",
+            artifact,
+        )
+    )
+    if mode == "live":
+        missing.append("Resend-before-DNS provider setup order")
 
 
 def _check_rollback_metadata(
