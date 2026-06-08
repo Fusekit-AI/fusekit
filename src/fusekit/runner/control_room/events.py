@@ -84,6 +84,8 @@ function gateStep(gate) {
     classification: gate.classification || "",
     target: gate.target || "",
     follow_steps: gate.follow_steps || [],
+    next_action: gate.next_action || "",
+    resume_hint: gate.resume_hint || "",
     attempts: gate.attempts || 0,
     captured_targets: gate.captured_targets || [],
     updated_at: gate.updated_at,
@@ -226,6 +228,16 @@ function renderGateHelp(step) {
       ].join("")
     : "";
   const captureButtons = renderCaptureButtons(step.id, step.target, step.captured_targets);
+  const nextAction = String(step.next_action || "").trim();
+  const resumeHint = String(step.resume_hint || "").trim();
+  const nextBlock = nextAction || resumeHint
+    ? [
+        `<div class="gate-next">`,
+        `<strong>Next</strong><p>${escapeHtml(nextAction)}</p>`,
+        `<em>${escapeHtml(resumeHint)}</em>`,
+        `</div>`,
+      ].join("")
+    : "";
   return `
     <div class="gate-help">
       <span>What you need to do</span>${classification}
@@ -235,6 +247,7 @@ function renderGateHelp(step) {
       ${meta}
       <ol>${followSteps.map((action) => `<li>${escapeHtml(action)}</li>`).join("")}</ol>
       <em>${escapeHtml(guidance.reassurance)}</em>
+      ${nextBlock}
       ${captureButtons}
       ${resumeButton}
     </div>

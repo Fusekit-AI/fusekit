@@ -760,6 +760,16 @@ def _render_gate_help(step: Any) -> str:
         else ""
     )
     capture_buttons = _render_capture_buttons(gate_id, target, captured_targets)
+    next_action = str(getattr(step, "next_action", "") or "").strip()
+    resume_hint = str(getattr(step, "resume_hint", "") or "").strip()
+    next_block = (
+        "<div class=\"gate-next\">"
+        f"<strong>Next</strong><p>{html.escape(next_action)}</p>"
+        f"<em>{html.escape(resume_hint)}</em>"
+        "</div>"
+        if next_action or resume_hint
+        else ""
+    )
     return f"""
         <div class="gate-help">
           <span>What you need to do</span>{classification_label}
@@ -769,6 +779,7 @@ def _render_gate_help(step: Any) -> str:
           {meta}
           <ol>{actions}</ol>
           <em>{html.escape(guidance.reassurance)}</em>
+          {next_block}
           {capture_buttons}
           {resume_button}
         </div>
@@ -868,6 +879,8 @@ def _gate_step(gate: dict[str, Any]) -> Any:
         classification=str(gate.get("classification", "") or ""),
         target=str(gate.get("target", "") or ""),
         follow_steps=gate.get("follow_steps", []),
+        next_action=str(gate.get("next_action", "") or ""),
+        resume_hint=str(gate.get("resume_hint", "") or ""),
         attempts=int(gate.get("attempts", 0) or 0),
         captured_targets=gate.get("captured_targets", []),
     )

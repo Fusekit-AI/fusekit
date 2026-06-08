@@ -164,6 +164,8 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                         "target": "OPENAI_API_KEY",
                         "attempts": 1,
                         "follow_steps": ["Complete login."],
+                        "next_action": "No action needed.",
+                        "resume_hint": "FuseKit verified this gate as passed.",
                         "captured_targets": ["OPENAI_API_KEY"],
                         "resume_url": "http://localhost:1455/auth/callback?code=secret-code",
                         "last_opened_url": "https://provider.example/?token=secret-token",
@@ -403,6 +405,88 @@ def test_live_acceptance_requires_complete_provider_strategy_evidence(tmp_path) 
     assert "complete provider strategy evidence" in report.missing
 
 
+def test_live_acceptance_requires_guided_control_room_gates(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "package.json").write_text(
+        json.dumps({"name": "moonlite-rsvp", "dependencies": {"next": "latest"}}),
+        encoding="utf-8",
+    )
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    (remote_fusekit / "audit.jsonl").write_text('{"event":"provider.verify"}\n', "utf-8")
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "live_url": "https://moonlite.example",
+                "raw_secrets_exposed": 0,
+                "actions": [],
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "verification_report.json").write_text(
+        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        "utf-8",
+    )
+    (remote_fusekit / "rollback_plan.json").write_text(
+        json.dumps({"rollback": [{"action": "rollback.github.secret", "status": "planned"}]}),
+        "utf-8",
+    )
+    (remote_fusekit / "provider_strategies.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.provider-strategies.v1",
+                "providers": [
+                    {
+                        "provider": "github",
+                        "strategies": [
+                            {
+                                "recipe": "github-repo-secrets",
+                                "strategy": "api",
+                                "status": "ok",
+                                "decision": _strategy_decision(),
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "gates.json").write_text(
+        json.dumps(
+            {
+                "gates": [
+                    {
+                        "id": "provider.github.authorization",
+                        "provider": "github",
+                        "reason": "GitHub token captured",
+                        "status": "passed",
+                    }
+                ]
+            }
+        ),
+        "utf-8",
+    )
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    guided_check = next(check for check in report.checks if check.id == "gates.guided")
+    assert report.launch_ready is False
+    assert guided_check.status == "failed"
+    assert "provider.github.authorization missing next_action, resume_hint" in guided_check.detail
+    assert "guided human gates" in report.missing
+
+
 def test_live_acceptance_requires_resolved_control_room_gates(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()
@@ -464,6 +548,8 @@ def test_live_acceptance_requires_resolved_control_room_gates(tmp_path) -> None:
                         "provider": "cloudflare",
                         "reason": "Cloudflare token creation",
                         "status": "waiting",
+                        "next_action": "Finish Cloudflare login in the VM browser.",
+                        "resume_hint": "FuseKit will retry verification after resume.",
                     }
                 ]
             }

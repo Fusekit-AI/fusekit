@@ -16,9 +16,14 @@ def test_gate_service_resurfaces_and_persists(tmp_path) -> None:
 
     loaded = GateService.load(path)
     assert loaded.records["github-auth"].attempts == 2
+    assert "Finish the github" in loaded.records["github-auth"].to_dict()["next_action"]
+    assert "retry verification" in loaded.records["github-auth"].to_dict()["resume_hint"]
     assert oct(path.stat().st_mode & 0o777) == "0o600"
     loaded.pass_gate("github-auth")
     assert GateService.load(path).records["github-auth"].status == "passed"
+    assert GateService.load(path).records["github-auth"].to_dict()["next_action"] == (
+        "No action needed."
+    )
 
 
 def test_gate_service_does_not_resurface_passed_gate(tmp_path) -> None:
@@ -49,6 +54,8 @@ def test_gate_service_resume_request_can_resurface_after_failed_recheck(tmp_path
     retrying = GateService.load(path).records["resend-auth"]
     assert retrying.status == "resume_requested"
     assert retrying.captured_targets == ("RESEND_API_KEY",)
+    assert retrying.next_action == "FuseKit is retrying provider verification now."
+    assert "next guided blocker" in retrying.resume_hint
 
     resurfaced = GateService.load(path).wait(
         "resend-auth",

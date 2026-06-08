@@ -789,6 +789,28 @@ def _check_gate_state(
         return
     gates = raw["gates"]
     snapshot = ledger.snapshot_json("gates", _redacted_gate_state(raw))
+    unguided = _unguided_gates(gates)
+    if unguided:
+        detail = ", ".join(unguided)
+        checks.append(
+            AcceptanceCheck(
+                "gates.guided",
+                "failed" if mode == "live" else "skipped",
+                "Control-room gates are missing durable guidance: " + detail,
+                str(snapshot),
+            )
+        )
+        if mode == "live":
+            missing.append("guided human gates")
+        return
+    checks.append(
+        AcceptanceCheck(
+            "gates.guided",
+            "ok",
+            "Every durable control-room gate includes next-action guidance.",
+            str(snapshot),
+        )
+    )
     unresolved = [
         {
             "id": str(gate.get("id", "")),
@@ -823,6 +845,24 @@ def _check_gate_state(
     )
 
 
+def _unguided_gates(gates: Any) -> list[str]:
+    if not isinstance(gates, list):
+        return ["gates"]
+    missing: list[str] = []
+    for index, gate in enumerate(gates):
+        if not isinstance(gate, dict):
+            continue
+        gate_id = str(gate.get("id", "") or f"gate[{index}]")
+        missing_fields = [
+            field
+            for field in ("next_action", "resume_hint")
+            if not str(gate.get(field, "")).strip()
+        ]
+        if missing_fields:
+            missing.append(f"{gate_id} missing {', '.join(missing_fields)}")
+    return missing
+
+
 def _redacted_gate_state(raw: Any) -> dict[str, Any]:
     """Return non-secret gate proof data for public acceptance artifacts."""
 
@@ -846,6 +886,8 @@ def _redacted_gate_state(raw: Any) -> dict[str, Any]:
                 "target": str(gate.get("target", "")),
                 "attempts": _safe_int(gate.get("attempts")),
                 "follow_step_count": len(follow_steps) if isinstance(follow_steps, list) else 0,
+                "has_next_action": bool(str(gate.get("next_action", ""))),
+                "has_resume_hint": bool(str(gate.get("resume_hint", ""))),
                 "captured_count": (
                     len(captured_targets) if isinstance(captured_targets, list) else 0
                 ),

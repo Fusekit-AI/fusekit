@@ -467,6 +467,33 @@ button {
   border: 1px solid rgba(111, 215, 255, 0.34);
 }
 
+.gate-next {
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(183, 232, 255, 0.24);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.gate-next strong {
+  color: #9bdcff;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.gate-next p {
+  margin: 0;
+  color: #f7fbff;
+  font-weight: 800;
+}
+
+.gate-next em {
+  color: #b7e8ff;
+  font-size: 12px;
+  font-weight: 750;
+}
+
 .gate-capture-panel {
   display: grid;
   gap: 8px;

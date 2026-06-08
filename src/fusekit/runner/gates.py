@@ -60,6 +60,8 @@ class GateRecord:
     classification: str = ""
     target: str = ""
     follow_steps: tuple[str, ...] = ()
+    next_action: str = ""
+    resume_hint: str = ""
     attempts: int = 0
     last_opened_url: str = ""
     last_opened_at: float = 0.0
@@ -79,6 +81,8 @@ class GateRecord:
             "classification": self.classification,
             "target": self.target,
             "follow_steps": list(self.follow_steps),
+            "next_action": self.next_action or _default_next_action(self),
+            "resume_hint": self.resume_hint or _default_resume_hint(self),
             "attempts": self.attempts,
             "last_opened_url": self.last_opened_url,
             "last_opened_at": self.last_opened_at,
@@ -100,6 +104,8 @@ class GateRecord:
             classification=str(raw.get("classification", "")),
             target=str(raw.get("target", "")),
             follow_steps=_string_tuple(raw.get("follow_steps", [])),
+            next_action=str(raw.get("next_action", "")),
+            resume_hint=str(raw.get("resume_hint", "")),
             attempts=_int_value(raw.get("attempts"), 0),
             last_opened_url=str(raw.get("last_opened_url", "")),
             last_opened_at=_float_value(raw.get("last_opened_at"), 0.0),
@@ -143,6 +149,8 @@ class GateService:
         classification: str = "",
         target: str = "",
         follow_steps: tuple[str, ...] = (),
+        next_action: str = "",
+        resume_hint: str = "",
     ) -> GateRecord:
         """Mark a gate as waiting/resurfaced."""
 
@@ -159,6 +167,8 @@ class GateService:
             classification = classification or record.classification
             target = target or record.target
             follow_steps = follow_steps or record.follow_steps
+            next_action = next_action or record.next_action
+            resume_hint = resume_hint or record.resume_hint
             last_opened_url = record.last_opened_url
             last_opened_at = record.last_opened_at
             captured_targets = (
@@ -177,6 +187,8 @@ class GateService:
             classification=classification,
             target=target,
             follow_steps=follow_steps,
+            next_action=next_action,
+            resume_hint=resume_hint,
             attempts=attempts,
             last_opened_url=last_opened_url,
             last_opened_at=last_opened_at,
@@ -193,6 +205,8 @@ class GateService:
 
         record = self.records[gate_id]
         record.status = "passed"
+        record.next_action = "No action needed."
+        record.resume_hint = "FuseKit verified this gate as passed."
         record.updated_at = time.time()
         self.save()
 
@@ -201,6 +215,11 @@ class GateService:
 
         record = self.records[gate_id]
         record.status = "resume_requested"
+        record.next_action = "FuseKit is retrying provider verification now."
+        record.resume_hint = (
+            "Keep this control room open; the next guided blocker or success state "
+            "will appear after the provider check finishes."
+        )
         record.updated_at = time.time()
         self.save()
 
@@ -219,6 +238,19 @@ class GateService:
         record = self.records[gate_id]
         normalized = target.strip().upper()
         record.captured_targets = tuple(dict.fromkeys((*record.captured_targets, normalized)))
+        missing = _capture_targets(record.target) - set(record.captured_targets)
+        if missing:
+            record.next_action = (
+                "Copy the next provider value in the VM browser, then capture "
+                + ", ".join(sorted(missing))
+                + "."
+            )
+            record.resume_hint = "FuseKit will resume automatically after every target is captured."
+        else:
+            record.next_action = "All required provider values are captured."
+            record.resume_hint = (
+                "FuseKit requested verification automatically; watch for the next provider check."
+            )
         record.updated_at = time.time()
         self.save()
 
@@ -227,6 +259,8 @@ class GateService:
 
         record = self.records[gate_id]
         record.status = "failed"
+        record.next_action = "Open the provider gate again and follow the latest instruction."
+        record.resume_hint = "FuseKit will keep this as a repairable gate instead of hiding it."
         record.updated_at = time.time()
         self.save()
 
@@ -260,3 +294,50 @@ def _atomic_write_private(path: Path, content: str) -> None:
         except OSError:
             pass
         raise
+
+
+def _capture_targets(target: str) -> set[str]:
+    return {
+        item
+        for item in (part.strip().upper() for part in target.split(","))
+        if item.isidentifier() and item == item.upper() and len(item) > 2 and "_" in item
+    }
+
+
+def _default_next_action(record: GateRecord) -> str:
+    if record.status == "resume_requested":
+        return "FuseKit is retrying provider verification now."
+    if record.status == "passed":
+        return "No action needed."
+    if record.status == "failed":
+        return "Open the provider gate again and follow the latest instruction."
+    targets = _capture_targets(record.target)
+    if targets:
+        missing = targets - set(record.captured_targets)
+        if missing:
+            return (
+                "Copy the provider value in the VM browser, then click Capture for "
+                + ", ".join(sorted(missing))
+                + "."
+            )
+        return "All required provider values are captured."
+    provider = record.provider.strip() or "provider"
+    return (
+        f"Finish the {provider} login, approval, ownership, or consent prompt in the VM "
+        "browser, then click I finished this step."
+    )
+
+
+def _default_resume_hint(record: GateRecord) -> str:
+    if record.status == "resume_requested":
+        return (
+            "Keep this control room open; the next guided blocker or success state "
+            "will appear after the provider check finishes."
+        )
+    if record.status == "passed":
+        return "FuseKit verified this gate as passed."
+    if record.status == "failed":
+        return "FuseKit will keep this as a repairable gate instead of hiding it."
+    if _capture_targets(record.target):
+        return "FuseKit will resume automatically after every target is captured."
+    return "FuseKit will retry verification after you click I finished this step."

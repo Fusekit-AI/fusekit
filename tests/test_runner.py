@@ -499,9 +499,14 @@ def test_control_room_payload_includes_active_gate_records(tmp_path) -> None:
     assert payload["gates"][0]["provider"] == "vercel"
     assert payload["gates"][0]["status"] == "waiting"
     assert "token" in str(payload["gates"][0]["reason"])
+    assert "next_action" in payload["gates"][0]
+    assert "resume_hint" in payload["gates"][0]
     assert "vercel needs your approval" in html
     assert "Click Continue" in html
     assert "Snowman highlighted" in html
+    assert "Next" in html
+    assert "Finish the vercel login" in html
+    assert "retry verification after you click" in html
     assert 'data-gate-pass="provider.vercel.authorization"' in html
     assert "Capture CONTINUE from VM clipboard" not in html
     assert "<strong data-count-waiting>1</strong> gates" in html
@@ -523,6 +528,8 @@ def test_control_room_uses_gate_provider_for_guidance_when_id_is_generic(tmp_pat
 
     assert "Resend needs an email API key" in html
     assert "before Cloudflare DNS" in html
+    assert "Copy the provider value in the VM browser" in html
+    assert "resume automatically after every target is captured" in html
     assert 'data-gate-capture="authorization"' in html
     assert "step.provider ||" in html
 
@@ -580,6 +587,7 @@ def test_control_room_renders_resume_requested_gate_as_rechecking(tmp_path) -> N
     assert payload["gates"][0]["status"] == "resume_requested"
     assert "cloudflare gate is being rechecked" in html.lower()
     assert "retrying provider verification now" in html
+    assert "next guided blocker or success state" in html
     assert 'data-gate-pass="provider.cloudflare.authorization"' not in html
     assert "Snowman is rechecking the provider now" in html
     assert "await refreshJob({ preserveStatus: true });" in html
@@ -602,6 +610,8 @@ def test_control_room_renders_vm_clipboard_capture_for_secret_gate(tmp_path) -> 
 
     assert "Safe secret capture" in html
     assert "Copy the provider value inside the VM browser" in html
+    assert "Copy the provider value in the VM browser" in html
+    assert "FuseKit will resume automatically after every target is captured." in html
     assert "reads only the VM clipboard" in html
     assert "encrypted vault" in html
     assert "Capture RESEND_API_KEY from VM clipboard" in html

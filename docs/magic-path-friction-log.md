@@ -47,6 +47,7 @@ guided, or explicitly verified.
 | Live launch proof could ignore durable control-room gate state, leaving a run marked ready even though the launcher still had a waiting provider gate. | Live acceptance now requires `gates.json` and fails unless every durable gate is resolved before launch readiness is claimed. |
 | Acceptance proof could snapshot raw gate URLs from provider callbacks even though those URLs might contain provider-owned codes or token-like query parameters. | Live acceptance now writes a minimal redacted gate-state proof instead of raw browser/session URLs while still proving every gate is resolved. |
 | Provider strategy proof could be too shallow to explain whether FuseKit used deterministic API automation, secure vault capture, or VM follow-me, making the control room feel like it skipped the important reasoning. | Live acceptance now requires complete selected-route evidence and considered candidates for every provider strategy decision before a run can be marked launch-ready. |
+| Provider gates could tell the user what provider page to use but not the exact next action or what FuseKit would do after the click/capture, making the flow feel stuck even when the worker was alive. | Durable gate records now carry `next_action` and `resume_hint`, static/live control rooms render them, and live acceptance fails if any gate is missing guided next-step proof. |
 
 ## Open Acceptance Items
 
