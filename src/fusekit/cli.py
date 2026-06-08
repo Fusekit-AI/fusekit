@@ -3913,6 +3913,10 @@ def _resend_api_key_follow_steps(domain: str) -> tuple[str, ...]:
             "Choose Full access for this first setup key so FuseKit can create or reuse "
             f"the sending domain and audience{domain_note}."
         ),
+        (
+            "If Resend shows No domains yet, stay on API Keys and do not click Add domain; "
+            "FuseKit creates or reuses the domain after Capture succeeds."
+        ),
         "Copy the API key only inside the VM browser, then click Capture in FuseKit.",
         (
             "FuseKit stores the key in the encrypted vault and uses Resend's API before "

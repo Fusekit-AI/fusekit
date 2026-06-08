@@ -1430,6 +1430,8 @@ def test_verification_gate_records_resend_api_key_follow_me(tmp_path) -> None:
     assert "live VM browser" in " ".join(gate.follow_steps)
     assert "Full access" in " ".join(gate.follow_steps)
     assert "sending domain and audience for moonlite.rsvp" in " ".join(gate.follow_steps)
+    assert "No domains yet" in " ".join(gate.follow_steps)
+    assert "do not click Add domain" in " ".join(gate.follow_steps)
     assert "resumes automatically" in " ".join(gate.follow_steps)
     assert "Capture RESEND_API_KEY" in gate.next_action
     assert "copy-once secrets" in gate.next_action

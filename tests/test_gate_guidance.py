@@ -115,6 +115,8 @@ def test_resend_guidance_names_api_key_path() -> None:
     assert "before Cloudflare DNS" in text
     assert "creates or reuses the Resend domain" in text
     assert "domain and audience" in text
+    assert "No domains yet" in text
+    assert "do not click Add domain" in text
     assert "encrypted vault" in text
     assert "Open provider gate in VM" in text
     assert "Capture from VM clipboard" in text

@@ -143,6 +143,10 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
                 "audience required by the app."
             ),
             (
+                "If Resend shows No domains yet, stay on API Keys; do not click Add domain. "
+                "FuseKit creates the domain after the key is captured."
+            ),
+            (
                 "When Resend reveals the API key once, copy it inside the VM browser and click "
                 "the matching Capture from VM clipboard button; FuseKit stores it only in the "
                 "encrypted vault."
