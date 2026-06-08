@@ -97,8 +97,9 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
             "Click Open provider gate in VM so Cloudflare opens in the VM browser, then sign "
             "in or create the account when prompted.",
             (
-                "Open My Profile > API Tokens, choose Create Token, choose Custom token, and "
-                "name it FuseKit DNS for this domain."
+                "Open My Profile > API Tokens > User API Tokens. Do not use API Keys or "
+                "Global API Key. Choose Create Token, choose Custom token, and name it "
+                "FuseKit DNS for this domain."
             ),
             (
                 "In Permissions, add exactly two rows: Zone / Zone / Read and "

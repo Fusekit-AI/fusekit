@@ -241,6 +241,8 @@ def test_cloudflare_pack_handoff_names_exact_token_wizard_choices(tmp_path) -> N
 
     assert "Create Token" in text
     assert "Custom token" in text
+    assert "User API Tokens" in text
+    assert "Do not use API Keys or Global API Key" in text
     assert "exactly two rows" in text
     assert "Zone / Zone / Read" in text
     assert "Zone / DNS / Edit" in text

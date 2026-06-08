@@ -101,8 +101,9 @@ HANDOFFS: dict[str, ProviderHandoff] = {
         ),
         secret_steps=(
             (
-                "Open My Profile > API Tokens, choose Create Token, choose Custom token, "
-                "and name it FuseKit DNS for this domain."
+                "Open My Profile > API Tokens > User API Tokens. Do not use API Keys or "
+                "Global API Key. Choose Create Token, choose Custom token, and name it "
+                "FuseKit DNS for this domain."
             ),
             (
                 "In Permissions, add exactly two rows: Zone / Zone / Read and "
