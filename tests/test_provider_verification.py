@@ -90,6 +90,7 @@ def test_http_json_recipe_uses_secret_template_refs_without_leaking(monkeypatch)
     http_result = next(result for result in results if result.kind == "http-json")
     assert http_result.status == "ok"
     assert "client-secret-value" in str(captured["body"])
+    assert captured["headers"]["User-agent"] == "FuseKit provider verification"
     public = json.dumps(http_result.to_dict())
     assert "client-secret-value" not in public
     assert "plaid-secret-value" not in public

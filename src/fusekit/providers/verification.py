@@ -214,6 +214,7 @@ def _verify_http_json(
         body = resolved.encode("utf-8")
         headers.setdefault("Content-Type", "application/json")
     headers.setdefault("Accept", "application/json")
+    headers.setdefault("User-Agent", "FuseKit provider verification")
     target = require_safe_url(recipe.target, label="HTTP verification target")
     request = Request(target, data=body, method=method, headers=headers)
     status_code = 0
