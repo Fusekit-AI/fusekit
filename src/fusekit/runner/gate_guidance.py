@@ -214,7 +214,15 @@ _GENERIC = GateGuidance(
     actions=(
         "Click Open provider gate in VM to bring the exact provider page forward.",
         "Complete only highlighted login, MFA, CAPTCHA, consent, payment, or ownership prompts.",
-        "Click I finished this step; FuseKit will verify the provider state before continuing.",
+        (
+            "If the provider reveals a copy-once API key or token and FuseKit shows a "
+            "Capture button, copy the value inside the VM browser and click the matching "
+            "Capture from VM clipboard button."
+        ),
+        (
+            "If no Capture button is shown, click I finished this step after the provider "
+            "confirms the gate is complete."
+        ),
     ),
     reassurance="The worker remains alive and will retry this gate until it passes.",
 )

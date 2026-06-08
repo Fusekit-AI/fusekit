@@ -58,6 +58,18 @@ def test_provider_gate_guidance_leads_instead_of_delegating_interpretation() -> 
             assert "capture" in lowered
 
 
+def test_generic_provider_guidance_distinguishes_capture_from_finished() -> None:
+    guidance = provider_gate_guidance("custom-provider")
+    text = " ".join((guidance.title, guidance.body, *guidance.actions, guidance.reassurance))
+
+    assert "copy-once API key or token" in text
+    assert "Capture from VM clipboard button" in text
+    assert "If no Capture button is shown" in text
+    assert "I finished this step" in text
+    assert "figure" not in text.lower()
+    assert "manually" not in text.lower()
+
+
 def test_cloudflare_guidance_names_scoped_token_path() -> None:
     guidance = provider_gate_guidance("cloudflare")
     text = " ".join((guidance.title, guidance.body, *guidance.actions, guidance.reassurance))
