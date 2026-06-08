@@ -862,9 +862,39 @@ def _step_detail(step: Any) -> str:
 
 
 def _render_gate_help(step: Any) -> str:
-    if step is None or step.status != "waiting":
+    if step is None:
+        return ""
+    status = str(getattr(step, "status", "") or "")
+    retrying = _is_retrying_gate_step(step)
+    if status != "waiting" and not retrying:
         return ""
     guidance = _guidance_for_step(step)
+    if retrying:
+        next_action = str(getattr(step, "next_action", "") or "").strip()
+        resume_hint = str(getattr(step, "resume_hint", "") or "").strip()
+        next_block = (
+            "<div class=\"gate-next\">"
+            f"<strong>Next</strong><p>{html.escape(_public_copy(next_action))}</p>"
+            f"<em>{html.escape(_public_copy(resume_hint))}</em>"
+            "</div>"
+            if next_action or resume_hint
+            else ""
+        )
+        classification = str(getattr(step, "classification", "") or "").replace("_", " ")
+        classification_label = (
+            f'<span class="gate-classification">{html.escape(classification)}</span>'
+            if classification
+            else ""
+        )
+        return f"""
+        <div class="gate-help gate-rechecking">
+          <span>FuseKit is rechecking now</span>{classification_label}
+          <strong>{html.escape(str(getattr(step, "label", "") or guidance.title))}</strong>
+          <p>{html.escape(_step_detail(step))}</p>
+          <em>{html.escape(_public_copy(guidance.reassurance))}</em>
+          {next_block}
+        </div>
+"""
     follow_steps = getattr(step, "follow_steps", None)
     actions_source = (
         follow_steps
@@ -943,6 +973,18 @@ def _render_gate_help(step: Any) -> str:
           {resume_button}
         </div>
 """
+
+
+def _is_retrying_gate_step(step: Any) -> bool:
+    return (
+        str(getattr(step, "status", "") or "") == "running"
+        and bool(str(getattr(step, "id", "") or ""))
+        and bool(str(getattr(step, "provider", "") or ""))
+        and (
+            bool(str(getattr(step, "next_action", "") or ""))
+            or bool(str(getattr(step, "resume_hint", "") or ""))
+        )
+    )
 
 
 def _gate_done_label(step: Any) -> str:

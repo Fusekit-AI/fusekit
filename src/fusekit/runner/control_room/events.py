@@ -250,10 +250,39 @@ function gateGuidance(provider) {
 }
 
 function renderGateHelp(step) {
-  if (step?.status !== "waiting") return "";
+  if (!step) return "";
+  const retrying = isRetryingGateStep(step);
+  if (step.status !== "waiting" && !retrying) return "";
   const provider = String(step.provider || "").trim().toLowerCase() ||
     inferGateProvider(`${step.id} ${step.label} ${step.detail}`);
   const guidance = gateGuidance(provider);
+  if (retrying) {
+    const classification = step.classification
+      ? [
+          `<span class="gate-classification">`,
+          `${escapeHtml(step.classification.replaceAll("_", " "))}</span>`,
+        ].join("")
+      : "";
+    const nextAction = publicCopy(step.next_action || "").trim();
+    const resumeHint = publicCopy(step.resume_hint || "").trim();
+    const nextBlock = nextAction || resumeHint
+      ? [
+          `<div class="gate-next">`,
+          `<strong>Next</strong><p>${escapeHtml(nextAction)}</p>`,
+          `<em>${escapeHtml(resumeHint)}</em>`,
+          `</div>`,
+        ].join("")
+      : "";
+    return `
+      <div class="gate-help gate-rechecking">
+        <span>FuseKit is rechecking now</span>${classification}
+        <strong>${escapeHtml(step.label || guidance.title)}</strong>
+        <p>${escapeHtml(stepDetail(step))}</p>
+        <em>${escapeHtml(publicCopy(guidance.reassurance))}</em>
+        ${nextBlock}
+      </div>
+    `;
+  }
   const followSteps = Array.isArray(step.follow_steps) && step.follow_steps.length
     ? step.follow_steps
     : guidance.actions;
@@ -316,6 +345,13 @@ function renderGateHelp(step) {
       ${resumeButton}
     </div>
   `;
+}
+
+function isRetryingGateStep(step) {
+  return step?.status === "running" &&
+    Boolean(String(step.id || "")) &&
+    Boolean(String(step.provider || "")) &&
+    (Boolean(String(step.next_action || "")) || Boolean(String(step.resume_hint || "")));
 }
 
 function captureTargets(target) {

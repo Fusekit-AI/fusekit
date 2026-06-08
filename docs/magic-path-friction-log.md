@@ -88,6 +88,7 @@ guided, or explicitly verified.
 | A provider gate launch could fall back to `xdg-open`, which cannot enforce FuseKit's shared VM Chrome profile and can open a disconnected/default browser session. | Live control-room provider gate launches now require Chrome/Chromium or a configured `FUSEKIT_VISUAL_BROWSER`, preserving the shared VM browser profile used for provider login, token creation, and capture. |
 | Resend's empty Domains page says "No domains yet" and shows an Add domain button, which can make users think they should manually create the domain before FuseKit has the setup key. | Resend API-key gates now explicitly say to stay on API Keys and not click Add domain; FuseKit creates or reuses the Resend domain through the API after Capture succeeds. |
 | An existing Resend API key can show Full access for all domains, but that metadata does not satisfy FuseKit if the raw copy-once secret value is unavailable. | Resend guidance now tells users that existing key permission is not enough unless they can copy the raw value; if not, create a new setup key and capture it through the VM clipboard into the encrypted vault. |
+| After clicking `I finished this step`, the control room could switch the active gate to a running recheck state and hide the gate-help panel, making the accepted click feel like the UI went blank. | Resume-requested gates now render a visible rechecking panel with the provider, next action, and session hint while FuseKit verifies or resurfaces the next guided blocker. |
 
 ## Open Acceptance Items
 

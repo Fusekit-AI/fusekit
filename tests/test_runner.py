@@ -743,6 +743,8 @@ def test_control_room_renders_resume_requested_gate_as_rechecking(tmp_path) -> N
 
     assert payload["gates"][0]["status"] == "resume_requested"
     assert "cloudflare gate is being rechecked" in html.lower()
+    assert "gate-rechecking" in html
+    assert "FuseKit is rechecking now" in html
     assert "retrying provider verification now" in html
     assert "next guided blocker or success state" in html
     assert 'data-gate-pass="provider.cloudflare.authorization"' not in html
