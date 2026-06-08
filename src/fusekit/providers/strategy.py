@@ -312,10 +312,10 @@ def _select_candidate(candidates: list[ProviderStrategy]) -> ProviderStrategy:
 
 def _handoff_url(pack: ProviderCapabilityPack) -> str:
     for value in (
-        pack.handoff.project_url,
         pack.handoff.token_url,
         pack.handoff.login_url,
         pack.handoff.signup_url,
+        pack.handoff.project_url,
     ):
         if value:
             return value
@@ -333,6 +333,7 @@ def summarize_strategy_action(decision: ProviderStrategyDecision) -> dict[str, A
     """Return a compact next-action payload for blocked provider setup."""
 
     selected = decision.selected
+    resume_url = selected.evidence.get("handoff_url", "")
     return {
         "provider": decision.provider,
         "recipe": decision.recipe_kind,
@@ -341,6 +342,7 @@ def summarize_strategy_action(decision: ProviderStrategyDecision) -> dict[str, A
         if selected.kind in {"browser_guided", "human_follow_me"}
         else selected.status,
         "reason": selected.reason,
+        "resume_url": resume_url,
         "next_action": (
             "Open the provider gate, complete login/MFA/CAPTCHA/consent/token creation, "
             "then let FuseKit capture the approved capability."

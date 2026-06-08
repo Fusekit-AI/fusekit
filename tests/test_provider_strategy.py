@@ -40,6 +40,35 @@ def test_provider_strategy_selects_browser_gate_when_api_token_is_missing(tmp_pa
     assert decision.selected.evidence["handoff_url"].startswith("https://")
 
 
+def test_provider_strategy_handoff_prefers_token_url_for_authorization(tmp_path) -> None:
+    vercel = synthesize_provider_pack("vercel", tmp_path)
+    vercel_recipe = SetupRecipe(kind="vercel-project", target="${input:vercel_project}")
+    resend = synthesize_provider_pack("resend", tmp_path)
+    resend_recipe = SetupRecipe(kind="resend-domain", target="${input:resend_domain}")
+
+    vercel_decision = choose_provider_strategy(
+        vercel,
+        vercel_recipe,
+        StrategySignal(token_available=False),
+    )
+    resend_decision = choose_provider_strategy(
+        resend,
+        resend_recipe,
+        StrategySignal(token_available=False),
+    )
+
+    assert vercel_decision.selected.evidence["handoff_url"] == (
+        "https://vercel.com/account/tokens"
+    )
+    assert summarize_strategy_action(vercel_decision)["resume_url"] == (
+        "https://vercel.com/account/tokens"
+    )
+    assert resend_decision.selected.evidence["handoff_url"] == "https://resend.com/api-keys"
+    assert summarize_strategy_action(resend_decision)["resume_url"] == (
+        "https://resend.com/api-keys"
+    )
+
+
 def test_provider_strategy_does_not_dead_end_on_unimplemented_cli(tmp_path) -> None:
     pack = synthesize_provider_pack("github", tmp_path)
     recipe = SetupRecipe(kind="github-deploy-key", target="${input:github_repo}")
@@ -59,6 +88,7 @@ def test_provider_strategy_does_not_dead_end_on_unimplemented_cli(tmp_path) -> N
     assert decision.selected.kind == "browser_guided"
     assert action["status"] == "needs_human_gate"
     assert "Open the provider gate" in action["next_action"]
+    assert action["resume_url"] == "https://github.com/settings/tokens?type=beta"
 
 
 def test_provider_strategy_uses_local_vault_for_capture_recipes(tmp_path) -> None:
