@@ -34,6 +34,7 @@ The run is launch-ready only when `.fusekit/acceptance/report.json` contains:
 
 ```json
 {
+  "blockers": [],
   "launch_ready": true,
   "mode": "live"
 }
@@ -82,3 +83,5 @@ FuseKit has a native proof layer:
 
 The harness only reports whether the run is public-launch ready. It does not
 grant provider access, bypass human gates, or make unverified provider-success claims.
+When the report is not launch-ready, `blockers[]` is the plain-language recovery
+map for the next demo pass.

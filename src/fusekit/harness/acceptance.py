@@ -58,6 +58,7 @@ class AcceptanceReport:
     ledger_path: str
     report_path: str
     missing: tuple[str, ...] = ()
+    blockers: tuple[dict[str, str], ...] = ()
     created_at: float = field(default_factory=time.time)
 
     def to_dict(self) -> dict[str, Any]:
@@ -69,6 +70,7 @@ class AcceptanceReport:
             "launch_ready": self.launch_ready,
             "checks": [check.to_dict() for check in self.checks],
             "missing": list(self.missing),
+            "blockers": list(self.blockers),
             "ledger_path": self.ledger_path,
             "report_path": self.report_path,
             "created_at": self.created_at,
@@ -199,6 +201,7 @@ def run_acceptance(
         ledger_path=str(output_dir / "ledger.jsonl"),
         report_path=str(report_path),
         missing=tuple(missing),
+        blockers=tuple(_acceptance_blockers(checks, missing)),
     )
     report_path.write_text(json.dumps(report.to_dict(), indent=2, sort_keys=True) + "\n", "utf-8")
     ledger.record("acceptance.finished", {"launch_ready": launch_ready, "missing": missing})
@@ -264,6 +267,133 @@ def _record_remote_artifacts(
             str(snapshot),
         )
     )
+
+
+def _acceptance_blockers(
+    checks: list[AcceptanceCheck],
+    missing: list[str],
+) -> list[dict[str, str]]:
+    blockers: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in missing:
+        if item in seen:
+            continue
+        seen.add(item)
+        category, action = _blocker_guidance(item)
+        blockers.append({"item": item, "category": category, "next_action": action})
+    for check in checks:
+        if check.status == "ok" or check.id in seen:
+            continue
+        if check.status == "skipped":
+            continue
+        item = check.id
+        if item in seen:
+            continue
+        seen.add(item)
+        category, action = _check_blocker_guidance(check)
+        blockers.append(
+            {
+                "item": item,
+                "category": category,
+                "next_action": action,
+                "detail": check.detail,
+            }
+        )
+    return blockers
+
+
+def _blocker_guidance(item: str) -> tuple[str, str]:
+    guidance = {
+        "encrypted vault": (
+            "Vault",
+            "Run the live setup with vault capture enabled and retrieve "
+            ".fusekit/fusekit.vault.json.",
+        ),
+        "redacted setup receipt": (
+            "Receipt",
+            "Retrieve the worker setup receipt and confirm it contains no raw secrets.",
+        ),
+        "safe verification report": (
+            "Verification",
+            "Run provider verification until checks pass or are explicitly pending-safe.",
+        ),
+        "rollback metadata": (
+            "Rollback",
+            "Generate rollback metadata from the redacted setup receipt before launch.",
+        ),
+        "provider strategy decisions": (
+            "Provider routes",
+            "Run provider setup through the strategy recorder so API, vault, or "
+            "VM follow-me choices are proven.",
+        ),
+        "complete provider strategy evidence": (
+            "Provider routes",
+            "Record selected-route kind, status, deterministic/implemented flags, "
+            "reason, and candidates.",
+        ),
+        "Resend-before-DNS provider setup order": (
+            "Provider order",
+            "Run Resend domain setup before Cloudflare/DNS so Resend DNS records are included.",
+        ),
+        "guided human gates": (
+            "Human gates",
+            "Regenerate gate state with next_action and resume_hint for every control-room gate.",
+        ),
+        "audited human gate interventions": (
+            "Human gates",
+            "Open, capture, or resume each control-room gate through the launcher "
+            "so redacted audit events are written.",
+        ),
+        "resolved human gates": (
+            "Human gates",
+            "Finish or repair every waiting/resurfaced/retrying control-room gate "
+            "before acceptance.",
+        ),
+        "validated provider capability packs": (
+            "Provider packs",
+            "Generate and validate provider capability packs for the services in the manifest.",
+        ),
+        "verified live URL": (
+            "Deployment",
+            "Verify the deployed live URL and write it into the redacted setup receipt.",
+        ),
+        "clean leak scan": (
+            "Security",
+            "Remove plaintext setup secrets from app files and artifacts, then rerun leak scan.",
+        ),
+        "detonated worker state": (
+            "Detonation",
+            "Run detonation/preflight so plaintext worker state is destroyed after "
+            "encrypted artifacts are preserved.",
+        ),
+    }
+    return guidance.get(
+        item,
+        ("Launch evidence", f"Repair missing launch evidence: {item}."),
+    )
+
+
+def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
+    if check.id.startswith("gates."):
+        return (
+            "Human gates",
+            "Repair the control-room gate artifact, then rerun live acceptance.",
+        )
+    if check.id.startswith("provider_strategies."):
+        return (
+            "Provider routes",
+            "Rerun provider setup so strategy decisions are recorded and ordered correctly.",
+        )
+    if check.id.startswith("verification_report."):
+        return (
+            "Verification",
+            "Rerun provider verification and resolve failed or unsafe pending checks.",
+        )
+    if check.id.startswith("vault."):
+        return ("Vault", "Regenerate or unlock the encrypted vault evidence.")
+    if check.id.startswith("receipt."):
+        return ("Receipt", "Regenerate the redacted setup receipt.")
+    return ("Launch evidence", f"Repair failed acceptance check {check.id}.")
 
 
 def _load_or_scan_manifest(

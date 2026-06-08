@@ -41,6 +41,7 @@ def test_acceptance_rehearsal_writes_ledger_and_report(tmp_path) -> None:
     assert (app / ".fusekit" / "acceptance" / "ledger.jsonl").exists()
     report_json = json.loads((app / ".fusekit" / "acceptance" / "report.json").read_text())
     assert report_json["launch_ready"] is True
+    assert report_json["blockers"] == []
     assert any(check["id"] == "manifest.scanned" for check in report_json["checks"])
 
 
@@ -57,6 +58,11 @@ def test_acceptance_live_requires_real_provider_evidence(tmp_path) -> None:
     assert "safe verification report" in report.missing
     assert "rollback metadata" in report.missing
     assert "provider strategy decisions" in report.missing
+    blockers = {blocker["item"]: blocker for blocker in report.blockers}
+    assert blockers["encrypted vault"]["category"] == "Vault"
+    assert "vault capture enabled" in blockers["encrypted vault"]["next_action"]
+    assert blockers["provider strategy decisions"]["category"] == "Provider routes"
+    assert "strategy recorder" in blockers["provider strategy decisions"]["next_action"]
 
 
 def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
@@ -226,6 +232,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
     assert "provider.openai.authorization" in audit_text
     report_json = json.loads((app / ".fusekit" / "acceptance" / "report.json").read_text())
     assert report_json["launch_ready"] is True
+    assert report_json["blockers"] == []
     assert any(check["id"] == "remote_artifacts.loaded" for check in report_json["checks"])
 
 
@@ -360,6 +367,11 @@ domains:
     assert report.launch_ready is False
     assert order_check.status == "failed"
     assert "Resend-before-DNS provider setup order" in report.missing
+    blockers = {blocker["item"]: blocker for blocker in report.blockers}
+    assert blockers["Resend-before-DNS provider setup order"]["category"] == "Provider order"
+    assert "Run Resend domain setup before Cloudflare/DNS" in blockers[
+        "Resend-before-DNS provider setup order"
+    ]["next_action"]
 
 
 def test_live_acceptance_requires_complete_provider_strategy_evidence(tmp_path) -> None:
@@ -596,6 +608,9 @@ def test_live_acceptance_requires_audited_control_room_gates(tmp_path) -> None:
     assert audit_check.status == "failed"
     assert "provider.github.authorization" in audit_check.detail
     assert "audited human gate interventions" in report.missing
+    blockers = {blocker["item"]: blocker for blocker in report.blockers}
+    assert blockers["audited human gate interventions"]["category"] == "Human gates"
+    assert "through the launcher" in blockers["audited human gate interventions"]["next_action"]
 
 
 def test_live_acceptance_requires_resolved_control_room_gates(tmp_path) -> None:
