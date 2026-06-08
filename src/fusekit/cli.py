@@ -70,11 +70,12 @@ from fusekit.providers.intelligence import (
 from fusekit.providers.vercel import verify_live_url
 from fusekit.providers.verification import VerificationResult, verify_provider_pack
 from fusekit.rollback import execute_native_rollback, plan_pack_rollback, plan_rollback, start_over
-from fusekit.runner import JobState, RunnerResolution, resolve_runner
+from fusekit.runner import JobState, JobStep, RunnerResolution, resolve_runner
 from fusekit.runner.cloud_shell import build_cloud_shell_launch_plan, write_cloud_shell_launcher
 from fusekit.runner.control_room import write_control_room
 from fusekit.runner.gate_guidance import provider_gate_guidance
 from fusekit.runner.gates import GateRecord, GateService
+from fusekit.runner.job import JobCheckpoint
 from fusekit.runner.oci import (
     OCI_API_KEYS_URL,
     OCI_CONSOLE_URL,
@@ -2903,6 +2904,7 @@ def _await_provider_token(
             target=token_env,
             follow_steps=_provider_authorization_follow_steps(handoff, token_env),
         )
+        _write_source_fetch_control_room(args, provider=provider, gate_id=gate_id)
         _ensure_gate_attempt_allowed(args, attempt, f"{provider} authorization")
         guidance = provider_gate_guidance(provider)
         print(
@@ -2913,6 +2915,77 @@ def _await_provider_token(
         if should_present_handoff:
             _run_handoff(args, provider, handoff, include_project, goal=goal)
         _sleep_for_gate(args, gate_id=gate_id)
+
+
+def _write_source_fetch_control_room(
+    args: argparse.Namespace,
+    *,
+    provider: str,
+    gate_id: str,
+) -> None:
+    """Write a guided control room when source fetch pauses before launch exists."""
+
+    if not hasattr(args, "source") or not hasattr(args, "dest"):
+        return
+    gate_path = _gate_state_path(args)
+    root = gate_path.parent
+    job_path = root / "source-fetch-job.json"
+    source = str(getattr(args, "source", "") or "the app source")
+    dest = Path(args.dest)
+    provider_label = {"github": "GitHub"}.get(provider.lower(), provider.title())
+    detail = (
+        f"{provider_label} authorization is required before FuseKit can fetch {source}. "
+        "Use the control-room gate below so this prelaunch step stays guided."
+    )
+    job = JobState(
+        id=f"fk-source-{uuid.uuid4().hex[:12]}",
+        app_path=str(dest),
+        runner="source-fetch",
+        status="waiting",
+        steps=[
+            JobStep(
+                "source.fetch",
+                "Fetch app source",
+                "waiting",
+                detail,
+            ),
+            JobStep(
+                "launch.start",
+                "Start guided launch",
+                "pending",
+                (
+                    "FuseKit will continue to the full launch control room after the "
+                    "source is fetched."
+                ),
+            ),
+        ],
+        checkpoints=[
+            JobCheckpoint(
+                "source.fetch",
+                "Fetch app source",
+                "waiting",
+                detail,
+                next_action="Click Open provider gate in VM and capture the approved source token.",
+                resume_hint=(
+                    "FuseKit will retry the source fetch after the "
+                    f"{gate_id} gate is captured or resumed."
+                ),
+                mascot_state="gate",
+            ),
+            JobCheckpoint(
+                "launch.start",
+                "Start guided launch",
+                "pending",
+                "The full setup worker has not started yet.",
+                next_action="Finish source authorization first.",
+                resume_hint="The normal launch control room appears after source fetch succeeds.",
+            ),
+        ],
+        artifacts={"gates": str(gate_path)},
+    )
+    job.add_artifact("control_room", root / "control-room.html")
+    job.save(job_path)
+    write_control_room(job, root / "control-room.html")
 
 
 def _provider_authorization_follow_steps(

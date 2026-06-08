@@ -74,6 +74,7 @@ guided, or explicitly verified.
 | The local OCI launcher summary still described provider secret capture as hidden Cloud Shell prompts, making the fallback sound like the normal user path. | Launcher and CLI help now describe the public path as VM clipboard Capture into the encrypted vault, with terminal capture reserved as fallback. |
 | Legacy worker status could still render "hidden prompt" instructions inside the control room, even though the public launcher path uses VM clipboard Capture. | Static and live control-room rendering now rewrites stale fallback wording into VM-browser Capture instructions before displaying or bootstrapping the page. |
 | Provider guidance used generic button names like "Open provider gate button" and "Capture in FuseKit" while the control room rendered "Open provider gate in VM" and target-specific Capture buttons. | Provider guidance now names the exact visible controls: Open provider gate in VM and the matching Capture from VM clipboard button. |
+| Private GitHub app-source authorization could pause before the full launch control room existed, leaving the user with terminal-only waiting during the first provider gate. | Source-fetch authorization gates now write a minimal guided control-room artifact beside `gates.json`, showing the GitHub gate, VM-browser open action, and Capture button before full launch starts. |
 
 ## Open Acceptance Items
 

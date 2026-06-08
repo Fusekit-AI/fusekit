@@ -37,7 +37,7 @@ from fusekit.cli import (
     main,
 )
 from fusekit.detonation.preflight import verification_report_allows_detonation
-from fusekit.errors import FuseKitError, ProviderError
+from fusekit.errors import ApprovalRequired, FuseKitError, ProviderError
 from fusekit.manifest import DomainRequirement, ServiceRequirement, SetupManifest, write_manifest
 from fusekit.providers.automation import ProviderSetupContext
 from fusekit.providers.capability_pack import (
@@ -1691,6 +1691,51 @@ def test_source_fetch_guides_private_repo_with_inferred_github_goal(
     assert "owner/private" in goals[0]
     assert "Highlight each provider-screen element" in goals[0]
     assert "Use the gate action with a target" in goals[0]
+
+
+def test_source_fetch_waiting_token_writes_guided_control_room(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    vault_path = tmp_path / "fusekit.vault.json"
+    passphrase = tmp_path / "passphrase.txt"
+    passphrase.write_text("passphrase\n", encoding="utf-8")
+    Vault.empty().save(vault_path, "passphrase")
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+    args = argparse.Namespace(
+        source="https://github.com/owner/private.git",
+        dest=tmp_path / "app",
+        capture_stdin=False,
+        gate_max_attempts=1,
+        gate_retry_seconds=0,
+        github_token_env="GITHUB_TOKEN",
+        passphrase_file=passphrase,
+        token_env="",
+        vault=vault_path,
+    )
+
+    with pytest.raises(ApprovalRequired):
+        _await_provider_token(
+            args,
+            "github",
+            handoff_for("github"),
+            include_project=False,
+        )
+
+    control_room = tmp_path / "control-room.html"
+    job_state = tmp_path / "source-fetch-job.json"
+    gates = GateService.load(tmp_path / "gates.json").records
+    html = control_room.read_text(encoding="utf-8")
+
+    assert control_room.exists()
+    assert job_state.exists()
+    assert gates["provider.github.authorization"].target == "GITHUB_TOKEN"
+    assert "Fetch app source" in html
+    assert "GitHub authorization is required before FuseKit can fetch" in html
+    assert "Open provider gate in VM" in html
+    assert "Capture GITHUB_TOKEN from VM clipboard" in html
+    assert "full setup worker has not started yet" in html
 
 
 def test_github_app_source_handoff_uses_launcher_capture_copy() -> None:
