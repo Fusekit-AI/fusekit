@@ -220,8 +220,10 @@ def _repair(provider: str, check: str, status: str) -> str:
 def _pending_repair(provider: str, check: str) -> str:
     if check == "provider_gate":
         return (
-            "Finish the active upstream provider gate in the control room; FuseKit will "
-            f"verify {provider} after that gate is resolved."
+            "Finish the active upstream provider gate in the control room. Click "
+            "Open provider gate in VM, complete the provider-owned step in that VM "
+            f"browser, then use the visible FuseKit Capture or I finished this step "
+            f"control so FuseKit can verify {provider}."
         )
     if check == "dns_record_exists":
         return (
@@ -239,19 +241,27 @@ def _pending_repair(provider: str, check: str) -> str:
         return "Vercel deployment is still warming up. FuseKit will keep checking."
     if check == "live_url_healthy":
         return "Wait for deployment warmup, then retry the live URL health check."
-    return f"Keep the {provider} gate alive and rerun verification after the provider finishes."
+    return (
+        f"Keep the control room open for {provider}. FuseKit will recheck after the "
+        "visible provider gate is captured or marked finished."
+    )
 
 
 def _human_gate_repair(provider: str, check: str) -> str:
     return (
         f"FuseKit is waiting for the {provider} screen that controls {check.replace('_', ' ')}. "
-        "Pass the provider gate when it appears; FuseKit will continue automatically."
+        "Click Open provider gate in VM, complete only the provider-owned prompt, "
+        "then use the visible FuseKit Capture button for copy-once values or "
+        "I finished this step for non-secret confirmation gates."
     )
 
 
 def _failed_repair(provider: str, check: str) -> str:
     if check == "configured":
-        return f"Reapply {provider} environment variables/secrets and rerun verification."
+        return (
+            f"FuseKit will reapply {provider} environment variables or secrets through "
+            "the provider API after any missing provider gate is captured."
+        )
     if provider == "github" and check == "repo_secret_exists":
         return "GitHub repo secret is missing. FuseKit will reapply the missing secret."
     if provider == "github" and check == "deploy_key_exists":
@@ -273,7 +283,10 @@ def _failed_repair(provider: str, check: str) -> str:
     if check == "webhook_secret_present":
         return "Webhook signature secret is missing. FuseKit will regenerate and store it."
     if check == "auth_valid":
-        return f"Create or recapture the approved {provider} token, then rerun verification."
+        return (
+            f"Create or recapture the approved {provider} token inside the VM browser, "
+            "then click the matching Capture from VM clipboard button."
+        )
     if check == "dns_propagated":
         return (
             "Compare expected DNS records to provider records, reapply missing "
@@ -281,7 +294,10 @@ def _failed_repair(provider: str, check: str) -> str:
         )
     if check == "live_url_healthy":
         return "Inspect deployment/provider status, redeploy if needed, then retry health checks."
-    return f"Confirm the {provider} resource exists, repair through provider UI/API, and retry."
+    return (
+        f"FuseKit will reopen {provider} through the launcher or retry the provider API; "
+        "use only the visible control-room gate if the provider asks for human approval."
+    )
 
 
 def _readable_check(check: str) -> str:

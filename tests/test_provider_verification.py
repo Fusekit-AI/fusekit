@@ -326,6 +326,44 @@ def test_verification_report_summarizes_repair_without_secrets(tmp_path) -> None
     assert "repair" in payload["checks"][0]["repair"].lower()
 
 
+def test_verification_report_uses_launcher_guidance_for_human_gates() -> None:
+    report = VerificationReport(app_name="app")
+    report.add_provider_results(
+        "cloudflare",
+        [
+            VerificationResult(
+                provider="cloudflare",
+                kind="provider-gate",
+                target="provider.cloudflare.token",
+                status="needs_human_gate",
+                details={},
+            )
+        ],
+    )
+    report.add_provider_results(
+        "resend",
+        [
+            VerificationResult(
+                provider="resend",
+                kind="http-json",
+                target="https://api.resend.com/domains",
+                status="failed",
+                details={},
+            )
+        ],
+    )
+
+    payload = report.to_dict()
+    repairs = [check["repair"] for check in payload["checks"]]
+
+    assert "Open provider gate in VM" in repairs[0]
+    assert "Capture button" in repairs[0]
+    assert "I finished this step" in repairs[0]
+    assert "Capture from VM clipboard" in repairs[1]
+    assert "rerun verification" not in " ".join(repairs).lower()
+    assert "provider UI/API" not in " ".join(repairs)
+
+
 def test_dns_pending_then_passing(monkeypatch) -> None:
     vault = Vault.empty()
     pack = _pack("cloudflare")

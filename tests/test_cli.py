@@ -1503,7 +1503,9 @@ def test_apply_writes_verification_report_when_provider_check_fails(tmp_path) ->
     assert report["overall"] == "failed"
     assert report["counts"]["failed"] == 1
     assert report["checks"][0]["status"] == "failed"
-    assert "rerun verification" in report["checks"][0]["repair"]
+    assert "provider API after any missing provider gate is captured" in report["checks"][0][
+        "repair"
+    ]
 
 
 def test_verification_gate_records_resend_api_key_follow_me(tmp_path) -> None:
