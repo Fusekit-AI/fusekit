@@ -148,7 +148,11 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                 if gate is None:
                     self._write_json({"ok": False, "error": "gate not found"}, status=404)
                     return
-                safe_url = require_safe_url(gate.resume_url, label="Provider gate URL")
+                try:
+                    safe_url = require_safe_url(gate.resume_url, label="Provider gate URL")
+                except FuseKitError as exc:
+                    self._write_json({"ok": False, "error": str(exc)}, status=400)
+                    return
                 if _recently_opened_gate(gate, safe_url):
                     _append_gate_audit(job_state, "control_room.gate_open", gate, reused=True)
                     self._write_json(

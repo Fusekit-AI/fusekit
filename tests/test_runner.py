@@ -1029,6 +1029,50 @@ def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -
     assert "dash.cloudflare.com" not in audit_path.read_text(encoding="utf-8")
 
 
+def test_control_room_open_rejects_unsafe_gate_url_before_browser_launch(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.cloudflare.authorization",
+        provider="cloudflare",
+        reason="Cloudflare token creation",
+        resume_url="javascript:alert(1)",
+        classification="consent",
+    )
+    monkeypatch.setenv("FUSEKIT_VISUAL_BROWSER", "/usr/bin/fake-chrome")
+    monkeypatch.setattr(
+        "fusekit.runner.control_room.server.subprocess.Popen",
+        lambda *args, **kwargs: pytest.fail("unsafe gate URL must not launch a browser"),
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = (
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/gates/provider.cloudflare.authorization/open"
+        )
+        request = Request(url, method="POST", headers=_control_room_post_headers(tmp_path))
+        with pytest.raises(HTTPError) as exc:
+            urlopen(request, timeout=5)
+        payload = json.loads(exc.value.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert exc.value.code == 400
+    assert payload == {"error": "Provider gate URL must include a host.", "ok": False}
+    gate = GateService.load(tmp_path / "gates.json").records[
+        "provider.cloudflare.authorization"
+    ]
+    assert gate.last_opened_url == ""
+    assert gate.status == "waiting"
+
+
 def test_control_room_visual_browser_requires_profile_capable_binary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
