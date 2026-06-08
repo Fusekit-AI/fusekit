@@ -952,7 +952,17 @@ def test_control_room_payload_and_html_include_visual_session(tmp_path) -> None:
     assert "Copy browser link" in html
     assert "http://203.0.113.10:6080/vnc.html?autoconnect=1" in html
     assert "password=viewer-password" in html
+    assert (
+        'href="http://203.0.113.10:6080/vnc.html?autoconnect=1&amp;password=viewer-password"'
+        in html
+    )
+    assert (
+        'data-copy="http://203.0.113.10:6080/vnc.html?autoconnect=1"'
+        in html
+    )
     assert "withQueryParam(novncUrl, \"password\", password)" in html
+    assert '<a href="${escapeAttr(iframeUrl)}" target="_blank" rel="noreferrer">' in html
+    assert 'data-copy="${escapeAttr(novncUrl)}"' in html
     assert "data-visual-status" in html
     assert "sameVisualSession" in html
     assert "root.dataset.novncUrl" in html

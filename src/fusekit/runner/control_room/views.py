@@ -308,7 +308,7 @@ def _render_visual_session(visual: Any) -> str:
             {password_row}
           </div>
           <div class="visual-actions">
-            <a href="{html.escape(novnc_url)}" target="_blank" rel="noreferrer">
+            <a href="{html.escape(iframe_url)}" target="_blank" rel="noreferrer">
               Open browser surface
             </a>
             <button

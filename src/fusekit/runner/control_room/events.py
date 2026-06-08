@@ -494,7 +494,7 @@ function renderVisual(job) {
             ${passwordRow}
           </div>
           <div class="visual-actions">
-            <a href="${escapeAttr(novncUrl)}" target="_blank" rel="noreferrer">
+            <a href="${escapeAttr(iframeUrl)}" target="_blank" rel="noreferrer">
               Open browser surface
             </a>
             <button
