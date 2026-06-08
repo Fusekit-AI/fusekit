@@ -459,8 +459,9 @@ def test_vercel_pack_pauses_for_github_login_connection_gate(
                 "link the requested repository."
             ),
             "next_action": (
-                "Open Vercel Login Connections in the VM browser, connect GitHub, approve "
-                "only the FuseKit account/repo access Vercel requests, then resume FuseKit."
+                "Click Open provider gate in VM, connect GitHub in Vercel Login Connections, "
+                "approve only the FuseKit account/repo access Vercel requests, then click "
+                "I finished this step."
             ),
             "resume_url": "https://vercel.com/account/settings/login-connections",
             "follow_steps": (
@@ -471,8 +472,8 @@ def test_vercel_pack_pauses_for_github_login_connection_gate(
                     "account/repo FuseKit named."
                 ),
                 (
-                    "Return to FuseKit and mark the gate finished after Vercel confirms "
-                    "the connection."
+                    "Return to FuseKit and click I finished this step after Vercel "
+                    "confirms the connection."
                 ),
             ),
             "strategy_decision": result["setup"][0]["strategy_decision"],

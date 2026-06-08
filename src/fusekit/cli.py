@@ -3396,7 +3396,7 @@ def _record_provider_strategy_gates(
             if isinstance(item_steps, (list, tuple))
             else _provider_strategy_follow_steps(pack)
         )
-        next_action = str(item.get("next_action", "") or "")
+        next_action = str(item.get("next_action", "") or "") or _provider_strategy_next_action()
         resume_hint = str(item.get("resume_hint", "") or "") or (
             "FuseKit will retry this provider route after you finish the gate."
         )
@@ -3423,9 +3423,24 @@ def _provider_strategy_follow_steps(pack: ProviderCapabilityPack) -> tuple[str, 
     if steps:
         return steps
     return (
-        f"Open the {pack.display_name} provider gate.",
-        "Complete provider-owned login, MFA, CAPTCHA, consent, billing, or verification steps.",
-        "Return to FuseKit and mark the gate finished once the approved capability exists.",
+        f"Click Open provider gate in VM so {pack.display_name} opens in the VM browser.",
+        (
+            "Complete provider-owned login, MFA, CAPTCHA, consent, billing, or verification "
+            "steps in that VM browser."
+        ),
+        (
+            "If the provider reveals a copy-once token, copy it inside the VM browser and "
+            "click the matching Capture from VM clipboard button."
+        ),
+        "If no secret is revealed, return to FuseKit and click I finished this step.",
+    )
+
+
+def _provider_strategy_next_action() -> str:
+    return (
+        "Click Open provider gate in VM, complete the provider-owned gate in the VM browser, "
+        "then either click I finished this step or use the matching Capture from VM clipboard "
+        "button if a copy-once token is revealed."
     )
 
 
@@ -3895,7 +3910,10 @@ def _provider_verification_gate(
         "classification": "provider-verification",
         "target": result.target,
         "follow_steps": _provider_strategy_follow_steps(pack),
-        "next_action": "Complete the highlighted provider gate, then click I finished this step.",
+        "next_action": (
+            "Click Open provider gate in VM, complete the highlighted provider verification "
+            "in the VM browser, then click I finished this step."
+        ),
         "resume_hint": "FuseKit will recheck the provider state before continuing.",
     }
 

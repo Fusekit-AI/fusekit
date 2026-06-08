@@ -47,6 +47,7 @@ from fusekit.manifest import (
 )
 from fusekit.providers.automation import ProviderSetupContext
 from fusekit.providers.capability_pack import (
+    PackHandoff,
     VerificationRecipe,
     synthesize_provider_pack,
     write_provider_pack,
@@ -1440,6 +1441,52 @@ def test_verification_gate_records_resend_api_key_follow_me(tmp_path) -> None:
     assert "creates or reuses the Resend sending domain" in gate.resume_hint
     assert "Cloudflare DNS" in gate.resume_hint
     assert "I finished this step" not in " ".join(gate.follow_steps)
+
+
+def test_verification_gate_fallback_names_exact_launcher_controls(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    args = argparse.Namespace(app=app)
+    manifest = SetupManifest(app_name="app", app_path=str(app))
+    pack = synthesize_provider_pack("stripe", app)
+    object.__setattr__(
+        pack,
+        "handoff",
+        PackHandoff(
+            signup_url="https://dashboard.stripe.com/register",
+            token_url="https://dashboard.stripe.com/apikeys",
+            login_url="https://dashboard.stripe.com/login",
+        ),
+    )
+    result = VerificationResult(
+        provider="stripe",
+        kind="http-json",
+        target="https://api.stripe.com/v1/account",
+        status="needs_human_gate",
+        details={"reason": "Stripe needs a provider-owned verification step."},
+    )
+
+    recorded = _record_provider_verification_gates(args, manifest, pack, [result])
+
+    assert recorded == [
+        {
+            "id": "provider.stripe.http-json",
+            "provider": "stripe",
+            "classification": "provider-verification",
+            "target": "https://api.stripe.com/v1/account",
+        }
+    ]
+    gate = GateService.load(app / ".fusekit" / "gates.json").records[
+        "provider.stripe.http-json"
+    ]
+    steps = " ".join(gate.follow_steps)
+    assert "Click Open provider gate in VM" in steps
+    assert "VM browser" in steps
+    assert "Capture from VM clipboard button" in steps
+    assert "I finished this step" in steps
+    assert "Click Open provider gate in VM" in gate.next_action
+    assert "highlighted provider verification" in gate.next_action
+    assert "I finished this step" in gate.next_action
 
 
 def test_verification_gate_routes_missing_resend_domain_to_api_retry(tmp_path) -> None:
