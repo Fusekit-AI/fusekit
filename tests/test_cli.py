@@ -1312,9 +1312,57 @@ def test_verification_gate_routes_resend_runtime_values_from_vercel(tmp_path) ->
     steps = " ".join(gate.follow_steps)
     assert "RESEND_AUDIENCE_ID" in steps
     assert "rsvp@moonlite.rsvp" in steps
+    assert "Open Resend Audiences" in steps
     assert "Capture button" in steps
     assert "resumes automatically" in steps
     assert "I finished this step" not in steps
+
+
+def test_verification_gate_routes_only_missing_resend_runtime_values(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    args = argparse.Namespace(app=app)
+    manifest = SetupManifest(
+        app_name="app",
+        app_path=str(app),
+        domains=(DomainRequirement(provider="cloudflare", domain="moonlite.rsvp"),),
+    )
+    pack = synthesize_provider_pack("vercel", app)
+    result = VerificationResult(
+        provider="vercel",
+        kind="vercel-env",
+        target="moonlite-rsvp-demo",
+        status="needs_human_gate",
+        details={
+            "reason": (
+                "Vercel is missing runtime values WEBHOOK_SECRET, "
+                "RESEND_FROM_EMAIL."
+            ),
+            "service_gate": True,
+        },
+    )
+
+    recorded = _record_provider_verification_gates(args, manifest, pack, [result])
+
+    assert recorded == [
+        {
+            "id": "provider.resend.runtime-values",
+            "provider": "resend",
+            "classification": "provider-runtime-values",
+            "target": "RESEND_FROM_EMAIL",
+        }
+    ]
+    gate = GateService.load(app / ".fusekit" / "gates.json").records[
+        "provider.resend.runtime-values"
+    ]
+    assert gate.resume_url == "https://resend.com/domains"
+    assert gate.target == "RESEND_FROM_EMAIL"
+    assert "WEBHOOK_SECRET" not in gate.target
+    steps = " ".join(gate.follow_steps)
+    assert "Open Resend Domains" in steps
+    assert "rsvp@moonlite.rsvp" in steps
+    assert "Open Resend Audiences" not in steps
+    assert "unless RESEND_AUDIENCE_ID is listed" in steps
 
 
 def test_cli_refuses_raw_secret_argument(tmp_path) -> None:

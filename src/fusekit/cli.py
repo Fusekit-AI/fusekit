@@ -3671,9 +3671,10 @@ def _provider_verification_gate(
     del args
     reason = str(result.details.get("reason") or "").strip()
     env_names = _verification_gate_env_names(reason)
+    resend_env_names = tuple(name for name in env_names if name.startswith("RESEND_"))
     domain = _default_manifest_domain(manifest)
-    if any(name.startswith("RESEND_") for name in env_names):
-        missing = ", ".join(env_names)
+    if resend_env_names:
+        missing = ", ".join(resend_env_names)
         return {
             "id": "provider.resend.runtime-values",
             "provider": "resend",
@@ -3681,10 +3682,10 @@ def _provider_verification_gate(
                 "Finish Resend email configuration so FuseKit can apply the missing "
                 f"runtime values: {missing}."
             ),
-            "resume_url": "https://resend.com/audiences",
+            "resume_url": _resend_runtime_resume_url(resend_env_names),
             "classification": "provider-runtime-values",
-            "target": ",".join(env_names),
-            "follow_steps": _resend_runtime_follow_steps(domain, env_names),
+            "target": ",".join(resend_env_names),
+            "follow_steps": _resend_runtime_follow_steps(domain, resend_env_names),
         }
     if pack.provider == "resend" and result.kind == "http-json":
         return {
@@ -3765,19 +3766,49 @@ def _resend_runtime_follow_steps(
 ) -> tuple[str, ...]:
     steps = [
         "Use the live VM browser surface, not a local browser tab.",
-        "Open Resend Audiences and create or select the audience for this app.",
-        (
-            "Copy each requested value inside the VM browser, then click its "
-            "Capture button in FuseKit."
-        ),
     ]
-    if "RESEND_AUDIENCE_ID" in env_names:
-        steps.append("Copy the audience ID inside the VM so FuseKit can store RESEND_AUDIENCE_ID.")
+    if "RESEND_API_KEY" in env_names:
+        steps.extend(
+            [
+                (
+                    "Open Resend API Keys and create a Full access setup key named "
+                    "FuseKit email setup."
+                ),
+                (
+                    "Copy the API key only inside the VM browser so FuseKit can store "
+                    "RESEND_API_KEY."
+                ),
+            ]
+        )
     if "RESEND_FROM_EMAIL" in env_names:
+        named_domain = domain or "the app sending domain"
         from_address = f"rsvp@{domain}" if domain else "the verified sending address"
-        steps.append(f"Use a verified From address such as {from_address} for RESEND_FROM_EMAIL.")
+        steps.extend(
+            [
+                f"Open Resend Domains and add or open {named_domain}.",
+                (
+                    "Use a verified From address such as "
+                    f"{from_address} for RESEND_FROM_EMAIL."
+                ),
+                (
+                    "Do not create a Resend audience unless RESEND_AUDIENCE_ID is listed "
+                    "as a missing value."
+                ),
+            ]
+        )
+    if "RESEND_AUDIENCE_ID" in env_names:
+        steps.extend(
+            [
+                "Open Resend Audiences and create or select the audience for this app.",
+                "Copy the audience ID inside the VM so FuseKit can store RESEND_AUDIENCE_ID.",
+            ]
+        )
     steps.extend(
         [
+            (
+                "Copy each requested value inside the VM browser, then click its "
+                "Capture button in FuseKit."
+            ),
             (
                 "FuseKit will apply the captured values to Vercel and GitHub after "
                 "the capture gate completes."
@@ -3786,6 +3817,14 @@ def _resend_runtime_follow_steps(
         ]
     )
     return tuple(steps)
+
+
+def _resend_runtime_resume_url(env_names: tuple[str, ...]) -> str:
+    if "RESEND_API_KEY" in env_names:
+        return "https://resend.com/api-keys"
+    if "RESEND_AUDIENCE_ID" in env_names:
+        return "https://resend.com/audiences"
+    return "https://resend.com/domains"
 
 
 def _verification_inputs(args: argparse.Namespace, manifest: SetupManifest) -> dict[str, str]:
