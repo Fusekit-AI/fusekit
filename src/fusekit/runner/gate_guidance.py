@@ -172,7 +172,7 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
         actions=(
             "Sign in to OpenAI when prompted.",
             "Complete the highlighted MFA, CAPTCHA, consent, or organization prompt.",
-            "Click the resume button after the provider says authorization is complete.",
+            "Click I finished this step after the provider says authorization is complete.",
         ),
         reassurance=(
             "FuseKit encrypts captured auth state and detonates plaintext worker state later."
@@ -189,7 +189,7 @@ _GENERIC = GateGuidance(
     actions=(
         "Use the Open provider gate button to bring the exact provider page forward.",
         "Complete only highlighted login, MFA, CAPTCHA, consent, payment, or ownership prompts.",
-        "Click the resume button here; FuseKit will verify the provider state before continuing.",
+        "Click I finished this step; FuseKit will verify the provider state before continuing.",
     ),
     reassurance="The worker remains alive and will retry this gate until it passes.",
 )

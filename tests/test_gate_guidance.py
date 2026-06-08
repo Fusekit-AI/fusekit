@@ -40,6 +40,9 @@ def test_provider_gate_guidance_leads_instead_of_delegating_interpretation() -> 
         text = " ".join((guidance.title, guidance.body, *guidance.actions, guidance.reassurance))
         lowered = text.lower()
         assert all(re.search(rf"\b{re.escape(phrase)}\b", lowered) is None for phrase in forbidden)
+        assert "resume button" not in lowered
+        if provider in {"openai", "unknown"}:
+            assert "i finished this step" in lowered
         assert any(anchor in lowered for anchor in ("highlighted", "open provider gate"))
         if provider in {"github", "vercel", "cloudflare", "resend"}:
             assert "vm browser" in lowered
