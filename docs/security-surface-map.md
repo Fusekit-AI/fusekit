@@ -58,7 +58,7 @@ SSH session provisioned by FuseKit, or an encrypted vault/passphrase boundary.
 | Vercel provider recipes | Project, env vars, deployment. | Requires provider token; env replacement creates before deleting old values unless repair requires replacement. |
 | Cloudflare provider recipes | DNS proposal/apply/verify. | Proposal is safe by default; apply requires explicit DNS approval scope; rollback metadata is written. |
 | `fusekit rollback --execute` | Provider-native delete/revoke/restore actions from receipt metadata. | Requires vault/provider token and receipt-derived action metadata. |
-| `fusekit detonate` / remote detonation | Deletes worker/tmp state and remote OCI resources. | Detonation preflight requires encrypted/redacted survivor artifacts, safe verification report, and rollback metadata before trusting cleanup. |
+| `fusekit detonate` / remote detonation | Deletes worker/tmp state, browser/visual/OpenClaw scratch state, FuseKit-controlled transient logs, uploaded app archives, passphrase files, and remote OCI resources. | Detonation preflight requires encrypted/redacted survivor artifacts, safe verification report, and rollback metadata before trusting cleanup; live acceptance now rejects leftover plaintext worker, browser, visual, provider-auth, or gateway/control-room scratch. |
 | OCI remote launch | Creates disposable VM/networking, uploads app archive/vault, runs remote FuseKit, retrieves artifacts. | x86_64-only shapes; app upload excludes secret paths; SSH uses generated keys; passphrase is stdin/file-scoped; remote artifacts are validated before detonation. |
 
 ## Command Injection Boundaries

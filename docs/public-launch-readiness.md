@@ -56,7 +56,10 @@ and declares `RESEND_*` runtime variables, the receipt must also prove that
 `vercel.env` configured each required Resend runtime key. Any durable human gate
 recorded during the run must include follow-me steps, a plain next action, and a
 resume hint, plus matching redacted control-room audit proof, even if the gate
-later passed.
+later passed. Detonation proof must cover worker/temp state plus browser profile,
+visual-session scratch, OpenClaw/auth state, passphrase files, uploaded app archives,
+and FuseKit-controlled control-room/gateway logs; only encrypted or redacted proof
+artifacts may survive.
 
 ## Acceptance Path
 
@@ -93,7 +96,7 @@ FuseKit has a native proof layer:
   no gate remains unresolved
 - redacted control-room intervention audit proof for every recorded human gate
 - control-room launch-blocker visibility for `blockers[]` recovery actions
-- receipt/audit/detonation/leak-scan gates
+- receipt/audit/broad detonation/leak-scan gates
 
 The harness only reports whether the run is public-launch ready. It does not
 grant provider access, bypass human gates, or make unverified provider-success claims.

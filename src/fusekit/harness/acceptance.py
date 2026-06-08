@@ -27,6 +27,27 @@ from fusekit.scanner import scan_repo
 from fusekit.security import redact_public_path, redact_public_text, scan_for_secret_leaks
 from fusekit.vault.bundle import Vault
 
+DETONATION_PLAINTEXT_PATHS = (
+    "worker",
+    "tmp",
+    "browser",
+    "browser-profile",
+    "chrome-profile",
+    "playwright-profile",
+    "provider-auth",
+    "auth-state",
+    "openclaw",
+    "openclaw-state",
+    "visual",
+    "passphrase",
+    "app.tar.gz",
+    "control-room.log",
+    "openclaw-gateway.log",
+    "x11vnc.log",
+    "websockify.log",
+    "chrome.log",
+)
+
 
 @dataclass(frozen=True)
 class AcceptanceCheck:
@@ -1814,16 +1835,16 @@ def _check_detonation(
 ) -> None:
     survivors = [
         path
-        for path in (fusekit_dir / "worker", fusekit_dir / "tmp")
-        if path.exists() and any(path.iterdir() if path.is_dir() else [path])
+        for name in DETONATION_PLAINTEXT_PATHS
+        if _detonation_survivor(path := fusekit_dir / name)
     ]
     if survivors:
         checks.append(
             AcceptanceCheck(
                 "detonation.worker_state",
                 "failed",
-                "Plaintext worker/tmp state still exists: "
-                + ", ".join(str(path) for path in survivors),
+                "Plaintext worker/browser/visual state still exists: "
+                + ", ".join(redact_public_path(path) for path in survivors),
             )
         )
         missing.append("detonated worker state")
@@ -1832,11 +1853,19 @@ def _check_detonation(
         AcceptanceCheck(
             "detonation.worker_state",
             "ok",
-            "Worker/tmp state is detonated or absent.",
+            "Worker, browser, visual, and auth scratch state is detonated or absent.",
         )
     )
     if mode == "live" and not fusekit_dir.exists():
         missing.append("FuseKit artifact directory")
+
+
+def _detonation_survivor(path: Path) -> bool:
+    if not path.exists():
+        return False
+    if path.is_dir():
+        return any(path.iterdir())
+    return True
 
 
 def _check_leaks(

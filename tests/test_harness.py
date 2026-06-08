@@ -9,6 +9,7 @@ from fusekit.harness.acceptance import (
     AcceptanceCheck,
     AcceptanceReport,
     _acceptance_blockers,
+    _check_detonation,
     _rollback_provider_names,
 )
 from fusekit.harness.ledger import HarnessLedger
@@ -280,6 +281,53 @@ def test_harness_ledger_snapshot_redacts_public_token_shapes(tmp_path) -> None:
     assert "code=[redacted]" in text
     assert "[redacted]" in text
     assert ".fusekit/acceptance/report.json" in text
+
+
+def test_acceptance_detonation_blocks_browser_visual_scratch(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    (fusekit_dir / "browser" / "Default").mkdir(parents=True)
+    (fusekit_dir / "browser" / "Default" / "Cookies").write_text(
+        "session cookie", encoding="utf-8"
+    )
+    (fusekit_dir / "visual").mkdir()
+    (fusekit_dir / "visual" / "x11vnc.log").write_text("visual log", encoding="utf-8")
+    checks: list[AcceptanceCheck] = []
+    missing: list[str] = []
+
+    _check_detonation(fusekit_dir, "live", checks, missing)
+
+    assert checks[-1].id == "detonation.worker_state"
+    assert checks[-1].status == "failed"
+    assert "worker/browser/visual state" in checks[-1].detail
+    assert "browser" in checks[-1].detail
+    assert "visual" in checks[-1].detail
+    assert str(tmp_path) not in checks[-1].detail
+    assert "detonated worker state" in missing
+
+
+def test_acceptance_detonation_allows_redacted_survivor_artifacts(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    for name in (
+        "visual.json",
+        "fusekit.vault.json",
+        "audit.jsonl",
+        "setup_receipt.json",
+        "verification_report.json",
+        "rollback_plan.json",
+        "provider_strategies.json",
+        "gates.json",
+    ):
+        (fusekit_dir / name).write_text("{}", encoding="utf-8")
+    checks: list[AcceptanceCheck] = []
+    missing: list[str] = []
+
+    _check_detonation(fusekit_dir, "live", checks, missing)
+
+    assert checks[-1].id == "detonation.worker_state"
+    assert checks[-1].status == "ok"
+    assert "browser, visual, and auth scratch" in checks[-1].detail
+    assert missing == []
 
 
 def test_acceptance_live_requires_real_provider_evidence(tmp_path) -> None:
