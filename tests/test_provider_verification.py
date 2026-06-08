@@ -337,6 +337,7 @@ def test_dns_pending_then_passing(monkeypatch) -> None:
             )
         },
     )
+    object.__setattr__(pack, "verification", (recipe,))
     calls = {"count": 0}
 
     class Resolver:
@@ -355,6 +356,42 @@ def test_dns_pending_then_passing(monkeypatch) -> None:
 
     assert result.status == "ok"
     assert calls["count"] == 2
+
+
+def test_dns_cname_allows_trailing_root_dot(monkeypatch) -> None:
+    vault = Vault.empty()
+    pack = _pack("cloudflare")
+    recipe = VerificationRecipe(
+        kind="dns-records",
+        target="moonlite.rsvp",
+        inputs={
+            "records_json": json.dumps(
+                [
+                    {
+                        "name": "www.moonlite.rsvp",
+                        "type": "CNAME",
+                        "value": "cname.vercel-dns.com",
+                    }
+                ]
+            )
+        },
+    )
+    object.__setattr__(pack, "verification", (recipe,))
+
+    class Resolver:
+        def resolve(self, name: str, record_type: str):  # type: ignore[no-untyped-def]
+            del name, record_type
+            return ["cname.vercel-dns.com."]
+
+    monkeypatch.setattr(
+        "fusekit.providers.verification.import_module",
+        lambda name: Resolver() if name == "dns.resolver" else SimpleNamespace(),
+    )
+
+    result = verify_provider_pack(pack, vault, inputs={})[0]
+
+    assert result.status == "ok"
+    assert result.details["checked"][0]["expected_value_present"] is True
 
 
 def test_dns_single_attempt_is_pending_safe(monkeypatch) -> None:

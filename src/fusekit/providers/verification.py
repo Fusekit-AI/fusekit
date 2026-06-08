@@ -339,12 +339,12 @@ def _verify_dns_record(
         raise ProviderError("dnspython is required for DNS verification.") from exc
     record_type = recipe.inputs.get("type", "A").upper()
     name = recipe.inputs.get("name", recipe.target)
-    expected_value = recipe.inputs.get("value", "")
+    expected_value = _normalize_dns_value(recipe.inputs.get("value", ""), record_type)
     try:
         answers = resolver.resolve(name, record_type)
     except Exception as exc:
         raise ProviderError(f"DNS verification failed for {name} {record_type}: {exc}") from exc
-    values = sorted(str(answer).strip('"') for answer in answers)
+    values = sorted(_normalize_dns_value(str(answer), record_type) for answer in answers)
     ok = bool(values)
     if expected_value:
         ok = expected_value in values
@@ -379,10 +379,10 @@ def _verify_dns_records(
     for record in records:
         name = str(record.get("name", ""))
         record_type = str(record.get("type", "A")).upper()
-        expected_value = str(record.get("value", ""))
+        expected_value = _normalize_dns_value(str(record.get("value", "")), record_type)
         try:
             answers = resolver.resolve(name, record_type)
-            values = sorted(str(answer).strip('"') for answer in answers)
+            values = sorted(_normalize_dns_value(str(answer), record_type) for answer in answers)
         except Exception:
             values = []
         expected_present = bool(expected_value and expected_value in values)
@@ -408,6 +408,13 @@ def _verify_dns_records(
             "expected": recipe.expected,
         },
     )
+
+
+def _normalize_dns_value(value: str, record_type: str) -> str:
+    normalized = value.strip().strip('"')
+    if record_type.upper() in {"CNAME", "NS", "PTR"}:
+        normalized = normalized.rstrip(".").lower()
+    return normalized
 
 
 def _verify_github_repo_secret(
