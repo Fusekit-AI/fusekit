@@ -407,6 +407,31 @@ def test_acceptance_provider_gates_require_openable_resume_url() -> None:
     assert "provider.github.authorization missing resume_url" in failures
 
 
+def test_acceptance_rejects_resend_generated_values_as_capture_targets() -> None:
+    failures = _unguided_gates(
+        [
+            {
+                "id": "provider.resend.runtime-values",
+                "provider": "resend",
+                "status": "passed",
+                "classification": "provider-runtime-values",
+                "resume_url": "https://resend.com/api-keys",
+                "target": "RESEND_API_KEY,RESEND_FROM_EMAIL,RESEND_AUDIENCE_ID",
+                "follow_steps": [
+                    "Copy the API key inside the VM browser and click Capture from VM clipboard."
+                ],
+                "next_action": "No action needed.",
+                "resume_hint": "FuseKit verified this gate as passed.",
+            }
+        ]
+    )
+
+    assert (
+        "provider.resend.runtime-values.target asks the user to capture "
+        "API-generated Resend values: RESEND_AUDIENCE_ID, RESEND_FROM_EMAIL"
+    ) in failures
+
+
 def test_acceptance_resume_audit_is_required_for_non_secret_gate_clicks() -> None:
     requirements = _gate_resume_audit_requirements(
         [

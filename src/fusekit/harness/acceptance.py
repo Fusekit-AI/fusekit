@@ -1580,6 +1580,9 @@ def _unguided_gates(gates: Any) -> list[str]:
         if missing_fields:
             missing.append(f"{gate_id} missing {', '.join(missing_fields)}")
             continue
+        generated_resend_target_failure = _generated_resend_runtime_capture_failure(gate)
+        if generated_resend_target_failure:
+            missing.append(generated_resend_target_failure)
         quality_failures = _guidance_quality_failures(
             gate_id,
             follow_steps=follow_steps,
@@ -1590,6 +1593,27 @@ def _unguided_gates(gates: Any) -> list[str]:
         )
         missing.extend(quality_failures)
     return missing
+
+
+def _generated_resend_runtime_capture_failure(gate: dict[str, Any]) -> str:
+    """Reject stale Resend gates that ask humans to copy API-generated values."""
+
+    provider = str(gate.get("provider", "")).strip().lower()
+    classification = str(gate.get("classification", "")).strip().lower()
+    if provider != "resend" or classification != "provider-runtime-values":
+        return ""
+    generated_targets = {
+        target
+        for target in _env_targets_from_text(str(gate.get("target", "")))
+        if target in {"RESEND_FROM_EMAIL", "RESEND_AUDIENCE_ID"}
+    }
+    if not generated_targets:
+        return ""
+    gate_id = str(gate.get("id", "") or "resend.runtime-values")
+    return (
+        f"{gate_id}.target asks the user to capture API-generated Resend values: "
+        + ", ".join(sorted(generated_targets))
+    )
 
 
 _PROVIDER_GATE_CLASSIFICATIONS = {
