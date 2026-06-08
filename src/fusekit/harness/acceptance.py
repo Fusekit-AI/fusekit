@@ -1137,11 +1137,16 @@ def _unguided_gates(gates: Any) -> list[str]:
         if not isinstance(gate, dict):
             continue
         gate_id = str(gate.get("id", "") or f"gate[{index}]")
+        follow_steps = gate.get("follow_steps", [])
         missing_fields = [
             field
             for field in ("next_action", "resume_hint")
             if not str(gate.get(field, "")).strip()
         ]
+        if not isinstance(follow_steps, list) or not any(
+            str(step).strip() for step in follow_steps
+        ):
+            missing_fields.append("follow_steps")
         if missing_fields:
             missing.append(f"{gate_id} missing {', '.join(missing_fields)}")
     return missing
@@ -1167,7 +1172,7 @@ def _redacted_gate_state(raw: Any) -> dict[str, Any]:
                 "provider": str(gate.get("provider", "")),
                 "status": str(gate.get("status", "")),
                 "classification": str(gate.get("classification", "")),
-                "target": str(gate.get("target", "")),
+                "target": redact_public_text(str(gate.get("target", ""))),
                 "attempts": _safe_int(gate.get("attempts")),
                 "follow_step_count": len(follow_steps) if isinstance(follow_steps, list) else 0,
                 "has_next_action": bool(str(gate.get("next_action", ""))),

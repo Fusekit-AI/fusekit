@@ -108,6 +108,7 @@ guided, or explicitly verified.
 | Live acceptance could prove rollback metadata existed without proving rollback coverage for every manifest provider. | Live acceptance now fails with a specific Rollback blocker when manifest providers are missing from `rollback_plan.json`. |
 | The rollback planner could emit DNS rollback as a generic `rollback.dns.*` action and omit Resend setup actions, causing fresh runs to fail the provider-coverage proof even after successful setup. | Rollback plans now emit provider-shaped actions for Cloudflare DNS and Resend setup, with legacy DNS rollback names still accepted by the launch-readiness harness. |
 | Shared capture copy could still say "Capture in FuseKit" or "Capture here" while the visible button says `Capture <ENV> from VM clipboard`. | Static, live, Resend-specific, and generic gate fallback copy now tells users to click the matching `Capture from VM clipboard` button. |
+| Live acceptance could treat a gate as guided with only a next-action sentence, and its redacted gate proof still serialized raw `target` text. | Live acceptance now requires non-empty follow-me steps for each durable gate and redacts gate targets in public acceptance artifacts. |
 
 ## Open Acceptance Items
 

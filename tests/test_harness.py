@@ -208,6 +208,17 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                     },
                     sort_keys=True,
                 ),
+                json.dumps(
+                    {
+                        "event": "control_room.gate_resume_requested",
+                        "data": {
+                            "gate_id": "provider.callback.review",
+                            "provider": "provider",
+                            "status": "passed",
+                        },
+                    },
+                    sort_keys=True,
+                ),
             ]
         )
         + "\n",
@@ -316,6 +327,21 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                         "captured_targets": ["OPENAI_API_KEY"],
                         "resume_url": "http://localhost:1455/auth/callback?code=secret-code",
                         "last_opened_url": "https://provider.example/?token=secret-token",
+                    },
+                    {
+                        "id": "provider.callback.review",
+                        "provider": "provider",
+                        "reason": "Provider callback reviewed",
+                        "status": "passed",
+                        "classification": "provider-verification",
+                        "target": (
+                            "https://provider.example/callback?"
+                            "code=abcdefghijklmnopqrstuvwxyz1234567890abcdef&state=ok"
+                        ),
+                        "attempts": 1,
+                        "follow_steps": ["Review the highlighted callback."],
+                        "next_action": "No action needed.",
+                        "resume_hint": "FuseKit verified this gate as passed.",
                     }
                 ]
             }
@@ -343,6 +369,8 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
     gates_text = Path(gates_artifact).read_text(encoding="utf-8")
     assert "secret-code" not in gates_text
     assert "secret-token" not in gates_text
+    assert "abcdefghijklmnopqrstuvwxyz1234567890abcdef" not in gates_text
+    assert "code=[redacted]" in gates_text
     assert "has_resume_url" in gates_text
     assert "captured_count" in gates_text
     audit_check = next(check for check in report.checks if check.id == "gates.audited")
@@ -968,7 +996,10 @@ def test_live_acceptance_requires_guided_control_room_gates(tmp_path) -> None:
     guided_check = next(check for check in report.checks if check.id == "gates.guided")
     assert report.launch_ready is False
     assert guided_check.status == "failed"
-    assert "provider.github.authorization missing next_action, resume_hint" in guided_check.detail
+    assert (
+        "provider.github.authorization missing next_action, resume_hint, follow_steps"
+        in guided_check.detail
+    )
     assert "guided human gates" in report.missing
 
 
@@ -1033,6 +1064,7 @@ def test_live_acceptance_requires_audited_control_room_gates(tmp_path) -> None:
                         "provider": "github",
                         "reason": "GitHub token captured",
                         "status": "passed",
+                        "follow_steps": ["Copy the GitHub token in the VM browser."],
                         "next_action": "No action needed.",
                         "resume_hint": "FuseKit verified this gate as passed.",
                     }
@@ -1142,6 +1174,7 @@ def test_live_acceptance_requires_clipboard_capture_for_secret_gates(tmp_path) -
                         "classification": "provider-authorization",
                         "target": "OPENAI_API_KEY",
                         "captured_targets": ["OPENAI_API_KEY"],
+                        "follow_steps": ["Copy OPENAI_API_KEY inside the VM browser."],
                         "next_action": "No action needed.",
                         "resume_hint": "FuseKit verified this gate as passed.",
                     }
@@ -1261,6 +1294,7 @@ def test_live_acceptance_requires_all_multi_value_gate_captures(tmp_path) -> Non
                         "classification": "provider-runtime-values",
                         "target": "RESEND_AUDIENCE_ID,RESEND_FROM_EMAIL",
                         "captured_targets": ["RESEND_AUDIENCE_ID"],
+                        "follow_steps": ["Copy each Resend value inside the VM browser."],
                         "next_action": "No action needed.",
                         "resume_hint": "FuseKit verified this gate as passed.",
                     }
@@ -1366,6 +1400,7 @@ def test_live_acceptance_requires_provider_gate_open_audit(tmp_path) -> None:
                         "status": "passed",
                         "classification": "provider-authorization",
                         "resume_url": "https://dash.cloudflare.com/profile/api-tokens",
+                        "follow_steps": ["Open Cloudflare in the VM browser."],
                         "next_action": "No action needed.",
                         "resume_hint": "FuseKit verified this gate as passed.",
                     }
@@ -1451,6 +1486,7 @@ def test_live_acceptance_requires_resolved_control_room_gates(tmp_path) -> None:
                         "provider": "cloudflare",
                         "reason": "Cloudflare token creation",
                         "status": "waiting",
+                        "follow_steps": ["Finish Cloudflare login in the VM browser."],
                         "next_action": "Finish Cloudflare login in the VM browser.",
                         "resume_hint": "FuseKit will retry verification after resume.",
                     }
