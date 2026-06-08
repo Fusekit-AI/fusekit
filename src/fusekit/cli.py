@@ -2904,14 +2904,24 @@ def _await_provider_token(
             target=token_env,
             follow_steps=_provider_authorization_follow_steps(handoff, token_env),
         )
-        _write_source_fetch_control_room(args, provider=provider, gate_id=gate_id)
-        _ensure_gate_attempt_allowed(args, attempt, f"{provider} authorization")
+        prelaunch_control_room = _write_source_fetch_control_room(
+            args,
+            provider=provider,
+            gate_id=gate_id,
+        )
         guidance = provider_gate_guidance(provider)
         print(
             f"Waiting: {guidance.title}. {guidance.reassurance} "
             f"When the provider reveals the approved key, provide {token_env}. "
             "FuseKit will keep checking for captured credentials."
         )
+        if prelaunch_control_room is not None:
+            print(
+                "Guided source-fetch control room: "
+                f"{prelaunch_control_room}. Open this file and use the VM-browser "
+                "Capture controls instead of guessing from the terminal."
+            )
+        _ensure_gate_attempt_allowed(args, attempt, f"{provider} authorization")
         if should_present_handoff:
             _run_handoff(args, provider, handoff, include_project, goal=goal)
         _sleep_for_gate(args, gate_id=gate_id)
@@ -2922,11 +2932,11 @@ def _write_source_fetch_control_room(
     *,
     provider: str,
     gate_id: str,
-) -> None:
+) -> Path | None:
     """Write a guided control room when source fetch pauses before launch exists."""
 
     if not hasattr(args, "source") or not hasattr(args, "dest"):
-        return
+        return None
     gate_path = _gate_state_path(args)
     root = gate_path.parent
     job_path = root / "source-fetch-job.json"
@@ -2983,9 +2993,11 @@ def _write_source_fetch_control_room(
         ],
         artifacts={"gates": str(gate_path)},
     )
-    job.add_artifact("control_room", root / "control-room.html")
+    control_room_path = root / "control-room.html"
+    job.add_artifact("control_room", control_room_path)
     job.save(job_path)
-    write_control_room(job, root / "control-room.html")
+    write_control_room(job, control_room_path)
+    return control_room_path
 
 
 def _provider_authorization_follow_steps(

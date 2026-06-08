@@ -1696,6 +1696,7 @@ def test_source_fetch_guides_private_repo_with_inferred_github_goal(
 def test_source_fetch_waiting_token_writes_guided_control_room(
     monkeypatch,
     tmp_path,
+    capsys,
 ) -> None:
     vault_path = tmp_path / "fusekit.vault.json"
     passphrase = tmp_path / "passphrase.txt"
@@ -1727,6 +1728,7 @@ def test_source_fetch_waiting_token_writes_guided_control_room(
     job_state = tmp_path / "source-fetch-job.json"
     gates = GateService.load(tmp_path / "gates.json").records
     html = control_room.read_text(encoding="utf-8")
+    output = capsys.readouterr().out
 
     assert control_room.exists()
     assert job_state.exists()
@@ -1736,6 +1738,8 @@ def test_source_fetch_waiting_token_writes_guided_control_room(
     assert "Open provider gate in VM" in html
     assert "Capture GITHUB_TOKEN from VM clipboard" in html
     assert "full setup worker has not started yet" in html
+    assert f"Guided source-fetch control room: {control_room}" in output
+    assert "use the VM-browser Capture controls" in output
 
 
 def test_github_app_source_handoff_uses_launcher_capture_copy() -> None:
