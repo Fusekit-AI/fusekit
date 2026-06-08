@@ -694,6 +694,7 @@ function acceptanceCards(report) {
       label: blocker.category || "Launch blocker",
       title: blocker.item || "Acceptance item",
       body: blocker.next_action || "Run acceptance again after fixing this.",
+      detail: blocker.detail || "",
       foot: "FuseKit will keep this visible until acceptance proof passes.",
     }));
   }
@@ -772,17 +773,23 @@ function renderAcceptance(job) {
   const summaryNode = document.querySelector("[data-acceptance-overall]");
   if (summaryNode) summaryNode.textContent = summary;
   root.innerHTML = acceptanceCards(report)
-    .map((card) => `
+    .map((card) => {
+      const detail = card.detail
+        ? `<code>${escapeHtml(publicCopy(card.detail))}</code>`
+        : "";
+      return `
       <article class="trust-card ${classToken(card.status)}">
         <div class="trust-snow state-${classToken(card.snow)}" aria-hidden="true"></div>
         <div>
           <span>${escapeHtml(card.label)}</span>
           <strong>${escapeHtml(card.title)}</strong>
           <p>${escapeHtml(card.body)}</p>
+          ${detail}
           <em>${escapeHtml(card.foot)}</em>
         </div>
       </article>
-    `)
+    `;
+    })
     .join("");
 }
 

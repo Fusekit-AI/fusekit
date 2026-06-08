@@ -424,6 +424,10 @@ def test_control_room_payload_and_html_include_acceptance_blockers(tmp_path) -> 
                             "Run Resend domain setup before Cloudflare/DNS so records "
                             "are included."
                         ),
+                        "detail": (
+                            "missing control_room.gate_open: "
+                            "provider.cloudflare.authorization"
+                        ),
                     }
                 ],
             }
@@ -435,11 +439,18 @@ def test_control_room_payload_and_html_include_acceptance_blockers(tmp_path) -> 
     payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
 
     assert payload["acceptance"]["blockers"][0]["category"] == "Provider order"
+    assert (
+        payload["acceptance"]["blockers"][0]["detail"]
+        == "missing control_room.gate_open: provider.cloudflare.authorization"
+    )
     assert "Launch blockers" in html
     assert "What must be fixed before recording" in html
     assert "Provider order" in html
     assert "Resend-before-DNS provider setup order" in html
     assert "Run Resend domain setup before Cloudflare/DNS" in html
+    assert "missing control_room.gate_open" in html
+    assert "provider.cloudflare.authorization" in html
+    assert "card.detail" in html
     assert "renderAcceptance" in html
 
 

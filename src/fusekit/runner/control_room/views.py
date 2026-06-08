@@ -517,6 +517,12 @@ def _render_acceptance_blocker_card(blocker: dict[str, Any]) -> str:
     category = str(blocker.get("category", "Launch blocker") or "Launch blocker")
     item = str(blocker.get("item", "Acceptance item") or "Acceptance item")
     next_action = str(blocker.get("next_action", "") or "Run acceptance again after fixing this.")
+    detail = str(blocker.get("detail", "") or "").strip()
+    detail_block = (
+        f"<code>{html.escape(_public_copy(detail))}</code>"
+        if detail
+        else ""
+    )
     return f"""
         <article class="trust-card failed">
           <div class="trust-snow state-failed" aria-hidden="true"></div>
@@ -524,6 +530,7 @@ def _render_acceptance_blocker_card(blocker: dict[str, Any]) -> str:
             <span>{html.escape(category)}</span>
             <strong>{html.escape(item)}</strong>
             <p>{html.escape(next_action)}</p>
+            {detail_block}
             <em>FuseKit will keep this visible until acceptance proof passes.</em>
           </div>
         </article>

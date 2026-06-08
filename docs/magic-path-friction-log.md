@@ -98,6 +98,7 @@ guided, or explicitly verified.
 | Generic provider setup and verification fallback gates could still say to open or complete a provider gate without explaining whether to use `Capture from VM clipboard` or `I finished this step`. | Fallback gates now name `Open provider gate in VM`, explain the VM browser flow, split copy-once token capture from non-secret completion, and persist those instructions in durable gate state. |
 | Vercel's GitHub Login Connection repair gate could say to "resume FuseKit" or "mark the gate finished", which did not match the launcher button label. | The Vercel repair gate now tells users to click `Open provider gate in VM`, approve only the named account/repo access, then click `I finished this step`. |
 | Older or partial acceptance reports with `missing[]` but no `blockers[]` could render a generic "Repair this acceptance item" card in the control room. | Static and live control-room blocker fallbacks now map known missing launch-proof items to the same plain-language categories and next actions as the harness. |
+| Acceptance blockers could know the exact missing proof, such as a skipped VM-browser open or clipboard capture, but hide that detail from the visible control-room card. | Static and live control-room blocker cards now show the redacted acceptance detail so the user can see the exact gate/open/capture proof FuseKit is waiting on. |
 
 ## Open Acceptance Items
 
