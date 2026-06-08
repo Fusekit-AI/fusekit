@@ -15,7 +15,7 @@ Python package is the live control room in `fusekit.runner.control_room.server`.
 | `/index.html` | `GET` | Read-only control-room HTML. | Same as `/`. |
 | `/api/job` | `GET` | Read-only redacted job payload. | Same as `/`. |
 | `/api/gates/<gate_id>/pass` | `POST` | Marks one gate as `resume_requested` in `.fusekit/gates.json`; for setup-plan and DNS-approval gates this is the protected control-room approval signal consumed by the worker. | Requires `x-fusekit-control-room: resume`; rejects untrusted `Origin`; rejects browser-declared cross-site `Sec-Fetch-Site`; every state-changing POST must echo the page's per-control-room `x-fusekit-action-token`; remote access additionally requires token via bearer/query/cookie; no CORS headers are emitted; refuses secret-capture gates until every target is captured into the vault. |
-| `/api/gates/<gate_id>/open` | `POST` | Opens the gate's provider URL in the shared VM browser and records debounce metadata. | Same POST protections as `/pass`; URL is read from the durable gate record and validated with `require_safe_url`; launches a fixed browser argv list, not caller-supplied commands; repeated opens are debounced. |
+| `/api/gates/<gate_id>/open` | `POST` | Opens the gate's provider URL in the shared VM browser and records debounce metadata. | Same POST protections as `/pass`; URL is read from the durable gate record and validated with `require_safe_url`; launches only Chrome/Chromium-family binaries through a fixed argv list, not caller-supplied commands; repeated opens are debounced. |
 | `/api/gates/<gate_id>/capture-clipboard` | `POST` | Reads the VM clipboard for one approved capture target, writes it into the encrypted vault, and marks capture progress. | Same POST protections as `/pass`; request body must be bounded `application/json`; target must match the gate's env-style allowlist; clipboard value size/text is bounded; stale captures are rejected after the gate auto-resumes for verification; response includes only target/record metadata, never raw secret text. |
 
 | Any route | `OPTIONS` | None. | Returns `405` with security headers and no CORS allow headers, so browser preflights for custom-header POSTs fail closed. |
@@ -64,6 +64,9 @@ SSH session provisioned by FuseKit, or an encrypted vault/passphrase boundary.
 ## Command Injection Boundaries
 
 - Local OpenClaw/browser commands use `subprocess.run([...])` argv lists.
+- The live control-room provider-gate launcher accepts only Chrome/Chromium-family
+  browser binaries and sanitizes the X display value before passing it through the
+  `DISPLAY` environment.
 - OpenClaw installer execution uses argv form, not `bash -lc`, so `FUSEKIT_HOME` and
   `FUSEKIT_OPENCLAW_VERSION` are not shell-interpreted.
 - Cloud Shell bootstrap is a generated shell script, but all external launch arguments,

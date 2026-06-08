@@ -29,6 +29,7 @@ from fusekit.security.url import require_safe_url
 from fusekit.vault import Vault
 
 GATE_OPEN_DEBOUNCE_SECONDS = 20.0
+VISUAL_DISPLAY_PATTERN = re.compile(r"^(?:[A-Za-z0-9_.-]+)?:[0-9]+(?:\.[0-9]+)?$")
 TOKEN_PROVIDER_BY_ENV = {
     "CLOUDFLARE_API_TOKEN": "cloudflare",
     "GITHUB_TOKEN": "github",
@@ -629,7 +630,7 @@ def _append_control_room_audit(
 
 def _visual_browser_binary() -> str:
     configured = os.environ.get("FUSEKIT_VISUAL_BROWSER", "").strip()
-    if configured:
+    if configured and _is_supported_visual_browser_binary(configured):
         return configured
     for root in (
         Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "")),
@@ -642,9 +643,18 @@ def _visual_browser_binary() -> str:
                 return str(candidate)
     for name in ("google-chrome", "google-chrome-stable", "chromium-browser", "chromium"):
         resolved = shutil.which(name)
-        if resolved:
+        if resolved and _is_supported_visual_browser_binary(resolved):
             return resolved
     return ""
+
+
+def _is_supported_visual_browser_binary(path: str) -> bool:
+    """Return whether a configured browser path is a Chrome/Chromium executable."""
+
+    name = Path(path).name.lower()
+    if name in {"google-chrome", "google-chrome-stable", "chromium", "chromium-browser"}:
+        return True
+    return "chrome" in name or "chromium" in name
 
 
 def _visual_display(job_state: Path) -> str:
@@ -655,9 +665,16 @@ def _visual_display(job_state: Path) -> str:
         visual = {}
     if isinstance(visual, dict):
         display = str(visual.get("display", "") or "").strip()
-        if display:
+        if display and _safe_visual_display(display):
             return display
-    return os.environ.get("FUSEKIT_VISUAL_DISPLAY", ":99")
+    env_display = os.environ.get("FUSEKIT_VISUAL_DISPLAY", "").strip()
+    if env_display and _safe_visual_display(env_display):
+        return env_display
+    return ":99"
+
+
+def _safe_visual_display(value: str) -> bool:
+    return bool(VISUAL_DISPLAY_PATTERN.fullmatch(value))
 
 
 def _is_loopback(host: str) -> bool:

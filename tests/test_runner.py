@@ -31,6 +31,7 @@ from fusekit.runner.control_room import render_control_room
 from fusekit.runner.control_room.server import (
     _control_room_vault_passphrase,
     _visual_browser_binary,
+    _visual_display,
 )
 from fusekit.runner.gates import GateService
 from fusekit.runner.job import JobState
@@ -1281,6 +1282,17 @@ def test_control_room_visual_browser_requires_profile_capable_binary(
     assert _visual_browser_binary() == ""
 
 
+def test_control_room_visual_browser_rejects_configured_non_browser(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FUSEKIT_VISUAL_BROWSER", "/tmp/not-a-browser")
+    monkeypatch.delenv("PLAYWRIGHT_BROWSERS_PATH", raising=False)
+    monkeypatch.setattr("fusekit.runner.control_room.server.Path.glob", lambda *_args: [])
+    monkeypatch.setattr("fusekit.runner.control_room.server.shutil.which", lambda _name: None)
+
+    assert _visual_browser_binary() == ""
+
+
 def test_control_room_visual_browser_prefers_chrome_family_binary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1298,6 +1310,35 @@ def test_control_room_visual_browser_prefers_chrome_family_binary(
     monkeypatch.setattr("fusekit.runner.control_room.server.shutil.which", fake_which)
 
     assert _visual_browser_binary() == "/usr/bin/google-chrome-stable"
+
+
+def test_control_room_visual_display_rejects_corrupt_display_values(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    (tmp_path / "visual.json").write_text(
+        json.dumps({"display": ":99\x00--bad"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FUSEKIT_VISUAL_DISPLAY", "$(touch /tmp/bad)")
+
+    assert _visual_display(job_path) == ":99"
+
+
+def test_control_room_visual_display_accepts_expected_display(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    (tmp_path / "visual.json").write_text(json.dumps({"display": ":44.0"}), encoding="utf-8")
+    monkeypatch.setenv("FUSEKIT_VISUAL_DISPLAY", ":99")
+
+    assert _visual_display(job_path) == ":44.0"
 
 
 def test_control_room_post_captures_vm_clipboard_into_vault(tmp_path, monkeypatch) -> None:
