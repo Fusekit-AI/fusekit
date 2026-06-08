@@ -84,6 +84,7 @@ guided, or explicitly verified.
 | Public acceptance report serialization could still return manually supplied blocker fields verbatim even though normal blocker construction redacted details. | `AcceptanceReport.to_dict()` now redacts every blocker field at the public serialization boundary. |
 | Launch-readiness proof and ledger artifacts could expose local absolute app and artifact paths, making a public demo report look like an internal debug dump. | Acceptance reports and harness ledger artifact entries now serialize public paths such as `.fusekit/acceptance/report.json` while keeping local in-memory paths usable for verification. |
 | Resend and Cloudflare had separate unit coverage, but the manifest setup loop did not directly prove that Resend-generated DNS records reached Cloudflare in the same run. | A manifest-level regression now simulates Resend domain creation and asserts Cloudflare sees the generated records after the enforced Resend-before-DNS order. |
+| After clicking `I finished this step`, generic retry copy could make the control room feel inert even when the worker had accepted the resume request. | Durable gate resume messages now distinguish provider authorization, provider setup retry, provider domain, and provider runtime-value checks, and tell the user to keep the same VM/control-room session open while FuseKit either continues or resurfaces the gate with updated follow-me instructions. |
 
 ## Open Acceptance Items
 

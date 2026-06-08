@@ -344,6 +344,27 @@ def _resume_next_action(record: GateRecord) -> str:
         return "FuseKit is applying the approved DNS records now."
     if classification == "setup-approval" or provider == "fusekit":
         return "FuseKit is continuing with the approved setup plan now."
+    if classification == "provider-setup-retry":
+        return (
+            "FuseKit is rerunning the provider setup route now. Keep the VM browser "
+            "open so any resurfaced provider gate appears in the same session."
+        )
+    if classification == "provider-domain":
+        return (
+            "FuseKit is rechecking the provider domain state now. If the provider still "
+            "needs DNS or ownership proof, the same guided gate will resurface."
+        )
+    if classification == "provider-runtime-values":
+        return (
+            "FuseKit is rechecking the captured provider values now and will apply them "
+            "to downstream services if verification succeeds."
+        )
+    if classification == "provider-authorization":
+        provider_label = provider.title() if provider else "Provider"
+        return (
+            f"FuseKit is rechecking {provider_label} authorization now. If the provider "
+            "rejects the capability, this gate will reopen with the exact repair step."
+        )
     return "FuseKit is retrying provider verification now."
 
 
@@ -357,6 +378,16 @@ def _resume_hint(record: GateRecord) -> str:
         )
     if classification == "setup-approval" or provider == "fusekit":
         return "Keep this control room open; provider setup will start from the approved plan."
+    if classification in {
+        "provider-authorization",
+        "provider-domain",
+        "provider-runtime-values",
+        "provider-setup-retry",
+    }:
+        return (
+            "Keep this control room open; FuseKit will either continue automatically "
+            "or resurface this same gate with updated follow-me instructions."
+        )
     return (
         "Keep this control room open; the next guided blocker or success state "
         "will appear after the provider check finishes."

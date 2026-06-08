@@ -96,3 +96,44 @@ def test_gate_service_resume_request_uses_approval_specific_copy(tmp_path) -> No
     assert "propagation status" in dns.resume_hint
     assert plan.next_action == "FuseKit is continuing with the approved setup plan now."
     assert "provider setup" in plan.resume_hint
+
+
+def test_gate_service_resume_request_uses_provider_specific_copy(tmp_path) -> None:
+    path = tmp_path / "gates.json"
+    service = GateService.load(path)
+    cases = {
+        "provider.cloudflare.authorization": (
+            "cloudflare",
+            "provider-authorization",
+            "rechecking Cloudflare authorization",
+        ),
+        "provider.resend.domain-setup-retry": (
+            "resend",
+            "provider-setup-retry",
+            "rerunning the provider setup route",
+        ),
+        "provider.resend.domain-verification": (
+            "resend",
+            "provider-domain",
+            "rechecking the provider domain state",
+        ),
+        "provider.resend.runtime-values": (
+            "resend",
+            "provider-runtime-values",
+            "rechecking the captured provider values",
+        ),
+    }
+    for gate_id, (provider, classification, _expected) in cases.items():
+        service.wait(
+            gate_id,
+            provider=provider,
+            reason="provider gate",
+            classification=classification,
+        )
+        service.request_resume(gate_id)
+
+    loaded = GateService.load(path)
+    for gate_id, (_provider, _classification, expected) in cases.items():
+        record = loaded.records[gate_id]
+        assert expected in record.next_action
+        assert "resurface this same gate with updated follow-me instructions" in record.resume_hint
