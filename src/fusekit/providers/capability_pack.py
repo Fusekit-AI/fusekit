@@ -973,8 +973,8 @@ def _github_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
             token_label="GitHub API token",
             required_scopes=(
                 "target repo only",
-                "repository Secrets read/write",
-                "repository Administration read/write",
+                "repository Secrets: Read and write",
+                "repository Administration: Read and write",
             ),
             account_steps=(
                 "Open GitHub in the VM browser and create or sign in to the account.",
@@ -982,8 +982,22 @@ def _github_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                 "Create or choose the exact repository that will receive secrets and deploy keys.",
             ),
             secret_steps=(
-                "Create a fine-grained token named FuseKit setup for only the target repository.",
-                "Grant repository Secrets read/write and Administration read/write.",
+                (
+                    "Create a fine-grained token named FuseKit setup and set Resource owner "
+                    "to the GitHub user or organization FuseKit named."
+                ),
+                (
+                    "Set Repository access to Only select repositories and choose only the "
+                    "target repository FuseKit named."
+                ),
+                (
+                    "Grant repository permissions Secrets: Read and write and Administration: "
+                    "Read and write; leave unrelated permissions at No access."
+                ),
+                (
+                    "If GitHub shows an organization approval or SSO step, approve only the "
+                    "named owner and repo."
+                ),
                 (
                     "Copy the token once inside the VM browser; FuseKit captures it into the "
                     "encrypted vault."

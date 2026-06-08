@@ -50,6 +50,30 @@ def test_synthesizes_plaid_capability_pack_from_evidence(tmp_path) -> None:
     assert handoff.signup_url.startswith("https://")
 
 
+def test_github_pack_handoff_names_fine_grained_scope_choices(tmp_path) -> None:
+    pack = synthesize_provider_pack("github", tmp_path)
+    handoff = handoff_from_provider_pack(pack)
+    text = " ".join(
+        (
+            *handoff.required_scopes,
+            *handoff.account_steps,
+            *handoff.secret_steps,
+        )
+    )
+
+    assert handoff.token_url == "https://github.com/settings/tokens?type=beta"
+    assert "fine-grained token named FuseKit setup" in text
+    assert "Resource owner" in text
+    assert "user or organization FuseKit named" in text
+    assert "Only select repositories" in text
+    assert "target repository FuseKit named" in text
+    assert "Secrets: Read and write" in text
+    assert "Administration: Read and write" in text
+    assert "unrelated permissions at No access" in text
+    assert "organization approval or SSO" in text
+    assert "encrypted vault" in text
+
+
 def test_provider_pack_round_trips_and_rejects_raw_secret(tmp_path) -> None:
     pack = synthesize_provider_pack(
         "plaid",

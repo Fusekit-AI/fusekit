@@ -83,10 +83,15 @@ def test_github_guidance_names_repo_scoped_permissions() -> None:
     text = " ".join((guidance.title, guidance.body, *guidance.actions, guidance.reassurance))
 
     assert "fine-grained personal access token" in text
+    assert "Generate new token" in text
+    assert "Resource owner" in text
+    assert "user or organization FuseKit named" in text
+    assert "organization approval or SSO" in text
     assert "Only select repositories" in text
     assert "exact target repo" in text
-    assert "Secrets read/write" in text
-    assert "Administration read/write" in text
+    assert "Secrets to Read and write" in text
+    assert "Administration to Read and write" in text
+    assert "unrelated permissions at No access" in text
     assert "Metadata read-only" in text
     assert "encrypted vault" in text
     assert "Open provider gate in VM" in text

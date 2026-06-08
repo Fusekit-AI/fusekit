@@ -38,15 +38,22 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
             "or create the account when GitHub asks.",
             (
                 "Open Settings > Developer settings > Personal access tokens > Fine-grained "
-                "tokens and create a fine-grained personal access token named FuseKit setup."
+                "tokens, click Generate new token, and create a fine-grained personal access "
+                "token named FuseKit setup."
+            ),
+            (
+                "Set Resource owner to the GitHub user or organization FuseKit named. If "
+                "GitHub shows an organization approval or SSO step, approve only that named "
+                "owner and repo."
             ),
             (
                 "Set Repository access to Only select repositories and choose the exact target "
                 "repo named by FuseKit."
             ),
             (
-                "Grant repository permissions Secrets read/write and Administration read/write; "
-                "leave Metadata read-only, which GitHub includes automatically."
+                "Under Repository permissions, set Secrets to Read and write and Administration "
+                "to Read and write. Leave unrelated permissions at No access; Metadata read-only "
+                "is included automatically."
             ),
             (
                 "When GitHub reveals the token once, copy it inside the VM browser and click "
