@@ -1482,10 +1482,13 @@ def test_verification_gate_fallback_names_exact_launcher_controls(tmp_path) -> N
     steps = " ".join(gate.follow_steps)
     assert "Click Open provider gate in VM" in steps
     assert "VM browser" in steps
+    assert "If FuseKit shows Capture buttons for named values" in steps
     assert "Capture from VM clipboard button" in steps
     assert "I finished this step" in steps
+    assert "If no secret is revealed" not in steps
     assert "Click Open provider gate in VM" in gate.next_action
-    assert "highlighted provider verification" in gate.next_action
+    assert "provider-owned verification" in gate.next_action
+    assert "when FuseKit shows that button" in gate.next_action
     assert "I finished this step" in gate.next_action
 
 

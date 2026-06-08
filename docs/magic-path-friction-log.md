@@ -101,6 +101,7 @@ guided, or explicitly verified.
 | Acceptance blockers could know the exact missing proof, such as a skipped VM-browser open or clipboard capture, but hide that detail from the visible control-room card. | Static and live control-room blocker cards now show the redacted acceptance detail so the user can see the exact gate/open/capture proof FuseKit is waiting on. |
 | A rare Resend domain-verification recovery gate could still tell users to add or open a domain, even though the normal magic path creates/reuses domains through the Resend API first. | Resend domain-verification recovery copy now says to review only the existing domain/provider-owned prompt and not create the domain or DNS records by hand. |
 | The control room trusted `visual.json` for the noVNC iframe URL even though the frame gets clipboard permissions for provider-gate work. | Visual session state is now sanitized before rendering: only credential-free noVNC `/vnc.html` URLs and same-host control-room links survive, and unsafe passwords/query values are dropped. |
+| Custom-provider fallback gates still asked users to decide whether a revealed copy-once token meant Capture or "I finished this step." | Generic strategy gates now tie the action to the visible FuseKit controls: use Capture only when named Capture buttons are rendered, otherwise click `I finished this step` after provider confirmation. |
 
 ## Open Acceptance Items
 

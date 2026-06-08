@@ -3429,18 +3429,21 @@ def _provider_strategy_follow_steps(pack: ProviderCapabilityPack) -> tuple[str, 
             "steps in that VM browser."
         ),
         (
-            "If the provider reveals a copy-once token, copy it inside the VM browser and "
-            "click the matching Capture from VM clipboard button."
+            "If FuseKit shows Capture buttons for named values, copy each provider value "
+            "inside the VM browser and click the matching Capture from VM clipboard button."
         ),
-        "If no secret is revealed, return to FuseKit and click I finished this step.",
+        (
+            "If FuseKit shows I finished this step, click it only after the provider "
+            "confirms the gate."
+        ),
     )
 
 
 def _provider_strategy_next_action() -> str:
     return (
         "Click Open provider gate in VM, complete the provider-owned gate in the VM browser, "
-        "then either click I finished this step or use the matching Capture from VM clipboard "
-        "button if a copy-once token is revealed."
+        "then follow the exact FuseKit control shown here: Capture named values from the VM "
+        "clipboard, or click I finished this step for non-secret gates."
     )
 
 
@@ -3911,8 +3914,8 @@ def _provider_verification_gate(
         "target": result.target,
         "follow_steps": _provider_strategy_follow_steps(pack),
         "next_action": (
-            "Click Open provider gate in VM, complete the highlighted provider verification "
-            "in the VM browser, then click I finished this step."
+            "Click Open provider gate in VM, complete the provider-owned verification "
+            "in the VM browser, then click I finished this step when FuseKit shows that button."
         ),
         "resume_hint": "FuseKit will recheck the provider state before continuing.",
     }
