@@ -73,7 +73,7 @@ def run_provider_pack_setup(
             if action["status"] == "needs_human_gate":
                 break
             continue
-        if decision.selected.kind == "api":
+        if decision.selected.kind == "api" and _recipe_may_touch_provider_api(recipe, context):
             try:
                 _ensure_provider_contract_health(pack, context)
             except FuseKitError:
@@ -123,6 +123,34 @@ def setup_handler_registry() -> dict[str, SetupHandler]:
         "resend-domain": _resend_domain,
         "resend-audience": _resend_audience,
     }
+
+
+def _recipe_may_touch_provider_api(recipe: SetupRecipe, context: ProviderSetupContext) -> bool:
+    """Return whether a recipe can call a provider API before it resolves."""
+
+    if recipe.kind == "github-deploy-key":
+        repo = _optional_input(context, "github_repo", recipe.target)
+        return bool(repo) and f"github.{repo}.deploy_key.private" not in context.vault.records
+    if recipe.kind == "github-repo-secrets":
+        return bool(_optional_input(context, "github_repo", recipe.target)) and bool(
+            _selected_secrets(recipe, context)
+        )
+    if recipe.kind == "vercel-project":
+        return bool(_optional_input(context, "vercel_project", recipe.target))
+    if recipe.kind == "vercel-env":
+        return bool(
+            context.inputs.get("vercel_project_id")
+            or _optional_input(context, "vercel_project", recipe.target)
+        ) and bool(_selected_secrets(recipe, context))
+    if recipe.kind == "vercel-git-deployment":
+        return bool(_optional_input(context, "vercel_project", recipe.target))
+    if recipe.kind == "cloudflare-dns":
+        return bool(context.manifest.domains)
+    if recipe.kind == "resend-domain":
+        return bool(context.inputs.get("resend_domain") or _default_domain(context))
+    if recipe.kind == "resend-audience":
+        return _needs_resend_audience(context)
+    return recipe.kind != "vault-capture-env"
 
 
 def _ensure_provider_contract_health(
@@ -580,12 +608,23 @@ def _required_input(
     name: str,
     templated: str = "",
 ) -> str:
+    value = _optional_input(context, name, templated)
+    if value:
+        return value
+    raise FuseKitError(f"Provider-pack setup input is required: {name}")
+
+
+def _optional_input(
+    context: ProviderSetupContext,
+    name: str,
+    templated: str = "",
+) -> str:
     value = context.inputs.get(name, "")
     if value:
         return value
     if templated and not templated.startswith("${input:"):
         return templated
-    raise FuseKitError(f"Provider-pack setup input is required: {name}")
+    return ""
 
 
 def _provider_token(vault: Vault, provider: str, env_name: str) -> str:

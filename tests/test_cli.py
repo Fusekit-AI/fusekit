@@ -1208,7 +1208,7 @@ def test_provider_api_fallback_runs_pack_setup_when_token_exists(monkeypatch, tm
             self.token = token
 
         def contract_health(self) -> dict[str, object]:
-            return {"route": "/domains", "ok": True, "domain_count": 0}
+            raise AssertionError("no-op Resend fallback should not call provider health")
 
     monkeypatch.setattr("fusekit.providers.automation.ResendProvider", FakeResendProvider)
     monkeypatch.setenv("RESEND_API_KEY", "fallback-secret-hidden")
