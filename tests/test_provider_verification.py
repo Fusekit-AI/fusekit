@@ -511,6 +511,29 @@ def test_vercel_deploy_lag_reports_pending_then_ready(monkeypatch) -> None:
     assert result.status == "ok"
 
 
+def test_vercel_deployment_accepts_healthy_live_url_when_list_is_ambiguous(
+    monkeypatch,
+) -> None:
+    vault = Vault.empty()
+    vault.put("provider.vercel.token", "provider_secret", "vercel", "VERCEL_TOKEN", "token")
+    pack = _pack("vercel")
+    recipe = VerificationRecipe(kind="vercel-deployment-url", target="moonlite")
+    object.__setattr__(pack, "verification", (recipe,))
+
+    def local_urlopen(request, timeout=30):  # type: ignore[no-untyped-def]
+        if request.full_url.startswith("https://api.vercel.com/"):
+            return _JsonResponse({"deployments": []}, status=200)
+        return _JsonResponse({}, status=200)
+
+    monkeypatch.setattr("fusekit.providers.verification.urlopen", local_urlopen)
+
+    result = verify_provider_pack(pack, vault, live_url="https://moonlite.rsvp")[0]
+
+    assert result.status == "ok"
+    assert result.details["ready"] is True
+    assert result.details["live_url_ready"] is True
+
+
 def test_resend_pending_domain_is_pending_safe(monkeypatch) -> None:
     vault = Vault.empty()
     vault.put(

@@ -587,7 +587,11 @@ def _verify_vercel_deployment(
     deployments = data.get("deployments", []) if isinstance(data, dict) else []
     latest = deployments[0] if deployments and isinstance(deployments[0], dict) else {}
     deployment_url = str(latest.get("url", ""))
-    ready = str(latest.get("readyState", "")).upper() in {"READY", "ALIASED"}
+    ready = str(
+        latest.get("readyState") or latest.get("state") or latest.get("readySubstate") or ""
+    ).upper() in {"READY", "ALIASED", "PROMOTED"}
+    live_url_ready = _url_is_healthy(live_url) if live_url and not ready else False
+    ready = ready or live_url_ready
     ok = bool(live_url or deployment_url) and ready
     return VerificationResult(
         provider=pack.provider,
@@ -598,9 +602,19 @@ def _verify_vercel_deployment(
             "project": project,
             "deployment_url_present": bool(live_url or deployment_url),
             "ready": ready,
+            "live_url_ready": live_url_ready,
             "pending_safe": True,
         },
     )
+
+
+def _url_is_healthy(url: str) -> bool:
+    try:
+        safe_url = require_safe_url(url, label="URL health target", allow_http_loopback=True)
+        with urlopen(Request(safe_url, method="GET"), timeout=30) as response:  # nosec B310
+            return 200 <= int(response.status) < 400
+    except (HTTPError, URLError):
+        return False
 
 
 def _verify_cloudflare_dns_api(
