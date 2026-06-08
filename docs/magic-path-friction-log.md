@@ -73,6 +73,7 @@ guided, or explicitly verified.
 | Acceptance reports could contain `missing[]` launch-readiness proof but no structured `blockers[]`, leaving the control room on a vague waiting card instead of telling the user what to fix. | Static and live control rooms now fall back to rendering `missing[]` as launch-evidence blockers with a clear repair-and-rerun action. |
 | The local OCI launcher summary still described provider secret capture as hidden Cloud Shell prompts, making the fallback sound like the normal user path. | Launcher and CLI help now describe the public path as VM clipboard Capture into the encrypted vault, with terminal capture reserved as fallback. |
 | Legacy worker status could still render "hidden prompt" instructions inside the control room, even though the public launcher path uses VM clipboard Capture. | Static and live control-room rendering now rewrites stale fallback wording into VM-browser Capture instructions before displaying or bootstrapping the page. |
+| Provider guidance used generic button names like "Open provider gate button" and "Capture in FuseKit" while the control room rendered "Open provider gate in VM" and target-specific Capture buttons. | Provider guidance now names the exact visible controls: Open provider gate in VM and the matching Capture from VM clipboard button. |
 
 ## Open Acceptance Items
 

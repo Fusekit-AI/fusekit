@@ -16,7 +16,7 @@ def test_provider_gate_guidance_is_plain_language_and_non_secret() -> None:
     assert "Vercel" in guidance.title
     assert "sign in" in " ".join(guidance.actions).lower()
     assert "VM browser" in " ".join(guidance.actions)
-    assert "Capture in FuseKit" in " ".join(guidance.actions)
+    assert "Capture from VM clipboard" in " ".join(guidance.actions)
     assert "token" not in guidance.reassurance.lower()
     assert "secret" not in guidance.reassurance.lower()
 
@@ -52,7 +52,7 @@ def test_provider_gate_guidance_leads_instead_of_delegating_interpretation() -> 
         assert "resume button" not in lowered
         if provider in {"openai", "unknown"}:
             assert "i finished this step" in lowered
-        assert any(anchor in lowered for anchor in ("highlighted", "open provider gate"))
+        assert "open provider gate in vm" in lowered or "highlighted" in lowered
         if provider in {"github", "vercel", "cloudflare", "resend"}:
             assert "vm browser" in lowered
             assert "capture" in lowered
@@ -72,6 +72,8 @@ def test_cloudflare_guidance_names_scoped_token_path() -> None:
     assert "TTL blank" in text
     assert "Continue to summary" in text
     assert "encrypted vault" in text
+    assert "Open provider gate in VM" in text
+    assert "Capture from VM clipboard" in text
 
 
 def test_github_guidance_names_repo_scoped_permissions() -> None:
@@ -85,6 +87,8 @@ def test_github_guidance_names_repo_scoped_permissions() -> None:
     assert "Administration read/write" in text
     assert "Metadata read-only" in text
     assert "encrypted vault" in text
+    assert "Open provider gate in VM" in text
+    assert "Capture from VM clipboard" in text
 
 
 def test_vercel_guidance_names_token_path() -> None:
@@ -97,6 +101,8 @@ def test_vercel_guidance_names_token_path() -> None:
     assert "short expiration" in text
     assert "personal account or team" in text
     assert "encrypted vault" in text
+    assert "Open provider gate in VM" in text
+    assert "Capture from VM clipboard" in text
 
 
 def test_resend_guidance_names_api_key_path() -> None:
@@ -110,6 +116,8 @@ def test_resend_guidance_names_api_key_path() -> None:
     assert "creates or reuses the Resend domain" in text
     assert "domain and audience" in text
     assert "encrypted vault" in text
+    assert "Open provider gate in VM" in text
+    assert "Capture from VM clipboard" in text
 
 
 def test_infer_gate_provider_from_step_detail() -> None:

@@ -34,7 +34,7 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
             "MFA, CAPTCHA, consent, or token reveal gates; FuseKit does the wiring after capture."
         ),
         actions=(
-            "Use the Open provider gate button so GitHub opens in the VM browser, then sign in "
+            "Click Open provider gate in VM so GitHub opens in the VM browser, then sign in "
             "or create the account when GitHub asks.",
             (
                 "Open Settings > Developer settings > Personal access tokens > Fine-grained "
@@ -50,7 +50,8 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
             ),
             (
                 "When GitHub reveals the token once, copy it inside the VM browser and click "
-                "Capture in FuseKit; FuseKit stores it only in the encrypted vault."
+                "the matching Capture from VM clipboard button; FuseKit stores it only in the "
+                "encrypted vault."
             ),
         ),
         reassurance="FuseKit will use GitHub's API and continue once the scoped token is captured.",
@@ -63,7 +64,7 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
             "MFA, CAPTCHA, consent, GitHub connection, or token reveal gates."
         ),
         actions=(
-            "Use the Open provider gate button so Vercel opens in the VM browser, then sign in "
+            "Click Open provider gate in VM so Vercel opens in the VM browser, then sign in "
             "or create the account when prompted.",
             (
                 "Open Account Settings > Tokens and create a token named FuseKit deployment "
@@ -79,7 +80,8 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
             ),
             (
                 "When Vercel reveals the token once, copy it inside the VM browser and click "
-                "Capture in FuseKit; FuseKit stores it only in the encrypted vault."
+                "the matching Capture from VM clipboard button; FuseKit stores it only in the "
+                "encrypted vault."
             ),
         ),
         reassurance="FuseKit will continue through Vercel's API after capture succeeds.",
@@ -92,7 +94,7 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
             "CAPTCHA, consent, nameserver, billing, or token reveal gates; FuseKit applies DNS."
         ),
         actions=(
-            "Use the Open provider gate button so Cloudflare opens in the VM browser, then sign "
+            "Click Open provider gate in VM so Cloudflare opens in the VM browser, then sign "
             "in or create the account when prompted.",
             (
                 "Open My Profile > API Tokens, choose Create Token, choose Custom token, and "
@@ -112,7 +114,8 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
             ),
             (
                 "When Cloudflare reveals the token once, copy it inside the VM browser and click "
-                "Capture in FuseKit; FuseKit stores it only in the encrypted vault."
+                "the matching Capture from VM clipboard button; FuseKit stores it only in the "
+                "encrypted vault."
             ),
         ),
         reassurance=(
@@ -128,7 +131,7 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
             "domain, reads the DNS records Resend returns, then asks Cloudflare to apply them."
         ),
         actions=(
-            "Use the Open provider gate button so Resend opens in the VM browser, then sign in "
+            "Click Open provider gate in VM so Resend opens in the VM browser, then sign in "
             "or create the account when prompted.",
             (
                 "Open API Keys, create a key named FuseKit email setup, and choose Full access "
@@ -141,7 +144,8 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
             ),
             (
                 "When Resend reveals the API key once, copy it inside the VM browser and click "
-                "Capture in FuseKit; FuseKit stores it only in the encrypted vault."
+                "the matching Capture from VM clipboard button; FuseKit stores it only in the "
+                "encrypted vault."
             ),
             (
                 "After the demo or setup, rotate or revoke the setup key from Resend if you want "
@@ -187,7 +191,7 @@ _GENERIC = GateGuidance(
         "something only the account owner is allowed to approve."
     ),
     actions=(
-        "Use the Open provider gate button to bring the exact provider page forward.",
+        "Click Open provider gate in VM to bring the exact provider page forward.",
         "Complete only highlighted login, MFA, CAPTCHA, consent, payment, or ownership prompts.",
         "Click I finished this step; FuseKit will verify the provider state before continuing.",
     ),
