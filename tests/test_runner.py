@@ -1678,17 +1678,93 @@ def test_control_room_clipboard_capture_waits_for_multi_value_gate(
     job.add_artifact("vault", vault_path)
     job.save(job_path)
     GateService.load(tmp_path / "gates.json").wait(
-        "provider.resend.runtime-values",
-        provider="resend",
-        reason="Resend runtime values",
+        "provider.custom.runtime-values",
+        provider="custom",
+        reason="Custom runtime values",
         classification="provider-runtime-values",
-        target="RESEND_AUDIENCE_ID,RESEND_FROM_EMAIL",
+        target="CUSTOM_API_KEY,CUSTOM_TOKEN",
     )
     monkeypatch.setenv("FUSEKIT_PASSPHRASE_FILE", str(passphrase_path))
-    clipboard = {"value": "audience-123\n"}
+    clipboard = {"value": "custom_key_12345\n"}
     monkeypatch.setattr(
         "fusekit.runner.control_room.server._vm_clipboard_text",
         lambda job_state: clipboard["value"],
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = (
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/gates/provider.custom.runtime-values/capture-clipboard"
+        )
+        request = Request(
+            url,
+            data=json.dumps({"target": "CUSTOM_API_KEY"}).encode("utf-8"),
+            method="POST",
+            headers=_control_room_post_headers(tmp_path, **{"content-type": "application/json"}),
+        )
+        with urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        html = render_control_room(JobState.load(job_path), gate_path=tmp_path / "gates.json")
+        clipboard["value"] = "custom_token_12345\n"
+        request = Request(
+            url,
+            data=json.dumps({"target": "CUSTOM_TOKEN"}).encode("utf-8"),
+            method="POST",
+            headers=_control_room_post_headers(tmp_path, **{"content-type": "application/json"}),
+        )
+        with urlopen(request, timeout=5) as response:
+            second_payload = json.loads(response.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert payload["status"] == "captured"
+    assert payload["captured_targets"] == ["CUSTOM_API_KEY"]
+    assert payload["message"] == (
+        "CUSTOM_API_KEY captured into the encrypted vault. "
+        "Capture the remaining required values to continue."
+    )
+    assert "1/2 captured" in html
+    assert "Captured CUSTOM_API_KEY" in html
+    assert 'data-gate-capture-target="CUSTOM_API_KEY" disabled' in html
+    gate = GateService.load(tmp_path / "gates.json").records[
+        "provider.custom.runtime-values"
+    ]
+    assert gate.status == "resume_requested"
+    assert gate.captured_targets == ("CUSTOM_API_KEY", "CUSTOM_TOKEN")
+    assert second_payload["status"] == "resume_requested"
+    assert second_payload["captured_targets"] == [
+        "CUSTOM_API_KEY",
+        "CUSTOM_TOKEN",
+    ]
+    assert "All required values were captured" in second_payload["message"]
+
+
+def test_control_room_clipboard_capture_rejects_stale_resend_generated_value_gate(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    vault_path = tmp_path / "fusekit.vault.json"
+    passphrase_path = tmp_path / "passphrase"
+    passphrase_path.write_text("passphrase\n", encoding="utf-8")
+    Vault.empty().save(vault_path, "passphrase")
+    job.add_artifact("vault", vault_path)
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.resend.runtime-values",
+        provider="resend",
+        reason="Stale Resend generated value capture",
+        classification="provider-runtime-values",
+        target="RESEND_FROM_EMAIL",
+    )
+    monkeypatch.setenv("FUSEKIT_PASSPHRASE_FILE", str(passphrase_path))
+    monkeypatch.setattr(
+        "fusekit.runner.control_room.server._vm_clipboard_text",
+        lambda job_state: "rsvp@example.com\n",
     )
     server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -1700,46 +1776,27 @@ def test_control_room_clipboard_capture_waits_for_multi_value_gate(
         )
         request = Request(
             url,
-            data=json.dumps({"target": "RESEND_AUDIENCE_ID"}).encode("utf-8"),
-            method="POST",
-            headers=_control_room_post_headers(tmp_path, **{"content-type": "application/json"}),
-        )
-        with urlopen(request, timeout=5) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-        html = render_control_room(JobState.load(job_path), gate_path=tmp_path / "gates.json")
-        clipboard["value"] = "rsvp@example.com\n"
-        request = Request(
-            url,
             data=json.dumps({"target": "RESEND_FROM_EMAIL"}).encode("utf-8"),
             method="POST",
             headers=_control_room_post_headers(tmp_path, **{"content-type": "application/json"}),
         )
-        with urlopen(request, timeout=5) as response:
-            second_payload = json.loads(response.read().decode("utf-8"))
+        with pytest.raises(HTTPError) as exc:
+            urlopen(request, timeout=5)
+        payload = json.loads(exc.value.read().decode("utf-8"))
     finally:
         server.shutdown()
         thread.join(timeout=5)
 
-    assert payload["status"] == "captured"
-    assert payload["captured_targets"] == ["RESEND_AUDIENCE_ID"]
-    assert payload["message"] == (
-        "RESEND_AUDIENCE_ID captured into the encrypted vault. "
-        "Capture the remaining required values to continue."
-    )
-    assert "1/2 captured" in html
-    assert "Captured RESEND_AUDIENCE_ID" in html
-    assert 'data-gate-capture-target="RESEND_AUDIENCE_ID" disabled' in html
+    assert exc.value.code == 400
+    assert payload["ok"] is False
+    assert "RESEND_FROM_EMAIL is generated by Resend API setup" in payload["error"]
     gate = GateService.load(tmp_path / "gates.json").records[
         "provider.resend.runtime-values"
     ]
-    assert gate.status == "resume_requested"
-    assert gate.captured_targets == ("RESEND_AUDIENCE_ID", "RESEND_FROM_EMAIL")
-    assert second_payload["status"] == "resume_requested"
-    assert second_payload["captured_targets"] == [
-        "RESEND_AUDIENCE_ID",
-        "RESEND_FROM_EMAIL",
-    ]
-    assert "All required values were captured" in second_payload["message"]
+    assert gate.status == "waiting"
+    vault = Vault.open(vault_path, "passphrase")
+    with pytest.raises(FuseKitError):
+        vault.require("app.resend.resend_from_email")
 
 
 def test_control_room_clipboard_capture_requires_json_content_type(tmp_path) -> None:
