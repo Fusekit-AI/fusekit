@@ -230,6 +230,10 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
             self.wfile.write(data)
 
         def _read_json_body(self) -> dict[str, Any]:
+            content_type = self.headers.get("content-type", "")
+            media_type = content_type.split(";", 1)[0].strip().lower()
+            if media_type != "application/json":
+                raise FuseKitError("Control-room request body must use application/json.")
             try:
                 length = int(self.headers.get("content-length", "0"))
             except ValueError:

@@ -909,6 +909,102 @@ def test_control_room_clipboard_capture_waits_for_multi_value_gate(
     assert "All required values were captured" in second_payload["message"]
 
 
+def test_control_room_clipboard_capture_requires_json_content_type(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.resend.api-key-domain-access",
+        provider="resend",
+        reason="Resend API key",
+        classification="provider-authorization",
+        target="RESEND_API_KEY",
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = (
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/gates/provider.resend.api-key-domain-access/capture-clipboard"
+        )
+        request = Request(
+            url,
+            data=b"target=RESEND_API_KEY",
+            method="POST",
+            headers={
+                "content-type": "application/x-www-form-urlencoded",
+                "x-fusekit-control-room": "resume",
+            },
+        )
+        with pytest.raises(HTTPError) as exc:
+            urlopen(request, timeout=5)
+        payload = json.loads(exc.value.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert exc.value.code == 400
+    assert payload == {
+        "error": "Control-room request body must use application/json.",
+        "ok": False,
+    }
+    gate = GateService.load(tmp_path / "gates.json").records[
+        "provider.resend.api-key-domain-access"
+    ]
+    assert gate.status == "waiting"
+    assert gate.captured_targets == ()
+
+
+def test_control_room_clipboard_capture_rejects_large_json_body(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.resend.api-key-domain-access",
+        provider="resend",
+        reason="Resend API key",
+        classification="provider-authorization",
+        target="RESEND_API_KEY",
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = (
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/gates/provider.resend.api-key-domain-access/capture-clipboard"
+        )
+        request = Request(
+            url,
+            data=json.dumps({"target": "RESEND_API_KEY", "padding": "x" * 5000}).encode(
+                "utf-8"
+            ),
+            method="POST",
+            headers={
+                "content-type": "application/json",
+                "x-fusekit-control-room": "resume",
+            },
+        )
+        with pytest.raises(HTTPError) as exc:
+            urlopen(request, timeout=5)
+        payload = json.loads(exc.value.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert exc.value.code == 400
+    assert payload == {
+        "error": "Control-room request body is too large.",
+        "ok": False,
+    }
+    gate = GateService.load(tmp_path / "gates.json").records[
+        "provider.resend.api-key-domain-access"
+    ]
+    assert gate.status == "waiting"
+    assert gate.captured_targets == ()
+
+
 def test_control_room_post_rejects_cross_site_gate_pass(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job_path = tmp_path / "job.json"
