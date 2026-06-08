@@ -434,6 +434,13 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
     if check.id.startswith("gates."):
         detail = check.detail.lower()
         if check.id == "gates.guided":
+            if "api-generated resend values" in detail:
+                return (
+                    "Human gates",
+                    "Regenerate the Resend runtime gate so Capture is used only for "
+                    "RESEND_API_KEY; generated sender and audience values must use "
+                    "Resend API setup retry.",
+                )
             if "missing resume_url" in detail:
                 return (
                     "Human gates",

@@ -588,6 +588,26 @@ def test_acceptance_blockers_use_launcher_actionable_check_guidance() -> None:
     ]["next_action"]
 
 
+def test_acceptance_blockers_explain_resend_generated_value_recovery() -> None:
+    blockers = _acceptance_blockers(
+        [
+            AcceptanceCheck(
+                "gates.guided",
+                "failed",
+                (
+                    "provider.resend.runtime-values.target asks the user to capture "
+                    "API-generated Resend values: RESEND_FROM_EMAIL"
+                ),
+            )
+        ],
+        [],
+    )
+
+    assert blockers[0]["item"] == "gates.guided"
+    assert "Capture is used only for RESEND_API_KEY" in blockers[0]["next_action"]
+    assert "Resend API setup retry" in blockers[0]["next_action"]
+
+
 def test_resend_api_strategy_requires_domain_ownership_evidence() -> None:
     failures = _provider_strategy_shape_failures(
         [

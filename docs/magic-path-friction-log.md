@@ -135,6 +135,7 @@ guided, or explicitly verified.
 | Downstream Vercel verification could report missing generated `RESEND_FROM_EMAIL` or `RESEND_AUDIENCE_ID` and route the user back to Resend to copy values that FuseKit should own. | Provider API fallback now regenerates API-owned Resend runtime values first, then retries the downstream provider setup with those generated values before surfacing a human gate. |
 | A mixed downstream failure could ask the user to capture `RESEND_API_KEY` plus generated Resend values in the same gate. | Resend runtime recovery now captures only the copy-once setup key when it is missing; sender and audience values are generated through Resend's API after the key is stored. |
 | A stale launcher artifact could still prove launch readiness after asking the user to capture generated Resend sender or audience values. | Live acceptance now rejects Resend runtime capture gates that target API-generated values, forcing the setup-key or API-retry path instead. |
+| The launch blocker for stale generated Resend capture gates could still fall back to generic guided-gate repair text. | Acceptance blockers now tell the user to regenerate the Resend runtime gate so only `RESEND_API_KEY` uses Capture and generated values use Resend API setup retry. |
 
 ## Open Acceptance Items
 
