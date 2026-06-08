@@ -758,6 +758,10 @@ function missingAcceptanceBlocker(item) {
       "Provider routes",
       "Record selected-route kind, status, deterministic flags, reason, and candidates.",
     ],
+    "complete provider strategy coverage": [
+      "Provider routes",
+      "Record provider strategy evidence for every provider declared by the manifest.",
+    ],
     "Resend-before-DNS provider setup order": [
       "Provider order",
       "Run Resend domain setup before Cloudflare/DNS so Resend DNS records are included.",

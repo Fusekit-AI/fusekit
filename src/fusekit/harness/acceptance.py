@@ -160,6 +160,7 @@ def run_acceptance(
     )
     _check_provider_strategies(
         evidence_fusekit_dir / "provider_strategies.json",
+        manifest,
         mode,
         checks,
         missing,
@@ -340,6 +341,10 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
             "Provider routes",
             "Record selected-route kind, status, deterministic/implemented flags, "
             "reason, and candidates.",
+        ),
+        "complete provider strategy coverage": (
+            "Provider routes",
+            "Record provider strategy evidence for every provider declared by the manifest.",
         ),
         "Resend-before-DNS provider setup order": (
             "Provider order",
@@ -669,6 +674,7 @@ def _check_verification_report(
 
 def _check_provider_strategies(
     strategies_path: Path,
+    manifest: SetupManifest,
     mode: str,
     checks: list[AcceptanceCheck],
     missing: list[str],
@@ -734,6 +740,14 @@ def _check_provider_strategies(
         )
     )
     _check_provider_strategy_decision_shape(providers, mode, checks, missing, str(snapshot))
+    _check_provider_strategy_coverage(
+        providers,
+        manifest,
+        mode,
+        checks,
+        missing,
+        str(snapshot),
+    )
     _check_provider_strategy_order(providers, mode, checks, missing, str(snapshot))
 
 
@@ -781,6 +795,61 @@ def _check_provider_strategy_decision_shape(
             artifact,
         )
     )
+
+
+def _check_provider_strategy_coverage(
+    providers: Any,
+    manifest: SetupManifest,
+    mode: str,
+    checks: list[AcceptanceCheck],
+    missing: list[str],
+    artifact: str,
+) -> None:
+    """Require strategy proof for every provider requested by the manifest."""
+
+    required = _manifest_provider_names(manifest)
+    if not required:
+        return
+    recorded = {
+        str(provider.get("provider", "")).strip().lower()
+        for provider in providers
+        if isinstance(provider, dict)
+    }
+    absent = sorted(required - recorded)
+    if absent:
+        checks.append(
+            AcceptanceCheck(
+                "provider_strategies.coverage",
+                "failed" if mode == "live" else "skipped",
+                "Provider strategy artifact is missing manifest providers: "
+                + ", ".join(absent),
+                artifact,
+            )
+        )
+        if mode == "live":
+            missing.append("complete provider strategy coverage")
+        return
+    checks.append(
+        AcceptanceCheck(
+            "provider_strategies.coverage",
+            "ok",
+            "Provider strategy artifact covers every provider declared by the manifest.",
+            artifact,
+        )
+    )
+
+
+def _manifest_provider_names(manifest: SetupManifest) -> set[str]:
+    providers: set[str] = set()
+    for service in manifest.services:
+        provider = service.provider.strip().lower()
+        if provider:
+            providers.add(provider)
+    for domain in manifest.domains:
+        provider = domain.provider.strip().lower()
+        if provider:
+            providers.add(provider)
+    return providers
 
 
 def _provider_strategy_shape_failures(providers: Any) -> list[str]:

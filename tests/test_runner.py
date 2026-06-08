@@ -462,7 +462,10 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
         json.dumps(
             {
                 "launch_ready": False,
-                "missing": ["audited human gate interventions"],
+                "missing": [
+                    "audited human gate interventions",
+                    "complete provider strategy coverage",
+                ],
                 "blockers": [],
             }
         ),
@@ -472,11 +475,17 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
     html = render_control_room(job, gate_path=tmp_path / "gates.json")
     payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
 
-    assert payload["acceptance"]["missing"] == ["audited human gate interventions"]
+    assert payload["acceptance"]["missing"] == [
+        "audited human gate interventions",
+        "complete provider strategy coverage",
+    ]
     assert "Human gates" in html
     assert "audited human gate interventions" in html
     assert "Open, capture, or resume each control-room gate through the launcher" in html
-    assert "1 launch blocker" in html
+    assert "Provider routes" in html
+    assert "complete provider strategy coverage" in html
+    assert "every provider declared by the manifest" in html
+    assert "2 launch blockers" in html
     assert "acceptanceBlockers" in html
     assert "missingAcceptanceBlocker" in html
 
