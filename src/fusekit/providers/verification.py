@@ -784,7 +784,11 @@ def _api_json(
 ) -> tuple[int, Any]:
     request = Request(
         f"{api_base}{path}",
-        headers={"Accept": "application/json", "Authorization": f"Bearer {token}"},
+        headers={
+            "Accept": "application/json",
+            "Authorization": f"Bearer {token}",
+            "User-Agent": "FuseKit provider verification",
+        },
         method="GET",
     )
     text = ""

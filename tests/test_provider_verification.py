@@ -580,6 +580,40 @@ def test_github_missing_secret_waits_for_uncaptured_provider_value(monkeypatch) 
     assert result.details["service_gate"] is True
 
 
+def test_resend_domain_check_sends_user_agent_and_allows_empty_domains(monkeypatch) -> None:
+    vault = Vault.empty()
+    vault.put(
+        "provider.resend.resend_api_key",
+        "provider_secret",
+        "resend",
+        "RESEND_API_KEY",
+        "resend-token",
+    )
+    pack = _pack("resend")
+    recipe = VerificationRecipe(kind="resend-domain", target="${input:resend_domain}")
+    object.__setattr__(pack, "verification", (recipe,))
+    captured: dict[str, object] = {}
+
+    def local_urlopen(request, timeout=30):  # type: ignore[no-untyped-def]
+        captured["headers"] = dict(request.headers)
+        captured["url"] = request.full_url
+        captured["timeout"] = timeout
+        return _JsonResponse({"data": []}, status=200)
+
+    monkeypatch.setattr("fusekit.providers.verification.urlopen", local_urlopen)
+
+    result = verify_provider_pack(
+        pack,
+        vault,
+        inputs={"resend_domain": "moonlite.rsvp"},
+    )[0]
+
+    assert result.status == "failed"
+    assert result.details["missing"] is True
+    assert captured["headers"]["User-agent"] == "FuseKit provider verification"
+    assert captured["url"] == "https://api.resend.com/domains"
+
+
 def test_live_url_500_then_200(monkeypatch) -> None:
     vault = Vault.empty()
     pack = _pack("vercel")
