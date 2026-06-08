@@ -625,6 +625,8 @@ def test_control_room_renders_vm_clipboard_capture_for_secret_gate(tmp_path) -> 
 def test_control_room_post_requests_human_gate_resume(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job_path = tmp_path / "job.json"
+    audit_path = tmp_path / "audit.jsonl"
+    job.add_artifact("audit_log", audit_path)
     job.save(job_path)
     GateService.load(tmp_path / "gates.json").wait(
         "provider.github.mfa.123",
@@ -651,6 +653,15 @@ def test_control_room_post_requests_human_gate_resume(tmp_path) -> None:
     assert GateService.load(tmp_path / "gates.json").records[
         "provider.github.mfa.123"
     ].status == "resume_requested"
+    events = [
+        json.loads(line)
+        for line in audit_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert events[-1]["event"] == "control_room.gate_resume_requested"
+    assert events[-1]["data"]["gate_id"] == "provider.github.mfa.123"
+    assert events[-1]["data"]["provider"] == "github"
+    assert events[-1]["data"]["status"] == "resume_requested"
 
 
 def test_control_room_post_rejects_capture_gate_resume_before_capture(tmp_path) -> None:
@@ -697,6 +708,8 @@ def test_control_room_post_rejects_capture_gate_resume_before_capture(tmp_path) 
 def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job_path = tmp_path / "job.json"
+    audit_path = tmp_path / "audit.jsonl"
+    job.add_artifact("audit_log", audit_path)
     job.save(job_path)
     (tmp_path / "visual.json").write_text(json.dumps({"display": ":99"}), encoding="utf-8")
     GateService.load(tmp_path / "gates.json").wait(
@@ -750,6 +763,19 @@ def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -
     ]
     assert gate.last_opened_url == "https://dash.cloudflare.com/profile/api-tokens"
     assert gate.last_opened_at > 0
+    events = [
+        json.loads(line)
+        for line in audit_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert [event["event"] for event in events[-2:]] == [
+        "control_room.gate_open",
+        "control_room.gate_open",
+    ]
+    assert events[-2]["data"]["reused"] is False
+    assert events[-1]["data"]["reused"] is True
+    assert events[-1]["data"]["has_resume_url"] is True
+    assert "dash.cloudflare.com" not in audit_path.read_text(encoding="utf-8")
 
 
 def test_control_room_post_captures_vm_clipboard_into_vault(tmp_path, monkeypatch) -> None:
@@ -822,6 +848,14 @@ def test_control_room_post_captures_vm_clipboard_into_vault(tmp_path, monkeypatc
     ]
     assert gate.status == "resume_requested"
     assert gate.captured_targets == ("RESEND_API_KEY",)
+    events = [
+        json.loads(line)
+        for line in audit_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert events[-1]["event"] == "control_room.clipboard_capture"
+    assert events[-1]["data"]["gate_id"] == "provider.resend.api-key-domain-access"
+    assert events[-1]["data"]["target"] == "RESEND_API_KEY"
     assert "re_live_secret" not in json.dumps(payload)
     assert "re_live_secret" not in audit_path.read_text(encoding="utf-8")
 

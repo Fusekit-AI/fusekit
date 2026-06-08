@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
+from fusekit.audit import AuditLog
 from fusekit.errors import FuseKitError
 from fusekit.runner.control_room import (
     control_room_payload as build_control_room_payload,
@@ -115,6 +116,8 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                     )
                     return
                 service.request_resume(gate_id)
+                gate = service.records[gate_id]
+                _append_gate_audit(job_state, "control_room.gate_resume_requested", gate)
                 self._write_json(
                     {
                         "ok": True,
@@ -133,6 +136,7 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                     return
                 safe_url = require_safe_url(gate.resume_url, label="Provider gate URL")
                 if _recently_opened_gate(gate, safe_url):
+                    _append_gate_audit(job_state, "control_room.gate_open", gate, reused=True)
                     self._write_json(
                         {
                             "ok": True,
@@ -151,6 +155,8 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                     self._write_json({"ok": False, "error": str(exc)}, status=400)
                     return
                 service.mark_opened(gate_id, safe_url)
+                gate = service.records[gate_id]
+                _append_gate_audit(job_state, "control_room.gate_open", gate, reused=False)
                 self._write_json(
                     {
                         "ok": True,
@@ -477,28 +483,65 @@ def _canonical_provider_token_record(provider: str, target: str) -> str:
     return ""
 
 
+def _append_gate_audit(
+    job_state: Path,
+    event: str,
+    gate: Any,
+    **extra: Any,
+) -> None:
+    payload = _gate_audit_payload(gate)
+    payload.update(extra)
+    _append_control_room_audit(job_state, event, payload)
+
+
+def _gate_audit_payload(gate: Any) -> dict[str, Any]:
+    target = str(getattr(gate, "target", "") or "")
+    captured_targets = getattr(gate, "captured_targets", ())
+    if not isinstance(captured_targets, tuple):
+        captured_targets = ()
+    return {
+        "gate_id": str(getattr(gate, "id", "") or ""),
+        "provider": str(getattr(gate, "provider", "") or ""),
+        "classification": str(getattr(gate, "classification", "") or ""),
+        "status": str(getattr(gate, "status", "") or ""),
+        "attempts": int(getattr(gate, "attempts", 0) or 0),
+        "target_count": len(_gate_capture_targets(target)),
+        "captured_count": len(captured_targets),
+        "has_resume_url": bool(str(getattr(gate, "resume_url", "") or "")),
+        "has_last_opened_url": bool(str(getattr(gate, "last_opened_url", "") or "")),
+    }
+
+
 def _append_capture_audit(
     job_state: Path,
     gate_id: str,
     target: str,
     record_id: str,
 ) -> None:
+    _append_control_room_audit(
+        job_state,
+        "control_room.clipboard_capture",
+        {
+            "gate_id": gate_id,
+            "target": target,
+            "record_id": record_id,
+        },
+    )
+
+
+def _append_control_room_audit(
+    job_state: Path,
+    event: str,
+    payload: dict[str, Any],
+) -> None:
     try:
         job = JobState.load(job_state)
     except (OSError, ValueError):
-        return
-    audit_path = job.artifacts.get("audit_log")
-    if not audit_path:
-        return
-    payload = {
-        "action": "control_room.clipboard_capture",
-        "gate_id": gate_id,
-        "target": target,
-        "record_id": record_id,
-    }
+        job = None
+    audit_path = job.artifacts.get("audit_log") if job is not None else ""
+    path = Path(audit_path) if audit_path else job_state.parent / "audit.jsonl"
     try:
-        with Path(audit_path).open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(payload, sort_keys=True) + "\n")
+        AuditLog(path).record(event, payload)
     except OSError:
         return
 
