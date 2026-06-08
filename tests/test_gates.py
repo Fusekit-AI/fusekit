@@ -44,6 +44,24 @@ def test_gate_service_does_not_resurface_passed_gate(tmp_path) -> None:
     assert GateService.load(path).records["cloudflare-auth"].status == "passed"
 
 
+def test_gate_service_default_capture_copy_names_vm_clipboard_button(tmp_path) -> None:
+    path = tmp_path / "gates.json"
+    service = GateService.load(path)
+
+    gate = service.wait(
+        "resend-auth",
+        provider="resend",
+        reason="token",
+        resume_url="https://x",
+        target="RESEND_API_KEY",
+    )
+
+    assert gate.to_dict()["next_action"] == (
+        "Copy the provider value in the VM browser, then click the matching "
+        "Capture from VM clipboard button for RESEND_API_KEY."
+    )
+
+
 def test_gate_service_resume_request_can_resurface_after_failed_recheck(tmp_path) -> None:
     path = tmp_path / "gates.json"
     service = GateService.load(path)

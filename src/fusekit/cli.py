@@ -3021,7 +3021,7 @@ def _provider_authorization_follow_steps(
 
     capture_step = (
         f"When the provider reveals {token_env}, copy it inside the VM browser and "
-        f"click Capture {token_env} from VM clipboard in FuseKit."
+        f"click the Capture {token_env} from VM clipboard button in FuseKit."
     )
     resume_step = "FuseKit resumes automatically after the token is captured into the vault."
     steps = [step for step in (*handoff.account_steps, *handoff.secret_steps) if step.strip()]
@@ -3942,7 +3942,10 @@ def _resend_api_key_follow_steps(domain: str) -> tuple[str, ...]:
             "If Resend shows No domains yet, stay on API Keys and do not click Add domain; "
             "FuseKit creates or reuses the domain after Capture succeeds."
         ),
-        "Copy the API key only inside the VM browser, then click Capture in FuseKit.",
+        (
+            "Copy the API key only inside the VM browser, then click the matching "
+            "Capture RESEND_API_KEY from VM clipboard button in FuseKit."
+        ),
         (
             "FuseKit stores the key in the encrypted vault and uses Resend's API before "
             "DNS is applied."

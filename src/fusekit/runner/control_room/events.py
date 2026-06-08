@@ -48,11 +48,11 @@ function publicCopy(value) {
   const replacements = [
     [
       "paste it into FuseKit's " + "hidden prompt",
-      "copy it inside the VM browser, then click Capture in FuseKit",
+      "copy it inside the VM browser, then click the matching Capture from VM clipboard button",
     ],
     [
       "paste into FuseKit's " + "hidden prompt",
-      "copy inside the VM browser, then click Capture in FuseKit",
+      "copy inside the VM browser, then click the matching Capture from VM clipboard button",
     ],
     ["hidden Cloud Shell prompts", "VM clipboard Capture buttons"],
     ["hidden prompts/env handoff", "VM clipboard Capture fallback"],
@@ -384,7 +384,8 @@ function renderCaptureButtons(gateId, target, capturedTargets = []) {
     `<strong>Safe secret capture</strong>`,
     progress,
     `</div>`,
-    `<p>Copy the provider ${plural} inside the VM browser, then click Capture here. ` +
+    `<p>Copy the provider ${plural} inside the VM browser, then click the matching ` +
+      `Capture from VM clipboard button below. ` +
       `FuseKit reads only the VM clipboard and saves it directly into the encrypted vault.</p>`,
     `<div class="gate-capture-row">`,
     targets.map((item) => {

@@ -315,7 +315,8 @@ def _default_next_action(record: GateRecord) -> str:
         missing = targets - set(record.captured_targets)
         if missing:
             return (
-                "Copy the provider value in the VM browser, then click Capture for "
+                "Copy the provider value in the VM browser, then click the matching "
+                "Capture from VM clipboard button for "
                 + ", ".join(sorted(missing))
                 + "."
             )

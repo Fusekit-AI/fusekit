@@ -835,6 +835,9 @@ def test_control_room_renders_vm_clipboard_capture_for_secret_gate(tmp_path) -> 
     assert "Safe secret capture" in html
     assert "Copy the provider value inside the VM browser" in html
     assert "Copy the provider value in the VM browser" in html
+    assert "click the matching" in html
+    assert "Capture from VM clipboard button below" in html
+    assert "click Capture here" not in html
     assert "FuseKit will resume automatically after every target is captured." in html
     assert "reads only the VM clipboard" in html
     assert "encrypted vault" in html
@@ -1722,7 +1725,11 @@ def test_control_room_uses_privacy_mascot_for_secret_gates(tmp_path) -> None:
     assert "privacy-mitten" in html
     assert "covering his eyes while secrets stay private" in html
     assert "isPrivacyStep" in html
-    assert "copy it inside the VM browser, then click Capture in FuseKit" in html
+    assert (
+        "copy it inside the VM browser, then click the matching Capture from VM clipboard button"
+        in html
+    )
+    assert "click Capture in FuseKit" not in html
     assert "paste it into FuseKit&#x27;s hidden prompt" not in html
 
 
