@@ -466,6 +466,7 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
                     "audited human gate interventions",
                     "complete provider strategy coverage",
                     "complete provider verification coverage",
+                    "complete rollback coverage",
                 ],
                 "blockers": [],
             }
@@ -480,6 +481,7 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
         "audited human gate interventions",
         "complete provider strategy coverage",
         "complete provider verification coverage",
+        "complete rollback coverage",
     ]
     assert "Human gates" in html
     assert "audited human gate interventions" in html
@@ -489,7 +491,10 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
     assert "every provider declared by the manifest" in html
     assert "Verification" in html
     assert "complete provider verification coverage" in html
-    assert "3 launch blockers" in html
+    assert "Rollback" in html
+    assert "complete rollback coverage" in html
+    assert "Record rollback metadata for every provider declared by the manifest" in html
+    assert "4 launch blockers" in html
     assert "acceptanceBlockers" in html
     assert "missingAcceptanceBlocker" in html
 

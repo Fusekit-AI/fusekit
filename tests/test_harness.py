@@ -754,6 +754,125 @@ domains:
     ]["next_action"]
 
 
+def test_live_acceptance_requires_rollback_coverage_for_manifest_providers(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "fusekit.yaml").write_text(
+        """
+app_name: app
+app_path: .
+required_env: []
+webhooks: []
+approvals: []
+services:
+  - provider: resend
+    kind: email
+    name: email
+    capabilities: []
+    secrets: []
+    settings: {}
+domains:
+  - domain: moonlite.rsvp
+    provider: cloudflare
+    records: []
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    (remote_fusekit / "audit.jsonl").write_text('{"event":"provider.verify"}\n', "utf-8")
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "live_url": "https://moonlite.example",
+                "raw_secrets_exposed": 0,
+                "actions": [],
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "verification_report.json").write_text(
+        json.dumps(
+            {
+                "checks": [
+                    {
+                        "provider": "resend",
+                        "check": "domain_verified",
+                        "status": "passed",
+                    },
+                    {
+                        "provider": "cloudflare",
+                        "check": "dns_record_exists",
+                        "status": "passed",
+                    },
+                ]
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "rollback_plan.json").write_text(
+        json.dumps({"rollback": [{"action": "rollback.resend.domain", "status": "planned"}]}),
+        "utf-8",
+    )
+    (remote_fusekit / "provider_strategies.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.provider-strategies.v1",
+                "providers": [
+                    {
+                        "provider": "resend",
+                        "strategies": [
+                            {
+                                "recipe": "resend-domain",
+                                "strategy": "api",
+                                "status": "ok",
+                                "decision": _strategy_decision(),
+                            }
+                        ],
+                    },
+                    {
+                        "provider": "cloudflare",
+                        "strategies": [
+                            {
+                                "recipe": "cloudflare-dns",
+                                "strategy": "api",
+                                "status": "ok",
+                                "decision": _strategy_decision(),
+                            }
+                        ],
+                    },
+                ],
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "gates.json").write_text(json.dumps({"gates": []}), "utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    coverage_check = next(
+        check for check in report.checks if check.id == "rollback_metadata.coverage"
+    )
+    assert report.launch_ready is False
+    assert coverage_check.status == "failed"
+    assert "cloudflare" in coverage_check.detail
+    assert "complete rollback coverage" in report.missing
+    blockers = {blocker["item"]: blocker for blocker in report.blockers}
+    assert blockers["complete rollback coverage"]["category"] == "Rollback"
+    assert "every provider declared by the manifest" in blockers[
+        "complete rollback coverage"
+    ]["next_action"]
+
+
 def test_live_acceptance_requires_guided_control_room_gates(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()

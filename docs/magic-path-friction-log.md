@@ -105,6 +105,7 @@ guided, or explicitly verified.
 | A green rehearsal acceptance report could make the control room say the live run was launch-ready and safe to record. | Acceptance cards now distinguish rehearsal proof from live proof: only `mode: live` with `launch_ready: true` tells the user to record the demo. |
 | Live acceptance could prove that some provider strategy existed without proving strategy coverage for every provider declared by the manifest. | Live acceptance now fails with a specific Provider routes blocker when manifest providers are missing from `provider_strategies.json`. |
 | Live acceptance could prove that present verification checks were safe without proving every manifest provider had a verification check. | Live acceptance now fails with a specific Verification blocker when manifest providers are missing from `verification_report.json`. |
+| Live acceptance could prove rollback metadata existed without proving rollback coverage for every manifest provider. | Live acceptance now fails with a specific Rollback blocker when manifest providers are missing from `rollback_plan.json`. |
 
 ## Open Acceptance Items
 

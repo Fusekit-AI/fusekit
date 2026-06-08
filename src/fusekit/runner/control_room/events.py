@@ -766,6 +766,10 @@ function missingAcceptanceBlocker(item) {
       "Verification",
       "Record verification checks for every provider declared by the manifest.",
     ],
+    "complete rollback coverage": [
+      "Rollback",
+      "Record rollback metadata for every provider declared by the manifest.",
+    ],
     "Resend-before-DNS provider setup order": [
       "Provider order",
       "Run Resend domain setup before Cloudflare/DNS so Resend DNS records are included.",

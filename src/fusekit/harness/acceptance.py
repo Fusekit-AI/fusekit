@@ -184,6 +184,7 @@ def run_acceptance(
     )
     _check_rollback_metadata(
         evidence_fusekit_dir / "rollback_plan.json",
+        manifest,
         mode,
         checks,
         missing,
@@ -336,6 +337,10 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
         "rollback metadata": (
             "Rollback",
             "Generate rollback metadata from the redacted setup receipt before launch.",
+        ),
+        "complete rollback coverage": (
+            "Rollback",
+            "Record rollback metadata for every provider declared by the manifest.",
         ),
         "provider strategy decisions": (
             "Provider routes",
@@ -1415,6 +1420,7 @@ def _control_room_audit_events(audit_log_path: Path) -> tuple[list[dict[str, Any
 
 def _check_rollback_metadata(
     rollback_path: Path,
+    manifest: SetupManifest,
     mode: str,
     checks: list[AcceptanceCheck],
     missing: list[str],
@@ -1474,6 +1480,67 @@ def _check_rollback_metadata(
             str(snapshot),
         )
     )
+    _check_rollback_provider_coverage(
+        actionable,
+        manifest,
+        mode,
+        checks,
+        missing,
+        str(snapshot),
+    )
+
+
+def _check_rollback_provider_coverage(
+    actions: list[Any],
+    manifest: SetupManifest,
+    mode: str,
+    checks: list[AcceptanceCheck],
+    missing: list[str],
+    artifact: str,
+) -> None:
+    """Require rollback evidence for every provider requested by the manifest."""
+
+    required = _manifest_provider_names(manifest)
+    if not required:
+        return
+    recorded = _rollback_provider_names(actions)
+    absent = sorted(required - recorded)
+    if absent:
+        checks.append(
+            AcceptanceCheck(
+                "rollback_metadata.coverage",
+                "failed" if mode == "live" else "skipped",
+                "Rollback metadata is missing manifest providers: " + ", ".join(absent),
+                artifact,
+            )
+        )
+        if mode == "live":
+            missing.append("complete rollback coverage")
+        return
+    checks.append(
+        AcceptanceCheck(
+            "rollback_metadata.coverage",
+            "ok",
+            "Rollback metadata covers every provider declared by the manifest.",
+            artifact,
+        )
+    )
+
+
+def _rollback_provider_names(actions: list[Any]) -> set[str]:
+    providers: set[str] = set()
+    for item in actions:
+        if not isinstance(item, dict):
+            continue
+        provider = str(item.get("provider", "")).strip().lower()
+        if provider:
+            providers.add(provider)
+            continue
+        action = str(item.get("action", "")).strip().lower()
+        parts = action.split(".")
+        if len(parts) >= 2 and parts[0] == "rollback" and parts[1]:
+            providers.add(parts[1])
+    return providers
 
 
 def _check_detonation(
