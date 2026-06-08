@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fusekit.cli import main
 from fusekit.harness import run_acceptance
+from fusekit.harness.acceptance import AcceptanceCheck, AcceptanceReport, _acceptance_blockers
 from fusekit.vault import Vault
 
 
@@ -63,6 +64,33 @@ def test_acceptance_live_requires_real_provider_evidence(tmp_path) -> None:
     assert "vault capture enabled" in blockers["encrypted vault"]["next_action"]
     assert blockers["provider strategy decisions"]["category"] == "Provider routes"
     assert "strategy recorder" in blockers["provider strategy decisions"]["next_action"]
+
+
+def test_acceptance_report_redacts_check_and_blocker_details(tmp_path) -> None:
+    raw_code = "abcdefghijklmnopqrstuvwxyz1234567890abcdef"
+    check = AcceptanceCheck(
+        "provider.callback",
+        "failed",
+        f"Provider callback failed: https://provider.example/callback?code={raw_code}&state=ok",
+    )
+    blockers = _acceptance_blockers([check], [])
+    report = AcceptanceReport(
+        mode="live",
+        app_path=str(tmp_path),
+        launch_ready=False,
+        checks=(check,),
+        ledger_path=str(tmp_path / "ledger.jsonl"),
+        report_path=str(tmp_path / "report.json"),
+        blockers=tuple(blockers),
+    )
+
+    payload = report.to_dict()
+    text = json.dumps(payload)
+
+    assert raw_code not in text
+    assert "code=[redacted]" in text
+    assert payload["checks"][0]["detail"].endswith("?code=[redacted]&state=ok")
+    assert payload["blockers"][0]["detail"].endswith("?code=[redacted]&state=ok")
 
 
 def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:

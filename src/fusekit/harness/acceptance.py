@@ -24,7 +24,7 @@ from fusekit.providers.capability_pack import (
     write_provider_pack,
 )
 from fusekit.scanner import scan_repo
-from fusekit.security import scan_for_secret_leaks
+from fusekit.security import redact_public_text, scan_for_secret_leaks
 from fusekit.vault.bundle import Vault
 
 
@@ -43,7 +43,7 @@ class AcceptanceCheck:
         return {
             "id": self.id,
             "status": self.status,
-            "detail": self.detail,
+            "detail": redact_public_text(self.detail),
             "artifact": self.artifact,
         }
 
@@ -297,7 +297,7 @@ def _acceptance_blockers(
                 "item": item,
                 "category": category,
                 "next_action": action,
-                "detail": check.detail,
+                "detail": redact_public_text(check.detail),
             }
         )
     return blockers

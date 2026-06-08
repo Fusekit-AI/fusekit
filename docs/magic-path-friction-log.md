@@ -80,6 +80,7 @@ guided, or explicitly verified.
 | Verification-time Resend gates could include follow-me steps but omit the durable next action/resume hint that tells the user exactly whether to Capture or click I finished this step. | Resend API-key, runtime-value, and domain-verification gates now persist exact next actions and resume hints, including auto-resume for Capture gates and Resend-before-Cloudflare retry copy. |
 | Generic provider verification gates could display a target URL/detail that contained provider callback codes or token-like query values. | Control-room gate targets are now redacted in the browser payload and rendering path while preserving useful target shape for guidance. |
 | Live acceptance could prove a partial multi-value Capture gate if `captured_targets` listed one value while the original gate target still required more values. | Gate audit proof now requires clipboard-capture events for the union of env targets in `target` and `captured_targets`, so missing Resend runtime values cannot look launch-ready. |
+| Public acceptance report blockers could copy failed check details directly, risking token-like provider callback values in the launch-readiness report and control-room blocker cards. | Acceptance check and blocker details now run through shared public-text redaction before they are serialized or displayed. |
 
 ## Open Acceptance Items
 
