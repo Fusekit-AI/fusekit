@@ -16,6 +16,7 @@ from fusekit.cli import (
     _capture_provider_tokens,
     _has_pack_provider_token,
     _local_verification_job_result,
+    _ordered_provider_services,
     _playwright_headless,
     _provider_verification_acceptable,
     _provider_verification_attempt_config,
@@ -103,6 +104,19 @@ def test_runtime_env_secrets_derive_live_url_and_use_matching_vault_records() ->
     assert secrets["NEXT_PUBLIC_APP_URL"] == "https://moonlite.rsvp"
     assert secrets["RESEND_API_KEY"] == "resend-runtime-key"
     assert "RESEND_FROM_EMAIL" not in secrets
+
+
+def test_provider_setup_orders_resend_before_dns() -> None:
+    services = {
+        "cloudflare": ServiceRequirement(provider="cloudflare", kind="dns", name="dns"),
+        "resend": ServiceRequirement(provider="resend", kind="email", name="email"),
+        "vercel": ServiceRequirement(provider="vercel", kind="hosting", name="hosting"),
+        "github": ServiceRequirement(provider="github", kind="source", name="source"),
+    }
+
+    ordered = [provider for provider, _service in _ordered_provider_services(services)]
+
+    assert ordered == ["github", "resend", "vercel", "cloudflare"]
 
 
 def test_playwright_fallback_is_headless_without_display(monkeypatch) -> None:
