@@ -3600,7 +3600,7 @@ def _resend_api_key_follow_steps(domain: str) -> tuple[str, ...]:
             "FuseKit stores the key in the encrypted vault and uses Resend's API before "
             "DNS is applied."
         ),
-        "Return here and click I finished this step after Capture reports success.",
+        "FuseKit resumes automatically after Capture reports success.",
     )
 
 
@@ -3625,6 +3625,10 @@ def _resend_runtime_follow_steps(
     steps = [
         "Use the live VM browser surface, not a local browser tab.",
         "Open Resend Audiences and create or select the audience for this app.",
+        (
+            "Copy each requested value inside the VM browser, then click its "
+            "Capture button in FuseKit."
+        ),
     ]
     if "RESEND_AUDIENCE_ID" in env_names:
         steps.append("Copy the audience ID inside the VM so FuseKit can store RESEND_AUDIENCE_ID.")
@@ -3635,9 +3639,9 @@ def _resend_runtime_follow_steps(
         [
             (
                 "FuseKit will apply the captured values to Vercel and GitHub after "
-                "this gate is marked finished."
+                "the capture gate completes."
             ),
-            "Return here and click I finished this step after the values have been captured.",
+            "FuseKit resumes automatically once every requested value has been captured.",
         ]
     )
     return tuple(steps)

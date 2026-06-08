@@ -1122,6 +1122,8 @@ def test_verification_gate_records_resend_api_key_follow_me(tmp_path) -> None:
     assert "live VM browser" in " ".join(gate.follow_steps)
     assert "Full access" in " ".join(gate.follow_steps)
     assert "sending domain and audience for moonlite.rsvp" in " ".join(gate.follow_steps)
+    assert "resumes automatically" in " ".join(gate.follow_steps)
+    assert "I finished this step" not in " ".join(gate.follow_steps)
 
 
 def test_verification_gate_routes_resend_runtime_values_from_vercel(tmp_path) -> None:
@@ -1165,6 +1167,9 @@ def test_verification_gate_routes_resend_runtime_values_from_vercel(tmp_path) ->
     steps = " ".join(gate.follow_steps)
     assert "RESEND_AUDIENCE_ID" in steps
     assert "rsvp@moonlite.rsvp" in steps
+    assert "Capture button" in steps
+    assert "resumes automatically" in steps
+    assert "I finished this step" not in steps
 
 
 def test_cli_refuses_raw_secret_argument(tmp_path) -> None:
