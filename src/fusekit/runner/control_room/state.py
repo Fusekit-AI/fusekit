@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from fusekit.runner.control_room.redaction import redact_gate_target
 from fusekit.runner.gates import GateRecord
 from fusekit.runner.job import JobState
 from fusekit.runner.run_state import LaunchRunState
@@ -40,13 +41,22 @@ def _read_gate_records(
     try:
         raw = json.loads(gate_path.read_text(encoding="utf-8"))
         records = [
-            GateRecord.from_dict(item).to_dict()
+            _redacted_gate_record(GateRecord.from_dict(item).to_dict())
             for item in raw.get("gates", [])
             if isinstance(item, dict)
         ]
     except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         return [], f"Gate state could not be read from {gate_path.name}: {type(exc).__name__}"
     return records, ""
+
+
+def _redacted_gate_record(record: dict[str, Any]) -> dict[str, Any]:
+    """Return a gate record safe for browser/control-room display."""
+
+    target = record.get("target", "")
+    if isinstance(target, str):
+        record = {**record, "target": redact_gate_target(target)}
+    return record
 
 
 def _verification_report_path(job: JobState, gate_path: Path | None) -> Path | None:

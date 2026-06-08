@@ -776,6 +776,34 @@ def test_control_room_renders_vm_clipboard_capture_for_secret_gate(tmp_path) -> 
     assert "function refreshJob(options = {})" in html
 
 
+def test_control_room_redacts_sensitive_gate_target_display(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    raw_code = "abcdefghijklmnopqrstuvwxyz1234567890abcdef"
+    target = f"https://provider.example/callback?code={raw_code}&state=visible"
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.generic.callback",
+        provider="generic",
+        reason="Provider callback requires review.",
+        classification="provider-verification",
+        target=target,
+        follow_steps=("Review the highlighted callback.",),
+    )
+
+    payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
+    html = render_control_room(JobState.load(job_path), gate_path=tmp_path / "gates.json")
+
+    assert payload["gates"][0]["target"] == (
+        "https://provider.example/callback?code=[redacted]&state=visible"
+    )
+    assert "code=[redacted]" in html
+    assert "state=visible" in html
+    assert raw_code not in json.dumps(payload)
+    assert raw_code not in html
+    assert "function publicTarget" in html
+
+
 def test_control_room_post_requests_human_gate_resume(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job_path = tmp_path / "job.json"

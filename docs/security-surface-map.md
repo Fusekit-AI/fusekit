@@ -27,6 +27,11 @@ accepts arbitrary commands, resource identifiers, DNS record bodies, or raw appr
 payloads from the browser; the worker interprets only the durable gate id/status
 that FuseKit already created.
 
+Gate target text is also display-redacted before it reaches the browser payload.
+FuseKit preserves useful target shape such as domains, env names, and redacted query
+keys, but token-like values, callback codes, API keys, and long opaque strings are
+replaced with `[redacted]`.
+
 There is no browser route that accepts a shell command, command arguments,
 provider recipe name, vault path, user name, admin account request, raw secret
 value, or arbitrary state mutation. Unknown GET/POST paths return `404`.

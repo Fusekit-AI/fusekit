@@ -65,6 +65,31 @@ function publicCopy(value) {
   return text;
 }
 
+function publicTarget(value) {
+  let text = publicCopy(value);
+  const patterns = [
+    /sk-[A-Za-z0-9_-]{12,}/g,
+    /sk_(?:live|test|prod)_[A-Za-z0-9_-]{12,}/g,
+    /pk_(?:live|test|prod)_[A-Za-z0-9_-]{12,}/g,
+    /gh[pousr]_[A-Za-z0-9_]{12,}/g,
+    /github_pat_[A-Za-z0-9_]{12,}/g,
+    /whsec_[A-Za-z0-9_]{12,}/g,
+    /rk_[A-Za-z0-9_-]{12,}/g,
+    /re_[A-Za-z0-9_-]{12,}/g,
+    /plaid-[A-Za-z0-9_-]{12,}/g,
+    /eyJ[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{8,}/g,
+    /\b[A-Za-z0-9_-]{36,}\b/g,
+  ];
+  for (const pattern of patterns) {
+    text = text.replace(pattern, "[redacted]");
+  }
+  text = text.replace(
+    /([?&](?:access_token|auth_token|token|api_key|key|secret|code|password|passphrase|signature)=)[^&#\s]+/gi,
+    "$1[redacted]",
+  );
+  return text;
+}
+
 function statusCounts(steps) {
   const counts = { running: 0, waiting: 0, done: 0, failed: 0 };
   for (const step of steps || []) {
@@ -254,7 +279,10 @@ function renderGateHelp(step) {
       ].join("")
     : "";
   const target = step.target
-    ? `<p class="gate-target">Snowman highlighted: <strong>${escapeHtml(step.target)}</strong></p>`
+    ? [
+        `<p class="gate-target">Snowman highlighted: `,
+        `<strong>${escapeHtml(publicTarget(step.target))}</strong></p>`,
+      ].join("")
     : "";
   const hasCaptureTargets = captureTargets(step.target).length > 0;
   const resumeButton = step.id && !hasCaptureTargets

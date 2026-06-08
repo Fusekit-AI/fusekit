@@ -78,6 +78,7 @@ guided, or explicitly verified.
 | The prelaunch source-fetch control room could be written but not named in the terminal waiting message, so a user still might not know where to click or how to activate live controls. | Source-fetch waiting output now prints the exact guided control-room path plus the `fusekit control-room --serve` command for live VM-browser open and Capture controls. |
 | The prelaunch source-fetch live control room could show Capture controls without carrying enough vault state for the server to save the copied token. | Source-fetch job state now includes the vault and passphrase-file artifacts, and live Capture reads the passphrase artifact before falling back. |
 | Verification-time Resend gates could include follow-me steps but omit the durable next action/resume hint that tells the user exactly whether to Capture or click I finished this step. | Resend API-key, runtime-value, and domain-verification gates now persist exact next actions and resume hints, including auto-resume for Capture gates and Resend-before-Cloudflare retry copy. |
+| Generic provider verification gates could display a target URL/detail that contained provider callback codes or token-like query values. | Control-room gate targets are now redacted in the browser payload and rendering path while preserving useful target shape for guidance. |
 
 ## Open Acceptance Items
 

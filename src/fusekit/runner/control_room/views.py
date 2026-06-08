@@ -18,6 +18,7 @@ from fusekit.runner.control_room.cards import (
     status_label,
 )
 from fusekit.runner.control_room.events import SCRIPT
+from fusekit.runner.control_room.redaction import redact_gate_target
 from fusekit.runner.control_room.snowman import (
     mascot_state,
     render_brand_lockup,
@@ -218,6 +219,12 @@ def _public_copy(value: Any) -> str:
     for old, new in replacements:
         text = text.replace(old, new)
     return text
+
+
+def _public_target(value: Any) -> str:
+    """Return a display-safe gate target."""
+
+    return redact_gate_target(_public_copy(value))
 
 
 def _public_payload(value: Any) -> Any:
@@ -898,8 +905,10 @@ def _render_gate_help(step: Any) -> str:
         for item in getattr(step, "captured_targets", ())
         if str(item).strip()
     )
+    safe_target = _public_target(target)
     target_label = (
-        f'<p class="gate-target">Snowman highlighted: <strong>{html.escape(target)}</strong></p>'
+        '<p class="gate-target">Snowman highlighted: '
+        f"<strong>{html.escape(safe_target)}</strong></p>"
         if target
         else ""
     )
