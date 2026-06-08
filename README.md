@@ -343,9 +343,7 @@ fusekit detonate .fusekit/worker .fusekit/tmp --preserve .fusekit/fusekit.vault.
 ```zsh
 source .venv/bin/activate
 python -m pip install -e ".[dev]"
-python -m pytest
-python -m ruff check .
-python -m mypy src
+bash scripts/check.sh
 ```
 
 ## Project Structure

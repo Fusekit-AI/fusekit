@@ -10,9 +10,7 @@ secrets must stay inside FuseKit's vault runtime.
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -e ".[dev]"
-python -m pytest
-python -m ruff check .
-python -m mypy src
+bash scripts/check.sh
 ```
 
 ## Contribution Guidelines

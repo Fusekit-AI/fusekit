@@ -11,7 +11,5 @@
 ## Verification
 
 ```zsh
-python -m pytest
-python -m ruff check .
-python -m mypy src
+bash scripts/check.sh
 ```
