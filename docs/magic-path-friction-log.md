@@ -81,6 +81,7 @@ guided, or explicitly verified.
 | Generic provider verification gates could display a target URL/detail that contained provider callback codes or token-like query values. | Control-room gate targets are now redacted in the browser payload and rendering path while preserving useful target shape for guidance. |
 | Live acceptance could prove a partial multi-value Capture gate if `captured_targets` listed one value while the original gate target still required more values. | Gate audit proof now requires clipboard-capture events for the union of env targets in `target` and `captured_targets`, so missing Resend runtime values cannot look launch-ready. |
 | Public acceptance report blockers could copy failed check details directly, risking token-like provider callback values in the launch-readiness report and control-room blocker cards. | Acceptance check and blocker details now run through shared public-text redaction before they are serialized or displayed. |
+| Public acceptance report serialization could still return manually supplied blocker fields verbatim even though normal blocker construction redacted details. | `AcceptanceReport.to_dict()` now redacts every blocker field at the public serialization boundary. |
 
 ## Open Acceptance Items
 

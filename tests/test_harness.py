@@ -81,7 +81,18 @@ def test_acceptance_report_redacts_check_and_blocker_details(tmp_path) -> None:
         checks=(check,),
         ledger_path=str(tmp_path / "ledger.jsonl"),
         report_path=str(tmp_path / "report.json"),
-        blockers=tuple(blockers),
+        blockers=(
+            *blockers,
+            {
+                "item": "provider callback",
+                "category": "Provider",
+                "next_action": "Rerun the provider gate.",
+                "detail": (
+                    "Raw callback detail: "
+                    f"https://provider.example/callback?code={raw_code}&state=ok"
+                ),
+            },
+        ),
     )
 
     payload = report.to_dict()
@@ -91,6 +102,7 @@ def test_acceptance_report_redacts_check_and_blocker_details(tmp_path) -> None:
     assert "code=[redacted]" in text
     assert payload["checks"][0]["detail"].endswith("?code=[redacted]&state=ok")
     assert payload["blockers"][0]["detail"].endswith("?code=[redacted]&state=ok")
+    assert payload["blockers"][1]["detail"].endswith("?code=[redacted]&state=ok")
 
 
 def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:

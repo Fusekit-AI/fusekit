@@ -71,7 +71,7 @@ class AcceptanceReport:
             "launch_ready": self.launch_ready,
             "checks": [check.to_dict() for check in self.checks],
             "missing": list(self.missing),
-            "blockers": list(self.blockers),
+            "blockers": [_redacted_blocker(blocker) for blocker in self.blockers],
             "ledger_path": self.ledger_path,
             "report_path": self.report_path,
             "created_at": self.created_at,
@@ -301,6 +301,15 @@ def _acceptance_blockers(
             }
         )
     return blockers
+
+
+def _redacted_blocker(blocker: dict[str, str]) -> dict[str, str]:
+    """Return a public-safe launch blocker."""
+
+    return {
+        str(key): redact_public_text(value)
+        for key, value in blocker.items()
+    }
 
 
 def _blocker_guidance(item: str) -> tuple[str, str]:
