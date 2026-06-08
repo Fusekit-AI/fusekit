@@ -1184,6 +1184,10 @@ def test_security_surface_map_documents_control_room_state_routes() -> None:
         assert route in text
     assert "x-fusekit-control-room: resume" in text
     assert "x-fusekit-action-token" in text
+    assert "resume_requested" in text
+    assert "protected control-room approval signal" in text
+    assert "Setup-plan and DNS approvals use the same protected `/pass` route" in text
+    assert "accepts arbitrary commands" in text
     assert "require_safe_url" in text
     assert "target must match the gate's env-style allowlist" in text
     assert "never raw secret text" in text

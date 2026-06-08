@@ -14,14 +14,18 @@ Python package is the live control room in `fusekit.runner.control_room.server`.
 | `/` | `GET` | Read-only control-room HTML. | Local-only bind by default. Remote bind requires `FUSEKIT_ALLOW_REMOTE_CONTROL_ROOM=1` and `FUSEKIT_CONTROL_ROOM_TOKEN`. `Cache-Control: no-store`, `X-Frame-Options: DENY`, CSP `frame-ancestors 'none'`, `form-action 'none'`. |
 | `/index.html` | `GET` | Read-only control-room HTML. | Same as `/`. |
 | `/api/job` | `GET` | Read-only redacted job payload. | Same as `/`. |
-| `/api/gates/<gate_id>/pass` | `POST` | Marks one human gate as passed in `.fusekit/gates.json`. | Requires `x-fusekit-control-room: resume`; rejects untrusted `Origin`; rejects browser-declared cross-site `Sec-Fetch-Site`; remote access requires token via bearer/query/cookie and tokenized remote POSTs must echo `x-fusekit-action-token`; no CORS headers are emitted; refuses secret-capture gates until every target is captured into the vault. |
+| `/api/gates/<gate_id>/pass` | `POST` | Marks one gate as `resume_requested` in `.fusekit/gates.json`; for setup-plan and DNS-approval gates this is the protected control-room approval signal consumed by the worker. | Requires `x-fusekit-control-room: resume`; rejects untrusted `Origin`; rejects browser-declared cross-site `Sec-Fetch-Site`; remote access requires token via bearer/query/cookie and tokenized remote POSTs must echo `x-fusekit-action-token`; no CORS headers are emitted; refuses secret-capture gates until every target is captured into the vault. |
 | `/api/gates/<gate_id>/open` | `POST` | Opens the gate's provider URL in the shared VM browser and records debounce metadata. | Same POST protections as `/pass`; URL is read from the durable gate record and validated with `require_safe_url`; launches a fixed browser argv list, not caller-supplied commands; repeated opens are debounced. |
 | `/api/gates/<gate_id>/capture-clipboard` | `POST` | Reads the VM clipboard for one approved capture target, writes it into the encrypted vault, and marks capture progress. | Same POST protections as `/pass`; request body must be bounded `application/json`; target must match the gate's env-style allowlist; clipboard value size/text is bounded; response includes only target/record metadata, never raw secret text. |
 
+| Any route | `OPTIONS` | None. | Returns `405` with security headers and no CORS allow headers, so browser preflights for custom-header POSTs fail closed. |
+
 The control-room gate POST routes append redacted audit events for provider-gate
 open, resume, and clipboard-capture actions. Audit payloads record gate/provider
-metadata and counts, not provider URLs or clipboard values.
-| Any route | `OPTIONS` | None. | Returns `405` with security headers and no CORS allow headers, so browser preflights for custom-header POSTs fail closed. |
+metadata and counts, not provider URLs or clipboard values. The `/pass` route never
+accepts arbitrary commands, resource identifiers, DNS record bodies, or raw approval
+payloads from the browser; the worker interprets only the durable gate id/status
+that FuseKit already created.
 
 There is no browser route that accepts a shell command, command arguments,
 provider recipe name, vault path, user name, admin account request, raw secret
@@ -75,6 +79,9 @@ or trigger commands:
   `405` without CORS allow headers.
 - Clipboard-capture POSTs additionally require a bounded `application/json` object,
   so form/plaintext bodies are rejected before any vault or gate mutation.
+- Setup-plan and DNS approvals use the same protected `/pass` route as other gates:
+  the browser can only request resume for a pre-existing FuseKit gate id, while the
+  CLI worker owns the setup plan and DNS record content it will apply.
 - If a browser sends `Origin`, it must match the control-room host and be loopback for
   local untokened control rooms.
 - If a browser sends `Sec-Fetch-Site: cross-site`, FuseKit rejects the state-changing
