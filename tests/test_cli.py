@@ -1202,6 +1202,15 @@ def test_provider_api_fallback_runs_pack_setup_when_token_exists(monkeypatch, tm
         "resend API token",
         "provider-token-hidden",
     )
+
+    class FakeResendProvider:
+        def __init__(self, token: str) -> None:
+            self.token = token
+
+        def contract_health(self) -> dict[str, object]:
+            return {"route": "/domains", "ok": True, "domain_count": 0}
+
+    monkeypatch.setattr("fusekit.providers.automation.ResendProvider", FakeResendProvider)
     monkeypatch.setenv("RESEND_API_KEY", "fallback-secret-hidden")
     args = argparse.Namespace(
         secret=[],

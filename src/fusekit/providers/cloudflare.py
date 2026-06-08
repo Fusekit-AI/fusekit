@@ -45,6 +45,14 @@ class CloudflareDnsProvider:
     def _client(self) -> JsonHttpClient:
         return JsonHttpClient(self.api_base, self.token, auth_header="Bearer")
 
+    def contract_health(self) -> dict[str, Any]:
+        """Check the token-backed Cloudflare API contract before DNS mutations."""
+
+        response = self._client().request("GET", "/user/tokens/verify")
+        if response.get("success") is False:
+            raise ProviderError("Cloudflare token verification failed.")
+        return {"route": "/user/tokens/verify", "ok": True}
+
     def propose(self, zone_name: str, records: tuple[DnsRecord, ...]) -> list[DnsChange]:
         """Create DNS change proposals with rollback metadata."""
 

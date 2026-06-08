@@ -40,6 +40,12 @@ class ResendProvider:
     def _client(self) -> JsonHttpClient:
         return JsonHttpClient(self.api_base, self.token, auth_header="Bearer")
 
+    def contract_health(self) -> dict[str, Any]:
+        """Check the token-backed Resend API contract before setup mutations."""
+
+        response = self._client().request("GET", "/domains")
+        return {"route": "/domains", "ok": True, "domain_count": len(_data_items(response))}
+
     def ensure_domain(self, domain: str) -> ResendDomain:
         """Create or reuse a Resend sending domain."""
 

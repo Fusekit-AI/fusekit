@@ -22,6 +22,16 @@ class GitHubProvider:
     def _client(self) -> JsonHttpClient:
         return JsonHttpClient(self.api_base, self.token, auth_header="Bearer")
 
+    def contract_health(self) -> dict[str, Any]:
+        """Check the token-backed GitHub API contract without mutating the repo."""
+
+        self._client().request(
+            "GET",
+            "/rate_limit",
+            headers={"X-GitHub-Api-Version": "2022-11-28"},
+        )
+        return {"route": "/rate_limit", "ok": True}
+
     def put_repo_secret(self, repo: str, name: str, value: str) -> dict[str, Any]:
         """Encrypt and store a GitHub Actions repo secret."""
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from fusekit.audit import AuditLog, Receipt, assert_no_secret_text
-from fusekit.errors import ProviderError
+from fusekit.errors import FuseKitError, ProviderError
 from fusekit.manifest import DnsRecord, DomainRequirement, SetupManifest
 from fusekit.providers.automation import ProviderSetupContext, run_provider_pack_setup
 from fusekit.providers.capability_pack import synthesize_provider_pack
@@ -706,6 +706,163 @@ def test_resend_pack_creates_domain_audience_and_feeds_dns(monkeypatch, tmp_path
     assert vault.require("provider.resend.resend_from_email").value == "rsvp@moonlite.rsvp"
     public = json.dumps(result) + json.dumps(receipt.to_dict())
     assert_no_secret_text(public, ["resend-key-hidden"])
+
+
+def test_provider_setup_checks_contract_health_before_api_mutation(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    calls: list[str] = []
+
+    class FakeVercelProvider:
+        def __init__(self, token: str) -> None:
+            self.token = token
+
+        def contract_health(self) -> dict[str, object]:
+            calls.append("health")
+            return {"route": "/v2/user", "ok": True}
+
+        def ensure_project(
+            self,
+            name: str,
+            framework: str | None = None,
+            git_repository: str | None = None,
+            root_directory: str | None = None,
+        ) -> dict[str, object]:
+            del framework, git_repository, root_directory
+            calls.append("project")
+            return {"id": "prj_123", "name": name, "created": False, "git_connected": True}
+
+        def put_env(
+            self,
+            project_id_or_name: str,
+            key: str,
+            value: str,
+            target: tuple[str, ...],
+        ) -> dict[str, object]:
+            del value, target
+            calls.append(f"env:{key}")
+            return {"project": project_id_or_name, "env": key}
+
+        def create_git_deployment(
+            self,
+            project_name: str,
+            git_repo_id: str | None = None,
+            ref: str = "main",
+            repo_type: str = "github",
+            org: str | None = None,
+            repo: str | None = None,
+        ) -> dict[str, object]:
+            del project_name, git_repo_id, ref, repo_type, org, repo
+            calls.append("deployment")
+            return {"deployment_id": "dpl_123", "url": "https://app.vercel.app"}
+
+    monkeypatch.setattr("fusekit.providers.automation.VercelProvider", FakeVercelProvider)
+    vault = Vault.empty()
+    vault.put(
+        "provider.vercel.token",
+        "provider_token",
+        "vercel",
+        "Vercel token",
+        "test-vercel-token-hidden",
+    )
+    receipt = Receipt(app_name="app")
+    context = ProviderSetupContext(
+        manifest=SetupManifest(app_name="app"),
+        vault=vault,
+        audit=AuditLog(tmp_path / "audit.jsonl"),
+        receipt=receipt,
+        secrets={"WEBHOOK_SECRET": "webhook-secret-value"},
+        provider_names={"vercel"},
+        inputs={
+            "github_repo": "owner/app",
+            "vercel_project": "app",
+            "vercel_framework": "nextjs",
+        },
+    )
+    pack = synthesize_provider_pack("vercel", tmp_path)
+
+    result = run_provider_pack_setup(pack, context)
+
+    assert calls[0] == "health"
+    assert calls.count("health") == 1
+    assert "project" in calls
+    assert "vercel" in context.contract_health_checked
+    actions = receipt.to_dict()["actions"]
+    assert any(
+        action["action"] == "vercel.contract_health" and action["status"] == "ok"
+        for action in actions
+    )
+    public = json.dumps(result) + json.dumps(receipt.to_dict())
+    assert_no_secret_text(public, ["webhook-secret-value", "test-vercel-token-hidden"])
+
+
+def test_provider_setup_contract_health_failure_stops_before_mutation(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    calls: list[str] = []
+
+    class FakeVercelProvider:
+        def __init__(self, token: str) -> None:
+            self.token = token
+
+        def contract_health(self) -> dict[str, object]:
+            calls.append("health")
+            raise ProviderError("GET /v2/user failed with HTTP 401: message=invalid token")
+
+        def ensure_project(
+            self,
+            name: str,
+            framework: str | None = None,
+            git_repository: str | None = None,
+            root_directory: str | None = None,
+        ) -> dict[str, object]:
+            del name, framework, git_repository, root_directory
+            calls.append("project")
+            return {}
+
+    monkeypatch.setattr("fusekit.providers.automation.VercelProvider", FakeVercelProvider)
+    vault = Vault.empty()
+    vault.put(
+        "provider.vercel.token",
+        "provider_token",
+        "vercel",
+        "Vercel token",
+        "test-vercel-token-hidden",
+    )
+    receipt = Receipt(app_name="app")
+    context = ProviderSetupContext(
+        manifest=SetupManifest(app_name="app"),
+        vault=vault,
+        audit=AuditLog(tmp_path / "audit.jsonl"),
+        receipt=receipt,
+        secrets={"WEBHOOK_SECRET": "webhook-secret-value"},
+        provider_names={"vercel"},
+        inputs={
+            "github_repo": "owner/app",
+            "vercel_project": "app",
+            "vercel_framework": "nextjs",
+        },
+    )
+    pack = synthesize_provider_pack("vercel", tmp_path)
+
+    try:
+        run_provider_pack_setup(pack, context)
+    except FuseKitError as exc:
+        assert "API contract health failed before setup" in str(exc)
+    else:
+        raise AssertionError("expected provider contract health failure")
+
+    assert calls == ["health"]
+    assert "vercel" not in context.contract_health_checked
+    actions = receipt.to_dict()["actions"]
+    assert any(
+        action["action"] == "vercel.contract_health" and action["status"] == "failed"
+        for action in actions
+    )
+    public = json.dumps(receipt.to_dict())
+    assert_no_secret_text(public, ["webhook-secret-value", "test-vercel-token-hidden"])
 
 
 def test_cloudflare_dns_includes_provider_generated_records(monkeypatch, tmp_path) -> None:

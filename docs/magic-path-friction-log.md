@@ -139,6 +139,7 @@ guided, or explicitly verified.
 | A stale launcher artifact could still prove launch readiness after asking the user to capture generated Resend sender or audience values. | Live acceptance now rejects Resend runtime capture gates that target API-generated values, forcing the setup-key or API-retry path instead. |
 | The launch blocker for stale generated Resend capture gates could still fall back to generic guided-gate repair text. | Acceptance blockers now tell the user to regenerate the Resend runtime gate so only `RESEND_API_KEY` uses Capture and generated values use Resend API setup retry. |
 | A stale live control-room gate could still let the user click Capture for generated Resend sender or audience values before acceptance failed later. | The control-room capture endpoint now refuses `RESEND_FROM_EMAIL` and `RESEND_AUDIENCE_ID` on Resend runtime capture gates and tells the user to capture only `RESEND_API_KEY` before API retry. |
+| Provider API setup could start mutating projects, DNS, domains, or repo settings before proving the token-backed provider API contract was still healthy. | Provider-pack setup now performs a read-only contract-health preflight before the first API mutation, records redacted audit/receipt evidence, and stops before mutation if the provider contract check fails. |
 
 ## Open Acceptance Items
 

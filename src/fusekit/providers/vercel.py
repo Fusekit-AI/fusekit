@@ -25,6 +25,12 @@ class VercelProvider:
     def _client(self) -> JsonHttpClient:
         return JsonHttpClient(self.api_base, self.token, auth_header="Bearer")
 
+    def contract_health(self) -> dict[str, Any]:
+        """Check the token-backed Vercel API contract before setup mutations."""
+
+        self._client().request("GET", "/v2/user")
+        return {"route": "/v2/user", "ok": True}
+
     def ensure_project(
         self,
         name: str,

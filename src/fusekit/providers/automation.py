@@ -44,6 +44,7 @@ class ProviderSetupContext:
     fusekit_gates: str = "service-only"
     available_cli_tools: set[str] = field(default_factory=set)
     generated_dns_records: dict[str, list[DnsRecord]] = field(default_factory=dict)
+    contract_health_checked: set[str] = field(default_factory=set)
 
 
 SetupHandler = Callable[[SetupRecipe, ProviderSetupContext], dict[str, Any]]
@@ -72,6 +73,21 @@ def run_provider_pack_setup(
             if action["status"] == "needs_human_gate":
                 break
             continue
+        if decision.selected.kind == "api":
+            try:
+                _ensure_provider_contract_health(pack, context)
+            except FuseKitError:
+                if not context.allow_incomplete:
+                    raise
+                results.append(
+                    {
+                        "kind": recipe.kind,
+                        "status": "skipped",
+                        "reason": "provider contract health failed",
+                        "strategy_decision": strategy_payload,
+                    }
+                )
+                break
         result: dict[str, Any]
         try:
             handler = handlers.get(recipe.kind)
@@ -107,6 +123,82 @@ def setup_handler_registry() -> dict[str, SetupHandler]:
         "resend-domain": _resend_domain,
         "resend-audience": _resend_audience,
     }
+
+
+def _ensure_provider_contract_health(
+    pack: ProviderCapabilityPack,
+    context: ProviderSetupContext,
+) -> None:
+    """Check token-backed provider API health before setup mutates provider state."""
+
+    provider = pack.provider.lower()
+    if provider in context.contract_health_checked:
+        return
+    try:
+        details = _provider_contract_health(provider, context)
+    except (FuseKitError, ProviderError) as exc:
+        failure = {
+            "provider": provider,
+            "status": "failed",
+            "reason": str(exc)[:500],
+        }
+        context.audit.record("provider_pack.contract_health", failure)
+        context.receipt.add_action(f"{provider}.contract_health", "failed", failure)
+        raise FuseKitError(
+            f"{pack.display_name} API contract health failed before setup: {exc}"
+        ) from exc
+    context.contract_health_checked.add(provider)
+    context.audit.record("provider_pack.contract_health", details)
+    context.receipt.add_action(f"{provider}.contract_health", "ok", details)
+
+
+def _provider_contract_health(
+    provider: str,
+    context: ProviderSetupContext,
+) -> dict[str, Any]:
+    token_envs = {
+        "github": "GITHUB_TOKEN",
+        "vercel": "VERCEL_TOKEN",
+        "cloudflare": "CLOUDFLARE_API_TOKEN",
+        "dns": "CLOUDFLARE_API_TOKEN",
+        "resend": "RESEND_API_KEY",
+    }
+    token_provider = "cloudflare" if provider == "dns" else provider
+    env_name = token_envs.get(provider, "")
+    if not env_name:
+        return {
+            "provider": provider,
+            "ok": True,
+            "checked": False,
+            "reason": "no contract health hook",
+        }
+    token = _provider_token(context.vault, token_provider, env_name)
+    adapter: Any
+    if token_provider == "github":
+        adapter = GitHubProvider(token)
+    elif token_provider == "vercel":
+        adapter = VercelProvider(token)
+    elif token_provider == "cloudflare":
+        adapter = CloudflareDnsProvider(token)
+    elif token_provider == "resend":
+        adapter = ResendProvider(token)
+    else:
+        return {
+            "provider": provider,
+            "ok": True,
+            "checked": False,
+            "reason": "no contract health hook",
+        }
+    health = getattr(adapter, "contract_health", None)
+    if not callable(health):
+        return {
+            "provider": provider,
+            "ok": True,
+            "checked": False,
+            "reason": "adapter does not expose contract health",
+        }
+    result = health()
+    return {"provider": provider, "checked": True, **result}
 
 
 def _vault_capture_env(
