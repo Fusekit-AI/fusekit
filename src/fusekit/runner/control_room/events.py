@@ -69,6 +69,7 @@ function gateStep(gate) {
     target: gate.target || "",
     follow_steps: gate.follow_steps || [],
     attempts: gate.attempts || 0,
+    captured_targets: gate.captured_targets || [],
     updated_at: gate.updated_at,
   };
 }
@@ -323,7 +324,7 @@ function renderGateHelp(step) {
         `data-gate-pass="${escapeAttr(step.id)}">I finished this step</button>`,
       ].join("")
     : "";
-  const captureButtons = renderCaptureButtons(step.id, step.target);
+  const captureButtons = renderCaptureButtons(step.id, step.target, step.captured_targets);
   return `
     <div class="gate-help">
       <span>What you need to do</span>${classification}
@@ -346,22 +347,35 @@ function captureTargets(target) {
     .filter((item) => /^[A-Z][A-Z0-9_]{2,}$/.test(item));
 }
 
-function renderCaptureButtons(gateId, target) {
+function renderCaptureButtons(gateId, target, capturedTargets = []) {
   const targets = captureTargets(target);
   if (!gateId || !targets.length) return "";
+  const captured = new Set((capturedTargets || []).map((item) => String(item).toUpperCase()));
+  const capturedCount = targets.filter((item) => captured.has(item)).length;
+  const progress = targets.length > 1
+    ? `<span>${capturedCount}/${targets.length} captured</span>`
+    : "";
   const plural = targets.length === 1 ? "value" : "values";
   return [
     `<div class="gate-capture-panel">`,
+    `<div class="gate-capture-head">`,
     `<strong>Safe secret capture</strong>`,
+    progress,
+    `</div>`,
     `<p>Copy the provider ${plural} inside the VM browser, then click Capture here. ` +
       `FuseKit reads only the VM clipboard and saves it directly into the encrypted vault.</p>`,
     `<div class="gate-capture-row">`,
-    targets.map((item) => [
-      `<button class="gate-capture" type="button" `,
-      `data-gate-capture="${escapeAttr(gateId)}" `,
-      `data-gate-capture-target="${escapeAttr(item)}">`,
-      `Capture ${escapeHtml(item)} from VM clipboard</button>`,
-    ].join("")).join(""),
+    targets.map((item) => {
+      const isCaptured = captured.has(item);
+      const label = isCaptured ? `Captured ${item}` : `Capture ${item} from VM clipboard`;
+      return [
+        `<button class="gate-capture" type="button" `,
+        `data-gate-capture="${escapeAttr(gateId)}" `,
+        `data-gate-capture-target="${escapeAttr(item)}"`,
+        isCaptured ? " disabled" : "",
+        `>${escapeHtml(label)}</button>`,
+      ].join("");
+    }).join(""),
     `</div>`,
     `</div>`,
   ].join("");

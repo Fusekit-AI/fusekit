@@ -315,7 +315,7 @@ def _capture_gate_clipboard_secret(
     job_state: Path,
     gate_id: str,
     target: str,
-) -> dict[str, str]:
+) -> dict[str, Any]:
     service = GateService.load(job_state.parent / "gates.json")
     gate = service.records.get(gate_id)
     if gate is None:
@@ -339,13 +339,19 @@ def _capture_gate_clipboard_secret(
     record_id, kind, provider = _capture_record_for_target(gate.provider, target)
     vault.put(record_id, kind, provider, target, value, {"env": target, "source": "vm-clipboard"})
     vault.save(vault_path, passphrase)
+    service.mark_captured(gate_id, target)
+    gate = service.records[gate_id]
+    captured_targets = set(gate.captured_targets)
     status = "captured"
-    message = f"{target} captured into the encrypted vault."
-    if len(allowed_targets) == 1:
+    message = (
+        f"{target} captured into the encrypted vault. "
+        "Capture the remaining required values to continue."
+    )
+    if allowed_targets.issubset(captured_targets):
         service.request_resume(gate_id)
         status = "resume_requested"
         message = (
-            f"{target} captured into the encrypted vault. "
+            "All required values were captured into the encrypted vault. "
             "FuseKit will retry provider verification."
         )
     _append_capture_audit(job_state, gate_id, target, record_id)
@@ -354,6 +360,7 @@ def _capture_gate_clipboard_secret(
         "target": target,
         "record_id": record_id,
         "status": status,
+        "captured_targets": sorted(captured_targets),
         "message": message,
     }
 

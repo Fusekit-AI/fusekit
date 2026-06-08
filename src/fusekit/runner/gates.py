@@ -42,6 +42,12 @@ def _string_tuple(value: object) -> tuple[str, ...]:
     return tuple(str(item) for item in value if isinstance(item, str))
 
 
+def _normalized_string_tuple(value: object) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(item.strip().upper() for item in _string_tuple(value) if item.strip())
+    )
+
+
 @dataclass
 class GateRecord:
     """A resumable provider-created human gate."""
@@ -57,6 +63,7 @@ class GateRecord:
     attempts: int = 0
     last_opened_url: str = ""
     last_opened_at: float = 0.0
+    captured_targets: tuple[str, ...] = ()
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
 
@@ -75,6 +82,7 @@ class GateRecord:
             "attempts": self.attempts,
             "last_opened_url": self.last_opened_url,
             "last_opened_at": self.last_opened_at,
+            "captured_targets": list(self.captured_targets),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -95,6 +103,7 @@ class GateRecord:
             attempts=_int_value(raw.get("attempts"), 0),
             last_opened_url=str(raw.get("last_opened_url", "")),
             last_opened_at=_float_value(raw.get("last_opened_at"), 0.0),
+            captured_targets=_normalized_string_tuple(raw.get("captured_targets", [])),
             created_at=_float_value(raw.get("created_at"), time.time()),
             updated_at=_float_value(raw.get("updated_at"), time.time()),
         )
@@ -152,9 +161,11 @@ class GateService:
             follow_steps = follow_steps or record.follow_steps
             last_opened_url = record.last_opened_url
             last_opened_at = record.last_opened_at
+            captured_targets = record.captured_targets
         else:
             last_opened_url = ""
             last_opened_at = 0.0
+            captured_targets = ()
         record = GateRecord(
             id=gate_id,
             provider=provider,
@@ -167,6 +178,7 @@ class GateService:
             attempts=attempts,
             last_opened_url=last_opened_url,
             last_opened_at=last_opened_at,
+            captured_targets=captured_targets,
             created_at=created_at,
             updated_at=time.time(),
         )
@@ -196,6 +208,15 @@ class GateService:
         record = self.records[gate_id]
         record.last_opened_url = url
         record.last_opened_at = time.time()
+        record.updated_at = time.time()
+        self.save()
+
+    def mark_captured(self, gate_id: str, target: str) -> None:
+        """Record a captured target value for progress-aware multi-secret gates."""
+
+        record = self.records[gate_id]
+        normalized = target.strip().upper()
+        record.captured_targets = tuple(dict.fromkeys((*record.captured_targets, normalized)))
         record.updated_at = time.time()
         self.save()
 

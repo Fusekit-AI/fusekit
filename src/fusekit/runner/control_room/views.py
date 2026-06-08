@@ -698,6 +698,11 @@ def _render_gate_help(step: Any) -> str:
         else ""
     )
     target = str(getattr(step, "target", "") or "")
+    captured_targets = tuple(
+        str(item).strip().upper()
+        for item in getattr(step, "captured_targets", ())
+        if str(item).strip()
+    )
     target_label = (
         f'<p class="gate-target">Snowman highlighted: <strong>{html.escape(target)}</strong></p>'
         if target
@@ -709,7 +714,7 @@ def _render_gate_help(step: Any) -> str:
         if gate_id
         else ""
     )
-    capture_buttons = _render_capture_buttons(gate_id, target)
+    capture_buttons = _render_capture_buttons(gate_id, target, captured_targets)
     return f"""
         <div class="gate-help">
           <span>What you need to do</span>{classification_label}
@@ -725,23 +730,29 @@ def _render_gate_help(step: Any) -> str:
 """
 
 
-def _render_capture_buttons(gate_id: str, target: str) -> str:
+def _render_capture_buttons(
+    gate_id: str,
+    target: str,
+    captured_targets: tuple[str, ...] = (),
+) -> str:
     targets = _capture_targets(target)
     if not gate_id or not targets:
         return ""
-    buttons = "".join(
-        (
-            f'<button class="gate-capture" type="button" '
-            f'data-gate-capture="{html.escape(gate_id)}" '
-            f'data-gate-capture-target="{html.escape(item)}">'
-            f"Capture {html.escape(item)} from VM clipboard</button>"
-        )
-        for item in targets
+    captured = set(captured_targets)
+    buttons = "".join(_render_capture_button(gate_id, item, item in captured) for item in targets)
+    captured_count = len([item for item in targets if item in captured])
+    progress = (
+        f"<span>{captured_count}/{len(targets)} captured</span>"
+        if len(targets) > 1
+        else ""
     )
     plural = "value" if len(targets) == 1 else "values"
     return f"""
       <div class="gate-capture-panel">
-        <strong>Safe secret capture</strong>
+        <div class="gate-capture-head">
+          <strong>Safe secret capture</strong>
+          {progress}
+        </div>
         <p>
           Copy the provider {plural} inside the VM browser, then click Capture here.
           FuseKit reads only the VM clipboard and saves it directly into the encrypted vault.
@@ -749,6 +760,17 @@ def _render_capture_buttons(gate_id: str, target: str) -> str:
         <div class="gate-capture-row">{buttons}</div>
       </div>
     """
+
+
+def _render_capture_button(gate_id: str, target: str, captured: bool) -> str:
+    disabled = " disabled" if captured else ""
+    label = f"Captured {target}" if captured else f"Capture {target} from VM clipboard"
+    return (
+        f'<button class="gate-capture" type="button" '
+        f'data-gate-capture="{html.escape(gate_id)}" '
+        f'data-gate-capture-target="{html.escape(target)}"{disabled}>'
+        f"{html.escape(label)}</button>"
+    )
 
 
 def _capture_targets(target: str) -> tuple[str, ...]:
@@ -800,6 +822,7 @@ def _gate_step(gate: dict[str, Any]) -> Any:
         target=str(gate.get("target", "") or ""),
         follow_steps=gate.get("follow_steps", []),
         attempts=int(gate.get("attempts", 0) or 0),
+        captured_targets=gate.get("captured_targets", []),
     )
 
 

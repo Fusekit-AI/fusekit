@@ -476,6 +476,20 @@ button {
   background: rgba(0, 21, 42, 0.22);
 }
 
+.gate-capture-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.gate-capture-head span {
+  color: #b9ecff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .gate-capture-panel strong {
   color: #ffffff;
   font-size: 13px;
