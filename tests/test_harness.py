@@ -732,6 +732,124 @@ def test_live_acceptance_requires_clipboard_capture_for_secret_gates(tmp_path) -
     assert "audited human gate interventions" in report.missing
 
 
+def test_live_acceptance_requires_all_multi_value_gate_captures(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "package.json").write_text(
+        json.dumps({"name": "moonlite-rsvp", "dependencies": {"next": "latest"}}),
+        encoding="utf-8",
+    )
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    (remote_fusekit / "audit.jsonl").write_text(
+        "\n".join(
+            [
+                '{"event":"provider.verify"}',
+                json.dumps(
+                    {
+                        "event": "control_room.clipboard_capture",
+                        "data": {
+                            "gate_id": "provider.resend.runtime-values",
+                            "provider": "resend",
+                            "target": "RESEND_AUDIENCE_ID",
+                            "record_id": "app.resend.resend_audience_id",
+                        },
+                    },
+                    sort_keys=True,
+                ),
+                json.dumps(
+                    {
+                        "event": "control_room.gate_resume_requested",
+                        "data": {
+                            "gate_id": "provider.resend.runtime-values",
+                            "provider": "resend",
+                            "status": "passed",
+                        },
+                    },
+                    sort_keys=True,
+                ),
+            ]
+        )
+        + "\n",
+        "utf-8",
+    )
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "live_url": "https://moonlite.example",
+                "raw_secrets_exposed": 0,
+                "actions": [],
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "verification_report.json").write_text(
+        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        "utf-8",
+    )
+    (remote_fusekit / "rollback_plan.json").write_text(
+        json.dumps({"rollback": [{"action": "rollback.resend.env", "status": "planned"}]}),
+        "utf-8",
+    )
+    (remote_fusekit / "provider_strategies.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.provider-strategies.v1",
+                "providers": [
+                    {
+                        "provider": "resend",
+                        "strategies": [
+                            {
+                                "recipe": "resend-runtime-values",
+                                "strategy": "control-room-capture",
+                                "status": "ok",
+                                "decision": _strategy_decision("human", "available"),
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "gates.json").write_text(
+        json.dumps(
+            {
+                "gates": [
+                    {
+                        "id": "provider.resend.runtime-values",
+                        "provider": "resend",
+                        "reason": "Resend runtime values captured",
+                        "status": "passed",
+                        "classification": "provider-runtime-values",
+                        "target": "RESEND_AUDIENCE_ID,RESEND_FROM_EMAIL",
+                        "captured_targets": ["RESEND_AUDIENCE_ID"],
+                        "next_action": "No action needed.",
+                        "resume_hint": "FuseKit verified this gate as passed.",
+                    }
+                ]
+            }
+        ),
+        "utf-8",
+    )
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    audit_check = next(check for check in report.checks if check.id == "gates.audited")
+    assert report.launch_ready is False
+    assert audit_check.status == "failed"
+    assert "provider.resend.runtime-values:RESEND_FROM_EMAIL" in audit_check.detail
+    assert "audited human gate interventions" in report.missing
+
+
 def test_live_acceptance_requires_provider_gate_open_audit(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()

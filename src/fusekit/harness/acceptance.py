@@ -1238,15 +1238,14 @@ def _gate_open_audit_requirements(gates: Any) -> list[str]:
 
 
 def _gate_secret_targets(gate: dict[str, Any]) -> list[str]:
+    targets: list[str] = []
+    target = str(gate.get("target", "")).strip()
+    if target:
+        targets.extend(part.strip() for part in target.split(","))
     captured_targets = gate.get("captured_targets", [])
     if isinstance(captured_targets, list):
-        targets = [str(target).strip() for target in captured_targets]
-        return [target for target in targets if _ENV_TARGET_RE.match(target)]
-    target = str(gate.get("target", "")).strip()
-    if not target:
-        return []
-    targets = [part.strip() for part in target.split(",")]
-    return [part for part in targets if _ENV_TARGET_RE.match(part)]
+        targets.extend(str(target).strip() for target in captured_targets)
+    return list(dict.fromkeys(part for part in targets if _ENV_TARGET_RE.match(part)))
 
 
 def _control_room_audit_events(audit_log_path: Path) -> tuple[list[dict[str, Any]], str]:
