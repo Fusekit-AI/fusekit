@@ -68,6 +68,7 @@ Do not publish the public walkthrough until:
 - provider strategy order proves Resend ran before Cloudflare/DNS
 - Vercel deployment is live
 - GitHub secrets/deploy-key verification passes
+- no control-room gate remains waiting, resurfaced, retrying, or failed
 - vault opens only with the right passphrase
 - receipts and logs are redacted
 - leak scan is clean

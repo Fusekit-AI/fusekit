@@ -129,6 +129,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
         ),
         "utf-8",
     )
+    (remote_fusekit / "gates.json").write_text(json.dumps({"gates": []}), "utf-8")
 
     report = run_acceptance(
         app,
@@ -142,6 +143,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
     assert "remote_artifacts.loaded" in check_ids
     assert "verification_report.safe" in check_ids
     assert "provider_strategies.recorded" in check_ids
+    assert "gates.resolved" in check_ids
     assert report.missing == ()
     report_json = json.loads((app / ".fusekit" / "acceptance" / "report.json").read_text())
     assert report_json["launch_ready"] is True
@@ -266,6 +268,7 @@ domains:
         ),
         encoding="utf-8",
     )
+    (remote_fusekit / "gates.json").write_text(json.dumps({"gates": []}), encoding="utf-8")
 
     report = run_acceptance(
         app,
@@ -278,3 +281,85 @@ domains:
     assert report.launch_ready is False
     assert order_check.status == "failed"
     assert "Resend-before-DNS provider setup order" in report.missing
+
+
+def test_live_acceptance_requires_resolved_control_room_gates(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "package.json").write_text(
+        json.dumps({"name": "moonlite-rsvp", "dependencies": {"next": "latest"}}),
+        encoding="utf-8",
+    )
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    (remote_fusekit / "audit.jsonl").write_text('{"event":"provider.verify"}\n', "utf-8")
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "live_url": "https://moonlite.example",
+                "raw_secrets_exposed": 0,
+                "actions": [],
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "verification_report.json").write_text(
+        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        "utf-8",
+    )
+    (remote_fusekit / "rollback_plan.json").write_text(
+        json.dumps({"rollback": [{"action": "rollback.vercel.env", "status": "planned"}]}),
+        "utf-8",
+    )
+    (remote_fusekit / "provider_strategies.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.provider-strategies.v1",
+                "providers": [
+                    {
+                        "provider": "github",
+                        "strategies": [
+                            {
+                                "recipe": "github-repo-secrets",
+                                "strategy": "api",
+                                "status": "ok",
+                                "decision": {"selected": {"kind": "api"}},
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "gates.json").write_text(
+        json.dumps(
+            {
+                "gates": [
+                    {
+                        "id": "provider.cloudflare.authorization",
+                        "provider": "cloudflare",
+                        "reason": "Cloudflare token creation",
+                        "status": "waiting",
+                    }
+                ]
+            }
+        ),
+        "utf-8",
+    )
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    gate_check = next(check for check in report.checks if check.id == "gates.resolved")
+    assert report.launch_ready is False
+    assert gate_check.status == "failed"
+    assert "provider.cloudflare.authorization:waiting" in gate_check.detail
+    assert "resolved human gates" in report.missing

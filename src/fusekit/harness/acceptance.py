@@ -162,6 +162,13 @@ def run_acceptance(
         missing,
         ledger,
     )
+    _check_gate_state(
+        evidence_fusekit_dir / "gates.json",
+        mode,
+        checks,
+        missing,
+        ledger,
+    )
     _check_rollback_metadata(
         evidence_fusekit_dir / "rollback_plan.json",
         mode,
@@ -226,6 +233,7 @@ def _record_remote_artifacts(
         "verification_report.json",
         "rollback_plan.json",
         "provider_strategies.json",
+        "gates.json",
     )
     inventory = {
         name: {
@@ -641,6 +649,75 @@ def _check_provider_strategy_order(
     )
     if mode == "live":
         missing.append("Resend-before-DNS provider setup order")
+
+
+def _check_gate_state(
+    gates_path: Path,
+    mode: str,
+    checks: list[AcceptanceCheck],
+    missing: list[str],
+    ledger: HarnessLedger,
+) -> None:
+    """Require live runs to prove no durable human gates remain unresolved."""
+
+    if not gates_path.exists():
+        status = "skipped" if mode == "rehearsal" else "missing"
+        checks.append(
+            AcceptanceCheck(
+                "gates.resolved",
+                status,
+                f"Gate state not found: {gates_path}",
+            )
+        )
+        if mode == "live":
+            missing.append("resolved human gates")
+        return
+    try:
+        raw = json.loads(gates_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        checks.append(
+            AcceptanceCheck(
+                "gates.resolved",
+                "failed",
+                "Gate state could not be read.",
+            )
+        )
+        missing.append("resolved human gates")
+        return
+    snapshot = ledger.snapshot_json("gates", raw)
+    gates = raw.get("gates", []) if isinstance(raw, dict) else []
+    unresolved = [
+        {
+            "id": str(gate.get("id", "")),
+            "provider": str(gate.get("provider", "")),
+            "status": str(gate.get("status", "")),
+        }
+        for gate in gates
+        if isinstance(gate, dict) and str(gate.get("status", "")) != "passed"
+    ]
+    if unresolved:
+        detail = ", ".join(
+            f"{gate['id']}:{gate['status']}" for gate in unresolved if gate["id"]
+        )
+        checks.append(
+            AcceptanceCheck(
+                "gates.resolved",
+                "failed" if mode == "live" else "skipped",
+                "Unresolved control-room gates remain: " + (detail or "unknown gate"),
+                str(snapshot),
+            )
+        )
+        if mode == "live":
+            missing.append("resolved human gates")
+        return
+    checks.append(
+        AcceptanceCheck(
+            "gates.resolved",
+            "ok",
+            "No unresolved control-room gates remain.",
+            str(snapshot),
+        )
+    )
 
 
 def _check_rollback_metadata(

@@ -42,9 +42,10 @@ The run is launch-ready only when `.fusekit/acceptance/report.json` contains:
 Live mode does not claim provider success without proof. It requires the real encrypted vault,
 passphrase unlock proof, redacted setup receipt, redacted audit log, live URL in
 the receipt, validated provider packs, recorded provider route decisions, clean
-leak scan, and detonated worker state. When both Resend and DNS are present, the
-provider strategy artifact must prove Resend ran before Cloudflare/DNS so
-Resend-generated domain records are included in the approved DNS changes.
+leak scan, resolved durable gate state, and detonated worker state. When both
+Resend and DNS are present, the provider strategy artifact must prove Resend ran
+before Cloudflare/DNS so Resend-generated domain records are included in the
+approved DNS changes.
 
 ## Acceptance Path
 
@@ -68,6 +69,7 @@ FuseKit has a native proof layer:
 - acceptance report with rehearsal/live modes
 - provider-pack validation snapshots
 - vault public-index proof without raw secrets
+- durable gate-state proof that no control-room gates remain unresolved
 - receipt/audit/detonation/leak-scan gates
 
 The harness only reports whether the run is public-launch ready. It does not
