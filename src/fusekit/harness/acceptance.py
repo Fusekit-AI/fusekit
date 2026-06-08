@@ -145,7 +145,7 @@ def run_acceptance(
     receipt_path = _app_relative(app_path, receipt_path) or (
         evidence_fusekit_dir / "setup_receipt.json"
     )
-    _check_receipt(receipt_path, mode, checks, missing, ledger)
+    _check_receipt(receipt_path, manifest, mode, checks, missing, ledger)
 
     audit_log_path = _app_relative(app_path, audit_log_path) or (
         evidence_fusekit_dir / "audit.jsonl"
@@ -360,6 +360,11 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
             "Provider order",
             "Run Resend domain setup before Cloudflare/DNS so Resend DNS records are included.",
         ),
+        "Resend DNS records in receipt DNS proposal": (
+            "Provider order",
+            "Rerun setup so the receipt proves Resend created/reused the sending domain "
+            "and Cloudflare/DNS proposed the exact Resend verification records.",
+        ),
         "guided human gates": (
             "Human gates",
             "Regenerate gate state with follow_steps, next_action, and resume_hint "
@@ -560,6 +565,7 @@ def _check_vault(
 
 def _check_receipt(
     receipt_path: Path,
+    manifest: SetupManifest,
     mode: str,
     checks: list[AcceptanceCheck],
     missing: list[str],
@@ -611,6 +617,149 @@ def _check_receipt(
                 f"Receipt includes live URL: {live_url}",
             )
         )
+    _check_receipt_resend_dns_flow(raw, manifest, mode, checks, missing, str(snapshot))
+
+
+def _check_receipt_resend_dns_flow(
+    raw: Any,
+    manifest: SetupManifest,
+    mode: str,
+    checks: list[AcceptanceCheck],
+    missing: list[str],
+    artifact: str,
+) -> None:
+    """Prove Resend-generated domain DNS reached the DNS proposal in live evidence."""
+
+    if mode != "live" or not _manifest_requires_resend_dns(manifest):
+        return
+    actions = raw.get("actions", []) if isinstance(raw, dict) else []
+    if not isinstance(actions, list):
+        _fail_resend_dns_receipt(
+            checks,
+            missing,
+            "Receipt actions are missing or malformed.",
+            artifact,
+        )
+        return
+    resend_index = _first_receipt_action(actions, "resend.domain", status="ok")
+    dns_index = _first_receipt_action(actions, "dns.propose", status="ok")
+    if resend_index is None or dns_index is None:
+        _fail_resend_dns_receipt(
+            checks,
+            missing,
+            "Receipt must include successful resend.domain and dns.propose actions.",
+            artifact,
+        )
+        return
+    if resend_index > dns_index:
+        _fail_resend_dns_receipt(
+            checks,
+            missing,
+            "Receipt put DNS proposal before Resend domain setup.",
+            artifact,
+        )
+        return
+    resend_records = _resend_receipt_dns_records(actions[resend_index])
+    dns_records = _dns_proposal_receipt_records(actions[dns_index])
+    if not resend_records:
+        _fail_resend_dns_receipt(
+            checks,
+            missing,
+            "Receipt does not include Resend-generated DNS records.",
+            artifact,
+        )
+        return
+    missing_records = sorted(resend_records - dns_records)
+    if missing_records:
+        _fail_resend_dns_receipt(
+            checks,
+            missing,
+            "Receipt DNS proposal is missing Resend-generated records: "
+            + ", ".join(f"{kind} {name}" for kind, name, _value in missing_records),
+            artifact,
+        )
+        return
+    checks.append(
+        AcceptanceCheck(
+            "receipt.resend_dns_flow",
+            "ok",
+            "Receipt proves Resend domain setup emitted DNS records before DNS proposal.",
+            artifact,
+        )
+    )
+
+
+def _manifest_requires_resend_dns(manifest: SetupManifest) -> bool:
+    providers = _manifest_provider_names(manifest)
+    return "resend" in providers and bool(manifest.domains)
+
+
+def _fail_resend_dns_receipt(
+    checks: list[AcceptanceCheck],
+    missing: list[str],
+    detail: str,
+    artifact: str,
+) -> None:
+    checks.append(
+        AcceptanceCheck(
+            "receipt.resend_dns_flow",
+            "failed",
+            detail,
+            artifact,
+        )
+    )
+    missing.append("Resend DNS records in receipt DNS proposal")
+
+
+def _first_receipt_action(
+    actions: list[Any],
+    name: str,
+    *,
+    status: str = "",
+) -> int | None:
+    for index, action in enumerate(actions):
+        if not isinstance(action, dict):
+            continue
+        if str(action.get("action", "")) != name:
+            continue
+        if status and str(action.get("status", "")) != status:
+            continue
+        return index
+    return None
+
+
+def _resend_receipt_dns_records(action: dict[str, Any]) -> set[tuple[str, str, str]]:
+    details = action.get("details", {})
+    raw_records = details.get("dns_records", []) if isinstance(details, dict) else []
+    return {
+        _receipt_dns_record_key(record)
+        for record in raw_records
+        if isinstance(record, dict) and _receipt_dns_record_key(record)[0]
+    }
+
+
+def _dns_proposal_receipt_records(action: dict[str, Any]) -> set[tuple[str, str, str]]:
+    details = action.get("details", {})
+    raw_changes = details.get("changes", []) if isinstance(details, dict) else []
+    records: set[tuple[str, str, str]] = set()
+    for change in raw_changes:
+        if not isinstance(change, dict):
+            continue
+        record = change.get("record", {})
+        if not isinstance(record, dict):
+            continue
+        key = _receipt_dns_record_key(record)
+        if key[0]:
+            records.add(key)
+    return records
+
+
+def _receipt_dns_record_key(record: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        str(record.get("type", "")).strip().upper(),
+        str(record.get("name", "")).strip().lower(),
+        str(record.get("value", "")).strip(),
+    )
 
 
 def _check_audit_log(

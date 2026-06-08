@@ -49,9 +49,11 @@ flags, reason, and considered candidates, so the control room can explain whethe
 FuseKit used API automation, secure vault capture, or VM follow-me. When both
 Resend and DNS are present, the provider strategy artifact must prove Resend ran
 before Cloudflare/DNS so Resend-generated domain records are included in the
-approved DNS changes. Any durable human gate recorded during the run must include
-follow-me steps, a plain next action, and a resume hint, plus matching redacted
-control-room audit proof, even if the gate later passed.
+approved DNS changes. The setup receipt must independently prove the same flow:
+`resend.domain` succeeds first, returns DNS records, and a later `dns.propose`
+action contains those exact Resend records. Any durable human gate recorded during
+the run must include follow-me steps, a plain next action, and a resume hint, plus
+matching redacted control-room audit proof, even if the gate later passed.
 
 ## Acceptance Path
 
