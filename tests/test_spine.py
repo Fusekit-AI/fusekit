@@ -451,6 +451,8 @@ def test_inferred_navigation_captures_recovery_event_on_action_failure() -> None
     takeover = [event for event in events if event.action == "human.takeover"]
     assert takeover
     assert takeover[0].status == "waiting"
+    assert "Guided provider takeover" in takeover[0].note
+    assert "Manual provider takeover" not in takeover[0].note
     assert "redaction-sentinel" not in takeover[0].note
     assert any(event.action == "stump.classify" for event in events)
 
@@ -495,7 +497,13 @@ def test_stump_follow_me_steps_do_not_delegate_interpretation() -> None:
         )
         text = " ".join(result.follow_steps).lower()
         assert all(phrase not in text for phrase in forbidden)
+        assert "resume button" not in text
+        assert "hidden capture prompt" not in text
         assert any(anchor in text for anchor in ("highlighted", "fusekit", "provider"))
+        if kind == "api_error":
+            assert "verify again" in text
+        else:
+            assert any(anchor in text for anchor in ("i finished this step", "capture button"))
 
 
 def test_inferred_navigation_records_follow_me_gate_details(tmp_path) -> None:

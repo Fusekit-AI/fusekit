@@ -701,32 +701,35 @@ def _follow_me_steps(provider: str, kind: str, target: str) -> tuple[str, ...]:
         "login": (
             f"FuseKit opened the {provider} sign-in screen for you.",
             "Enter account credentials only on the provider page FuseKit opened.",
-            "Click the resume button here after the provider accepts the sign-in.",
+            "Click I finished this step after the provider accepts the sign-in.",
         ),
         "mfa": (
             "Complete the highlighted MFA, passkey, email, or SMS-code prompt.",
             "Do not paste MFA codes into FuseKit; enter them only on the provider page.",
-            "Click the resume button here after the provider accepts the challenge.",
+            "Click I finished this step after the provider accepts the challenge.",
         ),
         "captcha": (
             "Solve the provider's human check in the browser.",
             "Leave the browser tab open after the challenge clears.",
-            "Click the resume button here when the page continues.",
+            "Click I finished this step when the page continues.",
         ),
         "consent": (
             "Review the highlighted provider permission screen.",
             "Approve only the account, repo, domain, or project access named by FuseKit.",
-            "Click the resume button here after the provider confirms approval.",
+            "Click I finished this step after the provider confirms approval.",
         ),
         "billing": (
             "Complete the highlighted billing or account-verification prompt on the provider page.",
             "Do not put card details into FuseKit; use only the provider page.",
-            "Click the resume button here after the provider unlocks the next screen.",
+            "Click I finished this step after the provider unlocks the next screen.",
         ),
         "missing_token": (
             "Open the provider's API key or token page.",
             "Create a scoped token/key for this app when the provider asks.",
-            "Paste the approved token only into FuseKit's hidden capture prompt.",
+            (
+                "Copy the approved token inside the VM browser, then click the matching "
+                "Capture button."
+            ),
         ),
         "api_error": (
             "Keep the provider page open while FuseKit checks for an API fallback.",
@@ -736,18 +739,18 @@ def _follow_me_steps(provider: str, kind: str, target: str) -> tuple[str, ...]:
         "page_loading": (
             "Keep the provider tab open while FuseKit waits for the page to finish loading.",
             "FuseKit will reopen and resnapshot this page automatically.",
-            "Use the resume button only after FuseKit shows a highlighted provider prompt.",
+            "Use I finished this step only after FuseKit shows a highlighted provider prompt.",
         ),
         "changed_navigation": (
             "FuseKit detected that this provider screen changed from the expected path.",
             "Complete only the highlighted provider control or prompt FuseKit points at.",
-            "Click the resume button here; FuseKit will verify rather than trusting the UI.",
+            "Click I finished this step; FuseKit will verify rather than trusting the UI.",
         ),
         "unknown_ui_drift": (
             "FuseKit is in guided takeover because this provider screen is new.",
             "Complete only highlighted provider prompts or provider-owned account checks.",
-            "Do not enter secrets anywhere except provider pages or FuseKit hidden prompts.",
-            "Click the resume button here so FuseKit can re-verify the setup.",
+            "Do not enter secrets anywhere except provider pages or FuseKit Capture buttons.",
+            "Click I finished this step so FuseKit can re-verify the setup.",
         ),
     }
     steps = templates.get(kind, templates["unknown_ui_drift"])
@@ -831,7 +834,7 @@ def _record_stump_gate(
             action="human.takeover",
             status="waiting",
             url=url,
-            note="Manual provider takeover is available; FuseKit will resume from verification.",
+            note="Guided provider takeover is available; FuseKit will resume from verification.",
         )
     )
     return gate_id
