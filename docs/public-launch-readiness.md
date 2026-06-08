@@ -41,8 +41,11 @@ The run is launch-ready only when `.fusekit/acceptance/report.json` contains:
 
 Live mode does not claim provider success without proof. It requires the real encrypted vault,
 passphrase unlock proof, redacted setup receipt, redacted audit log, live URL in
-the receipt, validated provider packs, recorded provider route decisions, clean
-leak scan, resolved durable gate state, and detonated worker state. When both
+the receipt, validated provider packs, complete provider route decisions, clean
+leak scan, resolved durable gate state, and detonated worker state. Complete
+route decisions include the selected route kind, status, deterministic/implemented
+flags, reason, and considered candidates, so the control room can explain whether
+FuseKit used API automation, secure vault capture, or VM follow-me. When both
 Resend and DNS are present, the provider strategy artifact must prove Resend ran
 before Cloudflare/DNS so Resend-generated domain records are included in the
 approved DNS changes.
@@ -69,6 +72,7 @@ FuseKit has a native proof layer:
 - acceptance report with rehearsal/live modes
 - provider-pack validation snapshots
 - vault public-index proof without raw secrets
+- complete provider-route proof for the chosen automation or follow-me path
 - redacted durable gate-state proof that no control-room gates remain unresolved
 - receipt/audit/detonation/leak-scan gates
 

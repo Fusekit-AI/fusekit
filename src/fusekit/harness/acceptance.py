@@ -585,6 +585,7 @@ def _check_provider_strategies(
             str(snapshot),
         )
     )
+    _check_provider_strategy_decision_shape(providers, mode, checks, missing, str(snapshot))
     _check_provider_strategy_order(providers, mode, checks, missing, str(snapshot))
 
 
@@ -600,6 +601,95 @@ def _has_strategy_decisions(providers: Any) -> bool:
         if any(isinstance(strategy, dict) and strategy.get("decision") for strategy in strategies):
             return True
     return False
+
+
+def _check_provider_strategy_decision_shape(
+    providers: Any,
+    mode: str,
+    checks: list[AcceptanceCheck],
+    missing: list[str],
+    artifact: str,
+) -> None:
+    """Require route decisions to include the fields needed for proof and UX."""
+
+    failures = _provider_strategy_shape_failures(providers)
+    if failures:
+        checks.append(
+            AcceptanceCheck(
+                "provider_strategies.complete",
+                "failed" if mode == "live" else "skipped",
+                "Provider strategy decisions are incomplete: " + "; ".join(failures),
+                artifact,
+            )
+        )
+        if mode == "live":
+            missing.append("complete provider strategy evidence")
+        return
+    checks.append(
+        AcceptanceCheck(
+            "provider_strategies.complete",
+            "ok",
+            "Provider strategy decisions include selected route evidence.",
+            artifact,
+        )
+    )
+
+
+def _provider_strategy_shape_failures(providers: Any) -> list[str]:
+    if not isinstance(providers, list):
+        return ["providers is not a list"]
+    failures: list[str] = []
+    for provider_index, provider in enumerate(providers):
+        if not isinstance(provider, dict):
+            failures.append(f"provider[{provider_index}] is not an object")
+            continue
+        provider_name = str(provider.get("provider", "")).strip() or f"provider[{provider_index}]"
+        strategies = provider.get("strategies", [])
+        if not isinstance(strategies, list) or not strategies:
+            failures.append(f"{provider_name} has no strategies")
+            continue
+        for strategy_index, strategy in enumerate(strategies):
+            label = f"{provider_name}.strategies[{strategy_index}]"
+            if not isinstance(strategy, dict):
+                failures.append(f"{label} is not an object")
+                continue
+            decision = strategy.get("decision")
+            if not isinstance(decision, dict):
+                failures.append(f"{label} is missing decision")
+                continue
+            selected = decision.get("selected")
+            if not isinstance(selected, dict):
+                failures.append(f"{label} is missing selected route")
+                continue
+            _require_strategy_string(selected, "kind", label, failures)
+            _require_strategy_string(selected, "status", label, failures)
+            _require_strategy_bool(selected, "deterministic", label, failures)
+            _require_strategy_bool(selected, "implemented", label, failures)
+            _require_strategy_string(selected, "reason", label, failures)
+            candidates = decision.get("candidates", [])
+            if not isinstance(candidates, list) or not candidates:
+                failures.append(f"{label} is missing considered candidates")
+    return failures
+
+
+def _require_strategy_string(
+    selected: dict[str, Any],
+    key: str,
+    label: str,
+    failures: list[str],
+) -> None:
+    if not str(selected.get(key, "")).strip():
+        failures.append(f"{label}.selected.{key} is missing")
+
+
+def _require_strategy_bool(
+    selected: dict[str, Any],
+    key: str,
+    label: str,
+    failures: list[str],
+) -> None:
+    if not isinstance(selected.get(key), bool):
+        failures.append(f"{label}.selected.{key} is missing")
 
 
 def _check_provider_strategy_order(

@@ -8,6 +8,27 @@ from fusekit.harness import run_acceptance
 from fusekit.vault import Vault
 
 
+def _strategy_decision(kind: str = "api", status: str = "available") -> dict[str, object]:
+    return {
+        "selected": {
+            "kind": kind,
+            "status": status,
+            "deterministic": True,
+            "implemented": True,
+            "reason": "deterministic provider API is available",
+        },
+        "candidates": [
+            {
+                "kind": kind,
+                "status": status,
+                "deterministic": True,
+                "implemented": True,
+                "reason": "deterministic provider API is available",
+            }
+        ],
+    }
+
+
 def test_acceptance_rehearsal_writes_ledger_and_report(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()
@@ -120,7 +141,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                                 "decision": {
                                     "provider": "github",
                                     "recipe_kind": "github-repo-secrets",
-                                    "selected": {"kind": "api", "status": "available"},
+                                    **_strategy_decision(),
                                 },
                             }
                         ],
@@ -277,7 +298,7 @@ domains:
                                 "recipe": "cloudflare-dns",
                                 "strategy": "api",
                                 "status": "ok",
-                                "decision": {"selected": {"kind": "api"}},
+                                "decision": _strategy_decision(),
                             }
                         ],
                     },
@@ -288,7 +309,7 @@ domains:
                                 "recipe": "resend-domain",
                                 "strategy": "api",
                                 "status": "ok",
-                                "decision": {"selected": {"kind": "api"}},
+                                "decision": _strategy_decision(),
                             }
                         ],
                     },
@@ -310,6 +331,76 @@ domains:
     assert report.launch_ready is False
     assert order_check.status == "failed"
     assert "Resend-before-DNS provider setup order" in report.missing
+
+
+def test_live_acceptance_requires_complete_provider_strategy_evidence(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "package.json").write_text(
+        json.dumps({"name": "moonlite-rsvp", "dependencies": {"next": "latest"}}),
+        encoding="utf-8",
+    )
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    (remote_fusekit / "audit.jsonl").write_text('{"event":"provider.verify"}\n', "utf-8")
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "live_url": "https://moonlite.example",
+                "raw_secrets_exposed": 0,
+                "actions": [],
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "verification_report.json").write_text(
+        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        "utf-8",
+    )
+    (remote_fusekit / "rollback_plan.json").write_text(
+        json.dumps({"rollback": [{"action": "rollback.github.secret", "status": "planned"}]}),
+        "utf-8",
+    )
+    (remote_fusekit / "provider_strategies.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.provider-strategies.v1",
+                "providers": [
+                    {
+                        "provider": "github",
+                        "strategies": [
+                            {
+                                "recipe": "github-repo-secrets",
+                                "strategy": "api",
+                                "status": "ok",
+                                "decision": {"selected": {"kind": "api"}},
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "gates.json").write_text(json.dumps({"gates": []}), "utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    strategy_check = next(
+        check for check in report.checks if check.id == "provider_strategies.complete"
+    )
+    assert report.launch_ready is False
+    assert strategy_check.status == "failed"
+    assert "selected.status is missing" in strategy_check.detail
+    assert "complete provider strategy evidence" in report.missing
 
 
 def test_live_acceptance_requires_resolved_control_room_gates(tmp_path) -> None:
@@ -355,7 +446,7 @@ def test_live_acceptance_requires_resolved_control_room_gates(tmp_path) -> None:
                                 "recipe": "github-repo-secrets",
                                 "strategy": "api",
                                 "status": "ok",
-                                "decision": {"selected": {"kind": "api"}},
+                                "decision": _strategy_decision(),
                             }
                         ],
                     }
