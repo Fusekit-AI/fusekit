@@ -40,6 +40,7 @@ guided, or explicitly verified.
 | Generic gate ids could make the control room show generic provider guidance even when the gate record knew the provider. | Static and live control-room rendering now use the gate's `provider` field as the source of truth for guidance, with text inference only as a fallback. |
 | The useful "verifying now" message could be replaced immediately by a generic live-refresh message. | Gate-pass refresh now preserves the explicit "Snowman is rechecking the provider now" status until the next real state appears. |
 | Pending-safe DNS verification could look like vague waiting even when the remaining action was DNS approval/apply. | Verification cards now translate pending-safe DNS approval states into plain-language instructions to approve/apply the exact setup-plan records while FuseKit keeps verifying propagation. |
+| Static control-room guidance and live-refresh guidance could drift because provider instructions were duplicated in Python and JavaScript. | Live control-room JavaScript now consumes the serialized Python guidance payload, so provider instructions have one source of truth across static and refreshed views. |
 
 ## Open Acceptance Items
 

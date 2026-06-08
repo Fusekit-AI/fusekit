@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import re
 
-from fusekit.runner.gate_guidance import infer_gate_provider, provider_gate_guidance
+from fusekit.runner.control_room.events import SCRIPT
+from fusekit.runner.gate_guidance import (
+    gate_guidance_payload,
+    infer_gate_provider,
+    provider_gate_guidance,
+)
 
 
 def test_provider_gate_guidance_is_plain_language_and_non_secret() -> None:
@@ -14,6 +19,18 @@ def test_provider_gate_guidance_is_plain_language_and_non_secret() -> None:
     assert "Capture in FuseKit" in " ".join(guidance.actions)
     assert "token" not in guidance.reassurance.lower()
     assert "secret" not in guidance.reassurance.lower()
+
+
+def test_live_control_room_guidance_uses_python_payload() -> None:
+    payload = gate_guidance_payload()
+    providers = payload["providers"]
+
+    assert "__GATE_GUIDANCE_JSON__" not in SCRIPT
+    assert "gateGuidanceData" in SCRIPT
+    assert "Object.keys(gateGuidanceData.providers || {})" in SCRIPT
+    assert providers["resend"]["title"] in SCRIPT
+    assert providers["cloudflare"]["body"] in SCRIPT
+    assert payload["generic"]["title"] in SCRIPT
 
 
 def test_provider_gate_guidance_leads_instead_of_delegating_interpretation() -> None:

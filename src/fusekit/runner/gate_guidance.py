@@ -14,6 +14,16 @@ class GateGuidance:
     actions: tuple[str, ...]
     reassurance: str
 
+    def to_dict(self) -> dict[str, object]:
+        """Serialize guidance for the live control-room browser script."""
+
+        return {
+            "title": self.title,
+            "body": self.body,
+            "actions": list(self.actions),
+            "reassurance": self.reassurance,
+        }
+
 
 _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
     "github": GateGuidance(
@@ -185,6 +195,18 @@ def provider_gate_guidance(provider: str) -> GateGuidance:
 
     key = provider.strip().lower()
     return _PROVIDER_GUIDANCE.get(key, _GENERIC)
+
+
+def gate_guidance_payload() -> dict[str, object]:
+    """Return provider guidance with one Python source of truth for all renderers."""
+
+    return {
+        "providers": {
+            provider: guidance.to_dict()
+            for provider, guidance in _PROVIDER_GUIDANCE.items()
+        },
+        "generic": _GENERIC.to_dict(),
+    }
 
 
 def infer_gate_provider(text: str) -> str:

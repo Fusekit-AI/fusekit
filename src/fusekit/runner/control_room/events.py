@@ -2,8 +2,24 @@
 
 from __future__ import annotations
 
+import json
+
+from fusekit.runner.gate_guidance import gate_guidance_payload
+
+_GATE_GUIDANCE_JSON = (
+    json.dumps(
+        gate_guidance_payload(),
+        ensure_ascii=True,
+        separators=(",", ":"),
+    )
+    .replace("<", "\\u003c")
+    .replace(">", "\\u003e")
+    .replace("&", "\\u0026")
+)
+
 SCRIPT = r"""
 const initialJob = JSON.parse(document.getElementById("job-data").textContent);
+const gateGuidanceData = __GATE_GUIDANCE_JSON__;
 
 const labels = {
   created: "Created",
@@ -159,7 +175,7 @@ function isPrivacyStep(step) {
 
 function inferGateProvider(text) {
   const lower = String(text || "").toLowerCase();
-  for (const provider of ["github", "vercel", "cloudflare", "resend", "oci", "openai"]) {
+  for (const provider of Object.keys(gateGuidanceData.providers || {})) {
     if (lower.includes(provider)) return provider;
   }
   if (lower.includes("oracle") || lower.includes("cloud shell")) return "oci";
@@ -167,125 +183,7 @@ function inferGateProvider(text) {
 }
 
 function gateGuidance(provider) {
-  return {
-    github: {
-      title: "GitHub needs a repo-scoped setup token",
-      body:
-        "FuseKit needs GitHub permission for the target repo so it can create deploy " +
-        "keys and encrypted Actions secrets without broad account access. You only approve " +
-        "login, MFA, CAPTCHA, consent, or token reveal gates; FuseKit does the wiring " +
-        "after capture.",
-      actions: [
-        "Use the Open provider gate button so GitHub opens in the VM browser, then sign " +
-          "in or create the account when GitHub asks.",
-        "Open Settings > Developer settings > Personal access tokens > Fine-grained " +
-          "tokens and create a fine-grained personal access token named FuseKit setup.",
-        "Set Repository access to Only select repositories and choose the exact target " +
-          "repo named by FuseKit.",
-        "Grant repository permissions Secrets read/write and Administration read/write; " +
-          "leave Metadata read-only, which GitHub includes automatically.",
-        "When GitHub reveals the token once, copy it inside the VM browser and click " +
-          "Capture in FuseKit; FuseKit stores it only in the encrypted vault.",
-      ],
-      reassurance: "FuseKit will use GitHub's API and continue once the scoped token is captured.",
-    },
-    vercel: {
-      title: "Vercel needs a deployment token",
-      body:
-        "FuseKit needs a Vercel token scoped to the personal account or team that " +
-        "will own the project, environment variables, and deployment. You only approve " +
-        "login, billing, MFA, CAPTCHA, consent, GitHub connection, or token reveal gates.",
-      actions: [
-        "Use the Open provider gate button so Vercel opens in the VM browser, then sign " +
-          "in or create the account when prompted.",
-        "Open Account Settings > Tokens and create a token named FuseKit deployment " +
-          "for the personal account or team FuseKit named.",
-        "Use a short expiration. FuseKit will create or connect the project, push " +
-          "environment variables, and deploy after capture.",
-        "If Vercel asks for GitHub Login Connections, connect only the GitHub account " +
-          "and repo FuseKit named, then return to the token page.",
-        "When Vercel reveals the token once, copy it inside the VM browser and click " +
-          "Capture in FuseKit; FuseKit stores it only in the encrypted vault.",
-      ],
-      reassurance: "FuseKit will continue through Vercel's API after capture succeeds.",
-    },
-    cloudflare: {
-      title: "Cloudflare needs a scoped DNS token",
-      body:
-        "FuseKit needs one Cloudflare token scoped to this domain so it can create " +
-        "and verify only the DNS records named in the setup plan. You approve account, " +
-        "domain, MFA, CAPTCHA, consent, nameserver, billing, or token reveal gates; " +
-        "FuseKit applies DNS.",
-      actions: [
-        "Use the Open provider gate button so Cloudflare opens in the VM browser, then " +
-          "sign in or create the account when prompted.",
-        "Open My Profile > API Tokens, choose Create Token, choose Custom token, and " +
-          "name it FuseKit DNS for this domain.",
-        "Add permissions Zone / Zone / Read and Zone / DNS / Edit.",
-        "Set Zone Resources to Include / Specific zone and choose the exact zone " +
-          "FuseKit named.",
-        "When Cloudflare reveals the token once, copy it inside the VM browser and click " +
-          "Capture in FuseKit; FuseKit stores it only in the encrypted vault.",
-      ],
-      reassurance:
-        "FuseKit will use the token through Cloudflare's API and keep retrying " +
-        "DNS verification.",
-    },
-    resend: {
-      title: "Resend needs an email API key",
-      body:
-        "FuseKit needs the first Resend setup key before any Resend domain exists. " +
-        "That is why this gate comes before Cloudflare DNS: FuseKit creates or reuses " +
-        "the Resend domain, reads the DNS records Resend returns, then asks Cloudflare " +
-        "to apply them.",
-      actions: [
-        "Use the Open provider gate button so Resend opens in the VM browser, then sign " +
-          "in or create the account when prompted.",
-        "Open API Keys, create a key named FuseKit email setup, and choose Full access " +
-          "for this first setup key.",
-        "Do not create Resend domains or audiences by hand unless FuseKit asks. After " +
-          "capture, FuseKit uses Resend's API to create or reuse the sending domain and " +
-          "audience required by the app.",
-        "When Resend reveals the API key once, copy it inside the VM browser and click " +
-          "Capture in FuseKit; FuseKit stores it only in the encrypted vault.",
-        "After the demo or setup, rotate or revoke the setup key from Resend if you want " +
-          "a narrower long-term key.",
-      ],
-      reassurance: "FuseKit will use Resend's API and continue once the email key is captured.",
-    },
-    oci: {
-      title: "Oracle Cloud is opening the clean room",
-      body:
-        "FuseKit is starting the disposable OCI workspace that runs setup away from your computer.",
-      actions: [
-        "Sign in or create the OCI account when Oracle asks.",
-        "Complete the highlighted MFA, CAPTCHA, payment, tenancy, or Cloud Shell prompt.",
-        "Leave the Cloud Shell tab open; FuseKit will continue from there.",
-      ],
-      reassurance: "FuseKit treats this as a waiting state, not a failure.",
-    },
-    openai: {
-      title: "OpenAI is authorizing the brain lane",
-      body:
-        "FuseKit needs an LLM route when no API key is already available.",
-      actions: [
-        "Sign in to OpenAI when prompted.",
-        "Complete the highlighted MFA, CAPTCHA, consent, or organization prompt.",
-        "Click the resume button after the provider says authorization is complete.",
-      ],
-      reassurance: "FuseKit encrypts auth state and detonates plaintext worker state later.",
-    },
-  }[provider] || {
-    title: "A provider needs a human check",
-    body:
-      "FuseKit has done what it can safely automate. The provider needs account approval.",
-    actions: [
-      "Use the Open provider gate button to bring the exact provider page forward.",
-      "Complete only highlighted login, MFA, CAPTCHA, consent, payment, or ownership prompts.",
-      "Click the resume button here; FuseKit will verify the provider state before continuing.",
-    ],
-    reassurance: "The worker remains alive and will retry this gate until it passes.",
-  };
+  return (gateGuidanceData.providers || {})[provider] || gateGuidanceData.generic;
 }
 
 function renderGateHelp(step) {
@@ -1035,4 +933,4 @@ render(initialJob);
 if (location.protocol.startsWith("http")) {
   setInterval(refreshJob, 2000);
 }
-"""
+""".replace("__GATE_GUIDANCE_JSON__", _GATE_GUIDANCE_JSON)
