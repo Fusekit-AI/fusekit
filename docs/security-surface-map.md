@@ -20,6 +20,12 @@ Python package is the live control room in `fusekit.runner.control_room.server`.
 
 | Any route | `OPTIONS` | None. | Returns `405` with security headers and no CORS allow headers, so browser preflights for custom-header POSTs fail closed. |
 
+The live VM browser iframe is not a general-purpose embed surface. Visual session
+state is sanitized before the browser payload sees it: the noVNC URL must be
+HTTP(S), credential-free, and end in `/vnc.html`; only expected noVNC query keys
+are preserved; the live control-room link is kept only when it is HTTP(S),
+credential-free, and on the same host as noVNC; unsafe visual passwords are dropped.
+
 The control-room gate POST routes append redacted audit events for provider-gate
 open, resume, and clipboard-capture actions. Audit payloads record gate/provider
 metadata and counts, not provider URLs or clipboard values. The `/pass` route never
@@ -70,6 +76,8 @@ SSH session provisioned by FuseKit, or an encrypted vault/passphrase boundary.
 - Live control-room refresh avoids duplicating the noVNC password into extra frontend
   dataset state; the visual credential is used only for the iframe autoconnect URL and
   explicit copy affordance.
+- Visual-session state is normalized before rendering so a corrupted `visual.json`
+  cannot turn the control room into a clipboard-enabled arbitrary iframe.
 - Source archive extraction validates paths and single-root layout before replacing the
   destination; remote artifact extraction validates target paths and does not use
   `tar.extractall`.

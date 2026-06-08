@@ -1548,6 +1548,8 @@ def test_security_surface_map_documents_control_room_state_routes() -> None:
     assert "require_safe_url" in text
     assert "target must match the gate's env-style allowlist" in text
     assert "never raw secret text" in text
+    assert "state is sanitized before the browser payload sees it" in text
+    assert "clipboard-enabled arbitrary iframe" in text
     assert "Public guided runs use VM clipboard Capture buttons" in text
     assert "CLI-only fallback can use hidden prompts/env handoff" in text
 
@@ -1730,6 +1732,68 @@ def test_control_room_payload_and_html_include_visual_session(tmp_path) -> None:
     assert "sameVisualSession" in html
     assert "root.dataset.novncUrl" in html
     assert "novncPassword" not in html
+
+
+def test_control_room_rejects_unsafe_visual_session_iframe_url(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    (tmp_path / "visual.json").write_text(
+        json.dumps(
+            {
+                "runner": "novnc",
+                "status": "ready",
+                "novnc_url": "https://attacker.example/phish.html?autoconnect=1",
+                "control_room_url": "https://attacker.example/?token=stolen",
+                "novnc_password": "viewer-password",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = control_room_payload(job_path)
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+
+    assert payload["visual"] == {
+        "status": "unavailable",
+        "error": "Visual session noVNC URL was not safe to embed.",
+    }
+    assert "attacker.example" not in html
+    assert "viewer-password" not in html
+    assert "Visual session noVNC URL was not safe to embed." in html
+
+
+def test_control_room_sanitizes_visual_session_urls_and_password(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    (tmp_path / "visual.json").write_text(
+        json.dumps(
+            {
+                "runner": "novnc",
+                "status": "ready",
+                "novnc_url": (
+                    "http://203.0.113.10:6080/vnc.html?autoconnect=1"
+                    "&resize=scale&password=leaked#frag"
+                ),
+                "control_room_url": "http://evil.example:8765/?token=test",
+                "novnc_password": "bad\npassword",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = control_room_payload(job_path)
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+
+    assert payload["visual"]["novnc_url"] == (
+        "http://203.0.113.10:6080/vnc.html?autoconnect=1&resize=scale"
+    )
+    assert "control_room_url" not in payload["visual"]
+    assert "novnc_password" not in payload["visual"]
+    assert "password=leaked" not in html
+    assert "bad\npassword" not in html
+    assert "evil.example" not in html
 
 
 def test_control_room_payload_and_html_include_provider_strategy_routes(tmp_path) -> None:

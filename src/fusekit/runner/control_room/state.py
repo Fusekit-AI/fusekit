@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from fusekit.runner.control_room.redaction import redact_gate_target
 from fusekit.runner.gates import GateRecord
@@ -126,7 +127,80 @@ def _read_visual_state(path: Path | None) -> dict[str, Any]:
         return {"status": "unavailable", "error": "Visual session state could not be read."}
     if not isinstance(raw, dict):
         return {"status": "unavailable", "error": "Visual session state was not a JSON object."}
-    return raw
+    return _sanitized_visual_state(raw)
+
+
+def _sanitized_visual_state(raw: dict[str, Any]) -> dict[str, Any]:
+    """Return a visual-session payload safe to embed with clipboard permissions."""
+
+    visual = dict(raw)
+    novnc_url = str(visual.get("novnc_url", "") or "").strip()
+    if not novnc_url:
+        return visual
+    safe_novnc_url, novnc_host = _safe_visual_url(
+        novnc_url,
+        require_vnc_path=True,
+        allowed_query_keys={"autoconnect", "resize"},
+    )
+    if not safe_novnc_url:
+        return _unavailable_visual("Visual session noVNC URL was not safe to embed.")
+    visual["novnc_url"] = safe_novnc_url
+    control_room_url = str(visual.get("control_room_url", "") or "").strip()
+    if control_room_url:
+        safe_control_url, control_host = _safe_visual_url(
+            control_room_url,
+            require_vnc_path=False,
+            allowed_query_keys={"token"},
+        )
+        if not safe_control_url or control_host != novnc_host:
+            visual.pop("control_room_url", None)
+        else:
+            visual["control_room_url"] = safe_control_url
+    password = str(visual.get("novnc_password", "") or "")
+    if not _safe_visual_password(password):
+        visual.pop("novnc_password", None)
+    return visual
+
+
+def _safe_visual_url(
+    value: str,
+    *,
+    require_vnc_path: bool,
+    allowed_query_keys: set[str],
+) -> tuple[str, str]:
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"}:
+        return "", ""
+    if parsed.username or parsed.password or not parsed.hostname:
+        return "", ""
+    if require_vnc_path and not parsed.path.endswith("/vnc.html"):
+        return "", ""
+    query = urlencode(
+        [
+            (key, item)
+            for key, item in parse_qsl(parsed.query, keep_blank_values=False)
+            if key in allowed_query_keys
+        ]
+    )
+    safe_url = urlunparse(
+        (parsed.scheme, parsed.netloc, parsed.path or "/", "", query, "")
+    )
+    return safe_url, parsed.hostname.lower().strip("[]")
+
+
+def _safe_visual_password(value: str) -> bool:
+    if not value:
+        return True
+    if len(value) > 256:
+        return False
+    return not any(ord(char) < 32 or ord(char) == 127 for char in value)
+
+
+def _unavailable_visual(error: str) -> dict[str, Any]:
+    return {
+        "status": "unavailable",
+        "error": error,
+    }
 
 
 def _provider_strategies_path(job: JobState, gate_path: Path | None) -> Path | None:
