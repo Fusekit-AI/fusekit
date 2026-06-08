@@ -253,6 +253,19 @@ def test_cloudflare_pack_handoff_names_exact_token_wizard_choices(tmp_path) -> N
     assert "Copy the token once inside the VM browser" in text
 
 
+def test_vercel_pack_handoff_names_account_scope_choices(tmp_path) -> None:
+    pack = synthesize_provider_pack("vercel", tmp_path)
+
+    text = " ".join((*pack.handoff.account_steps, *pack.handoff.secret_steps))
+
+    assert "Account Settings > Tokens" in text
+    assert "top-left account/team switcher" in text
+    assert "Personal Account unless FuseKit named a team" in text
+    assert "set its scope to Personal Account or the exact team" in text
+    assert "Use a short expiration" in text
+    assert "Copy the token once inside the VM browser" in text
+
+
 def test_resend_pack_handoff_explains_existing_key_secret_value(tmp_path) -> None:
     pack = synthesize_provider_pack("resend", tmp_path)
 

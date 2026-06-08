@@ -67,8 +67,12 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
             "Click Open provider gate in VM so Vercel opens in the VM browser, then sign in "
             "or create the account when prompted.",
             (
-                "Open Account Settings > Tokens and create a token named FuseKit deployment "
-                "for the personal account or team FuseKit named."
+                "Use the top-left account/team switcher to choose Personal Account unless "
+                "FuseKit named a team, then open Account Settings > Tokens."
+            ),
+            (
+                "Create a token named FuseKit deployment and set its scope to Personal "
+                "Account or the exact team FuseKit named."
             ),
             (
                 "Use a short expiration. FuseKit will create or connect the project, push "

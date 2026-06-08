@@ -1060,8 +1060,15 @@ def _vercel_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                 ),
             ),
             secret_steps=(
-                "Create an Account Settings > Tokens token named FuseKit deployment.",
-                "Use a short expiration and choose the personal account or team FuseKit named.",
+                (
+                    "Use the top-left account/team switcher to choose Personal Account unless "
+                    "FuseKit named a team, then open Account Settings > Tokens."
+                ),
+                (
+                    "Create a token named FuseKit deployment and set its scope to Personal "
+                    "Account or the exact team FuseKit named."
+                ),
+                "Use a short expiration.",
                 (
                     "Copy the token once inside the VM browser; FuseKit captures it into the "
                     "encrypted vault."

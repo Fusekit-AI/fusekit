@@ -98,6 +98,9 @@ def test_vercel_guidance_names_token_path() -> None:
     text = " ".join((guidance.title, guidance.body, *guidance.actions, guidance.reassurance))
 
     assert "Account Settings > Tokens" in text
+    assert "top-left account/team switcher" in text
+    assert "Personal Account unless FuseKit named a team" in text
+    assert "set its scope to Personal Account or the exact team" in text
     assert "Login Connections" in text
     assert "GitHub" in text
     assert "short expiration" in text
