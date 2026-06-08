@@ -56,7 +56,11 @@ and declares `RESEND_*` runtime variables, the receipt must also prove that
 `vercel.env` configured each required Resend runtime key. Any durable human gate
 recorded during the run must include follow-me steps, a plain next action, and a
 resume hint, plus matching redacted control-room audit proof, even if the gate
-later passed. Detonation proof must cover worker/temp state plus browser profile,
+later passed. Human-gate guidance must be launcher-actionable: provider gates
+with URLs must send the user through the VM browser path, copy-once env/token
+targets must name `Capture from VM clipboard`, and public proof must reject
+hidden-prompt, side-channel, manual, or figure-it-out wording. Detonation proof
+must cover worker/temp state plus browser profile,
 visual-session scratch, OpenClaw/auth state, passphrase files, uploaded app archives,
 and FuseKit-controlled control-room/gateway logs; only encrypted or redacted proof
 artifacts may survive.

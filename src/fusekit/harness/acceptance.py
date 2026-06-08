@@ -1229,6 +1229,16 @@ def _provider_strategy_shape_failures(providers: Any) -> list[str]:
                     failures.append(f"{label}.next_action is missing")
                 if not str(strategy.get("resume_hint", "")).strip():
                     failures.append(f"{label}.resume_hint is missing")
+                failures.extend(
+                    _guidance_quality_failures(
+                        label,
+                        follow_steps=follow_steps,
+                        next_action=str(strategy.get("next_action", "")),
+                        resume_hint=str(strategy.get("resume_hint", "")),
+                        target=str(strategy.get("target", "")),
+                        requires_vm=True,
+                    )
+                )
     return failures
 
 
@@ -1425,7 +1435,80 @@ def _unguided_gates(gates: Any) -> list[str]:
             missing_fields.append("follow_steps")
         if missing_fields:
             missing.append(f"{gate_id} missing {', '.join(missing_fields)}")
+            continue
+        quality_failures = _guidance_quality_failures(
+            gate_id,
+            follow_steps=follow_steps,
+            next_action=str(gate.get("next_action", "")),
+            resume_hint=str(gate.get("resume_hint", "")),
+            target=str(gate.get("target", "")),
+            requires_vm=bool(str(gate.get("resume_url", "")).strip()),
+        )
+        missing.extend(quality_failures)
     return missing
+
+
+_FORBIDDEN_GUIDANCE_PHRASES = (
+    "figure",
+    "yourself",
+    "hidden prompt",
+    "hidden prompts",
+    "paste into fusekit",
+    "terminal prompt",
+    "terminal prompts",
+    "side-channel",
+    "side channel",
+    "manually",
+)
+
+
+def _guidance_quality_failures(
+    label: str,
+    *,
+    follow_steps: Any,
+    next_action: str,
+    resume_hint: str,
+    target: str,
+    requires_vm: bool,
+) -> list[str]:
+    """Return launch-readiness failures for non-actionable human-gate guidance."""
+
+    steps = follow_steps if isinstance(follow_steps, list) else []
+    text = " ".join(str(item) for item in (*steps, next_action, resume_hint)).strip()
+    lowered = text.lower()
+    failures: list[str] = []
+    for phrase in _FORBIDDEN_GUIDANCE_PHRASES:
+        if phrase in lowered:
+            failures.append(f"{label}.guidance contains non-launcher wording: {phrase}")
+            break
+    if requires_vm and not any(
+        phrase in lowered
+        for phrase in ("open provider gate in vm", "vm browser", "highlighted")
+    ):
+        failures.append(f"{label}.guidance does not mention the VM browser path")
+    secret_targets = _env_targets_from_text(target)
+    if secret_targets:
+        if "capture from vm clipboard" not in lowered:
+            failures.append(
+                f"{label}.guidance does not name Capture from VM clipboard for "
+                + ", ".join(secret_targets)
+            )
+        next_lower = next_action.lower()
+        if "i finished this step" in next_lower and "capture" not in next_lower:
+            failures.append(
+                f"{label}.next_action points secret targets at I finished this step"
+            )
+    return failures
+
+
+def _env_targets_from_text(value: str) -> list[str]:
+    return list(
+        dict.fromkeys(
+            part.strip().upper()
+            for part in str(value or "").split(",")
+            if _ENV_TARGET_RE.match(part.strip().upper())
+        )
+    )
 
 
 def _redacted_gate_state(raw: Any) -> dict[str, Any]:

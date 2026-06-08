@@ -10,7 +10,9 @@ from fusekit.harness.acceptance import (
     AcceptanceReport,
     _acceptance_blockers,
     _check_detonation,
+    _provider_strategy_shape_failures,
     _rollback_provider_names,
+    _unguided_gates,
 )
 from fusekit.harness.ledger import HarnessLedger
 from fusekit.vault import Vault
@@ -330,6 +332,62 @@ def test_acceptance_detonation_allows_redacted_survivor_artifacts(tmp_path) -> N
     assert missing == []
 
 
+def test_acceptance_gate_guidance_rejects_hidden_prompt_or_wrong_button() -> None:
+    failures = _unguided_gates(
+        [
+            {
+                "id": "provider.custom.authorization",
+                "provider": "custom",
+                "status": "passed",
+                "resume_url": "https://provider.example/token",
+                "target": "CUSTOM_API_KEY",
+                "follow_steps": [
+                    "Open the provider page and paste into FuseKit's hidden prompt."
+                ],
+                "next_action": "Click I finished this step after copying CUSTOM_API_KEY.",
+                "resume_hint": "FuseKit will retry verification.",
+            }
+        ]
+    )
+
+    assert any("hidden prompt" in item for item in failures)
+    assert any("Capture from VM clipboard" in item for item in failures)
+    assert any("secret targets at I finished this step" in item for item in failures)
+
+
+def test_acceptance_human_strategy_guidance_must_be_launcher_actionable() -> None:
+    failures = _provider_strategy_shape_failures(
+        [
+            {
+                "provider": "custom",
+                "strategies": [
+                    {
+                        "status": "needs_human_gate",
+                        "target": "CUSTOM_API_KEY",
+                        "follow_steps": ["Figure out the token page yourself."],
+                        "next_action": "Paste into FuseKit after manual setup.",
+                        "resume_hint": "Retry later.",
+                        "decision": {
+                            "selected": {
+                                "kind": "browser_guided",
+                                "status": "available",
+                                "deterministic": False,
+                                "implemented": False,
+                                "reason": "Missing provider token.",
+                            },
+                            "candidates": [{"kind": "browser_guided"}],
+                        },
+                    }
+                ],
+            }
+        ]
+    )
+
+    assert any("non-launcher wording" in item for item in failures)
+    assert any("VM browser path" in item for item in failures)
+    assert any("Capture from VM clipboard" in item for item in failures)
+
+
 def test_acceptance_live_requires_real_provider_evidence(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()
@@ -552,7 +610,13 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                         "classification": "provider-authorization",
                         "target": "OPENAI_API_KEY",
                         "attempts": 1,
-                        "follow_steps": ["Complete login."],
+                        "follow_steps": [
+                            "Complete login in the VM browser.",
+                            (
+                                "Copy the OpenAI key inside the VM browser and click "
+                                "Capture from VM clipboard."
+                            ),
+                        ],
                         "next_action": "No action needed.",
                         "resume_hint": "FuseKit verified this gate as passed.",
                         "captured_targets": ["OPENAI_API_KEY"],
