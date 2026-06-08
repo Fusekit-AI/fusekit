@@ -467,6 +467,24 @@ button {
   border: 1px solid rgba(111, 215, 255, 0.34);
 }
 
+.gate-capture-panel {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(111, 215, 255, 0.3);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(0, 21, 42, 0.22);
+}
+
+.gate-capture-panel strong {
+  color: #ffffff;
+  font-size: 13px;
+}
+
+.gate-capture-panel p {
+  margin: 0;
+}
+
 .gate-capture-row {
   display: flex;
   flex-wrap: wrap;

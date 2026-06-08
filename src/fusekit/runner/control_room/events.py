@@ -349,7 +349,12 @@ function captureTargets(target) {
 function renderCaptureButtons(gateId, target) {
   const targets = captureTargets(target);
   if (!gateId || !targets.length) return "";
+  const plural = targets.length === 1 ? "value" : "values";
   return [
+    `<div class="gate-capture-panel">`,
+    `<strong>Safe secret capture</strong>`,
+    `<p>Copy the provider ${plural} inside the VM browser, then click Capture here. ` +
+      `FuseKit reads only the VM clipboard and saves it directly into the encrypted vault.</p>`,
     `<div class="gate-capture-row">`,
     targets.map((item) => [
       `<button class="gate-capture" type="button" `,
@@ -357,6 +362,7 @@ function renderCaptureButtons(gateId, target) {
       `data-gate-capture-target="${escapeAttr(item)}">`,
       `Capture ${escapeHtml(item)} from VM clipboard</button>`,
     ].join("")).join(""),
+    `</div>`,
     `</div>`,
   ].join("");
 }

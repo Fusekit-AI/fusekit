@@ -738,7 +738,17 @@ def _render_capture_buttons(gate_id: str, target: str) -> str:
         )
         for item in targets
     )
-    return f'<div class="gate-capture-row">{buttons}</div>'
+    plural = "value" if len(targets) == 1 else "values"
+    return f"""
+      <div class="gate-capture-panel">
+        <strong>Safe secret capture</strong>
+        <p>
+          Copy the provider {plural} inside the VM browser, then click Capture here.
+          FuseKit reads only the VM clipboard and saves it directly into the encrypted vault.
+        </p>
+        <div class="gate-capture-row">{buttons}</div>
+      </div>
+    """
 
 
 def _capture_targets(target: str) -> tuple[str, ...]:

@@ -544,6 +544,10 @@ def test_control_room_renders_vm_clipboard_capture_for_secret_gate(tmp_path) -> 
 
     html = render_control_room(JobState.load(job_path), gate_path=tmp_path / "gates.json")
 
+    assert "Safe secret capture" in html
+    assert "Copy the provider value inside the VM browser" in html
+    assert "reads only the VM clipboard" in html
+    assert "encrypted vault" in html
     assert "Capture RESEND_API_KEY from VM clipboard" in html
     assert 'data-gate-capture="provider.resend.api-key-domain-access"' in html
     assert 'data-gate-capture-target="RESEND_API_KEY"' in html
