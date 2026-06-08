@@ -137,7 +137,7 @@ def _record_from_resend(raw: dict[str, Any], domain: str) -> DnsRecord:
     record_type = str(raw.get("type", "TXT")).upper()
     name = _fqdn(str(raw.get("name", "") or raw.get("host", "")), domain)
     value = str(raw.get("value", "") or raw.get("content", "")).strip().strip('"')
-    ttl = int(raw.get("ttl", 300) or 300)
+    ttl = _ttl_from_resend(raw.get("ttl"))
     priority = raw.get("priority")
     return DnsRecord(
         name=name,
@@ -147,6 +147,17 @@ def _record_from_resend(raw: dict[str, Any], domain: str) -> DnsRecord:
         proxied=False,
         priority=int(priority) if priority is not None else None,
     )
+
+
+def _ttl_from_resend(value: Any) -> int:
+    if value in (None, ""):
+        return 300
+    if isinstance(value, str) and value.strip().lower() == "auto":
+        return 300
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 300
 
 
 def _fqdn(name: str, domain: str) -> str:

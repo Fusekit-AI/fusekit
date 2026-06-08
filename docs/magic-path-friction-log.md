@@ -52,6 +52,7 @@ guided, or explicitly verified.
 | Control-room gate open/resume/capture actions could be recorded in gate state without launch acceptance proving they were also in the audit ledger. | Live acceptance now requires every durable control-room gate to have a matching redacted `control_room.*` audit event before a run can be launch-ready. |
 | Acceptance blockers were only visible in `.fusekit/acceptance/report.json`, so the launcher could still feel stuck when the order-of-operations proof failed. | Static and live control rooms now render `blockers[]` as launch-blocker cards with plain next actions, including Resend-before-DNS ordering failures. |
 | Provider setup was sorted Resend-before-DNS but could still continue to downstream providers if Resend paused on an API-key gate, risking an incomplete DNS plan. | Provider setup now pauses at the first unresolved authorization gate, records that downstream providers are waiting, and resumes later with complete upstream provider data. |
+| Resend DNS records can return provider-managed TTL values such as `Auto`, which could break parsing before Cloudflare received the record plan. | Resend DNS record parsing now treats provider-managed TTL values as the safe default TTL while preserving record name, type, value, and priority. |
 
 ## Open Acceptance Items
 
