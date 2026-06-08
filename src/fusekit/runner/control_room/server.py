@@ -13,7 +13,7 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, parse_qsl, unquote, urlencode, urlparse
 
 from fusekit.audit import AuditLog
 from fusekit.errors import FuseKitError
@@ -77,6 +77,9 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
         def do_GET(self) -> None:  # noqa: N802
             route = urlparse(self.path)
             if not self._authorize_request(route):
+                return
+            if _should_clean_query_token(route, self):
+                self._write_redirect(_clean_query_token_location(route))
                 return
             if route.path == "/api/job":
                 self._write_json(control_room_payload(job_state))
@@ -252,6 +255,14 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
             self._write_control_room_cookie()
             self.end_headers()
             self.wfile.write(data)
+
+        def _write_redirect(self, location: str) -> None:
+            self.send_response(303)
+            self.send_header("location", location)
+            self.send_header("content-length", "0")
+            self._write_security_headers()
+            self._write_control_room_cookie()
+            self.end_headers()
 
         def _read_json_body(self) -> dict[str, Any]:
             content_type = self.headers.get("content-type", "")
@@ -694,6 +705,29 @@ def _safe_cookie_value(value: str) -> bool:
 def _query_token(route: Any) -> str:
     values = parse_qs(getattr(route, "query", ""), keep_blank_values=False).get("token", [])
     return values[0] if values else ""
+
+
+def _should_clean_query_token(route: Any, handler: Any) -> bool:
+    if getattr(route, "path", "") not in {"/", "/index.html"}:
+        return False
+    if not _query_token(route):
+        return False
+    expected = os.environ.get("FUSEKIT_CONTROL_ROOM_TOKEN", "")
+    return bool(getattr(handler, "_set_control_room_cookie", False)) and _safe_cookie_value(
+        expected
+    )
+
+
+def _clean_query_token_location(route: Any) -> str:
+    query = urlencode(
+        [
+            (key, value)
+            for key, value in parse_qsl(getattr(route, "query", ""), keep_blank_values=False)
+            if key != "token"
+        ]
+    )
+    path = getattr(route, "path", "") or "/"
+    return f"{path}?{query}" if query else path
 
 
 def _hostname_without_port(value: str) -> str:

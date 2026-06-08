@@ -106,6 +106,9 @@ or trigger commands:
   mutating gate state.
 - Remote control rooms require an unguessable token; token cookies are emitted only
   for token-url-safe values and are `HttpOnly` and `SameSite=Strict`.
+- Browser visits that authenticate with `?token=` set the control-room cookie and
+  redirect back to the clean page URL so the token does not stay in the address bar
+  for recordings, screenshots, or browser history.
 - The control room never exposes a route that executes arbitrary shell commands.
 
 ## Current Residual Risk

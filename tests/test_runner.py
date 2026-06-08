@@ -73,6 +73,16 @@ def _control_room_post_headers(root: Path, **extra: str) -> dict[str, str]:
     }
 
 
+def _control_room_cookie_from_token(port: int, token: str) -> tuple[str, int, str]:
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    connection.request("GET", f"/?token={token}")
+    response = connection.getresponse()
+    headers = {key.lower(): value for key, value in response.getheaders()}
+    response.read()
+    connection.close()
+    return headers["set-cookie"], response.status, headers.get("location", "")
+
+
 def test_runner_auto_uses_local_for_explicit_rehearsal(tmp_path) -> None:
     resolution = resolve_runner("auto", allow_incomplete=True, oci_config_file=tmp_path / "nope")
 
@@ -1595,6 +1605,8 @@ def test_security_surface_map_documents_control_room_state_routes() -> None:
     assert "clipboard-enabled arbitrary iframe" in text
     assert "Public guided runs use VM clipboard Capture buttons" in text
     assert "CLI-only fallback can use hidden prompts/env handoff" in text
+    assert "redirect back to the clean page URL" in text
+    assert "does not stay in the address bar" in text
 
 
 def test_control_room_post_rejects_untrusted_origin(tmp_path) -> None:
@@ -1966,8 +1978,11 @@ def test_control_room_server_requires_remote_token(
         base = f"http://127.0.0.1:{server.server_port}"
         with pytest.raises(HTTPError):
             urlopen(f"{base}/", timeout=5)
-        with urlopen(f"{base}/?token=token-123", timeout=5) as response:
-            cookie = response.headers["set-cookie"]
+        cookie, redirect_status, redirect_location = _control_room_cookie_from_token(
+            server.server_port, "token-123"
+        )
+        request = Request(f"{base}/", headers={"Cookie": cookie})
+        with urlopen(request, timeout=5) as response:
             html = response.read().decode("utf-8")
         request = Request(f"{base}/api/job", headers={"Cookie": cookie})
         with urlopen(request, timeout=5) as response:
@@ -1977,6 +1992,8 @@ def test_control_room_server_requires_remote_token(
         server.server_close()
         thread.join(timeout=5)
 
+    assert redirect_status == 303
+    assert redirect_location == "/"
     assert "FuseKit Control Room" in html
     assert "fusekit_control_room=token-123" in cookie
     assert "HttpOnly" in cookie
@@ -2073,8 +2090,10 @@ def test_tokenized_control_room_requires_action_token_for_gate_post(
     thread.start()
     try:
         base = f"http://127.0.0.1:{server.server_port}"
-        with urlopen(f"{base}/?token=token-123", timeout=5) as response:
-            cookie = response.headers["set-cookie"]
+        cookie, redirect_status, redirect_location = _control_room_cookie_from_token(
+            server.server_port, "token-123"
+        )
+        with urlopen(Request(f"{base}/", headers={"Cookie": cookie}), timeout=5) as response:
             html = response.read().decode("utf-8")
         url = f"{base}/api/gates/provider.github.mfa.123/pass"
         request = Request(
@@ -2095,6 +2114,8 @@ def test_tokenized_control_room_requires_action_token_for_gate_post(
         server.server_close()
         thread.join(timeout=5)
 
+    assert redirect_status == 303
+    assert redirect_location == "/"
     assert "controlRoomActionToken" in html
     assert "x-fusekit-action-token" in html
     assert exc.value.code == 403
@@ -2123,9 +2144,9 @@ def test_tokenized_control_room_accepts_action_token_for_gate_post(
     thread.start()
     try:
         base = f"http://127.0.0.1:{server.server_port}"
-        with urlopen(f"{base}/?token=token-123", timeout=5) as response:
-            cookie = response.headers["set-cookie"]
-            response.read()
+        cookie, redirect_status, redirect_location = _control_room_cookie_from_token(
+            server.server_port, "token-123"
+        )
         url = f"{base}/api/gates/provider.github.mfa.123/pass"
         request = Request(
             url,
@@ -2147,6 +2168,8 @@ def test_tokenized_control_room_accepts_action_token_for_gate_post(
         server.server_close()
         thread.join(timeout=5)
 
+    assert redirect_status == 303
+    assert redirect_location == "/"
     assert payload["ok"] is True
     assert payload["status"] == "resume_requested"
     assert GateService.load(tmp_path / "gates.json").records[
