@@ -1527,7 +1527,9 @@ document.addEventListener("click", async (event) => {
       if (!response.ok || !payload.ok) {
         throw controlRoomFailureError(
           payload,
-          `Could not capture ${target} from the VM clipboard. Copy it in the VM and try again.`,
+          `Could not capture ${target} from the VM clipboard. ` +
+            `Copy the value inside the VM browser, then click Capture ${target} ` +
+            `from VM clipboard again.`,
         );
       }
       setRefreshStatus(payload.message || `${target} captured into the encrypted vault.`);
@@ -1539,7 +1541,9 @@ document.addEventListener("click", async (event) => {
       await refreshJob({ preserveStatus: true });
     } catch (error) {
       const message = error?.message ||
-        `Could not capture ${target} from the VM clipboard. Copy it in the VM and try again.`;
+        `Could not capture ${target} from the VM clipboard. ` +
+          `Copy the value inside the VM browser, then click Capture ${target} ` +
+          `from VM clipboard again.`;
       setRefreshStatus(message, "stale");
       setGateActionStatus(gateId, error?.gateStatus || message, "stale");
     } finally {

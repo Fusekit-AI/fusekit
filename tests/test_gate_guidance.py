@@ -43,6 +43,8 @@ def test_control_room_click_errors_preserve_backend_guidance() -> None:
     assert "Still needed: ${escapeHtml(missingTargets.join" in SCRIPT
     assert "error.gateStatus = gateStatus" in SCRIPT
     assert "setGateActionStatus(gateId, error?.gateStatus || message, \"stale\")" in SCRIPT
+    assert "Copy the value inside the VM browser, then click Capture ${target}" in SCRIPT
+    assert "from VM clipboard again." in SCRIPT
     assert "gate update failed" not in SCRIPT
     assert "capture failed" not in SCRIPT
     assert "gate open failed" not in SCRIPT

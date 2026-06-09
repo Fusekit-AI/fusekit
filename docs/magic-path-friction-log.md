@@ -185,6 +185,7 @@ guided, or explicitly verified.
 | Built-in, catalog, and inferred provider handoff packs could still start with "open/sign in in the VM browser" copy instead of naming the launcher button that opens that page. | Provider-pack validation now requires account-opening steps to name `Open provider gate in VM`, and maintained provider handoffs use that exact public control before provider-specific setup instructions. |
 | A user could copy a masked provider key, placeholder text, or `undefined` into the VM clipboard and generic token validation could store it as if it were real. | VM clipboard Capture now rejects placeholder and masked token values before vault write, names the target, and tells the user to copy the real token value in the VM browser and click the same Capture button again. |
 | Vercel env verification could still say to "Capture or derive" missing runtime values, making generated Resend values feel like a user decision. | Vercel verification now describes launcher-owned recovery: Capture only copy-once provider values from the VM clipboard, regenerate API-owned provider values, reapply Vercel env, and then verify deployment. |
+| If the live control room could not parse a Capture failure response, the browser fallback said only to copy in the VM and try again. | Capture fallback errors now name the VM browser and exact `Capture <ENV> from VM clipboard` button so the user still has a precise recovery action without backend detail. |
 
 ## Open Acceptance Items
 
