@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
@@ -11,6 +12,8 @@ from fusekit.runner.control_room.redaction import redact_gate_target
 from fusekit.runner.gates import GateRecord
 from fusekit.runner.job import JobState
 from fusekit.runner.run_state import LaunchRunState
+
+SAFE_URL_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,256}$")
 
 
 def control_room_payload(job: JobState, *, gate_path: Path | None = None) -> dict[str, Any]:
@@ -175,13 +178,14 @@ def _safe_visual_url(
         return "", ""
     if require_vnc_path and not parsed.path.endswith("/vnc.html"):
         return "", ""
-    query = urlencode(
-        [
-            (key, item)
-            for key, item in parse_qsl(parsed.query, keep_blank_values=False)
-            if key in allowed_query_keys
-        ]
-    )
+    query_pairs: list[tuple[str, str]] = []
+    for key, item in parse_qsl(parsed.query, keep_blank_values=False):
+        if key not in allowed_query_keys:
+            continue
+        if key == "token" and not SAFE_URL_TOKEN_PATTERN.fullmatch(item):
+            return "", ""
+        query_pairs.append((key, item))
+    query = urlencode(query_pairs)
     safe_url = urlunparse(
         (parsed.scheme, parsed.netloc, parsed.path or "/", "", query, "")
     )

@@ -477,13 +477,14 @@ def test_acceptance_allows_sanitized_visual_state_survivor(tmp_path) -> None:
     fusekit_dir = tmp_path / "app" / ".fusekit"
     fusekit_dir.mkdir(parents=True)
     visual_path = fusekit_dir / "visual.json"
+    control_room_token = "viewer_token_abcdefghijklmnopqrstuvwxyz0123456789"
     visual_path.write_text(
         json.dumps(
             {
                 "runner": "novnc",
                 "status": "ready",
                 "novnc_url": "http://203.0.113.10:6080/vnc.html?autoconnect=1&resize=scale",
-                "control_room_url": "http://203.0.113.10:8765/?token=viewer-token",
+                "control_room_url": f"http://203.0.113.10:8765/?token={control_room_token}",
                 "novnc_password": "viewer-password",
             }
         ),
@@ -501,7 +502,35 @@ def test_acceptance_allows_sanitized_visual_state_survivor(tmp_path) -> None:
     snapshot = Path(checks[-1].artifact).read_text(encoding="utf-8")
     assert "password=" not in snapshot
     assert "viewer-password" not in snapshot
+    assert control_room_token not in snapshot
     assert "[REDACTED sha256:" in snapshot
+
+
+def test_acceptance_rejects_weak_visual_control_room_token(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    visual_path = fusekit_dir / "visual.json"
+    visual_path.write_text(
+        json.dumps(
+            {
+                "runner": "novnc",
+                "status": "ready",
+                "novnc_url": "http://203.0.113.10:6080/vnc.html?autoconnect=1",
+                "control_room_url": "http://203.0.113.10:8765/?token=short",
+            }
+        ),
+        encoding="utf-8",
+    )
+    checks: list[AcceptanceCheck] = []
+    missing: list[str] = []
+    ledger = HarnessLedger.create(fusekit_dir / "acceptance")
+
+    _check_visual_state(visual_path, "live", checks, missing, ledger)
+
+    assert checks[-1].id == "visual_state.safe"
+    assert checks[-1].status == "failed"
+    assert "control-room URL" in checks[-1].detail
+    assert "safe visual session state" in missing
 
 
 def test_acceptance_gate_guidance_rejects_hidden_prompt_or_wrong_button() -> None:
