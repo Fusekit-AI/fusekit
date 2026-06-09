@@ -156,6 +156,7 @@ guided, or explicitly verified.
 | Route-plan copy for token and human gates could still say to use the VM browser without naming the actual launcher controls, leaving first-time users to infer which button advances the run. | Route-plan token and human-gate steps now name `Open provider gate in VM`, the shared VM browser, `Capture from VM clipboard`, and `I finished this step` directly. |
 | Durable provider-route checkpoints could pass acceptance with vague "use the VM browser" wording or copy-once token names without proving the recovery map names the actual launcher controls. | Launch acceptance now rejects waiting provider-route checkpoints unless they name `Open provider gate in VM`, and rejects copy-once token/key checkpoints unless they name `Capture from VM clipboard`. |
 | Live control-room retry errors and acceptance blockers could still say "mark the gate done" or "resume button", which did not match the button the user sees. | Gate-pass error copy and unresolved-gate blockers now name the visible `I finished this step` button. |
+| Verification-report repair copy could still say "visible FuseKit Capture" instead of the actual clipboard-capture control, leaving report-driven recovery less precise than the control room. | Verification reports now name `Capture from VM clipboard` for copy-once values and `I finished this step` for non-secret provider gates. |
 
 ## Open Acceptance Items
 

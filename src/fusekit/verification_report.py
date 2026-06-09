@@ -222,8 +222,8 @@ def _pending_repair(provider: str, check: str) -> str:
         return (
             "Finish the active upstream provider gate in the control room. Click "
             "Open provider gate in VM, complete the provider-owned step in that VM "
-            f"browser, then use the visible FuseKit Capture or I finished this step "
-            f"control so FuseKit can verify {provider}."
+            f"browser, then click Capture from VM clipboard for copy-once values or "
+            f"I finished this step for non-secret gates so FuseKit can verify {provider}."
         )
     if check == "dns_record_exists":
         return (
@@ -251,7 +251,7 @@ def _human_gate_repair(provider: str, check: str) -> str:
     return (
         f"FuseKit is waiting for the {provider} screen that controls {check.replace('_', ' ')}. "
         "Click Open provider gate in VM, complete only the provider-owned prompt, "
-        "then use the visible FuseKit Capture button for copy-once values or "
+        "then click Capture from VM clipboard for copy-once values or "
         "I finished this step for non-secret confirmation gates."
     )
 

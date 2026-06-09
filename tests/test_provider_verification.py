@@ -352,14 +352,30 @@ def test_verification_report_uses_launcher_guidance_for_human_gates() -> None:
             )
         ],
     )
+    report.add_provider_results(
+        "vercel",
+        [
+            VerificationResult(
+                provider="vercel",
+                kind="provider-gate",
+                target="provider.vercel.github-login",
+                status="pending",
+                details={},
+            )
+        ],
+    )
 
     payload = report.to_dict()
     repairs = [check["repair"] for check in payload["checks"]]
 
     assert "Open provider gate in VM" in repairs[0]
-    assert "Capture button" in repairs[0]
+    assert "Capture from VM clipboard" in repairs[0]
     assert "I finished this step" in repairs[0]
     assert "Capture from VM clipboard" in repairs[1]
+    assert "Open provider gate in VM" in repairs[2]
+    assert "Capture from VM clipboard" in repairs[2]
+    assert "I finished this step" in repairs[2]
+    assert "visible FuseKit Capture" not in " ".join(repairs)
     assert "rerun verification" not in " ".join(repairs).lower()
     assert "provider UI/API" not in " ".join(repairs)
 
