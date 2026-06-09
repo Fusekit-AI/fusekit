@@ -2028,6 +2028,28 @@ def test_control_room_clipboard_capture_rejects_structured_token_blobs(value: st
         _validate_clipboard_capture_value("CUSTOM_API_KEY", value)
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        "undefined",
+        "********",
+        "xxxxxxxx",
+        "\u2022\u2022\u2022\u2022\u2022\u2022",
+        "redacted",
+    ],
+)
+def test_control_room_clipboard_capture_rejects_placeholder_tokens(value: str) -> None:
+    with pytest.raises(
+        FuseKitError,
+        match=re.escape(
+            "CUSTOM_API_KEY looks like a placeholder or masked value, not a "
+            "copy-once token. Copy only the real token value inside the VM browser, "
+            "then click Capture CUSTOM_API_KEY from VM clipboard again."
+        ),
+    ):
+        _validate_clipboard_capture_value("CUSTOM_API_KEY", value)
+
+
 def test_control_room_passphrase_uses_job_artifact(tmp_path, monkeypatch) -> None:
     job = JobState.create("fk-test", tmp_path, "source-fetch")
     job_path = tmp_path / "source-fetch-job.json"

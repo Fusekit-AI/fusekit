@@ -183,6 +183,7 @@ guided, or explicitly verified.
 | Weak tokenized visual/control-room URLs could survive sanitized visual state even though the remote server requires strong URL-safe access tokens. | Visual state now drops tokenized control-room links unless the token has the same strong URL-safe shape, and acceptance rejects weak-token survivors before launch-ready proof. |
 | Provider guidance could still pass launch readiness with vague "use the VM browser" wording, leaving first-time users unsure which control opens the live provider page. | Launch acceptance now requires openable provider gates and human-gate strategy guidance to name the exact `Open provider gate in VM` control before a run can be demo-ready. |
 | Built-in, catalog, and inferred provider handoff packs could still start with "open/sign in in the VM browser" copy instead of naming the launcher button that opens that page. | Provider-pack validation now requires account-opening steps to name `Open provider gate in VM`, and maintained provider handoffs use that exact public control before provider-specific setup instructions. |
+| A user could copy a masked provider key, placeholder text, or `undefined` into the VM clipboard and generic token validation could store it as if it were real. | VM clipboard Capture now rejects placeholder and masked token values before vault write, names the target, and tells the user to copy the real token value in the VM browser and click the same Capture button again. |
 
 ## Open Acceptance Items
 

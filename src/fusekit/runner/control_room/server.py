@@ -40,6 +40,20 @@ TOKEN_PREFIXES_BY_ENV = {
     "OPENAI_API_KEY": ("sk-",),
     "RESEND_API_KEY": ("re_",),
 }
+PLACEHOLDER_TOKEN_VALUES = {
+    "api key",
+    "api_key",
+    "copied",
+    "hidden",
+    "n/a",
+    "none",
+    "null",
+    "redacted",
+    "secret",
+    "token",
+    "undefined",
+}
+MASKED_TOKEN_PATTERN = re.compile(r"^(?:[*xX]|\u2022|\u25cf){6,}$")
 SENSITIVE_BROWSER_ENV_MARKERS = (
     "AUTH",
     "COOKIE",
@@ -578,6 +592,12 @@ def _validate_clipboard_capture_value(target: str, value: str) -> None:
 
     normalized_target = target.strip().upper()
     if normalized_target.endswith(("_API_KEY", "_TOKEN")):
+        if _looks_like_placeholder_token(value):
+            raise FuseKitError(
+                f"{normalized_target} looks like a placeholder or masked value, not a "
+                "copy-once token. "
+                f"{_capture_retry_action(normalized_target, 'real token value')}"
+            )
         if value.lstrip().startswith(("{", "[", "<")):
             raise FuseKitError(
                 f"{normalized_target} looks like copied page or response text, not a token. "
@@ -632,6 +652,15 @@ def _reject_cross_provider_token_prefix(target: str, value: str) -> None:
                 "provider page named by this gate inside the VM browser, then click "
                 f"Capture {target} from VM clipboard again."
             )
+
+
+def _looks_like_placeholder_token(value: str) -> bool:
+    candidate = value.strip()
+    lowered = candidate.lower()
+    return (
+        lowered in PLACEHOLDER_TOKEN_VALUES
+        or MASKED_TOKEN_PATTERN.fullmatch(candidate) is not None
+    )
 
 
 def _uncaptured_gate_targets(
