@@ -134,6 +134,38 @@ domains: []
     )
 
 
+def _write_resend_audience_vercel_manifest(app: Path) -> None:
+    (app / "fusekit.yaml").write_text(
+        """
+app_name: app
+app_path: .
+required_env:
+  - RESEND_API_KEY
+  - RESEND_FROM_EMAIL
+  - RESEND_AUDIENCE_ID
+webhooks: []
+approvals: []
+services:
+  - provider: resend
+    kind: email
+    name: email
+    capabilities:
+      - audience
+    secrets: []
+    settings: {}
+  - provider: vercel
+    kind: hosting
+    name: hosting
+    capabilities: []
+    secrets: []
+    settings: {}
+domains: []
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def _write_minimum_live_artifacts(remote_fusekit: Path) -> None:
     (remote_fusekit / "audit.jsonl").write_text('{"event":"provider.verify"}\n', "utf-8")
     (remote_fusekit / "verification_report.json").write_text(
@@ -2112,6 +2144,150 @@ def test_live_acceptance_requires_resend_generation_before_vercel_env_write(
     assert "RESEND_FROM_EMAIL" in receipt_check.detail
 
 
+def test_live_acceptance_requires_resend_audience_before_vercel_env_write(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_audience_vercel_manifest(app)
+    remote = tmp_path / "remote"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "actions": [
+                    {
+                        "action": "resend.domain",
+                        "status": "ok",
+                        "details": {
+                            "domain": "moonlite.rsvp",
+                            "generated_env": ["RESEND_FROM_EMAIL"],
+                            "dns_records": [],
+                        },
+                    },
+                    {
+                        "action": "vercel.env",
+                        "status": "ok",
+                        "details": {"project": "moonlite", "env": "RESEND_API_KEY"},
+                    },
+                    {
+                        "action": "vercel.env",
+                        "status": "ok",
+                        "details": {"project": "moonlite", "env": "RESEND_FROM_EMAIL"},
+                    },
+                    {
+                        "action": "vercel.env",
+                        "status": "ok",
+                        "details": {"project": "moonlite", "env": "RESEND_AUDIENCE_ID"},
+                    },
+                    {
+                        "action": "resend.audience",
+                        "status": "ok",
+                        "details": {
+                            "name": "Moonlite RSVP audience",
+                            "generated_env": ["RESEND_AUDIENCE_ID"],
+                        },
+                    },
+                ],
+                "raw_secrets_exposed": 0,
+                "live_url": "https://moonlite.rsvp",
+            }
+        ),
+        "utf-8",
+    )
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    receipt_check = next(
+        check for check in report.checks if check.id == "receipt.resend_vercel_env"
+    )
+    assert report.launch_ready is False
+    assert receipt_check.status == "failed"
+    assert "prior Resend API-generated runtime proof" in receipt_check.detail
+    assert "RESEND_AUDIENCE_ID" in receipt_check.detail
+
+
+def test_live_acceptance_accepts_resend_audience_before_vercel_env_write(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_audience_vercel_manifest(app)
+    remote = tmp_path / "remote"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "actions": [
+                    {
+                        "action": "resend.domain",
+                        "status": "ok",
+                        "details": {
+                            "domain": "moonlite.rsvp",
+                            "generated_env": ["RESEND_FROM_EMAIL"],
+                            "dns_records": [],
+                        },
+                    },
+                    {
+                        "action": "resend.audience",
+                        "status": "ok",
+                        "details": {
+                            "name": "Moonlite RSVP audience",
+                            "generated_env": ["RESEND_AUDIENCE_ID"],
+                        },
+                    },
+                    {
+                        "action": "vercel.env",
+                        "status": "ok",
+                        "details": {"project": "moonlite", "env": "RESEND_API_KEY"},
+                    },
+                    {
+                        "action": "vercel.env",
+                        "status": "ok",
+                        "details": {"project": "moonlite", "env": "RESEND_FROM_EMAIL"},
+                    },
+                    {
+                        "action": "vercel.env",
+                        "status": "ok",
+                        "details": {"project": "moonlite", "env": "RESEND_AUDIENCE_ID"},
+                    },
+                ],
+                "raw_secrets_exposed": 0,
+                "live_url": "https://moonlite.rsvp",
+            }
+        ),
+        "utf-8",
+    )
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    receipt_check = next(
+        check for check in report.checks if check.id == "receipt.resend_vercel_env"
+    )
+    assert receipt_check.status == "ok"
+    assert "Resend-owned runtime env keys were generated before Vercel setup" in (
+        receipt_check.detail
+    )
+
+
 def test_live_acceptance_accepts_receipt_resend_runtime_env_in_vercel(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()
@@ -2164,7 +2340,9 @@ def test_live_acceptance_accepts_receipt_resend_runtime_env_in_vercel(tmp_path) 
         check for check in report.checks if check.id == "receipt.resend_vercel_env"
     )
     assert receipt_check.status == "ok"
-    assert "Resend runtime env keys were generated before Vercel setup" in receipt_check.detail
+    assert "Resend-owned runtime env keys were generated before Vercel setup" in (
+        receipt_check.detail
+    )
 
 
 def test_live_acceptance_requires_provider_contract_health_before_api_setup(

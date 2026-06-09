@@ -1088,7 +1088,7 @@ def _check_receipt_resend_vercel_env_flow(
         AcceptanceCheck(
             "receipt.resend_vercel_env",
             "ok",
-            "Receipt proves required Resend runtime env keys were generated before Vercel setup.",
+            "Receipt proves Resend-owned runtime env keys were generated before Vercel setup.",
             artifact,
         )
     )
