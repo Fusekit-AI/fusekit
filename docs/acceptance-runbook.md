@@ -52,6 +52,25 @@ Use the control-room VM browser and `Capture from VM clipboard` buttons for
 copy-once provider keys during the recording. `--capture-stdin` is only for an
 advanced CLI fallback rehearsal, not the public no-thinking launcher path.
 
+## Public Recording Rules
+
+- Keep every provider interaction inside the control-room VM browser.
+- Use `Open provider gate in VM` for provider login, MFA, consent, billing,
+  domain-ownership, or copy-once secret screens.
+- After copying a provider token inside the VM browser, use the matching
+  `Capture <ENV> from VM clipboard` button. Do not paste secrets into the host
+  laptop, host browser, terminal, or recording notes.
+- For non-secret provider confirmations, use `I finished this step` only after
+  the provider screen confirms the requested action.
+- For Resend, stay on API Keys during first setup. Empty Domains or Audiences
+  pages are not a user task; FuseKit creates or reuses the sending domain and
+  audience by API after `RESEND_API_KEY` is captured.
+- A Resend row that says Full access is not enough by itself. If the raw key
+  value is not visible/copyable, create a new setup key and capture that raw
+  value into the encrypted vault.
+- Do not click Resend Add domain or Add audience during the public path unless a
+  future FuseKit gate explicitly changes the acceptance runbook and tests.
+
 Then run the proof gate:
 
 ```zsh

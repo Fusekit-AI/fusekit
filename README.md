@@ -285,6 +285,8 @@ Expected supervised gates:
 - OpenAI/OpenClaw authorization when no LLM API key is already in the encrypted vault.
 - OCI Cloud Shell or OCI account login if the clean-room runner lane is selected.
 - GitHub login/MFA/consent and fine-grained token creation for the target repo.
+- Resend login/MFA/consent and one-time `RESEND_API_KEY` capture from the VM
+  clipboard; FuseKit then owns Resend domain/audience setup by API before DNS.
 - Vercel login/MFA/consent and project or Git import confirmation.
 - Cloudflare login/MFA/domain ownership checks before DNS records can verify.
 

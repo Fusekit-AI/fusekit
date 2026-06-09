@@ -11,6 +11,8 @@ def test_readme_real_provider_path_names_resend_and_vm_capture() -> None:
     assert "Bundled GitHub, Resend, Vercel, and Cloudflare behavior" in text
     assert "RESEND_API_KEY" in text
     assert "Capture from VM clipboard" in text
+    assert "one-time `RESEND_API_KEY` capture from the VM" in text
+    assert "FuseKit then owns Resend domain/audience setup by API before DNS" in text
     assert "browser surface" not in text.lower()
 
 
@@ -25,3 +27,13 @@ def test_acceptance_runbook_uses_launcher_capture_for_public_recording() -> None
     assert "--capture-stdin" not in launch_command
     assert "Capture from VM clipboard" in text
     assert "not the public no-thinking launcher path" in text
+    assert "Public Recording Rules" in text
+    assert "Open provider gate in VM" in text
+    assert "I finished this step" in text
+    assert "Do not paste secrets into the host" in text
+    assert "Empty Domains or Audiences" in text
+    assert "pages are not a user task" in text
+    assert "FuseKit creates or reuses the sending domain" in text
+    assert "audience by API" in text
+    assert "A Resend row that says Full access is not enough by itself" in text
+    assert "Do not click Resend Add domain or Add audience" in text
