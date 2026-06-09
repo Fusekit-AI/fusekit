@@ -47,6 +47,10 @@ leak scan, resolved durable gate state, and detonated worker state. Complete
 route decisions include the selected route kind, status, deterministic/implemented
 flags, reason, and considered candidates, so the control room can explain whether
 FuseKit used API automation, secure vault capture, or VM follow-me. When both
+provider route decisions and setup receipts claim an API route succeeded, the
+receipt must also prove that the provider's read-only contract-health check
+succeeded before the provider setup action, so stale, revoked, or mis-scoped
+tokens are routed back through guided capture before mutations. When both
 Resend and DNS are present, the provider strategy artifact must prove Resend ran
 before Cloudflare/DNS so Resend-generated domain records are included in the
 approved DNS changes. The setup receipt must independently prove the same flow:

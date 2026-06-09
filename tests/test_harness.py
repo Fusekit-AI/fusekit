@@ -226,6 +226,23 @@ def _write_minimum_resend_vercel_live_artifacts(remote_fusekit: Path) -> None:
     (remote_fusekit / "gates.json").write_text(json.dumps({"gates": []}), "utf-8")
 
 
+def _provider_pack_api_setup_action(provider: str, recipe: str) -> dict[str, object]:
+    return {
+        "action": "provider_pack.setup",
+        "status": "ok",
+        "details": {
+            "provider": provider,
+            "setup": [
+                {
+                    "kind": recipe,
+                    "status": "ok",
+                    "strategy_decision": _strategy_decision(),
+                }
+            ],
+        },
+    }
+
+
 def test_rollback_provider_names_accepts_current_and_legacy_dns_actions() -> None:
     providers = _rollback_provider_names(
         [
@@ -572,6 +589,11 @@ def test_acceptance_blockers_use_launcher_actionable_check_guidance() -> None:
             "Receipt DNS proposal is missing Resend-generated records: MX send.moonlite.rsvp",
         ),
         AcceptanceCheck(
+            "receipt.provider_contract_health",
+            "failed",
+            "Receipt is missing provider API contract-health proof before setup for: vercel",
+        ),
+        AcceptanceCheck(
             "detonation.worker_state",
             "failed",
             "Plaintext worker/browser/visual state still exists: .fusekit/browser",
@@ -583,6 +605,9 @@ def test_acceptance_blockers_use_launcher_actionable_check_guidance() -> None:
     assert "Open provider gate in VM URL" in blockers["gates.guided"]["next_action"]
     assert "I finished this step" in blockers["gates.audited"]["next_action"]
     assert "approve the DNS apply gate" in blockers["receipt.resend_dns_flow"]["next_action"]
+    assert "read-only provider health check before mutation" in blockers[
+        "receipt.provider_contract_health"
+    ]["next_action"]
     assert "plaintext worker, browser, visual, and auth scratch state" in blockers[
         "detonation.worker_state"
     ]["next_action"]
@@ -1289,6 +1314,132 @@ def test_live_acceptance_accepts_receipt_resend_runtime_env_in_vercel(tmp_path) 
     )
     assert receipt_check.status == "ok"
     assert "Resend runtime env keys were configured in Vercel" in receipt_check.detail
+
+
+def test_live_acceptance_requires_provider_contract_health_before_api_setup(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "actions": [
+                    {
+                        "action": "resend.domain",
+                        "status": "ok",
+                        "details": {
+                            "domain": "moonlite.rsvp",
+                            "dns_records": [],
+                        },
+                    },
+                    {
+                        "action": "vercel.env",
+                        "status": "ok",
+                        "details": {"project": "moonlite", "env": "RESEND_API_KEY"},
+                    },
+                    {
+                        "action": "vercel.env",
+                        "status": "ok",
+                        "details": {"project": "moonlite", "env": "RESEND_FROM_EMAIL"},
+                    },
+                    _provider_pack_api_setup_action("vercel", "vercel-env"),
+                ],
+                "raw_secrets_exposed": 0,
+                "live_url": "https://moonlite.rsvp",
+            }
+        ),
+        "utf-8",
+    )
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    receipt_check = next(
+        check for check in report.checks if check.id == "receipt.provider_contract_health"
+    )
+    assert report.launch_ready is False
+    assert receipt_check.status == "failed"
+    assert "vercel" in receipt_check.detail
+    assert "provider contract-health receipt proof" in report.missing
+    blockers = {blocker["item"]: blocker for blocker in report.blockers}
+    assert blockers["provider contract-health receipt proof"]["category"] == "Provider routes"
+    assert "read-only contract-health check" in blockers[
+        "provider contract-health receipt proof"
+    ]["next_action"]
+
+
+def test_live_acceptance_accepts_provider_contract_health_before_api_setup(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "actions": [
+                    {
+                        "action": "resend.domain",
+                        "status": "ok",
+                        "details": {
+                            "domain": "moonlite.rsvp",
+                            "dns_records": [],
+                        },
+                    },
+                    {
+                        "action": "vercel.contract_health",
+                        "status": "ok",
+                        "details": {"provider": "vercel", "checked": True},
+                    },
+                    {
+                        "action": "vercel.env",
+                        "status": "ok",
+                        "details": {"project": "moonlite", "env": "RESEND_API_KEY"},
+                    },
+                    {
+                        "action": "vercel.env",
+                        "status": "ok",
+                        "details": {"project": "moonlite", "env": "RESEND_FROM_EMAIL"},
+                    },
+                    _provider_pack_api_setup_action("vercel", "vercel-env"),
+                ],
+                "raw_secrets_exposed": 0,
+                "live_url": "https://moonlite.rsvp",
+            }
+        ),
+        "utf-8",
+    )
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    receipt_check = next(
+        check for check in report.checks if check.id == "receipt.provider_contract_health"
+    )
+    assert receipt_check.status == "ok"
+    assert "provider API contract health before token-backed setup" in receipt_check.detail
 
 
 def test_live_acceptance_requires_complete_provider_strategy_evidence(tmp_path) -> None:

@@ -391,6 +391,11 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
             "Rerun setup so Vercel env setup records every app-required RESEND_* runtime "
             "key after FuseKit captures or generates those values.",
         ),
+        "provider contract-health receipt proof": (
+            "Provider routes",
+            "Rerun provider setup so every API-backed provider records a read-only "
+            "contract-health check before setup mutates provider state.",
+        ),
         "guided human gates": (
             "Human gates",
             "Regenerate gate state with follow_steps, next_action, and resume_hint "
@@ -525,6 +530,13 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
             return (
                 "Deployment env",
                 "Capture or generate the required RESEND_* values before Vercel env setup runs.",
+            )
+        if check.id == "receipt.provider_contract_health":
+            return (
+                "Provider routes",
+                "Rerun provider setup so API-backed routes prove a read-only provider "
+                "health check before mutation; refresh or recapture the token if the "
+                "health check fails.",
             )
         return ("Receipt", "Regenerate the redacted setup receipt.")
     if check.id == "detonation.worker_state":
@@ -733,6 +745,117 @@ def _check_receipt(
         )
     _check_receipt_resend_dns_flow(raw, manifest, mode, checks, missing, str(snapshot))
     _check_receipt_resend_vercel_env_flow(raw, manifest, mode, checks, missing, str(snapshot))
+    _check_receipt_provider_contract_health(raw, mode, checks, missing, str(snapshot))
+
+
+def _check_receipt_provider_contract_health(
+    raw: Any,
+    mode: str,
+    checks: list[AcceptanceCheck],
+    missing: list[str],
+    artifact: str,
+) -> None:
+    """Prove token-backed provider setup ran read-only API preflight first."""
+
+    if mode != "live":
+        return
+    actions = raw.get("actions", []) if isinstance(raw, dict) else []
+    if not isinstance(actions, list):
+        checks.append(
+            AcceptanceCheck(
+                "receipt.provider_contract_health",
+                "failed",
+                "Receipt actions are missing or malformed.",
+                artifact,
+            )
+        )
+        missing.append("provider contract-health receipt proof")
+        return
+    required = _providers_requiring_contract_health(actions)
+    if not required:
+        return
+    ok_before_setup = _contract_health_ok_before_provider_setup(actions)
+    missing_proof = sorted(required - ok_before_setup)
+    if missing_proof:
+        checks.append(
+            AcceptanceCheck(
+                "receipt.provider_contract_health",
+                "failed",
+                "Receipt is missing provider API contract-health proof before setup for: "
+                + ", ".join(missing_proof),
+                artifact,
+            )
+        )
+        missing.append("provider contract-health receipt proof")
+        return
+    checks.append(
+        AcceptanceCheck(
+            "receipt.provider_contract_health",
+            "ok",
+            "Receipt proves provider API contract health before token-backed setup.",
+            artifact,
+        )
+    )
+
+
+def _providers_requiring_contract_health(actions: list[Any]) -> set[str]:
+    providers: set[str] = set()
+    for action in actions:
+        if not isinstance(action, dict):
+            continue
+        if str(action.get("action", "")) != "provider_pack.setup":
+            continue
+        if str(action.get("status", "")) != "ok":
+            continue
+        details = action.get("details", {})
+        if not isinstance(details, dict):
+            continue
+        provider = str(details.get("provider", "")).strip().lower()
+        setup = details.get("setup", [])
+        if not provider or not isinstance(setup, list):
+            continue
+        if any(_setup_item_used_successful_api(item) for item in setup):
+            providers.add(provider)
+    return providers
+
+
+def _setup_item_used_successful_api(item: Any) -> bool:
+    if not isinstance(item, dict):
+        return False
+    if str(item.get("status", "")).strip() != "ok":
+        return False
+    decision = item.get("strategy_decision", {})
+    if not isinstance(decision, dict):
+        return False
+    selected = decision.get("selected", {})
+    if not isinstance(selected, dict):
+        return False
+    return str(selected.get("kind", "")).strip() == "api"
+
+
+def _contract_health_ok_before_provider_setup(actions: list[Any]) -> set[str]:
+    ok: set[str] = set()
+    proven: set[str] = set()
+    for action in actions:
+        if not isinstance(action, dict):
+            continue
+        name = str(action.get("action", "")).strip()
+        status = str(action.get("status", "")).strip()
+        if name.endswith(".contract_health") and status == "ok":
+            provider = name[: -len(".contract_health")].strip().lower()
+            if provider:
+                ok.add(provider)
+            continue
+        if name == "provider_pack.setup" and status == "ok":
+            details = action.get("details", {})
+            provider = (
+                str(details.get("provider", "")).strip().lower()
+                if isinstance(details, dict)
+                else ""
+            )
+            if provider in ok:
+                proven.add(provider)
+    return proven
 
 
 def _check_receipt_resend_dns_flow(

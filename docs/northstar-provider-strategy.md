@@ -117,13 +117,15 @@ The first north-star slice adds `fusekit.providers.strategy` and wires strategy
 decisions into provider-pack setup execution. Existing API handlers still perform
 the deterministic work. Missing authorization now becomes an explicit
 `needs_human_gate` strategy result with next-action guidance rather than a
-thin missing-token failure.
+thin missing-token failure. API-backed provider routes also run a read-only
+contract-health check before provider mutations; failed health checks become a
+guided token-refresh/capture gate, and live acceptance requires the receipt to
+prove health succeeded before setup.
 
 Next slices:
 
 1. Add official CLI executors for providers where CLI is more reliable.
 2. Add signed remote provider-pack registry support.
-3. Add provider contract-health checks before setup.
-4. Persist strategy decisions into checkpoints/control-room surfaces.
-5. Run a real OCI provider acceptance using GitHub, Vercel, Cloudflare, and a
+3. Persist strategy decisions into checkpoints/control-room surfaces.
+4. Run a real OCI provider acceptance using GitHub, Vercel, Cloudflare, and a
    disposable domain.
