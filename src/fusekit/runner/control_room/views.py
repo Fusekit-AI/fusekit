@@ -363,14 +363,14 @@ def _render_visual_session(visual: Any) -> str:
           </div>
           <div class="visual-actions">
             <a href="{html.escape(iframe_url)}" target="_blank" rel="noreferrer">
-              Open browser surface
+              Open live VM browser
             </a>
             <button
               type="button"
               data-copy="{html.escape(novnc_url)}"
-              data-copy-label="browser link"
+              data-copy-label="live VM browser link"
             >
-              Copy browser link
+              Copy live VM browser link
             </button>
             {control_link}
           </div>

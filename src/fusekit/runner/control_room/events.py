@@ -601,14 +601,14 @@ function renderVisual(job) {
           </div>
           <div class="visual-actions">
             <a href="${escapeAttr(iframeUrl)}" target="_blank" rel="noreferrer">
-              Open browser surface
+              Open live VM browser
             </a>
             <button
               type="button"
               data-copy="${escapeAttr(novncUrl)}"
-              data-copy-label="browser link"
+              data-copy-label="live VM browser link"
             >
-              Copy browser link
+              Copy live VM browser link
             </button>
             ${controlLink}
           </div>
