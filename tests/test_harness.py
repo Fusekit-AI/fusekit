@@ -11,6 +11,7 @@ from fusekit.harness.acceptance import (
     _acceptance_blockers,
     _check_detonation,
     _check_visual_state,
+    _gate_open_audit_event_proves_vm_open,
     _gate_resume_audit_requirements,
     _provider_strategy_checkpoint_failures,
     _provider_strategy_shape_failures,
@@ -699,6 +700,28 @@ def test_acceptance_resume_audit_is_required_for_non_secret_gate_clicks() -> Non
         "provider.cloudflare.domain-review",
         "dns.moonlite.rsvp.approval",
     ]
+
+
+def test_acceptance_provider_gate_open_proof_requires_non_reused_launch() -> None:
+    base_event = {
+        "event": "control_room.gate_open",
+        "data": {
+            "gate_id": "provider.cloudflare.authorization",
+            "reused": False,
+            "has_resume_url": True,
+            "has_last_opened_url": True,
+        },
+    }
+    reused_event = {
+        **base_event,
+        "data": {
+            **base_event["data"],
+            "reused": True,
+        },
+    }
+
+    assert _gate_open_audit_event_proves_vm_open(base_event) is True
+    assert _gate_open_audit_event_proves_vm_open(reused_event) is False
 
 
 def test_acceptance_human_strategy_guidance_must_be_launcher_actionable() -> None:

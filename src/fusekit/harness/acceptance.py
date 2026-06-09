@@ -2501,7 +2501,7 @@ def _gate_open_audit_event_proves_vm_open(event: dict[str, Any]) -> bool:
     return (
         str(event.get("event", "")) == "control_room.gate_open"
         and isinstance(data, dict)
-        and isinstance(data.get("reused"), bool)
+        and data.get("reused") is False
         and data.get("has_resume_url") is True
         and data.get("has_last_opened_url") is True
         and bool(str(data.get("gate_id", "")).strip())
