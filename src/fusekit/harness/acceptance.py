@@ -23,6 +23,7 @@ from fusekit.providers.capability_pack import (
     validate_provider_pack,
     write_provider_pack,
 )
+from fusekit.runner.control_room.state import _sanitized_visual_state
 from fusekit.scanner import scan_repo
 from fusekit.security import redact_public_path, redact_public_text, scan_for_secret_leaks
 from fusekit.vault.bundle import Vault
@@ -219,6 +220,7 @@ def run_acceptance(
         missing,
         ledger,
     )
+    _check_visual_state(evidence_fusekit_dir / "visual.json", mode, checks, missing, ledger)
     _check_detonation(evidence_fusekit_dir, mode, checks, missing)
     _check_leaks(app_path, checks, missing, ledger)
 
@@ -428,6 +430,11 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
         "validated provider capability packs": (
             "Provider packs",
             "Generate and validate provider capability packs for the services in the manifest.",
+        ),
+        "safe visual session state": (
+            "Visual session",
+            "Regenerate visual.json so it contains only safe noVNC/control-room URLs "
+            "and safe noVNC password metadata.",
         ),
         "verified live URL": (
             "Deployment",
@@ -2479,6 +2486,87 @@ def _detonation_survivor(path: Path) -> bool:
     if path.is_dir():
         return any(path.iterdir())
     return True
+
+
+def _check_visual_state(
+    visual_path: Path,
+    mode: str,
+    checks: list[AcceptanceCheck],
+    missing: list[str],
+    ledger: HarnessLedger,
+) -> None:
+    if not visual_path.exists():
+        checks.append(
+            AcceptanceCheck(
+                "visual_state.safe",
+                "ok",
+                "Visual session state not present; no surviving visual state to validate.",
+            )
+        )
+        return
+    try:
+        raw = json.loads(visual_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        checks.append(
+            AcceptanceCheck(
+                "visual_state.safe",
+                "failed",
+                "Visual session state could not be read as a JSON object.",
+            )
+        )
+        if mode == "live":
+            missing.append("safe visual session state")
+        return
+    if not isinstance(raw, dict):
+        checks.append(
+            AcceptanceCheck(
+                "visual_state.safe",
+                "failed",
+                "Visual session state was not a JSON object.",
+            )
+        )
+        if mode == "live":
+            missing.append("safe visual session state")
+        return
+
+    sanitized = _sanitized_visual_state(raw)
+    snapshot = ledger.snapshot_json("visual-state", sanitized)
+    unsafe_fields = _unsafe_visual_state_fields(raw, sanitized)
+    if unsafe_fields:
+        checks.append(
+            AcceptanceCheck(
+                "visual_state.safe",
+                "failed",
+                "Visual session state contains unsafe " + ", ".join(unsafe_fields) + ".",
+                str(snapshot),
+            )
+        )
+        if mode == "live":
+            missing.append("safe visual session state")
+        return
+    checks.append(
+        AcceptanceCheck(
+            "visual_state.safe",
+            "ok",
+            "Visual session state is safe to preserve and embed.",
+            str(snapshot),
+        )
+    )
+
+
+def _unsafe_visual_state_fields(raw: dict[str, Any], sanitized: dict[str, Any]) -> list[str]:
+    unsafe: list[str] = []
+    if "novnc_url" in raw and raw.get("novnc_url") != sanitized.get("novnc_url"):
+        unsafe.append("noVNC URL")
+    if "control_room_url" in raw and raw.get("control_room_url") != sanitized.get(
+        "control_room_url"
+    ):
+        unsafe.append("control-room URL")
+    if "novnc_password" in raw and raw.get("novnc_password") != sanitized.get(
+        "novnc_password"
+    ):
+        unsafe.append("noVNC password metadata")
+    return unsafe
 
 
 def _check_leaks(

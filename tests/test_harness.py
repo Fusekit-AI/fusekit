@@ -10,6 +10,7 @@ from fusekit.harness.acceptance import (
     AcceptanceReport,
     _acceptance_blockers,
     _check_detonation,
+    _check_visual_state,
     _gate_resume_audit_requirements,
     _provider_strategy_shape_failures,
     _rollback_provider_names,
@@ -383,6 +384,72 @@ def test_acceptance_detonation_allows_redacted_survivor_artifacts(tmp_path) -> N
     assert checks[-1].status == "ok"
     assert "browser, visual, and auth scratch" in checks[-1].detail
     assert missing == []
+
+
+def test_acceptance_rejects_unsafe_visual_state_survivor(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    visual_path = fusekit_dir / "visual.json"
+    visual_path.write_text(
+        json.dumps(
+            {
+                "runner": "novnc",
+                "status": "ready",
+                "novnc_url": (
+                    "http://203.0.113.10:6080/vnc.html"
+                    "?autoconnect=1&password=leaked#frag"
+                ),
+                "control_room_url": "http://evil.example:8765/?token=stolen",
+                "novnc_password": "bad\npassword",
+            }
+        ),
+        encoding="utf-8",
+    )
+    checks: list[AcceptanceCheck] = []
+    missing: list[str] = []
+    ledger = HarnessLedger.create(fusekit_dir / "acceptance")
+
+    _check_visual_state(visual_path, "live", checks, missing, ledger)
+
+    assert checks[-1].id == "visual_state.safe"
+    assert checks[-1].status == "failed"
+    assert "noVNC URL" in checks[-1].detail
+    assert "control-room URL" in checks[-1].detail
+    assert "noVNC password metadata" in checks[-1].detail
+    assert "leaked" not in checks[-1].detail
+    assert "stolen" not in checks[-1].detail
+    assert "safe visual session state" in missing
+
+
+def test_acceptance_allows_sanitized_visual_state_survivor(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    visual_path = fusekit_dir / "visual.json"
+    visual_path.write_text(
+        json.dumps(
+            {
+                "runner": "novnc",
+                "status": "ready",
+                "novnc_url": "http://203.0.113.10:6080/vnc.html?autoconnect=1&resize=scale",
+                "control_room_url": "http://203.0.113.10:8765/?token=viewer-token",
+                "novnc_password": "viewer-password",
+            }
+        ),
+        encoding="utf-8",
+    )
+    checks: list[AcceptanceCheck] = []
+    missing: list[str] = []
+    ledger = HarnessLedger.create(fusekit_dir / "acceptance")
+
+    _check_visual_state(visual_path, "live", checks, missing, ledger)
+
+    assert checks[-1].id == "visual_state.safe"
+    assert checks[-1].status == "ok"
+    assert missing == []
+    snapshot = Path(checks[-1].artifact).read_text(encoding="utf-8")
+    assert "password=" not in snapshot
+    assert "viewer-password" not in snapshot
+    assert "[REDACTED sha256:" in snapshot
 
 
 def test_acceptance_gate_guidance_rejects_hidden_prompt_or_wrong_button() -> None:
