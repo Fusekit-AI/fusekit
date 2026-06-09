@@ -969,6 +969,27 @@ def test_acceptance_blockers_use_launcher_actionable_check_guidance() -> None:
     ]["next_action"]
 
 
+def test_acceptance_blockers_explain_missing_gate_event_controls() -> None:
+    blockers = {
+        blocker["item"]: blocker
+        for blocker in _acceptance_blockers(
+            [
+                AcceptanceCheck(
+                    "gates.audited",
+                    "failed",
+                    "missing gate events: provider.custom.review",
+                )
+            ],
+            [],
+        )
+    }
+
+    next_action = blockers["gates.audited"]["next_action"]
+    assert "Open provider gate in VM" in next_action
+    assert "Capture from VM clipboard" in next_action
+    assert "I finished this step" in next_action
+
+
 def test_acceptance_blockers_explain_resend_generated_value_recovery() -> None:
     blockers = _acceptance_blockers(
         [
@@ -2703,7 +2724,15 @@ def test_live_acceptance_requires_audited_control_room_gates(tmp_path) -> None:
     assert "audited human gate interventions" in report.missing
     blockers = {blocker["item"]: blocker for blocker in report.blockers}
     assert blockers["audited human gate interventions"]["category"] == "Human gates"
-    assert "through the launcher" in blockers["audited human gate interventions"]["next_action"]
+    assert "Open provider gate in VM" in blockers[
+        "audited human gate interventions"
+    ]["next_action"]
+    assert "Capture from VM clipboard" in blockers[
+        "audited human gate interventions"
+    ]["next_action"]
+    assert "I finished this step" in blockers[
+        "audited human gate interventions"
+    ]["next_action"]
 
 
 def test_live_acceptance_requires_clipboard_capture_for_secret_gates(tmp_path) -> None:
@@ -3258,6 +3287,11 @@ def test_live_acceptance_rejects_malformed_gate_audit_event(tmp_path) -> None:
     assert audit_check.status == "failed"
     assert "missing gate events: custom.review" in audit_check.detail
     assert "audited human gate interventions" in report.missing
+    blockers = {blocker["item"]: blocker for blocker in report.blockers}
+    next_action = blockers["audited human gate interventions"]["next_action"]
+    assert "Open provider gate in VM" in next_action
+    assert "Capture from VM clipboard" in next_action
+    assert "I finished this step" in next_action
 
 
 def test_live_acceptance_requires_resolved_control_room_gates(tmp_path) -> None:

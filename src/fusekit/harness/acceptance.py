@@ -419,8 +419,9 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
         ),
         "audited human gate interventions": (
             "Human gates",
-            "Open, capture, or resume each control-room gate through the launcher "
-            "so redacted audit events are written.",
+            "Use the visible launcher controls for each gate: Open provider gate "
+            "in VM, Capture from VM clipboard for copy-once values, or I finished "
+            "this step after a non-secret provider confirmation.",
         ),
         "resolved human gates": (
             "Human gates",
@@ -494,6 +495,13 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
                     "Regenerate provider gates so follow-me steps name the VM browser path.",
                 )
         if check.id == "gates.audited":
+            if "missing gate events" in detail:
+                return (
+                    "Human gates",
+                    "Use the visible launcher controls for each gate: Open provider gate "
+                    "in VM, Capture from VM clipboard for copy-once values, or I finished "
+                    "this step after a non-secret provider confirmation.",
+                )
             if "control_room.gate_open" in detail:
                 return (
                     "Human gates",
