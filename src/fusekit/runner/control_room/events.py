@@ -605,7 +605,7 @@ function renderVisual(job) {
             </a>
             <button
               type="button"
-              data-copy="${escapeAttr(novncUrl)}"
+              data-copy="${escapeAttr(iframeUrl)}"
               data-copy-label="live VM browser link"
             >
               Copy live VM browser link

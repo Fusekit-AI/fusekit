@@ -367,7 +367,7 @@ def _render_visual_session(visual: Any) -> str:
             </a>
             <button
               type="button"
-              data-copy="{html.escape(novnc_url)}"
+              data-copy="{html.escape(iframe_url)}"
               data-copy-label="live VM browser link"
             >
               Copy live VM browser link
