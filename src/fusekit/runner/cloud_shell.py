@@ -797,7 +797,7 @@ def _launcher_summary_items(plan: CloudShellLaunchPlan) -> tuple[str, ...]:
         items.append("Computer-use guidance: enabled")
     if "--capture-stdin" in args or "--capture-stdin" in plan.bootstrap_command:
         items.append(
-            "Secret capture: VM clipboard Capture buttons save directly to the encrypted vault"
+            "Secret capture: Capture from VM clipboard buttons save directly to the encrypted vault"
         )
     return tuple(items)
 

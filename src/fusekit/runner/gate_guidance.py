@@ -278,12 +278,12 @@ _GENERIC = GateGuidance(
         "Complete only highlighted login, MFA, CAPTCHA, consent, payment, or ownership prompts.",
         (
             "If the provider reveals a copy-once API key or token and FuseKit shows a "
-            "Capture button, copy the value inside the VM browser and click the matching "
-            "Capture from VM clipboard button."
+            "Capture from VM clipboard button, copy the value inside the VM browser and "
+            "click the matching button."
         ),
         (
-            "If no Capture button is shown, click I finished this step after the provider "
-            "confirms the gate is complete."
+            "If no Capture from VM clipboard button is shown, click I finished this step "
+            "after the provider confirms the gate is complete."
         ),
     ),
     reassurance="The worker remains alive and will retry this gate until it passes.",

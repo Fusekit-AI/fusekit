@@ -454,7 +454,7 @@ def _parser() -> argparse.ArgumentParser:
         default=True,
         help=(
             "enable secure provider secret capture; launcher runs use VM clipboard "
-            "Capture buttons, with terminal prompts only as fallback"
+            "Capture from VM clipboard buttons, with terminal prompts only as fallback"
         ),
     )
     launcher.add_argument(
@@ -995,8 +995,8 @@ def _github_source_handoff(args: argparse.Namespace) -> ProviderHandoff:
                     "token, copy it inside the VM browser."
                 ),
                 (
-                    "Click the matching Capture button in FuseKit; FuseKit stores the token "
-                    "only in the encrypted vault."
+                    "Click the matching Capture from VM clipboard button; FuseKit stores "
+                    "the token only in the encrypted vault."
                 ),
             ),
         )
@@ -3693,8 +3693,8 @@ def _provider_strategy_follow_steps(pack: ProviderCapabilityPack) -> tuple[str, 
             "steps in that VM browser."
         ),
         (
-            "If FuseKit shows Capture buttons for named values, copy each provider value "
-            "inside the VM browser and click the matching Capture from VM clipboard button."
+            "If FuseKit shows Capture from VM clipboard buttons for named values, copy "
+            "each provider value inside the VM browser and click the matching button."
         ),
         (
             "If FuseKit shows I finished this step, click it only after the provider "
@@ -4255,7 +4255,7 @@ def _resend_api_key_follow_steps(domain: str) -> tuple[str, ...]:
         ),
         (
             "Copy the API key only inside the VM browser, then click the matching "
-            "Capture RESEND_API_KEY from VM clipboard button in FuseKit."
+            "Capture RESEND_API_KEY from VM clipboard button."
         ),
         (
             "FuseKit stores the key in the encrypted vault and uses Resend's API before "
@@ -4363,7 +4363,7 @@ def _resend_runtime_follow_steps(
         [
             (
                 "Copy each requested value inside the VM browser, then click its "
-                "Capture button in FuseKit."
+                "Capture from VM clipboard button."
             ),
             (
                 "FuseKit will apply the captured values to Vercel and GitHub after "

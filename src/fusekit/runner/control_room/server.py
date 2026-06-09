@@ -582,7 +582,7 @@ def _blocked_capture_next_action(missing_targets: set[str]) -> str:
     if len(targets) == 1:
         return f"Click Capture {targets[0]} from VM clipboard, then FuseKit will continue."
     return (
-        "Click each missing Capture button from the VM clipboard: "
+        "Click each missing Capture from VM clipboard button: "
         + ", ".join(targets)
         + ". FuseKit continues after every required value is captured."
     )

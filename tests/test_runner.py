@@ -335,7 +335,7 @@ def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
     assert plan.launch_args[-1] == "--infer-ui"
     assert "SnowmanAI / FuseKit" in html
     assert "Privacy mode" in html
-    assert "VM clipboard Capture buttons save directly to the encrypted vault" in html
+    assert "Capture from VM clipboard buttons save directly to the encrypted vault" in html
     assert "hidden Cloud Shell prompts" not in html
     assert "Copy Bootstrap Command" in html
     assert "command: command.value" not in html
@@ -1063,6 +1063,39 @@ def test_control_room_post_rejects_capture_gate_resume_before_capture(tmp_path) 
         "provider.resend.api-key-domain-access"
     ]
     assert gate.status == "waiting"
+
+
+def test_control_room_post_rejects_multi_capture_gate_with_exact_copy(
+    tmp_path,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.custom.tokens",
+        provider="custom",
+        reason="Provider keys",
+        classification="provider-authorization",
+        target="CUSTOM_API_KEY, CUSTOM_WEBHOOK_SECRET",
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/api/gates/provider.custom.tokens/pass"
+        request = Request(url, method="POST", headers=_control_room_post_headers(tmp_path))
+        with pytest.raises(HTTPError) as exc:
+            urlopen(request, timeout=5)
+        payload = json.loads(exc.value.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert exc.value.code == 400
+    assert payload["missing_targets"] == ["CUSTOM_API_KEY", "CUSTOM_WEBHOOK_SECRET"]
+    assert "Click each missing Capture from VM clipboard button" in payload["next_action"]
+    assert "Capture button from the VM clipboard" not in payload["next_action"]
+    gate = GateService.load(tmp_path / "gates.json").records["provider.custom.tokens"]
     assert gate.captured_targets == ()
 
 
@@ -2133,7 +2166,7 @@ def test_security_surface_map_documents_control_room_state_routes() -> None:
     assert "clipboard-enabled arbitrary iframe" in text
     assert "action token is stored owner-only" in text
     assert "permissions repaired before reuse" in text
-    assert "Public guided runs use VM clipboard Capture buttons" in text
+    assert "Public guided runs use `Capture from VM clipboard` buttons" in text
     assert "CLI-only fallback can use a non-echoing prompt or env handoff" in text
     assert "redirect back to the same route without the token query parameter" in text
     assert "does not stay in the address bar" in text

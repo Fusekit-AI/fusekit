@@ -728,7 +728,7 @@ def _follow_me_steps(provider: str, kind: str, target: str) -> tuple[str, ...]:
             "Create a scoped token/key for this app when the provider asks.",
             (
                 "Copy the approved token inside the VM browser, then click the matching "
-                "Capture button."
+                "Capture from VM clipboard button."
             ),
         ),
         "api_error": (
@@ -749,7 +749,10 @@ def _follow_me_steps(provider: str, kind: str, target: str) -> tuple[str, ...]:
         "unknown_ui_drift": (
             "FuseKit is in guided takeover because this provider screen is new.",
             "Complete only highlighted provider prompts or provider-owned account checks.",
-            "Do not enter secrets anywhere except provider pages or FuseKit Capture buttons.",
+            (
+                "Do not enter secrets anywhere except provider pages or Capture from VM "
+                "clipboard buttons."
+            ),
             "Click I finished this step so FuseKit can re-verify the setup.",
         ),
     }

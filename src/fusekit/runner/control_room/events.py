@@ -55,7 +55,7 @@ function publicCopy(value) {
       "paste into FuseKit's " + "hidden prompt",
       "copy inside the VM browser, then click the matching Capture from VM clipboard button",
     ],
-    ["hidden Cloud Shell prompts", "VM clipboard Capture buttons"],
+    ["hidden Cloud Shell prompts", "Capture from VM clipboard buttons"],
     ["hidden prompts/env handoff", "VM clipboard Capture fallback"],
     ["hidden prompts", "VM clipboard Capture fallback"],
     ["hidden " + "prompt", "VM clipboard Capture"],

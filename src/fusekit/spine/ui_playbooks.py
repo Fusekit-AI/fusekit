@@ -214,8 +214,8 @@ def _capture_steps(handoff: ProviderHandoff) -> tuple[ProviderUiStep, ...]:
             service_gate=True,
             note=(
                 f"After the provider reveals the approved secret, copy {handoff.token_env} "
-                "inside the VM browser and use the matching Capture button so FuseKit "
-                "saves it directly into the encrypted vault."
+                "inside the VM browser and use the matching Capture from VM clipboard "
+                "button so FuseKit saves it directly into the encrypted vault."
             ),
         ),
     )
