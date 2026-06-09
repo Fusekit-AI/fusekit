@@ -1281,6 +1281,12 @@ button {
   background: #f2f8ff;
 }
 
+.strategy-card.strategy-plan {
+  grid-column: span 2;
+  border-color: rgba(0, 151, 255, 0.3);
+  background: #f6fbff;
+}
+
 .strategy-card span,
 .strategy-card strong,
 .strategy-card p,
@@ -1322,6 +1328,10 @@ button {
 
 .strategy-card li + li {
   margin-top: 4px;
+}
+
+.strategy-plan li {
+  font-weight: 760;
 }
 
 .strategy-card b {

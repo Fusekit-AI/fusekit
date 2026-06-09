@@ -84,6 +84,28 @@ def _control_room_cookie_from_token(port: int, token: str) -> tuple[str, int, st
     return headers["set-cookie"], response.status, headers.get("location", "")
 
 
+def _strategy_decision() -> dict[str, object]:
+    return {
+        "selected": {
+            "kind": "api",
+            "status": "available",
+            "deterministic": True,
+            "implemented": True,
+            "reason": "deterministic provider API is available",
+            "evidence": {},
+        },
+        "candidates": [
+            {
+                "kind": "api",
+                "status": "available",
+                "deterministic": True,
+                "implemented": True,
+                "reason": "deterministic provider API is available",
+            }
+        ],
+    }
+
+
 def test_runner_auto_uses_local_for_explicit_rehearsal(tmp_path) -> None:
     resolution = resolve_runner("auto", allow_incomplete=True, oci_config_file=tmp_path / "nope")
 
@@ -2291,6 +2313,7 @@ def test_control_room_payload_and_html_include_provider_strategy_routes(tmp_path
                                 "recipe": "github-deploy-key",
                                 "status": "needs_human_gate",
                                 "strategy": "browser_guided",
+                                "target": "GITHUB_TOKEN",
                                 "next_action": (
                                     "Click Open provider gate in VM, create the setup token, "
                                     "then click Capture from VM clipboard."
@@ -2333,6 +2356,8 @@ def test_control_room_payload_and_html_include_provider_strategy_routes(tmp_path
     assert "Provider token is missing." in html
     assert "Click Open provider gate in VM, create the setup token" in html
     assert "Create the fine-grained FuseKit setup token." in html
+    assert "Route plan" in html
+    assert "Capture from VM clipboard for GITHUB_TOKEN" in html
 
 
 def test_control_room_explains_deterministic_provider_route(tmp_path) -> None:
@@ -2381,9 +2406,80 @@ def test_control_room_explains_deterministic_provider_route(tmp_path) -> None:
 
     assert "resend-domain" in html
     assert "api · ok" in html
+    assert "Route plan" in html
+    assert "What happens in order" in html
+    assert "First, FuseKit creates or reuses the Resend sending domain by API" in html
+    assert "do not manually click Add domain in Resend unless FuseKit asks" in html
     assert "FuseKit creates or reuses the Resend domain" in html
     assert "then waits for DNS approval" in html
     assert "hand DNS records to DNS" in html
+
+
+def test_control_room_route_plan_explains_resend_dns_and_vercel_order(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job.save(tmp_path / "job.json")
+    (tmp_path / "provider_strategies.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.provider-strategies.v1",
+                "providers": [
+                    {
+                        "provider": "resend",
+                        "strategies": [
+                            {
+                                "recipe": "resend-domain",
+                                "status": "ok",
+                                "strategy": "api",
+                                "decision": {
+                                    "selected": {
+                                        "kind": "api",
+                                        "deterministic": True,
+                                        "implemented": True,
+                                        "reason": "Resend domain setup is API owned.",
+                                        "evidence": {
+                                            "api_owns": "domain",
+                                            "downstream_order": "before_dns_apply",
+                                            "user_manual_domain_step": "false",
+                                        },
+                                    }
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "provider": "vercel",
+                        "strategies": [
+                            {
+                                "recipe": "vercel-env",
+                                "status": "ok",
+                                "strategy": "api",
+                                "decision": _strategy_decision(),
+                            }
+                        ],
+                    },
+                    {
+                        "provider": "cloudflare",
+                        "strategies": [
+                            {
+                                "recipe": "cloudflare-dns",
+                                "status": "ok",
+                                "strategy": "api",
+                                "decision": _strategy_decision(),
+                            }
+                        ],
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+
+    assert "Route plan" in html
+    assert "First, FuseKit creates or reuses the Resend sending domain by API" in html
+    assert "Then FuseKit carries the Resend DNS records into the DNS approval gate" in html
+    assert "After Resend values exist, FuseKit writes the required RESEND_* runtime" in html
 
 
 def test_control_room_server_uses_local_only_and_security_headers(tmp_path) -> None:

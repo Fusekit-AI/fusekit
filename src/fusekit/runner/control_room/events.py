@@ -903,7 +903,133 @@ function renderProviderStrategies(job) {
       "</article>";
     return;
   }
-  root.innerHTML = providers.map(renderProviderStrategyCard).join("");
+  root.innerHTML =
+    renderProviderStrategyPlan(providers) +
+    providers.map(renderProviderStrategyCard).join("");
+}
+
+function renderProviderStrategyPlan(providers) {
+  const items = providerStrategyPlanItems(providers);
+  if (!items.length) return "";
+  return `
+    <article class="strategy-card strategy-plan">
+      <span>Route plan</span>
+      <strong>What happens in order</strong>
+      <ol>
+        ${items.map((item) => `<li>${escapeHtml(publicCopy(item))}</li>`).join("")}
+      </ol>
+    </article>
+  `;
+}
+
+function providerStrategyPlanItems(providers) {
+  const records = providerStrategyRecords(providers);
+  if (!records.length) return [];
+  const hasResendDomain = records.some((record) =>
+    strategyProvider(record) === "resend" &&
+    strategyRecipe(record) === "resend-domain" &&
+    strategyRoute(record) === "api" &&
+    strategyEvidence(record).downstream_order === "before_dns_apply"
+  );
+  const hasDns = records.some((record) =>
+    ["cloudflare", "dns"].includes(strategyProvider(record)) ||
+    strategyRecipe(record).includes("dns")
+  );
+  const hasVercelResendEnv = records.some((record) =>
+    strategyProvider(record) === "vercel" &&
+    strategyRoute(record) === "api" &&
+    strategyRecipe(record).includes("env")
+  );
+  const tokenTargets = Array.from(new Set(records
+    .filter((record) =>
+      ["browser_guided", "human_follow_me"].includes(strategyRoute(record)) &&
+      String(record.target || "").trim()
+    )
+    .map((record) => String(record.target || "").trim().toUpperCase())))
+    .sort();
+  const hasHumanGate = records.some((record) =>
+    ["browser_guided", "human_follow_me"].includes(strategyRoute(record))
+  );
+  const hasApi = records.some((record) => strategyRoute(record) === "api");
+  const items = [];
+  if (hasResendDomain) {
+    items.push(
+      "First, FuseKit creates or reuses the Resend sending domain by API; " +
+      "do not manually click Add domain in Resend unless FuseKit asks.",
+    );
+  }
+  if (hasResendDomain && hasDns) {
+    items.push(
+      "Then FuseKit carries the Resend DNS records into the DNS approval gate " +
+      "with the app records before Cloudflare/DNS apply runs.",
+    );
+  }
+  if (hasVercelResendEnv) {
+    items.push(
+      "After Resend values exist, FuseKit writes the required RESEND_* runtime " +
+      "variables into Vercel before deployment verification.",
+    );
+  }
+  if (tokenTargets.length) {
+    items.push(
+      "If a provider token gate appears, open it in the VM browser and use " +
+      `Capture from VM clipboard for ${tokenTargets.join(", ")}.`,
+    );
+  } else if (hasHumanGate) {
+    items.push(
+      "For provider-owned login, MFA, consent, or billing gates, use the VM " +
+      "browser and click I finished this step only after the provider confirms.",
+    );
+  }
+  if (!items.length && hasApi) {
+    items.push(
+      "FuseKit will run deterministic provider API setup after authorization " +
+      "and read-only health checks pass.",
+    );
+  }
+  return items;
+}
+
+function providerStrategyRecords(providers) {
+  return providers.flatMap((providerRecord) => {
+    const provider = String(providerRecord.provider || "").trim().toLowerCase();
+    const strategies = Array.isArray(providerRecord.strategies)
+      ? providerRecord.strategies
+      : [];
+    return strategies
+      .filter((strategy) => strategy && typeof strategy === "object")
+      .map((strategy) => ({ ...strategy, _provider: provider }));
+  });
+}
+
+function strategyProvider(record) {
+  return String(record._provider || record.provider || "").trim().toLowerCase();
+}
+
+function strategyRecipe(record) {
+  return String(record.recipe || "").trim().toLowerCase();
+}
+
+function strategyRoute(record) {
+  const decision = record.decision && typeof record.decision === "object"
+    ? record.decision
+    : {};
+  const selected = decision.selected && typeof decision.selected === "object"
+    ? decision.selected
+    : {};
+  return String(record.strategy || selected.kind || "").trim();
+}
+
+function strategyEvidence(record) {
+  const decision = record.decision && typeof record.decision === "object"
+    ? record.decision
+    : {};
+  const selected = decision.selected && typeof decision.selected === "object"
+    ? decision.selected
+    : {};
+  return selected.evidence && typeof selected.evidence === "object"
+    ? selected.evidence
+    : {};
 }
 
 function renderProviderStrategyCard(providerRecord) {

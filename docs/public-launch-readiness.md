@@ -92,7 +92,9 @@ permissioned Resend API key satisfies only the auth gate; FuseKit must then crea
 or reuse the Resend sending domain by API, create an audience only when the app
 requires one, carry the returned Resend DNS records into the Cloudflare approval
 plan, and continue without asking the user to manually create Resend domains or
-audiences.
+audiences. The provider-routes panel must show this as an ordered Route plan so
+the user can follow or watch the lane without deciding whether to click provider
+setup controls such as Resend's Add domain button.
 
 ## Harness Layer
 

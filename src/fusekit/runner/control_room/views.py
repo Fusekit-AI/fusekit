@@ -571,6 +571,13 @@ def _missing_acceptance_guidance(item: str) -> tuple[str, str]:
                 "let FuseKit push them into Vercel before verification."
             ),
         ),
+        "provider contract-health receipt proof": (
+            "Provider routes",
+            (
+                "Let FuseKit rerun provider setup so each API route proves a read-only "
+                "provider health check before changing provider state."
+            ),
+        ),
         "validated provider capability packs": (
             "Provider packs",
             "Regenerate provider capability packs for this app's providers before setup runs.",
@@ -669,7 +676,8 @@ def _render_provider_strategies(strategies: Any) -> str:
         </article>
 """
     else:
-        cards = "\n".join(_render_strategy_card(item) for item in providers)
+        plan = _render_strategy_plan(providers)
+        cards = plan + "\n".join(_render_strategy_card(item) for item in providers)
     return f"""
     <section class="strategy-panel" aria-label="Provider route decisions">
       <div class="section-head compact">
@@ -682,6 +690,130 @@ def _render_provider_strategies(strategies: Any) -> str:
       <div class="strategy-grid" data-provider-strategies>{cards}</div>
     </section>
 """
+
+
+def _render_strategy_plan(providers: list[Any]) -> str:
+    items = _strategy_plan_items(providers)
+    if not items:
+        return ""
+    rows = "".join(
+        f"<li>{html.escape(_public_copy(item))}</li>"
+        for item in items
+        if item.strip()
+    )
+    return f"""
+        <article class="strategy-card strategy-plan">
+          <span>Route plan</span>
+          <strong>What happens in order</strong>
+          <ol>{rows}</ol>
+        </article>
+"""
+
+
+def _strategy_plan_items(providers: list[Any]) -> list[str]:
+    records = list(_iter_strategy_records(providers))
+    if not records:
+        return []
+    items: list[str] = []
+    has_resend_domain = any(
+        _strategy_provider(record) == "resend"
+        and _strategy_recipe(record) == "resend-domain"
+        and _strategy_route(record) == "api"
+        and _strategy_evidence(record).get("downstream_order") == "before_dns_apply"
+        for record in records
+    )
+    has_dns = any(
+        _strategy_provider(record) in {"cloudflare", "dns"}
+        or "dns" in _strategy_recipe(record)
+        for record in records
+    )
+    has_vercel_resend_env = any(
+        _strategy_provider(record) == "vercel"
+        and _strategy_route(record) == "api"
+        and "env" in _strategy_recipe(record)
+        for record in records
+    )
+    token_targets = sorted(
+        {
+            str(record.get("target", "")).strip().upper()
+            for record in records
+            if _strategy_route(record) in {"browser_guided", "human_follow_me"}
+            and str(record.get("target", "")).strip()
+        }
+    )
+    has_human_gate = any(
+        _strategy_route(record) in {"browser_guided", "human_follow_me"}
+        for record in records
+    )
+    has_api = any(_strategy_route(record) == "api" for record in records)
+    if has_resend_domain:
+        items.append(
+            "First, FuseKit creates or reuses the Resend sending domain by API; "
+            "do not manually click Add domain in Resend unless FuseKit asks."
+        )
+    if has_resend_domain and has_dns:
+        items.append(
+            "Then FuseKit carries the Resend DNS records into the DNS approval gate "
+            "with the app records before Cloudflare/DNS apply runs."
+        )
+    if has_vercel_resend_env:
+        items.append(
+            "After Resend values exist, FuseKit writes the required RESEND_* runtime "
+            "variables into Vercel before deployment verification."
+        )
+    if token_targets:
+        items.append(
+            "If a provider token gate appears, open it in the VM browser and use "
+            f"Capture from VM clipboard for {', '.join(token_targets)}."
+        )
+    elif has_human_gate:
+        items.append(
+            "For provider-owned login, MFA, consent, or billing gates, use the VM "
+            "browser and click I finished this step only after the provider confirms."
+        )
+    if not items and has_api:
+        items.append(
+            "FuseKit will run deterministic provider API setup after authorization "
+            "and read-only health checks pass."
+        )
+    return items
+
+
+def _iter_strategy_records(providers: list[Any]) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for provider_record in providers:
+        if not isinstance(provider_record, dict):
+            continue
+        provider = str(provider_record.get("provider", "")).strip().lower()
+        strategies = provider_record.get("strategies", [])
+        if not isinstance(strategies, list):
+            continue
+        for strategy in strategies:
+            if isinstance(strategy, dict):
+                records.append({**strategy, "_provider": provider})
+    return records
+
+
+def _strategy_provider(record: dict[str, Any]) -> str:
+    return str(record.get("_provider", record.get("provider", ""))).strip().lower()
+
+
+def _strategy_recipe(record: dict[str, Any]) -> str:
+    return str(record.get("recipe", "")).strip().lower()
+
+
+def _strategy_route(record: dict[str, Any]) -> str:
+    decision = record.get("decision", {})
+    selected = decision.get("selected", {}) if isinstance(decision, dict) else {}
+    fallback = selected.get("kind", "") if isinstance(selected, dict) else ""
+    return str(record.get("strategy", fallback)).strip()
+
+
+def _strategy_evidence(record: dict[str, Any]) -> dict[str, Any]:
+    decision = record.get("decision", {})
+    selected = decision.get("selected", {}) if isinstance(decision, dict) else {}
+    evidence = selected.get("evidence", {}) if isinstance(selected, dict) else {}
+    return evidence if isinstance(evidence, dict) else {}
 
 
 def _render_strategy_card(provider_record: Any) -> str:

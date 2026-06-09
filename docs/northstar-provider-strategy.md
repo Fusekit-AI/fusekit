@@ -120,12 +120,14 @@ the deterministic work. Missing authorization now becomes an explicit
 thin missing-token failure. API-backed provider routes also run a read-only
 contract-health check before provider mutations; failed health checks become a
 guided token-refresh/capture gate, and live acceptance requires the receipt to
-prove health succeeded before setup.
+prove health succeeded before setup. The control room renders a provider Route
+plan from strategy evidence so users see Resend domain setup, DNS approval,
+Vercel env wiring, and token-capture gates in the intended order.
 
 Next slices:
 
 1. Add official CLI executors for providers where CLI is more reliable.
 2. Add signed remote provider-pack registry support.
-3. Persist strategy decisions into checkpoints/control-room surfaces.
+3. Persist strategy decisions into checkpoint resume records.
 4. Run a real OCI provider acceptance using GitHub, Vercel, Cloudflare, and a
    disposable domain.
