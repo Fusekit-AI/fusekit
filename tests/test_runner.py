@@ -68,6 +68,8 @@ from fusekit.runner.server import _handler, _is_loopback, control_room_payload, 
 from fusekit.security import scan_for_secret_leaks
 from fusekit.vault import Vault
 
+REMOTE_CONTROL_ROOM_TOKEN = "remote_control_room_token_abcdefghijklmnopqrstuvwxyz0123456789"
+
 
 def _control_room_post_headers(root: Path, **extra: str) -> dict[str, str]:
     token = (root / "control-room-action-token").read_text(encoding="utf-8").strip()
@@ -2965,7 +2967,7 @@ def test_control_room_server_requires_remote_token(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("FUSEKIT_CONTROL_ROOM_TOKEN", "token-123")
+    monkeypatch.setenv("FUSEKIT_CONTROL_ROOM_TOKEN", REMOTE_CONTROL_ROOM_TOKEN)
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job_path = tmp_path / "job.json"
     job.save(job_path)
@@ -2977,7 +2979,7 @@ def test_control_room_server_requires_remote_token(
         with pytest.raises(HTTPError):
             urlopen(f"{base}/", timeout=5)
         cookie, redirect_status, redirect_location = _control_room_cookie_from_token(
-            server.server_port, "token-123"
+            server.server_port, REMOTE_CONTROL_ROOM_TOKEN
         )
         request = Request(f"{base}/", headers={"Cookie": cookie})
         with urlopen(request, timeout=5) as response:
@@ -2993,7 +2995,7 @@ def test_control_room_server_requires_remote_token(
     assert redirect_status == 303
     assert redirect_location == "/"
     assert "FuseKit Control Room" in html
-    assert "fusekit_control_room=token-123" in cookie
+    assert f"fusekit_control_room={REMOTE_CONTROL_ROOM_TOKEN}" in cookie
     assert "HttpOnly" in cookie
     assert "SameSite=Strict" in cookie
     assert "Path=/" in cookie
@@ -3013,15 +3015,23 @@ def test_control_room_does_not_cookie_unsafe_remote_token(
     thread.start()
     try:
         base = f"http://127.0.0.1:{server.server_port}"
-        with urlopen(f"{base}/?token=token%20with%20spaces", timeout=5) as response:
-            headers = {key.lower(): value for key, value in response.headers.items()}
-            html = response.read().decode("utf-8")
+        with pytest.raises(HTTPError) as exc:
+            urlopen(f"{base}/?token=token%20with%20spaces", timeout=5)
+        headers = {key.lower(): value for key, value in exc.value.headers.items()}
+        payload = json.loads(exc.value.read().decode("utf-8"))
     finally:
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
 
-    assert "FuseKit Control Room" in html
+    assert exc.value.code == 403
+    assert payload == {
+        "error": (
+            "Remote control room token must be generated with secrets.token_urlsafe "
+            "and contain at least 32 URL-safe characters."
+        ),
+        "ok": False,
+    }
     assert "set-cookie" not in headers
 
 
@@ -3029,7 +3039,7 @@ def test_tokenized_control_room_cleans_query_token_on_api_get(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("FUSEKIT_CONTROL_ROOM_TOKEN", "token-123")
+    monkeypatch.setenv("FUSEKIT_CONTROL_ROOM_TOKEN", REMOTE_CONTROL_ROOM_TOKEN)
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job_path = tmp_path / "job.json"
     job.save(job_path)
@@ -3039,7 +3049,7 @@ def test_tokenized_control_room_cleans_query_token_on_api_get(
     connection = None
     try:
         connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
-        connection.request("GET", "/api/job?token=token-123&view=compact")
+        connection.request("GET", f"/api/job?token={REMOTE_CONTROL_ROOM_TOKEN}&view=compact")
         response = connection.getresponse()
         headers = {key.lower(): value for key, value in response.getheaders()}
         response.read()
@@ -3052,15 +3062,15 @@ def test_tokenized_control_room_cleans_query_token_on_api_get(
 
     assert response.status == 303
     assert headers["location"] == "/api/job?view=compact"
-    assert "token-123" not in headers["location"]
-    assert "fusekit_control_room=token-123" in headers["set-cookie"]
+    assert REMOTE_CONTROL_ROOM_TOKEN not in headers["location"]
+    assert f"fusekit_control_room={REMOTE_CONTROL_ROOM_TOKEN}" in headers["set-cookie"]
 
 
 def test_tokenized_control_room_rejects_cross_site_gate_post(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("FUSEKIT_CONTROL_ROOM_TOKEN", "token-123")
+    monkeypatch.setenv("FUSEKIT_CONTROL_ROOM_TOKEN", REMOTE_CONTROL_ROOM_TOKEN)
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job_path = tmp_path / "job.json"
     job.save(job_path)
@@ -3079,7 +3089,7 @@ def test_tokenized_control_room_rejects_cross_site_gate_post(
             url,
             method="POST",
             headers={
-                "Authorization": "Bearer token-123",
+                "Authorization": f"Bearer {REMOTE_CONTROL_ROOM_TOKEN}",
                 "x-fusekit-control-room": "resume",
                 "x-fusekit-action-token": (
                     tmp_path / "control-room-action-token"
@@ -3104,7 +3114,7 @@ def test_tokenized_control_room_requires_action_token_for_gate_post(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("FUSEKIT_CONTROL_ROOM_TOKEN", "token-123")
+    monkeypatch.setenv("FUSEKIT_CONTROL_ROOM_TOKEN", REMOTE_CONTROL_ROOM_TOKEN)
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job_path = tmp_path / "job.json"
     job.save(job_path)
@@ -3120,7 +3130,7 @@ def test_tokenized_control_room_requires_action_token_for_gate_post(
     try:
         base = f"http://127.0.0.1:{server.server_port}"
         cookie, redirect_status, redirect_location = _control_room_cookie_from_token(
-            server.server_port, "token-123"
+            server.server_port, REMOTE_CONTROL_ROOM_TOKEN
         )
         with urlopen(Request(f"{base}/", headers={"Cookie": cookie}), timeout=5) as response:
             html = response.read().decode("utf-8")
@@ -3158,7 +3168,7 @@ def test_tokenized_control_room_accepts_action_token_for_gate_post(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("FUSEKIT_CONTROL_ROOM_TOKEN", "token-123")
+    monkeypatch.setenv("FUSEKIT_CONTROL_ROOM_TOKEN", REMOTE_CONTROL_ROOM_TOKEN)
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job_path = tmp_path / "job.json"
     job.save(job_path)
@@ -3174,7 +3184,7 @@ def test_tokenized_control_room_accepts_action_token_for_gate_post(
     try:
         base = f"http://127.0.0.1:{server.server_port}"
         cookie, redirect_status, redirect_location = _control_room_cookie_from_token(
-            server.server_port, "token-123"
+            server.server_port, REMOTE_CONTROL_ROOM_TOKEN
         )
         url = f"{base}/api/gates/provider.github.mfa.123/pass"
         request = Request(

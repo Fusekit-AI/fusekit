@@ -51,6 +51,10 @@ SENSITIVE_BROWSER_ENV_MARKERS = (
     "SESSION",
     "TOKEN",
 )
+REMOTE_CONTROL_ROOM_TOKEN_ERROR = (
+    "Remote control room token must be generated with secrets.token_urlsafe "
+    "and contain at least 32 URL-safe characters."
+)
 
 
 def serve_control_room(job_state: Path, host: str = "127.0.0.1", port: int = 8765) -> str:
@@ -66,10 +70,7 @@ def serve_control_room(job_state: Path, host: str = "127.0.0.1", port: int = 876
         if not token:
             raise FuseKitError("Remote control room binding requires FUSEKIT_CONTROL_ROOM_TOKEN.")
         if not _safe_remote_control_room_token(token):
-            raise FuseKitError(
-                "Remote control room token must be generated with secrets.token_urlsafe "
-                "and contain at least 32 URL-safe characters."
-            )
+            raise FuseKitError(REMOTE_CONTROL_ROOM_TOKEN_ERROR)
     handler = _handler(job_state)
     server = ThreadingHTTPServer((host, port), handler)
     url = f"http://{host}:{server.server_port}"
@@ -239,6 +240,12 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
             expected = os.environ.get("FUSEKIT_CONTROL_ROOM_TOKEN", "")
             if not expected:
                 return True
+            if not _safe_remote_control_room_token(expected):
+                self._write_json(
+                    {"ok": False, "error": REMOTE_CONTROL_ROOM_TOKEN_ERROR},
+                    status=403,
+                )
+                return False
             token = self._request_token(route)
             if token and secrets.compare_digest(token, expected):
                 if token == _query_token(route):
@@ -324,7 +331,7 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
             expected = os.environ.get("FUSEKIT_CONTROL_ROOM_TOKEN", "")
             if not expected or not getattr(self, "_set_control_room_cookie", False):
                 return
-            if not _safe_cookie_value(expected):
+            if not _safe_remote_control_room_token(expected):
                 return
             self.send_header(
                 "set-cookie",
@@ -913,10 +920,6 @@ def _safe_remote_control_room_token(value: str) -> bool:
     return _safe_action_token(value)
 
 
-def _safe_cookie_value(value: str) -> bool:
-    return bool(re.fullmatch(r"[A-Za-z0-9_-]{8,512}", value))
-
-
 def _query_token(route: Any) -> str:
     values = parse_qs(getattr(route, "query", ""), keep_blank_values=False).get("token", [])
     return values[0] if values else ""
@@ -926,9 +929,9 @@ def _should_clean_query_token(route: Any, handler: Any) -> bool:
     if not _query_token(route):
         return False
     expected = os.environ.get("FUSEKIT_CONTROL_ROOM_TOKEN", "")
-    return bool(getattr(handler, "_set_control_room_cookie", False)) and _safe_cookie_value(
-        expected
-    )
+    return bool(
+        getattr(handler, "_set_control_room_cookie", False)
+    ) and _safe_remote_control_room_token(expected)
 
 
 def _clean_query_token_location(route: Any) -> str:
