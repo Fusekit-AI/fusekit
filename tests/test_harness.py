@@ -1081,7 +1081,12 @@ def test_acceptance_blockers_use_launcher_actionable_check_guidance() -> None:
     assert "read-only provider health check before mutation" in blockers[
         "receipt.provider_contract_health"
     ]["next_action"]
-    assert "plaintext worker, browser, visual, and auth scratch state" in blockers[
+    assert (
+        "plaintext worker, browser, visual, provider-auth, control-room, and gateway "
+        "scratch state"
+        in blockers["detonation.worker_state"]["next_action"]
+    )
+    assert "plaintext worker, browser, visual, and auth scratch state" not in blockers[
         "detonation.worker_state"
     ]["next_action"]
     assert "I finished this step button" in blockers["gates.resolved"]["next_action"]

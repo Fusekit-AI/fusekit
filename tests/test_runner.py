@@ -566,7 +566,12 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
     assert "create or reuse the Resend domain/audience values by API" in html
     assert "Capture or generate the required RESEND_* values" not in html
     assert "Detonation" in html
-    assert "plaintext worker, browser, visual, and auth scratch state" in html
+    assert (
+        "plaintext worker, browser, visual, provider-auth, control-room, and gateway "
+        "scratch state"
+        in html
+    )
+    assert "plaintext worker, browser, visual, and auth scratch state" not in html
     assert "8 launch blockers" in html
     assert "acceptanceBlockers" in html
     assert "missingAcceptanceBlocker" in html

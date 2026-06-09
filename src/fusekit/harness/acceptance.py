@@ -448,8 +448,9 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
         ),
         "detonated worker state": (
             "Detonation",
-            "Run detonation/preflight so plaintext worker state is destroyed after "
-            "encrypted artifacts are preserved.",
+            "Run detonation/preflight so plaintext worker, browser, visual, "
+            "provider-auth, control-room, and gateway scratch state is destroyed "
+            "after encrypted artifacts are preserved.",
         ),
     }
     return guidance.get(
@@ -585,8 +586,8 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
     if check.id == "detonation.worker_state":
         return (
             "Detonation",
-            "Run detonation so plaintext worker, browser, visual, and auth scratch "
-            "state is removed.",
+            "Run detonation so plaintext worker, browser, visual, provider-auth, "
+            "control-room, and gateway scratch state is removed.",
         )
     if check.id == "leak_scan.clean":
         return (

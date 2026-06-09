@@ -872,8 +872,9 @@ function missingAcceptanceBlocker(item) {
     ],
     "detonated worker state": [
       "Detonation",
-      "Run detonation so plaintext worker, browser, visual, and auth scratch state " +
-        "is destroyed after encrypted proof is preserved.",
+      "Run detonation so plaintext worker, browser, visual, provider-auth, " +
+        "control-room, and gateway scratch state is destroyed after encrypted " +
+        "proof is preserved.",
     ],
   };
   const fallback = [
