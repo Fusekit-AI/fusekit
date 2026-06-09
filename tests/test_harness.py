@@ -475,6 +475,61 @@ def test_acceptance_gate_guidance_rejects_hidden_prompt_or_wrong_button() -> Non
     assert any("secret targets at I finished this step" in item for item in failures)
 
 
+def test_acceptance_gate_guidance_rejects_local_browser_side_channel() -> None:
+    failures = _unguided_gates(
+        [
+            {
+                "id": "provider.github.authorization",
+                "provider": "github",
+                "status": "passed",
+                "classification": "provider-authorization",
+                "resume_url": "https://github.com/settings/tokens",
+                "target": "GITHUB_TOKEN",
+                "follow_steps": [
+                    "Click Open provider gate in VM so GitHub opens in the VM browser.",
+                    "Use your local browser tab to copy the token.",
+                    "Click Capture from VM clipboard after copying GITHUB_TOKEN.",
+                ],
+                "next_action": "Capture GITHUB_TOKEN from VM clipboard.",
+                "resume_hint": "FuseKit will retry provider setup.",
+                "success_criteria": ["A GitHub token is captured in the encrypted vault."],
+                "avoid_steps": ["Do not grant unrelated permissions."],
+            }
+        ]
+    )
+
+    assert any("local browser" in item for item in failures)
+
+
+def test_acceptance_gate_guidance_allows_local_browser_warning() -> None:
+    failures = _unguided_gates(
+        [
+            {
+                "id": "provider.github.authorization",
+                "provider": "github",
+                "status": "passed",
+                "classification": "provider-authorization",
+                "resume_url": "https://github.com/settings/tokens",
+                "target": "GITHUB_TOKEN",
+                "follow_steps": [
+                    "Click Open provider gate in VM so GitHub opens in the VM browser.",
+                    "Do not use a local browser tab for this gate.",
+                    (
+                        "Copy the token inside the VM browser and click "
+                        "Capture from VM clipboard."
+                    ),
+                ],
+                "next_action": "Capture GITHUB_TOKEN from VM clipboard.",
+                "resume_hint": "FuseKit will retry provider setup.",
+                "success_criteria": ["A GitHub token is captured in the encrypted vault."],
+                "avoid_steps": ["Do not grant unrelated permissions."],
+            }
+        ]
+    )
+
+    assert failures == []
+
+
 def test_acceptance_provider_gates_require_openable_resume_url() -> None:
     failures = _unguided_gates(
         [
@@ -589,6 +644,45 @@ def test_acceptance_human_strategy_guidance_must_be_launcher_actionable() -> Non
     assert any("non-launcher wording" in item for item in failures)
     assert any("VM browser path" in item for item in failures)
     assert any("Capture from VM clipboard" in item for item in failures)
+
+
+def test_acceptance_human_strategy_rejects_local_browser_side_channel() -> None:
+    failures = _provider_strategy_shape_failures(
+        [
+            {
+                "provider": "github",
+                "strategies": [
+                    {
+                        "recipe": "github-repo-secrets",
+                        "status": "needs_human_gate",
+                        "target": "GITHUB_TOKEN",
+                        "follow_steps": [
+                            (
+                                "Click Open provider gate in VM so GitHub opens in "
+                                "the VM browser."
+                            ),
+                            "Use a local browser tab to create the token.",
+                            "Click Capture from VM clipboard after copying GITHUB_TOKEN.",
+                        ],
+                        "next_action": "Capture GITHUB_TOKEN from VM clipboard.",
+                        "resume_hint": "FuseKit will retry GitHub setup.",
+                        "decision": {
+                            "selected": {
+                                "kind": "browser_guided",
+                                "status": "available",
+                                "deterministic": False,
+                                "implemented": False,
+                                "reason": "Missing provider token.",
+                            },
+                            "candidates": [{"kind": "browser_guided"}],
+                        },
+                    }
+                ],
+            }
+        ]
+    )
+
+    assert any("local browser" in item for item in failures)
 
 
 def test_acceptance_live_requires_real_provider_evidence(tmp_path) -> None:

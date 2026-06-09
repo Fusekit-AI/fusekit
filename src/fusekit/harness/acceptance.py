@@ -2007,6 +2007,11 @@ _FORBIDDEN_GUIDANCE_PHRASES = (
     "manually",
 )
 
+_LOCAL_BROWSER_GUIDANCE_PATTERNS = (
+    r"\b(?:open|use|launch|complete|finish|copy|paste)\b.{0,48}\b(?:local browser|local tab)\b",
+    r"\b(?:local browser|local tab)\b.{0,48}\b(?:open|use|copy|paste|complete|finish)\b",
+)
+
 
 def _guidance_quality_failures(
     label: str,
@@ -2027,6 +2032,11 @@ def _guidance_quality_failures(
         if phrase in lowered:
             failures.append(f"{label}.guidance contains non-launcher wording: {phrase}")
             break
+    local_browser_failure = _local_browser_guidance_failure(lowered)
+    if local_browser_failure:
+        failures.append(
+            f"{label}.guidance contains non-launcher wording: {local_browser_failure}"
+        )
     if requires_vm and not any(
         phrase in lowered
         for phrase in ("open provider gate in vm", "vm browser", "highlighted")
@@ -2045,6 +2055,28 @@ def _guidance_quality_failures(
                 f"{label}.next_action points secret targets at I finished this step"
             )
     return failures
+
+
+def _local_browser_guidance_failure(text: str) -> str:
+    for pattern in _LOCAL_BROWSER_GUIDANCE_PATTERNS:
+        for match in re.finditer(pattern, text):
+            if not _local_browser_match_is_negated(text, match.start()):
+                return "local browser"
+    return ""
+
+
+def _local_browser_match_is_negated(text: str, match_start: int) -> bool:
+    prefix = text[max(0, match_start - 64) : match_start]
+    clause = re.split(r"[.;:!?]\s*", prefix)[-1]
+    return (
+        re.search(
+            r"\b(?:do not|don't|never)\s+"
+            r"(?:(?:use|open|launch|copy|paste|complete|finish)\s+)?"
+            r"(?:(?:a|the|your)\s+)?$",
+            clause,
+        )
+        is not None
+    )
 
 
 def _env_targets_from_text(value: str) -> list[str]:
