@@ -1862,6 +1862,36 @@ def test_verification_gate_guides_resend_domain_verification(tmp_path) -> None:
     assert "Cloudflare DNS behind Resend" in gate.resume_hint
 
 
+def test_verification_gate_fallback_resend_domain_copy_is_review_only(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    args = argparse.Namespace(app=app)
+    manifest = SetupManifest(
+        app_name="app",
+        app_path=str(app),
+        domains=(DomainRequirement(provider="cloudflare", domain="moonlite.rsvp"),),
+    )
+    pack = synthesize_provider_pack("resend", app)
+    result = VerificationResult(
+        provider="resend",
+        kind="resend-domain",
+        target="moonlite.rsvp",
+        status="needs_human_gate",
+        details={"service_gate": True},
+    )
+
+    _record_provider_verification_gates(args, manifest, pack, [result])
+
+    gate = GateService.load(app / ".fusekit" / "gates.json").records[
+        "provider.resend.domain-verification"
+    ]
+    gate_text = " ".join((gate.reason, *gate.follow_steps, gate.next_action, gate.resume_hint))
+    assert "Review the existing Resend sending domain moonlite.rsvp" in gate.reason
+    assert "FuseKit creates or reuses it by API before DNS" in gate.reason
+    assert "Add and verify" not in gate_text
+    assert "Click Add domain" not in gate_text
+
+
 def test_verification_gate_routes_resend_runtime_values_from_vercel(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()

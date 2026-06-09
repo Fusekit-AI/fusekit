@@ -4199,7 +4199,10 @@ def _provider_verification_gate(
             "id": "provider.resend.domain-verification",
             "provider": "resend",
             "reason": reason
-            or f"Add and verify the Resend sending domain {target or domain}.",
+            or (
+                f"Review the existing Resend sending domain {target or domain}; "
+                "FuseKit creates or reuses it by API before DNS."
+            ),
             "resume_url": "https://resend.com/domains",
             "classification": "provider-domain",
             "target": target,

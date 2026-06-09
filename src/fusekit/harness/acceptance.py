@@ -1923,6 +1923,7 @@ def _generated_resend_runtime_capture_failure(gate: dict[str, Any]) -> str:
 _RESEND_MANUAL_SETUP_PATTERNS = (
     r"\b(?:click|press|choose|use|open)\s+(?:the\s+)?(?:\+\s*)?add domain\b",
     r"\b(?:click|press|choose|use|open)\s+(?:the\s+)?(?:\+\s*)?add audience\b",
+    r"\badd\s+and\s+verify\s+(?:the\s+)?resend\s+sending\s+domain\b",
     r"\bcreate\s+(?:a|the)\s+resend\s+domain\b",
     r"\bcreate\s+(?:a|the)\s+domain\s+in\s+resend\b",
     r"\bcreate\s+(?:a|the)\s+resend\s+audience\b",

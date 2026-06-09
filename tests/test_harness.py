@@ -788,6 +788,7 @@ def test_acceptance_rejects_manual_resend_domain_or_audience_gate_guidance() -> 
                 "provider": "resend",
                 "status": "waiting",
                 "classification": "provider-domain",
+                "reason": "Add and verify the Resend sending domain moonlite.rsvp.",
                 "resume_url": "https://resend.com/domains",
                 "target": "moonlite.rsvp",
                 "follow_steps": [
