@@ -84,7 +84,7 @@ class GateRecord:
             "resume_url": self.resume_url,
             "classification": self.classification,
             "target": self.target,
-            "follow_steps": list(self.follow_steps),
+            "follow_steps": list(self.follow_steps or _default_follow_steps(self.provider)),
             "success_criteria": list(
                 self.success_criteria or _default_success_criteria(self.provider)
             ),
@@ -321,6 +321,10 @@ def _capture_targets(target: str) -> set[str]:
 
 def _default_success_criteria(provider: str) -> tuple[str, ...]:
     return provider_gate_guidance(provider).success
+
+
+def _default_follow_steps(provider: str) -> tuple[str, ...]:
+    return provider_gate_guidance(provider).actions
 
 
 def _default_avoid_steps(provider: str) -> tuple[str, ...]:

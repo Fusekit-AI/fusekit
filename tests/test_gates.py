@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from fusekit.runner.gate_guidance import provider_gate_guidance
 from fusekit.runner.gates import GateService
 
 
@@ -61,6 +60,9 @@ def test_gate_service_default_capture_copy_names_vm_clipboard_button(tmp_path) -
         "Copy the provider value in the VM browser, then click the matching "
         "Capture from VM clipboard button for RESEND_API_KEY."
     )
+    assert any(
+        "Capture from VM clipboard" in item for item in gate.to_dict()["follow_steps"]
+    )
 
 
 def test_gate_service_persists_provider_success_and_avoid_guidance(tmp_path) -> None:
@@ -78,15 +80,13 @@ def test_gate_service_persists_provider_success_and_avoid_guidance(tmp_path) -> 
     gate = GateService.load(path).records["provider.resend.authorization"].to_dict()
     assert "success_criteria" in gate
     assert "avoid_steps" in gate
+    assert any("All domains" in item for item in gate["follow_steps"])
     assert any("raw Resend API key value" in item for item in gate["success_criteria"])
     assert any(
         "No Resend domains or audiences need to exist" in item
         for item in gate["success_criteria"]
     )
     assert any("Do not click Add domain" in item for item in gate["avoid_steps"])
-
-    guidance = provider_gate_guidance("resend")
-    assert any("All domains" in item for item in guidance.actions)
 
 
 def test_gate_service_resume_request_can_resurface_after_failed_recheck(tmp_path) -> None:

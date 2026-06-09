@@ -20,6 +20,7 @@ from fusekit.harness.acceptance import (
 )
 from fusekit.harness.ledger import HarnessLedger
 from fusekit.runner.gate_guidance import provider_gate_guidance
+from fusekit.runner.gates import GateService
 from fusekit.vault import Vault
 
 
@@ -1277,6 +1278,24 @@ def test_acceptance_allows_resend_api_owned_domain_retry_guidance() -> None:
     )
 
     assert failures == []
+
+
+def test_acceptance_allows_gate_service_default_provider_guidance(tmp_path) -> None:
+    service = GateService.load(tmp_path / "gates.json")
+    service.wait(
+        "provider.github.authorization",
+        provider="github",
+        reason="GitHub setup token",
+        resume_url="https://github.com/settings/tokens?type=beta",
+        classification="provider-authorization",
+        target="GITHUB_TOKEN",
+    )
+
+    gates = json.loads((tmp_path / "gates.json").read_text(encoding="utf-8"))["gates"]
+
+    assert _unguided_gates(gates) == []
+    assert any("Open provider gate in VM" in step for step in gates[0]["follow_steps"])
+    assert any("Capture from VM clipboard" in step for step in gates[0]["follow_steps"])
 
 
 def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
