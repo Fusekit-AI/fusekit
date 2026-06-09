@@ -34,6 +34,7 @@ from fusekit.runner.control_room.server import (
     _control_room_vault_passphrase,
     _validate_clipboard_capture_value,
     _visual_browser_binary,
+    _visual_browser_env,
     _visual_display,
 )
 from fusekit.runner.gates import GateService
@@ -1297,6 +1298,13 @@ def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -
     fake_chrome.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     fake_chrome.chmod(0o700)
     monkeypatch.setenv("FUSEKIT_VISUAL_BROWSER", str(fake_chrome))
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("RESEND_API_KEY", "re_test")
+    monkeypatch.setenv("FUSEKIT_PROVIDER_TOKEN", "provider-token")
+    monkeypatch.setenv("FUSEKIT_VAULT_PASSPHRASE", "passphrase")
+    monkeypatch.setenv("FUSEKIT_PROVIDER_SESSION_COOKIE", "provider-cookie")
+    monkeypatch.setenv("FUSEKIT_VISUAL_SAFE_SETTING", "kept")
+    monkeypatch.setenv("XAUTHORITY", "/tmp/fusekit-xauthority")
     monkeypatch.setattr("fusekit.runner.control_room.server.subprocess.Popen", fake_popen)
     server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -1325,6 +1333,13 @@ def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -
     assert len(calls) == 1
     assert calls[0]["command"][-1] == "https://dash.cloudflare.com/profile/api-tokens"
     assert calls[0]["env"]["DISPLAY"] == ":99"
+    assert calls[0]["env"]["FUSEKIT_VISUAL_SAFE_SETTING"] == "kept"
+    assert calls[0]["env"]["XAUTHORITY"] == "/tmp/fusekit-xauthority"
+    assert "OPENAI_API_KEY" not in calls[0]["env"]
+    assert "RESEND_API_KEY" not in calls[0]["env"]
+    assert "FUSEKIT_PROVIDER_TOKEN" not in calls[0]["env"]
+    assert "FUSEKIT_VAULT_PASSPHRASE" not in calls[0]["env"]
+    assert "FUSEKIT_PROVIDER_SESSION_COOKIE" not in calls[0]["env"]
     assert calls[0]["command"][0] == str(fake_chrome)
     gate = GateService.load(tmp_path / "gates.json").records[
         "provider.cloudflare.authorization"
@@ -1344,6 +1359,29 @@ def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -
     assert events[-1]["data"]["reused"] is True
     assert events[-1]["data"]["has_resume_url"] is True
     assert "dash.cloudflare.com" not in audit_path.read_text(encoding="utf-8")
+
+
+def test_control_room_visual_browser_env_strips_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("RESEND_API_KEY", "re_test")
+    monkeypatch.setenv("FUSEKIT_CONTROL_ROOM_TOKEN", "remote-control-room-token")
+    monkeypatch.setenv("FUSEKIT_VAULT_PASSPHRASE", "passphrase")
+    monkeypatch.setenv("FUSEKIT_PROVIDER_SESSION_COOKIE", "provider-cookie")
+    monkeypatch.setenv("FUSEKIT_VISUAL_SAFE_SETTING", "kept")
+    monkeypatch.setenv("XAUTHORITY", "/tmp/fusekit-xauthority")
+
+    env = _visual_browser_env(":99")
+
+    assert env["DISPLAY"] == ":99"
+    assert env["FUSEKIT_VISUAL_SAFE_SETTING"] == "kept"
+    assert env["XAUTHORITY"] == "/tmp/fusekit-xauthority"
+    assert "OPENAI_API_KEY" not in env
+    assert "RESEND_API_KEY" not in env
+    assert "FUSEKIT_CONTROL_ROOM_TOKEN" not in env
+    assert "FUSEKIT_VAULT_PASSPHRASE" not in env
+    assert "FUSEKIT_PROVIDER_SESSION_COOKIE" not in env
 
 
 def test_control_room_open_reuses_active_gate_even_after_debounce_window(

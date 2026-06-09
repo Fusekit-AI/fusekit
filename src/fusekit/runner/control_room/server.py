@@ -40,6 +40,17 @@ TOKEN_PREFIXES_BY_ENV = {
     "OPENAI_API_KEY": ("sk-",),
     "RESEND_API_KEY": ("re_",),
 }
+SENSITIVE_BROWSER_ENV_MARKERS = (
+    "AUTH",
+    "COOKIE",
+    "CREDENTIAL",
+    "KEY",
+    "PASS",
+    "PASSWORD",
+    "SECRET",
+    "SESSION",
+    "TOKEN",
+)
 
 
 def serve_control_room(job_state: Path, host: str = "127.0.0.1", port: int = 8765) -> str:
@@ -390,11 +401,10 @@ def _open_gate_url_in_visual_browser(job_state: Path, url: str) -> str:
         f"--user-data-dir={profile_dir}",
         safe_url,
     ]
-    env = {**os.environ, "DISPLAY": display}
     try:
         subprocess.Popen(
             command,
-            env=env,
+            env=_visual_browser_env(display),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.STDOUT,
             start_new_session=True,
@@ -776,6 +786,25 @@ def _is_supported_visual_browser_binary(path: str) -> bool:
     if name in {"google-chrome", "google-chrome-stable", "chromium", "chromium-browser"}:
         return True
     return "chrome" in name or "chromium" in name
+
+
+def _visual_browser_env(display: str) -> dict[str, str]:
+    """Return a browser environment without provider or vault secrets."""
+
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if not _is_sensitive_browser_env_name(key)
+    }
+    env["DISPLAY"] = display
+    return env
+
+
+def _is_sensitive_browser_env_name(name: str) -> bool:
+    upper_name = name.upper()
+    if upper_name == "XAUTHORITY":
+        return False
+    return any(marker in upper_name for marker in SENSITIVE_BROWSER_ENV_MARKERS)
 
 
 def _visual_display(job_state: Path) -> str:
