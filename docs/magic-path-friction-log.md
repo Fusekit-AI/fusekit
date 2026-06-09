@@ -186,6 +186,7 @@ guided, or explicitly verified.
 | A user could copy a masked provider key, placeholder text, or `undefined` into the VM clipboard and generic token validation could store it as if it were real. | VM clipboard Capture now rejects placeholder and masked token values before vault write, names the target, and tells the user to copy the real token value in the VM browser and click the same Capture button again. |
 | Vercel env verification could still say to "Capture or derive" missing runtime values, making generated Resend values feel like a user decision. | Vercel verification now describes launcher-owned recovery: Capture only copy-once provider values from the VM clipboard, regenerate API-owned provider values, reapply Vercel env, and then verify deployment. |
 | If the live control room could not parse a Capture failure response, the browser fallback said only to copy in the VM and try again. | Capture fallback errors now name the VM browser and exact `Capture <ENV> from VM clipboard` button so the user still has a precise recovery action without backend detail. |
+| Synthesized Resend provider packs could still mention a domain-ownership gate during first account setup, contradicting the no-manual-domain public path. | Resend pack handoffs now keep first-run setup on login/API-key capture only, explicitly avoid Resend domain setup screens, and omit domain-ownership service gates because FuseKit owns domain creation and DNS record collection by API after key capture. |
 
 ## Open Acceptance Items
 

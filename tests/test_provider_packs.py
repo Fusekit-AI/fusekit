@@ -320,6 +320,9 @@ def test_resend_pack_handoff_explains_existing_key_secret_value(tmp_path) -> Non
     assert "does not reveal old key secrets again" in text
     assert "Open provider gate in VM" in text
     assert "Copy RESEND_API_KEY once inside the VM browser" in text
+    assert "domain ownership" not in text.lower()
+    assert "domain setup screens" in text
+    assert "domain ownership verification" not in pack.handoff.service_gates
 
 
 def test_resend_handoff_never_opens_domains_before_api_key_capture() -> None:

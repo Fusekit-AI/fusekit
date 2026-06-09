@@ -1358,7 +1358,7 @@ def _resend_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                 ),
                 (
                     "Complete the highlighted email verification, MFA, CAPTCHA, billing, "
-                    "consent, or domain ownership gate."
+                    "or consent gate. Do not use Resend domain setup screens here."
                 ),
                 "Let FuseKit create or reuse the sending domain and audience after key capture.",
                 (
@@ -1395,7 +1395,6 @@ def _resend_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                 "CAPTCHA",
                 "billing/payment verification",
                 "consent",
-                "domain ownership verification",
             ),
         ),
         required_secrets=("RESEND_API_KEY",),
