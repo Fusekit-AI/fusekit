@@ -1326,6 +1326,8 @@ def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -
 
     assert payload["ok"] is True
     assert payload["reused"] is False
+    assert payload["browser"] == fake_chrome.name
+    assert str(tmp_path) not in payload["browser"]
     assert "shared VM browser" in payload["message"]
     assert second_payload["ok"] is True
     assert second_payload["reused"] is True

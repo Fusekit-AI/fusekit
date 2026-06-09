@@ -210,7 +210,7 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                     {
                         "ok": True,
                         "gate_id": gate_id,
-                        "browser": browser,
+                        "browser": _visual_browser_label(browser),
                         "reused": False,
                         "message": "Provider gate opened inside the shared VM browser.",
                     }
@@ -786,6 +786,10 @@ def _is_supported_visual_browser_binary(path: str) -> bool:
     if name in {"google-chrome", "google-chrome-stable", "chromium", "chromium-browser"}:
         return True
     return "chrome" in name or "chromium" in name
+
+
+def _visual_browser_label(path: str) -> str:
+    return Path(path).name or "chrome"
 
 
 def _visual_browser_env(display: str) -> dict[str, str]:
