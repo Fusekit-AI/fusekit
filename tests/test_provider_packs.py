@@ -21,6 +21,7 @@ from fusekit.providers.capability_pack import (
     validate_provider_pack,
     write_provider_pack,
 )
+from fusekit.providers.handoff import handoff_for
 
 
 def test_synthesizes_plaid_capability_pack_from_evidence(tmp_path) -> None:
@@ -292,13 +293,31 @@ def test_vercel_pack_handoff_names_account_scope_choices(tmp_path) -> None:
 
 def test_resend_pack_handoff_explains_existing_key_secret_value(tmp_path) -> None:
     pack = synthesize_provider_pack("resend", tmp_path)
+    runtime_handoff = handoff_from_provider_pack(pack)
 
     text = " ".join((*pack.handoff.account_steps, *pack.handoff.secret_steps))
 
+    assert pack.handoff.token_url == "https://resend.com/api-keys"
+    assert pack.handoff.project_url == ""
+    assert runtime_handoff.urls(include_project=True) == (
+        "https://resend.com/signup",
+        "https://resend.com/api-keys",
+    )
     assert "Full access" in text
     assert "raw value" in text
     assert "does not reveal old key secrets again" in text
     assert "Copy RESEND_API_KEY once inside the VM browser" in text
+
+
+def test_resend_handoff_never_opens_domains_before_api_key_capture() -> None:
+    handoff = handoff_for("resend")
+
+    assert handoff.project_url == ""
+    assert handoff.urls(include_project=True) == (
+        "https://resend.com/signup",
+        "https://resend.com/api-keys",
+    )
+    assert "https://resend.com/domains" not in handoff.urls(include_project=True)
 
 
 def test_common_provider_catalog_synthesizes_valid_specific_packs(tmp_path) -> None:

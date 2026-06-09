@@ -25,10 +25,10 @@ class ProviderHandoff:
     def urls(self, include_project: bool = False) -> tuple[str, ...]:
         """Return the URLs FuseKit should open for the user."""
 
-        urls = (self.signup_url, self.token_url)
-        if include_project:
-            return urls + (self.project_url,)
-        return urls
+        urls = [self.signup_url, self.token_url]
+        if include_project and self.project_url:
+            urls.append(self.project_url)
+        return tuple(dict.fromkeys(url for url in urls if url))
 
 
 HANDOFFS: dict[str, ProviderHandoff] = {
@@ -148,7 +148,7 @@ HANDOFFS: dict[str, ProviderHandoff] = {
         provider="resend",
         signup_url="https://resend.com/signup",
         token_url="https://resend.com/api-keys",
-        project_url="https://resend.com/domains",
+        project_url="",
         token_env="RESEND_API_KEY",
         token_record_id="provider.resend.token",
         token_label="Resend API key",

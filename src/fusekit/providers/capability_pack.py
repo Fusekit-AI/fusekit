@@ -1261,7 +1261,7 @@ def _resend_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
             signup_url="https://resend.com/signup",
             login_url="https://resend.com/login",
             token_url="https://resend.com/api-keys",
-            project_url="https://resend.com/domains",
+            project_url="",
             token_env="RESEND_API_KEY",
             token_record_id="provider.resend.token",
             token_label="Resend API key",
