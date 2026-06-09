@@ -13,6 +13,8 @@ class GateGuidance:
     body: str
     actions: tuple[str, ...]
     reassurance: str
+    success: tuple[str, ...] = ()
+    avoid: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         """Serialize guidance for the live control-room browser script."""
@@ -22,6 +24,8 @@ class GateGuidance:
             "body": self.body,
             "actions": list(self.actions),
             "reassurance": self.reassurance,
+            "success": list(self.success),
+            "avoid": list(self.avoid),
         }
 
 
@@ -62,6 +66,16 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
             ),
         ),
         reassurance="FuseKit will use GitHub's API and continue once the scoped token is captured.",
+        success=(
+            "A new fine-grained token is copied from GitHub's one-time reveal screen.",
+            "The token is limited to the named owner and repository.",
+            "Only Secrets and Administration are read/write; unrelated permissions stay off.",
+        ),
+        avoid=(
+            "Do not choose All repositories unless FuseKit explicitly named that scope.",
+            "Do not paste the token into the terminal or local browser.",
+            "Do not approve unrelated organizations, repos, or SSO prompts.",
+        ),
     ),
     "vercel": GateGuidance(
         title="Vercel needs a deployment token",
@@ -96,6 +110,16 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
             ),
         ),
         reassurance="FuseKit will continue through Vercel's API after capture succeeds.",
+        success=(
+            "A new Vercel token is copied from the one-time reveal screen.",
+            "The token is scoped to Personal Account or the exact team FuseKit named.",
+            "Any GitHub connection approval names only the target account and repo.",
+        ),
+        avoid=(
+            "Do not create the token under the wrong team or account.",
+            "Do not connect extra GitHub repos or organizations.",
+            "Do not paste the token anywhere except the VM clipboard Capture flow.",
+        ),
     ),
     "cloudflare": GateGuidance(
         title="Cloudflare needs a scoped DNS token",
@@ -133,6 +157,16 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
         reassurance=(
             "FuseKit will use the token through Cloudflare's API and keep retrying "
             "DNS verification."
+        ),
+        success=(
+            "A Custom User API Token is copied from Cloudflare's one-time reveal screen.",
+            "Permissions are Zone / Zone / Read and Zone / DNS / Edit.",
+            "Zone Resources is limited to the exact zone FuseKit named.",
+        ),
+        avoid=(
+            "Do not use Global API Key or the older API Keys page.",
+            "Do not include all zones unless FuseKit explicitly named that scope.",
+            "Do not add IP filtering or TTL rules unless your organization requires them.",
         ),
     ),
     "resend": GateGuidance(
@@ -174,6 +208,16 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
             ),
         ),
         reassurance="FuseKit will use Resend's API and continue once the email key is captured.",
+        success=(
+            "A raw Resend API key value is copied from a new one-time reveal screen.",
+            "The first setup key has Full access so FuseKit can create the sending domain.",
+            "FuseKit owns domain creation, DNS record collection, and optional audience setup.",
+        ),
+        avoid=(
+            "Do not rely on an existing key card unless you can copy the raw key value.",
+            "Do not click Add domain when Resend says No domains yet.",
+            "Do not create audiences by hand unless FuseKit later asks for a provider-owned gate.",
+        ),
     ),
     "oci": GateGuidance(
         title="Oracle Cloud is opening the clean room",
@@ -187,6 +231,14 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
             "Leave the Cloud Shell tab open; FuseKit will continue from there.",
         ),
         reassurance="FuseKit treats this as a waiting state, not a failure.",
+        success=(
+            "Cloud Shell is open and ready to run the launcher command.",
+            "OCI account, tenancy, payment, MFA, or Cloud Shell prompts are complete.",
+        ),
+        avoid=(
+            "Do not close Cloud Shell while the launcher is provisioning.",
+            "Do not create extra compartments or VMs by hand unless FuseKit asks.",
+        ),
     ),
     "openai": GateGuidance(
         title="OpenAI is authorizing the brain lane",
@@ -201,6 +253,14 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
         ),
         reassurance=(
             "FuseKit encrypts captured auth state and detonates plaintext worker state later."
+        ),
+        success=(
+            "OpenAI authorization shows a success callback in the VM browser.",
+            "FuseKit resumes without asking for a raw OpenAI key in the control room.",
+        ),
+        avoid=(
+            "Do not restart the auth flow in a different browser profile.",
+            "Do not paste provider callback URLs into chat or terminal logs.",
         ),
     ),
 }
@@ -225,6 +285,15 @@ _GENERIC = GateGuidance(
         ),
     ),
     reassurance="The worker remains alive and will retry this gate until it passes.",
+    success=(
+        "The provider page confirms the account-owner action is complete.",
+        "If a one-time token is revealed, FuseKit has captured it from the VM clipboard.",
+    ),
+    avoid=(
+        "Do not use a local browser for this gate.",
+        "Do not paste secrets into terminal prompts unless FuseKit explicitly labels "
+        "it a CLI fallback.",
+    ),
 )
 
 

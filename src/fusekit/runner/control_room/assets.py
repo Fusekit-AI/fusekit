@@ -437,6 +437,42 @@ button {
   padding-left: 20px;
 }
 
+.gate-criteria-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.gate-criteria {
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(183, 232, 255, 0.22);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: rgba(0, 21, 42, 0.2);
+}
+
+.gate-criteria.success {
+  border-color: rgba(109, 221, 177, 0.34);
+}
+
+.gate-criteria.avoid {
+  border-color: rgba(255, 197, 117, 0.32);
+}
+
+.gate-criteria strong {
+  color: #9bdcff;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.gate-criteria ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 17px;
+}
+
 .gate-help em {
   color: #b7e8ff;
   font-style: normal;

@@ -1273,6 +1273,7 @@ def _render_gate_help(step: Any) -> str:
         if next_action or resume_hint
         else ""
     )
+    criteria_block = _render_gate_criteria(guidance)
     return f"""
         <div class="gate-help">
           <span>What you need to do</span>{classification_label}
@@ -1281,12 +1282,42 @@ def _render_gate_help(step: Any) -> str:
           {target_label}
           {meta}
           <ol>{actions}</ol>
+          {criteria_block}
           <em>{html.escape(guidance.reassurance)}</em>
           {next_block}
           {capture_buttons}
           {resume_button}
         </div>
 """
+
+
+def _render_gate_criteria(guidance: GateGuidance) -> str:
+    blocks: list[str] = []
+    if guidance.success:
+        rows = "".join(
+            f"<li>{html.escape(_public_copy(item))}</li>"
+            for item in guidance.success
+            if str(item).strip()
+        )
+        if rows:
+            blocks.append(
+                '<div class="gate-criteria success"><strong>Success looks like</strong>'
+                f"<ul>{rows}</ul></div>"
+            )
+    if guidance.avoid:
+        rows = "".join(
+            f"<li>{html.escape(_public_copy(item))}</li>"
+            for item in guidance.avoid
+            if str(item).strip()
+        )
+        if rows:
+            blocks.append(
+                '<div class="gate-criteria avoid"><strong>Avoid</strong>'
+                f"<ul>{rows}</ul></div>"
+            )
+    if not blocks:
+        return ""
+    return f'<div class="gate-criteria-grid">{"".join(blocks)}</div>'
 
 
 def _is_retrying_gate_step(step: Any) -> bool:

@@ -331,6 +331,7 @@ function renderGateHelp(step) {
         `</div>`,
       ].join("")
     : "";
+  const criteriaBlock = renderGateCriteria(guidance);
   return `
     <div class="gate-help">
       <span>What you need to do</span>${classification}
@@ -339,12 +340,39 @@ function renderGateHelp(step) {
       ${target}
       ${meta}
       <ol>${followSteps.map((action) => `<li>${escapeHtml(publicCopy(action))}</li>`).join("")}</ol>
+      ${criteriaBlock}
       <em>${escapeHtml(guidance.reassurance)}</em>
       ${nextBlock}
       ${captureButtons}
       ${resumeButton}
     </div>
   `;
+}
+
+function renderGateCriteria(guidance) {
+  const blocks = [];
+  if (Array.isArray(guidance.success) && guidance.success.length) {
+    const rows = guidance.success
+      .filter((item) => String(item || "").trim())
+      .map((item) => `<li>${escapeHtml(publicCopy(item))}</li>`)
+      .join("");
+    if (rows) {
+      blocks.push(
+        `<div class="gate-criteria success"><strong>Success looks like</strong>` +
+          `<ul>${rows}</ul></div>`,
+      );
+    }
+  }
+  if (Array.isArray(guidance.avoid) && guidance.avoid.length) {
+    const rows = guidance.avoid
+      .filter((item) => String(item || "").trim())
+      .map((item) => `<li>${escapeHtml(publicCopy(item))}</li>`)
+      .join("");
+    if (rows) {
+      blocks.push(`<div class="gate-criteria avoid"><strong>Avoid</strong><ul>${rows}</ul></div>`);
+    }
+  }
+  return blocks.length ? `<div class="gate-criteria-grid">${blocks.join("")}</div>` : "";
 }
 
 function isRetryingGateStep(step) {

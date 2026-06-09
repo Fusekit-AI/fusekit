@@ -741,12 +741,17 @@ def test_control_room_uses_gate_provider_for_guidance_when_id_is_generic(tmp_pat
 
     assert "Resend needs an email API key" in html
     assert "before Cloudflare DNS" in html
+    assert "Success looks like" in html
+    assert "A raw Resend API key value is copied from a new one-time reveal screen." in html
+    assert "Avoid" in html
+    assert "Do not click Add domain when Resend says No domains yet." in html
     assert "Open provider gate in VM" in html
     assert "Capture from VM clipboard" in html
     assert "Copy the provider value in the VM browser" in html
     assert "resume automatically after every target is captured" in html
     assert 'data-gate-capture="authorization"' in html
     assert "step.provider ||" in html
+    assert "renderGateCriteria" in html
 
 
 def test_control_room_resend_setup_retry_uses_finished_button_not_capture(tmp_path) -> None:
