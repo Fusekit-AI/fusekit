@@ -12,6 +12,7 @@ from fusekit.harness.acceptance import (
     _check_detonation,
     _check_visual_state,
     _gate_resume_audit_requirements,
+    _provider_strategy_checkpoint_failures,
     _provider_strategy_shape_failures,
     _rollback_provider_names,
     _unguided_gates,
@@ -814,6 +815,57 @@ def test_acceptance_human_strategy_rejects_bad_success_or_avoid_panels() -> None
 
     assert any("local browser" in item for item in failures)
     assert any("manual action" in item for item in failures)
+
+
+def test_acceptance_checkpoint_guidance_rejects_side_channels() -> None:
+    failures = _provider_strategy_checkpoint_failures(
+        {"github": {"github-repo-secrets"}},
+        [
+            {
+                "id": "provider.github.routes",
+                "status": "waiting",
+                "detail": "github-repo-secrets uses browser_guided (needs_human_gate)",
+                "next_action": "Use your local browser tab to create the token.",
+                "resume_hint": "Manually add provider secrets if the route fails.",
+            }
+        ],
+    )
+
+    assert any("local browser" in item for item in failures)
+
+
+def test_acceptance_checkpoint_guidance_rejects_manual_resend_setup() -> None:
+    failures = _provider_strategy_checkpoint_failures(
+        {"resend": {"resend-domain"}},
+        [
+            {
+                "id": "provider.resend.routes",
+                "status": "waiting",
+                "detail": "resend-domain uses browser_guided (needs_human_gate)",
+                "next_action": "Click Add domain in Resend, then continue.",
+                "resume_hint": "FuseKit will wait for DNS after the domain exists.",
+            }
+        ],
+    )
+
+    assert any("manual Resend domain/audience setup" in item for item in failures)
+
+
+def test_acceptance_checkpoint_guidance_allows_negated_manual_copy_warning() -> None:
+    failures = _provider_strategy_checkpoint_failures(
+        {"vercel": {"vercel-deploy"}},
+        [
+            {
+                "id": "provider.vercel.routes",
+                "status": "done",
+                "detail": "vercel-deploy uses api (ok)",
+                "next_action": "Nothing to copy manually into Vercel.",
+                "resume_hint": "FuseKit recorded the deterministic provider route.",
+            }
+        ],
+    )
+
+    assert failures == []
 
 
 def test_acceptance_live_requires_real_provider_evidence(tmp_path) -> None:

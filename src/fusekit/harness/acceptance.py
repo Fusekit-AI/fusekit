@@ -1736,6 +1736,13 @@ def _provider_strategy_checkpoint_failures(
         status = str(checkpoint.get("status", "") or "").strip()
         if status not in {"done", "waiting", "running", "failed"}:
             failures.append(f"{checkpoint_id} has unsupported status {status or 'empty'}")
+        guidance_failure = _checkpoint_guidance_quality_failure(
+            checkpoint_id,
+            checkpoint,
+            provider=provider,
+        )
+        if guidance_failure:
+            failures.append(guidance_failure)
         if provider == "resend" and "resend-domain" in recipes:
             text = " ".join(
                 str(checkpoint.get(field, "") or "")
@@ -1746,6 +1753,41 @@ def _provider_strategy_checkpoint_failures(
                     f"{checkpoint_id} is missing Resend-before-DNS recovery guidance"
                 )
     return failures
+
+
+def _checkpoint_guidance_quality_failure(
+    checkpoint_id: str,
+    checkpoint: dict[str, Any],
+    *,
+    provider: str,
+) -> str:
+    text = " ".join(
+        str(checkpoint.get(field, "") or "")
+        for field in ("detail", "next_action", "resume_hint")
+    ).lower()
+    for phrase in _FORBIDDEN_GUIDANCE_PHRASES:
+        if phrase in text:
+            return f"{checkpoint_id} guidance contains non-launcher wording: {phrase}"
+    local_browser_failure = _local_browser_guidance_failure(text)
+    if local_browser_failure:
+        return (
+            f"{checkpoint_id} guidance contains non-launcher wording: "
+            f"{local_browser_failure}"
+        )
+    manual_action_failure = _manual_action_guidance_failure(text)
+    if manual_action_failure:
+        return (
+            f"{checkpoint_id} guidance contains non-launcher wording: "
+            f"{manual_action_failure}"
+        )
+    if provider == "resend":
+        for field in ("detail", "next_action", "resume_hint"):
+            if _field_asks_for_manual_resend_setup(str(checkpoint.get(field, "") or "")):
+                return (
+                    f"{checkpoint_id} guidance asks for manual Resend "
+                    "domain/audience setup"
+                )
+    return ""
 
 
 def _provider_route_slug(value: str) -> str:
