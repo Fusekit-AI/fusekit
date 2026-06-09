@@ -712,6 +712,26 @@ def test_acceptance_blockers_explain_resend_generated_value_recovery() -> None:
     assert "Resend API setup retry" in blockers[0]["next_action"]
 
 
+def test_acceptance_blockers_explain_manual_resend_setup_recovery() -> None:
+    blockers = _acceptance_blockers(
+        [
+            AcceptanceCheck(
+                "gates.guided",
+                "failed",
+                (
+                    "provider.resend.domain.guidance asks for manual Resend "
+                    "domain/audience setup"
+                ),
+            )
+        ],
+        [],
+    )
+
+    assert blockers[0]["item"] == "gates.guided"
+    assert "captures only the setup key" in blockers[0]["next_action"]
+    assert "domains and audiences through Resend API" in blockers[0]["next_action"]
+
+
 def test_resend_api_strategy_requires_domain_ownership_evidence() -> None:
     failures = _provider_strategy_shape_failures(
         [
@@ -758,6 +778,89 @@ def test_resend_audience_strategy_requires_conditional_api_evidence() -> None:
         "resend.strategies[0].selected.evidence.conditional must be "
         "only_when_app_requires_audience"
     ) in failures
+
+
+def test_acceptance_rejects_manual_resend_domain_or_audience_gate_guidance() -> None:
+    failures = _unguided_gates(
+        [
+            {
+                "id": "provider.resend.domain-verification",
+                "provider": "resend",
+                "status": "waiting",
+                "classification": "provider-domain",
+                "resume_url": "https://resend.com/domains",
+                "target": "moonlite.rsvp",
+                "follow_steps": [
+                    "Open Resend in the VM browser.",
+                    "Click Add domain and create a Resend domain for moonlite.rsvp.",
+                ],
+                "next_action": "Click I finished this step after the domain exists.",
+                "resume_hint": "FuseKit will continue after the domain is present.",
+                "success_criteria": ["A Resend domain exists for moonlite.rsvp."],
+                "avoid_steps": ["Do not create broad API keys."],
+            },
+            {
+                "id": "provider.resend.audience",
+                "provider": "resend",
+                "status": "waiting",
+                "classification": "provider-runtime-values",
+                "resume_url": "https://resend.com/audiences",
+                "target": "",
+                "follow_steps": [
+                    "Open Resend in the VM browser.",
+                    "Click Add audience and create the audience in Resend.",
+                ],
+                "next_action": "Click I finished this step after the audience exists.",
+                "resume_hint": "FuseKit will continue after the audience is present.",
+                "success_criteria": ["A Resend audience exists."],
+                "avoid_steps": ["Do not create broad API keys."],
+            },
+        ]
+    )
+
+    assert any(
+        "provider.resend.domain-verification.guidance asks for manual Resend "
+        "domain/audience setup" in failure
+        for failure in failures
+    )
+    assert any(
+        "provider.resend.audience.guidance asks for manual Resend domain/audience setup"
+        in failure
+        for failure in failures
+    )
+
+
+def test_acceptance_allows_resend_api_owned_domain_retry_guidance() -> None:
+    failures = _unguided_gates(
+        [
+            {
+                "id": "provider.resend.domain-setup-retry",
+                "provider": "resend",
+                "status": "waiting",
+                "classification": "provider-setup-retry",
+                "resume_url": "https://resend.com/api-keys",
+                "target": "",
+                "follow_steps": [
+                    "Open provider gate in VM and stay on Resend API Keys.",
+                    "Do not click Add domain; FuseKit creates or reuses the domain.",
+                    "Click I finished this step so FuseKit retries Resend API setup.",
+                ],
+                "next_action": (
+                    "Click I finished this step so FuseKit retries Resend API setup."
+                ),
+                "resume_hint": (
+                    "FuseKit will create or reuse the sending domain through Resend API, "
+                    "then hand returned DNS records to Cloudflare."
+                ),
+                "success_criteria": [
+                    "Resend API key has been captured through the launcher."
+                ],
+                "avoid_steps": ["Do not click Add domain in Resend."],
+            }
+        ]
+    )
+
+    assert failures == []
 
 
 def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:

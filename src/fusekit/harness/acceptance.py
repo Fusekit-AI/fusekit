@@ -467,6 +467,12 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
                     "RESEND_API_KEY; generated sender and audience values must use "
                     "Resend API setup retry.",
                 )
+            if "manual resend domain/audience setup" in detail:
+                return (
+                    "Human gates",
+                    "Regenerate the Resend gate so the user captures only the setup key; "
+                    "FuseKit must create or reuse domains and audiences through Resend API.",
+                )
             if "missing resume_url" in detail:
                 return (
                     "Human gates",
@@ -1878,6 +1884,9 @@ def _unguided_gates(gates: Any) -> list[str]:
         generated_resend_target_failure = _generated_resend_runtime_capture_failure(gate)
         if generated_resend_target_failure:
             missing.append(generated_resend_target_failure)
+        manual_resend_setup_failure = _manual_resend_setup_gate_failure(gate)
+        if manual_resend_setup_failure:
+            missing.append(manual_resend_setup_failure)
         quality_failures = _guidance_quality_failures(
             gate_id,
             follow_steps=follow_steps,
@@ -1909,6 +1918,54 @@ def _generated_resend_runtime_capture_failure(gate: dict[str, Any]) -> str:
         f"{gate_id}.target asks the user to capture API-generated Resend values: "
         + ", ".join(sorted(generated_targets))
     )
+
+
+_RESEND_MANUAL_SETUP_PATTERNS = (
+    r"\b(?:click|press|choose|use|open)\s+(?:the\s+)?(?:\+\s*)?add domain\b",
+    r"\b(?:click|press|choose|use|open)\s+(?:the\s+)?(?:\+\s*)?add audience\b",
+    r"\bcreate\s+(?:a|the)\s+resend\s+domain\b",
+    r"\bcreate\s+(?:a|the)\s+domain\s+in\s+resend\b",
+    r"\bcreate\s+(?:a|the)\s+resend\s+audience\b",
+    r"\bcreate\s+(?:a|the)\s+audience\s+in\s+resend\b",
+)
+
+
+def _manual_resend_setup_gate_failure(gate: dict[str, Any]) -> str:
+    """Reject stale Resend gates that route API-owned setup back to provider UI."""
+
+    provider = str(gate.get("provider", "")).strip().lower()
+    if provider != "resend":
+        return ""
+    fields = (
+        gate.get("reason", ""),
+        gate.get("target", ""),
+        gate.get("next_action", ""),
+        gate.get("resume_hint", ""),
+        *(gate.get("follow_steps", []) if isinstance(gate.get("follow_steps"), list) else []),
+    )
+    for value in fields:
+        if _field_asks_for_manual_resend_setup(str(value)):
+            gate_id = str(gate.get("id", "") or "provider.resend")
+            return (
+                f"{gate_id}.guidance asks for manual Resend domain/audience setup; "
+                "FuseKit must own that setup through Resend API after key capture"
+            )
+    return ""
+
+
+def _field_asks_for_manual_resend_setup(value: str) -> bool:
+    text = value.lower()
+    for pattern in _RESEND_MANUAL_SETUP_PATTERNS:
+        for match in re.finditer(pattern, text):
+            if not _manual_setup_match_is_negated(text, match.start()):
+                return True
+    return False
+
+
+def _manual_setup_match_is_negated(text: str, match_start: int) -> bool:
+    prefix = text[max(0, match_start - 48) : match_start]
+    clause = re.split(r"[.;:!?]\s*", prefix)[-1]
+    return re.search(r"\b(?:do not|don't|never)\s+(?:manually\s+)?$", clause) is not None
 
 
 _PROVIDER_GATE_CLASSIFICATIONS = {
