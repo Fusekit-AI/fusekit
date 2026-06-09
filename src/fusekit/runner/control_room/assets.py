@@ -622,6 +622,23 @@ button {
   text-transform: uppercase;
 }
 
+.gate-action-status strong,
+.gate-action-status span,
+.gate-action-status p {
+  margin: 0;
+}
+
+.gate-action-status strong {
+  font-size: 13px;
+}
+
+.gate-action-status span,
+.gate-action-status p {
+  color: #d4ebff;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .gate-action-status.pending {
   border-color: rgba(111, 215, 255, 0.38);
 }

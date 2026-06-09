@@ -449,11 +449,11 @@ function renderGateActionStatus(gateId) {
   const status = gateActionStatus.get(String(gateId));
   const tone = status ? classToken(status.tone || "ok") : "";
   const hidden = status ? "" : " hidden";
-  const message = status ? status.message : "";
+  const message = status ? renderGateActionStatusBody(status) : "";
   return [
     `<div class="gate-action-status ${tone}" role="status" aria-live="polite" `,
     `data-gate-action-status-for="${escapeAttr(gateId)}"${hidden}>`,
-    `${escapeHtml(message)}</div>`,
+    `${message}</div>`,
   ].join("");
 }
 
@@ -1372,9 +1372,14 @@ async function copyText(text) {
 }
 
 function controlRoomFailureMessage(payload, fallback) {
+  return controlRoomFailureStatus(payload, fallback).message;
+}
+
+function controlRoomFailureStatus(payload, fallback) {
   const parts = [];
   const reason = String(payload?.error || payload?.message || "").trim();
-  if (reason) parts.push(reason);
+  const summary = reason || fallback;
+  if (summary) parts.push(summary);
   const missingTargets = Array.isArray(payload?.missing_targets)
     ? payload.missing_targets.map((item) => String(item).trim()).filter(Boolean)
     : [];
@@ -1383,7 +1388,19 @@ function controlRoomFailureMessage(payload, fallback) {
   }
   const nextAction = String(payload?.next_action || "").trim();
   if (nextAction) parts.push(nextAction);
-  return parts.join(" ") || fallback;
+  return {
+    message: parts.join(" ") || fallback,
+    missingTargets,
+    nextAction,
+    summary,
+  };
+}
+
+function controlRoomFailureError(payload, fallback) {
+  const gateStatus = controlRoomFailureStatus(payload, fallback);
+  const error = new Error(gateStatus.message);
+  error.gateStatus = gateStatus;
+  return error;
 }
 
 function gateActionStatusNode(gateId) {
@@ -1395,8 +1412,17 @@ function gateActionStatusNode(gateId) {
 function setGateActionStatus(gateId, message, tone = "ok") {
   const normalized = String(gateId || "");
   if (!normalized) return;
-  const status = {
+  const status = typeof message === "object" && message !== null ? {
+    message: String(message.message || ""),
+    missingTargets: Array.isArray(message.missingTargets) ? message.missingTargets : [],
+    nextAction: String(message.nextAction || ""),
+    summary: String(message.summary || message.message || ""),
+    tone: String(tone || message.tone || "ok"),
+  } : {
     message: String(message || ""),
+    missingTargets: [],
+    nextAction: "",
+    summary: String(message || ""),
     tone: String(tone || "ok"),
   };
   gateActionStatus.set(normalized, status);
@@ -1404,7 +1430,21 @@ function setGateActionStatus(gateId, message, tone = "ok") {
   if (!node) return;
   node.hidden = false;
   node.className = `gate-action-status ${classToken(status.tone)}`;
-  node.textContent = status.message;
+  node.innerHTML = renderGateActionStatusBody(status);
+}
+
+function renderGateActionStatusBody(status) {
+  const rows = [];
+  const summary = String(status?.summary || status?.message || "").trim();
+  if (summary) rows.push(`<strong>${escapeHtml(summary)}</strong>`);
+  const missingTargets = Array.isArray(status?.missingTargets) ? status.missingTargets : [];
+  if (missingTargets.length) {
+    rows.push(`<span>Still needed: ${escapeHtml(missingTargets.join(", "))}</span>`);
+  }
+  const nextAction = String(status?.nextAction || "").trim();
+  if (nextAction) rows.push(`<p>${escapeHtml(nextAction)}</p>`);
+  if (!rows.length) rows.push(`<strong>${escapeHtml(String(status?.message || ""))}</strong>`);
+  return rows.join("");
 }
 
 document.addEventListener("click", async (event) => {
@@ -1429,10 +1469,10 @@ document.addEventListener("click", async (event) => {
       );
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) {
-        throw new Error(controlRoomFailureMessage(
+        throw controlRoomFailureError(
           payload,
           "Could not open the provider gate inside the VM. Use Open live VM browser.",
-        ));
+        );
       }
       setRefreshStatus(
         payload.message || "Provider gate opened inside the shared VM browser.",
@@ -1446,7 +1486,7 @@ document.addEventListener("click", async (event) => {
       const message = error?.message ||
         "Could not open the provider gate inside the VM. Use Open live VM browser.";
       setRefreshStatus(message, "stale");
-      setGateActionStatus(gateId, message, "stale");
+      setGateActionStatus(gateId, error?.gateStatus || message, "stale");
     } finally {
       gateOpenButton.disabled = false;
       gateOpenButton.textContent = originalText;
@@ -1476,10 +1516,10 @@ document.addEventListener("click", async (event) => {
       );
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) {
-        throw new Error(controlRoomFailureMessage(
+        throw controlRoomFailureError(
           payload,
           `Could not capture ${target} from the VM clipboard. Copy it in the VM and try again.`,
-        ));
+        );
       }
       setRefreshStatus(payload.message || `${target} captured into the encrypted vault.`);
       setGateActionStatus(
@@ -1492,7 +1532,7 @@ document.addEventListener("click", async (event) => {
       const message = error?.message ||
         `Could not capture ${target} from the VM clipboard. Copy it in the VM and try again.`;
       setRefreshStatus(message, "stale");
-      setGateActionStatus(gateId, message, "stale");
+      setGateActionStatus(gateId, error?.gateStatus || message, "stale");
     } finally {
       captureButton.disabled = false;
       captureButton.textContent = originalText;
@@ -1516,10 +1556,10 @@ document.addEventListener("click", async (event) => {
       );
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) {
-        throw new Error(controlRoomFailureMessage(
+        throw controlRoomFailureError(
           payload,
           "Could not record I finished this step from this snapshot. FuseKit will keep waiting.",
-        ));
+        );
       }
       setRefreshStatus(
         payload.message ||
@@ -1538,7 +1578,7 @@ document.addEventListener("click", async (event) => {
       const message = error?.message ||
         "Could not record I finished this step from this snapshot. FuseKit will keep waiting.";
       setRefreshStatus(message, "stale");
-      setGateActionStatus(gateId, message, "stale");
+      setGateActionStatus(gateId, error?.gateStatus || message, "stale");
     }
     return;
   }

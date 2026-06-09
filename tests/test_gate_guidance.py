@@ -36,8 +36,13 @@ def test_live_control_room_guidance_uses_python_payload() -> None:
 
 def test_control_room_click_errors_preserve_backend_guidance() -> None:
     assert "function controlRoomFailureMessage" in SCRIPT
+    assert "function controlRoomFailureStatus" in SCRIPT
+    assert "function renderGateActionStatusBody" in SCRIPT
     assert "payload?.missing_targets" in SCRIPT
     assert "Missing: ${missingTargets.join" in SCRIPT
+    assert "Still needed: ${escapeHtml(missingTargets.join" in SCRIPT
+    assert "error.gateStatus = gateStatus" in SCRIPT
+    assert "setGateActionStatus(gateId, error?.gateStatus || message, \"stale\")" in SCRIPT
     assert "gate update failed" not in SCRIPT
     assert "capture failed" not in SCRIPT
     assert "gate open failed" not in SCRIPT
