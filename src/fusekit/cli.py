@@ -4286,8 +4286,8 @@ def _resend_domain_follow_steps(domain: str) -> tuple[str, ...]:
         ),
         "FuseKit reads Resend DNS records through the API and asks Cloudflare to apply them.",
         (
-            "Return here and click I finished this step after Resend shows the "
-            "domain as verified or pending DNS."
+            "After Resend shows the domain as verified or pending DNS, click the visible "
+            "I finished this step button in the control room."
         ),
     )
 

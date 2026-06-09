@@ -353,7 +353,7 @@ def _default_next_action(record: GateRecord) -> str:
     provider = record.provider.strip() or "provider"
     return (
         f"Finish the {provider} login, approval, ownership, or consent prompt in the VM "
-        "browser, then click I finished this step."
+        "browser, then click the visible I finished this step button in the control room."
     )
 
 
@@ -366,7 +366,10 @@ def _default_resume_hint(record: GateRecord) -> str:
         return "FuseKit will keep this as a repairable gate instead of hiding it."
     if _capture_targets(record.target):
         return "FuseKit will resume automatically after every target is captured."
-    return "FuseKit will retry verification after you click I finished this step."
+    return (
+        "FuseKit will retry verification after you click the visible "
+        "I finished this step button in the control room."
+    )
 
 
 def _resume_next_action(record: GateRecord) -> str:

@@ -582,6 +582,34 @@ def test_acceptance_gate_guidance_rejects_local_browser_side_channel() -> None:
     assert any("local browser" in item for item in failures)
 
 
+def test_acceptance_gate_guidance_rejects_return_to_fusekit_wording() -> None:
+    failures = _unguided_gates(
+        [
+            {
+                "id": "provider.vercel.login-connection",
+                "provider": "vercel",
+                "status": "waiting",
+                "classification": "provider-authorization",
+                "resume_url": "https://vercel.com/account/settings/login-connections",
+                "target": "",
+                "follow_steps": [
+                    "Click Open provider gate in VM so Vercel opens in the VM browser.",
+                    "Return to FuseKit and click I finished this step after Vercel confirms.",
+                ],
+                "next_action": (
+                    "Click Open provider gate in VM, approve the connection, then click "
+                    "I finished this step."
+                ),
+                "resume_hint": "FuseKit will retry Vercel setup.",
+                "success_criteria": ["The Vercel connection is approved."],
+                "avoid_steps": ["Do not use a local browser tab."],
+            }
+        ]
+    )
+
+    assert any("return to fusekit" in item for item in failures)
+
+
 def test_acceptance_gate_guidance_allows_local_browser_warning() -> None:
     failures = _unguided_gates(
         [

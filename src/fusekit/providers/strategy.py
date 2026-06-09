@@ -435,7 +435,7 @@ def _strategy_follow_steps(pack: ProviderCapabilityPack | None) -> tuple[str, ..
             "your computer; Capture reads the VM clipboard directly."
         ),
         (
-            "For non-secret confirmation gates, click I finished this step after the "
-            "provider confirms."
+            "For non-secret confirmation gates, click the visible I finished this step "
+            "button in the control room after the provider confirms."
         ),
     )

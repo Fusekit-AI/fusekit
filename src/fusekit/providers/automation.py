@@ -251,7 +251,10 @@ def _provider_contract_health_gate(
             "Capture reads the VM clipboard directly."
         )
     else:
-        steps.append("Return to FuseKit and click I finished this step after provider approval.")
+        steps.append(
+            "After provider approval, click the visible I finished this step button "
+            "in the control room."
+        )
     return {
         "kind": recipe.kind,
         "provider": pack.provider,
@@ -269,7 +272,7 @@ def _provider_contract_health_gate(
             "Do not paste it into your computer; Capture reads the VM clipboard directly."
             if token_env
             else "Click Open provider gate in VM, complete the provider-owned authorization, "
-            "then click I finished this step."
+            "then click the visible I finished this step button in the control room."
         ),
         "follow_steps": tuple(steps),
         "resume_hint": (
@@ -404,7 +407,7 @@ def _vercel_github_connection_gate(
         "next_action": (
             "Click Open provider gate in VM, connect GitHub in Vercel Login Connections, "
             "approve only the FuseKit account/repo access Vercel requests, then click "
-            "I finished this step."
+            "the visible I finished this step button in the control room."
         ),
         "resume_url": "https://vercel.com/account/settings/login-connections",
         "follow_steps": (
@@ -415,8 +418,8 @@ def _vercel_github_connection_gate(
                 "account/repo FuseKit named."
             ),
             (
-                "Return to FuseKit and click I finished this step after Vercel confirms "
-                "the connection."
+                "After Vercel confirms the connection, click the visible I finished "
+                "this step button in the control room."
             ),
         ),
     }

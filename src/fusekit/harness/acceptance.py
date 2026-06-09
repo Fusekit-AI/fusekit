@@ -2190,6 +2190,8 @@ _FORBIDDEN_GUIDANCE_PHRASES = (
     "paste into fusekit",
     "terminal prompt",
     "terminal prompts",
+    "return to fusekit",
+    "return here",
     "side-channel",
     "side channel",
 )

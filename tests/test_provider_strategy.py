@@ -109,6 +109,10 @@ def test_provider_strategy_does_not_dead_end_on_unimplemented_cli(tmp_path) -> N
     assert "Click Open provider gate in VM" in action["next_action"]
     assert "matching Capture from VM clipboard button" in action["next_action"]
     assert "Capture reads the VM clipboard directly" in action["next_action"]
+    assert (
+        "visible I finished this step button in the control room"
+        in " ".join(action["follow_steps"])
+    )
     assert action["resume_url"] == "https://github.com/settings/tokens?type=beta"
     assert "visible gate is finished" in action["resume_hint"]
 
