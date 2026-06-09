@@ -530,6 +530,62 @@ def test_acceptance_gate_guidance_allows_local_browser_warning() -> None:
     assert failures == []
 
 
+def test_acceptance_gate_guidance_rejects_affirmative_manual_setup() -> None:
+    failures = _unguided_gates(
+        [
+            {
+                "id": "provider.custom.authorization",
+                "provider": "custom",
+                "status": "passed",
+                "classification": "provider-verification",
+                "resume_url": "https://provider.example/setup",
+                "target": "",
+                "follow_steps": [
+                    "Click Open provider gate in VM so the provider opens in the VM browser.",
+                    "Manually create the provider integration in the dashboard.",
+                    "Click I finished this step after setup is done.",
+                ],
+                "next_action": "Click I finished this step after manual setup.",
+                "resume_hint": "FuseKit will retry provider setup.",
+                "success_criteria": ["The provider integration is created."],
+                "avoid_steps": ["Do not paste secrets into chat."],
+            }
+        ]
+    )
+
+    assert any("manual action" in item for item in failures)
+
+
+def test_acceptance_gate_guidance_allows_negated_manual_warning() -> None:
+    failures = _unguided_gates(
+        [
+            {
+                "id": "provider.resend.domain-setup-retry",
+                "provider": "resend",
+                "status": "passed",
+                "classification": "provider-setup-retry",
+                "resume_url": "https://resend.com/api-keys",
+                "target": "",
+                "follow_steps": [
+                    "Click Open provider gate in VM so Resend opens in the VM browser.",
+                    "No manual Resend domain or DNS step is needed here.",
+                    "Do not manually create moonlite.rsvp in Resend for this step.",
+                    "Click I finished this step so FuseKit retries Resend API setup.",
+                ],
+                "next_action": (
+                    "No manual Resend domain work is needed. Click I finished this step "
+                    "so FuseKit retries Resend domain setup through the API."
+                ),
+                "resume_hint": "FuseKit will rerun Resend API setup before Cloudflare DNS.",
+                "success_criteria": ["FuseKit owns the Resend setup retry."],
+                "avoid_steps": ["Do not click Add domain."],
+            }
+        ]
+    )
+
+    assert failures == []
+
+
 def test_acceptance_provider_gates_require_openable_resume_url() -> None:
     failures = _unguided_gates(
         [

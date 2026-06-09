@@ -2004,12 +2004,16 @@ _FORBIDDEN_GUIDANCE_PHRASES = (
     "terminal prompts",
     "side-channel",
     "side channel",
-    "manually",
 )
 
 _LOCAL_BROWSER_GUIDANCE_PATTERNS = (
     r"\b(?:open|use|launch|complete|finish|copy|paste)\b.{0,48}\b(?:local browser|local tab)\b",
     r"\b(?:local browser|local tab)\b.{0,48}\b(?:open|use|copy|paste|complete|finish)\b",
+)
+
+_MANUAL_ACTION_GUIDANCE_PATTERNS = (
+    r"\bmanual(?:ly)?\b.{0,32}\b(?:setup|set up|create|configure|copy|paste|enter|apply|add)\b",
+    r"\b(?:setup|set up|create|configure|copy|paste|enter|apply|add)\b.{0,32}\bmanually\b",
 )
 
 
@@ -2037,6 +2041,11 @@ def _guidance_quality_failures(
         failures.append(
             f"{label}.guidance contains non-launcher wording: {local_browser_failure}"
         )
+    manual_action_failure = _manual_action_guidance_failure(lowered)
+    if manual_action_failure:
+        failures.append(
+            f"{label}.guidance contains non-launcher wording: {manual_action_failure}"
+        )
     if requires_vm and not any(
         phrase in lowered
         for phrase in ("open provider gate in vm", "vm browser", "highlighted")
@@ -2063,6 +2072,27 @@ def _local_browser_guidance_failure(text: str) -> str:
             if not _local_browser_match_is_negated(text, match.start()):
                 return "local browser"
     return ""
+
+
+def _manual_action_guidance_failure(text: str) -> str:
+    for pattern in _MANUAL_ACTION_GUIDANCE_PATTERNS:
+        for match in re.finditer(pattern, text):
+            if not _manual_action_match_is_negated(text, match.start()):
+                return "manual action"
+    return ""
+
+
+def _manual_action_match_is_negated(text: str, match_start: int) -> bool:
+    prefix = text[max(0, match_start - 64) : match_start]
+    clause = re.split(r"[.;:!?]\s*", prefix)[-1]
+    return (
+        re.search(
+            r"\b(?:do not|don't|never|no|nothing to)\s+"
+            r"(?:(?:do|perform|complete|use|create|copy|paste|enter|apply|add)\s+)?$",
+            clause,
+        )
+        is not None
+    )
 
 
 def _local_browser_match_is_negated(text: str, match_start: int) -> bool:
