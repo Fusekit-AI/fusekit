@@ -889,7 +889,11 @@ def _plaid_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
             ),
             secret_steps=(
                 "Open Developers > Keys and reveal the approved Sandbox or Development secret.",
-                "Capture PLAID_CLIENT_ID, PLAID_SECRET, and PLAID_ENV into the encrypted vault.",
+                (
+                    "Capture PLAID_CLIENT_ID, PLAID_SECRET, and PLAID_ENV with the matching "
+                    "Capture from VM clipboard buttons. No paste into your computer is needed "
+                    "because Capture reads the VM clipboard directly."
+                ),
                 "Configure allowed products and redirect/webhook settings required by the app.",
             ),
             service_gates=(
@@ -1000,7 +1004,8 @@ def _github_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                 ),
                 (
                     "Copy the token once inside the VM browser; FuseKit captures it into the "
-                    "encrypted vault."
+                    "encrypted vault. No paste into your computer is needed because Capture "
+                    "reads the VM clipboard directly."
                 ),
             ),
             service_gates=("email verification", "passkey", "MFA", "CAPTCHA", "consent"),
@@ -1085,7 +1090,8 @@ def _vercel_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                 "Use a short expiration.",
                 (
                     "Copy the token once inside the VM browser; FuseKit captures it into the "
-                    "encrypted vault."
+                    "encrypted vault. No paste into your computer is needed because Capture "
+                    "reads the VM clipboard directly."
                 ),
             ),
             service_gates=("SSO", "MFA", "CAPTCHA", "billing/payment verification", "consent"),
@@ -1191,7 +1197,8 @@ def _cloudflare_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                 ),
                 (
                     "Copy the token once inside the VM browser; FuseKit captures it into the "
-                    "encrypted vault."
+                    "encrypted vault. No paste into your computer is needed because Capture "
+                    "reads the VM clipboard directly."
                 ),
             ),
             service_gates=(
@@ -1394,7 +1401,7 @@ def _catalog_pack(
             token_label=entry.token_label,
             required_scopes=entry.required_scopes,
             account_steps=entry.account_steps,
-            secret_steps=entry.secret_steps,
+            secret_steps=_launcher_secret_steps(entry.secret_steps, entry.token_env),
             service_gates=entry.service_gates,
         ),
         required_secrets=required,
@@ -1462,7 +1469,8 @@ def _inferred_pack(provider: str, evidence: ProviderEvidence) -> ProviderCapabil
                     "Create or reveal the approved token/API key and capture it into "
                     "the encrypted vault."
                 ),
-            ),
+            )
+            + _launcher_capture_step(required[0]),
             service_gates=(
                 "login/MFA/CAPTCHA/billing/payment/fraud/consent/verification",
             ),
@@ -1492,6 +1500,23 @@ def _inferred_pack(provider: str, evidence: ProviderEvidence) -> ProviderCapabil
         rollback=(
             "Rotate or revoke provider API credentials.",
             "Remove provider env vars from deployment secret stores.",
+        ),
+    )
+
+
+def _launcher_secret_steps(steps: tuple[str, ...], target: str) -> tuple[str, ...]:
+    if any("Capture from VM clipboard" in step for step in steps):
+        return steps
+    return (*steps, *_launcher_capture_step(target))
+
+
+def _launcher_capture_step(target: str) -> tuple[str, ...]:
+    label = target or "the approved provider value"
+    return (
+        (
+            f"When the provider reveals {label}, copy it inside the VM browser and click "
+            "the matching Capture from VM clipboard button. No paste into your computer "
+            "is needed because Capture reads the VM clipboard directly."
         ),
     )
 

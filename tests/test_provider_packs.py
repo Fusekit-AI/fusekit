@@ -276,6 +276,8 @@ def test_cloudflare_pack_handoff_names_exact_token_wizard_choices(tmp_path) -> N
     assert "TTL blank" in text
     assert "Continue to summary" in text
     assert "Copy the token once inside the VM browser" in text
+    assert "No paste into your computer is needed" in text
+    assert "Capture reads the VM clipboard directly" in text
 
 
 def test_vercel_pack_handoff_names_account_scope_choices(tmp_path) -> None:
@@ -289,6 +291,8 @@ def test_vercel_pack_handoff_names_account_scope_choices(tmp_path) -> None:
     assert "set its scope to Personal Account or the exact team" in text
     assert "Use a short expiration" in text
     assert "Copy the token once inside the VM browser" in text
+    assert "No paste into your computer is needed" in text
+    assert "Capture reads the VM clipboard directly" in text
 
 
 def test_resend_pack_handoff_explains_existing_key_secret_value(tmp_path) -> None:
@@ -335,6 +339,27 @@ def test_common_provider_catalog_synthesizes_valid_specific_packs(tmp_path) -> N
         assert pack.handoff.account_creation == "supervised"
         assert pack.handoff.account_creation_reason
         assert pack.detection.docs_urls
+
+
+def test_common_provider_handoffs_use_launcher_capture_path(tmp_path) -> None:
+    providers = {"stripe", "supabase", "clerk", "neon", "upstash", "openai", "plaid"}
+
+    for provider in sorted(providers):
+        pack = synthesize_provider_pack(provider, tmp_path)
+        text = " ".join(pack.handoff.secret_steps)
+        assert "Capture from VM clipboard" in text
+        assert "No paste into your computer is needed" in text
+        assert "Capture reads the VM clipboard directly" in text
+
+
+def test_inferred_provider_handoff_uses_launcher_capture_path(tmp_path) -> None:
+    pack = synthesize_provider_pack("newpay", tmp_path)
+    text = " ".join(pack.handoff.secret_steps)
+
+    assert "NEWPAY_API_KEY" in text
+    assert "Capture from VM clipboard" in text
+    assert "No paste into your computer is needed" in text
+    assert "Capture reads the VM clipboard directly" in text
 
 
 def test_provider_pack_rejects_invalid_account_creation_mode(tmp_path) -> None:

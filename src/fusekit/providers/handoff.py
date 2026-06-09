@@ -100,7 +100,8 @@ HANDOFFS: dict[str, ProviderHandoff] = {
             "Use a short expiration.",
             (
                 "Copy the token once inside the VM browser; FuseKit captures it into the "
-                "encrypted vault."
+                "encrypted vault. No paste into your computer is needed because Capture "
+                "reads the VM clipboard directly."
             ),
         ),
     ),
@@ -141,7 +142,8 @@ HANDOFFS: dict[str, ProviderHandoff] = {
             ),
             (
                 "Copy the token once inside the VM browser; FuseKit captures it into the "
-                "encrypted vault."
+                "encrypted vault. No paste into your computer is needed because Capture "
+                "reads the VM clipboard directly."
             ),
         ),
     ),
