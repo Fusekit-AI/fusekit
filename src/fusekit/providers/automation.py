@@ -17,7 +17,7 @@ from fusekit.policy import require_allowed
 from fusekit.providers.capability_pack import ProviderCapabilityPack, SetupRecipe
 from fusekit.providers.cloudflare import CloudflareDnsProvider
 from fusekit.providers.github import GitHubProvider
-from fusekit.providers.resend import ResendProvider
+from fusekit.providers.resend import RESEND_DEFAULT_REGION, ResendProvider
 from fusekit.providers.secret_routing import select_app_env_secrets
 from fusekit.providers.strategy import (
     StrategySignal,
@@ -559,9 +559,11 @@ def _resend_domain(recipe: SetupRecipe, context: ProviderSetupContext) -> dict[s
     domain = context.inputs.get("resend_domain") or _default_domain(context)
     if not domain:
         return {"kind": "resend-domain", "status": "skipped", "reason": "no domain"}
+    region = context.inputs.get("resend_region") or RESEND_DEFAULT_REGION
     token = _provider_token(context.vault, "resend", "RESEND_API_KEY")
     provider = ResendProvider(token)
-    resend_domain = provider.ensure_domain(domain)
+    resend_domain = provider.ensure_domain(domain, region=region)
+    actual_region = getattr(resend_domain, "region", region)
     context.generated_dns_records.setdefault(domain, [])
     for record in resend_domain.records:
         if record not in context.generated_dns_records[domain]:
@@ -582,6 +584,9 @@ def _resend_domain(recipe: SetupRecipe, context: ProviderSetupContext) -> dict[s
         "domain": resend_domain.name,
         "domain_id": resend_domain.id,
         "domain_status": resend_domain.status,
+        "region": actual_region,
+        "requested_region": region,
+        "capabilities": {"sending": "enabled", "receiving": "disabled"},
         "reused": resend_domain.reused,
         "generated_env": ["RESEND_FROM_EMAIL"],
         "dns_records": [

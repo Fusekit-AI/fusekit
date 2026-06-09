@@ -71,6 +71,23 @@ def _resend_audience_strategy_decision() -> dict[str, object]:
     )
 
 
+def _resend_domain_receipt_details(
+    *,
+    dns_records: list[dict[str, str]] | None = None,
+    generated_env: list[str] | None = None,
+) -> dict[str, object]:
+    return {
+        "domain": "moonlite.rsvp",
+        "domain_id": "domain-1",
+        "domain_status": "pending",
+        "region": "us-east-1",
+        "requested_region": "us-east-1",
+        "capabilities": {"sending": "enabled", "receiving": "disabled"},
+        "generated_env": generated_env or ["RESEND_FROM_EMAIL"],
+        "dns_records": dns_records or [],
+    }
+
+
 def _gate_guidance_fields(provider: str) -> dict[str, list[str]]:
     guidance = provider_gate_guidance(provider)
     return {
@@ -1929,7 +1946,7 @@ def test_live_acceptance_requires_receipt_resend_dns_flow(tmp_path) -> None:
     ]["next_action"]
 
 
-def test_live_acceptance_accepts_receipt_resend_records_before_dns(tmp_path) -> None:
+def test_live_acceptance_requires_resend_domain_contract_before_dns(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()
     _write_resend_cloudflare_manifest(app)
@@ -1956,6 +1973,74 @@ def test_live_acceptance_accepts_receipt_resend_records_before_dns(tmp_path) -> 
                                 }
                             ],
                         },
+                    },
+                    {
+                        "action": "dns.propose",
+                        "status": "ok",
+                        "details": {
+                            "domain": "moonlite.rsvp",
+                            "changes": [
+                                {
+                                    "record": {
+                                        "type": "MX",
+                                        "name": "send.moonlite.rsvp",
+                                        "value": "feedback-smtp.us-east-1.amazonses.com",
+                                    }
+                                }
+                            ],
+                        },
+                    },
+                ],
+                "raw_secrets_exposed": 0,
+                "live_url": "https://moonlite.rsvp",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    receipt_check = next(check for check in report.checks if check.id == "receipt.resend_dns_flow")
+    assert report.launch_ready is False
+    assert receipt_check.status == "failed"
+    assert "missing the Resend domain id" in receipt_check.detail
+    blockers = {blocker["item"]: blocker for blocker in report.blockers}
+    assert "Resend created/reused the sending domain" in blockers[
+        "Resend DNS records in receipt DNS proposal"
+    ]["next_action"]
+
+
+def test_live_acceptance_accepts_receipt_resend_records_before_dns(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_cloudflare_manifest(app)
+    remote = tmp_path / "remote"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_live_artifacts(remote_fusekit)
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "actions": [
+                    {
+                        "action": "resend.domain",
+                        "status": "ok",
+                        "details": _resend_domain_receipt_details(
+                            dns_records=[
+                                {
+                                    "type": "MX",
+                                    "name": "send.moonlite.rsvp",
+                                    "value": "feedback-smtp.us-east-1.amazonses.com",
+                                }
+                            ],
+                        ),
                     },
                     {
                         "action": "dns.propose",
@@ -1997,7 +2082,7 @@ def test_live_acceptance_accepts_receipt_resend_records_before_dns(tmp_path) -> 
 
     receipt_check = next(check for check in report.checks if check.id == "receipt.resend_dns_flow")
     assert receipt_check.status == "ok"
-    assert "Resend domain setup emitted DNS records before DNS proposal" in receipt_check.detail
+    assert "deterministic sending-domain contract" in receipt_check.detail
 
 
 def test_live_acceptance_requires_receipt_resend_runtime_env_in_vercel(tmp_path) -> None:

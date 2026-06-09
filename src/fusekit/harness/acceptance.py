@@ -23,6 +23,7 @@ from fusekit.providers.capability_pack import (
     validate_provider_pack,
     write_provider_pack,
 )
+from fusekit.providers.resend import RESEND_ALLOWED_REGIONS
 from fusekit.runner.control_room.state import _sanitized_visual_state
 from fusekit.scanner import scan_repo
 from fusekit.security import redact_public_path, redact_public_text, scan_for_secret_leaks
@@ -955,6 +956,15 @@ def _check_receipt_resend_dns_flow(
             artifact,
         )
         return
+    contract_failure = _resend_receipt_domain_contract_failure(actions[resend_index])
+    if contract_failure:
+        _fail_resend_dns_receipt(
+            checks,
+            missing,
+            contract_failure,
+            artifact,
+        )
+        return
     resend_records = _resend_receipt_dns_records(actions[resend_index])
     dns_records = _dns_proposal_receipt_records(actions[dns_index])
     if not resend_records:
@@ -979,7 +989,8 @@ def _check_receipt_resend_dns_flow(
         AcceptanceCheck(
             "receipt.resend_dns_flow",
             "ok",
-            "Receipt proves Resend domain setup emitted DNS records before DNS proposal.",
+            "Receipt proves Resend domain setup emitted DNS records before DNS proposal "
+            "with a deterministic sending-domain contract.",
             artifact,
         )
     )
@@ -1005,6 +1016,39 @@ def _fail_resend_dns_receipt(
         )
     )
     missing.append("Resend DNS records in receipt DNS proposal")
+
+
+def _resend_receipt_domain_contract_failure(action: dict[str, Any]) -> str:
+    details = action.get("details", {})
+    if not isinstance(details, dict):
+        return "Receipt resend.domain details are missing or malformed."
+    domain_id = str(details.get("domain_id", "") or "").strip()
+    if not domain_id:
+        return "Receipt resend.domain is missing the Resend domain id."
+    region = str(details.get("region", "") or "").strip().lower()
+    if region not in RESEND_ALLOWED_REGIONS:
+        allowed = ", ".join(sorted(RESEND_ALLOWED_REGIONS))
+        return f"Receipt resend.domain is missing a supported Resend region ({allowed})."
+    requested_region = str(details.get("requested_region", "") or "").strip().lower()
+    if requested_region and requested_region not in RESEND_ALLOWED_REGIONS:
+        allowed = ", ".join(sorted(RESEND_ALLOWED_REGIONS))
+        return (
+            "Receipt resend.domain has an unsupported requested Resend region "
+            f"({allowed})."
+        )
+    capabilities = details.get("capabilities", {})
+    if not isinstance(capabilities, dict):
+        return "Receipt resend.domain is missing sending-only capability details."
+    sending = str(capabilities.get("sending", "") or "").strip().lower()
+    receiving = str(capabilities.get("receiving", "") or "").strip().lower()
+    if sending != "enabled" or receiving != "disabled":
+        return (
+            "Receipt resend.domain must prove sending is enabled and receiving is disabled."
+        )
+    generated = _receipt_generated_env_names(action)
+    if "RESEND_FROM_EMAIL" not in generated:
+        return "Receipt resend.domain must prove FuseKit generated RESEND_FROM_EMAIL."
+    return ""
 
 
 def _first_receipt_action(

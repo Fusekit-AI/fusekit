@@ -636,8 +636,8 @@ def test_resend_pack_creates_domain_audience_and_feeds_dns(monkeypatch, tmp_path
         def __init__(self, token: str) -> None:
             self.token = token
 
-        def ensure_domain(self, domain: str):  # type: ignore[no-untyped-def]
-            calls.append(f"resend-domain:{domain}:{self.token}")
+        def ensure_domain(self, domain: str, *, region: str = "us-east-1"):  # type: ignore[no-untyped-def]
+            calls.append(f"resend-domain:{domain}:{region}:{self.token}")
             return type(
                 "Domain",
                 (),
@@ -645,6 +645,7 @@ def test_resend_pack_creates_domain_audience_and_feeds_dns(monkeypatch, tmp_path
                     "id": "domain-1",
                     "name": domain,
                     "status": "pending",
+                    "region": region,
                     "reused": False,
                     "records": (
                         DnsRecord(
@@ -691,7 +692,7 @@ def test_resend_pack_creates_domain_audience_and_feeds_dns(monkeypatch, tmp_path
     result = run_provider_pack_setup(pack, context)
 
     assert calls == [
-        "resend-domain:moonlite.rsvp:resend-key-hidden",
+        "resend-domain:moonlite.rsvp:us-east-1:resend-key-hidden",
         "resend-audience:Moonlite RSVP audience",
     ]
     assert [item["kind"] for item in result["setup"]] == [
@@ -707,6 +708,8 @@ def test_resend_pack_creates_domain_audience_and_feeds_dns(monkeypatch, tmp_path
     resend_domain = next(item for item in result["setup"] if item["kind"] == "resend-domain")
     resend_audience = next(item for item in result["setup"] if item["kind"] == "resend-audience")
     assert resend_domain["generated_env"] == ["RESEND_FROM_EMAIL"]
+    assert resend_domain["region"] == "us-east-1"
+    assert resend_domain["requested_region"] == "us-east-1"
     assert resend_audience["generated_env"] == ["RESEND_AUDIENCE_ID"]
     receipt_actions = receipt.to_dict()["actions"]
     assert any(

@@ -9,6 +9,11 @@ from fusekit.errors import ProviderError
 from fusekit.manifest import DnsRecord
 from fusekit.providers.http import JsonHttpClient
 
+RESEND_ALLOWED_REGIONS = frozenset(
+    {"us-east-1", "eu-west-1", "sa-east-1", "ap-northeast-1"}
+)
+RESEND_DEFAULT_REGION = "us-east-1"
+
 
 @dataclass(frozen=True)
 class ResendDomain:
@@ -18,6 +23,7 @@ class ResendDomain:
     name: str
     status: str
     records: tuple[DnsRecord, ...]
+    region: str = RESEND_DEFAULT_REGION
     reused: bool = False
 
 
@@ -46,17 +52,26 @@ class ResendProvider:
         response = self._client().request("GET", "/domains")
         return {"route": "/domains", "ok": True, "domain_count": len(_data_items(response))}
 
-    def ensure_domain(self, domain: str) -> ResendDomain:
+    def ensure_domain(self, domain: str, *, region: str = RESEND_DEFAULT_REGION) -> ResendDomain:
         """Create or reuse a Resend sending domain."""
 
+        region = _normalize_region(region)
         existing = self._find_domain(domain)
         if existing:
             domain_id = _required_id(existing, "domain")
             data = self._get_domain(domain_id)
-            return _domain_from_response(data or existing, domain, reused=True)
-        created = self._client().request("POST", "/domains", {"name": domain})
+            return _domain_from_response(data or existing, domain, reused=True, region=region)
+        created = self._client().request(
+            "POST",
+            "/domains",
+            {
+                "name": domain,
+                "region": region,
+                "capabilities": {"sending": "enabled", "receiving": "disabled"},
+            },
+        )
         domain_data = _payload_object(created, "domain")
-        return _domain_from_response(domain_data, domain, reused=False)
+        return _domain_from_response(domain_data, domain, reused=False, region=region)
 
     def verify_domain(self, domain_id: str) -> dict[str, Any]:
         """Ask Resend to verify a domain after DNS records have been applied."""
@@ -119,7 +134,21 @@ def _required_id(data: dict[str, Any], label: str) -> str:
     return value
 
 
-def _domain_from_response(data: dict[str, Any], domain: str, *, reused: bool) -> ResendDomain:
+def _normalize_region(region: str) -> str:
+    value = region.strip().lower() or RESEND_DEFAULT_REGION
+    if value not in RESEND_ALLOWED_REGIONS:
+        allowed = ", ".join(sorted(RESEND_ALLOWED_REGIONS))
+        raise ProviderError(f"Resend region must be one of: {allowed}.")
+    return value
+
+
+def _domain_from_response(
+    data: dict[str, Any],
+    domain: str,
+    *,
+    reused: bool,
+    region: str,
+) -> ResendDomain:
     domain_id = _required_id(data, "domain")
     records = tuple(_record_from_resend(item, domain) for item in _verification_records(data))
     return ResendDomain(
@@ -127,6 +156,7 @@ def _domain_from_response(data: dict[str, Any], domain: str, *, reused: bool) ->
         name=str(data.get("name") or domain),
         status=str(data.get("status", "")),
         records=records,
+        region=str(data.get("region") or region),
         reused=reused,
     )
 
