@@ -1795,6 +1795,20 @@ def _checkpoint_guidance_quality_failure(
                     f"{checkpoint_id} guidance asks for manual Resend "
                     "domain/audience setup"
                 )
+    waiting_for_human_gate = (
+        str(checkpoint.get("status", "") or "").strip().lower() == "waiting"
+        or "needs_human_gate" in text
+        or "browser_guided" in text
+        or "human_follow_me" in text
+    )
+    if waiting_for_human_gate and "open provider gate in vm" not in text:
+        return f"{checkpoint_id} guidance does not name Open provider gate in VM"
+    secret_targets = _copy_once_targets_mentioned(text)
+    if secret_targets and "capture from vm clipboard" not in text:
+        return (
+            f"{checkpoint_id} guidance does not name Capture from VM clipboard for "
+            + ", ".join(secret_targets)
+        )
     return ""
 
 
@@ -2189,6 +2203,15 @@ def _env_targets_from_text(value: str) -> list[str]:
     )
 
 
+def _copy_once_targets_mentioned(value: str) -> list[str]:
+    return list(
+        dict.fromkeys(
+            match.group(0).upper()
+            for match in _COPY_ONCE_TARGET_RE.finditer(str(value or "").upper())
+        )
+    )
+
+
 def _redacted_gate_state(raw: Any) -> dict[str, Any]:
     """Return non-secret gate proof data for public acceptance artifacts."""
 
@@ -2395,6 +2418,9 @@ def _check_gate_audit_events(
 
 
 _ENV_TARGET_RE = re.compile(r"^[A-Z][A-Z0-9_]{2,}$")
+_COPY_ONCE_TARGET_RE = re.compile(
+    r"\b[A-Z][A-Z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD|PRIVATE_KEY)\b"
+)
 
 
 def _gate_capture_audit_requirements(gates: Any) -> list[tuple[str, str]]:

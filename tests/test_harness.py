@@ -834,6 +834,62 @@ def test_acceptance_checkpoint_guidance_rejects_side_channels() -> None:
     assert any("local browser" in item for item in failures)
 
 
+def test_acceptance_checkpoint_guidance_requires_open_gate_control() -> None:
+    failures = _provider_strategy_checkpoint_failures(
+        {"cloudflare": {"cloudflare-consent"}},
+        [
+            {
+                "id": "provider.cloudflare.routes",
+                "status": "waiting",
+                "detail": "cloudflare-consent uses human_follow_me (needs_human_gate)",
+                "next_action": "Use the VM browser to approve the named zone.",
+                "resume_hint": "Click I finished this step after Cloudflare confirms.",
+            }
+        ],
+    )
+
+    assert any("Open provider gate in VM" in item for item in failures)
+
+
+def test_acceptance_checkpoint_guidance_requires_capture_for_copy_once_target() -> None:
+    failures = _provider_strategy_checkpoint_failures(
+        {"github": {"github-repo-secrets"}},
+        [
+            {
+                "id": "provider.github.routes",
+                "status": "waiting",
+                "detail": "github-repo-secrets uses browser_guided (needs_human_gate)",
+                "next_action": (
+                    "Click Open provider gate in VM and copy the GITHUB_TOKEN value."
+                ),
+                "resume_hint": "FuseKit will retry provider setup after the value is copied.",
+            }
+        ],
+    )
+
+    assert any("Capture from VM clipboard" in item for item in failures)
+
+
+def test_acceptance_checkpoint_guidance_accepts_exact_launcher_controls() -> None:
+    failures = _provider_strategy_checkpoint_failures(
+        {"github": {"github-repo-secrets"}},
+        [
+            {
+                "id": "provider.github.routes",
+                "status": "waiting",
+                "detail": "github-repo-secrets uses browser_guided (needs_human_gate)",
+                "next_action": (
+                    "Click Open provider gate in VM, copy GITHUB_TOKEN inside the shared "
+                    "VM browser, then click Capture from VM clipboard."
+                ),
+                "resume_hint": "FuseKit will retry provider setup after capture.",
+            }
+        ],
+    )
+
+    assert failures == []
+
+
 def test_acceptance_checkpoint_guidance_rejects_manual_resend_setup() -> None:
     failures = _provider_strategy_checkpoint_failures(
         {"resend": {"resend-domain"}},
