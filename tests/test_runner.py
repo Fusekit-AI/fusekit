@@ -1590,6 +1590,9 @@ def test_control_room_post_captures_vm_clipboard_into_vault(tmp_path, monkeypatc
     assert events[-1]["event"] == "control_room.clipboard_capture"
     assert events[-1]["data"]["gate_id"] == "provider.resend.api-key-domain-access"
     assert events[-1]["data"]["target"] == "RESEND_API_KEY"
+    assert events[-1]["data"]["record_id"] == "provider.resend.resend_api_key"
+    assert events[-1]["data"]["source"] == "vm-clipboard"
+    assert events[-1]["data"]["storage"] == "encrypted-vault"
     assert "re_live_secret" not in json.dumps(payload)
     assert "re_live_secret" not in audit_path.read_text(encoding="utf-8")
 

@@ -1220,6 +1220,8 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                             "status": "passed",
                             "target": "OPENAI_API_KEY",
                             "record_id": "provider.openai.token",
+                            "source": "vm-clipboard",
+                            "storage": "encrypted-vault",
                         },
                     },
                     sort_keys=True,
@@ -2722,6 +2724,18 @@ def test_live_acceptance_requires_clipboard_capture_for_secret_gates(tmp_path) -
                 '{"event":"provider.verify"}',
                 json.dumps(
                     {
+                        "event": "control_room.clipboard_capture",
+                        "data": {
+                            "gate_id": "provider.openai.authorization",
+                            "provider": "openai",
+                            "target": "OPENAI_API_KEY",
+                            "record_id": "provider.openai.token",
+                        },
+                    },
+                    sort_keys=True,
+                ),
+                json.dumps(
+                    {
                         "event": "control_room.gate_resume_requested",
                         "data": {
                             "gate_id": "provider.openai.authorization",
@@ -2836,6 +2850,8 @@ def test_live_acceptance_requires_all_multi_value_gate_captures(tmp_path) -> Non
                             "provider": "resend",
                             "target": "RESEND_AUDIENCE_ID",
                             "record_id": "app.resend.resend_audience_id",
+                            "source": "vm-clipboard",
+                            "storage": "encrypted-vault",
                         },
                     },
                     sort_keys=True,

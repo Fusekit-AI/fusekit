@@ -708,6 +708,8 @@ def _append_capture_audit(
             "gate_id": gate_id,
             "target": target,
             "record_id": record_id,
+            "source": "vm-clipboard",
+            "storage": "encrypted-vault",
         },
     )
 

@@ -2322,8 +2322,7 @@ def _check_gate_audit_events(
             str(event.get("data", {}).get("target", "")),
         )
         for event in audit_events
-        if str(event.get("event", "")) == "control_room.clipboard_capture"
-        and isinstance(event.get("data"), dict)
+        if _gate_capture_audit_event_proves_vault_capture(event)
     }
     opened_gate_ids = {
         str(event.get("data", {}).get("gate_id", ""))
@@ -2474,6 +2473,21 @@ def _gate_open_audit_event_proves_vm_open(event: dict[str, Any]) -> bool:
         and data.get("has_resume_url") is True
         and data.get("has_last_opened_url") is True
         and bool(str(data.get("gate_id", "")).strip())
+    )
+
+
+def _gate_capture_audit_event_proves_vault_capture(event: dict[str, Any]) -> bool:
+    """Return whether an audit event proves safe VM clipboard capture."""
+
+    data = event.get("data")
+    return (
+        str(event.get("event", "")) == "control_room.clipboard_capture"
+        and isinstance(data, dict)
+        and data.get("source") == "vm-clipboard"
+        and data.get("storage") == "encrypted-vault"
+        and bool(str(data.get("gate_id", "")).strip())
+        and bool(str(data.get("target", "")).strip())
+        and bool(str(data.get("record_id", "")).strip())
     )
 
 
