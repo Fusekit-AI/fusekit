@@ -2948,7 +2948,8 @@ def test_control_room_route_plan_names_human_gate_controls(tmp_path) -> None:
     assert "For provider-owned login, MFA, consent, or billing gates" in html
     assert "click Open provider gate in VM" in html
     assert "finish the prompt in the shared VM browser" in html
-    assert "click I finished this step only after the provider confirms" in html
+    assert "click the visible I finished this step button in the control room" in html
+    assert "click I finished this step only after the provider confirms" not in html
 
 
 def test_control_room_explains_deterministic_provider_route(tmp_path) -> None:

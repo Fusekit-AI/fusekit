@@ -786,7 +786,8 @@ def _strategy_plan_items(providers: list[Any]) -> list[str]:
         items.append(
             "For provider-owned login, MFA, consent, or billing gates, click Open "
             "provider gate in VM, finish the prompt in the shared VM browser, then "
-            "click I finished this step only after the provider confirms."
+            "click the visible I finished this step button in the control room only "
+            "after the provider confirms."
         )
     if not items and has_api:
         items.append(
