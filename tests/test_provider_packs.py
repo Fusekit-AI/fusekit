@@ -319,6 +319,7 @@ def test_resend_pack_handoff_explains_existing_key_secret_value(tmp_path) -> Non
 
 def test_resend_handoff_never_opens_domains_before_api_key_capture() -> None:
     handoff = handoff_for("resend")
+    text = " ".join((*handoff.account_steps, *handoff.secret_steps))
 
     assert handoff.project_url == ""
     assert handoff.urls(include_project=True) == (
@@ -326,6 +327,10 @@ def test_resend_handoff_never_opens_domains_before_api_key_capture() -> None:
         "https://resend.com/api-keys",
     )
     assert "https://resend.com/domains" not in handoff.urls(include_project=True)
+    assert "no domains or audiences yet" in text
+    assert "creates or reuses them by API after RESEND_API_KEY is captured" in text
+    assert "existing Full access key row is not enough by itself" in text
+    assert "raw key value captured into the encrypted vault" in text
 
 
 def test_common_provider_catalog_synthesizes_valid_specific_packs(tmp_path) -> None:
