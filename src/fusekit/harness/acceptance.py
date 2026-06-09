@@ -2311,11 +2311,6 @@ def _check_gate_audit_events(
         if mode == "live":
             missing.append("audited human gate interventions")
         return
-    audited_gate_ids = {
-        str(event.get("data", {}).get("gate_id", ""))
-        for event in audit_events
-        if isinstance(event.get("data"), dict)
-    }
     captured_targets = {
         (
             str(event.get("data", {}).get("gate_id", "")),
@@ -2334,6 +2329,9 @@ def _check_gate_audit_events(
         for event in audit_events
         if _gate_resume_audit_event_proves_finished_click(event)
     }
+    audited_gate_ids = {
+        gate_id for gate_id, _target in captured_targets
+    } | opened_gate_ids | resumed_gate_ids
     missing_gate_ids = [gate_id for gate_id in gate_ids if gate_id not in audited_gate_ids]
     missing_captures = [
         (gate_id, target)

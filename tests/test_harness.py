@@ -3172,6 +3172,94 @@ def test_live_acceptance_requires_concrete_finished_click_audit(tmp_path) -> Non
     assert "audited human gate interventions" in report.missing
 
 
+def test_live_acceptance_rejects_malformed_gate_audit_event(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "package.json").write_text(
+        json.dumps({"name": "moonlite-rsvp", "dependencies": {"next": "latest"}}),
+        encoding="utf-8",
+    )
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    (remote_fusekit / "audit.jsonl").write_text(
+        "\n".join(
+            [
+                '{"event":"provider.verify"}',
+                json.dumps(
+                    {
+                        "event": "control_room.gate_resume_requested",
+                        "data": {
+                            "gate_id": "custom.review",
+                            "provider": "custom",
+                            "status": "passed",
+                        },
+                    },
+                    sort_keys=True,
+                ),
+            ]
+        )
+        + "\n",
+        "utf-8",
+    )
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "live_url": "https://moonlite.example",
+                "raw_secrets_exposed": 0,
+                "actions": [],
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "verification_report.json").write_text(
+        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        "utf-8",
+    )
+    (remote_fusekit / "rollback_plan.json").write_text(
+        json.dumps({"rollback": [{"action": "rollback.custom.review", "status": "planned"}]}),
+        "utf-8",
+    )
+    (remote_fusekit / "provider_strategies.json").write_text(
+        json.dumps({"schema_version": "fusekit.provider-strategies.v1", "providers": []}),
+        "utf-8",
+    )
+    (remote_fusekit / "gates.json").write_text(
+        json.dumps(
+            {
+                "gates": [
+                    {
+                        "id": "custom.review",
+                        "provider": "custom",
+                        "reason": "Custom review gate complete",
+                        "status": "passed",
+                        "classification": "review",
+                        "follow_steps": ["Review the custom provider result in the VM browser."],
+                        "next_action": "No action needed.",
+                        "resume_hint": "FuseKit verified this gate as passed.",
+                    }
+                ]
+            }
+        ),
+        "utf-8",
+    )
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    audit_check = next(check for check in report.checks if check.id == "gates.audited")
+    assert report.launch_ready is False
+    assert audit_check.status == "failed"
+    assert "missing gate events: custom.review" in audit_check.detail
+    assert "audited human gate interventions" in report.missing
+
+
 def test_live_acceptance_requires_resolved_control_room_gates(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()
