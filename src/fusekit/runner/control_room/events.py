@@ -473,11 +473,7 @@ function classToken(value) {
 
 function controlRoomActionToken() {
   if (initialJob.control_room_action_token) return initialJob.control_room_action_token;
-  try {
-    return new URLSearchParams(window.location.search).get("token") || "";
-  } catch {
-    return "";
-  }
+  return "";
 }
 
 function controlRoomHeaders(extra = {}) {

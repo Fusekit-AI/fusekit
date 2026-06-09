@@ -122,6 +122,9 @@ or trigger commands:
 - Browser GETs that authenticate with `?token=` set the control-room cookie and
   redirect back to the same route without the token query parameter so the token
   does not stay in the address bar for recordings, screenshots, or browser history.
+- The browser client does not reuse the remote access token as the
+  `x-fusekit-action-token`; state-changing requests use only the owner-only action
+  token embedded in the served control-room payload.
 - Acceptance ledger snapshots apply both structured secret-key redaction and
   public token-shape/path redaction before writing proof artifacts.
 - The control room never exposes a route that executes arbitrary shell commands.

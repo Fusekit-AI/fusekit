@@ -3270,11 +3270,42 @@ def test_tokenized_control_room_requires_action_token_for_gate_post(
     assert redirect_location == "/"
     assert "controlRoomActionToken" in html
     assert "x-fusekit-action-token" in html
+    assert "URLSearchParams(window.location.search).get(\"token\")" not in html
     assert exc.value.code == 403
     assert payload == {"error": "invalid action token", "ok": False}
     assert GateService.load(tmp_path / "gates.json").records[
         "provider.github.mfa.123"
     ].status == "waiting"
+
+
+def test_control_room_client_does_not_use_remote_token_as_action_token(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FUSEKIT_CONTROL_ROOM_TOKEN", REMOTE_CONTROL_ROOM_TOKEN)
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_port}"
+        cookie, redirect_status, redirect_location = _control_room_cookie_from_token(
+            server.server_port, REMOTE_CONTROL_ROOM_TOKEN
+        )
+        with urlopen(Request(f"{base}/", headers={"Cookie": cookie}), timeout=5) as response:
+            html = response.read().decode("utf-8")
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert redirect_status == 303
+    assert redirect_location == "/"
+    assert REMOTE_CONTROL_ROOM_TOKEN not in html
+    assert "control_room_action_token" in html
+    assert "URLSearchParams(window.location.search).get(\"token\")" not in html
 
 
 def test_tokenized_control_room_accepts_action_token_for_gate_post(
