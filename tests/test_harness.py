@@ -3674,7 +3674,12 @@ def test_live_acceptance_requires_provider_gate_open_audit(tmp_path) -> None:
                         "status": "passed",
                         "classification": "provider-authorization",
                         "resume_url": "https://dash.cloudflare.com/profile/api-tokens",
-                        "follow_steps": ["Open Cloudflare in the VM browser."],
+                        "follow_steps": [
+                            (
+                                "Click Open provider gate in VM so Cloudflare opens "
+                                "in the VM browser."
+                            )
+                        ],
                         "next_action": "No action needed.",
                         "resume_hint": "FuseKit verified this gate as passed.",
                     }

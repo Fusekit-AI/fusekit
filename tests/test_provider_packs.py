@@ -49,6 +49,7 @@ def test_synthesizes_plaid_capability_pack_from_evidence(tmp_path) -> None:
     handoff = handoff_from_provider_pack(pack)
     assert handoff.token_env == "PLAID_SECRET"
     assert handoff.signup_url.startswith("https://")
+    assert "Open provider gate in VM" in " ".join(handoff.account_steps)
 
 
 def test_github_pack_handoff_names_fine_grained_scope_choices(tmp_path) -> None:
@@ -63,6 +64,7 @@ def test_github_pack_handoff_names_fine_grained_scope_choices(tmp_path) -> None:
     )
 
     assert handoff.token_url == "https://github.com/settings/tokens?type=beta"
+    assert "Open provider gate in VM" in text
     assert "fine-grained token named FuseKit setup" in text
     assert "Resource owner" in text
     assert "user or organization FuseKit named" in text
@@ -264,6 +266,7 @@ def test_cloudflare_pack_handoff_names_exact_token_wizard_choices(tmp_path) -> N
 
     text = " ".join((*pack.handoff.account_steps, *pack.handoff.secret_steps))
 
+    assert "Open provider gate in VM" in text
     assert "Create Token" in text
     assert "Custom token" in text
     assert "User API Tokens" in text
@@ -285,6 +288,7 @@ def test_vercel_pack_handoff_names_account_scope_choices(tmp_path) -> None:
 
     text = " ".join((*pack.handoff.account_steps, *pack.handoff.secret_steps))
 
+    assert "Open provider gate in VM" in text
     assert "Account Settings > Tokens" in text
     assert "top-left account/team switcher" in text
     assert "Personal Account unless FuseKit named a team" in text
@@ -314,6 +318,7 @@ def test_resend_pack_handoff_explains_existing_key_secret_value(tmp_path) -> Non
     assert "raw key value captured into the encrypted vault" in text
     assert "raw value" in text
     assert "does not reveal old key secrets again" in text
+    assert "Open provider gate in VM" in text
     assert "Copy RESEND_API_KEY once inside the VM browser" in text
 
 
@@ -331,6 +336,7 @@ def test_resend_handoff_never_opens_domains_before_api_key_capture() -> None:
     assert "creates or reuses them by API after RESEND_API_KEY is captured" in text
     assert "existing Full access key row is not enough by itself" in text
     assert "raw key value captured into the encrypted vault" in text
+    assert "Open provider gate in VM" in text
 
 
 def test_common_provider_catalog_synthesizes_valid_specific_packs(tmp_path) -> None:
@@ -355,7 +361,9 @@ def test_common_provider_handoffs_use_launcher_capture_path(tmp_path) -> None:
 
     for provider in sorted(providers):
         pack = synthesize_provider_pack(provider, tmp_path)
+        account_text = " ".join(pack.handoff.account_steps)
         text = " ".join(pack.handoff.secret_steps)
+        assert "Open provider gate in VM" in account_text
         assert "Capture from VM clipboard" in text
         assert "No paste into your computer is needed" in text
         assert "Capture reads the VM clipboard directly" in text
@@ -363,8 +371,10 @@ def test_common_provider_handoffs_use_launcher_capture_path(tmp_path) -> None:
 
 def test_inferred_provider_handoff_uses_launcher_capture_path(tmp_path) -> None:
     pack = synthesize_provider_pack("newpay", tmp_path)
+    account_text = " ".join(pack.handoff.account_steps)
     text = " ".join(pack.handoff.secret_steps)
 
+    assert "Open provider gate in VM" in account_text
     assert "NEWPAY_API_KEY" in text
     assert "Capture from VM clipboard" in text
     assert "No paste into your computer is needed" in text
@@ -382,6 +392,20 @@ def test_provider_pack_rejects_vague_secret_capture_handoff(tmp_path) -> None:
     )
 
     with pytest.raises(ProviderError, match="Capture from VM clipboard"):
+        validate_provider_pack(bad)
+
+
+def test_provider_pack_rejects_vague_account_handoff(tmp_path) -> None:
+    pack = synthesize_provider_pack("stripe", tmp_path)
+    bad = replace(
+        pack,
+        handoff=replace(
+            pack.handoff,
+            account_steps=("Create or sign in to Stripe in the VM browser.",),
+        ),
+    )
+
+    with pytest.raises(ProviderError, match="Open provider gate in VM"):
         validate_provider_pack(bad)
 
 

@@ -46,7 +46,10 @@ HANDOFFS: dict[str, ProviderHandoff] = {
             "repository Administration: Read and write",
         ),
         account_steps=(
-            "Open GitHub in the VM browser and create or sign in to the account.",
+            (
+                "Click Open provider gate in VM so GitHub opens in the VM browser, "
+                "then create or sign in to the account."
+            ),
             "Complete the highlighted email, passkey, MFA, CAPTCHA, or consent challenge.",
             "Create or choose the exact repository that will receive secrets and deploy keys.",
         ),
@@ -84,7 +87,10 @@ HANDOFFS: dict[str, ProviderHandoff] = {
         token_label="Vercel API token",
         required_scopes=("project access", "environment variables", "deployments"),
         account_steps=(
-            "Open Vercel in the VM browser and create or sign in to the account.",
+            (
+                "Click Open provider gate in VM so Vercel opens in the VM browser, "
+                "then create or sign in to the account."
+            ),
             "Complete the highlighted email, SSO, MFA, CAPTCHA, billing, or consent step.",
             "Connect only the named GitHub account/repo under Login Connections when Vercel asks.",
         ),
@@ -115,7 +121,10 @@ HANDOFFS: dict[str, ProviderHandoff] = {
         token_label="Cloudflare API token",
         required_scopes=("Zone / Zone / Read", "Zone / DNS / Edit for the target zone"),
         account_steps=(
-            "Open Cloudflare in the VM browser and create or sign in to the account.",
+            (
+                "Click Open provider gate in VM so Cloudflare opens in the VM browser, "
+                "then create or sign in to the account."
+            ),
             "Add or choose the exact zone that owns the target domain.",
             (
                 "Complete the highlighted nameserver, domain ownership, MFA, CAPTCHA, billing, "
@@ -157,7 +166,10 @@ HANDOFFS: dict[str, ProviderHandoff] = {
         token_label="Resend API key",
         required_scopes=("Full access for first setup", "domain and audience setup"),
         account_steps=(
-            "Open Resend in the VM browser and create or sign in to the account.",
+            (
+                "Click Open provider gate in VM so Resend opens in the VM browser, "
+                "then create or sign in to the account."
+            ),
             "Complete the highlighted email, MFA, CAPTCHA, billing, or consent step.",
             "Let FuseKit create or reuse the sending domain and audience after key capture.",
             (

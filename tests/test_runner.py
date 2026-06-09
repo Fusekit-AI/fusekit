@@ -2841,7 +2841,10 @@ def test_control_room_payload_and_html_include_provider_strategy_routes(tmp_path
                                     "FuseKit will retry this provider route after capture."
                                 ),
                                 "follow_steps": [
-                                    "Open GitHub in the VM browser.",
+                                    (
+                                        "Click Open provider gate in VM so GitHub opens "
+                                        "in the VM browser."
+                                    ),
                                     "Create the fine-grained FuseKit setup token.",
                                 ],
                                 "decision": {

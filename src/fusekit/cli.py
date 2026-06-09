@@ -982,7 +982,10 @@ def _github_source_handoff(args: argparse.Namespace) -> ProviderHandoff:
                 "Actions secrets and deploy keys when setup will configure GitHub",
             ),
             account_steps=(
-                "Sign in to GitHub.",
+                (
+                    "Click Open provider gate in VM so GitHub opens in the VM browser, "
+                    "then sign in."
+                ),
                 "Install or authorize the FuseKit GitHub App for only the selected repository.",
                 (
                     "Complete the highlighted GitHub passkey, MFA, CAPTCHA, organization, "

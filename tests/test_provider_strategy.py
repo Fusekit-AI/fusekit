@@ -123,7 +123,8 @@ def test_provider_strategy_action_can_carry_pack_follow_steps(tmp_path) -> None:
 
     assert action["resume_url"] == "https://resend.com/api-keys"
     assert action["target"] == "RESEND_API_KEY"
-    assert "Open Resend in the VM browser" in steps
+    assert "Open provider gate in VM" in steps
+    assert "Resend opens in the VM browser" in steps
     assert "Full access for this first setup" in steps
     assert "does not reveal old key secrets again" in steps
     assert "creates or reuses the sending domain through Resend's API" in steps

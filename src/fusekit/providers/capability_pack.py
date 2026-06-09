@@ -55,6 +55,7 @@ LAUNCHER_CAPTURE_PHRASES = (
     "vm browser",
     "capture reads the vm clipboard directly",
 )
+LAUNCHER_OPEN_GATE_PHRASE = "open provider gate in vm"
 NO_HOST_PASTE_PHRASES = (
     "no paste into your computer",
     "do not paste it into your computer",
@@ -415,7 +416,10 @@ COMMON_PROVIDER_CATALOG: dict[str, ProviderCatalogEntry] = {
         token_label="Stripe secret key",
         required_scopes=("restricted API key or secret key for the target account",),
         account_steps=(
-            "Create or sign in to a Stripe account.",
+            (
+                "Click Open provider gate in VM so Stripe opens in the VM browser, "
+                "then create or sign in to the account."
+            ),
             "Complete the highlighted email, MFA, CAPTCHA, business, identity, or payment gate.",
             "Choose test mode or live mode based on the app launch target.",
         ),
@@ -468,7 +472,10 @@ COMMON_PROVIDER_CATALOG: dict[str, ProviderCatalogEntry] = {
         token_label="Supabase service role key",
         required_scopes=("project API settings", "database configuration required by the app"),
         account_steps=(
-            "Create or sign in to Supabase.",
+            (
+                "Click Open provider gate in VM so Supabase opens in the VM browser, "
+                "then create or sign in."
+            ),
             "Complete the highlighted email, SSO, MFA, CAPTCHA, billing, or consent gate.",
             "Create or choose the project and region that match the app.",
         ),
@@ -511,7 +518,10 @@ COMMON_PROVIDER_CATALOG: dict[str, ProviderCatalogEntry] = {
         token_label="Clerk secret key",
         required_scopes=("application API keys", "webhook settings when detected"),
         account_steps=(
-            "Create or sign in to Clerk.",
+            (
+                "Click Open provider gate in VM so Clerk opens in the VM browser, "
+                "then create or sign in."
+            ),
             "Complete the highlighted email, MFA, CAPTCHA, billing, or consent gate.",
             "Create or choose the Clerk application for the app.",
         ),
@@ -550,7 +560,10 @@ COMMON_PROVIDER_CATALOG: dict[str, ProviderCatalogEntry] = {
         token_label="Neon API key",
         required_scopes=("project creation or selected project access",),
         account_steps=(
-            "Create or sign in to Neon.",
+            (
+                "Click Open provider gate in VM so Neon opens in the VM browser, "
+                "then create or sign in."
+            ),
             "Complete the highlighted email, SSO, MFA, CAPTCHA, billing, or consent gate.",
             "Create or choose the Postgres project and branch for the app.",
         ),
@@ -594,7 +607,10 @@ COMMON_PROVIDER_CATALOG: dict[str, ProviderCatalogEntry] = {
         token_label="Upstash REST token",
         required_scopes=("resource credentials for Redis, Vector, or QStash used by the app",),
         account_steps=(
-            "Create or sign in to Upstash.",
+            (
+                "Click Open provider gate in VM so Upstash opens in the VM browser, "
+                "then create or sign in."
+            ),
             "Complete the highlighted email, MFA, CAPTCHA, billing, or consent gate.",
             "Create or choose the Redis, Vector, or QStash resource required by the app.",
         ),
@@ -631,7 +647,10 @@ COMMON_PROVIDER_CATALOG: dict[str, ProviderCatalogEntry] = {
         token_label="OpenAI API key",
         required_scopes=("project API key for the selected app project",),
         account_steps=(
-            "Create or sign in to OpenAI.",
+            (
+                "Click Open provider gate in VM so OpenAI opens in the VM browser, "
+                "then create or sign in."
+            ),
             "Complete the highlighted email, MFA, CAPTCHA, billing, payment, or consent gate.",
             "Choose the project that should own the app key.",
         ),
@@ -758,6 +777,17 @@ def handoff_from_provider_pack(pack: ProviderCapabilityPack) -> ProviderHandoff:
 def _validate_launcher_capture_handoff(pack: ProviderCapabilityPack) -> None:
     """Require provider packs to use the public launcher secret-capture path."""
 
+    if not pack.handoff.account_steps:
+        raise ProviderError("Provider pack must include launcher account-opening steps.")
+    account_text = " ".join(pack.handoff.account_steps).lower()
+    if LAUNCHER_OPEN_GATE_PHRASE not in account_text:
+        raise ProviderError(
+            "Provider pack account_steps must name Open provider gate in VM."
+        )
+    if "local browser" in account_text or "host browser" in account_text:
+        raise ProviderError(
+            "Provider pack account_steps must keep provider gates inside the VM browser."
+        )
     if not pack.handoff.secret_steps:
         raise ProviderError("Provider pack must include launcher secret capture steps.")
     secret_text = " ".join(pack.handoff.secret_steps).lower()
@@ -913,7 +943,10 @@ def _plaid_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
             token_label="Plaid secret key",
             required_scopes=("sandbox/development API keys", "allowed products used by the app"),
             account_steps=(
-                "Create or sign in to a Plaid developer account.",
+                (
+                    "Click Open provider gate in VM so Plaid opens in the VM browser, "
+                    "then create or sign in to the developer account."
+                ),
                 (
                     "Complete the highlighted Plaid email, MFA, CAPTCHA, business, billing, "
                     "consent, or identity gate."
@@ -1014,7 +1047,10 @@ def _github_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                 "repository Administration: Read and write",
             ),
             account_steps=(
-                "Open GitHub in the VM browser and create or sign in to the account.",
+                (
+                    "Click Open provider gate in VM so GitHub opens in the VM browser, "
+                    "then create or sign in to the account."
+                ),
                 "Complete the highlighted email, passkey, MFA, CAPTCHA, or consent gate.",
                 "Create or choose the exact repository that will receive secrets and deploy keys.",
             ),
@@ -1105,7 +1141,10 @@ def _vercel_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
             token_label="Vercel API token",
             required_scopes=("project access", "environment variables", "deployments"),
             account_steps=(
-                "Open Vercel in the VM browser and create or sign in to the account.",
+                (
+                    "Click Open provider gate in VM so Vercel opens in the VM browser, "
+                    "then create or sign in to the account."
+                ),
                 "Complete the highlighted SSO, MFA, CAPTCHA, billing, payment, or consent gate.",
                 (
                     "Connect only the named GitHub account/repo under Login Connections when "
@@ -1205,7 +1244,10 @@ def _cloudflare_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
             token_label="Cloudflare API token",
             required_scopes=("Zone / Zone / Read", "Zone / DNS / Edit for the target zone"),
             account_steps=(
-                "Open Cloudflare in the VM browser and create or sign in to the account.",
+                (
+                    "Click Open provider gate in VM so Cloudflare opens in the VM browser, "
+                    "then create or sign in to the account."
+                ),
                 "Add or choose the exact DNS zone that owns the target domain.",
                 (
                     "Complete the highlighted nameserver, domain ownership, MFA, CAPTCHA, "
@@ -1310,7 +1352,10 @@ def _resend_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
             token_label="Resend API key",
             required_scopes=("Full access for first setup", "domain and audience setup"),
             account_steps=(
-                "Open Resend in the VM browser and create or sign in to the account.",
+                (
+                    "Click Open provider gate in VM so Resend opens in the VM browser, "
+                    "then create or sign in to the account."
+                ),
                 (
                     "Complete the highlighted email verification, MFA, CAPTCHA, billing, "
                     "consent, or domain ownership gate."
@@ -1502,7 +1547,10 @@ def _inferred_pack(provider: str, evidence: ProviderEvidence) -> ProviderCapabil
             token_label=f"{provider} API token",
             required_scopes=("least-privilege access required by the detected app integration",),
             account_steps=(
-                f"Create or sign in to {provider}.",
+                (
+                    f"Click Open provider gate in VM so {provider} opens in the VM browser, "
+                    "then create or sign in."
+                ),
                 (
                     "Complete the highlighted provider login, MFA, CAPTCHA, billing, fraud, "
                     "consent, or verification gate."
