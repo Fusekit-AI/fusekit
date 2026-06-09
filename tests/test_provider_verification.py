@@ -894,7 +894,12 @@ def test_vercel_env_missing_runtime_values_needs_human_gate(monkeypatch) -> None
 
     assert result.status == "needs_human_gate"
     assert result.details["service_gate"] is True
-    assert "RESEND_FROM_EMAIL" in result.details["reason"]
+    reason = result.details["reason"]
+    assert "RESEND_FROM_EMAIL" in reason
+    assert "Capture or derive" not in reason
+    assert "launcher controls" in reason
+    assert "Capture copy-once provider values from the VM clipboard" in reason
+    assert "regenerate API-owned provider values" in reason
 
 
 def test_webhook_secret_mismatch_reports_failed() -> None:

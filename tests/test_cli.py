@@ -1350,8 +1350,10 @@ def test_provider_api_fallback_regenerates_resend_values_before_downstream_retry
             details={
                 "reason": (
                     "Vercel is missing required app runtime environment variables: "
-                    "RESEND_FROM_EMAIL, RESEND_AUDIENCE_ID. Capture or derive these values "
-                    "before verifying the deployment."
+                    "RESEND_FROM_EMAIL, RESEND_AUDIENCE_ID. FuseKit will recover through "
+                    "launcher controls: Capture copy-once provider values from the VM "
+                    "clipboard, regenerate API-owned provider values, then reapply Vercel "
+                    "env before verifying the deployment."
                 )
             },
         )
