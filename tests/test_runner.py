@@ -2045,6 +2045,69 @@ def test_security_surface_map_documents_control_room_state_routes() -> None:
     assert "CLI-only fallback can use hidden prompts/env handoff" in text
     assert "redirect back to the same route without the token query parameter" in text
     assert "does not stay in the address bar" in text
+    assert "emits no `Access-Control-Allow-Origin`" in text
+    assert "`Access-Control-Allow-Methods`" in text
+    assert "`Access-Control-Allow-Headers`" in text
+
+
+def test_control_room_preflight_and_rejected_posts_emit_no_cors_allow_headers(
+    tmp_path,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.github.mfa.123",
+        provider="github",
+        reason="MFA required",
+        classification="mfa",
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/api/gates/provider.github.mfa.123/pass"
+        options = Request(
+            url,
+            method="OPTIONS",
+            headers={
+                "Origin": "https://attacker.example",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": (
+                    "x-fusekit-control-room,x-fusekit-action-token"
+                ),
+            },
+        )
+        with pytest.raises(HTTPError) as options_exc:
+            urlopen(options, timeout=5)
+        post = Request(
+            url,
+            method="POST",
+            headers={
+                "Origin": "https://attacker.example",
+                "Sec-Fetch-Site": "cross-site",
+                "x-fusekit-control-room": "resume",
+                "x-fusekit-action-token": (
+                    tmp_path / "control-room-action-token"
+                ).read_text(encoding="utf-8").strip(),
+            },
+        )
+        with pytest.raises(HTTPError) as post_exc:
+            urlopen(post, timeout=5)
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert options_exc.value.code == 405
+    assert post_exc.value.code == 403
+    for response in (options_exc.value, post_exc.value):
+        headers = {key.lower(): value for key, value in response.headers.items()}
+        assert "access-control-allow-origin" not in headers
+        assert "access-control-allow-methods" not in headers
+        assert "access-control-allow-headers" not in headers
+    assert GateService.load(tmp_path / "gates.json").records[
+        "provider.github.mfa.123"
+    ].status == "waiting"
 
 
 def test_threat_model_documents_control_room_state_route_defenses() -> None:

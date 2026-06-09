@@ -92,7 +92,8 @@ or trigger commands:
 
 - Simple HTML forms cannot set `x-fusekit-control-room`, so gate POSTs fail.
 - JavaScript `fetch` with that custom header triggers CORS preflight; FuseKit returns
-  `405` without CORS allow headers.
+  `405` and emits no `Access-Control-Allow-Origin`,
+  `Access-Control-Allow-Methods`, or `Access-Control-Allow-Headers` headers.
 - Clipboard-capture POSTs additionally require a bounded `application/json` object,
   so form/plaintext bodies are rejected before any vault or gate mutation.
 - Setup-plan and DNS approvals use the same protected `/pass` route as other gates:
