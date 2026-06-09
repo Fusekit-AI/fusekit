@@ -68,11 +68,16 @@ class VerificationReport:
                 repair=(
                     "Nothing needed."
                     if status == "passed"
-                    else "Wait for DNS/deployment propagation, then retry the live URL check."
+                    else (
+                        "Keep the control room open while FuseKit retries DNS and deployment "
+                        "health checks; any provider-owned blocker will resurface as a guided "
+                        "launcher gate."
+                    )
                     if status == "pending"
                     else (
-                        "FuseKit should retry health checks, inspect deployment logs, "
-                        "and redeploy after provider repair."
+                        "FuseKit will retry the live URL health check, reapply provider setup "
+                        "through API routes where possible, and surface a guided control-room "
+                        "gate if a provider needs human approval."
                     )
                 ),
                 details=result,
@@ -293,7 +298,11 @@ def _failed_repair(provider: str, check: str) -> str:
             "records, then retry."
         )
     if check == "live_url_healthy":
-        return "Inspect deployment/provider status, redeploy if needed, then retry health checks."
+        return (
+            "Keep the control room open. FuseKit will retry the live URL health check, "
+            "reapply provider setup through API routes where possible, and surface a "
+            "guided launcher gate if a provider needs human approval."
+        )
     return (
         f"FuseKit will reopen {provider} through the launcher or retry the provider API; "
         "use only the visible control-room gate if the provider asks for human approval."

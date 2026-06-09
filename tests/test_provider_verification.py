@@ -380,6 +380,40 @@ def test_verification_report_uses_launcher_guidance_for_human_gates() -> None:
     assert "provider UI/API" not in " ".join(repairs)
 
 
+def test_verification_report_live_url_repairs_are_launcher_actionable() -> None:
+    pending = VerificationReport(app_name="app")
+    pending.add_live_url({"ok": False, "pending_safe": True})
+    failed = VerificationReport(app_name="app")
+    failed.add_live_url({"ok": False})
+    provider_failed = VerificationReport(app_name="app")
+    provider_failed.add_provider_results(
+        "live_app",
+        [
+            VerificationResult(
+                provider="live_app",
+                kind="url-health",
+                target="https://app.example",
+                status="failed",
+                details={},
+            )
+        ],
+    )
+
+    repairs = [
+        pending.to_dict()["checks"][0]["repair"],
+        failed.to_dict()["checks"][0]["repair"],
+        provider_failed.to_dict()["checks"][0]["repair"],
+    ]
+    joined = " ".join(repairs)
+
+    assert "control room" in repairs[0]
+    assert "guided launcher gate" in joined
+    assert "provider needs human approval" in joined
+    assert "inspect" not in joined.lower()
+    assert "redeploy if needed" not in joined.lower()
+    assert "provider status" not in joined.lower()
+
+
 def test_dns_pending_then_passing(monkeypatch) -> None:
     vault = Vault.empty()
     pack = _pack("cloudflare")
