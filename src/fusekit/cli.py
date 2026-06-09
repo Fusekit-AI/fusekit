@@ -3371,6 +3371,7 @@ def _run_manifest_provider_pack_setup(
         result = run_provider_pack_setup(pack, context)
         strategy_runs.append(_provider_strategy_record(result))
         _write_provider_strategy_artifact(args, strategy_runs)
+        _record_provider_strategy_checkpoints(args, strategy_runs)
         _record_provider_strategy_gates(args, pack, result)
         context.audit.record("provider_pack.setup", result)
         context.receipt.add_action("provider_pack.setup", "ok", result)
@@ -3524,6 +3525,157 @@ def _record_provider_strategy_gates(
             next_action=next_action,
             resume_hint=resume_hint,
         )
+
+
+def _record_provider_strategy_checkpoints(
+    args: argparse.Namespace,
+    strategy_runs: list[dict[str, object]],
+) -> None:
+    job_state = getattr(args, "job_state", None)
+    if job_state is None:
+        return
+    job_path = Path(job_state)
+    if not job_path.exists():
+        return
+    try:
+        job = JobState.load(job_path)
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return
+    changed = False
+    for record in strategy_runs:
+        provider = str(record.get("provider", "") or "").strip().lower()
+        strategies = _checkpoint_strategy_items(record)
+        if not provider or not strategies:
+            continue
+        status, mascot_state = _provider_strategy_checkpoint_status(strategies)
+        detail = _provider_strategy_checkpoint_detail(strategies)
+        next_action = _provider_strategy_checkpoint_next_action(provider, strategies, status)
+        resume_hint = _provider_strategy_checkpoint_resume_hint(provider, strategies, status)
+        job.upsert_checkpoint(
+            f"provider.{_strategy_gate_slug(provider)}.routes",
+            f"Provider route: {provider}",
+            status=status,
+            detail=detail,
+            next_action=next_action,
+            resume_hint=resume_hint,
+            mascot_state=mascot_state,
+        )
+        changed = True
+    if changed:
+        args.job_state = job_path
+        _save_launch_job(args, job)
+
+
+def _checkpoint_strategy_items(record: dict[str, object]) -> list[dict[str, object]]:
+    raw_strategies = record.get("strategies", [])
+    if not isinstance(raw_strategies, list):
+        return []
+    strategies: list[dict[str, object]] = []
+    for item in raw_strategies:
+        if isinstance(item, dict):
+            strategies.append({str(key): value for key, value in item.items()})
+    return strategies
+
+
+def _provider_strategy_checkpoint_status(
+    strategies: list[dict[str, object]],
+) -> tuple[str, str]:
+    statuses = {str(item.get("status", "") or "").strip() for item in strategies}
+    if "needs_human_gate" in statuses:
+        has_secret_target = any(
+            str(item.get("target", "") or "").strip() for item in strategies
+        )
+        mascot = "privacy" if has_secret_target else "gate"
+        return "waiting", mascot
+    if statuses and statuses <= {"ok"}:
+        return "done", "verify"
+    if statuses & {"failed", "error"}:
+        return "failed", "gate"
+    return "running", "working"
+
+
+def _provider_strategy_checkpoint_detail(strategies: list[dict[str, object]]) -> str:
+    parts = []
+    for item in strategies:
+        recipe = str(item.get("recipe", "setup") or "setup").strip()
+        route = str(item.get("strategy", "") or "").strip() or "planned route"
+        status = str(item.get("status", "") or "").strip() or "pending"
+        parts.append(f"{recipe} uses {route} ({status})")
+    return "; ".join(parts)
+
+
+def _provider_strategy_checkpoint_next_action(
+    provider: str,
+    strategies: list[dict[str, object]],
+    status: str,
+) -> str:
+    human_gate = _first_strategy_with_status(strategies, "needs_human_gate")
+    if human_gate is not None:
+        return str(human_gate.get("next_action", "") or "") or _provider_strategy_next_action()
+    if provider == "resend":
+        return (
+            "Nothing to do manually in Resend; FuseKit creates or reuses the domain by API, "
+            "then waits for DNS approval after Resend records exist."
+        )
+    if provider == "vercel":
+        return (
+            "Nothing to copy manually into Vercel; FuseKit writes required runtime env vars "
+            "after upstream provider values exist."
+        )
+    if provider in {"cloudflare", "dns"}:
+        return (
+            "Review and approve the DNS apply gate in the control room when FuseKit shows "
+            "the exact app and provider-generated records."
+        )
+    if status == "failed":
+        return (
+            "Open the provider route details in the control room and retry the failed "
+            "setup path."
+        )
+    return "Nothing to do manually unless FuseKit surfaces a provider-owned gate."
+
+
+def _provider_strategy_checkpoint_resume_hint(
+    provider: str,
+    strategies: list[dict[str, object]],
+    status: str,
+) -> str:
+    human_gate = _first_strategy_with_status(strategies, "needs_human_gate")
+    if human_gate is not None:
+        return str(human_gate.get("resume_hint", "") or "") or (
+            "FuseKit will retry this provider route after you finish the gate."
+        )
+    if provider == "resend":
+        return (
+            "If this resurfaces, rerun setup so Resend records feed the DNS approval gate "
+            "before Cloudflare/DNS apply."
+        )
+    if provider == "vercel":
+        return (
+            "If this resurfaces, rerun setup after Resend and other provider values are "
+            "available so Vercel env wiring can stay deterministic."
+        )
+    if provider in {"cloudflare", "dns"}:
+        return (
+            "If DNS is waiting, approve the exact generated records in the launcher; FuseKit "
+            "will keep verifying propagation instead of giving up early."
+        )
+    if status == "failed":
+        return (
+            "Fix the provider-owned blocker, then rerun FuseKit so the strategy can be "
+            "rechecked."
+        )
+    return "FuseKit recorded the deterministic provider route for resume and audit."
+
+
+def _first_strategy_with_status(
+    strategies: list[dict[str, object]],
+    status: str,
+) -> dict[str, object] | None:
+    for item in strategies:
+        if str(item.get("status", "") or "") == status:
+            return item
+    return None
 
 
 def _provider_strategy_follow_steps(pack: ProviderCapabilityPack) -> tuple[str, ...]:

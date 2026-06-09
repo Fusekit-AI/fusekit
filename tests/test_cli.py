@@ -55,6 +55,7 @@ from fusekit.providers.capability_pack import (
 from fusekit.providers.handoff import handoff_for
 from fusekit.providers.verification import VerificationResult
 from fusekit.runner.gates import GateService
+from fusekit.runner.job import JobState
 from fusekit.runner.oci_live import OciWorkspace
 from fusekit.spine.playbooks import BrowserPlaybookEvent
 from fusekit.vault import Vault
@@ -206,6 +207,9 @@ def test_provider_setup_orders_resend_before_dns() -> None:
 def test_provider_setup_pauses_dns_behind_resend_human_gate(monkeypatch, tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()
+    fusekit_dir = app / ".fusekit"
+    job_path = fusekit_dir / "job.json"
+    JobState.create("fk-test", app, "oci-free").save(job_path)
     calls: list[str] = []
 
     def fake_run_provider_pack_setup(pack, context):  # type: ignore[no-untyped-def]
@@ -256,6 +260,8 @@ def test_provider_setup_pauses_dns_behind_resend_human_gate(monkeypatch, tmp_pat
         vercel_git_repo_id="",
         vercel_git_ref="main",
         dns_zone="moonlite.rsvp",
+        job_state=job_path,
+        control_room=False,
     )
     context = ProviderSetupContext(
         manifest=manifest,
@@ -279,6 +285,14 @@ def test_provider_setup_pauses_dns_behind_resend_human_gate(monkeypatch, tmp_pat
     assert actions[-1]["action"] == "provider_pack.setup.paused"
     assert actions[-1]["status"] == "needs_human_gate"
     assert actions[-1]["details"]["provider"] == "resend"
+    checkpoints = json.loads((fusekit_dir / "checkpoints.json").read_text(encoding="utf-8"))
+    provider_checkpoint = next(
+        item for item in checkpoints["checkpoints"] if item["id"] == "provider.resend.routes"
+    )
+    assert provider_checkpoint["status"] == "waiting"
+    assert provider_checkpoint["mascot_state"] == "gate"
+    assert "resend-domain uses browser_guided (needs_human_gate)" in provider_checkpoint["detail"]
+    assert "Click Open provider gate in VM" in provider_checkpoint["next_action"]
 
 
 def test_manifest_setup_feeds_resend_dns_records_to_cloudflare(monkeypatch, tmp_path) -> None:
@@ -286,6 +300,8 @@ def test_manifest_setup_feeds_resend_dns_records_to_cloudflare(monkeypatch, tmp_
     (app / ".fusekit").mkdir(parents=True)
     vault_path = app / ".fusekit" / "fusekit.vault.json"
     vault_path.write_text("{}", encoding="utf-8")
+    job_path = app / ".fusekit" / "job.json"
+    JobState.create("fk-test", app, "oci-free").save(job_path)
     calls: list[str] = []
 
     def fake_run_provider_pack_setup(pack, context):  # type: ignore[no-untyped-def]
@@ -349,6 +365,8 @@ def test_manifest_setup_feeds_resend_dns_records_to_cloudflare(monkeypatch, tmp_
         vercel_git_repo_id="",
         vercel_git_ref="main",
         dns_zone="moonlite.rsvp",
+        job_state=job_path,
+        control_room=False,
     )
     context = ProviderSetupContext(
         manifest=manifest,
@@ -363,6 +381,14 @@ def test_manifest_setup_feeds_resend_dns_records_to_cloudflare(monkeypatch, tmp_
     _run_manifest_provider_pack_setup(args, manifest, context)
 
     assert calls == ["resend", "cloudflare"]
+    checkpoints = json.loads((app / ".fusekit" / "checkpoints.json").read_text("utf-8"))
+    resend_checkpoint = next(
+        item for item in checkpoints["checkpoints"] if item["id"] == "provider.resend.routes"
+    )
+    assert resend_checkpoint["status"] == "done"
+    assert resend_checkpoint["detail"] == "resend-domain uses api (ok)"
+    assert "Nothing to do manually in Resend" in resend_checkpoint["next_action"]
+    assert "DNS approval gate" in resend_checkpoint["resume_hint"]
 
 
 def test_control_room_dns_approval_waits_after_resend_records_before_cloudflare(

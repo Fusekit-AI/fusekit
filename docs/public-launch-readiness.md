@@ -47,6 +47,9 @@ leak scan, resolved durable gate state, and detonated worker state. Complete
 route decisions include the selected route kind, status, deterministic/implemented
 flags, reason, and considered candidates, so the control room can explain whether
 FuseKit used API automation, secure vault capture, or VM follow-me. When both
+provider route decisions and launch checkpoints are present, the checkpoint
+recovery map must preserve the same provider-route next actions so refreshed
+launcher sessions do not regress to generic setup guidance. When both
 provider route decisions and setup receipts claim an API route succeeded, the
 receipt must also prove that the provider's read-only contract-health check
 succeeded before the provider setup action, so stale, revoked, or mis-scoped

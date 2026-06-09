@@ -123,11 +123,13 @@ guided token-refresh/capture gate, and live acceptance requires the receipt to
 prove health succeeded before setup. The control room renders a provider Route
 plan from strategy evidence so users see Resend domain setup, DNS approval,
 Vercel env wiring, and token-capture gates in the intended order.
+Those provider route decisions are also persisted into durable checkpoint
+resume records, so a refreshed or resumed launcher keeps the same no-thinking
+next action instead of falling back to generic setup-worker guidance.
 
 Next slices:
 
 1. Add official CLI executors for providers where CLI is more reliable.
 2. Add signed remote provider-pack registry support.
-3. Persist strategy decisions into checkpoint resume records.
-4. Run a real OCI provider acceptance using GitHub, Vercel, Cloudflare, and a
+3. Run a real OCI provider acceptance using GitHub, Vercel, Cloudflare, and a
    disposable domain.

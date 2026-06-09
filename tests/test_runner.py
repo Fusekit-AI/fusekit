@@ -171,6 +171,15 @@ def test_job_status_preserves_failure_after_cleanup_step(tmp_path) -> None:
 def test_job_state_writes_recovery_checkpoints(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job.mark("setup.execute", "running", "provider token hidden prompt is open")
+    job.upsert_checkpoint(
+        "provider.resend.routes",
+        "Provider route: resend",
+        status="done",
+        detail="resend-domain uses api (ok)",
+        next_action="Nothing to do manually in Resend.",
+        resume_hint="Resend records feed DNS approval.",
+        mascot_state="verify",
+    )
     job_path = tmp_path / "job.json"
 
     job.save(job_path)
@@ -184,6 +193,12 @@ def test_job_state_writes_recovery_checkpoints(tmp_path) -> None:
     assert setup["status"] == "running"
     assert setup["mascot_state"] == "privacy"
     assert "Human gates wait forever" in setup["resume_hint"]
+    provider = next(
+        item for item in checkpoint_payload["checkpoints"] if item["id"] == "provider.resend.routes"
+    )
+    assert provider["status"] == "done"
+    assert provider["detail"] == "resend-domain uses api (ok)"
+    assert "Resend records feed DNS approval" in provider["resume_hint"]
 
 
 def test_launch_run_state_contract_tracks_detonation_readiness(tmp_path) -> None:

@@ -181,6 +181,42 @@ class JobState:
         self.artifacts[name] = str(path)
         self.updated_at = time.time()
 
+    def upsert_checkpoint(
+        self,
+        checkpoint_id: str,
+        label: str,
+        *,
+        status: str,
+        detail: str,
+        next_action: str,
+        resume_hint: str,
+        mascot_state: str = "launch",
+    ) -> None:
+        """Add or replace a durable user-facing checkpoint."""
+
+        checkpoint = JobCheckpoint(
+            id=checkpoint_id,
+            label=label,
+            status=status,
+            detail=detail,
+            next_action=next_action,
+            resume_hint=resume_hint,
+            mascot_state=mascot_state,
+            updated_at=time.time(),
+        )
+        updated: list[JobCheckpoint] = []
+        found = False
+        for existing in self.checkpoints:
+            if existing.id == checkpoint_id:
+                updated.append(checkpoint)
+                found = True
+            else:
+                updated.append(existing)
+        if not found:
+            updated.append(checkpoint)
+        self.checkpoints = updated
+        self.updated_at = time.time()
+
     def _mark_checkpoint(self, step: JobStep) -> None:
         checkpoint = _checkpoint_from_step(step)
         updated: list[JobCheckpoint] = []
