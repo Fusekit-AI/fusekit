@@ -455,7 +455,7 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
     }
     return guidance.get(
         item,
-        ("Launch evidence", f"Repair missing launch evidence: {item}."),
+        ("Launch evidence", _unknown_launch_evidence_action(item)),
     )
 
 
@@ -530,7 +530,9 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
             )
         return (
             "Human gates",
-            "Repair the control-room gate artifact, then rerun live acceptance.",
+            "Keep the control room open and regenerate the gate through the live launcher "
+            "so it shows Open provider gate in VM, Capture from VM clipboard, or "
+            "I finished this step as the next visible action.",
         )
     if check.id == "provider_strategies.order":
         return (
@@ -594,7 +596,19 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
             "Security",
             "Remove plaintext setup secrets from app files, then rerun the launch leak scan.",
         )
-    return ("Launch evidence", f"Repair failed acceptance check {check.id}.")
+    return ("Launch evidence", _unknown_launch_evidence_action(check.id))
+
+
+def _unknown_launch_evidence_action(item: str) -> str:
+    """Return a launcher-first recovery action for unfamiliar acceptance blockers."""
+
+    return (
+        f"Keep the control room open while FuseKit regenerates launch evidence for {item}. "
+        "Use any visible Open provider gate in VM, Capture from VM clipboard, "
+        "I finished this step, Approve setup plan, or Approve DNS apply control that appears. "
+        "If no specific launcher control appears, rerun the same live launch/acceptance so "
+        "FuseKit can rebuild this proof artifact."
+    )
 
 
 def _load_or_scan_manifest(

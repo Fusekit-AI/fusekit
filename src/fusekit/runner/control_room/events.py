@@ -760,7 +760,9 @@ function acceptanceCards(report) {
       snow: "failed",
       label: blocker.category || "Launch blocker",
       title: blocker.item || "Acceptance item",
-      body: blocker.next_action || "Run acceptance again after fixing this.",
+      body:
+        blocker.next_action ||
+        unknownAcceptanceBlockerAction(blocker.item || "Acceptance item"),
       detail: blocker.detail || "",
       foot: "FuseKit will keep this visible until acceptance proof passes.",
     }));
@@ -879,10 +881,20 @@ function missingAcceptanceBlocker(item) {
   };
   const fallback = [
     "Launch evidence",
-    "Repair this acceptance item, then rerun live acceptance.",
+    unknownAcceptanceBlockerAction(item),
   ];
   const [category, nextAction] = guidance[item] || fallback;
   return { category, item, next_action: nextAction };
+}
+
+function unknownAcceptanceBlockerAction(item) {
+  return (
+    `Keep the control room open while FuseKit regenerates launch evidence for ${item}. ` +
+    "Use any visible Open provider gate in VM, Capture from VM clipboard, " +
+    "I finished this step, Approve setup plan, or Approve DNS apply control that appears. " +
+    "If no specific launcher control appears, rerun the same live launch/acceptance so " +
+    "FuseKit can rebuild this proof artifact."
+  );
 }
 
 function renderAcceptance(job) {

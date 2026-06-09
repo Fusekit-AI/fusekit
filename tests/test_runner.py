@@ -589,6 +589,38 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
     assert "missingAcceptanceBlocker" in html
 
 
+def test_control_room_unknown_acceptance_missing_uses_launcher_controls(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    acceptance_dir = tmp_path / "acceptance"
+    acceptance_dir.mkdir()
+    (acceptance_dir / "report.json").write_text(
+        json.dumps(
+            {
+                "launch_ready": False,
+                "missing": ["custom provider launch proof"],
+                "blockers": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+    payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
+
+    assert payload["acceptance"]["missing"] == ["custom provider launch proof"]
+    assert payload["acceptance"]["blockers"] == []
+    assert "custom provider launch proof" in html
+    assert "Launch evidence" in html
+    assert "Keep the control room open" in html
+    assert "Open provider gate in VM" in html
+    assert "Capture from VM clipboard" in html
+    assert "I finished this step" in html
+    assert "Approve DNS apply" in html
+    assert "Repair this acceptance item" not in html
+    assert "Run acceptance again after fixing this" not in html
+    assert "unknownAcceptanceBlockerAction" in html
+
+
 def test_control_room_renders_acceptance_ready_state(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     acceptance_dir = tmp_path / "acceptance"

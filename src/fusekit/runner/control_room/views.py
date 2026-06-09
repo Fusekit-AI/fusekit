@@ -602,14 +602,26 @@ def _missing_acceptance_guidance(item: str) -> tuple[str, str]:
     }
     return guidance.get(
         item,
-        ("Launch evidence", "Repair this acceptance item, then rerun live acceptance."),
+        ("Launch evidence", _unknown_acceptance_blocker_action(item)),
+    )
+
+
+def _unknown_acceptance_blocker_action(item: str) -> str:
+    return (
+        f"Keep the control room open while FuseKit regenerates launch evidence for {item}. "
+        "Use any visible Open provider gate in VM, Capture from VM clipboard, "
+        "I finished this step, Approve setup plan, or Approve DNS apply control that appears. "
+        "If no specific launcher control appears, rerun the same live launch/acceptance so "
+        "FuseKit can rebuild this proof artifact."
     )
 
 
 def _render_acceptance_blocker_card(blocker: dict[str, Any]) -> str:
     category = str(blocker.get("category", "Launch blocker") or "Launch blocker")
     item = str(blocker.get("item", "Acceptance item") or "Acceptance item")
-    next_action = str(blocker.get("next_action", "") or "Run acceptance again after fixing this.")
+    next_action = str(
+        blocker.get("next_action", "") or _unknown_acceptance_blocker_action(item)
+    )
     detail = str(blocker.get("detail", "") or "").strip()
     detail_block = (
         f"<code>{html.escape(_public_copy(detail))}</code>"

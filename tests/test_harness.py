@@ -1093,6 +1093,31 @@ def test_acceptance_blockers_use_launcher_actionable_check_guidance() -> None:
     assert "resume button" not in blockers["gates.resolved"]["next_action"]
 
 
+def test_acceptance_blockers_keep_unknown_items_launcher_actionable() -> None:
+    blockers = _acceptance_blockers(
+        [
+            AcceptanceCheck(
+                "provider_custom.unexpected_artifact",
+                "failed",
+                "provider-specific proof is missing",
+            )
+        ],
+        ["custom launch proof"],
+    )
+
+    by_item = {blocker["item"]: blocker for blocker in blockers}
+    for item in ("custom launch proof", "provider_custom.unexpected_artifact"):
+        next_action = by_item[item]["next_action"]
+        assert "Keep the control room open" in next_action
+        assert "Open provider gate in VM" in next_action
+        assert "Capture from VM clipboard" in next_action
+        assert "I finished this step" in next_action
+        assert "Approve DNS apply" in next_action
+        assert "Repair missing launch evidence" not in next_action
+        assert "Repair failed acceptance check" not in next_action
+        assert "Repair this acceptance item" not in next_action
+
+
 def test_acceptance_blockers_explain_missing_gate_event_controls() -> None:
     blockers = {
         blocker["item"]: blocker
