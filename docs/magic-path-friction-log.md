@@ -167,6 +167,7 @@ guided, or explicitly verified.
 | Live control-room retry errors and acceptance blockers could still say "mark the gate done" or "resume button", which did not match the button the user sees. | Gate-pass error copy and unresolved-gate blockers now name the visible `I finished this step` button. |
 | Verification-report repair copy could still say "visible FuseKit Capture" instead of the actual clipboard-capture control, leaving report-driven recovery less precise than the control room. | Verification reports now name `Capture from VM clipboard` for copy-once values and `I finished this step` for non-secret provider gates. |
 | Source handoffs, browser playbooks, inferred UI repair, and launcher helper copy could still say "Capture button" or "Capture button in FuseKit" instead of the exact visible capture control. | Public guided copy now consistently names `Capture from VM clipboard` buttons for copy-once provider values. |
+| Multi-value capture gates could name the first Capture control exactly but fall back to vague "then capture VALUE" copy after one value was stored. | Partial capture states now continue to name the matching `Capture from VM clipboard` button for the remaining value. |
 
 ## Open Acceptance Items
 

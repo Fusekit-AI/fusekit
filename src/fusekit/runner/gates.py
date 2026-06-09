@@ -254,7 +254,8 @@ class GateService:
         missing = _capture_targets(record.target) - set(record.captured_targets)
         if missing:
             record.next_action = (
-                "Copy the next provider value in the VM browser, then capture "
+                "Copy the next provider value in the VM browser, then click the matching "
+                "Capture from VM clipboard button for "
                 + ", ".join(sorted(missing))
                 + "."
             )

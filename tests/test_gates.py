@@ -115,6 +115,27 @@ def test_gate_service_resume_request_can_resurface_after_failed_recheck(tmp_path
     assert resurfaced.captured_targets == ()
 
 
+def test_gate_service_partial_capture_names_vm_clipboard_button(tmp_path) -> None:
+    path = tmp_path / "gates.json"
+    service = GateService.load(path)
+    service.wait(
+        "provider.custom.runtime-values",
+        provider="custom",
+        reason="Runtime values",
+        target="CUSTOM_API_KEY,CUSTOM_WEBHOOK_SECRET",
+    )
+    service.mark_captured("provider.custom.runtime-values", "CUSTOM_API_KEY")
+
+    gate = GateService.load(path).records["provider.custom.runtime-values"]
+
+    assert gate.captured_targets == ("CUSTOM_API_KEY",)
+    assert gate.next_action == (
+        "Copy the next provider value in the VM browser, then click the matching "
+        "Capture from VM clipboard button for CUSTOM_WEBHOOK_SECRET."
+    )
+    assert "resume automatically" in gate.resume_hint
+
+
 def test_gate_service_resume_request_uses_approval_specific_copy(tmp_path) -> None:
     path = tmp_path / "gates.json"
     service = GateService.load(path)
