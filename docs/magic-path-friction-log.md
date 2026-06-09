@@ -155,6 +155,7 @@ guided, or explicitly verified.
 | Resend route-plan and provider guidance said not to click Add Domain "unless FuseKit asks," leaving a vague exception that could make new-account users wonder whether manual domain setup might still be expected. | Resend guidance now states the public path plainly: do not click Add Domain or create domains/audiences by hand; FuseKit creates or reuses Resend resources by API after key capture and then sends records to DNS approval. |
 | Route-plan copy for token and human gates could still say to use the VM browser without naming the actual launcher controls, leaving first-time users to infer which button advances the run. | Route-plan token and human-gate steps now name `Open provider gate in VM`, the shared VM browser, `Capture from VM clipboard`, and `I finished this step` directly. |
 | Durable provider-route checkpoints could pass acceptance with vague "use the VM browser" wording or copy-once token names without proving the recovery map names the actual launcher controls. | Launch acceptance now rejects waiting provider-route checkpoints unless they name `Open provider gate in VM`, and rejects copy-once token/key checkpoints unless they name `Capture from VM clipboard`. |
+| Live control-room retry errors and acceptance blockers could still say "mark the gate done" or "resume button", which did not match the button the user sees. | Gate-pass error copy and unresolved-gate blockers now name the visible `I finished this step` button. |
 
 ## Open Acceptance Items
 

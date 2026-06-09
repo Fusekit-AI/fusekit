@@ -885,6 +885,8 @@ def test_control_room_renders_resume_requested_gate_as_rechecking(tmp_path) -> N
     assert "next guided blocker or success state" in html
     assert 'data-gate-pass="provider.cloudflare.authorization"' not in html
     assert "Snowman is rechecking the provider now" in html
+    assert "Could not record I finished this step from this snapshot" in html
+    assert "Could not mark the gate done" not in html
     assert "await refreshJob({ preserveStatus: true });" in html
 
 

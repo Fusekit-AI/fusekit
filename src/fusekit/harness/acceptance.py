@@ -524,7 +524,7 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
             return (
                 "Human gates",
                 "Finish the visible VM-browser gate, then use the matching Capture "
-                "or resume button.",
+                "or I finished this step button.",
             )
         return (
             "Human gates",

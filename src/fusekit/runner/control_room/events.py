@@ -1516,7 +1516,7 @@ document.addEventListener("click", async (event) => {
       if (!response.ok || !payload.ok) {
         throw new Error(controlRoomFailureMessage(
           payload,
-          "Could not mark the gate done from this snapshot. FuseKit will keep waiting.",
+          "Could not record I finished this step from this snapshot. FuseKit will keep waiting.",
         ));
       }
       setRefreshStatus(
@@ -1534,7 +1534,7 @@ document.addEventListener("click", async (event) => {
       gateButton.disabled = false;
       gateButton.textContent = originalText;
       const message = error?.message ||
-        "Could not mark the gate done from this snapshot. FuseKit will keep waiting.";
+        "Could not record I finished this step from this snapshot. FuseKit will keep waiting.";
       setRefreshStatus(message, "stale");
       setGateActionStatus(gateId, message, "stale");
     }

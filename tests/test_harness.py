@@ -1010,6 +1010,11 @@ def test_acceptance_blockers_use_launcher_actionable_check_guidance() -> None:
             "failed",
             "Plaintext worker/browser/visual state still exists: .fusekit/browser",
         ),
+        AcceptanceCheck(
+            "gates.resolved",
+            "failed",
+            "Waiting provider gate still exists: provider.cloudflare.authorization",
+        ),
     ]
 
     blockers = {blocker["item"]: blocker for blocker in _acceptance_blockers(checks, [])}
@@ -1023,6 +1028,8 @@ def test_acceptance_blockers_use_launcher_actionable_check_guidance() -> None:
     assert "plaintext worker, browser, visual, and auth scratch state" in blockers[
         "detonation.worker_state"
     ]["next_action"]
+    assert "I finished this step button" in blockers["gates.resolved"]["next_action"]
+    assert "resume button" not in blockers["gates.resolved"]["next_action"]
 
 
 def test_acceptance_blockers_explain_missing_gate_event_controls() -> None:
