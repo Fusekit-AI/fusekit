@@ -1203,6 +1203,8 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                         "data": {
                             "gate_id": "provider.openai.authorization",
                             "provider": "openai",
+                            "has_last_opened_url": True,
+                            "has_resume_url": True,
                             "reused": False,
                             "status": "waiting",
                         },
@@ -1228,6 +1230,8 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                         "data": {
                             "gate_id": "provider.callback.review",
                             "provider": "provider",
+                            "has_last_opened_url": True,
+                            "has_resume_url": True,
                             "reused": False,
                             "status": "waiting",
                         },
@@ -2943,6 +2947,18 @@ def test_live_acceptance_requires_provider_gate_open_audit(tmp_path) -> None:
         "\n".join(
             [
                 '{"event":"provider.verify"}',
+                json.dumps(
+                    {
+                        "event": "control_room.gate_open",
+                        "data": {
+                            "gate_id": "provider.cloudflare.authorization",
+                            "provider": "cloudflare",
+                            "reused": False,
+                            "status": "waiting",
+                        },
+                    },
+                    sort_keys=True,
+                ),
                 json.dumps(
                     {
                         "event": "control_room.gate_resume_requested",

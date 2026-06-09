@@ -2328,8 +2328,7 @@ def _check_gate_audit_events(
     opened_gate_ids = {
         str(event.get("data", {}).get("gate_id", ""))
         for event in audit_events
-        if str(event.get("event", "")) == "control_room.gate_open"
-        and isinstance(event.get("data"), dict)
+        if _gate_open_audit_event_proves_vm_open(event)
     }
     resumed_gate_ids = {
         str(event.get("data", {}).get("gate_id", ""))
@@ -2463,6 +2462,20 @@ def _gate_requires_visible_resume(gate: dict[str, Any]) -> bool:
     if provider in {"dns", "fusekit"}:
         return True
     return str(gate.get("id", "")).startswith("provider.")
+
+
+def _gate_open_audit_event_proves_vm_open(event: dict[str, Any]) -> bool:
+    """Return whether an audit event proves a real control-room VM browser open."""
+
+    data = event.get("data")
+    return (
+        str(event.get("event", "")) == "control_room.gate_open"
+        and isinstance(data, dict)
+        and isinstance(data.get("reused"), bool)
+        and data.get("has_resume_url") is True
+        and data.get("has_last_opened_url") is True
+        and bool(str(data.get("gate_id", "")).strip())
+    )
 
 
 def _gate_secret_targets(gate: dict[str, Any]) -> list[str]:
