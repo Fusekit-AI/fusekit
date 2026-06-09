@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from fusekit.runner.gate_guidance import provider_gate_guidance
 from fusekit.runner.gates import GateService
 
 
@@ -78,7 +79,14 @@ def test_gate_service_persists_provider_success_and_avoid_guidance(tmp_path) -> 
     assert "success_criteria" in gate
     assert "avoid_steps" in gate
     assert any("raw Resend API key value" in item for item in gate["success_criteria"])
+    assert any(
+        "No Resend domains or audiences need to exist" in item
+        for item in gate["success_criteria"]
+    )
     assert any("Do not click Add domain" in item for item in gate["avoid_steps"])
+
+    guidance = provider_gate_guidance("resend")
+    assert any("All domains" in item for item in guidance.actions)
 
 
 def test_gate_service_resume_request_can_resurface_after_failed_recheck(tmp_path) -> None:
