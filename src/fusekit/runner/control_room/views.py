@@ -763,13 +763,15 @@ def _strategy_plan_items(providers: list[Any]) -> list[str]:
         )
     if token_targets:
         items.append(
-            "If a provider token gate appears, open it in the VM browser and use "
+            "If a provider token gate appears, click Open provider gate in VM, copy "
+            "the value inside the shared VM browser, then click "
             f"Capture from VM clipboard for {', '.join(token_targets)}."
         )
     elif has_human_gate:
         items.append(
-            "For provider-owned login, MFA, consent, or billing gates, use the VM "
-            "browser and click I finished this step only after the provider confirms."
+            "For provider-owned login, MFA, consent, or billing gates, click Open "
+            "provider gate in VM, finish the prompt in the shared VM browser, then "
+            "click I finished this step only after the provider confirms."
         )
     if not items and has_api:
         items.append(

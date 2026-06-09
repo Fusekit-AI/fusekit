@@ -2531,7 +2531,54 @@ def test_control_room_payload_and_html_include_provider_strategy_routes(tmp_path
     assert "Click Open provider gate in VM, create the setup token" in html
     assert "Create the fine-grained FuseKit setup token." in html
     assert "Route plan" in html
+    assert "If a provider token gate appears, click Open provider gate in VM" in html
+    assert "copy the value inside the shared VM browser" in html
     assert "Capture from VM clipboard for GITHUB_TOKEN" in html
+
+
+def test_control_room_route_plan_names_human_gate_controls(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job.save(tmp_path / "job.json")
+    (tmp_path / "provider_strategies.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.provider-strategies.v1",
+                "providers": [
+                    {
+                        "provider": "cloudflare",
+                        "strategies": [
+                            {
+                                "recipe": "cloudflare-consent",
+                                "status": "needs_human_gate",
+                                "strategy": "human_follow_me",
+                                "next_action": (
+                                    "Click Open provider gate in VM and approve only the "
+                                    "named zone."
+                                ),
+                                "decision": {
+                                    "selected": {
+                                        "kind": "human_follow_me",
+                                        "deterministic": False,
+                                        "implemented": False,
+                                        "reason": "Cloudflare needs account consent.",
+                                    }
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+
+    assert "Route plan" in html
+    assert "For provider-owned login, MFA, consent, or billing gates" in html
+    assert "click Open provider gate in VM" in html
+    assert "finish the prompt in the shared VM browser" in html
+    assert "click I finished this step only after the provider confirms" in html
 
 
 def test_control_room_explains_deterministic_provider_route(tmp_path) -> None:
