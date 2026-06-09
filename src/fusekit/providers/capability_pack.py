@@ -50,6 +50,16 @@ SERVICE_GATE_WORDS = (
     "identity",
     "verification",
 )
+LAUNCHER_CAPTURE_PHRASES = (
+    "capture from vm clipboard",
+    "vm browser",
+    "capture reads the vm clipboard directly",
+)
+NO_HOST_PASTE_PHRASES = (
+    "no paste into your computer",
+    "do not paste it into your computer",
+    "do not paste into your computer",
+)
 BUILT_IN_PROVIDERS = {"github", "vercel", "cloudflare", "dns"}
 FRAMEWORK_ENV_PREFIXES = {
     "astro",
@@ -724,6 +734,7 @@ def validate_provider_pack(pack: ProviderCapabilityPack) -> None:
             pack.prohibited_actions
         ).lower():
             raise ProviderError(f"Provider pack references {word} without a service gate.")
+    _validate_launcher_capture_handoff(pack)
 
 
 def handoff_from_provider_pack(pack: ProviderCapabilityPack) -> ProviderHandoff:
@@ -742,6 +753,28 @@ def handoff_from_provider_pack(pack: ProviderCapabilityPack) -> ProviderHandoff:
         account_steps=pack.handoff.account_steps,
         secret_steps=pack.handoff.secret_steps,
     )
+
+
+def _validate_launcher_capture_handoff(pack: ProviderCapabilityPack) -> None:
+    """Require provider packs to use the public launcher secret-capture path."""
+
+    if not pack.handoff.secret_steps:
+        raise ProviderError("Provider pack must include launcher secret capture steps.")
+    secret_text = " ".join(pack.handoff.secret_steps).lower()
+    for phrase in LAUNCHER_CAPTURE_PHRASES:
+        if phrase not in secret_text:
+            raise ProviderError(
+                "Provider pack secret_steps must use Capture from VM clipboard "
+                "and explain that capture reads the VM clipboard directly."
+            )
+    if not any(phrase in secret_text for phrase in NO_HOST_PASTE_PHRASES):
+        raise ProviderError(
+            "Provider pack secret_steps must tell users no paste into their computer is needed."
+        )
+    if "local browser" in secret_text or "host browser" in secret_text:
+        raise ProviderError(
+            "Provider pack secret_steps must keep secret capture inside the VM browser."
+        )
 
 
 def synthesize_provider_pack(
@@ -890,9 +923,9 @@ def _plaid_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
             secret_steps=(
                 "Open Developers > Keys and reveal the approved Sandbox or Development secret.",
                 (
-                    "Capture PLAID_CLIENT_ID, PLAID_SECRET, and PLAID_ENV with the matching "
-                    "Capture from VM clipboard buttons. No paste into your computer is needed "
-                    "because Capture reads the VM clipboard directly."
+                    "Copy PLAID_CLIENT_ID, PLAID_SECRET, and PLAID_ENV inside the VM browser, "
+                    "then click the matching Capture from VM clipboard buttons. No paste into "
+                    "your computer is needed because Capture reads the VM clipboard directly."
                 ),
                 "Configure allowed products and redirect/webhook settings required by the app.",
             ),
@@ -1003,9 +1036,10 @@ def _github_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                     "named owner and repo."
                 ),
                 (
-                    "Copy the token once inside the VM browser; FuseKit captures it into the "
-                    "encrypted vault. No paste into your computer is needed because Capture "
-                    "reads the VM clipboard directly."
+                    "Copy the token once inside the VM browser, then click the matching "
+                    "Capture from VM clipboard button to store it in the encrypted vault. "
+                    "No paste into your computer is needed because Capture reads the VM "
+                    "clipboard directly."
                 ),
             ),
             service_gates=("email verification", "passkey", "MFA", "CAPTCHA", "consent"),
@@ -1089,9 +1123,10 @@ def _vercel_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                 ),
                 "Use a short expiration.",
                 (
-                    "Copy the token once inside the VM browser; FuseKit captures it into the "
-                    "encrypted vault. No paste into your computer is needed because Capture "
-                    "reads the VM clipboard directly."
+                    "Copy the token once inside the VM browser, then click the matching "
+                    "Capture from VM clipboard button to store it in the encrypted vault. "
+                    "No paste into your computer is needed because Capture reads the VM "
+                    "clipboard directly."
                 ),
             ),
             service_gates=("SSO", "MFA", "CAPTCHA", "billing/payment verification", "consent"),
@@ -1196,9 +1231,10 @@ def _cloudflare_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                     "requires them, then choose Continue to summary and Create Token."
                 ),
                 (
-                    "Copy the token once inside the VM browser; FuseKit captures it into the "
-                    "encrypted vault. No paste into your computer is needed because Capture "
-                    "reads the VM clipboard directly."
+                    "Copy the token once inside the VM browser, then click the matching "
+                    "Capture from VM clipboard button to store it in the encrypted vault. "
+                    "No paste into your computer is needed because Capture reads the VM "
+                    "clipboard directly."
                 ),
             ),
             service_gates=(
@@ -1292,9 +1328,10 @@ def _resend_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                     "key secrets again."
                 ),
                 (
-                    "Copy RESEND_API_KEY once inside the VM browser; FuseKit captures it into "
-                    "the encrypted vault. No paste into your computer is needed because "
-                    "Capture reads the VM clipboard directly."
+                    "Copy RESEND_API_KEY once inside the VM browser, then click the matching "
+                    "Capture from VM clipboard button to store it in the encrypted vault. "
+                    "No paste into your computer is needed because Capture reads the VM "
+                    "clipboard directly."
                 ),
                 "FuseKit creates or reuses the sending domain through Resend's API.",
                 "FuseKit uses returned domain verification records as DNS proposals.",

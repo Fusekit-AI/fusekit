@@ -362,6 +362,38 @@ def test_inferred_provider_handoff_uses_launcher_capture_path(tmp_path) -> None:
     assert "Capture reads the VM clipboard directly" in text
 
 
+def test_provider_pack_rejects_vague_secret_capture_handoff(tmp_path) -> None:
+    pack = synthesize_provider_pack("stripe", tmp_path)
+    bad = replace(
+        pack,
+        handoff=replace(
+            pack.handoff,
+            secret_steps=("Create a token in the provider dashboard.",),
+        ),
+    )
+
+    with pytest.raises(ProviderError, match="Capture from VM clipboard"):
+        validate_provider_pack(bad)
+
+
+def test_provider_pack_rejects_local_browser_secret_capture_handoff(tmp_path) -> None:
+    pack = synthesize_provider_pack("stripe", tmp_path)
+    bad = replace(
+        pack,
+        handoff=replace(
+            pack.handoff,
+            secret_steps=(
+                "Open the token page in the local browser, copy it inside the VM browser, "
+                "and click the matching Capture from VM clipboard button. No paste into "
+                "your computer is needed because Capture reads the VM clipboard directly.",
+            ),
+        ),
+    )
+
+    with pytest.raises(ProviderError, match="inside the VM browser"):
+        validate_provider_pack(bad)
+
+
 def test_provider_pack_rejects_invalid_account_creation_mode(tmp_path) -> None:
     pack = synthesize_provider_pack("stripe", tmp_path)
     bad = replace(
