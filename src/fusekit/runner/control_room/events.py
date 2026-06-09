@@ -854,8 +854,9 @@ function missingAcceptanceBlocker(item) {
     ],
     "Resend runtime env in Vercel receipt": [
       "Deployment env",
-      "Capture or generate the required RESEND_* values in the launcher, then " +
-        "let FuseKit push them into Vercel before verification.",
+      "Capture RESEND_API_KEY in the launcher, then let FuseKit create or reuse " +
+        "the Resend domain/audience values by API and push the required RESEND_* " +
+        "runtime variables into Vercel before verification.",
     ],
     "validated provider capability packs": [
       "Provider packs",
@@ -1019,7 +1020,8 @@ function providerStrategyPlanItems(providers) {
   }
   if (hasVercelResendEnv) {
     items.push(
-      "After Resend values exist, FuseKit writes the required RESEND_* runtime " +
+      "After RESEND_API_KEY capture lets FuseKit create or reuse the Resend " +
+      "domain/audience values by API, FuseKit writes the required RESEND_* runtime " +
       "variables into Vercel before deployment verification.",
     );
   }

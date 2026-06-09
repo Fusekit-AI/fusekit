@@ -560,7 +560,9 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
     assert "Resend DNS records in receipt DNS proposal" in html
     assert "Cloudflare receives the exact Resend records" in html
     assert "Deployment env" in html
-    assert "Capture or generate the required RESEND_* values" in html
+    assert "Capture RESEND_API_KEY in the launcher" in html
+    assert "create or reuse the Resend domain/audience values by API" in html
+    assert "Capture or generate the required RESEND_* values" not in html
     assert "Detonation" in html
     assert "plaintext worker, browser, visual, and auth scratch state" in html
     assert "8 launch blockers" in html
@@ -2872,7 +2874,9 @@ def test_control_room_route_plan_explains_resend_dns_and_vercel_order(tmp_path) 
     assert "Route plan" in html
     assert "First, FuseKit creates or reuses the Resend sending domain by API" in html
     assert "Then FuseKit carries the Resend DNS records into the DNS approval gate" in html
-    assert "After Resend values exist, FuseKit writes the required RESEND_* runtime" in html
+    assert "After RESEND_API_KEY capture lets FuseKit create or reuse the Resend" in html
+    assert "create or reuse the Resend domain/audience values by API" in html
+    assert "Capture or generate the required RESEND_* values" not in html
 
 
 def test_control_room_server_uses_local_only_and_security_headers(tmp_path) -> None:

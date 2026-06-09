@@ -169,6 +169,7 @@ guided, or explicitly verified.
 | Source handoffs, browser playbooks, inferred UI repair, and launcher helper copy could still say "Capture button" or "Capture button in FuseKit" instead of the exact visible capture control. | Public guided copy now consistently names `Capture from VM clipboard` buttons for copy-once provider values. |
 | Multi-value capture gates could name the first Capture control exactly but fall back to vague "then capture VALUE" copy after one value was stored. | Partial capture states now continue to name the matching `Capture from VM clipboard` button for the remaining value. |
 | Failed VM clipboard captures could reject URLs, wrong-provider tokens, short tokens, empty clipboards, or stale Resend generated-value captures without naming the exact launcher recovery action. | Capture failures now tell users to copy the correct value inside the VM browser and click the target-specific `Capture <ENV> from VM clipboard` button again; stale Resend generated-value captures also say not to create domains or audiences by hand. |
+| Route-plan and acceptance-blocker copy could say to "capture or generate" `RESEND_*` values, which made first-time users wonder whether they had to create Resend domain, sender, or audience values by hand. | Resend/Vercel route guidance now says the user captures only `RESEND_API_KEY`; FuseKit then creates or reuses Resend domain/audience values by API and writes the required `RESEND_*` runtime variables into Vercel. |
 
 ## Open Acceptance Items
 
