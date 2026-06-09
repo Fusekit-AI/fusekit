@@ -1480,6 +1480,8 @@ def _provider_strategy_shape_failures(providers: Any) -> list[str]:
                         next_action=str(strategy.get("next_action", "")),
                         resume_hint=str(strategy.get("resume_hint", "")),
                         target=str(strategy.get("target", "")),
+                        success_criteria=strategy.get("success_criteria", []),
+                        avoid_steps=strategy.get("avoid_steps", []),
                         requires_vm=True,
                     )
                 )
@@ -1893,6 +1895,8 @@ def _unguided_gates(gates: Any) -> list[str]:
             next_action=str(gate.get("next_action", "")),
             resume_hint=str(gate.get("resume_hint", "")),
             target=str(gate.get("target", "")),
+            success_criteria=gate.get("success_criteria", []),
+            avoid_steps=gate.get("avoid_steps", []),
             requires_vm=bool(str(gate.get("resume_url", "")).strip()),
         )
         missing.extend(quality_failures)
@@ -1943,6 +1947,12 @@ def _manual_resend_setup_gate_failure(gate: dict[str, Any]) -> str:
         gate.get("next_action", ""),
         gate.get("resume_hint", ""),
         *(gate.get("follow_steps", []) if isinstance(gate.get("follow_steps"), list) else []),
+        *(
+            gate.get("success_criteria", [])
+            if isinstance(gate.get("success_criteria"), list)
+            else []
+        ),
+        *(gate.get("avoid_steps", []) if isinstance(gate.get("avoid_steps"), list) else []),
     )
     for value in fields:
         if _field_asks_for_manual_resend_setup(str(value)):
@@ -2024,13 +2034,23 @@ def _guidance_quality_failures(
     next_action: str,
     resume_hint: str,
     target: str,
+    success_criteria: Any = (),
+    avoid_steps: Any = (),
     requires_vm: bool,
 ) -> list[str]:
     """Return launch-readiness failures for non-actionable human-gate guidance."""
 
     steps = follow_steps if isinstance(follow_steps, list) else []
-    text = " ".join(str(item) for item in (*steps, next_action, resume_hint)).strip()
-    lowered = text.lower()
+    action_text = " ".join(str(item) for item in (*steps, next_action, resume_hint)).strip()
+    detail_text = " ".join(
+        str(item)
+        for item in (
+            *_string_list_field(success_criteria),
+            *_string_list_field(avoid_steps),
+        )
+    )
+    lowered = " ".join((action_text, detail_text)).strip().lower()
+    action_lowered = action_text.lower()
     failures: list[str] = []
     for phrase in _FORBIDDEN_GUIDANCE_PHRASES:
         if phrase in lowered:
@@ -2047,13 +2067,13 @@ def _guidance_quality_failures(
             f"{label}.guidance contains non-launcher wording: {manual_action_failure}"
         )
     if requires_vm and not any(
-        phrase in lowered
+        phrase in action_lowered
         for phrase in ("open provider gate in vm", "vm browser", "highlighted")
     ):
         failures.append(f"{label}.guidance does not mention the VM browser path")
     secret_targets = _env_targets_from_text(target)
     if secret_targets:
-        if "capture from vm clipboard" not in lowered:
+        if "capture from vm clipboard" not in action_lowered:
             failures.append(
                 f"{label}.guidance does not name Capture from VM clipboard for "
                 + ", ".join(secret_targets)

@@ -291,8 +291,8 @@ _GENERIC = GateGuidance(
     ),
     avoid=(
         "Do not use a local browser for this gate.",
-        "Do not paste secrets into terminal prompts unless FuseKit explicitly labels "
-        "it a CLI fallback.",
+        "Do not move secrets outside the VM browser and Capture flow unless "
+        "FuseKit explicitly labels the run as CLI-only.",
     ),
 )
 

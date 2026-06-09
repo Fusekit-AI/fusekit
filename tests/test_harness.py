@@ -530,6 +530,37 @@ def test_acceptance_gate_guidance_allows_local_browser_warning() -> None:
     assert failures == []
 
 
+def test_acceptance_gate_guidance_rejects_bad_success_or_avoid_panels() -> None:
+    failures = _unguided_gates(
+        [
+            {
+                "id": "provider.github.authorization",
+                "provider": "github",
+                "status": "passed",
+                "classification": "provider-authorization",
+                "resume_url": "https://github.com/settings/tokens",
+                "target": "GITHUB_TOKEN",
+                "follow_steps": [
+                    "Click Open provider gate in VM so GitHub opens in the VM browser.",
+                    "Copy the token inside the VM browser.",
+                    "Click Capture from VM clipboard after copying GITHUB_TOKEN.",
+                ],
+                "next_action": "Capture GITHUB_TOKEN from VM clipboard.",
+                "resume_hint": "FuseKit will retry provider setup.",
+                "success_criteria": [
+                    "If the VM browser is busy, use a local browser tab to finish setup."
+                ],
+                "avoid_steps": [
+                    "Manually create extra webhook integrations if verification stalls."
+                ],
+            }
+        ]
+    )
+
+    assert any("local browser" in item for item in failures)
+    assert any("manual action" in item for item in failures)
+
+
 def test_acceptance_gate_guidance_rejects_affirmative_manual_setup() -> None:
     failures = _unguided_gates(
         [
@@ -739,6 +770,50 @@ def test_acceptance_human_strategy_rejects_local_browser_side_channel() -> None:
     )
 
     assert any("local browser" in item for item in failures)
+
+
+def test_acceptance_human_strategy_rejects_bad_success_or_avoid_panels() -> None:
+    failures = _provider_strategy_shape_failures(
+        [
+            {
+                "provider": "github",
+                "strategies": [
+                    {
+                        "recipe": "github-repo-secrets",
+                        "status": "needs_human_gate",
+                        "target": "GITHUB_TOKEN",
+                        "follow_steps": [
+                            (
+                                "Click Open provider gate in VM so GitHub opens in "
+                                "the VM browser."
+                            ),
+                            "Copy the token inside the VM browser.",
+                            "Click Capture from VM clipboard after copying GITHUB_TOKEN.",
+                        ],
+                        "next_action": "Capture GITHUB_TOKEN from VM clipboard.",
+                        "resume_hint": "FuseKit will retry GitHub setup.",
+                        "success_criteria": [
+                            "Use your local browser tab if the VM browser is slow."
+                        ],
+                        "avoid_steps": ["Manually add provider secrets if capture fails."],
+                        "decision": {
+                            "selected": {
+                                "kind": "browser_guided",
+                                "status": "available",
+                                "deterministic": False,
+                                "implemented": False,
+                                "reason": "Missing provider token.",
+                            },
+                            "candidates": [{"kind": "browser_guided"}],
+                        },
+                    }
+                ],
+            }
+        ]
+    )
+
+    assert any("local browser" in item for item in failures)
+    assert any("manual action" in item for item in failures)
 
 
 def test_acceptance_live_requires_real_provider_evidence(tmp_path) -> None:
@@ -977,6 +1052,37 @@ def test_acceptance_rejects_manual_resend_domain_or_audience_gate_guidance() -> 
     assert any(
         "provider.resend.audience.guidance asks for manual Resend domain/audience setup"
         in failure
+        for failure in failures
+    )
+
+
+def test_acceptance_rejects_manual_resend_setup_in_success_or_avoid_panels() -> None:
+    failures = _unguided_gates(
+        [
+            {
+                "id": "provider.resend.domain-setup-retry",
+                "provider": "resend",
+                "status": "waiting",
+                "classification": "provider-setup-retry",
+                "resume_url": "https://resend.com/api-keys",
+                "target": "",
+                "follow_steps": [
+                    "Open provider gate in VM and stay on Resend API Keys.",
+                    "Click I finished this step so FuseKit retries Resend API setup.",
+                ],
+                "next_action": (
+                    "Click I finished this step so FuseKit retries Resend API setup."
+                ),
+                "resume_hint": "FuseKit will create or reuse the sending domain by API.",
+                "success_criteria": ["Create a Resend domain for moonlite.rsvp."],
+                "avoid_steps": ["If blocked, click Add domain in Resend."],
+            }
+        ]
+    )
+
+    assert any(
+        "provider.resend.domain-setup-retry.guidance asks for manual Resend "
+        "domain/audience setup" in failure
         for failure in failures
     )
 
