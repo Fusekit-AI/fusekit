@@ -1893,6 +1893,26 @@ def test_control_room_clipboard_capture_validation_names_launcher_recovery_actio
         _validate_clipboard_capture_value(target, value)
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        '{"api_key":"custom_secret_value"}',
+        '["custom_secret_value"]',
+        "<html>custom_secret_value</html>",
+    ],
+)
+def test_control_room_clipboard_capture_rejects_structured_token_blobs(value: str) -> None:
+    with pytest.raises(
+        FuseKitError,
+        match=re.escape(
+            "CUSTOM_API_KEY looks like copied page or response text, not a token. "
+            "Copy only the copy-once token value inside the VM browser, then click "
+            "Capture CUSTOM_API_KEY from VM clipboard again."
+        ),
+    ):
+        _validate_clipboard_capture_value("CUSTOM_API_KEY", value)
+
+
 def test_control_room_passphrase_uses_job_artifact(tmp_path, monkeypatch) -> None:
     job = JobState.create("fk-test", tmp_path, "source-fetch")
     job_path = tmp_path / "source-fetch-job.json"

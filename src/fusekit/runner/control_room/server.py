@@ -561,6 +561,11 @@ def _validate_clipboard_capture_value(target: str, value: str) -> None:
 
     normalized_target = target.strip().upper()
     if normalized_target.endswith(("_API_KEY", "_TOKEN")):
+        if value.lstrip().startswith(("{", "[", "<")):
+            raise FuseKitError(
+                f"{normalized_target} looks like copied page or response text, not a token. "
+                f"{_capture_retry_action(normalized_target, 'copy-once token value')}"
+            )
         if re.search(r"\s", value):
             raise FuseKitError(
                 f"{normalized_target} must be one copied token with no spaces or line breaks. "
