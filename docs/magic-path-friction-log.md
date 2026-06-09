@@ -168,6 +168,7 @@ guided, or explicitly verified.
 | Verification-report repair copy could still say "visible FuseKit Capture" instead of the actual clipboard-capture control, leaving report-driven recovery less precise than the control room. | Verification reports now name `Capture from VM clipboard` for copy-once values and `I finished this step` for non-secret provider gates. |
 | Source handoffs, browser playbooks, inferred UI repair, and launcher helper copy could still say "Capture button" or "Capture button in FuseKit" instead of the exact visible capture control. | Public guided copy now consistently names `Capture from VM clipboard` buttons for copy-once provider values. |
 | Multi-value capture gates could name the first Capture control exactly but fall back to vague "then capture VALUE" copy after one value was stored. | Partial capture states now continue to name the matching `Capture from VM clipboard` button for the remaining value. |
+| Failed VM clipboard captures could reject URLs, wrong-provider tokens, short tokens, empty clipboards, or stale Resend generated-value captures without naming the exact launcher recovery action. | Capture failures now tell users to copy the correct value inside the VM browser and click the target-specific `Capture <ENV> from VM clipboard` button again; stale Resend generated-value captures also say not to create domains or audiences by hand. |
 
 ## Open Acceptance Items
 
