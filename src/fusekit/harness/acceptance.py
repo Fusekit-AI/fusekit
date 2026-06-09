@@ -188,6 +188,14 @@ def run_acceptance(
         missing,
         ledger,
     )
+    _check_provider_strategy_checkpoints(
+        evidence_fusekit_dir / "provider_strategies.json",
+        evidence_fusekit_dir / "checkpoints.json",
+        mode,
+        checks,
+        missing,
+        ledger,
+    )
     _check_gate_state(
         evidence_fusekit_dir / "gates.json",
         mode,
@@ -269,6 +277,7 @@ def _record_remote_artifacts(
         "verification_report.json",
         "rollback_plan.json",
         "provider_strategies.json",
+        "checkpoints.json",
         "gates.json",
     )
     inventory = {
@@ -376,6 +385,11 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
         "complete provider strategy coverage": (
             "Provider routes",
             "Record provider strategy evidence for every provider declared by the manifest.",
+        ),
+        "provider route recovery checkpoints": (
+            "Provider routes",
+            "Rerun setup so provider strategy decisions are written into checkpoints.json "
+            "with concrete resume guidance.",
         ),
         "Resend-before-DNS provider setup order": (
             "Provider order",
@@ -501,6 +515,12 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
             "Run Resend domain setup before Cloudflare/DNS so Resend DNS records are available.",
         )
     if check.id.startswith("provider_strategies."):
+        if check.id == "provider_strategies.checkpoints":
+            return (
+                "Provider routes",
+                "Rerun provider setup so each selected route is persisted into the recovery "
+                "map with a next action and resume hint.",
+            )
         if "resend.strategies" in check.detail.lower() and "evidence" in check.detail.lower():
             return (
                 "Provider routes",
@@ -1581,6 +1601,140 @@ def _check_provider_strategy_order(
     )
     if mode == "live":
         missing.append("Resend-before-DNS provider setup order")
+
+
+def _check_provider_strategy_checkpoints(
+    strategies_path: Path,
+    checkpoints_path: Path,
+    mode: str,
+    checks: list[AcceptanceCheck],
+    missing: list[str],
+    ledger: HarnessLedger,
+) -> None:
+    """Require provider strategy decisions to survive in durable resume checkpoints."""
+
+    required = _provider_strategy_checkpoint_requirements(strategies_path)
+    if not required:
+        return
+    if not checkpoints_path.exists():
+        checks.append(
+            AcceptanceCheck(
+                "provider_strategies.checkpoints",
+                "failed" if mode == "live" else "skipped",
+                f"Provider route checkpoints not found: {checkpoints_path}",
+            )
+        )
+        if mode == "live":
+            missing.append("provider route recovery checkpoints")
+        return
+    try:
+        raw = json.loads(checkpoints_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        checks.append(
+            AcceptanceCheck(
+                "provider_strategies.checkpoints",
+                "failed",
+                "Provider route checkpoints could not be read.",
+            )
+        )
+        missing.append("provider route recovery checkpoints")
+        return
+    snapshot = ledger.snapshot_json("checkpoints", raw)
+    checkpoints = raw.get("checkpoints", []) if isinstance(raw, dict) else []
+    failures = _provider_strategy_checkpoint_failures(required, checkpoints)
+    if failures:
+        checks.append(
+            AcceptanceCheck(
+                "provider_strategies.checkpoints",
+                "failed" if mode == "live" else "skipped",
+                "Provider route checkpoints are incomplete: " + "; ".join(failures),
+                str(snapshot),
+            )
+        )
+        if mode == "live":
+            missing.append("provider route recovery checkpoints")
+        return
+    checks.append(
+        AcceptanceCheck(
+            "provider_strategies.checkpoints",
+            "ok",
+            "Provider route decisions are present in durable recovery checkpoints.",
+            str(snapshot),
+        )
+    )
+
+
+def _provider_strategy_checkpoint_requirements(
+    strategies_path: Path,
+) -> dict[str, set[str]]:
+    try:
+        raw = json.loads(strategies_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    providers = raw.get("providers", []) if isinstance(raw, dict) else []
+    if not _has_strategy_decisions(providers):
+        return {}
+    requirements: dict[str, set[str]] = {}
+    for provider in providers:
+        if not isinstance(provider, dict):
+            continue
+        provider_name = str(provider.get("provider", "") or "").strip().lower()
+        if not provider_name:
+            continue
+        strategies = provider.get("strategies", [])
+        if not isinstance(strategies, list):
+            continue
+        recipes = {
+            str(strategy.get("recipe", "") or "").strip().lower()
+            for strategy in strategies
+            if isinstance(strategy, dict) and isinstance(strategy.get("decision"), dict)
+        }
+        if recipes:
+            requirements[provider_name] = recipes
+    return requirements
+
+
+def _provider_strategy_checkpoint_failures(
+    required: dict[str, set[str]],
+    checkpoints: Any,
+) -> list[str]:
+    if not isinstance(checkpoints, list):
+        return ["checkpoints is not a list"]
+    by_id = {
+        str(checkpoint.get("id", "") or "").strip(): checkpoint
+        for checkpoint in checkpoints
+        if isinstance(checkpoint, dict)
+    }
+    failures: list[str] = []
+    for provider, recipes in sorted(required.items()):
+        checkpoint_id = f"provider.{_provider_route_slug(provider)}.routes"
+        checkpoint = by_id.get(checkpoint_id)
+        if checkpoint is None:
+            failures.append(f"{checkpoint_id} is missing")
+            continue
+        fields = ("status", "detail", "next_action", "resume_hint")
+        missing_fields = [
+            field for field in fields if not str(checkpoint.get(field, "") or "").strip()
+        ]
+        if missing_fields:
+            failures.append(f"{checkpoint_id} missing {', '.join(missing_fields)}")
+        status = str(checkpoint.get("status", "") or "").strip()
+        if status not in {"done", "waiting", "running", "failed"}:
+            failures.append(f"{checkpoint_id} has unsupported status {status or 'empty'}")
+        if provider == "resend" and "resend-domain" in recipes:
+            text = " ".join(
+                str(checkpoint.get(field, "") or "")
+                for field in ("detail", "next_action", "resume_hint")
+            ).lower()
+            if "resend" not in text or "dns" not in text:
+                failures.append(
+                    f"{checkpoint_id} is missing Resend-before-DNS recovery guidance"
+                )
+    return failures
+
+
+def _provider_route_slug(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-") or "provider"
 
 
 def _check_gate_state(

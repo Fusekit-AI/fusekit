@@ -844,6 +844,35 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
         ),
         "utf-8",
     )
+    (remote_fusekit / "checkpoints.json").write_text(
+        json.dumps(
+            {
+                "job_id": "fk-test",
+                "status": "running",
+                "checkpoints": [
+                    {
+                        "id": "provider.github.routes",
+                        "label": "Provider route: github",
+                        "status": "done",
+                        "detail": "github-repo-secrets uses api (ok)",
+                        "next_action": "Nothing to do manually unless FuseKit surfaces a gate.",
+                        "resume_hint": "FuseKit recorded the deterministic provider route.",
+                        "mascot_state": "verify",
+                    },
+                    {
+                        "id": "provider.vercel.routes",
+                        "label": "Provider route: vercel",
+                        "status": "done",
+                        "detail": "vercel-deploy uses api (ok)",
+                        "next_action": "Nothing to copy manually into Vercel.",
+                        "resume_hint": "FuseKit recorded the deterministic provider route.",
+                        "mascot_state": "verify",
+                    },
+                ],
+            }
+        ),
+        "utf-8",
+    )
     (remote_fusekit / "gates.json").write_text(
         json.dumps(
             {
@@ -903,6 +932,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
     assert "remote_artifacts.loaded" in check_ids
     assert "verification_report.safe" in check_ids
     assert "provider_strategies.recorded" in check_ids
+    assert "provider_strategies.checkpoints" in check_ids
     assert "gates.resolved" in check_ids
     assert "gates.audited" in check_ids
     assert report.missing == ()
@@ -924,6 +954,83 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
     assert report_json["launch_ready"] is True
     assert report_json["blockers"] == []
     assert any(check["id"] == "remote_artifacts.loaded" for check in report_json["checks"])
+
+
+def test_live_acceptance_requires_provider_route_recovery_checkpoints(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "package.json").write_text(
+        json.dumps({"name": "moonlite-rsvp", "dependencies": {"next": "latest"}}),
+        encoding="utf-8",
+    )
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    (remote_fusekit / "audit.jsonl").write_text('{"event":"provider.verify"}\n', "utf-8")
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "live_url": "https://moonlite.example",
+                "raw_secrets_exposed": 0,
+                "actions": [],
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "verification_report.json").write_text(
+        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        "utf-8",
+    )
+    (remote_fusekit / "rollback_plan.json").write_text(
+        json.dumps({"rollback": [{"action": "rollback.github.secret", "status": "planned"}]}),
+        "utf-8",
+    )
+    (remote_fusekit / "provider_strategies.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.provider-strategies.v1",
+                "providers": [
+                    {
+                        "provider": "github",
+                        "strategies": [
+                            {
+                                "recipe": "github-repo-secrets",
+                                "strategy": "api",
+                                "status": "ok",
+                                "decision": {
+                                    "provider": "github",
+                                    "recipe_kind": "github-repo-secrets",
+                                    **_strategy_decision(),
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "gates.json").write_text(json.dumps({"gates": []}), "utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    checkpoint_check = next(
+        check for check in report.checks if check.id == "provider_strategies.checkpoints"
+    )
+    assert report.launch_ready is False
+    assert checkpoint_check.status == "failed"
+    assert "Provider route checkpoints not found" in checkpoint_check.detail
+    assert "provider route recovery checkpoints" in report.missing
+    blockers = {blocker["item"]: blocker for blocker in report.blockers}
+    assert blockers["provider route recovery checkpoints"]["category"] == "Provider routes"
+    assert "checkpoints.json" in blockers["provider route recovery checkpoints"]["next_action"]
 
 
 def test_acceptance_cli_checks_vault_without_leaking_secret(tmp_path, capsys) -> None:
