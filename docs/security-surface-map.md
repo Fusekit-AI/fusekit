@@ -18,6 +18,7 @@ Python package is the live control room in `fusekit.runner.control_room.server`.
 | `/api/gates/<gate_id>/open` | `POST` | Opens the gate's provider URL in the shared VM browser and records debounce metadata. | Same POST protections as `/pass`; URL is read from the durable gate record and validated with `require_safe_url`; launches only executable Chrome/Chromium-family binaries through a fixed argv list, not caller-supplied commands; repeated opens are debounced. |
 | `/api/gates/<gate_id>/capture-clipboard` | `POST` | Reads the VM clipboard for one approved capture target, writes it into the encrypted vault, and marks capture progress. | Same POST protections as `/pass`; request body must be bounded `application/json`; target must match the gate's env-style allowlist; clipboard value size/text is bounded; stale captures are rejected after the gate auto-resumes for verification; response includes only target/record metadata, never raw secret text. |
 
+| Unknown routes | `GET`/`POST` | None. | Returns `404` with zero-length body, the same no-store/CSP/frame/security headers as known routes, and no CORS allow headers. |
 | Any route | `OPTIONS` | None. | Returns `405` with security headers and no CORS allow headers, so browser preflights for custom-header POSTs fail closed. |
 
 The live VM browser iframe is not a general-purpose embed surface. Visual session

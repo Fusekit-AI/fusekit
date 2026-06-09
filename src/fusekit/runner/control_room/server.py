@@ -99,8 +99,7 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                 job = JobState.load(job_state)
                 self._write_html(_live_html(job, job_state))
                 return
-            self.send_response(404)
-            self.end_headers()
+            self._write_not_found()
 
         def do_POST(self) -> None:  # noqa: N802
             route = urlparse(self.path)
@@ -220,8 +219,7 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                     return
                 self._write_json({"ok": True, **captured})
                 return
-            self.send_response(404)
-            self.end_headers()
+            self._write_not_found()
 
         def log_message(self, format: str, *args: object) -> None:
             return
@@ -263,6 +261,13 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
             self._write_control_room_cookie()
             self.end_headers()
             self.wfile.write(data)
+
+        def _write_not_found(self) -> None:
+            self.send_response(404)
+            self.send_header("content-length", "0")
+            self._write_security_headers()
+            self._write_control_room_cookie()
+            self.end_headers()
 
         def _write_html(self, html: str) -> None:
             data = html.encode("utf-8")

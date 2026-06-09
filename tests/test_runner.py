@@ -2360,6 +2360,48 @@ def test_control_room_rejects_cors_preflight_without_cors_headers(tmp_path) -> N
     assert headers["x-frame-options"] == "DENY"
 
 
+def test_control_room_unknown_routes_keep_security_headers(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+        connection.request("GET", "/missing")
+        get_response = connection.getresponse()
+        get_headers = {key.lower(): value for key, value in get_response.getheaders()}
+        get_response.read()
+
+        connection.request(
+            "POST",
+            "/api/unknown",
+            body=b"{}",
+            headers={
+                **_control_room_post_headers(tmp_path),
+                "content-type": "application/json",
+            },
+        )
+        post_response = connection.getresponse()
+        post_headers = {key.lower(): value for key, value in post_response.getheaders()}
+        post_response.read()
+    finally:
+        connection.close()
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert get_response.status == 404
+    assert post_response.status == 404
+    for headers in (get_headers, post_headers):
+        assert headers["content-length"] == "0"
+        assert headers["cache-control"] == "no-store"
+        assert headers["x-frame-options"] == "DENY"
+        assert headers["x-content-type-options"] == "nosniff"
+        assert "content-security-policy" in headers
+        assert "access-control-allow-origin" not in headers
+
+
 def test_control_room_uses_privacy_mascot_for_secret_gates(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job.mark(
