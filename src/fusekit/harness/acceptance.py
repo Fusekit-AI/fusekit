@@ -1861,9 +1861,13 @@ def _unguided_gates(gates: Any) -> list[str]:
             missing_fields.append("follow_steps")
         if _gate_requires_resume_url(gate) and not str(gate.get("resume_url", "")).strip():
             missing_fields.append("resume_url")
+        if _gate_requires_resume_url(gate):
+            if not _string_list_field(gate.get("success_criteria")):
+                missing_fields.append("success_criteria")
+            if not _string_list_field(gate.get("avoid_steps")):
+                missing_fields.append("avoid_steps")
         if missing_fields:
             missing.append(f"{gate_id} missing {', '.join(missing_fields)}")
-            continue
         generated_resend_target_failure = _generated_resend_runtime_capture_failure(gate)
         if generated_resend_target_failure:
             missing.append(generated_resend_target_failure)
@@ -1917,6 +1921,12 @@ def _gate_requires_resume_url(gate: dict[str, Any]) -> bool:
     if provider in {"", "dns", "fusekit"}:
         return False
     return str(gate.get("id", "")).startswith("provider.")
+
+
+def _string_list_field(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if str(item).strip()]
 
 
 _FORBIDDEN_GUIDANCE_PHRASES = (

@@ -1273,7 +1273,13 @@ def _render_gate_help(step: Any) -> str:
         if next_action or resume_hint
         else ""
     )
-    criteria_block = _render_gate_criteria(guidance)
+    success_criteria = getattr(step, "success_criteria", None)
+    avoid_steps = getattr(step, "avoid_steps", None)
+    criteria_block = _render_gate_criteria(
+        guidance,
+        success_criteria=success_criteria,
+        avoid_steps=avoid_steps,
+    )
     return f"""
         <div class="gate-help">
           <span>What you need to do</span>{classification_label}
@@ -1291,12 +1297,19 @@ def _render_gate_help(step: Any) -> str:
 """
 
 
-def _render_gate_criteria(guidance: GateGuidance) -> str:
+def _render_gate_criteria(
+    guidance: GateGuidance,
+    *,
+    success_criteria: Any = None,
+    avoid_steps: Any = None,
+) -> str:
     blocks: list[str] = []
-    if guidance.success:
+    success = _string_list(success_criteria) or list(guidance.success)
+    avoid = _string_list(avoid_steps) or list(guidance.avoid)
+    if success:
         rows = "".join(
             f"<li>{html.escape(_public_copy(item))}</li>"
-            for item in guidance.success
+            for item in success
             if str(item).strip()
         )
         if rows:
@@ -1304,10 +1317,10 @@ def _render_gate_criteria(guidance: GateGuidance) -> str:
                 '<div class="gate-criteria success"><strong>Success looks like</strong>'
                 f"<ul>{rows}</ul></div>"
             )
-    if guidance.avoid:
+    if avoid:
         rows = "".join(
             f"<li>{html.escape(_public_copy(item))}</li>"
-            for item in guidance.avoid
+            for item in avoid
             if str(item).strip()
         )
         if rows:
@@ -1318,6 +1331,12 @@ def _render_gate_criteria(guidance: GateGuidance) -> str:
     if not blocks:
         return ""
     return f'<div class="gate-criteria-grid">{"".join(blocks)}</div>'
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    return [str(item) for item in value if str(item).strip()]
 
 
 def _is_retrying_gate_step(step: Any) -> bool:

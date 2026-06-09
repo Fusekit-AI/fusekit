@@ -16,6 +16,7 @@ from fusekit.harness.acceptance import (
     _unguided_gates,
 )
 from fusekit.harness.ledger import HarnessLedger
+from fusekit.runner.gate_guidance import provider_gate_guidance
 from fusekit.vault import Vault
 
 
@@ -64,6 +65,14 @@ def _resend_audience_strategy_decision() -> dict[str, object]:
             "conditional": "only_when_app_requires_audience",
         }
     )
+
+
+def _gate_guidance_fields(provider: str) -> dict[str, list[str]]:
+    guidance = provider_gate_guidance(provider)
+    return {
+        "success_criteria": list(guidance.success),
+        "avoid_steps": list(guidance.avoid),
+    }
 
 
 def _write_resend_cloudflare_manifest(app: Path) -> None:
@@ -421,7 +430,10 @@ def test_acceptance_provider_gates_require_openable_resume_url() -> None:
         ]
     )
 
-    assert "provider.github.authorization missing resume_url" in failures
+    assert any(
+        item.startswith("provider.github.authorization missing resume_url")
+        for item in failures
+    )
 
 
 def test_acceptance_rejects_resend_generated_values_as_capture_targets() -> None:
@@ -897,6 +909,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                         "captured_targets": ["OPENAI_API_KEY"],
                         "resume_url": "http://localhost:1455/auth/callback?code=secret-code",
                         "last_opened_url": "https://provider.example/?token=secret-token",
+                        **_gate_guidance_fields("openai"),
                     },
                     {
                         "id": "provider.callback.review",
@@ -913,6 +926,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                         "next_action": "No action needed.",
                         "resume_hint": "FuseKit verified this gate as passed.",
                         "resume_url": "https://provider.example/review",
+                        **_gate_guidance_fields("provider"),
                     }
                 ]
             }
@@ -2110,7 +2124,8 @@ def test_live_acceptance_requires_guided_control_room_gates(tmp_path) -> None:
     assert report.launch_ready is False
     assert guided_check.status == "failed"
     assert (
-        "provider.github.authorization missing next_action, resume_hint, follow_steps"
+        "provider.github.authorization missing next_action, resume_hint, follow_steps, "
+        "resume_url, success_criteria, avoid_steps"
         in guided_check.detail
     )
     assert "guided human gates" in report.missing
@@ -2611,6 +2626,7 @@ def test_live_acceptance_requires_resolved_control_room_gates(tmp_path) -> None:
                         ],
                         "next_action": "Finish Cloudflare login in the VM browser.",
                         "resume_hint": "FuseKit will retry verification after resume.",
+                        **_gate_guidance_fields("cloudflare"),
                     }
                 ]
             }

@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from fusekit.runner.gate_guidance import provider_gate_guidance
+
 GateStatus = Literal["waiting", "resurfaced", "resume_requested", "passed", "failed"]
 
 
@@ -60,6 +62,8 @@ class GateRecord:
     classification: str = ""
     target: str = ""
     follow_steps: tuple[str, ...] = ()
+    success_criteria: tuple[str, ...] = ()
+    avoid_steps: tuple[str, ...] = ()
     next_action: str = ""
     resume_hint: str = ""
     attempts: int = 0
@@ -81,6 +85,10 @@ class GateRecord:
             "classification": self.classification,
             "target": self.target,
             "follow_steps": list(self.follow_steps),
+            "success_criteria": list(
+                self.success_criteria or _default_success_criteria(self.provider)
+            ),
+            "avoid_steps": list(self.avoid_steps or _default_avoid_steps(self.provider)),
             "next_action": self.next_action or _default_next_action(self),
             "resume_hint": self.resume_hint or _default_resume_hint(self),
             "attempts": self.attempts,
@@ -104,6 +112,8 @@ class GateRecord:
             classification=str(raw.get("classification", "")),
             target=str(raw.get("target", "")),
             follow_steps=_string_tuple(raw.get("follow_steps", [])),
+            success_criteria=_string_tuple(raw.get("success_criteria", [])),
+            avoid_steps=_string_tuple(raw.get("avoid_steps", [])),
             next_action=str(raw.get("next_action", "")),
             resume_hint=str(raw.get("resume_hint", "")),
             attempts=_int_value(raw.get("attempts"), 0),
@@ -149,6 +159,8 @@ class GateService:
         classification: str = "",
         target: str = "",
         follow_steps: tuple[str, ...] = (),
+        success_criteria: tuple[str, ...] = (),
+        avoid_steps: tuple[str, ...] = (),
         next_action: str = "",
         resume_hint: str = "",
     ) -> GateRecord:
@@ -167,6 +179,8 @@ class GateService:
             classification = classification or record.classification
             target = target or record.target
             follow_steps = follow_steps or record.follow_steps
+            success_criteria = success_criteria or record.success_criteria
+            avoid_steps = avoid_steps or record.avoid_steps
             next_action = next_action or record.next_action
             resume_hint = resume_hint or record.resume_hint
             last_opened_url = record.last_opened_url
@@ -187,6 +201,8 @@ class GateService:
             classification=classification,
             target=target,
             follow_steps=follow_steps,
+            success_criteria=success_criteria,
+            avoid_steps=avoid_steps,
             next_action=next_action,
             resume_hint=resume_hint,
             attempts=attempts,
@@ -301,6 +317,14 @@ def _capture_targets(target: str) -> set[str]:
         for item in (part.strip().upper() for part in target.split(","))
         if item.isidentifier() and item == item.upper() and len(item) > 2 and "_" in item
     }
+
+
+def _default_success_criteria(provider: str) -> tuple[str, ...]:
+    return provider_gate_guidance(provider).success
+
+
+def _default_avoid_steps(provider: str) -> tuple[str, ...]:
+    return provider_gate_guidance(provider).avoid
 
 
 def _default_next_action(record: GateRecord) -> str:

@@ -133,6 +133,8 @@ function gateStep(gate) {
     follow_steps: gate.follow_steps || [],
     next_action: gate.next_action || "",
     resume_hint: gate.resume_hint || "",
+    success_criteria: gate.success_criteria || [],
+    avoid_steps: gate.avoid_steps || [],
     attempts: gate.attempts || 0,
     captured_targets: gate.captured_targets || [],
     updated_at: gate.updated_at,
@@ -331,7 +333,7 @@ function renderGateHelp(step) {
         `</div>`,
       ].join("")
     : "";
-  const criteriaBlock = renderGateCriteria(guidance);
+  const criteriaBlock = renderGateCriteria(guidance, step.success_criteria, step.avoid_steps);
   return `
     <div class="gate-help">
       <span>What you need to do</span>${classification}
@@ -349,11 +351,19 @@ function renderGateHelp(step) {
   `;
 }
 
-function renderGateCriteria(guidance) {
+function stringList(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item || "")).filter((item) => item.trim());
+}
+
+function renderGateCriteria(guidance, successCriteria = [], avoidSteps = []) {
   const blocks = [];
-  if (Array.isArray(guidance.success) && guidance.success.length) {
-    const rows = guidance.success
-      .filter((item) => String(item || "").trim())
+  const success = stringList(successCriteria).length
+    ? stringList(successCriteria)
+    : stringList(guidance.success);
+  const avoid = stringList(avoidSteps).length ? stringList(avoidSteps) : stringList(guidance.avoid);
+  if (success.length) {
+    const rows = success
       .map((item) => `<li>${escapeHtml(publicCopy(item))}</li>`)
       .join("");
     if (rows) {
@@ -363,9 +373,8 @@ function renderGateCriteria(guidance) {
       );
     }
   }
-  if (Array.isArray(guidance.avoid) && guidance.avoid.length) {
-    const rows = guidance.avoid
-      .filter((item) => String(item || "").trim())
+  if (avoid.length) {
+    const rows = avoid
       .map((item) => `<li>${escapeHtml(publicCopy(item))}</li>`)
       .join("");
     if (rows) {
