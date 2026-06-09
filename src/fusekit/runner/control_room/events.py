@@ -20,6 +20,7 @@ _GATE_GUIDANCE_JSON = (
 SCRIPT = r"""
 const initialJob = JSON.parse(document.getElementById("job-data").textContent);
 const gateGuidanceData = __GATE_GUIDANCE_JSON__;
+const gateActionStatus = new Map();
 
 const labels = {
   created: "Created",
@@ -323,6 +324,7 @@ function renderGateHelp(step) {
       ].join("")
     : "";
   const captureButtons = renderCaptureButtons(step.id, step.target, step.captured_targets);
+  const actionStatus = renderGateActionStatus(step.id);
   const nextAction = publicCopy(step.next_action || "").trim();
   const resumeHint = publicCopy(step.resume_hint || "").trim();
   const nextBlock = nextAction || resumeHint
@@ -347,6 +349,7 @@ function renderGateHelp(step) {
       ${nextBlock}
       ${captureButtons}
       ${resumeButton}
+      ${actionStatus}
     </div>
   `;
 }
@@ -438,6 +441,19 @@ function renderCaptureButtons(gateId, target, capturedTargets = []) {
     }).join(""),
     `</div>`,
     `</div>`,
+  ].join("");
+}
+
+function renderGateActionStatus(gateId) {
+  if (!gateId) return "";
+  const status = gateActionStatus.get(String(gateId));
+  const tone = status ? classToken(status.tone || "ok") : "";
+  const hidden = status ? "" : " hidden";
+  const message = status ? status.message : "";
+  return [
+    `<div class="gate-action-status ${tone}" role="status" aria-live="polite" `,
+    `data-gate-action-status-for="${escapeAttr(gateId)}"${hidden}>`,
+    `${escapeHtml(message)}</div>`,
   ].join("");
 }
 
@@ -1366,15 +1382,42 @@ function controlRoomFailureMessage(payload, fallback) {
   return parts.join(" ") || fallback;
 }
 
+function gateActionStatusNode(gateId) {
+  const wanted = String(gateId || "");
+  return Array.from(document.querySelectorAll("[data-gate-action-status-for]"))
+    .find((node) => node.dataset.gateActionStatusFor === wanted);
+}
+
+function setGateActionStatus(gateId, message, tone = "ok") {
+  const normalized = String(gateId || "");
+  if (!normalized) return;
+  const status = {
+    message: String(message || ""),
+    tone: String(tone || "ok"),
+  };
+  gateActionStatus.set(normalized, status);
+  const node = gateActionStatusNode(normalized);
+  if (!node) return;
+  node.hidden = false;
+  node.className = `gate-action-status ${classToken(status.tone)}`;
+  node.textContent = status.message;
+}
+
 document.addEventListener("click", async (event) => {
   const gateOpenButton = event.target.closest("[data-gate-open]");
   if (gateOpenButton) {
     gateOpenButton.disabled = true;
+    const gateId = gateOpenButton.dataset.gateOpen || "";
     const originalText = gateOpenButton.textContent;
     gateOpenButton.textContent = "Opening in VM...";
+    setGateActionStatus(
+      gateId,
+      "Opening the provider gate inside the shared VM browser...",
+      "pending",
+    );
     try {
       const response = await fetch(
-        `/api/gates/${encodeURIComponent(gateOpenButton.dataset.gateOpen)}/open`,
+        `/api/gates/${encodeURIComponent(gateId)}/open`,
         {
           method: "POST",
           headers: controlRoomHeaders(),
@@ -1390,12 +1433,16 @@ document.addEventListener("click", async (event) => {
       setRefreshStatus(
         payload.message || "Provider gate opened inside the shared VM browser.",
       );
-    } catch (error) {
-      setRefreshStatus(
-        error?.message ||
-          "Could not open the provider gate inside the VM. Use the noVNC browser surface.",
-        "stale",
+      setGateActionStatus(
+        gateId,
+        payload.message || "Provider gate opened inside the shared VM browser.",
+        "ok",
       );
+    } catch (error) {
+      const message = error?.message ||
+        "Could not open the provider gate inside the VM. Use the noVNC browser surface.";
+      setRefreshStatus(message, "stale");
+      setGateActionStatus(gateId, message, "stale");
     } finally {
       gateOpenButton.disabled = false;
       gateOpenButton.textContent = originalText;
@@ -1405,12 +1452,18 @@ document.addEventListener("click", async (event) => {
   const captureButton = event.target.closest("[data-gate-capture]");
   if (captureButton) {
     captureButton.disabled = true;
+    const gateId = captureButton.dataset.gateCapture || "";
     const originalText = captureButton.textContent;
     const target = captureButton.dataset.gateCaptureTarget || "";
     captureButton.textContent = `Capturing ${target}...`;
+    setGateActionStatus(
+      gateId,
+      `Capturing ${target} from the VM clipboard into the encrypted vault...`,
+      "pending",
+    );
     try {
       const response = await fetch(
-        `/api/gates/${encodeURIComponent(captureButton.dataset.gateCapture)}/capture-clipboard`,
+        `/api/gates/${encodeURIComponent(gateId)}/capture-clipboard`,
         {
           method: "POST",
           headers: controlRoomHeaders({ "content-type": "application/json" }),
@@ -1425,13 +1478,17 @@ document.addEventListener("click", async (event) => {
         ));
       }
       setRefreshStatus(payload.message || `${target} captured into the encrypted vault.`);
+      setGateActionStatus(
+        gateId,
+        payload.message || `${target} captured into the encrypted vault.`,
+        "ok",
+      );
       await refreshJob({ preserveStatus: true });
     } catch (error) {
-      setRefreshStatus(
-        error?.message ||
-          `Could not capture ${target} from the VM clipboard. Copy it in the VM and try again.`,
-        "stale",
-      );
+      const message = error?.message ||
+        `Could not capture ${target} from the VM clipboard. Copy it in the VM and try again.`;
+      setRefreshStatus(message, "stale");
+      setGateActionStatus(gateId, message, "stale");
     } finally {
       captureButton.disabled = false;
       captureButton.textContent = originalText;
@@ -1441,11 +1498,13 @@ document.addEventListener("click", async (event) => {
   const gateButton = event.target.closest("[data-gate-pass]");
   if (gateButton) {
     gateButton.disabled = true;
+    const gateId = gateButton.dataset.gatePass || "";
     const originalText = gateButton.textContent;
     gateButton.textContent = "Checking again...";
+    setGateActionStatus(gateId, "Sending your approval so FuseKit can recheck...", "pending");
     try {
       const response = await fetch(
-        `/api/gates/${encodeURIComponent(gateButton.dataset.gatePass)}/pass`,
+        `/api/gates/${encodeURIComponent(gateId)}/pass`,
         {
           method: "POST",
           headers: controlRoomHeaders(),
@@ -1462,15 +1521,20 @@ document.addEventListener("click", async (event) => {
         payload.message ||
           "Snowman is rechecking the provider now. The next step will appear here.",
       );
+      setGateActionStatus(
+        gateId,
+        payload.message ||
+          "FuseKit is rechecking the provider now. The next step will appear here.",
+        "ok",
+      );
       await refreshJob({ preserveStatus: true });
     } catch (error) {
       gateButton.disabled = false;
       gateButton.textContent = originalText;
-      setRefreshStatus(
-        error?.message ||
-          "Could not mark the gate done from this snapshot. FuseKit will keep waiting.",
-        "stale",
-      );
+      const message = error?.message ||
+        "Could not mark the gate done from this snapshot. FuseKit will keep waiting.";
+      setRefreshStatus(message, "stale");
+      setGateActionStatus(gateId, message, "stale");
     }
     return;
   }

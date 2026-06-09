@@ -598,6 +598,42 @@ button {
   opacity: 0.72;
 }
 
+.gate-action-status {
+  display: grid;
+  gap: 3px;
+  border: 1px solid rgba(183, 232, 255, 0.26);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #f7fbff;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.gate-action-status[hidden] {
+  display: none;
+}
+
+.gate-action-status::before {
+  content: "Action status";
+  color: #9bdcff;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.gate-action-status.pending {
+  border-color: rgba(111, 215, 255, 0.38);
+}
+
+.gate-action-status.ok {
+  border-color: rgba(109, 221, 177, 0.42);
+}
+
+.gate-action-status.stale {
+  border-color: rgba(255, 197, 117, 0.4);
+}
+
 .snow-scene {
   position: relative;
   min-height: 136px;

@@ -750,6 +750,9 @@ def test_control_room_uses_gate_provider_for_guidance_when_id_is_generic(tmp_pat
     assert "Copy the provider value in the VM browser" in html
     assert "resume automatically after every target is captured" in html
     assert 'data-gate-capture="authorization"' in html
+    assert "gate-action-status" in html
+    assert "data-gate-action-status-for" in html
+    assert "Capturing ${target} from the VM clipboard into the encrypted vault" in html
     assert "step.provider ||" in html
     assert "renderGateCriteria" in html
 
@@ -788,6 +791,8 @@ def test_control_room_resend_setup_retry_uses_finished_button_not_capture(tmp_pa
     assert 'data-gate-pass="provider.resend.domain-setup-retry"' in html
     assert 'data-gate-capture="provider.resend.domain-setup-retry"' not in html
     assert "Capture RESEND_API_KEY from VM clipboard" not in html
+    assert "Sending your approval so FuseKit can recheck" in html
+    assert "Action status" in html
 
 
 def test_control_room_gate_help_includes_resume_link_and_attempts(tmp_path) -> None:
@@ -816,6 +821,7 @@ def test_control_room_gate_help_includes_resume_link_and_attempts(tmp_path) -> N
 
     assert "Open provider gate in VM" in html
     assert 'data-gate-open="provider.vercel.authorization"' in html
+    assert "Opening the provider gate inside the shared VM browser" in html
     assert "gate-attempts" in html
     assert "https://vercel.com/account/tokens" in html
     assert '"attempts":2' in html or '"attempts": 2' in html
