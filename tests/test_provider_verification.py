@@ -414,6 +414,45 @@ def test_verification_report_live_url_repairs_are_launcher_actionable() -> None:
     assert "provider status" not in joined.lower()
 
 
+def test_verification_report_downstream_repairs_are_fusekit_owned() -> None:
+    report = VerificationReport(app_name="app")
+    report.add_provider_results(
+        "vercel",
+        [
+            VerificationResult(
+                provider="vercel",
+                kind="vercel-env",
+                target="RESEND_API_KEY",
+                status="failed",
+                details={},
+            )
+        ],
+    )
+    report.add_provider_results(
+        "cloudflare",
+        [
+            VerificationResult(
+                provider="cloudflare",
+                kind="dns-records",
+                target="moonlite.rsvp",
+                status="failed",
+                details={},
+            )
+        ],
+    )
+
+    repairs = [check["repair"] for check in report.to_dict()["checks"]]
+    joined = " ".join(repairs)
+
+    assert "Vercel's API" in repairs[0]
+    assert "guided launcher gate" in repairs[0]
+    assert "control room" in repairs[1]
+    assert "DNS API" in repairs[1]
+    assert "env var and redeploy" not in joined
+    assert "Compare expected DNS records" not in joined
+    assert "reapply missing records, then retry" not in joined
+
+
 def test_dns_pending_then_passing(monkeypatch) -> None:
     vault = Vault.empty()
     pack = _pack("cloudflare")

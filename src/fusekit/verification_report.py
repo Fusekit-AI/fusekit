@@ -273,8 +273,9 @@ def _failed_repair(provider: str, check: str) -> str:
         return "GitHub deploy key is missing. FuseKit will create a new deploy key."
     if provider == "vercel" and check == "env_vars_configured":
         return (
-            "Vercel deploy succeeded, but env var is missing. FuseKit will reapply "
-            "env var and redeploy."
+            "Vercel runtime env is missing after deploy. FuseKit will reapply the "
+            "required env vars through Vercel's API, trigger the needed deployment "
+            "refresh, and surface a guided launcher gate if Vercel needs human approval."
         )
     if provider == "vercel" and check == "project_exists":
         return "Vercel project is missing. FuseKit will recreate or reconnect the project."
@@ -294,8 +295,9 @@ def _failed_repair(provider: str, check: str) -> str:
         )
     if check == "dns_propagated":
         return (
-            "Compare expected DNS records to provider records, reapply missing "
-            "records, then retry."
+            "Keep the control room open while FuseKit compares the approved DNS plan "
+            "to provider records, reapplies missing records through the DNS API, and "
+            "keeps checking propagation."
         )
     if check == "live_url_healthy":
         return (
