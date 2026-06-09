@@ -752,6 +752,8 @@ def test_control_room_uses_gate_provider_for_guidance_when_id_is_generic(tmp_pat
     assert "Capture from VM clipboard" in html
     assert "Copy the provider value in the VM browser" in html
     assert "resume automatically after every target is captured" in html
+    assert "VM clipboard Capture and vault encryption keep secrets yours." in html
+    assert "Hidden prompts and vault encryption keep secrets yours." not in html
     assert 'data-gate-capture="authorization"' in html
     assert "gate-action-status" in html
     assert "data-gate-action-status-for" in html
@@ -2127,7 +2129,7 @@ def test_security_surface_map_documents_control_room_state_routes() -> None:
     assert "action token is stored owner-only" in text
     assert "permissions repaired before reuse" in text
     assert "Public guided runs use VM clipboard Capture buttons" in text
-    assert "CLI-only fallback can use hidden prompts/env handoff" in text
+    assert "CLI-only fallback can use a non-echoing prompt or env handoff" in text
     assert "redirect back to the same route without the token query parameter" in text
     assert "does not stay in the address bar" in text
     assert "emits no `Access-Control-Allow-Origin`" in text

@@ -862,7 +862,7 @@ button {
 }
 
 .state-privacy .snow-prop::after {
-  content: "  · Hidden prompts and vault encryption keep secrets yours.";
+  content: "  · VM clipboard Capture and vault encryption keep secrets yours.";
   color: rgba(255, 255, 255, 0.72);
 }
 
