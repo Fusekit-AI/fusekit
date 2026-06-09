@@ -111,7 +111,7 @@ fusekit acceptance run /path/to/generated-app \
 
 ## Real Provider Acceptance Run
 
-The V1 real path is GitHub + Vercel + Cloudflare DNS. FuseKit uses OpenClaw computer use to navigate provider websites and run supervised account/token/project handoff playbooks in the shared VM browser. It will not bypass login, MFA, CAPTCHA, billing, payment verification, provider fraud controls, or consent screens. Create or sign in to the provider account, pass the real human gate, copy any one-time provider token inside the VM browser, then click the matching FuseKit `Capture from VM clipboard` button so the approved value lands directly in the encrypted vault.
+The V1 real path is GitHub + Resend + Vercel + Cloudflare DNS. FuseKit uses OpenClaw computer use to navigate provider websites and run supervised account/token/project handoff playbooks in the shared VM browser. It will not bypass login, MFA, CAPTCHA, billing, payment verification, provider fraud controls, or consent screens. Create or sign in to the provider account, pass the real human gate, copy any one-time provider token inside the VM browser, then click the matching FuseKit `Capture from VM clipboard` button so the approved value lands directly in the encrypted vault.
 
 FuseKit does not require Codex, Codex plugins, or preconfigured local skills. A real `launch` bootstraps FuseKit-owned runtime components by default. Today that means installing/checking OpenClaw through the official local-prefix installer, using a user-supplied LLM API key when one exists, then falling back to OpenClaw's OpenAI authorization step when there is no user-provided inference lane. OpenAI `gpt-5.5` is the default because it is the lowest-friction hosted LLM path, but any OpenAI-compatible provider can still be selected with `--llm-provider`, `--llm-model`, `--llm-base-url`, and `--llm-api-key-env`.
 
@@ -135,7 +135,7 @@ Verification is pack-driven and broad by design. Supported executable recipe kin
 - `dns-record`: verify `A`, `CNAME`, `TXT`, `MX`, and other DNS records through `dnspython`.
 - `url-health`: verify a live app URL returns a healthy HTTP status.
 
-Setup is pack-driven too. Bundled GitHub, Vercel, and Cloudflare behavior is now represented as provider-pack setup recipes and executed by the capability recipe runtime. The low-level Python provider modules remain as reusable primitives for API details such as GitHub secret encryption, Vercel env writes, and Cloudflare DNS mutation; the product flow no longer depends on provider-specific CLI branches for those providers.
+Setup is pack-driven too. Bundled GitHub, Resend, Vercel, and Cloudflare behavior is now represented as provider-pack setup recipes and executed by the capability recipe runtime. The low-level Python provider modules remain as reusable primitives for API details such as GitHub secret encryption, Resend domain/audience setup, Vercel env writes, and Cloudflare DNS mutation; the product flow no longer depends on provider-specific CLI branches for those providers.
 
 Provider setup also records a strategy decision for each recipe: provider API,
 official CLI, guided browser, human follow-me, or local vault capture. The
@@ -162,6 +162,7 @@ During `scan`, `install`, and `launch`, maintained provider catalog entries prod
 Minimum token scopes:
 
 - `GITHUB_TOKEN`: access to the target repo, Actions secrets, and deploy keys.
+- `RESEND_API_KEY`: Full access for the first setup so FuseKit can create or reuse the sending domain and audience when required.
 - `VERCEL_TOKEN`: access to the target team/project and deployments.
 - `CLOUDFLARE_API_TOKEN`: edit DNS for the target zone.
 

@@ -43,11 +43,14 @@ fusekit launch /path/to/moonlite-rsvp \
   --app-source https://github.com/owner/moonlite-rsvp.git \
   --fusekit-package git+https://github.com/owner/fusekit.git \
   --infer-ui \
-  --capture-stdin \
   --verify-attempts 10 \
   --verify-retry-seconds 30 \
   --control-room
 ```
+
+Use the control-room VM browser and `Capture from VM clipboard` buttons for
+copy-once provider keys during the recording. `--capture-stdin` is only for an
+advanced CLI fallback rehearsal, not the public no-thinking launcher path.
 
 Then run the proof gate:
 
