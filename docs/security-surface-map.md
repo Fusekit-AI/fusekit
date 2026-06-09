@@ -108,6 +108,9 @@ or trigger commands:
 - Local and remote state-changing POSTs require the explicit
   `x-fusekit-action-token` header from the live control-room page instead of
   accepting cookie-authenticated or loopback POSTs alone.
+- Rejected state-changing POST responses keep `Cache-Control: no-store`,
+  `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, CSP frame/form
+  restrictions, and no CORS allow headers.
 - The per-control-room action token is stored owner-only; existing valid token
   files have their permissions repaired before reuse.
 - Tokenized remote control rooms still reject attacker-origin gate POSTs before

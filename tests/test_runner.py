@@ -90,6 +90,18 @@ def _control_room_cookie_from_token(port: int, token: str) -> tuple[str, int, st
     return headers["set-cookie"], response.status, headers.get("location", "")
 
 
+def _assert_hardened_control_room_error_headers(response: HTTPError) -> None:
+    headers = {key.lower(): value for key, value in response.headers.items()}
+    assert headers["cache-control"] == "no-store"
+    assert headers["x-frame-options"] == "DENY"
+    assert headers["x-content-type-options"] == "nosniff"
+    assert headers["referrer-policy"] == "no-referrer"
+    assert "content-security-policy" in headers
+    assert "access-control-allow-origin" not in headers
+    assert "access-control-allow-methods" not in headers
+    assert "access-control-allow-headers" not in headers
+
+
 def _strategy_decision() -> dict[str, object]:
     return {
         "selected": {
@@ -1278,6 +1290,67 @@ def test_control_room_state_routes_reject_cross_site_posts(
     assert gate.status == "waiting"
     assert gate.captured_targets == ()
     assert gate.last_opened_url == ""
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_error"),
+    (
+        ("missing-control-room-header", "missing control-room header"),
+        ("untrusted-origin", "untrusted origin"),
+        ("cross-site-fetch-site", "cross-site request"),
+        ("invalid-action-token", "invalid action token"),
+    ),
+)
+def test_control_room_gate_post_rejection_branches_keep_hardened_headers(
+    tmp_path,
+    case: str,
+    expected_error: str,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.github.mfa.123",
+        provider="github",
+        reason="MFA required",
+        classification="mfa",
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_port}"
+        action_token = (tmp_path / "control-room-action-token").read_text(
+            encoding="utf-8"
+        ).strip()
+        headers = {
+            "x-fusekit-control-room": "resume",
+            "x-fusekit-action-token": action_token,
+        }
+        if case == "missing-control-room-header":
+            headers.pop("x-fusekit-control-room")
+        elif case == "untrusted-origin":
+            headers["Origin"] = "https://attacker.example"
+        elif case == "cross-site-fetch-site":
+            headers["Origin"] = base
+            headers["Sec-Fetch-Site"] = "cross-site"
+        elif case == "invalid-action-token":
+            headers["x-fusekit-action-token"] = "wrong-action-token"
+        url = f"{base}/api/gates/provider.github.mfa.123/pass"
+        request = Request(url, method="POST", headers=headers)
+        with pytest.raises(HTTPError) as exc:
+            urlopen(request, timeout=5)
+        payload = json.loads(exc.value.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert exc.value.code == 403
+    assert payload == {"error": expected_error, "ok": False}
+    _assert_hardened_control_room_error_headers(exc.value)
+    assert GateService.load(tmp_path / "gates.json").records[
+        "provider.github.mfa.123"
+    ].status == "waiting"
 
 
 def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -> None:
