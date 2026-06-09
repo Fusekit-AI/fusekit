@@ -704,6 +704,21 @@ def test_resend_pack_creates_domain_audience_and_feeds_dns(monkeypatch, tmp_path
     assert context.secrets["RESEND_AUDIENCE_ID"] == "audience-1"
     assert vault.require("provider.resend.resend_audience_id").value == "audience-1"
     assert vault.require("provider.resend.resend_from_email").value == "rsvp@moonlite.rsvp"
+    resend_domain = next(item for item in result["setup"] if item["kind"] == "resend-domain")
+    resend_audience = next(item for item in result["setup"] if item["kind"] == "resend-audience")
+    assert resend_domain["generated_env"] == ["RESEND_FROM_EMAIL"]
+    assert resend_audience["generated_env"] == ["RESEND_AUDIENCE_ID"]
+    receipt_actions = receipt.to_dict()["actions"]
+    assert any(
+        action["action"] == "resend.domain"
+        and action["details"]["generated_env"] == ["RESEND_FROM_EMAIL"]
+        for action in receipt_actions
+    )
+    assert any(
+        action["action"] == "resend.audience"
+        and action["details"]["generated_env"] == ["RESEND_AUDIENCE_ID"]
+        for action in receipt_actions
+    )
     public = json.dumps(result) + json.dumps(receipt.to_dict())
     assert_no_secret_text(public, ["resend-key-hidden"])
 

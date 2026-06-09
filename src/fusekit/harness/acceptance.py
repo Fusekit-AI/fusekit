@@ -1074,11 +1074,21 @@ def _check_receipt_resend_vercel_env_flow(
             artifact,
         )
         return
+    generated_missing = _receipt_resend_generated_envs_missing_before_vercel(actions, required)
+    if generated_missing:
+        _fail_resend_vercel_env_receipt(
+            checks,
+            missing,
+            "Receipt Vercel env setup lacks prior Resend API-generated runtime proof for: "
+            + ", ".join(generated_missing),
+            artifact,
+        )
+        return
     checks.append(
         AcceptanceCheck(
             "receipt.resend_vercel_env",
             "ok",
-            "Receipt proves required Resend runtime env keys were configured in Vercel.",
+            "Receipt proves required Resend runtime env keys were generated before Vercel setup.",
             artifact,
         )
     )
@@ -1111,6 +1121,48 @@ def _receipt_vercel_env_names(actions: list[Any]) -> set[str]:
         if env_name:
             configured.add(env_name)
     return configured
+
+
+def _receipt_resend_generated_envs_missing_before_vercel(
+    actions: list[Any],
+    required: set[str],
+) -> list[str]:
+    generated_required = required & {"RESEND_FROM_EMAIL", "RESEND_AUDIENCE_ID"}
+    if not generated_required:
+        return []
+    generated: set[str] = set()
+    missing: set[str] = set()
+    for action in actions:
+        if not isinstance(action, dict):
+            continue
+        name = str(action.get("action", "")).strip()
+        status = str(action.get("status", "")).strip()
+        if status != "ok":
+            continue
+        if name in {"resend.domain", "resend.audience"}:
+            generated.update(_receipt_generated_env_names(action) & generated_required)
+            continue
+        if name != "vercel.env":
+            continue
+        details = action.get("details", {})
+        if not isinstance(details, dict):
+            continue
+        env_name = str(details.get("env", "")).strip().upper()
+        if env_name in generated_required and env_name not in generated:
+            missing.add(env_name)
+    return sorted(missing)
+
+
+def _receipt_generated_env_names(action: dict[str, Any]) -> set[str]:
+    details = action.get("details", {})
+    if not isinstance(details, dict):
+        return set()
+    raw_names = details.get("generated_env", [])
+    if isinstance(raw_names, str):
+        raw_names = [raw_names]
+    if not isinstance(raw_names, list):
+        return set()
+    return {str(name).strip().upper() for name in raw_names if str(name).strip()}
 
 
 def _fail_resend_vercel_env_receipt(

@@ -583,6 +583,7 @@ def _resend_domain(recipe: SetupRecipe, context: ProviderSetupContext) -> dict[s
         "domain_id": resend_domain.id,
         "domain_status": resend_domain.status,
         "reused": resend_domain.reused,
+        "generated_env": ["RESEND_FROM_EMAIL"],
         "dns_records": [
             {
                 "name": record.name,
@@ -623,6 +624,7 @@ def _resend_audience(recipe: SetupRecipe, context: ProviderSetupContext) -> dict
         "audience_id": audience.id,
         "name": audience.name,
         "reused": audience.reused,
+        "generated_env": ["RESEND_AUDIENCE_ID"],
     }
     context.audit.record("provider_pack.resend.audience", result)
     context.receipt.add_action("resend.audience", "ok", result)

@@ -1957,6 +1957,7 @@ def test_live_acceptance_requires_receipt_resend_runtime_env_in_vercel(tmp_path)
                         "status": "ok",
                         "details": {
                             "domain": "moonlite.rsvp",
+                            "generated_env": ["RESEND_FROM_EMAIL"],
                             "dns_records": [],
                         },
                     },
@@ -1994,7 +1995,9 @@ def test_live_acceptance_requires_receipt_resend_runtime_env_in_vercel(tmp_path)
     ]["next_action"]
 
 
-def test_live_acceptance_accepts_receipt_resend_runtime_env_in_vercel(tmp_path) -> None:
+def test_live_acceptance_requires_receipt_resend_generated_env_proof_before_vercel(
+    tmp_path,
+) -> None:
     app = tmp_path / "app"
     app.mkdir()
     _write_resend_vercel_manifest(app)
@@ -2044,8 +2047,124 @@ def test_live_acceptance_accepts_receipt_resend_runtime_env_in_vercel(tmp_path) 
     receipt_check = next(
         check for check in report.checks if check.id == "receipt.resend_vercel_env"
     )
+    assert report.launch_ready is False
+    assert receipt_check.status == "failed"
+    assert "prior Resend API-generated runtime proof" in receipt_check.detail
+    assert "RESEND_FROM_EMAIL" in receipt_check.detail
+
+
+def test_live_acceptance_requires_resend_generation_before_vercel_env_write(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "actions": [
+                    {
+                        "action": "vercel.env",
+                        "status": "ok",
+                        "details": {"project": "moonlite", "env": "RESEND_API_KEY"},
+                    },
+                    {
+                        "action": "vercel.env",
+                        "status": "ok",
+                        "details": {"project": "moonlite", "env": "RESEND_FROM_EMAIL"},
+                    },
+                    {
+                        "action": "resend.domain",
+                        "status": "ok",
+                        "details": {
+                            "domain": "moonlite.rsvp",
+                            "generated_env": ["RESEND_FROM_EMAIL"],
+                            "dns_records": [],
+                        },
+                    },
+                ],
+                "raw_secrets_exposed": 0,
+                "live_url": "https://moonlite.rsvp",
+            }
+        ),
+        "utf-8",
+    )
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    receipt_check = next(
+        check for check in report.checks if check.id == "receipt.resend_vercel_env"
+    )
+    assert report.launch_ready is False
+    assert receipt_check.status == "failed"
+    assert "prior Resend API-generated runtime proof" in receipt_check.detail
+    assert "RESEND_FROM_EMAIL" in receipt_check.detail
+
+
+def test_live_acceptance_accepts_receipt_resend_runtime_env_in_vercel(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "actions": [
+                    {
+                        "action": "resend.domain",
+                        "status": "ok",
+                        "details": {
+                            "domain": "moonlite.rsvp",
+                            "generated_env": ["RESEND_FROM_EMAIL"],
+                            "dns_records": [],
+                        },
+                    },
+                    {
+                        "action": "vercel.env",
+                        "status": "ok",
+                        "details": {"project": "moonlite", "env": "RESEND_API_KEY"},
+                    },
+                    {
+                        "action": "vercel.env",
+                        "status": "ok",
+                        "details": {"project": "moonlite", "env": "RESEND_FROM_EMAIL"},
+                    },
+                ],
+                "raw_secrets_exposed": 0,
+                "live_url": "https://moonlite.rsvp",
+            }
+        ),
+        "utf-8",
+    )
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    receipt_check = next(
+        check for check in report.checks if check.id == "receipt.resend_vercel_env"
+    )
     assert receipt_check.status == "ok"
-    assert "Resend runtime env keys were configured in Vercel" in receipt_check.detail
+    assert "Resend runtime env keys were generated before Vercel setup" in receipt_check.detail
 
 
 def test_live_acceptance_requires_provider_contract_health_before_api_setup(
@@ -2069,6 +2188,7 @@ def test_live_acceptance_requires_provider_contract_health_before_api_setup(
                         "status": "ok",
                         "details": {
                             "domain": "moonlite.rsvp",
+                            "generated_env": ["RESEND_FROM_EMAIL"],
                             "dns_records": [],
                         },
                     },
@@ -2133,6 +2253,7 @@ def test_live_acceptance_accepts_provider_contract_health_before_api_setup(
                         "status": "ok",
                         "details": {
                             "domain": "moonlite.rsvp",
+                            "generated_env": ["RESEND_FROM_EMAIL"],
                             "dns_records": [],
                         },
                     },
