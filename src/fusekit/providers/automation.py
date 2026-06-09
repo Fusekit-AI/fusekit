@@ -247,7 +247,8 @@ def _provider_contract_health_gate(
     if token_env:
         steps.append(
             f"Copy the fresh {token_env} value inside the VM browser and click the matching "
-            "Capture from VM clipboard button."
+            "Capture from VM clipboard button. Do not paste it into your computer; "
+            "Capture reads the VM clipboard directly."
         )
     else:
         steps.append("Return to FuseKit and click I finished this step after provider approval.")
@@ -264,7 +265,8 @@ def _provider_contract_health_gate(
         "target": token_env,
         "next_action": (
             f"Click Open provider gate in VM, create or reveal a fresh {token_env}, copy it "
-            "inside the VM browser, then click the matching Capture from VM clipboard button."
+            "inside the VM browser, then click the matching Capture from VM clipboard button. "
+            "Do not paste it into your computer; Capture reads the VM clipboard directly."
             if token_env
             else "Click Open provider gate in VM, complete the provider-owned authorization, "
             "then click I finished this step."

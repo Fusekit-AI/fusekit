@@ -62,7 +62,8 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
             (
                 "When GitHub reveals the token once, copy it inside the VM browser and click "
                 "the matching Capture from VM clipboard button; FuseKit stores it only in the "
-                "encrypted vault."
+                "encrypted vault. You do not need to paste it into your computer; Capture "
+                "reads the VM clipboard directly."
             ),
         ),
         reassurance="FuseKit will use GitHub's API and continue once the scoped token is captured.",
@@ -106,7 +107,8 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
             (
                 "When Vercel reveals the token once, copy it inside the VM browser and click "
                 "the matching Capture from VM clipboard button; FuseKit stores it only in the "
-                "encrypted vault."
+                "encrypted vault. You do not need to paste it into your computer; Capture "
+                "reads the VM clipboard directly."
             ),
         ),
         reassurance="FuseKit will continue through Vercel's API after capture succeeds.",
@@ -151,7 +153,8 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
             (
                 "When Cloudflare reveals the token once, copy it inside the VM browser and click "
                 "the matching Capture from VM clipboard button; FuseKit stores it only in the "
-                "encrypted vault."
+                "encrypted vault. You do not need to paste it into your computer; Capture "
+                "reads the VM clipboard directly."
             ),
         ),
         reassurance=(
@@ -204,7 +207,8 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
             (
                 "When Resend reveals the API key once, copy it inside the VM browser and click "
                 "the matching Capture from VM clipboard button; FuseKit stores it only in the "
-                "encrypted vault."
+                "encrypted vault. You do not need to paste it into your computer; Capture "
+                "reads the VM clipboard directly."
             ),
             (
                 "After the demo or setup, rotate or revoke the setup key from Resend if you want "
@@ -284,7 +288,8 @@ _GENERIC = GateGuidance(
         (
             "If the provider reveals a copy-once API key or token and FuseKit shows a "
             "Capture from VM clipboard button, copy the value inside the VM browser and "
-            "click the matching button."
+            "click the matching button. You do not need to paste it into your computer; "
+            "Capture reads the VM clipboard directly."
         ),
         (
             "If no Capture from VM clipboard button is shown, click I finished this step "

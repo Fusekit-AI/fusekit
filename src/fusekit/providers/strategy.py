@@ -399,7 +399,8 @@ def summarize_strategy_action(
         "next_action": (
             "Click Open provider gate in VM, complete login/MFA/CAPTCHA/consent/token "
             "creation in the VM browser, then copy any revealed token and click the "
-            "matching Capture from VM clipboard button."
+            "matching Capture from VM clipboard button. Do not paste it into your "
+            "computer; Capture reads the VM clipboard directly."
             if needs_human_gate
             else "Install or authorize a deterministic provider route, then retry."
         ),
@@ -430,7 +431,8 @@ def _strategy_follow_steps(pack: ProviderCapabilityPack | None) -> tuple[str, ..
         "Complete only provider-owned login, MFA, CAPTCHA, consent, billing, or token prompts.",
         (
             "If the provider reveals a copy-once token, copy it inside the VM browser and "
-            "click the matching Capture from VM clipboard button."
+            "click the matching Capture from VM clipboard button. Do not paste it into "
+            "your computer; Capture reads the VM clipboard directly."
         ),
         (
             "For non-secret confirmation gates, click I finished this step after the "

@@ -108,6 +108,7 @@ def test_provider_strategy_does_not_dead_end_on_unimplemented_cli(tmp_path) -> N
     assert action["status"] == "needs_human_gate"
     assert "Click Open provider gate in VM" in action["next_action"]
     assert "matching Capture from VM clipboard button" in action["next_action"]
+    assert "Capture reads the VM clipboard directly" in action["next_action"]
     assert action["resume_url"] == "https://github.com/settings/tokens?type=beta"
     assert "visible gate is finished" in action["resume_hint"]
 
@@ -127,6 +128,7 @@ def test_provider_strategy_action_can_carry_pack_follow_steps(tmp_path) -> None:
     assert "does not reveal old key secrets again" in steps
     assert "creates or reuses the sending domain through Resend's API" in steps
     assert "encrypted vault" in steps
+    assert "Capture reads the VM clipboard directly" in steps
     assert "matching Capture from VM clipboard button" in action["next_action"]
 
 

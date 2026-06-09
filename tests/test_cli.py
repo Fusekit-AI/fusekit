@@ -1581,6 +1581,7 @@ def test_apply_records_provider_strategy_gate_when_token_is_missing(
     assert "fine-grained token" in " ".join(gate.follow_steps)
     assert "Click Open provider gate in VM" in gate.next_action
     assert "matching Capture from VM clipboard button" in gate.next_action
+    assert "Capture reads the VM clipboard directly" in gate.next_action
     assert "retry this provider route" in gate.resume_hint
 
     strategies = json.loads((fusekit_dir / "provider_strategies.json").read_text("utf-8"))
@@ -1593,6 +1594,7 @@ def test_apply_records_provider_strategy_gate_when_token_is_missing(
     assert "fine-grained token" in " ".join(strategy["follow_steps"])
     assert "Resource owner" in " ".join(strategy["follow_steps"])
     assert "matching Capture from VM clipboard button" in strategy["next_action"]
+    assert "Capture reads the VM clipboard directly" in strategy["next_action"]
     assert "visible gate is finished" in strategy["resume_hint"]
 
 
@@ -1709,6 +1711,7 @@ def test_verification_gate_records_resend_api_key_follow_me(tmp_path) -> None:
     assert "No domains yet" in " ".join(gate.follow_steps)
     assert "do not click Add domain" in " ".join(gate.follow_steps)
     assert "resumes automatically" in " ".join(gate.follow_steps)
+    assert "Capture reads the VM clipboard directly" in " ".join(gate.follow_steps)
     assert "Capture RESEND_API_KEY" in gate.next_action
     assert "copy-once secrets" in gate.next_action
     assert "creates or reuses the Resend sending domain" in gate.resume_hint
@@ -2306,6 +2309,7 @@ def test_github_app_source_handoff_uses_launcher_capture_copy() -> None:
     steps = " ".join(handoff.secret_steps)
     assert "inside the VM browser" in steps
     assert "Capture from VM clipboard button" in steps
+    assert "Capture reads the VM clipboard directly" in steps
     assert "Capture button in FuseKit" not in steps
     assert "encrypted vault" in steps
     assert "hidden prompt" not in steps
@@ -2394,6 +2398,7 @@ def test_await_provider_token_presents_handoff_only_once(
     assert gate.classification == "provider-authorization"
     assert gate.target == "GITHUB_TOKEN"
     assert any("Capture GITHUB_TOKEN from VM clipboard" in step for step in gate.follow_steps)
+    assert any("Capture reads the VM clipboard directly" in step for step in gate.follow_steps)
 
 
 def test_await_provider_token_does_not_represent_existing_handoff(

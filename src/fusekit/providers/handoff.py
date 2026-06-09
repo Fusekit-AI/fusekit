@@ -69,7 +69,8 @@ HANDOFFS: dict[str, ProviderHandoff] = {
             ),
             (
                 "Copy the token once inside the VM browser; FuseKit captures it into the "
-                "encrypted vault."
+                "encrypted vault. No paste into your computer is needed because Capture "
+                "reads the VM clipboard directly."
             ),
         ),
     ),
@@ -166,7 +167,8 @@ HANDOFFS: dict[str, ProviderHandoff] = {
             ),
             (
                 "Copy the API key once inside the VM browser; FuseKit captures it into the "
-                "encrypted vault."
+                "encrypted vault. No paste into your computer is needed because Capture "
+                "reads the VM clipboard directly."
             ),
             "FuseKit reads Resend DNS verification records and adds them to the DNS plan.",
         ),

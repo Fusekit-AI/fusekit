@@ -17,6 +17,7 @@ def test_provider_gate_guidance_is_plain_language_and_non_secret() -> None:
     assert "sign in" in " ".join(guidance.actions).lower()
     assert "VM browser" in " ".join(guidance.actions)
     assert "Capture from VM clipboard" in " ".join(guidance.actions)
+    assert "Capture reads the VM clipboard directly" in " ".join(guidance.actions)
     assert "token" not in guidance.reassurance.lower()
     assert "secret" not in guidance.reassurance.lower()
 
@@ -64,6 +65,8 @@ def test_generic_provider_guidance_distinguishes_capture_from_finished() -> None
 
     assert "copy-once API key or token" in text
     assert "Capture from VM clipboard button" in text
+    assert "You do not need to paste it into your computer" in text
+    assert "Capture reads the VM clipboard directly" in text
     assert "If no Capture from VM clipboard button is shown" in text
     assert "I finished this step" in text
     assert "figure" not in text.lower()
@@ -88,6 +91,7 @@ def test_cloudflare_guidance_names_scoped_token_path() -> None:
     assert "encrypted vault" in text
     assert "Open provider gate in VM" in text
     assert "Capture from VM clipboard" in text
+    assert "Capture reads the VM clipboard directly" in text
 
 
 def test_github_guidance_names_repo_scoped_permissions() -> None:
@@ -108,6 +112,7 @@ def test_github_guidance_names_repo_scoped_permissions() -> None:
     assert "encrypted vault" in text
     assert "Open provider gate in VM" in text
     assert "Capture from VM clipboard" in text
+    assert "Capture reads the VM clipboard directly" in text
 
 
 def test_vercel_guidance_names_token_path() -> None:

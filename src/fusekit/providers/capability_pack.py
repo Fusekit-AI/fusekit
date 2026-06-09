@@ -1286,7 +1286,8 @@ def _resend_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                 ),
                 (
                     "Copy RESEND_API_KEY once inside the VM browser; FuseKit captures it into "
-                    "the encrypted vault."
+                    "the encrypted vault. No paste into your computer is needed because "
+                    "Capture reads the VM clipboard directly."
                 ),
                 "FuseKit creates or reuses the sending domain through Resend's API.",
                 "FuseKit uses returned domain verification records as DNS proposals.",
