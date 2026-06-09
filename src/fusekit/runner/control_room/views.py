@@ -749,7 +749,7 @@ def _strategy_plan_items(providers: list[Any]) -> list[str]:
     if has_resend_domain:
         items.append(
             "First, FuseKit creates or reuses the Resend sending domain by API; "
-            "do not manually click Add domain in Resend unless FuseKit asks."
+            "do not click Add domain in Resend."
         )
     if has_resend_domain and has_dns:
         items.append(

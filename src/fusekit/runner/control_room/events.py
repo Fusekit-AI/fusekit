@@ -1008,7 +1008,7 @@ function providerStrategyPlanItems(providers) {
   if (hasResendDomain) {
     items.push(
       "First, FuseKit creates or reuses the Resend sending domain by API; " +
-      "do not manually click Add domain in Resend unless FuseKit asks.",
+      "do not click Add domain in Resend.",
     );
   }
   if (hasResendDomain && hasDns) {

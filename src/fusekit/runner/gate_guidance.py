@@ -189,9 +189,9 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
                 "a new setup key if you cannot copy the existing value."
             ),
             (
-                "Do not create Resend domains or audiences by hand unless FuseKit asks. After "
-                "capture, FuseKit uses Resend's API to create or reuse the sending domain and "
-                "audience required by the app."
+                "Do not create Resend domains or audiences by hand. After capture, FuseKit "
+                "uses Resend's API to create or reuse the sending domain and audience "
+                "required by the app."
             ),
             (
                 "If Resend shows No domains yet, stay on API Keys; do not click Add domain. "
@@ -216,7 +216,8 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
         avoid=(
             "Do not rely on an existing key card unless you can copy the raw key value.",
             "Do not click Add domain when Resend says No domains yet.",
-            "Do not create audiences by hand unless FuseKit later asks for a provider-owned gate.",
+            "Do not create audiences by hand; FuseKit creates them through Resend's API "
+            "only when the app requires one.",
         ),
     ),
     "oci": GateGuidance(
@@ -237,7 +238,8 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
         ),
         avoid=(
             "Do not close Cloud Shell while the launcher is provisioning.",
-            "Do not create extra compartments or VMs by hand unless FuseKit asks.",
+            "Do not create extra compartments or VMs by hand; FuseKit provisions the "
+            "workspace it needs.",
         ),
     ),
     "openai": GateGuidance(

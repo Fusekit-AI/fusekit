@@ -2559,7 +2559,8 @@ def test_control_room_explains_deterministic_provider_route(tmp_path) -> None:
     assert "Route plan" in html
     assert "What happens in order" in html
     assert "First, FuseKit creates or reuses the Resend sending domain by API" in html
-    assert "do not manually click Add domain in Resend unless FuseKit asks" in html
+    assert "do not click Add domain in Resend" in html
+    assert "unless FuseKit asks" not in html
     assert "FuseKit creates or reuses the Resend domain" in html
     assert "then waits for DNS approval" in html
     assert "hand DNS records to DNS" in html

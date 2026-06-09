@@ -142,6 +142,7 @@ def test_resend_guidance_names_api_key_path() -> None:
     assert "domain and audience" in text
     assert "No domains yet" in text
     assert "do not click Add domain" in text
+    assert "unless FuseKit asks" not in text
     assert "encrypted vault" in text
     assert "Open provider gate in VM" in text
     assert "Capture from VM clipboard" in text
