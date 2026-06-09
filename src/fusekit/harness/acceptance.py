@@ -2109,6 +2109,7 @@ _RESEND_MANUAL_SETUP_PATTERNS = (
     r"\bcreate\s+(?:a|the)\s+domain\s+in\s+resend\b",
     r"\bcreate\s+(?:a|the)\s+resend\s+audience\b",
     r"\bcreate\s+(?:a|the)\s+audience\s+in\s+resend\b",
+    r"\bdomain\s+ownership\s+(?:gate|step|verification)\b",
 )
 
 

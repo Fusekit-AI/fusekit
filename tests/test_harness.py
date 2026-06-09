@@ -1337,6 +1337,27 @@ def test_acceptance_rejects_manual_resend_domain_or_audience_gate_guidance() -> 
                 "success_criteria": ["A Resend audience exists."],
                 "avoid_steps": ["Do not create broad API keys."],
             },
+            {
+                "id": "provider.resend.account",
+                "provider": "resend",
+                "status": "waiting",
+                "classification": "provider-authorization",
+                "resume_url": "https://resend.com/api-keys",
+                "target": "RESEND_API_KEY",
+                "follow_steps": [
+                    "Click Open provider gate in VM so Resend opens in the VM browser.",
+                    "Complete the highlighted domain ownership gate.",
+                    "Copy RESEND_API_KEY inside the VM browser and click Capture "
+                    "from VM clipboard.",
+                ],
+                "next_action": (
+                    "Click Open provider gate in VM, then click Capture from VM clipboard "
+                    "after the key is copied."
+                ),
+                "resume_hint": "FuseKit will continue after RESEND_API_KEY capture.",
+                "success_criteria": ["The Resend domain ownership verification passed."],
+                "avoid_steps": ["Do not click Add domain."],
+            },
         ]
     )
 
@@ -1347,6 +1368,11 @@ def test_acceptance_rejects_manual_resend_domain_or_audience_gate_guidance() -> 
     )
     assert any(
         "provider.resend.audience.guidance asks for manual Resend domain/audience setup"
+        in failure
+        for failure in failures
+    )
+    assert any(
+        "provider.resend.account.guidance asks for manual Resend domain/audience setup"
         in failure
         for failure in failures
     )
