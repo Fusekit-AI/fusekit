@@ -41,6 +41,7 @@ EXCLUDED_APP_PATHS = (
 CONTROL_ROOM_PORT = 8765
 NOVNC_PORT = 6080
 VISUAL_DISPLAY = ":99"
+PROVIDER_BROWSER_PROFILE = "/var/lib/fusekit-runner/visual/chrome-provider-profile"
 
 
 class CommandRunner(Protocol):
@@ -369,6 +370,7 @@ def execute_remote_setup(
             "export FUSEKIT_OPENCLAW_HOME_MODE=default; "
             "unset OPENCLAW_HOME; "
             "export PLAYWRIGHT_BROWSERS_PATH=/opt/fusekit-playwright-browsers; "
+            f"export FUSEKIT_PROVIDER_BROWSER_PROFILE={quote(PROVIDER_BROWSER_PROFILE)}; "
             f"{display_export}"
             f"{openclaw_browser_prepare}"
             "trap 'rm -f /var/lib/fusekit-runner/passphrase' EXIT; "
@@ -539,6 +541,7 @@ def _prepare_remote_visual_session(
         "> /var/lib/fusekit-runner/app/.fusekit/job.json; "
         f"export FUSEKIT_VISUAL_PASSWORD={quote(visual['novnc_password'])}; "
         f"export FUSEKIT_VISUAL_DISPLAY={quote(visual['display'])}; "
+        f"export FUSEKIT_PROVIDER_BROWSER_PROFILE={quote(PROVIDER_BROWSER_PROFILE)}; "
         "/usr/local/sbin/fusekit-visual-start; "
         f"for i in $(seq 1 20); do "
         f"if curl -fsS http://127.0.0.1:{NOVNC_PORT}/vnc.html >/dev/null 2>&1; "
@@ -550,6 +553,7 @@ def _prepare_remote_visual_session(
         "> /var/lib/fusekit-runner/app/.fusekit/visual.json; "
         f"export FUSEKIT_CONTROL_ROOM_TOKEN={quote(visual['control_room_token'])}; "
         "export FUSEKIT_ALLOW_REMOTE_CONTROL_ROOM=1; "
+        f"export FUSEKIT_PROVIDER_BROWSER_PROFILE={quote(PROVIDER_BROWSER_PROFILE)}; "
         "nohup fusekit control-room --serve "
         "--job-state /var/lib/fusekit-runner/app/.fusekit/job.json "
         f"--host 0.0.0.0 --port {CONTROL_ROOM_PORT} "

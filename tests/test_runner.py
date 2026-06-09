@@ -1301,7 +1301,9 @@ def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -
     fake_chrome = tmp_path / "fake-chrome"
     fake_chrome.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     fake_chrome.chmod(0o700)
+    shared_profile = tmp_path / "shared-vm-profile"
     monkeypatch.setenv("FUSEKIT_VISUAL_BROWSER", str(fake_chrome))
+    monkeypatch.setenv("FUSEKIT_PROVIDER_BROWSER_PROFILE", str(shared_profile))
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     monkeypatch.setenv("RESEND_API_KEY", "re_test")
     monkeypatch.setenv("FUSEKIT_PROVIDER_TOKEN", "provider-token")
@@ -1338,6 +1340,7 @@ def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -
     assert "already open" in second_payload["message"]
     assert len(calls) == 1
     assert calls[0]["command"][-1] == "https://dash.cloudflare.com/profile/api-tokens"
+    assert f"--user-data-dir={shared_profile}" in calls[0]["command"]
     assert calls[0]["env"]["DISPLAY"] == ":99"
     assert calls[0]["env"]["FUSEKIT_VISUAL_SAFE_SETTING"] == "kept"
     assert calls[0]["env"]["XAUTHORITY"] == "/tmp/fusekit-xauthority"
@@ -4396,6 +4399,21 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         for command in calls
     )
     assert any("/usr/local/sbin/fusekit-visual-start" in command[-1] for command in calls)
+    assert any(
+        "FUSEKIT_PROVIDER_BROWSER_PROFILE=/var/lib/fusekit-runner/visual/chrome-provider-profile"
+        in command[-1]
+        and "/usr/local/sbin/fusekit-visual-start" in command[-1]
+        and "fusekit control-room --serve" in command[-1]
+        for command in calls
+        if command[0] == "ssh"
+    )
+    assert any(
+        "FUSEKIT_PROVIDER_BROWSER_PROFILE=/var/lib/fusekit-runner/visual/chrome-provider-profile"
+        in command[-1]
+        and "fusekit launch . --runner local --yes" in command[-1]
+        for command in calls
+        if command[0] == "ssh"
+    )
     assert any(
         "curl -fsS http://127.0.0.1:6080/vnc.html" in command[-1]
         and "exit 45" in command[-1]

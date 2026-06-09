@@ -393,7 +393,7 @@ def _open_gate_url_in_visual_browser(job_state: Path, url: str) -> str:
     browser = _visual_browser_binary()
     if not browser:
         raise FuseKitError("No VM browser binary is available for provider gate launch.")
-    profile_dir = job_state.parent.parent / "visual" / "chrome-provider-profile"
+    profile_dir = _shared_visual_provider_profile(job_state)
     try:
         profile_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
@@ -419,6 +419,16 @@ def _open_gate_url_in_visual_browser(job_state: Path, url: str) -> str:
     except OSError as exc:
         raise FuseKitError(f"Could not open provider gate in VM browser: {exc}") from exc
     return browser
+
+
+def _shared_visual_provider_profile(job_state: Path) -> Path:
+    configured = os.environ.get("FUSEKIT_PROVIDER_BROWSER_PROFILE", "").strip()
+    if configured:
+        configured_path = Path(configured)
+        if configured_path.is_absolute():
+            return configured_path
+        return job_state.parent.parent / configured_path
+    return job_state.parent.parent / "visual" / "chrome-provider-profile"
 
 
 def _active_gate_url_is_open(gate: Any, safe_url: str) -> bool:
