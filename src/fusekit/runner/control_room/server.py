@@ -31,8 +31,14 @@ VISUAL_DISPLAY_PATTERN = re.compile(r"^(?:[A-Za-z0-9_.-]+)?:[0-9]+(?:\.[0-9]+)?$
 TOKEN_PROVIDER_BY_ENV = {
     "CLOUDFLARE_API_TOKEN": "cloudflare",
     "GITHUB_TOKEN": "github",
+    "OPENAI_API_KEY": "openai",
     "RESEND_API_KEY": "resend",
     "VERCEL_TOKEN": "vercel",
+}
+TOKEN_PREFIXES_BY_ENV = {
+    "GITHUB_TOKEN": ("ghp_", "github_pat_", "gho_", "ghu_", "ghs_", "ghr_"),
+    "OPENAI_API_KEY": ("sk-",),
+    "RESEND_API_KEY": ("re_",),
 }
 
 
@@ -518,12 +524,32 @@ def _validate_clipboard_capture_value(target: str, value: str) -> None:
             )
         if len(value) < 8:
             raise FuseKitError(f"{normalized_target} is too short to be a provider token.")
+        expected_prefixes = TOKEN_PREFIXES_BY_ENV.get(normalized_target, ())
+        if expected_prefixes and not value.startswith(expected_prefixes):
+            readable = " or ".join(expected_prefixes)
+            raise FuseKitError(
+                f"{normalized_target} does not look like the expected provider token. "
+                f"Copy the value that starts with {readable}."
+            )
+        _reject_cross_provider_token_prefix(normalized_target, value)
     if normalized_target == "RESEND_FROM_EMAIL":
         if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value):
             raise FuseKitError("RESEND_FROM_EMAIL must be a single sender email address.")
     if normalized_target == "RESEND_AUDIENCE_ID":
         if re.search(r"\s", value) or len(value) < 3:
             raise FuseKitError("RESEND_AUDIENCE_ID must be one copied audience id.")
+
+
+def _reject_cross_provider_token_prefix(target: str, value: str) -> None:
+    for prefix_target, prefixes in TOKEN_PREFIXES_BY_ENV.items():
+        if prefix_target == target:
+            continue
+        if value.startswith(prefixes):
+            source = prefix_target.removesuffix("_API_KEY").removesuffix("_TOKEN")
+            raise FuseKitError(
+                f"{target} looks like a {source} token. Copy the value from the "
+                "provider page named by this gate."
+            )
 
 
 def _uncaptured_gate_targets(

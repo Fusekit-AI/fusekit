@@ -3,6 +3,7 @@ from __future__ import annotations
 import http.client
 import json
 import os
+import re
 import shlex
 import subprocess
 import tarfile
@@ -30,6 +31,7 @@ from fusekit.runner.control_room import (
 from fusekit.runner.control_room import render_control_room
 from fusekit.runner.control_room.server import (
     _control_room_vault_passphrase,
+    _validate_clipboard_capture_value,
     _visual_browser_binary,
     _visual_display,
 )
@@ -1692,6 +1694,63 @@ def test_control_room_clipboard_capture_rejects_wrong_token_clipboard_value(
     assert not audit_path.exists()
 
 
+@pytest.mark.parametrize(
+    ("target", "value"),
+    [
+        ("RESEND_API_KEY", "re_1234567890abcdef"),
+        ("GITHUB_TOKEN", "github_pat_1234567890abcdef"),
+        ("GITHUB_TOKEN", "ghp_1234567890abcdef"),
+        ("OPENAI_API_KEY", "sk-proj-1234567890abcdef"),
+        ("CLOUDFLARE_API_TOKEN", "cf_1234567890abcdef"),
+        ("VERCEL_TOKEN", "vercel_1234567890abcdef"),
+    ],
+)
+def test_control_room_clipboard_capture_accepts_expected_token_shapes(
+    target: str,
+    value: str,
+) -> None:
+    _validate_clipboard_capture_value(target, value)
+
+
+@pytest.mark.parametrize(
+    ("target", "value", "message"),
+    [
+        (
+            "RESEND_API_KEY",
+            "ghp_1234567890abcdef",
+            "Copy the value that starts with re_.",
+        ),
+        (
+            "GITHUB_TOKEN",
+            "re_1234567890abcdef",
+            "Copy the value that starts with",
+        ),
+        (
+            "OPENAI_API_KEY",
+            "re_1234567890abcdef",
+            "Copy the value that starts with sk-.",
+        ),
+        (
+            "CLOUDFLARE_API_TOKEN",
+            "github_pat_1234567890abcdef",
+            "CLOUDFLARE_API_TOKEN looks like a GITHUB token.",
+        ),
+        (
+            "VERCEL_TOKEN",
+            "sk-proj-1234567890abcdef",
+            "VERCEL_TOKEN looks like a OPENAI token.",
+        ),
+    ],
+)
+def test_control_room_clipboard_capture_rejects_cross_provider_token_shapes(
+    target: str,
+    value: str,
+    message: str,
+) -> None:
+    with pytest.raises(FuseKitError, match=re.escape(message)):
+        _validate_clipboard_capture_value(target, value)
+
+
 def test_control_room_passphrase_uses_job_artifact(tmp_path, monkeypatch) -> None:
     job = JobState.create("fk-test", tmp_path, "source-fetch")
     job_path = tmp_path / "source-fetch-job.json"
@@ -1723,7 +1782,7 @@ def test_control_room_rejects_stale_capture_after_gate_resumes(
         classification="provider-authorization",
         target="RESEND_API_KEY",
     )
-    clipboard = {"value": "first_secret_from_vm_clipboard\n"}
+    clipboard = {"value": "re_first_secret_from_vm_clipboard\n"}
     monkeypatch.setenv("FUSEKIT_PASSPHRASE_FILE", str(passphrase_path))
     monkeypatch.setattr(
         "fusekit.runner.control_room.server._vm_clipboard_text",
@@ -1745,7 +1804,7 @@ def test_control_room_rejects_stale_capture_after_gate_resumes(
         )
         with urlopen(request, timeout=5) as response:
             payload = json.loads(response.read().decode("utf-8"))
-        clipboard["value"] = "second_secret_should_not_overwrite\n"
+        clipboard["value"] = "re_second_secret_should_not_overwrite\n"
         stale_request = Request(
             url,
             data=json.dumps({"target": "RESEND_API_KEY"}).encode("utf-8"),
@@ -1769,8 +1828,10 @@ def test_control_room_rejects_stale_capture_after_gate_resumes(
         "provider.resend.api-key-domain-access"
     ].status == "resume_requested"
     vault = Vault.open(vault_path, "passphrase")
-    assert vault.require("provider.resend.resend_api_key").value == "first_secret_from_vm_clipboard"
-    assert vault.require("provider.resend.token").value == "first_secret_from_vm_clipboard"
+    assert vault.require("provider.resend.resend_api_key").value == (
+        "re_first_secret_from_vm_clipboard"
+    )
+    assert vault.require("provider.resend.token").value == "re_first_secret_from_vm_clipboard"
 
 
 def test_control_room_clipboard_capture_waits_for_multi_value_gate(
