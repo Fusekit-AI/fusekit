@@ -51,8 +51,14 @@ def serve_control_room(job_state: Path, host: str = "127.0.0.1", port: int = 876
                 "Control room serves local job metadata and is local-only by default. "
                 "Set FUSEKIT_ALLOW_REMOTE_CONTROL_ROOM=1 to bind a non-loopback host."
             )
-        if not os.environ.get("FUSEKIT_CONTROL_ROOM_TOKEN"):
+        token = os.environ.get("FUSEKIT_CONTROL_ROOM_TOKEN", "")
+        if not token:
             raise FuseKitError("Remote control room binding requires FUSEKIT_CONTROL_ROOM_TOKEN.")
+        if not _safe_remote_control_room_token(token):
+            raise FuseKitError(
+                "Remote control room token must be generated with secrets.token_urlsafe "
+                "and contain at least 32 URL-safe characters."
+            )
     handler = _handler(job_state)
     server = ThreadingHTTPServer((host, port), handler)
     url = f"http://{host}:{server.server_port}"
@@ -817,6 +823,10 @@ def _trusted_action_token(value: str | None, expected: str) -> bool:
 
 def _safe_action_token(value: str) -> bool:
     return bool(re.fullmatch(r"[A-Za-z0-9_-]{32,256}", value))
+
+
+def _safe_remote_control_room_token(value: str) -> bool:
+    return _safe_action_token(value)
 
 
 def _safe_cookie_value(value: str) -> bool:

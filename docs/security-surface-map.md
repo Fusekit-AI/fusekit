@@ -11,7 +11,7 @@ Python package is the live control room in `fusekit.runner.control_room.server`.
 
 | Route | Method | State | Protection |
 | --- | --- | --- | --- |
-| `/` | `GET` | Read-only control-room HTML. | Local-only bind by default. Remote bind requires `FUSEKIT_ALLOW_REMOTE_CONTROL_ROOM=1` and `FUSEKIT_CONTROL_ROOM_TOKEN`. `Cache-Control: no-store`, `X-Frame-Options: DENY`, CSP `frame-ancestors 'none'`, `form-action 'none'`. |
+| `/` | `GET` | Read-only control-room HTML. | Local-only bind by default. Remote bind requires `FUSEKIT_ALLOW_REMOTE_CONTROL_ROOM=1` and a `secrets.token_urlsafe`-style `FUSEKIT_CONTROL_ROOM_TOKEN` with at least 32 URL-safe characters. `Cache-Control: no-store`, `X-Frame-Options: DENY`, CSP `frame-ancestors 'none'`, `form-action 'none'`. |
 | `/index.html` | `GET` | Read-only control-room HTML. | Same as `/`. |
 | `/api/job` | `GET` | Read-only redacted job payload. | Same as `/`. |
 | `/api/gates/<gate_id>/pass` | `POST` | Marks one gate as `resume_requested` in `.fusekit/gates.json`; for setup-plan and DNS-approval gates this is the protected control-room approval signal consumed by the worker. | Requires `x-fusekit-control-room: resume`; rejects untrusted `Origin`; rejects browser-declared cross-site `Sec-Fetch-Site`; every state-changing POST must echo the page's per-control-room `x-fusekit-action-token`; remote access additionally requires token via bearer/query/cookie; no CORS headers are emitted; refuses secret-capture gates until every target is captured into the vault. |
@@ -108,8 +108,10 @@ or trigger commands:
   accepting cookie-authenticated or loopback POSTs alone.
 - Tokenized remote control rooms still reject attacker-origin gate POSTs before
   mutating gate state.
-- Remote control rooms require an unguessable token; token cookies are emitted only
-  for token-url-safe values and are `HttpOnly` and `SameSite=Strict`.
+- Remote control rooms reject weak or non-URL-safe tokens at startup and require
+  a `secrets.token_urlsafe`-style token with at least 32 URL-safe characters;
+  token cookies are emitted only for token-url-safe values and are `HttpOnly`
+  and `SameSite=Strict`.
 - Browser GETs that authenticate with `?token=` set the control-room cookie and
   redirect back to the same route without the token query parameter so the token
   does not stay in the address bar for recordings, screenshots, or browser history.

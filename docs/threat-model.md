@@ -67,7 +67,8 @@ Every state-changing control-room POST must keep all of these protections:
 - same-origin or loopback `Origin` validation
 - `Sec-Fetch-Site` rejection for browser-declared cross-site requests
 - no permissive CORS preflight response
-- remote access disabled unless an explicit remote token is configured
+- remote access disabled unless an explicit generated remote token is configured
+  with at least 32 URL-safe characters
 
 The control room must never expose a route that accepts arbitrary shell
 commands, creates OS or application admin accounts, edits startup files, or

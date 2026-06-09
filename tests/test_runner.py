@@ -2191,7 +2191,8 @@ def test_threat_model_documents_control_room_state_route_defenses() -> None:
     assert "Origin" in text
     assert "Sec-Fetch-Site" in text
     assert "no permissive CORS preflight response" in text
-    assert "remote access disabled unless an explicit remote token is configured" in text
+    assert "remote access disabled unless an explicit generated remote token is configured" in text
+    assert "at least 32 URL-safe characters" in text
     assert "must never expose a route" in text
     assert "arbitrary shell" in text
     assert "creates OS or application admin accounts" in text
@@ -2918,6 +2919,10 @@ def test_control_room_remote_bind_requires_allow_flag_and_token(
 
     monkeypatch.setenv("FUSEKIT_ALLOW_REMOTE_CONTROL_ROOM", "1")
     with pytest.raises(FuseKitError, match="requires FUSEKIT_CONTROL_ROOM_TOKEN"):
+        serve_control_room(job_path, host="0.0.0.0", port=0)
+
+    monkeypatch.setenv("FUSEKIT_CONTROL_ROOM_TOKEN", "short")
+    with pytest.raises(FuseKitError, match="secrets.token_urlsafe"):
         serve_control_room(job_path, host="0.0.0.0", port=0)
 
 
