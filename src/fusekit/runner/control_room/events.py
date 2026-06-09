@@ -1554,12 +1554,15 @@ document.addEventListener("click", async (event) => {
   } catch {
     button.textContent = "Copy blocked";
     const nearbyInput = button.parentElement?.querySelector("input");
+    let fallbackDetail = `FuseKit left the ${copyLabel} visible.`;
     if (nearbyInput) {
       nearbyInput.focus();
       nearbyInput.select();
+      fallbackDetail =
+        `FuseKit selected the ${copyLabel}; press Command+C or Ctrl+C to copy it.`;
     }
     setRefreshStatus(
-      `Copy was blocked by the browser. FuseKit left the ${copyLabel} visible.`,
+      `Copy was blocked by the browser. ${fallbackDetail}`,
       "stale",
     );
   }

@@ -2487,6 +2487,8 @@ def test_control_room_payload_and_html_include_visual_session(tmp_path) -> None:
     assert "data-visual-status" in html
     assert "sameVisualSession" in html
     assert "root.dataset.novncUrl" in html
+    assert "press Command+C or Ctrl+C to copy it" in html
+    assert "FuseKit left the ${copyLabel} visible" in html
     assert "novncPassword" not in html
 
 
