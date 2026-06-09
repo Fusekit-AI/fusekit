@@ -2264,6 +2264,8 @@ def test_security_surface_map_documents_control_room_state_routes() -> None:
     assert "emits no `Access-Control-Allow-Origin`" in text
     assert "`Access-Control-Allow-Methods`" in text
     assert "`Access-Control-Allow-Headers`" in text
+    assert "Unknown POST first passes the same control-room header" in text
+    assert "attacker-origin or tokenless unknown POSTs fail before route handling" in text
 
 
 def test_control_room_preflight_and_rejected_posts_emit_no_cors_allow_headers(
@@ -2490,6 +2492,41 @@ def test_control_room_unknown_routes_keep_security_headers(tmp_path) -> None:
         assert headers["x-content-type-options"] == "nosniff"
         assert "content-security-policy" in headers
         assert "access-control-allow-origin" not in headers
+
+
+def test_control_room_unknown_post_rejects_cross_site_before_404(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/api/unknown"
+        request = Request(
+            url,
+            data=b"{}",
+            method="POST",
+            headers={
+                **_control_room_post_headers(
+                    tmp_path,
+                    **{
+                        "Origin": "https://evil.example",
+                        "Sec-Fetch-Site": "cross-site",
+                    },
+                ),
+                "content-type": "application/json",
+            },
+        )
+        with pytest.raises(HTTPError) as exc:
+            urlopen(request, timeout=5)
+        payload = json.loads(exc.value.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert exc.value.code == 403
+    assert payload == {"error": "untrusted origin", "ok": False}
 
 
 def test_control_room_uses_privacy_mascot_for_secret_gates(tmp_path) -> None:
