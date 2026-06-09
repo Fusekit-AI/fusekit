@@ -1429,7 +1429,7 @@ document.addEventListener("click", async (event) => {
       if (!response.ok || !payload.ok) {
         throw new Error(controlRoomFailureMessage(
           payload,
-          "Could not open the provider gate inside the VM. Use the noVNC browser surface.",
+          "Could not open the provider gate inside the VM. Use Open live VM browser.",
         ));
       }
       setRefreshStatus(
@@ -1442,7 +1442,7 @@ document.addEventListener("click", async (event) => {
       );
     } catch (error) {
       const message = error?.message ||
-        "Could not open the provider gate inside the VM. Use the noVNC browser surface.";
+        "Could not open the provider gate inside the VM. Use Open live VM browser.";
       setRefreshStatus(message, "stale");
       setGateActionStatus(gateId, message, "stale");
     } finally {

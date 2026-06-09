@@ -1399,7 +1399,8 @@ def test_control_room_open_reuses_active_gate_even_after_debounce_window(
 
     assert first_payload["reused"] is False
     assert second_payload["reused"] is True
-    assert "Use the live VM browser surface" in second_payload["message"]
+    assert "Use the live VM browser" in second_payload["message"]
+    assert "browser surface" not in second_payload["message"]
     assert len(calls) == 1
 
 

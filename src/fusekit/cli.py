@@ -4239,7 +4239,7 @@ def _verification_gate_env_names(text: str) -> tuple[str, ...]:
 def _resend_api_key_follow_steps(domain: str) -> tuple[str, ...]:
     domain_note = f" for {domain}" if domain else ""
     return (
-        "Use the live VM browser surface, not a local browser tab.",
+        "Use the live VM browser, not a local browser tab.",
         "Open Resend API Keys and create a new key named FuseKit email setup.",
         (
             "Choose Full access for this first setup key so FuseKit can create or reuse "
@@ -4268,7 +4268,7 @@ def _resend_api_key_follow_steps(domain: str) -> tuple[str, ...]:
 def _resend_domain_follow_steps(domain: str) -> tuple[str, ...]:
     named_domain = domain or "the app sending domain"
     return (
-        "Use the live VM browser surface, not a local browser tab.",
+        "Use the live VM browser, not a local browser tab.",
         (
             f"Open Resend Domains only to review the existing {named_domain} domain "
             "and any provider-owned verification prompt shown there."
@@ -4288,7 +4288,7 @@ def _resend_domain_follow_steps(domain: str) -> tuple[str, ...]:
 def _resend_domain_setup_retry_follow_steps(domain: str) -> tuple[str, ...]:
     named_domain = domain or "the app sending domain"
     return (
-        "Use the live VM browser surface, not a local browser tab.",
+        "Use the live VM browser, not a local browser tab.",
         (
             "No manual Resend domain or DNS step is needed here; FuseKit already has a "
             "valid setup key and needs a retry wake-up."
@@ -4309,7 +4309,7 @@ def _resend_runtime_follow_steps(
     env_names: tuple[str, ...],
 ) -> tuple[str, ...]:
     steps = [
-        "Use the live VM browser surface, not a local browser tab.",
+        "Use the live VM browser, not a local browser tab.",
     ]
     if "RESEND_API_KEY" in env_names:
         steps.extend(
@@ -4382,7 +4382,7 @@ def _resend_runtime_setup_retry_follow_steps(
     named_domain = domain or "the app sending domain"
     missing = ", ".join(env_names)
     return (
-        "Use the live VM browser surface, not a local browser tab.",
+        "Use the live VM browser, not a local browser tab.",
         (
             f"Do not copy {missing} from Resend for this recovery step; those values "
             "are FuseKit-owned runtime settings."
@@ -5175,7 +5175,7 @@ def _openclaw_llm_auth_gate_handoff(
         return (
             novnc_url or config.base_url,
             (
-                "Open the live VM browser surface.",
+                "Open the live VM browser.",
                 "Enter the noVNC password if prompted.",
                 (
                     "Use the visible FuseKit OpenClaw authorization terminal to complete "
@@ -5192,7 +5192,7 @@ def _openclaw_llm_auth_gate_handoff(
         return (
             novnc_url or config.base_url,
             (
-                "Open the live VM browser surface if one is available.",
+                "Open the live VM browser if one is available.",
                 (
                     "Open a terminal in the VM and run: openclaw models auth login "
                     "--provider openai --set-default"

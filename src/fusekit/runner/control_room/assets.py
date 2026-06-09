@@ -835,7 +835,7 @@ button {
 }
 
 .state-gate .snow-prop::after {
-  content: "  · Tap the provider prompt, then I keep going.";
+  content: "  · Use Open provider gate in VM, then I keep going.";
   color: rgba(255, 255, 255, 0.68);
 }
 

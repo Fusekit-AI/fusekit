@@ -406,7 +406,7 @@ def _vercel_github_connection_gate(
         ),
         "resume_url": "https://vercel.com/account/settings/login-connections",
         "follow_steps": (
-            "Use the live VM browser surface, not a local browser tab.",
+            "Use the live VM browser, not a local browser tab.",
             "Open Vercel Login Connections and choose GitHub.",
             (
                 "Complete GitHub login, MFA, CAPTCHA, or consent only for the "

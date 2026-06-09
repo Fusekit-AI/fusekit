@@ -523,7 +523,7 @@ def _prepare_remote_visual_session(
                 "id": "remote.bootstrap",
                 "label": "Bootstrap FuseKit and visual browser session",
                 "status": "running",
-                "detail": "FuseKit is starting the VM-owned browser surface.",
+                "detail": "FuseKit is starting the live VM browser.",
             }
         ],
         "checkpoints": [],

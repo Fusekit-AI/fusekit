@@ -256,7 +256,7 @@ def _candidate_strategies(
             reason=(
                 "Provider handoff URL is available; FuseKit can guide the user through gates."
                 if signal.browser_available and handoff_url
-                else "No usable provider handoff URL/browser surface is available."
+                else "No usable provider handoff URL or VM browser is available."
             ),
             evidence={"handoff_url": handoff_url},
         )

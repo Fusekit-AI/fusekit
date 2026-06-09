@@ -183,7 +183,7 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                             "reused": True,
                             "message": (
                                 "Provider gate is already open in the shared VM browser. "
-                                "Use the live VM browser surface instead of opening another tab."
+                                "Use the live VM browser instead of opening another tab."
                             ),
                         }
                     )
