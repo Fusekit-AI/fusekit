@@ -2243,11 +2243,11 @@ def _guidance_quality_failures(
         failures.append(
             f"{label}.guidance contains non-launcher wording: {manual_action_failure}"
         )
-    if requires_vm and not any(
-        phrase in action_lowered
-        for phrase in ("open provider gate in vm", "vm browser", "highlighted")
-    ):
-        failures.append(f"{label}.guidance does not mention the VM browser path")
+    if requires_vm and "open provider gate in vm" not in action_lowered:
+        failures.append(
+            f"{label}.guidance does not name Open provider gate in VM for the "
+            "VM browser path"
+        )
     secret_targets = _env_targets_from_text(target)
     if secret_targets:
         if "capture from vm clipboard" not in action_lowered:

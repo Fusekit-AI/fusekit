@@ -611,6 +611,34 @@ def test_acceptance_gate_guidance_allows_local_browser_warning() -> None:
     assert failures == []
 
 
+def test_acceptance_gate_guidance_requires_open_gate_control() -> None:
+    failures = _unguided_gates(
+        [
+            {
+                "id": "provider.cloudflare.authorization",
+                "provider": "cloudflare",
+                "status": "passed",
+                "classification": "provider-authorization",
+                "resume_url": "https://dash.cloudflare.com/profile/api-tokens",
+                "target": "CLOUDFLARE_API_TOKEN",
+                "follow_steps": [
+                    "Use the VM browser to create the exact Cloudflare token.",
+                    (
+                        "Copy the token inside the VM browser and click "
+                        "Capture from VM clipboard."
+                    ),
+                ],
+                "next_action": "Capture CLOUDFLARE_API_TOKEN from VM clipboard.",
+                "resume_hint": "FuseKit will retry Cloudflare setup.",
+                "success_criteria": ["The token is captured in the encrypted vault."],
+                "avoid_steps": ["Do not grant unrelated zones."],
+            }
+        ]
+    )
+
+    assert any("Open provider gate in VM" in item for item in failures)
+
+
 def test_acceptance_gate_guidance_rejects_bad_success_or_avoid_panels() -> None:
     failures = _unguided_gates(
         [
@@ -1617,6 +1645,10 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                         "target": "OPENAI_API_KEY",
                         "attempts": 1,
                         "follow_steps": [
+                            (
+                                "Click Open provider gate in VM so OpenAI opens in "
+                                "the VM browser."
+                            ),
                             "Complete login in the VM browser.",
                             (
                                 "Copy the OpenAI key inside the VM browser and click "
@@ -1629,24 +1661,30 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                         "resume_url": "http://localhost:1455/auth/callback?code=secret-code",
                         "last_opened_url": "https://provider.example/?token=secret-token",
                         **_gate_guidance_fields("openai"),
-                    },
-                    {
-                        "id": "provider.callback.review",
-                        "provider": "provider",
-                        "reason": "Provider callback reviewed",
+                        },
+                        {
+                            "id": "provider.callback.review",
+                            "provider": "provider",
+                            "reason": "Provider callback reviewed",
                         "status": "passed",
                         "classification": "provider-verification",
                         "target": (
                             "https://provider.example/callback?"
                             "code=abcdefghijklmnopqrstuvwxyz1234567890abcdef&state=ok"
-                        ),
-                        "attempts": 1,
-                        "follow_steps": ["Review the highlighted callback."],
-                        "next_action": "No action needed.",
-                        "resume_hint": "FuseKit verified this gate as passed.",
-                        "resume_url": "https://provider.example/review",
-                        **_gate_guidance_fields("provider"),
-                    }
+                            ),
+                            "attempts": 1,
+                            "follow_steps": [
+                                (
+                                    "Click Open provider gate in VM so the provider callback "
+                                    "opens in the VM browser."
+                                ),
+                                "Review the highlighted callback.",
+                            ],
+                            "next_action": "No action needed.",
+                            "resume_hint": "FuseKit verified this gate as passed.",
+                            "resume_url": "https://provider.example/review",
+                            **_gate_guidance_fields("provider"),
+                        }
                 ]
             }
         ),

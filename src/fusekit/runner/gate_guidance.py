@@ -258,7 +258,8 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
             "available, OpenClaw opens the OpenAI authorization step."
         ),
         actions=(
-            "Sign in to OpenAI when prompted.",
+            "Click Open provider gate in VM so OpenAI opens in the VM browser, then sign "
+            "in when prompted.",
             "Complete the highlighted MFA, CAPTCHA, consent, or organization prompt.",
             "Click I finished this step after the provider says authorization is complete.",
         ),
