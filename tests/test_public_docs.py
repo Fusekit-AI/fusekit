@@ -11,6 +11,7 @@ def test_readme_real_provider_path_names_resend_and_vm_capture() -> None:
     assert "Bundled GitHub, Resend, Vercel, and Cloudflare behavior" in text
     assert "RESEND_API_KEY" in text
     assert "Capture from VM clipboard" in text
+    assert "browser surface" not in text.lower()
 
 
 def test_acceptance_runbook_uses_launcher_capture_for_public_recording() -> None:

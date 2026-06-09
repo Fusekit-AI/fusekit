@@ -104,7 +104,7 @@ class ProviderResearchSource(Protocol):
 
 
 class ResearchSpine(Protocol):
-    """OpenClaw-like browser surface for provider research."""
+    """OpenClaw-like VM browser control plane for provider research."""
 
     def open(self, url: str) -> object:
         """Open a provider documentation URL."""
