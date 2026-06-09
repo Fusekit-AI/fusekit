@@ -404,8 +404,9 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
         ),
         "Resend runtime env in Vercel receipt": (
             "Deployment env",
-            "Rerun setup so Vercel env setup records every app-required RESEND_* runtime "
-            "key after FuseKit captures or generates those values.",
+            "Capture RESEND_API_KEY in the launcher; FuseKit must then create or reuse "
+            "Resend domain/audience values by API and record every app-required RESEND_* "
+            "runtime key in Vercel env setup.",
         ),
         "provider contract-health receipt proof": (
             "Provider routes",
@@ -570,7 +571,8 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
         if check.id == "receipt.resend_vercel_env":
             return (
                 "Deployment env",
-                "Capture or generate the required RESEND_* values before Vercel env setup runs.",
+                "Capture RESEND_API_KEY in the launcher; FuseKit must then create or reuse "
+                "Resend domain/audience values by API before Vercel env setup runs.",
             )
         if check.id == "receipt.provider_contract_health":
             return (

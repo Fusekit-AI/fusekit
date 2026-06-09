@@ -2022,8 +2022,26 @@ def test_live_acceptance_requires_receipt_resend_runtime_env_in_vercel(tmp_path)
     assert "Resend runtime env in Vercel receipt" in report.missing
     blockers = {blocker["item"]: blocker for blocker in report.blockers}
     assert blockers["Resend runtime env in Vercel receipt"]["category"] == "Deployment env"
-    assert "Vercel env setup records every app-required RESEND_*" in blockers[
+    assert "Capture RESEND_API_KEY in the launcher" in blockers[
         "Resend runtime env in Vercel receipt"
+    ]["next_action"]
+    assert "Resend domain/audience values by API" in blockers[
+        "Resend runtime env in Vercel receipt"
+    ]["next_action"]
+    assert "captures or generates those values" not in blockers[
+        "Resend runtime env in Vercel receipt"
+    ]["next_action"]
+    assert "Capture or generate the required RESEND_* values" not in blockers[
+        "Resend runtime env in Vercel receipt"
+    ]["next_action"]
+    assert "Capture RESEND_API_KEY in the launcher" in blockers[
+        "receipt.resend_vercel_env"
+    ]["next_action"]
+    assert "Resend domain/audience values by API" in blockers[
+        "receipt.resend_vercel_env"
+    ]["next_action"]
+    assert "Capture or generate the required RESEND_* values" not in blockers[
+        "receipt.resend_vercel_env"
     ]["next_action"]
 
 
