@@ -30,6 +30,7 @@ from fusekit.runner.control_room import (
 )
 from fusekit.runner.control_room import render_control_room
 from fusekit.runner.control_room.server import (
+    _control_room_action_token,
     _control_room_vault_passphrase,
     _validate_clipboard_capture_value,
     _visual_browser_binary,
@@ -1095,6 +1096,21 @@ def test_local_control_room_requires_action_token_for_gate_post(tmp_path) -> Non
     ].status == "waiting"
 
 
+def test_control_room_reuses_action_token_with_owner_only_permissions(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    token_path = tmp_path / "control-room-action-token"
+    existing = "A" * 32
+    token_path.write_text(existing, encoding="utf-8")
+    os.chmod(token_path, 0o644)
+
+    token = _control_room_action_token(job_path)
+
+    assert token == existing
+    assert token_path.stat().st_mode & 0o777 == 0o600
+
+
 @pytest.mark.parametrize(
     ("gate_id", "route_suffix", "target", "resume_url"),
     (
@@ -2108,6 +2124,8 @@ def test_security_surface_map_documents_control_room_state_routes() -> None:
     assert "never raw secret text" in text
     assert "state is sanitized before the browser payload sees it" in text
     assert "clipboard-enabled arbitrary iframe" in text
+    assert "action token is stored owner-only" in text
+    assert "permissions repaired before reuse" in text
     assert "Public guided runs use VM clipboard Capture buttons" in text
     assert "CLI-only fallback can use hidden prompts/env handoff" in text
     assert "redirect back to the same route without the token query parameter" in text

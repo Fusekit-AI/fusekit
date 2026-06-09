@@ -351,6 +351,10 @@ def _control_room_action_token(job_state: Path) -> str:
     except OSError:
         existing = ""
     if _safe_action_token(existing):
+        try:
+            os.chmod(token_path, 0o600)
+        except OSError:
+            pass
         return existing
     token = secrets.token_urlsafe(32)
     try:

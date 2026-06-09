@@ -106,6 +106,8 @@ or trigger commands:
 - Local and remote state-changing POSTs require the explicit
   `x-fusekit-action-token` header from the live control-room page instead of
   accepting cookie-authenticated or loopback POSTs alone.
+- The per-control-room action token is stored owner-only; existing valid token
+  files have their permissions repaired before reuse.
 - Tokenized remote control rooms still reject attacker-origin gate POSTs before
   mutating gate state.
 - Remote control rooms reject weak or non-URL-safe tokens at startup and require
