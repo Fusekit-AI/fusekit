@@ -453,6 +453,50 @@ def test_verification_report_downstream_repairs_are_fusekit_owned() -> None:
     assert "reapply missing records, then retry" not in joined
 
 
+def test_verification_report_pending_and_repairing_states_stay_in_control_room() -> None:
+    pending = VerificationReport(app_name="app")
+    pending.add_provider_results(
+        "live_app",
+        [
+            VerificationResult(
+                provider="live_app",
+                kind="url-health",
+                target="https://app.example",
+                status="pending",
+                details={},
+            )
+        ],
+    )
+    repairing = VerificationReport(app_name="app")
+    repairing.add_provider_results(
+        "vercel",
+        [
+            VerificationResult(
+                provider="vercel",
+                kind="vercel-project",
+                target="moonlite-rsvp",
+                status="failed",
+                details={},
+            )
+        ],
+        repaired=True,
+    )
+
+    repairs = [
+        pending.to_dict()["checks"][0]["repair"],
+        repairing.to_dict()["checks"][0]["repair"],
+    ]
+    joined = " ".join(repairs)
+
+    assert "control room" in joined
+    assert "keeps retrying the live URL health check" in repairs[0]
+    assert "guided launcher gates" in repairs[1]
+    assert "provider APIs" in repairs[1]
+    assert "Wait for deployment warmup" not in joined
+    assert "FuseKit should reopen" not in joined
+    assert "rerun this check" not in joined
+
+
 def test_dns_pending_then_passing(monkeypatch) -> None:
     vault = Vault.empty()
     pack = _pack("cloudflare")

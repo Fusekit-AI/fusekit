@@ -216,8 +216,9 @@ def _repair(provider: str, check: str, status: str) -> str:
         return _human_gate_repair(provider, check)
     if status == "repairing":
         return (
-            "FuseKit should reopen the provider page, repair the missing setup, "
-            "and rerun this check."
+            "Keep the control room open while FuseKit reruns the repair pass. "
+            "Provider-owned approvals will resurface as guided launcher gates, and "
+            "deterministic routes will retry through provider APIs."
         )
     return _failed_repair(provider, check)
 
@@ -245,7 +246,10 @@ def _pending_repair(provider: str, check: str) -> str:
     if provider == "vercel" and check == "deployment_url_exists":
         return "Vercel deployment is still warming up. FuseKit will keep checking."
     if check == "live_url_healthy":
-        return "Wait for deployment warmup, then retry the live URL health check."
+        return (
+            "Keep the control room open while FuseKit waits for deployment warmup "
+            "and keeps retrying the live URL health check."
+        )
     return (
         f"Keep the control room open for {provider}. FuseKit will recheck after the "
         "visible provider gate is captured or marked finished."
