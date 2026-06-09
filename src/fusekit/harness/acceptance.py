@@ -2333,8 +2333,7 @@ def _check_gate_audit_events(
     resumed_gate_ids = {
         str(event.get("data", {}).get("gate_id", ""))
         for event in audit_events
-        if str(event.get("event", "")) == "control_room.gate_resume_requested"
-        and isinstance(event.get("data"), dict)
+        if _gate_resume_audit_event_proves_finished_click(event)
     }
     missing_gate_ids = [gate_id for gate_id in gate_ids if gate_id not in audited_gate_ids]
     missing_captures = [
@@ -2474,6 +2473,18 @@ def _gate_open_audit_event_proves_vm_open(event: dict[str, Any]) -> bool:
         and isinstance(data.get("reused"), bool)
         and data.get("has_resume_url") is True
         and data.get("has_last_opened_url") is True
+        and bool(str(data.get("gate_id", "")).strip())
+    )
+
+
+def _gate_resume_audit_event_proves_finished_click(event: dict[str, Any]) -> bool:
+    """Return whether an audit event proves the protected finished-step action."""
+
+    data = event.get("data")
+    return (
+        str(event.get("event", "")) == "control_room.gate_resume_requested"
+        and isinstance(data, dict)
+        and data.get("status") == "resume_requested"
         and bool(str(data.get("gate_id", "")).strip())
     )
 
