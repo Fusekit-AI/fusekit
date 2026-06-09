@@ -1316,11 +1316,19 @@ def _resend_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                     "consent, or domain ownership gate."
                 ),
                 "Let FuseKit create or reuse the sending domain and audience after key capture.",
+                (
+                    "It is okay if Resend shows no domains or audiences yet; FuseKit "
+                    "creates or reuses them by API after RESEND_API_KEY is captured."
+                ),
             ),
             secret_steps=(
                 (
                     "Create an API key named FuseKit email setup with Full access for this "
                     "first setup."
+                ),
+                (
+                    "An existing Full access key row is not enough by itself; FuseKit "
+                    "needs the raw key value captured into the encrypted vault."
                 ),
                 (
                     "If an existing key already has Full access but the raw value is not "
