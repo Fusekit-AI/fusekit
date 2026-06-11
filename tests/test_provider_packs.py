@@ -421,6 +421,73 @@ def test_provider_pack_rejects_generic_secret_capture_handoff(tmp_path) -> None:
         validate_provider_pack(bad)
 
 
+def test_provider_pack_infers_capture_target_from_required_secret(tmp_path) -> None:
+    pack = synthesize_provider_pack("newpay", tmp_path)
+    bad = replace(
+        pack,
+        handoff=replace(
+            pack.handoff,
+            token_env="",
+            secret_steps=(
+                "Copy the token inside the VM browser, then click the visible "
+                "Capture from VM clipboard button. No paste into your computer is "
+                "needed because Capture reads the VM clipboard directly.",
+            ),
+        ),
+    )
+
+    with pytest.raises(ProviderError, match="Capture NEWPAY_API_KEY from VM clipboard"):
+        validate_provider_pack(bad)
+
+
+def test_provider_pack_requires_every_required_secret_capture_label(tmp_path) -> None:
+    pack = synthesize_provider_pack("newpay", tmp_path)
+    bad = replace(
+        pack,
+        required_secrets=("NEWPAY_API_KEY", "NEWPAY_WEBHOOK_SECRET"),
+        env_vars=("NEWPAY_API_KEY", "NEWPAY_WEBHOOK_SECRET"),
+        handoff=replace(
+            pack.handoff,
+            token_env="",
+            secret_steps=(
+                "Copy the API key inside the VM browser, then click Capture "
+                "NEWPAY_API_KEY from VM clipboard. No paste into your computer is "
+                "needed because Capture reads the VM clipboard directly.",
+            ),
+        ),
+    )
+
+    with pytest.raises(
+        ProviderError,
+        match="Capture NEWPAY_WEBHOOK_SECRET from VM clipboard",
+    ):
+        validate_provider_pack(bad)
+
+
+def test_provider_pack_accepts_required_secret_capture_labels_without_token_env(
+    tmp_path,
+) -> None:
+    pack = synthesize_provider_pack("newpay", tmp_path)
+    good = replace(
+        pack,
+        required_secrets=("NEWPAY_API_KEY", "NEWPAY_WEBHOOK_SECRET"),
+        env_vars=("NEWPAY_API_KEY", "NEWPAY_WEBHOOK_SECRET"),
+        handoff=replace(
+            pack.handoff,
+            token_env="",
+            secret_steps=(
+                "Copy NEWPAY_API_KEY inside the VM browser, then click Capture "
+                "NEWPAY_API_KEY from VM clipboard. Copy NEWPAY_WEBHOOK_SECRET inside "
+                "the VM browser, then click Capture NEWPAY_WEBHOOK_SECRET from VM "
+                "clipboard. No paste into your computer is needed because Capture "
+                "reads the VM clipboard directly.",
+            ),
+        ),
+    )
+
+    validate_provider_pack(good)
+
+
 def test_provider_pack_rejects_vague_account_handoff(tmp_path) -> None:
     pack = synthesize_provider_pack("stripe", tmp_path)
     bad = replace(

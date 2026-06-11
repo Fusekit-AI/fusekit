@@ -804,17 +804,57 @@ def _validate_launcher_capture_handoff(pack: ProviderCapabilityPack) -> None:
         raise ProviderError(
             "Provider pack secret_steps must keep secret capture inside the VM browser."
         )
-    if pack.handoff.token_env:
-        exact_capture = f"capture {pack.handoff.token_env.lower()} from vm clipboard"
-        if exact_capture not in secret_text:
+    capture_targets = _launcher_capture_targets(pack)
+    if capture_targets:
+        missing = [
+            target
+            for target in capture_targets
+            if f"capture {target.lower()} from vm clipboard" not in secret_text
+        ]
+        if missing:
+            if len(missing) == 1:
+                raise ProviderError(
+                    "Provider pack secret_steps must name the exact visible "
+                    f"Capture {missing[0]} from VM clipboard button."
+                )
+            missing_controls = ", ".join(
+                f"Capture {target} from VM clipboard" for target in missing
+            )
             raise ProviderError(
-                "Provider pack secret_steps must name the exact target-specific "
-                f"Capture {pack.handoff.token_env} from VM clipboard button."
+                "Provider pack secret_steps must name every exact visible Capture "
+                f"button: {missing_controls}."
             )
     elif "capture from vm clipboard" not in secret_text:
         raise ProviderError(
             "Provider pack secret_steps must use Capture from VM clipboard."
         )
+
+
+def _launcher_capture_targets(pack: ProviderCapabilityPack) -> tuple[str, ...]:
+    """Return env targets that need exact launcher Capture button labels."""
+
+    targets: list[str] = []
+    if pack.handoff.token_env:
+        targets.append(pack.handoff.token_env)
+    for secret in pack.required_secrets:
+        if _requires_launcher_capture_label(secret, pack.provider):
+            targets.append(secret)
+    return tuple(dict.fromkeys(targets))
+
+
+def _requires_launcher_capture_label(secret: str, provider: str) -> bool:
+    if not ENV_NAME_RE.match(secret):
+        return False
+    upper = secret.upper()
+    if upper in {"CLIENT_ID", "PLAID_CLIENT_ID"} or upper.endswith(("_CLIENT_ID", "_ENV")):
+        return False
+    route = classify_secret_name(upper, {provider}).route
+    if route != "app_env":
+        return True
+    return any(
+        marker in upper
+        for marker in ("SECRET", "TOKEN", "PASSWORD", "PRIVATE_KEY", "API_KEY")
+    )
 
 
 def synthesize_provider_pack(

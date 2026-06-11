@@ -233,6 +233,7 @@ guided, or explicitly verified.
 | Acceptance blockers generated upstream for malformed gates could still say "Regenerate..." before the control room rendered them, making report-level recovery sound like backend repair work. | Harness blocker guidance now keeps users in the live launcher/control room while FuseKit rebuilds stale gate cards, Resend setup gates, provider URLs, and exact Capture controls. |
 | VM clipboard Capture rejected lowercase URLs and whitespace blobs, but uppercase copied URLs or comma/semicolon-separated token blobs could still look like a custom token. | Capture validation now rejects URL-looking values case-insensitively and refuses obvious multi-value clipboard blobs before anything enters the encrypted vault. |
 | Provider gate URL validation required HTTPS but still allowed HTTPS loopback/private IP targets by default, leaving an unnecessary path from stale gate artifacts to local/private browser navigation. | Safe URL validation now rejects local and private network hosts by default, while explicit loopback allowance remains available only for health checks that intentionally opt in. |
+| Custom provider packs without `handoff.token_env` could still pass validation with generic `Capture from VM clipboard` wording even when required env secrets were known. | Provider-pack validation now infers Capture targets from required env secrets and requires exact visible controls such as `Capture CUSTOM_API_KEY from VM clipboard` before a pack can drive the public launcher path. |
 
 ## Open Acceptance Items
 
