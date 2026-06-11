@@ -715,7 +715,7 @@ def _vm_clipboard_text(job_state: Path) -> str:
                 capture_output=True,
                 text=True,
                 timeout=5,
-                env={**os.environ, "DISPLAY": display},
+                env=_visual_browser_env(display),
             )
         except (OSError, subprocess.TimeoutExpired):
             continue

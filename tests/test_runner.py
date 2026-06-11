@@ -38,6 +38,7 @@ from fusekit.runner.control_room.server import (
     _visual_browser_binary,
     _visual_browser_env,
     _visual_display,
+    _vm_clipboard_text,
 )
 from fusekit.runner.gates import GateService
 from fusekit.runner.job import JobState
@@ -1620,6 +1621,53 @@ def test_control_room_visual_browser_env_strips_secrets(
 
     env = _visual_browser_env(":99")
 
+    assert env["DISPLAY"] == ":99"
+    assert env["FUSEKIT_VISUAL_SAFE_SETTING"] == "kept"
+    assert env["XAUTHORITY"] == "/tmp/fusekit-xauthority"
+    assert "OPENAI_API_KEY" not in env
+    assert "RESEND_API_KEY" not in env
+    assert "FUSEKIT_CONTROL_ROOM_TOKEN" not in env
+    assert "FUSEKIT_VAULT_PASSPHRASE" not in env
+    assert "FUSEKIT_PROVIDER_SESSION_COOKIE" not in env
+
+
+def test_control_room_vm_clipboard_read_strips_secret_env(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    (tmp_path / "visual.json").write_text(json.dumps({"display": ":99"}), encoding="utf-8")
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("RESEND_API_KEY", "re_test")
+    monkeypatch.setenv("FUSEKIT_CONTROL_ROOM_TOKEN", "remote-control-room-token")
+    monkeypatch.setenv("FUSEKIT_VAULT_PASSPHRASE", "passphrase")
+    monkeypatch.setenv("FUSEKIT_PROVIDER_SESSION_COOKIE", "provider-cookie")
+    monkeypatch.setenv("FUSEKIT_VISUAL_SAFE_SETTING", "kept")
+    monkeypatch.setenv("XAUTHORITY", "/tmp/fusekit-xauthority")
+    monkeypatch.setattr(
+        "fusekit.runner.control_room.server.shutil.which",
+        lambda name: "/usr/bin/xclip" if name == "xclip" else None,
+    )
+    calls: list[dict[str, Any]] = []
+
+    def fake_run(command, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append({"command": command, **kwargs})
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="clipboard-value\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr("fusekit.runner.control_room.server.subprocess.run", fake_run)
+
+    assert _vm_clipboard_text(job_path) == "clipboard-value\n"
+    assert calls
+    env = calls[0]["env"]
+    assert calls[0]["command"] == ("xclip", "-selection", "clipboard", "-o")
     assert env["DISPLAY"] == ":99"
     assert env["FUSEKIT_VISUAL_SAFE_SETTING"] == "kept"
     assert env["XAUTHORITY"] == "/tmp/fusekit-xauthority"
