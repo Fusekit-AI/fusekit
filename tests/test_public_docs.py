@@ -98,3 +98,12 @@ def test_northstar_next_slices_include_verified_runner_profile() -> None:
     assert "OpenClaw/browser spine" in text
     assert "noVNC" in text
     assert "before provider gates are shown" in text
+
+
+def test_friction_log_tracks_runner_verify_prepared_environment_fix() -> None:
+    text = Path("docs/magic-path-friction-log.md").read_text(encoding="utf-8")
+
+    assert "wrong architecture or miss noVNC/visual helper binaries" in text
+    assert "`fusekit-runner-verify` now fails before provider setup" in text
+    assert "Playwright Chromium can launch" in text
+    assert "shared Chrome provider profile path exists" in text

@@ -157,6 +157,24 @@ write_files:
       export FUSEKIT_OPENCLAW_BIN=/opt/fusekit-openclaw/bin/openclaw
       export OPENCLAW_HOME=/var/lib/fusekit-runner/openclaw-state
       export PLAYWRIGHT_BROWSERS_PATH={playwright_browsers_path}
+      case "$(uname -m)" in
+        x86_64|amd64) ;;
+        *)
+          printf '%s\\n' "FuseKit runner requires x86_64 architecture; got $(uname -m)." >&2
+          exit 1
+          ;;
+      esac
+      test -x /usr/local/sbin/fusekit-runner-loop-once
+      test -x /usr/local/sbin/fusekit-visual-start
+      for command in Xvfb x11vnc fluxbox; do
+        command -v "$command" >/dev/null 2>&1
+      done
+      if ! command -v websockify >/dev/null 2>&1 \
+        && [ ! -x /usr/share/novnc/utils/novnc_proxy ]; then
+        printf '%s\\n' "FuseKit runner requires websockify or novnc_proxy for noVNC." >&2
+        exit 1
+      fi
+      mkdir -p /var/lib/fusekit-runner/visual/chrome-provider-profile
       python3 --version
       /opt/fusekit-python/bin/python --version
       fusekit --version
@@ -232,7 +250,7 @@ write_files:
         fi
       fi
 runcmd:
-  - mkdir -p /var/lib/fusekit-runner
+  - mkdir -p /var/lib/fusekit-runner/visual/chrome-provider-profile
   - mkdir -p {playwright_browsers_path}
   - iptables -I INPUT -p tcp --dport {CONTROL_ROOM_PORT} -j ACCEPT || true
   - iptables -I INPUT -p tcp --dport {NOVNC_PORT} -j ACCEPT || true

@@ -4271,6 +4271,15 @@ def test_remote_bootstrap_artifacts_are_self_contained() -> None:
         "git+https://github.com/example/fusekit.git"
     ) in git_cloud_init
     assert "PLAYWRIGHT_BROWSERS_PATH=/opt/fusekit-playwright-browsers" in cloud_init
+    assert 'case "$(uname -m)" in' in cloud_init
+    assert "FuseKit runner requires x86_64 architecture" in cloud_init
+    assert "test -x /usr/local/sbin/fusekit-runner-loop-once" in cloud_init
+    assert "test -x /usr/local/sbin/fusekit-visual-start" in cloud_init
+    assert "for command in Xvfb x11vnc fluxbox" in cloud_init
+    assert (
+        "FuseKit runner requires websockify or novnc_proxy for noVNC." in cloud_init
+    )
+    assert "mkdir -p /var/lib/fusekit-runner/visual/chrome-provider-profile" in cloud_init
     assert (
         "/usr/local/sbin/fusekit-retry "
         "env PLAYWRIGHT_BROWSERS_PATH=/opt/fusekit-playwright-browsers "
