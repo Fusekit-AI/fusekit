@@ -369,15 +369,39 @@ def test_verification_report_uses_launcher_guidance_for_human_gates() -> None:
     repairs = [check["repair"] for check in payload["checks"]]
 
     assert "Open provider gate in VM" in repairs[0]
-    assert "Capture from VM clipboard" in repairs[0]
+    assert "Capture CLOUDFLARE_API_TOKEN from VM clipboard" in repairs[0]
     assert "I finished this step" in repairs[0]
-    assert "Capture from VM clipboard" in repairs[1]
+    assert "Capture RESEND_API_KEY from VM clipboard" in repairs[1]
     assert "Open provider gate in VM" in repairs[2]
-    assert "Capture from VM clipboard" in repairs[2]
+    assert "Capture VERCEL_TOKEN from VM clipboard" in repairs[2]
     assert "I finished this step" in repairs[2]
+    assert "Capture from VM clipboard for copy-once values" not in " ".join(repairs)
     assert "visible FuseKit Capture" not in " ".join(repairs)
     assert "rerun verification" not in " ".join(repairs).lower()
     assert "provider UI/API" not in " ".join(repairs)
+
+
+def test_verification_report_names_exact_multi_capture_buttons() -> None:
+    report = VerificationReport(app_name="app")
+    report.add_provider_results(
+        "custom",
+        [
+            VerificationResult(
+                provider="custom",
+                kind="provider-gate",
+                target="CUSTOM_API_KEY, CUSTOM_WEBHOOK_SECRET",
+                status="needs_human_gate",
+                details={},
+            )
+        ],
+    )
+
+    repair = report.to_dict()["checks"][0]["repair"]
+
+    assert "each matching Capture button" in repair
+    assert "Capture CUSTOM_API_KEY from VM clipboard" in repair
+    assert "Capture CUSTOM_WEBHOOK_SECRET from VM clipboard" in repair
+    assert "copy-once values" not in repair
 
 
 def test_verification_report_live_url_repairs_are_launcher_actionable() -> None:

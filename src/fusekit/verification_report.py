@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,6 +11,18 @@ from typing import Any
 
 from fusekit.audit import redact
 from fusekit.providers.verification import VerificationResult
+
+CAPTURE_TARGET_RE = re.compile(
+    r"\b[A-Z][A-Z0-9_]*(?:API_KEY|API_TOKEN|ACCESS_TOKEN|REFRESH_TOKEN|TOKEN|SECRET)\b"
+)
+DEFAULT_CAPTURE_TARGETS_BY_PROVIDER = {
+    "cloudflare": ("CLOUDFLARE_API_TOKEN",),
+    "dns": ("CLOUDFLARE_API_TOKEN",),
+    "github": ("GITHUB_TOKEN",),
+    "openai": ("OPENAI_API_KEY",),
+    "resend": ("RESEND_API_KEY",),
+    "vercel": ("VERCEL_TOKEN",),
+}
 
 
 @dataclass(frozen=True)
@@ -152,7 +165,13 @@ def _check_from_result(
         check=check,
         status=status,
         summary=_summary(provider, check, status),
-        repair=_repair(provider, check, status),
+        repair=_repair(
+            provider,
+            check,
+            status,
+            target=result.target,
+            details=result.details,
+        ),
         details=result.to_dict(),
     )
 
@@ -205,31 +224,45 @@ def _summary(provider: str, check: str, status: str) -> str:
     return f"{provider} {readable} failed."
 
 
-def _repair(provider: str, check: str, status: str) -> str:
+def _repair(
+    provider: str,
+    check: str,
+    status: str,
+    *,
+    target: str = "",
+    details: dict[str, Any] | None = None,
+) -> str:
     if status == "passed":
         return "Nothing needed."
     if status == "skipped":
         return "No action needed unless this optional check matters for launch proof."
     if status == "pending":
-        return _pending_repair(provider, check)
+        return _pending_repair(provider, check, target=target, details=details)
     if status == "needs_human_gate":
-        return _human_gate_repair(provider, check)
+        return _human_gate_repair(provider, check, target=target, details=details)
     if status == "repairing":
         return (
             "Keep the control room open while FuseKit reruns the repair pass. "
             "Provider-owned approvals will resurface as guided launcher gates, and "
             "deterministic routes will retry through provider APIs."
         )
-    return _failed_repair(provider, check)
+    return _failed_repair(provider, check, target=target, details=details)
 
 
-def _pending_repair(provider: str, check: str) -> str:
+def _pending_repair(
+    provider: str,
+    check: str,
+    *,
+    target: str = "",
+    details: dict[str, Any] | None = None,
+) -> str:
     if check == "provider_gate":
+        capture_action = _capture_recovery_action(provider, target, details)
         return (
             "Finish the active upstream provider gate in the control room. Click "
             "Open provider gate in VM, complete the provider-owned step in that VM "
-            f"browser, then click Capture from VM clipboard for copy-once values or "
-            f"I finished this step for non-secret gates so FuseKit can verify {provider}."
+            f"browser, then click {capture_action} or I finished this step for "
+            f"non-secret gates so FuseKit can verify {provider}."
         )
     if check == "dns_record_exists":
         return (
@@ -256,16 +289,29 @@ def _pending_repair(provider: str, check: str) -> str:
     )
 
 
-def _human_gate_repair(provider: str, check: str) -> str:
+def _human_gate_repair(
+    provider: str,
+    check: str,
+    *,
+    target: str = "",
+    details: dict[str, Any] | None = None,
+) -> str:
+    capture_action = _capture_recovery_action(provider, target, details)
     return (
         f"FuseKit is waiting for the {provider} screen that controls {check.replace('_', ' ')}. "
         "Click Open provider gate in VM, complete only the provider-owned prompt, "
-        "then click Capture from VM clipboard for copy-once values or "
-        "I finished this step for non-secret confirmation gates."
+        f"then click {capture_action} or I finished this step for non-secret "
+        "confirmation gates."
     )
 
 
-def _failed_repair(provider: str, check: str) -> str:
+def _failed_repair(
+    provider: str,
+    check: str,
+    *,
+    target: str = "",
+    details: dict[str, Any] | None = None,
+) -> str:
     if check == "configured":
         return (
             f"FuseKit will reapply {provider} environment variables or secrets through "
@@ -293,9 +339,10 @@ def _failed_repair(provider: str, check: str) -> str:
     if check == "webhook_secret_present":
         return "Webhook signature secret is missing. FuseKit will regenerate and store it."
     if check == "auth_valid":
+        capture_action = _capture_recovery_action(provider, target, details)
         return (
             f"Create or recapture the approved {provider} token inside the VM browser, "
-            "then click the matching Capture from VM clipboard button."
+            f"then click {capture_action}."
         )
     if check == "dns_propagated":
         return (
@@ -313,6 +360,52 @@ def _failed_repair(provider: str, check: str) -> str:
         f"FuseKit will reopen {provider} through the launcher or retry the provider API; "
         "use only the visible control-room gate if the provider asks for human approval."
     )
+
+
+def _capture_recovery_action(
+    provider: str,
+    target: str,
+    details: dict[str, Any] | None,
+) -> str:
+    targets = _capture_targets(provider, target, details)
+    if not targets:
+        return "Capture from VM clipboard for copy-once values"
+    labels = [f"Capture {candidate} from VM clipboard" for candidate in targets]
+    if len(labels) == 1:
+        return labels[0]
+    return "each matching Capture button: " + ", ".join(labels)
+
+
+def _capture_targets(
+    provider: str,
+    target: str,
+    details: dict[str, Any] | None,
+) -> tuple[str, ...]:
+    found: list[str] = []
+    _collect_capture_targets(target, found)
+    _collect_capture_targets(details or {}, found)
+    if not found:
+        found.extend(DEFAULT_CAPTURE_TARGETS_BY_PROVIDER.get(provider.lower(), ()))
+    unique: list[str] = []
+    for candidate in found:
+        upper = candidate.strip().upper()
+        if upper and upper not in unique:
+            unique.append(upper)
+    return tuple(unique)
+
+
+def _collect_capture_targets(value: Any, found: list[str]) -> None:
+    if isinstance(value, str):
+        found.extend(CAPTURE_TARGET_RE.findall(value))
+        return
+    if isinstance(value, dict):
+        for key, child in value.items():
+            _collect_capture_targets(key, found)
+            _collect_capture_targets(child, found)
+        return
+    if isinstance(value, (list, tuple, set)):
+        for child in value:
+            _collect_capture_targets(child, found)
 
 
 def _readable_check(check: str) -> str:
