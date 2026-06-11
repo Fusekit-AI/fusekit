@@ -137,6 +137,20 @@ def test_provider_strategy_action_can_carry_pack_follow_steps(tmp_path) -> None:
     assert "Capture RESEND_API_KEY from VM clipboard" in action["next_action"]
 
 
+def test_provider_strategy_summary_uses_evidence_token_env_without_pack(tmp_path) -> None:
+    pack = synthesize_provider_pack("newpay", tmp_path)
+    recipe = SetupRecipe(kind="newpay-project", target="${input:newpay_project}")
+
+    decision = choose_provider_strategy(pack, recipe, StrategySignal(token_available=False))
+    action = summarize_strategy_action(decision)
+
+    assert decision.selected.kind == "browser_guided"
+    assert decision.selected.evidence["token_env"] == "NEWPAY_API_KEY"
+    assert action["target"] == "NEWPAY_API_KEY"
+    assert "Capture NEWPAY_API_KEY from VM clipboard" in action["next_action"]
+    assert "target-specific Capture from VM clipboard button" not in action["next_action"]
+
+
 def test_provider_strategy_uses_local_vault_for_capture_recipes(tmp_path) -> None:
     pack = synthesize_provider_pack("resend", tmp_path)
     recipe = SetupRecipe(

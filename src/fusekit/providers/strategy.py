@@ -189,7 +189,7 @@ def choose_account_creation_strategy(
                 deterministic=False,
                 implemented=False,
                 reason=pack.handoff.account_creation_reason,
-                evidence={"handoff_url": handoff_url},
+                evidence=_handoff_evidence(pack, handoff_url),
             )
         )
         candidates.append(
@@ -201,7 +201,7 @@ def choose_account_creation_strategy(
                 deterministic=False,
                 implemented=False,
                 reason="The user can complete provider-owned signup gates with guidance.",
-                evidence={"handoff_url": handoff_url},
+                evidence=_handoff_evidence(pack, handoff_url),
             )
         )
     selected = _select_candidate(candidates)
@@ -265,7 +265,7 @@ def _candidate_strategies(
                 if signal.browser_available and handoff_url
                 else "No usable provider handoff URL or VM browser is available."
             ),
-            evidence={"handoff_url": handoff_url},
+            evidence=_handoff_evidence(pack, handoff_url),
         )
     )
     candidates.append(
@@ -281,7 +281,7 @@ def _candidate_strategies(
                 if signal.human_gate_allowed and handoff_url
                 else "No human-gate route is available for this provider."
             ),
-            evidence={"handoff_url": handoff_url},
+            evidence=_handoff_evidence(pack, handoff_url),
         )
     )
     if not candidates:
@@ -386,6 +386,15 @@ def _account_handoff_url(pack: ProviderCapabilityPack) -> str:
     return ""
 
 
+def _handoff_evidence(pack: ProviderCapabilityPack, handoff_url: str) -> dict[str, str]:
+    evidence = {"handoff_url": handoff_url}
+    if pack.handoff.token_env:
+        evidence["token_env"] = pack.handoff.token_env
+    if pack.handoff.token_label:
+        evidence["token_label"] = pack.handoff.token_label
+    return evidence
+
+
 def summarize_strategy_action(
     decision: ProviderStrategyDecision,
     pack: ProviderCapabilityPack | None = None,
@@ -398,7 +407,10 @@ def summarize_strategy_action(
     target = (
         pack.handoff.token_env
         if pack is not None
-        else DEFAULT_TOKEN_ENV_BY_PROVIDER.get(decision.provider, "")
+        else (
+            selected.evidence.get("token_env", "")
+            or DEFAULT_TOKEN_ENV_BY_PROVIDER.get(decision.provider, "")
+        )
     )
     capture_action = (
         f"Capture {target} from VM clipboard"
