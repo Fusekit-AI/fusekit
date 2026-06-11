@@ -644,9 +644,9 @@ def _missing_acceptance_guidance(item: str) -> tuple[str, str]:
         "detonated worker state": (
             "Detonation",
             (
-                "Run detonation so plaintext worker, browser, visual, provider-auth, "
-                "control-room, and gateway scratch state is destroyed after encrypted "
-                "proof is preserved."
+                "Keep the launcher/control room open while FuseKit detonates plaintext "
+                "worker, browser, visual, provider-auth, control-room, and gateway "
+                "scratch state after encrypted proof is preserved."
             ),
         ),
     }

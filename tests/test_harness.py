@@ -1352,10 +1352,14 @@ def test_acceptance_blockers_use_launcher_actionable_check_guidance() -> None:
         "receipt.provider_contract_health"
     ]["next_action"]
     assert (
-        "plaintext worker, browser, visual, provider-auth, control-room, and gateway "
-        "scratch state"
+        "Keep the launcher/control room open while FuseKit detonates plaintext "
+        "worker, browser, visual, provider-auth, control-room, and gateway scratch state"
         in blockers["detonation.worker_state"]["next_action"]
     )
+    assert "after encrypted artifacts are preserved" in blockers[
+        "detonation.worker_state"
+    ]["next_action"]
+    assert "Run detonation" not in blockers["detonation.worker_state"]["next_action"]
     assert "plaintext worker, browser, visual, and auth scratch state" not in blockers[
         "detonation.worker_state"
     ]["next_action"]

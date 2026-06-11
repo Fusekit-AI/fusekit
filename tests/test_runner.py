@@ -692,6 +692,32 @@ def test_control_room_provider_pack_and_leak_scan_missing_are_launcher_actionabl
     assert "rerun the launch leak scan" not in html
 
 
+def test_control_room_detonation_missing_is_launcher_actionable(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    acceptance_dir = tmp_path / "acceptance"
+    acceptance_dir.mkdir()
+    (acceptance_dir / "report.json").write_text(
+        json.dumps(
+            {
+                "launch_ready": False,
+                "missing": ["detonated worker state"],
+                "blockers": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+
+    assert "Detonation" in html
+    assert "detonated worker state" in html
+    assert "launcher/control room open" in html
+    assert "FuseKit detonates plaintext worker, browser, visual, provider-auth" in html
+    assert "control-room, and gateway scratch state" in html
+    assert "after encrypted proof is preserved" in html
+    assert "Run detonation" not in html
+
+
 def test_control_room_missing_provider_route_blockers_are_launcher_actionable(
     tmp_path,
 ) -> None:

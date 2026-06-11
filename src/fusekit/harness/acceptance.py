@@ -454,8 +454,9 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
         ),
         "safe visual session state": (
             "Visual session",
-            "Regenerate visual.json so it contains only safe noVNC/control-room URLs "
-            "and safe noVNC password metadata.",
+            "Keep the live launcher/control room open while FuseKit refreshes visual "
+            "session metadata with only safe noVNC/control-room URLs and safe noVNC "
+            "password metadata.",
         ),
         "verified live URL": (
             "Deployment",
@@ -469,9 +470,9 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
         ),
         "detonated worker state": (
             "Detonation",
-            "Run detonation/preflight so plaintext worker, browser, visual, "
-            "provider-auth, control-room, and gateway scratch state is destroyed "
-            "after encrypted artifacts are preserved.",
+            "Keep the launcher/control room open while FuseKit detonates plaintext "
+            "worker, browser, visual, provider-auth, control-room, and gateway "
+            "scratch state after encrypted artifacts are preserved.",
         ),
     }
     return guidance.get(
@@ -661,8 +662,9 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
     if check.id == "detonation.worker_state":
         return (
             "Detonation",
-            "Run detonation so plaintext worker, browser, visual, provider-auth, "
-            "control-room, and gateway scratch state is removed.",
+            "Keep the launcher/control room open while FuseKit detonates plaintext "
+            "worker, browser, visual, provider-auth, control-room, and gateway "
+            "scratch state after encrypted artifacts are preserved.",
         )
     if check.id == "leak_scan.clean":
         return (
