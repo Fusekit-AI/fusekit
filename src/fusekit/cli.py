@@ -4254,8 +4254,8 @@ def _resend_api_key_follow_steps(domain: str) -> tuple[str, ...]:
         "Use the live VM browser, not a local browser tab.",
         "Open Resend API Keys and create a new key named FuseKit email setup.",
         (
-            "Choose Full access for this first setup key so FuseKit can create or reuse "
-            f"the sending domain and audience{domain_note}."
+            "Choose Permission: Full access and Domain: All domains for this first setup "
+            f"key so FuseKit can create or reuse the sending domain and audience{domain_note}."
         ),
         (
             "If an existing key already says Full access but you cannot copy its raw value, "
@@ -4331,8 +4331,8 @@ def _resend_runtime_follow_steps(
         steps.extend(
             [
                 (
-                    "Open Resend API Keys and create a Full access setup key named "
-                    "FuseKit email setup."
+                    "Open Resend API Keys and create a setup key named FuseKit email setup "
+                    "with Permission: Full access and Domain: All domains."
                 ),
                 (
                     "Copy the API key only inside the VM browser so FuseKit can store "

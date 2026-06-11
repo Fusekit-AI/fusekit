@@ -317,6 +317,8 @@ def test_resend_pack_handoff_explains_existing_key_secret_value(tmp_path) -> Non
     assert "no domains or audiences yet" in text
     assert "creates or reuses them by API after RESEND_API_KEY is captured" in text
     assert "Full access" in text
+    assert "Permission: Full access" in text
+    assert "Domain: All domains" in text
     assert "existing Full access key row is not enough by itself" in text
     assert "raw key value captured into the encrypted vault" in text
     assert "raw value" in text

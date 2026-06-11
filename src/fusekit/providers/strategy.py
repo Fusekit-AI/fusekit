@@ -308,8 +308,9 @@ def _api_strategy_reason(provider: str, recipe_kind: str, signal: StrategySignal
                     "sending domain through Resend's API and hand DNS records to DNS."
                 )
             return (
-                "RESEND_API_KEY is missing; capture a Full access setup key before "
-                "FuseKit creates or reuses the Resend sending domain."
+                "RESEND_API_KEY is missing; capture a setup key with Permission: "
+                "Full access and Domain: All domains before FuseKit creates or "
+                "reuses the Resend sending domain."
             )
         if recipe_kind == "resend-audience":
             if signal.token_available:

@@ -1737,6 +1737,8 @@ def test_verification_gate_records_resend_api_key_follow_me(tmp_path) -> None:
     assert gate.resume_url == "https://resend.com/api-keys"
     assert "live VM browser" in " ".join(gate.follow_steps)
     assert "Full access" in " ".join(gate.follow_steps)
+    assert "Permission: Full access" in " ".join(gate.follow_steps)
+    assert "Domain: All domains" in " ".join(gate.follow_steps)
     assert "sending domain and audience for moonlite.rsvp" in " ".join(gate.follow_steps)
     assert "raw value" in " ".join(gate.follow_steps)
     assert "does not reveal old key secrets again" in " ".join(gate.follow_steps)

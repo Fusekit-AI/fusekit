@@ -93,9 +93,10 @@ def provider_ui_playbook(provider: str, include_project: bool = False) -> Provid
                 "click_text",
                 "Create API Key",
                 note=(
-                    "Create a Full access setup key only. Do not create Resend domains "
-                    "or audiences here; FuseKit creates or reuses them through Resend's "
-                    "API after Capture succeeds."
+                    "Create a setup key named FuseKit email setup with Permission: Full "
+                    "access and Domain: All domains. Do not create Resend domains or "
+                    "audiences here; FuseKit creates or reuses them through Resend's API "
+                    "after Capture succeeds."
                 ),
             ),
         )

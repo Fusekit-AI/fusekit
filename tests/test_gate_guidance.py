@@ -148,6 +148,8 @@ def test_resend_guidance_names_api_key_path() -> None:
     assert "API Keys" in text
     assert "FuseKit email setup" in text
     assert "Full access" in text
+    assert "Permission: Full access" in text
+    assert "Domain: All domains" in text
     assert "existing key card" in text
     assert "raw key value" in text
     assert "does not reveal old key secrets again" in text

@@ -263,6 +263,8 @@ def test_resend_ui_playbook_uses_computer_actions_without_secrets() -> None:
     assert "Add Domain" not in targets
     assert "Do not create Resend domains" in notes
     assert "FuseKit creates or reuses them through Resend's API" in notes
+    assert "Permission: Full access" in notes
+    assert "Domain: All domains" in notes
     assert "RESEND_API_KEY" in events[-1].note
     assert "VM browser" in events[-1].note
     assert "Capture RESEND_API_KEY from VM clipboard" in events[-1].note

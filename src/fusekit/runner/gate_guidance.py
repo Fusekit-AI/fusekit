@@ -183,8 +183,8 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
             "Click Open provider gate in VM so Resend opens in the VM browser, then sign in "
             "or create the account when prompted.",
             (
-                "Open API Keys, create a key named FuseKit email setup, and choose Full access "
-                "for this first setup key."
+                "Open API Keys, create a key named FuseKit email setup, choose Permission: "
+                "Full access, and choose Domain: All domains for this first setup key."
             ),
             (
                 "If the key card says Full access and All domains, the permissions are fine; "

@@ -1421,8 +1421,8 @@ def _resend_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
             ),
             secret_steps=(
                 (
-                    "Create an API key named FuseKit email setup with Full access for this "
-                    "first setup."
+                    "Create an API key named FuseKit email setup, choose Permission: "
+                    "Full access, and choose Domain: All domains for this first setup."
                 ),
                 (
                     "An existing Full access key row is not enough by itself; FuseKit "
@@ -1470,7 +1470,8 @@ def _resend_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
         ),
         setup_goals=(
             "Create or connect the Resend account.",
-            "Create or capture a Full access setup Resend API key into the encrypted vault.",
+            "Create or capture a Resend setup API key with Permission: Full access and "
+            "Domain: All domains into the encrypted vault.",
             "Create or reuse the sending domain through Resend's API.",
             "Feed Resend verification records into DNS proposals before DNS is applied.",
             "Create or reuse a Resend audience only when the app requires one.",

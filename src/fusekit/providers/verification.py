@@ -711,8 +711,8 @@ def _verify_resend_domain(
             recipe,
             (
                 "Resend rejected the captured setup key. Create or capture a Resend API key "
-                "with Full access for the first setup so FuseKit can create or reuse domains "
-                "and audiences."
+                "with Permission: Full access and Domain: All domains for the first setup "
+                "so FuseKit can create or reuse domains and audiences."
             ),
         )
     if status >= 400:

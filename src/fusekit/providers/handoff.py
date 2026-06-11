@@ -179,7 +179,10 @@ HANDOFFS: dict[str, ProviderHandoff] = {
             ),
         ),
         secret_steps=(
-            "Create an API key named FuseKit email setup with Full access for this first setup.",
+            (
+                "Create an API key named FuseKit email setup, choose Permission: "
+                "Full access, and choose Domain: All domains for this first setup."
+            ),
             (
                 "An existing Full access key row is not enough by itself; FuseKit "
                 "needs the raw key value captured into the encrypted vault."
