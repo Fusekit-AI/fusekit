@@ -1152,10 +1152,60 @@ def test_control_room_post_rejects_multi_capture_gate_with_exact_copy(
 
     assert exc.value.code == 400
     assert payload["missing_targets"] == ["CUSTOM_API_KEY", "CUSTOM_WEBHOOK_SECRET"]
-    assert "Click each missing Capture from VM clipboard button" in payload["next_action"]
+    assert (
+        "Click each missing target-specific Capture button"
+        in payload["next_action"]
+    )
+    assert "Capture CUSTOM_API_KEY from VM clipboard" in payload["next_action"]
+    assert "Capture CUSTOM_WEBHOOK_SECRET from VM clipboard" in payload["next_action"]
     assert "Capture button from the VM clipboard" not in payload["next_action"]
     gate = GateService.load(tmp_path / "gates.json").records["provider.custom.tokens"]
     assert gate.captured_targets == ()
+
+
+def test_control_room_clipboard_capture_rejects_wrong_target_with_exact_buttons(
+    tmp_path,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.custom.tokens",
+        provider="custom",
+        reason="Provider keys",
+        classification="provider-authorization",
+        target="CUSTOM_API_KEY, CUSTOM_WEBHOOK_SECRET",
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = (
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/gates/provider.custom.tokens/capture-clipboard"
+        )
+        request = Request(
+            url,
+            data=json.dumps({"target": "WRONG_TARGET"}).encode("utf-8"),
+            method="POST",
+            headers=_control_room_post_headers(
+                tmp_path,
+                **{"content-type": "application/json"},
+            ),
+        )
+        with pytest.raises(HTTPError) as exc:
+            urlopen(request, timeout=5)
+        payload = json.loads(exc.value.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert exc.value.code == 400
+    assert payload["ok"] is False
+    assert "Use the matching visible button" in payload["error"]
+    assert "Capture CUSTOM_API_KEY from VM clipboard" in payload["error"]
+    assert "Capture CUSTOM_WEBHOOK_SECRET from VM clipboard" in payload["error"]
+    assert "Capture from VM clipboard button for" not in payload["error"]
 
 
 def test_local_control_room_requires_action_token_for_gate_post(tmp_path) -> None:

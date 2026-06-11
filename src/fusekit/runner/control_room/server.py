@@ -8,6 +8,7 @@ import re
 import secrets
 import shutil
 import subprocess
+from collections.abc import Iterable
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -476,10 +477,10 @@ def _capture_gate_clipboard_secret(
     target = target.strip().upper()
     allowed_targets = _gate_capture_targets(gate.target)
     if target not in allowed_targets:
-        allowed = ", ".join(sorted(allowed_targets)) or "the target shown on this gate"
+        allowed = _capture_button_labels(allowed_targets)
         raise FuseKitError(
-            "This gate is not allowed to capture that value. Use the visible "
-            f"Capture from VM clipboard button for {allowed}."
+            "This gate is not allowed to capture that value. Use the matching "
+            f"visible button: {allowed}."
         )
     _validate_gate_capture_target(gate, target)
     value = _vm_clipboard_text(job_state).strip()
@@ -683,10 +684,23 @@ def _blocked_capture_next_action(missing_targets: set[str]) -> str:
     if len(targets) == 1:
         return f"Click Capture {targets[0]} from VM clipboard, then FuseKit will continue."
     return (
-        "Click each missing Capture from VM clipboard button: "
-        + ", ".join(targets)
+        "Click each missing target-specific Capture button: "
+        + _capture_button_labels(targets)
         + ". FuseKit continues after every required value is captured."
     )
+
+
+def _capture_button_labels(targets: Iterable[str]) -> str:
+    """Return exact visible clipboard-capture button labels for targets."""
+
+    labels = [
+        f"Capture {target.strip().upper()} from VM clipboard"
+        for target in sorted(targets)
+        if target.strip()
+    ]
+    if not labels:
+        return "the target-specific Capture from VM clipboard button"
+    return ", ".join(labels)
 
 
 def _vm_clipboard_text(job_state: Path) -> str:
