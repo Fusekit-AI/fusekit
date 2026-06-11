@@ -34,6 +34,13 @@ def test_live_control_room_guidance_uses_python_payload() -> None:
     assert payload["generic"]["title"] in SCRIPT
 
 
+def test_live_control_room_strategy_rows_normalize_generic_capture_copy() -> None:
+    assert "publicCopy(strategy.next_action || \"\", captureTargetList)" in SCRIPT
+    assert "publicCopy(strategy.resume_hint || \"\", captureTargetList)" in SCRIPT
+    assert "publicCopy(step, captureTargetList)" in SCRIPT
+    assert "\"Capture from VM clipboard\", captureInstruction" in SCRIPT
+
+
 def test_control_room_click_errors_preserve_backend_guidance() -> None:
     assert "function controlRoomFailureMessage" in SCRIPT
     assert "function controlRoomFailureStatus" in SCRIPT

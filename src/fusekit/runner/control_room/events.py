@@ -59,6 +59,10 @@ function publicCopy(value, captureTargetList = []) {
       "paste into FuseKit's " + "hidden prompt",
       "copy inside the VM browser, then click " + captureInstruction,
     ],
+    ["the matching Capture from VM clipboard button", captureInstruction],
+    ["the visible env-named Capture button", captureInstruction],
+    ["Capture from VM clipboard button", captureInstruction],
+    ["Capture from VM clipboard", captureInstruction],
     ["hidden Cloud Shell prompts", "exact env-named Capture buttons"],
     ["hidden prompts/env handoff", "VM clipboard Capture controls"],
     ["hidden prompts", "VM clipboard Capture controls"],
@@ -1200,8 +1204,9 @@ function renderProviderStrategyRow(provider, strategy) {
   const status = String(strategy.status || "pending");
   const reason = String(selected.reason || "");
   const routeSummary = providerStrategyRouteSummary(provider, strategy, selected);
-  const nextAction = publicCopy(strategy.next_action || "").trim();
-  const resumeHint = publicCopy(strategy.resume_hint || "").trim();
+  const captureTargetList = captureTargets(strategy.target);
+  const nextAction = publicCopy(strategy.next_action || "", captureTargetList).trim();
+  const resumeHint = publicCopy(strategy.resume_hint || "", captureTargetList).trim();
   const followSteps = Array.isArray(strategy.follow_steps) ? strategy.follow_steps : [];
   const guide = nextAction
     ? `<small><b>Next:</b> ${escapeHtml(nextAction)}</small>`
@@ -1212,7 +1217,7 @@ function renderProviderStrategyRow(provider, strategy) {
         `<ol>`,
         followSteps
           .filter((step) => String(step || "").trim())
-          .map((step) => `<li>${escapeHtml(publicCopy(step))}</li>`)
+          .map((step) => `<li>${escapeHtml(publicCopy(step, captureTargetList))}</li>`)
           .join(""),
         `</ol>`,
       ].join("")

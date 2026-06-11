@@ -215,6 +215,10 @@ def _public_copy(value: Any, capture_targets: Iterable[str] = ()) -> str:
             "paste into FuseKit's hidden prompt",
             "copy inside the VM browser, then click " + capture_instruction,
         ),
+        ("the matching Capture from VM clipboard button", capture_instruction),
+        ("the visible env-named Capture button", capture_instruction),
+        ("Capture from VM clipboard button", capture_instruction),
+        ("Capture from VM clipboard", capture_instruction),
         ("hidden Cloud Shell prompts", "exact env-named Capture buttons"),
         ("hidden prompts/env handoff", "VM clipboard Capture controls"),
         ("hidden prompts", "VM clipboard Capture controls"),
@@ -932,9 +936,10 @@ def _render_strategy_row(provider: str, strategy: dict[str, Any]) -> str:
     next_action = str(strategy.get("next_action", "") or "").strip()
     resume_hint = str(strategy.get("resume_hint", "") or "").strip()
     follow_steps = strategy.get("follow_steps", [])
+    capture_targets = _capture_targets(str(strategy.get("target", "") or ""))
     step_items = (
         "".join(
-            f"<li>{html.escape(_public_copy(str(step)))}</li>"
+            f"<li>{html.escape(_public_copy(str(step), capture_targets))}</li>"
             for step in follow_steps
             if str(step).strip()
         )
@@ -943,12 +948,14 @@ def _render_strategy_row(provider: str, strategy: dict[str, Any]) -> str:
     )
     guide = (
         "<small><b>Next:</b> "
-        f"{html.escape(_public_copy(next_action))}</small>"
+        f"{html.escape(_public_copy(next_action, capture_targets))}</small>"
         if next_action
         else ""
     )
     hint = (
-        f"<small>{html.escape(_public_copy(resume_hint))}</small>" if resume_hint else ""
+        f"<small>{html.escape(_public_copy(resume_hint, capture_targets))}</small>"
+        if resume_hint
+        else ""
     )
     steps = f"<ol>{step_items}</ol>" if step_items else ""
     return f"""

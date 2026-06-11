@@ -1089,20 +1089,24 @@ def test_control_room_uses_gate_provider_for_guidance_when_id_is_generic(tmp_pat
     )
 
     html = render_control_room(job, gate_path=tmp_path / "gates.json")
+    visible_html = html[: html.index("<script")]
 
-    assert "Resend needs an email API key" in html
-    assert "before Cloudflare DNS" in html
-    assert "Success looks like" in html
-    assert "A raw Resend API key value is copied from a new one-time reveal screen." in html
-    assert "Avoid" in html
-    assert "Do not click Add domain when Resend says No domains yet." in html
-    assert "Open provider gate in VM" in html
-    assert "Capture RESEND_API_KEY from VM clipboard" in html
-    assert "Capture from VM clipboard" not in html
-    assert "Copy the provider value in the VM browser" in html
-    assert "resume automatically after every target is captured" in html
-    assert "VM clipboard Capture and vault encryption keep secrets yours." in html
-    assert "Hidden prompts and vault encryption keep secrets yours." not in html
+    assert "Resend needs an email API key" in visible_html
+    assert "before Cloudflare DNS" in visible_html
+    assert "Success looks like" in visible_html
+    assert (
+        "A raw Resend API key value is copied from a new one-time reveal screen."
+        in visible_html
+    )
+    assert "Avoid" in visible_html
+    assert "Do not click Add domain when Resend says No domains yet." in visible_html
+    assert "Open provider gate in VM" in visible_html
+    assert "Capture RESEND_API_KEY from VM clipboard" in visible_html
+    assert "Capture from VM clipboard" not in visible_html
+    assert "Copy the provider value in the VM browser" in visible_html
+    assert "resume automatically after every target is captured" in visible_html
+    assert "VM clipboard Capture and vault encryption keep secrets yours." in visible_html
+    assert "Hidden prompts and vault encryption keep secrets yours." not in visible_html
     assert 'data-gate-capture="authorization"' in html
     assert "gate-action-status" in html
     assert "data-gate-action-status-for" in html
@@ -1267,20 +1271,21 @@ def test_control_room_renders_vm_clipboard_capture_for_secret_gate(tmp_path) -> 
     )
 
     html = render_control_room(JobState.load(job_path), gate_path=tmp_path / "gates.json")
+    visible_html = html[: html.index("<script")]
 
-    assert "Safe secret capture" in html
-    assert "Copy the provider value inside the VM browser" in html
-    assert "Copy the provider value in the VM browser" in html
-    assert "click the matching" not in html
-    assert "Capture RESEND_API_KEY from VM clipboard below" in html
-    assert "click Capture RESEND_API_KEY from VM clipboard" in html
-    assert "Capture from VM clipboard button below" not in html
-    assert "target-specific Capture" not in html
-    assert "click Capture here" not in html
-    assert "FuseKit will resume automatically after every target is captured." in html
-    assert "reads only the VM clipboard" in html
-    assert "encrypted vault" in html
-    assert "Capture RESEND_API_KEY from VM clipboard" in html
+    assert "Safe secret capture" in visible_html
+    assert "Copy the provider value inside the VM browser" in visible_html
+    assert "Copy the provider value in the VM browser" in visible_html
+    assert "click the matching" not in visible_html
+    assert "Capture RESEND_API_KEY from VM clipboard below" in visible_html
+    assert "click Capture RESEND_API_KEY from VM clipboard" in visible_html
+    assert "Capture from VM clipboard button below" not in visible_html
+    assert "target-specific Capture" not in visible_html
+    assert "click Capture here" not in visible_html
+    assert "FuseKit will resume automatically after every target is captured." in visible_html
+    assert "reads only the VM clipboard" in visible_html
+    assert "encrypted vault" in visible_html
+    assert "Capture RESEND_API_KEY from VM clipboard" in visible_html
     assert 'data-gate-capture="provider.resend.api-key-domain-access"' in html
     assert 'data-gate-capture-target="RESEND_API_KEY"' in html
     assert 'data-gate-pass="provider.resend.api-key-domain-access"' not in html
@@ -3260,21 +3265,22 @@ def test_control_room_uses_privacy_mascot_for_secret_gates(tmp_path) -> None:
     )
 
     html = render_control_room(job)
+    visible_html = html[: html.index("<script")]
 
-    assert "state-privacy" in html
-    assert "privacy-mitten" in html
-    assert "covering his eyes while secrets stay private" in html
+    assert "state-privacy" in visible_html
+    assert "privacy-mitten" in visible_html
+    assert "covering his eyes while secrets stay private" in visible_html
     assert "isPrivacyStep" in html
     assert (
         "copy it inside the VM browser, then click the visible env-named "
         "Capture button such as Capture RESEND_API_KEY from VM clipboard"
-        in html
+        in visible_html
     )
-    assert "visible env-named Capture from VM clipboard button" not in html
-    assert "target-specific Capture" not in html
-    assert "click the matching Capture from VM clipboard button" not in html
-    assert "click Capture in FuseKit" not in html
-    assert "paste it into FuseKit&#x27;s hidden prompt" not in html
+    assert "visible env-named Capture from VM clipboard button" not in visible_html
+    assert "target-specific Capture" not in visible_html
+    assert "click the matching Capture from VM clipboard button" not in visible_html
+    assert "click Capture in FuseKit" not in visible_html
+    assert "paste it into FuseKit&#x27;s hidden prompt" not in visible_html
 
 
 def test_control_room_payload_reports_corrupt_gate_state(tmp_path) -> None:
@@ -3477,6 +3483,10 @@ def test_control_room_payload_and_html_include_provider_strategy_routes(tmp_path
                                         "in the VM browser."
                                     ),
                                     "Create the fine-grained FuseKit setup token.",
+                                    (
+                                        "After copying the token, click the matching "
+                                        "Capture from VM clipboard button."
+                                    ),
                                 ],
                                 "decision": {
                                     "selected": {
@@ -3507,8 +3517,19 @@ def test_control_room_payload_and_html_include_provider_strategy_routes(tmp_path
     assert "provider-owned gates" in html
     assert "providerStrategyRouteSummary" in html
     assert "Provider token is missing." in html
-    assert "Click Open provider gate in VM, create the setup token" in html
-    assert "Create the fine-grained FuseKit setup token." in html
+    strategy_start = html.index("github-deploy-key")
+    strategy_html = html[
+        strategy_start : html.index("</article>", strategy_start)
+    ]
+    assert "Click Open provider gate in VM, create the setup token" in strategy_html
+    assert "then click Capture GITHUB_TOKEN from VM clipboard" in strategy_html
+    assert "Create the fine-grained FuseKit setup token." in strategy_html
+    assert (
+        "After copying the token, click Capture GITHUB_TOKEN from VM clipboard."
+        in strategy_html
+    )
+    assert "the matching Capture from VM clipboard button" not in strategy_html
+    assert "then click Capture from VM clipboard." not in strategy_html
     assert "Route plan" in html
     assert "If a provider token gate appears, click Open provider gate in VM" in html
     assert "copy the value inside the shared VM browser" in html
