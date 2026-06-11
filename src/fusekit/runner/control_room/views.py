@@ -205,12 +205,12 @@ def _public_copy(value: Any) -> str:
     replacements = (
         (
             "paste it into FuseKit's hidden prompt",
-            "copy it inside the VM browser, then click the matching "
+            "copy it inside the VM browser, then click the target-specific "
             "Capture from VM clipboard button",
         ),
         (
             "paste into FuseKit's hidden prompt",
-            "copy inside the VM browser, then click the matching "
+            "copy inside the VM browser, then click the target-specific "
             "Capture from VM clipboard button",
         ),
         ("hidden Cloud Shell prompts", "Capture from VM clipboard buttons"),
@@ -515,8 +515,8 @@ def _missing_acceptance_guidance(item: str) -> tuple[str, str]:
             "Human gates",
             (
                 "Use the visible launcher controls for every gate: Open provider gate "
-                "in VM, Capture from VM clipboard for copy-once values, or I finished "
-                "this step after a non-secret provider confirmation."
+                "in VM, target-specific Capture from VM clipboard buttons for copy-once "
+                "values, or I finished this step after a non-secret provider confirmation."
             ),
         ),
         "resolved human gates": (
@@ -1400,6 +1400,7 @@ def _render_capture_buttons(
         else ""
     )
     plural = "value" if len(targets) == 1 else "values"
+    capture_instruction = _capture_instruction(targets)
     return f"""
       <div class="gate-capture-panel">
         <div class="gate-capture-head">
@@ -1407,13 +1408,24 @@ def _render_capture_buttons(
           {progress}
         </div>
         <p>
-          Copy the provider {plural} inside the VM browser, then click the matching
-          Capture from VM clipboard button below.
+          Copy the provider {plural} inside the VM browser, then click
+          {capture_instruction}.
           FuseKit reads only the VM clipboard and saves it directly into the encrypted vault.
         </p>
         <div class="gate-capture-row">{buttons}</div>
       </div>
     """
+
+
+def _capture_instruction(targets: tuple[str, ...]) -> str:
+    labels = [
+        f"Capture {html.escape(target)} from VM clipboard"
+        for target in targets
+        if target.strip()
+    ]
+    if len(labels) == 1:
+        return f"{labels[0]} below"
+    return "each target-specific button below: " + ", ".join(labels)
 
 
 def _render_capture_button(gate_id: str, target: str, captured: bool) -> str:

@@ -254,7 +254,7 @@ class GateService:
         missing = _capture_targets(record.target) - set(record.captured_targets)
         if missing:
             record.next_action = (
-                "Copy the next provider value in the VM browser, then click the matching "
+                "Copy the next provider value in the VM browser, then click "
                 + _capture_control_list(sorted(missing))
                 + "."
             )
@@ -343,7 +343,7 @@ def _default_next_action(record: GateRecord) -> str:
         missing = targets - set(record.captured_targets)
         if missing:
             return (
-                "Copy the provider value in the VM browser, then click the matching "
+                "Copy the provider value in the VM browser, then click "
                 + _capture_control_list(sorted(missing))
                 + "."
             )
@@ -372,7 +372,7 @@ def _default_resume_hint(record: GateRecord) -> str:
 
 def _capture_control_list(targets: list[str]) -> str:
     if len(targets) == 1:
-        return f"Capture {targets[0]} from VM clipboard button"
+        return f"Capture {targets[0]} from VM clipboard"
     labels = [f"Capture {target} from VM clipboard" for target in targets]
     return "Capture buttons: " + ", ".join(labels)
 

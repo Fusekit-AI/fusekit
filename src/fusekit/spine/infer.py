@@ -727,7 +727,7 @@ def _follow_me_steps(provider: str, kind: str, target: str) -> tuple[str, ...]:
             "Open the provider's API key or token page.",
             "Create a scoped token/key for this app when the provider asks.",
             (
-                "Copy the approved token inside the VM browser, then click the matching "
+                "Copy the approved token inside the VM browser, then click the target-specific "
                 "Capture from VM clipboard button."
             ),
         ),

@@ -422,8 +422,8 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
         "audited human gate interventions": (
             "Human gates",
             "Use the visible launcher controls for each gate: Open provider gate "
-            "in VM, Capture from VM clipboard for copy-once values, or I finished "
-            "this step after a non-secret provider confirmation.",
+            "in VM, target-specific Capture from VM clipboard buttons for copy-once "
+            "values, or I finished this step after a non-secret provider confirmation.",
         ),
         "resolved human gates": (
             "Human gates",
@@ -519,8 +519,8 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
                 return (
                     "Human gates",
                     "Use the visible launcher controls for each gate: Open provider gate "
-                    "in VM, Capture from VM clipboard for copy-once values, or I finished "
-                    "this step after a non-secret provider confirmation.",
+                    "in VM, target-specific Capture from VM clipboard buttons for copy-once "
+                    "values, or I finished this step after a non-secret provider confirmation.",
                 )
             if "control_room.gate_open" in detail:
                 return (
@@ -539,8 +539,8 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
                     )
                 return (
                     "Human gates",
-                    "Copy the provider token in the VM browser, then click the matching "
-                    "Capture from VM clipboard button.",
+                    "Copy the provider token in the VM browser, then click the "
+                    "target-specific Capture from VM clipboard button.",
                 )
             if "control_room.gate_resume_requested" in detail:
                 return (

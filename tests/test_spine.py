@@ -210,7 +210,7 @@ def test_provider_playbook_uses_openclaw_spine_without_secrets() -> None:
     assert events[1].url == "https://vercel.com/signup"
     assert events[-1].status == "awaiting-approved-secret"
     assert "VM browser" in events[-1].note
-    assert "Capture from VM clipboard button" in events[-1].note
+    assert "Capture VERCEL_TOKEN from VM clipboard" in events[-1].note
     assert "encrypted vault" in events[-1].note
     assert "hidden prompt" not in events[-1].note
 
@@ -265,7 +265,7 @@ def test_resend_ui_playbook_uses_computer_actions_without_secrets() -> None:
     assert "FuseKit creates or reuses them through Resend's API" in notes
     assert "RESEND_API_KEY" in events[-1].note
     assert "VM browser" in events[-1].note
-    assert "Capture from VM clipboard button" in events[-1].note
+    assert "Capture RESEND_API_KEY from VM clipboard" in events[-1].note
     assert "hidden prompt" not in events[-1].note
 
 

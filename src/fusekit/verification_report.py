@@ -369,11 +369,11 @@ def _capture_recovery_action(
 ) -> str:
     targets = _capture_targets(provider, target, details)
     if not targets:
-        return "Capture from VM clipboard for copy-once values"
+        return "the target-specific Capture from VM clipboard button for copy-once values"
     labels = [f"Capture {candidate} from VM clipboard" for candidate in targets]
     if len(labels) == 1:
         return labels[0]
-    return "each matching Capture button: " + ", ".join(labels)
+    return "each target-specific Capture button: " + ", ".join(labels)
 
 
 def _capture_targets(

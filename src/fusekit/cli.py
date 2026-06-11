@@ -998,9 +998,9 @@ def _github_source_handoff(args: argparse.Namespace) -> ProviderHandoff:
                     "token, copy it inside the VM browser."
                 ),
                 (
-                    "Click the matching Capture from VM clipboard button; FuseKit stores "
-                    "the token only in the encrypted vault. No paste into your computer is "
-                    "needed because Capture reads the VM clipboard directly."
+                    "Click Capture GITHUB_APP_INSTALLATION_TOKEN from VM clipboard; "
+                    "FuseKit stores the token only in the encrypted vault. No paste into "
+                    "your computer is needed because Capture reads the VM clipboard directly."
                 ),
             ),
         )
@@ -3699,8 +3699,9 @@ def _provider_strategy_follow_steps(pack: ProviderCapabilityPack) -> tuple[str, 
         ),
         (
             "If FuseKit shows Capture from VM clipboard buttons for named values, copy "
-            "each provider value inside the VM browser and click the matching button. "
-            "Do not paste it into your computer; Capture reads the VM clipboard directly."
+            "each provider value inside the VM browser and click each target-specific "
+            "Capture button. Do not paste it into your computer; Capture reads the VM "
+            "clipboard directly."
         ),
         (
             "If FuseKit shows I finished this step, click it only after the provider "
@@ -4260,8 +4261,8 @@ def _resend_api_key_follow_steps(domain: str) -> tuple[str, ...]:
             "FuseKit creates or reuses the domain after Capture succeeds."
         ),
         (
-            "Copy the API key only inside the VM browser, then click the matching "
-            "Capture RESEND_API_KEY from VM clipboard button. Do not paste it into your "
+            "Copy the API key only inside the VM browser, then click "
+            "Capture RESEND_API_KEY from VM clipboard. Do not paste it into your "
             "computer; Capture reads the VM clipboard directly."
         ),
         (
@@ -4369,9 +4370,9 @@ def _resend_runtime_follow_steps(
     steps.extend(
         [
             (
-                "Copy each requested value inside the VM browser, then click its "
-                "Capture from VM clipboard button. Do not paste it into your computer; "
-                "Capture reads the VM clipboard directly."
+                "Copy each requested value inside the VM browser, then click each "
+                "target-specific Capture from VM clipboard button. Do not paste it into "
+                "your computer; Capture reads the VM clipboard directly."
             ),
             (
                 "FuseKit will apply the captured values to Vercel and GitHub after "

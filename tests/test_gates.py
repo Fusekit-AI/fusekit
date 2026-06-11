@@ -57,8 +57,8 @@ def test_gate_service_default_capture_copy_names_vm_clipboard_button(tmp_path) -
     )
 
     assert gate.to_dict()["next_action"] == (
-        "Copy the provider value in the VM browser, then click the matching "
-        "Capture RESEND_API_KEY from VM clipboard button."
+        "Copy the provider value in the VM browser, then click "
+        "Capture RESEND_API_KEY from VM clipboard."
     )
     assert any(
         "Capture RESEND_API_KEY from VM clipboard" in item
@@ -131,8 +131,8 @@ def test_gate_service_partial_capture_names_vm_clipboard_button(tmp_path) -> Non
 
     assert gate.captured_targets == ("CUSTOM_API_KEY",)
     assert gate.next_action == (
-        "Copy the next provider value in the VM browser, then click the matching "
-        "Capture CUSTOM_WEBHOOK_SECRET from VM clipboard button."
+        "Copy the next provider value in the VM browser, then click "
+        "Capture CUSTOM_WEBHOOK_SECRET from VM clipboard."
     )
     assert "resume automatically" in gate.resume_hint
 

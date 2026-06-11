@@ -49,11 +49,13 @@ function publicCopy(value) {
   const replacements = [
     [
       "paste it into FuseKit's " + "hidden prompt",
-      "copy it inside the VM browser, then click the matching Capture from VM clipboard button",
+      "copy it inside the VM browser, then click the target-specific Capture from VM " +
+        "clipboard button",
     ],
     [
       "paste into FuseKit's " + "hidden prompt",
-      "copy inside the VM browser, then click the matching Capture from VM clipboard button",
+      "copy inside the VM browser, then click the target-specific Capture from VM " +
+        "clipboard button",
     ],
     ["hidden Cloud Shell prompts", "Capture from VM clipboard buttons"],
     ["hidden prompts/env handoff", "VM clipboard Capture fallback"],
@@ -418,14 +420,15 @@ function renderCaptureButtons(gateId, target, capturedTargets = []) {
     ? `<span>${capturedCount}/${targets.length} captured</span>`
     : "";
   const plural = targets.length === 1 ? "value" : "values";
+  const captureInstruction = captureInstructionForTargets(targets);
   return [
     `<div class="gate-capture-panel">`,
     `<div class="gate-capture-head">`,
     `<strong>Safe secret capture</strong>`,
     progress,
     `</div>`,
-    `<p>Copy the provider ${plural} inside the VM browser, then click the matching ` +
-      `Capture from VM clipboard button below. ` +
+    `<p>Copy the provider ${plural} inside the VM browser, then click ` +
+      `${captureInstruction}. ` +
       `FuseKit reads only the VM clipboard and saves it directly into the encrypted vault.</p>`,
     `<div class="gate-capture-row">`,
     targets.map((item) => {
@@ -442,6 +445,16 @@ function renderCaptureButtons(gateId, target, capturedTargets = []) {
     `</div>`,
     `</div>`,
   ].join("");
+}
+
+function captureInstructionForTargets(targets) {
+  const labels = (targets || [])
+    .map((item) => `Capture ${String(item || "").toUpperCase()} from VM clipboard`)
+    .filter((item) => item.trim() !== "Capture  from VM clipboard");
+  if (labels.length === 1) {
+    return `${escapeHtml(labels[0])} below`;
+  }
+  return "each target-specific button below: " + labels.map(escapeHtml).join(", ");
 }
 
 function renderGateActionStatus(gateId) {
@@ -809,8 +822,8 @@ function missingAcceptanceBlocker(item) {
     "audited human gate interventions": [
       "Human gates",
       "Use the visible launcher controls for every gate: Open provider gate " +
-        "in VM, Capture from VM clipboard for copy-once values, or I finished " +
-        "this step after a non-secret provider confirmation.",
+        "in VM, target-specific Capture from VM clipboard buttons for copy-once " +
+        "values, or I finished this step after a non-secret provider confirmation.",
     ],
     "resolved human gates": [
       "Human gates",

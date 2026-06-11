@@ -92,7 +92,7 @@ def provider_handoff_playbook(
             status="awaiting-approved-secret",
             note=(
                 f"After creating the scoped token, copy {handoff.token_env} inside the "
-                "VM browser and click the matching Capture from VM clipboard button so "
+                f"VM browser and click Capture {handoff.token_env} from VM clipboard so "
                 "FuseKit saves it directly into the encrypted vault."
             ),
         )

@@ -1761,7 +1761,7 @@ def test_verification_gate_fallback_names_exact_launcher_controls(tmp_path) -> N
     assert "Click Open provider gate in VM" in steps
     assert "VM browser" in steps
     assert "If FuseKit shows Capture from VM clipboard buttons for named values" in steps
-    assert "Capture from VM clipboard button" in steps
+    assert "target-specific Capture button" in steps
     assert "I finished this step" in steps
     assert "If no secret is revealed" not in steps
     assert "Click Open provider gate in VM" in gate.next_action
@@ -2312,7 +2312,7 @@ def test_github_app_source_handoff_uses_launcher_capture_copy() -> None:
 
     steps = " ".join(handoff.secret_steps)
     assert "inside the VM browser" in steps
-    assert "Capture from VM clipboard button" in steps
+    assert "Capture GITHUB_APP_INSTALLATION_TOKEN from VM clipboard" in steps
     assert "Capture reads the VM clipboard directly" in steps
     assert "Capture button in FuseKit" not in steps
     assert "encrypted vault" in steps

@@ -562,7 +562,7 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
     assert "audited human gate interventions" in html
     assert "Use the visible launcher controls for every gate" in html
     assert "Open provider gate in VM" in html
-    assert "Capture from VM clipboard for copy-once values" in html
+    assert "target-specific Capture from VM clipboard buttons for copy-once values" in html
     assert "I finished this step after a non-secret provider confirmation" in html
     assert "Open, capture, or resume each control-room gate" not in html
     assert "guided human gates" in html
@@ -967,8 +967,9 @@ def test_control_room_renders_vm_clipboard_capture_for_secret_gate(tmp_path) -> 
     assert "Safe secret capture" in html
     assert "Copy the provider value inside the VM browser" in html
     assert "Copy the provider value in the VM browser" in html
-    assert "click the matching" in html
-    assert "Capture from VM clipboard button below" in html
+    assert "click the matching" not in html
+    assert "Capture RESEND_API_KEY from VM clipboard below" in html
+    assert "Capture from VM clipboard button below" not in html
     assert "click Capture here" not in html
     assert "FuseKit will resume automatically after every target is captured." in html
     assert "reads only the VM clipboard" in html
@@ -2290,6 +2291,9 @@ def test_control_room_clipboard_capture_waits_for_multi_value_gate(
     )
     assert "1/2 captured" in html
     assert "Captured CUSTOM_API_KEY" in html
+    assert "each target-specific button below" in html
+    assert "Capture CUSTOM_API_KEY from VM clipboard" in html
+    assert "Capture CUSTOM_TOKEN from VM clipboard" in html
     assert 'data-gate-capture-target="CUSTOM_API_KEY" disabled' in html
     gate = GateService.load(tmp_path / "gates.json").records[
         "provider.custom.runtime-values"
@@ -2792,9 +2796,11 @@ def test_control_room_uses_privacy_mascot_for_secret_gates(tmp_path) -> None:
     assert "covering his eyes while secrets stay private" in html
     assert "isPrivacyStep" in html
     assert (
-        "copy it inside the VM browser, then click the matching Capture from VM clipboard button"
+        "copy it inside the VM browser, then click the target-specific "
+        "Capture from VM clipboard button"
         in html
     )
+    assert "click the matching Capture from VM clipboard button" not in html
     assert "click Capture in FuseKit" not in html
     assert "paste it into FuseKit&#x27;s hidden prompt" not in html
 

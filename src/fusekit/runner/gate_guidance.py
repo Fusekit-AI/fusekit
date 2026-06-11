@@ -289,8 +289,8 @@ _GENERIC = GateGuidance(
         (
             "If the provider reveals a copy-once API key or token and FuseKit shows a "
             "Capture from VM clipboard button, copy the value inside the VM browser and "
-            "click the matching button. You do not need to paste it into your computer; "
-            "Capture reads the VM clipboard directly."
+            "click that target-specific Capture button. You do not need to paste it into "
+            "your computer; Capture reads the VM clipboard directly."
         ),
         (
             "If no Capture from VM clipboard button is shown, click I finished this step "
