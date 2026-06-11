@@ -3699,9 +3699,9 @@ def _provider_strategy_follow_steps(pack: ProviderCapabilityPack) -> tuple[str, 
         ),
         (
             "If FuseKit shows Capture from VM clipboard buttons for named values, copy "
-            "each provider value inside the VM browser and click each target-specific "
-            "Capture button. Do not paste it into your computer; Capture reads the VM "
-            "clipboard directly."
+            "each provider value inside the VM browser and click the visible button "
+            "named for that value, for example Capture CUSTOM_API_KEY from VM clipboard. "
+            "Do not paste it into your computer; Capture reads the VM clipboard directly."
         ),
         (
             "If FuseKit shows I finished this step, click it only after the provider "

@@ -968,8 +968,9 @@ def _plaid_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                 (
                     "Copy PLAID_CLIENT_ID, PLAID_SECRET, and PLAID_ENV inside the VM browser, "
                     "then click Capture PLAID_SECRET from VM clipboard and any other "
-                    "target-specific Capture buttons FuseKit shows. No paste into your computer "
-                    "is needed because Capture reads the VM clipboard directly."
+                    "visible Capture <TARGET> from VM clipboard buttons FuseKit shows. "
+                    "No paste into your computer is needed because Capture reads the "
+                    "VM clipboard directly."
                 ),
                 "Configure allowed products and redirect/webhook settings required by the app.",
             ),
@@ -1620,7 +1621,7 @@ def _launcher_capture_step(target: str) -> tuple[str, ...]:
     capture_label = (
         f"Capture {target} from VM clipboard"
         if target
-        else "the target-specific Capture from VM clipboard button"
+        else "the visible Capture <TARGET> from VM clipboard button"
     )
     return (
         (

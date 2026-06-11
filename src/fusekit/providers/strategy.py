@@ -415,7 +415,7 @@ def summarize_strategy_action(
     capture_action = (
         f"Capture {target} from VM clipboard"
         if target
-        else "the target-specific Capture from VM clipboard button"
+        else "the visible Capture <TARGET> from VM clipboard button FuseKit shows"
     )
     action = {
         "provider": decision.provider,
@@ -459,8 +459,8 @@ def _strategy_follow_steps(pack: ProviderCapabilityPack | None) -> tuple[str, ..
         "Complete only provider-owned login, MFA, CAPTCHA, consent, billing, or token prompts.",
         (
             "If the provider reveals a copy-once token, copy it inside the VM browser and "
-            "click the target-specific Capture from VM clipboard button. Do not paste it into "
-            "your computer; Capture reads the VM clipboard directly."
+            "click the visible Capture <TARGET> from VM clipboard button FuseKit shows. "
+            "Do not paste it into your computer; Capture reads the VM clipboard directly."
         ),
         (
             "For non-secret confirmation gates, click the visible I finished this step "

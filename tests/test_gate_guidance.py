@@ -71,8 +71,8 @@ def test_generic_provider_guidance_distinguishes_capture_from_finished() -> None
     text = " ".join((guidance.title, guidance.body, *guidance.actions, guidance.reassurance))
 
     assert "copy-once API key or token" in text
-    assert "Capture from VM clipboard button" in text
-    assert "target-specific Capture button" in text
+    assert "Capture CUSTOM_API_KEY from VM clipboard" in text
+    assert "button named for that value" in text
     assert "You do not need to paste it into your computer" in text
     assert "Capture reads the VM clipboard directly" in text
     assert "If no Capture from VM clipboard button is shown" in text

@@ -288,9 +288,10 @@ _GENERIC = GateGuidance(
         "Complete only highlighted login, MFA, CAPTCHA, consent, payment, or ownership prompts.",
         (
             "If the provider reveals a copy-once API key or token and FuseKit shows a "
-            "Capture from VM clipboard button, copy the value inside the VM browser and "
-            "click that target-specific Capture button. You do not need to paste it into "
-            "your computer; Capture reads the VM clipboard directly."
+            "Capture button, copy the value inside the VM browser and click the visible "
+            "button named for that value, for example Capture CUSTOM_API_KEY from VM "
+            "clipboard. You do not need to paste it into your computer; Capture reads "
+            "the VM clipboard directly."
         ),
         (
             "If no Capture from VM clipboard button is shown, click I finished this step "

@@ -1191,7 +1191,7 @@ def test_control_room_post_rejects_multi_capture_gate_with_exact_copy(
     assert exc.value.code == 400
     assert payload["missing_targets"] == ["CUSTOM_API_KEY", "CUSTOM_WEBHOOK_SECRET"]
     assert (
-        "Click each missing target-specific Capture button"
+        "Click these exact Capture buttons"
         in payload["next_action"]
     )
     assert "Capture CUSTOM_API_KEY from VM clipboard" in payload["next_action"]

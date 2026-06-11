@@ -706,7 +706,7 @@ def _blocked_capture_next_action(missing_targets: set[str]) -> str:
     if len(targets) == 1:
         return f"Click Capture {targets[0]} from VM clipboard, then FuseKit will continue."
     return (
-        "Click each missing target-specific Capture button: "
+        "Click these exact Capture buttons: "
         + _capture_button_labels(targets)
         + ". FuseKit continues after every required value is captured."
     )
@@ -721,7 +721,7 @@ def _capture_button_labels(targets: Iterable[str]) -> str:
         if target.strip()
     ]
     if not labels:
-        return "the target-specific Capture from VM clipboard button"
+        return "the visible Capture <TARGET> from VM clipboard button"
     return ", ".join(labels)
 
 
