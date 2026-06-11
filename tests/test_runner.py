@@ -2630,7 +2630,13 @@ def test_security_surface_map_documents_control_room_state_routes() -> None:
     assert "clipboard-enabled arbitrary iframe" in text
     assert "action token is stored owner-only" in text
     assert "permissions repaired before reuse" in text
-    assert "Public guided runs use `Capture from VM clipboard` buttons" in text
+    assert "Public guided runs use exact env-target buttons" in text
+    assert "Capture RESEND_API_KEY from VM clipboard" in text
+    assert (
+        "Public guided runs use `Capture from VM clipboard` buttons for approved env targets"
+        not in text
+    )
+    assert "must not ship placeholder `Capture <TARGET> from VM clipboard`" in text
     assert "CLI-only fallback can use a non-echoing prompt or env handoff" in text
     assert "redirect back to the same route without the token query parameter" in text
     assert "does not stay in the address bar" in text
