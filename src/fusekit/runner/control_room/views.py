@@ -1425,7 +1425,7 @@ def _capture_instruction(targets: tuple[str, ...]) -> str:
     ]
     if len(labels) == 1:
         return f"{labels[0]} below"
-    return "each target-specific button below: " + ", ".join(labels)
+    return "these exact Capture buttons: " + ", ".join(labels)
 
 
 def _render_capture_button(gate_id: str, target: str, captured: bool) -> str:

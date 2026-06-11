@@ -454,7 +454,7 @@ function captureInstructionForTargets(targets) {
   if (labels.length === 1) {
     return `${escapeHtml(labels[0])} below`;
   }
-  return "each target-specific button below: " + labels.map(escapeHtml).join(", ");
+  return "these exact Capture buttons: " + labels.map(escapeHtml).join(", ");
 }
 
 function renderGateActionStatus(gateId) {

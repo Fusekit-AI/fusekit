@@ -2407,7 +2407,8 @@ def test_control_room_clipboard_capture_waits_for_multi_value_gate(
     )
     assert "1/2 captured" in html
     assert "Captured CUSTOM_API_KEY" in html
-    assert "each target-specific button below" in html
+    assert "these exact Capture buttons" in html
+    assert "each target-specific button below" not in html
     assert "Capture CUSTOM_API_KEY from VM clipboard" in html
     assert "Capture CUSTOM_TOKEN from VM clipboard" in html
     assert 'data-gate-capture-target="CUSTOM_API_KEY" disabled' in html
