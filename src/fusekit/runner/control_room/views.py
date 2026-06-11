@@ -777,10 +777,13 @@ def _strategy_plan_items(providers: list[Any]) -> list[str]:
             "variables into Vercel before deployment verification."
         )
     if token_targets:
+        capture_labels = ", ".join(
+            f"Capture {target} from VM clipboard" for target in token_targets
+        )
         items.append(
             "If a provider token gate appears, click Open provider gate in VM, copy "
             "the value inside the shared VM browser, then click "
-            f"Capture from VM clipboard for {', '.join(token_targets)}."
+            f"{capture_labels}."
         )
     elif has_human_gate:
         items.append(

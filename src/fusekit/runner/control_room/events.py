@@ -1035,10 +1035,13 @@ function providerStrategyPlanItems(providers) {
     );
   }
   if (tokenTargets.length) {
+    const captureLabels = tokenTargets
+      .map((target) => `Capture ${target} from VM clipboard`)
+      .join(", ");
     items.push(
       "If a provider token gate appears, click Open provider gate in VM, copy " +
       "the value inside the shared VM browser, then click " +
-      `Capture from VM clipboard for ${tokenTargets.join(", ")}.`,
+      `${captureLabels}.`,
     );
   } else if (hasHumanGate) {
     items.push(

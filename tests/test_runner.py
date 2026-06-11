@@ -2940,7 +2940,7 @@ def test_control_room_payload_and_html_include_provider_strategy_routes(tmp_path
     assert "Route plan" in html
     assert "If a provider token gate appears, click Open provider gate in VM" in html
     assert "copy the value inside the shared VM browser" in html
-    assert "Capture from VM clipboard for GITHUB_TOKEN" in html
+    assert "Capture GITHUB_TOKEN from VM clipboard" in html
 
 
 def test_control_room_route_plan_names_human_gate_controls(tmp_path) -> None:
