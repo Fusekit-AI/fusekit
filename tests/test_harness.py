@@ -1248,6 +1248,12 @@ def test_acceptance_live_requires_real_provider_evidence(tmp_path) -> None:
     blockers = {blocker["item"]: blocker for blocker in report.blockers}
     assert blockers["encrypted vault"]["category"] == "Vault"
     assert "vault capture enabled" in blockers["encrypted vault"]["next_action"]
+    assert blockers["redacted setup receipt"]["category"] == "Receipt"
+    assert "live launcher/control room" in blockers["redacted setup receipt"]["next_action"]
+    assert "redacted receipt with no raw secrets" in blockers[
+        "redacted setup receipt"
+    ]["next_action"]
+    assert "Rerun setup" not in blockers["redacted setup receipt"]["next_action"]
     assert blockers["provider strategy decisions"]["category"] == "Provider routes"
     assert "live launcher/control room" in blockers["provider strategy decisions"]["next_action"]
     assert "setup worker record" in blockers["provider strategy decisions"]["next_action"]

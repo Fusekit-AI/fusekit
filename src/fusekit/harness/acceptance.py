@@ -357,7 +357,8 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
         ),
         "redacted setup receipt": (
             "Receipt",
-            "Retrieve the worker setup receipt and confirm it contains no raw secrets.",
+            "Keep the live launcher/control room open and let the setup worker finish "
+            "provider setup so FuseKit can save a redacted receipt with no raw secrets.",
         ),
         "safe verification report": (
             "Verification",
@@ -639,7 +640,11 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
                 "read-only provider health check before mutation; if the token is "
                 "expired or scoped wrong, use the exact env-named Capture button.",
             )
-        return ("Receipt", "Regenerate the redacted setup receipt.")
+        return (
+            "Receipt",
+            "Keep the live launcher/control room open and let the setup worker finish "
+            "provider setup so FuseKit can save a redacted receipt with no raw secrets.",
+        )
     if check.id == "detonation.worker_state":
         return (
             "Detonation",

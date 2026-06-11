@@ -676,6 +676,30 @@ def test_control_room_missing_provider_route_blockers_are_launcher_actionable(
     assert "exact env-named Capture button" in html
 
 
+def test_control_room_missing_receipt_blocker_is_launcher_actionable(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    acceptance_dir = tmp_path / "acceptance"
+    acceptance_dir.mkdir()
+    (acceptance_dir / "report.json").write_text(
+        json.dumps(
+            {
+                "launch_ready": False,
+                "missing": ["redacted setup receipt"],
+                "blockers": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+
+    assert "redacted setup receipt" in html
+    assert "live launcher/control room" in html
+    assert "setup worker finish provider setup" in html
+    assert "redacted receipt with no raw secrets" in html
+    assert "Rerun setup so the worker writes a redacted setup receipt" not in html
+
+
 def test_control_room_unknown_acceptance_missing_uses_launcher_controls(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     acceptance_dir = tmp_path / "acceptance"

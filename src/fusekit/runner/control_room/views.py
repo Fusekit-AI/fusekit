@@ -514,7 +514,10 @@ def _missing_acceptance_guidance(item: str) -> tuple[str, str]:
         ),
         "redacted setup receipt": (
             "Receipt",
-            "Rerun setup so the worker writes a redacted setup receipt with no raw secrets.",
+            (
+                "Keep the live launcher/control room open and let the setup worker finish "
+                "provider setup so FuseKit can save a redacted receipt with no raw secrets."
+            ),
         ),
         "safe verification report": (
             "Verification",
