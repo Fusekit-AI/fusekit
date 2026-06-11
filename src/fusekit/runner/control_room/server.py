@@ -614,11 +614,9 @@ def _validate_gate_capture_target(gate: Any, target: str) -> None:
     """Reject stale capture gates that should be provider API setup retries."""
 
     provider = str(getattr(gate, "provider", "") or "").strip().lower()
-    classification = str(getattr(gate, "classification", "") or "").strip().lower()
     normalized_target = target.strip().upper()
     if (
         provider == "resend"
-        and classification == "provider-runtime-values"
         and normalized_target in {"RESEND_FROM_EMAIL", "RESEND_AUDIENCE_ID"}
     ):
         raise FuseKitError(
