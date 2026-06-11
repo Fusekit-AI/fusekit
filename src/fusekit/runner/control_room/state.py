@@ -15,6 +15,8 @@ from fusekit.runner.job import JobState
 from fusekit.runner.run_state import LaunchRunState
 
 SAFE_URL_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,256}$")
+EXPECTED_NOVNC_PORT = 6080
+EXPECTED_CONTROL_ROOM_PORT = 8765
 
 
 def control_room_payload(job: JobState, *, gate_path: Path | None = None) -> dict[str, Any]:
@@ -145,6 +147,7 @@ def _sanitized_visual_state(raw: dict[str, Any]) -> dict[str, Any]:
         novnc_url,
         require_vnc_path=True,
         allowed_query_keys={"autoconnect", "resize"},
+        expected_port=EXPECTED_NOVNC_PORT,
     )
     if not safe_novnc_url:
         return _unavailable_visual("Visual session noVNC URL was not safe to embed.")
@@ -155,6 +158,7 @@ def _sanitized_visual_state(raw: dict[str, Any]) -> dict[str, Any]:
             control_room_url,
             require_vnc_path=False,
             allowed_query_keys={"token"},
+            expected_port=EXPECTED_CONTROL_ROOM_PORT,
         )
         if not safe_control_url or control_host != novnc_host:
             visual.pop("control_room_url", None)
@@ -171,11 +175,18 @@ def _safe_visual_url(
     *,
     require_vnc_path: bool,
     allowed_query_keys: set[str],
+    expected_port: int,
 ) -> tuple[str, str]:
     parsed = urlparse(value)
     if parsed.scheme not in {"http", "https"}:
         return "", ""
     if parsed.username or parsed.password or not parsed.hostname:
+        return "", ""
+    try:
+        port = parsed.port
+    except ValueError:
+        return "", ""
+    if port != expected_port:
         return "", ""
     if not _safe_visual_host(parsed.hostname):
         return "", ""

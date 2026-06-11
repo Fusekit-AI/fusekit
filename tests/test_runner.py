@@ -3540,6 +3540,38 @@ def test_control_room_rejects_visual_session_hostname_and_private_ip(tmp_path) -
         assert "viewer-password" not in html
 
 
+def test_control_room_rejects_visual_session_wrong_ports(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    (tmp_path / "visual.json").write_text(
+        json.dumps(
+            {
+                "runner": "novnc",
+                "status": "ready",
+                "novnc_url": "http://93.184.216.34:4444/vnc.html?autoconnect=1",
+                "control_room_url": (
+                    "http://93.184.216.34:8766/"
+                    "?token=viewer_token_abcdefghijklmnopqrstuvwxyz0123456789"
+                ),
+                "novnc_password": "viewer-password",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = control_room_payload(job_path)
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+
+    assert payload["visual"] == {
+        "status": "unavailable",
+        "error": "Visual session noVNC URL was not safe to embed.",
+    }
+    assert "93.184.216.34:4444" not in html
+    assert "93.184.216.34:8766" not in html
+    assert "viewer-password" not in html
+
+
 def test_control_room_sanitizes_visual_session_urls_and_password(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job_path = tmp_path / "job.json"
