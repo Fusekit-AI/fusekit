@@ -71,8 +71,8 @@ advanced CLI fallback rehearsal, not the public no-thinking launcher path.
 - A Resend row that says Full access is not enough by itself. If the raw key
   value is not visible/copyable, create a new setup key and capture that raw
   value into the encrypted vault.
-- Do not click Resend Add domain or Add audience during the public path unless a
-  future FuseKit gate explicitly changes the acceptance runbook and tests.
+- Do not click Resend Add domain or Add audience during the public path.
+  FuseKit owns Resend domain and audience setup by API after key capture.
 
 Then run the proof gate:
 

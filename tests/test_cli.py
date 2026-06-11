@@ -1734,6 +1734,8 @@ def test_verification_gate_records_resend_api_key_follow_me(tmp_path) -> None:
     gate = GateService.load(app / ".fusekit" / "gates.json").records[
         "provider.resend.api-key-domain-access"
     ]
+    assert "Permission: Full access" in gate.reason
+    assert "Domain: All domains" in gate.reason
     assert gate.resume_url == "https://resend.com/api-keys"
     assert "live VM browser" in " ".join(gate.follow_steps)
     assert "Full access" in " ".join(gate.follow_steps)

@@ -4161,11 +4161,7 @@ def _provider_verification_gate(
         return {
             "id": "provider.resend.api-key-domain-access",
             "provider": "resend",
-            "reason": reason
-            or (
-                "Resend rejected the captured setup key. Create a Resend API key with Full "
-                "access for the first setup so FuseKit can create or reuse domains and audiences."
-            ),
+            "reason": _resend_api_key_gate_reason(reason),
             "resume_url": "https://resend.com/api-keys",
             "classification": "provider-authorization",
             "target": "RESEND_API_KEY",
@@ -4276,6 +4272,21 @@ def _resend_api_key_follow_steps(domain: str) -> tuple[str, ...]:
         ),
         "FuseKit resumes automatically after Capture reports success.",
     )
+
+
+def _resend_api_key_gate_reason(reason: str) -> str:
+    """Return launcher-safe Resend API-key guidance even for stale provider errors."""
+
+    exact = (
+        "Create or capture a Resend API key with Permission: Full access and "
+        "Domain: All domains for the first setup so FuseKit can create or reuse "
+        "domains and audiences."
+    )
+    if not reason:
+        return f"Resend rejected the captured setup key. {exact}"
+    if "Permission: Full access" in reason and "Domain: All domains" in reason:
+        return reason
+    return f"{reason} {exact}"
 
 
 def _resend_domain_follow_steps(domain: str) -> tuple[str, ...]:
