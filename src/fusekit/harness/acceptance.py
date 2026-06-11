@@ -2253,6 +2253,9 @@ def _unguided_gates(gates: Any) -> list[str]:
         manual_resend_setup_failure = _manual_resend_setup_gate_failure(gate)
         if manual_resend_setup_failure:
             missing.append(manual_resend_setup_failure)
+        resend_selector_failure = _resend_setup_key_selector_failure(gate)
+        if resend_selector_failure:
+            missing.append(resend_selector_failure)
         quality_failures = _guidance_quality_failures(
             gate_id,
             follow_steps=follow_steps,
@@ -2336,6 +2339,45 @@ def _field_asks_for_manual_resend_setup(value: str) -> bool:
             if not _manual_setup_match_is_negated(text, match.start()):
                 return True
     return False
+
+
+def _resend_setup_key_selector_failure(gate: dict[str, Any]) -> str:
+    """Require exact Resend setup-key selector copy on secret capture gates."""
+
+    provider = str(gate.get("provider", "")).strip().lower()
+    if provider != "resend":
+        return ""
+    targets = _env_targets_from_text(str(gate.get("target", "")))
+    if "RESEND_API_KEY" not in targets:
+        return ""
+    classification = str(gate.get("classification", "")).strip().lower()
+    if classification not in {"provider-authorization", "provider-runtime-values"}:
+        return ""
+    fields = (
+        gate.get("reason", ""),
+        gate.get("next_action", ""),
+        gate.get("resume_hint", ""),
+        *(gate.get("follow_steps", []) if isinstance(gate.get("follow_steps"), list) else []),
+        *(
+            gate.get("success_criteria", [])
+            if isinstance(gate.get("success_criteria"), list)
+            else []
+        ),
+        *(gate.get("avoid_steps", []) if isinstance(gate.get("avoid_steps"), list) else []),
+    )
+    text = "\n".join(str(value) for value in fields)
+    missing = [
+        selector
+        for selector in ("Permission: Full access", "Domain: All domains")
+        if selector not in text
+    ]
+    if not missing:
+        return ""
+    gate_id = str(gate.get("id", "") or "provider.resend")
+    return (
+        f"{gate_id}.guidance must name exact Resend setup-key selectors: "
+        + ", ".join(missing)
+    )
 
 
 def _manual_setup_match_is_negated(text: str, match_start: int) -> bool:

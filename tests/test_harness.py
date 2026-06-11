@@ -906,6 +906,87 @@ def test_acceptance_rejects_resend_generated_values_as_capture_targets() -> None
     ) in failures
 
 
+def test_acceptance_rejects_vague_resend_setup_key_selector_guidance() -> None:
+    failures = _unguided_gates(
+        [
+            {
+                "id": "provider.resend.authorization",
+                "provider": "resend",
+                "status": "waiting",
+                "classification": "provider-authorization",
+                "resume_url": "https://resend.com/api-keys",
+                "target": "RESEND_API_KEY",
+                "reason": "Create a Full access Resend setup key for all domains.",
+                "follow_steps": [
+                    "Click Open provider gate in VM so Resend opens in the VM browser.",
+                    "Create a Full access API key that works for all domains.",
+                    "Copy the key inside the VM browser and click "
+                    "Capture RESEND_API_KEY from VM clipboard.",
+                ],
+                "next_action": (
+                    "Click Open provider gate in VM, then click "
+                    "Capture RESEND_API_KEY from VM clipboard after the key is copied."
+                ),
+                "resume_hint": "FuseKit will continue after RESEND_API_KEY capture.",
+                "success_criteria": ["A Resend setup API key was captured."],
+                "avoid_steps": ["Do not create Resend domains or audiences by hand."],
+            }
+        ]
+    )
+
+    assert (
+        "provider.resend.authorization.guidance must name exact Resend "
+        "setup-key selectors: Permission: Full access, Domain: All domains"
+    ) in failures
+
+
+def test_acceptance_allows_exact_resend_setup_key_selector_guidance() -> None:
+    failures = _unguided_gates(
+        [
+            {
+                "id": "provider.resend.authorization",
+                "provider": "resend",
+                "status": "waiting",
+                "classification": "provider-authorization",
+                "resume_url": "https://resend.com/api-keys",
+                "target": "RESEND_API_KEY",
+                "reason": (
+                    "Create a Resend setup key with Permission: Full access and "
+                    "Domain: All domains."
+                ),
+                "follow_steps": [
+                    "Click Open provider gate in VM so Resend opens in the VM browser.",
+                    (
+                        "Create or open a Resend API key with Permission: Full access "
+                        "and Domain: All domains."
+                    ),
+                    "Copy the key inside the VM browser and click "
+                    "Capture RESEND_API_KEY from VM clipboard.",
+                    "Do not click Add domain or Add audience; FuseKit owns those steps.",
+                ],
+                "next_action": (
+                    "Click Open provider gate in VM, then click "
+                    "Capture RESEND_API_KEY from VM clipboard after the key is copied."
+                ),
+                "resume_hint": (
+                    "FuseKit will create or reuse Resend domains and audiences by API "
+                    "after RESEND_API_KEY capture."
+                ),
+                "success_criteria": [
+                    "A Resend setup API key with Permission: Full access and "
+                    "Domain: All domains was captured."
+                ],
+                "avoid_steps": [
+                    "Do not click Add domain in Resend.",
+                    "Do not click Add audience in Resend.",
+                ],
+            }
+        ]
+    )
+
+    assert failures == []
+
+
 def test_acceptance_resume_audit_is_required_for_non_secret_gate_clicks() -> None:
     requirements = _gate_resume_audit_requirements(
         [
