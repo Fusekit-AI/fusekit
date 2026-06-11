@@ -237,6 +237,7 @@ guided, or explicitly verified.
 | Targetless provider strategy, verification-report, provider-pack, and control-room fallback copy could still show placeholder `Capture <TARGET>` button names. | Runtime fallback guidance now says to use the visible env-named Capture button and gives a concrete example such as `Capture RESEND_API_KEY from VM clipboard`, while acceptance keeps rejecting placeholder copy when concrete targets are known. |
 | Unknown launch-evidence blockers could still tell demo users to rerun the same live launch or acceptance if no specific control appeared. | Static control room, live control room, and acceptance blocker generation now keep that recovery inside the current control room while FuseKit rebuilds the missing proof artifact. |
 | Cloud Shell launcher clipboard fallback could tell Mac users to press `Command+C` but did not name the opened backup panel or the cross-platform `Ctrl+C` path. | Launcher copy feedback now says when the command is copied to paste into OCI, and if copying is blocked it opens/selects the backup command and tells users to press `Command+C` or `Ctrl+C` before pasting into Cloud Shell. |
+| Temporary live-control-room refresh failures could tell users to reopen or restart the control-room server, which sounds like a backend/operator task during a public demo. | Live refresh recovery now keeps users in the same control room and says FuseKit will keep trying to reconnect. |
 
 ## Open Acceptance Items
 

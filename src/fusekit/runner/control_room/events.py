@@ -1728,7 +1728,7 @@ async function refreshJob(options = {}) {
   } catch {
     setRefreshStatus(
       location.protocol.startsWith("http")
-        ? "Live refresh paused. Reopen or restart the control-room server."
+        ? "Live refresh paused. Keep this control room open; FuseKit will keep trying to reconnect."
         : "Snapshot view. Serve the control room for live updates.",
       "stale",
     );

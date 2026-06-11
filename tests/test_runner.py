@@ -503,7 +503,11 @@ def test_control_room_renders_job_without_secrets(tmp_path) -> None:
     assert "Every step stays alive" in html
     assert "checkpoint-card" in html
     assert "waiting politely with a tiny access badge" in html
-    assert "Live refresh paused. Reopen or restart the control-room server." in html
+    assert (
+        "Live refresh paused. Keep this control room open; "
+        "FuseKit will keep trying to reconnect."
+    ) in html
+    assert "Reopen or restart the control-room server" not in html
     assert "Snapshot view. Serve the control room for live updates." in html
     assert "setRefreshStatus" in html
     assert "function copyText(text)" in html
