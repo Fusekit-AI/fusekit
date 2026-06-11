@@ -909,12 +909,17 @@ def _check_receipt_dns_apply_approval(
     if audit_error:
         _fail_dns_apply_approval(checks, missing, audit_error, artifact)
         return
-    if not any(_gate_resume_audit_event_proves_dns_apply_approval(event) for event in audit_events):
+    approved_domains = _dns_apply_approval_domains(audit_events)
+    missing_domains = sorted(
+        domain for domain in applied_domains if domain.lower() not in approved_domains
+    )
+    if missing_domains:
         _fail_dns_apply_approval(
             checks,
             missing,
-            "Receipt applied DNS changes without protected Approve DNS apply audit proof for: "
-            + ", ".join(applied_domains),
+            "Receipt applied DNS changes without protected per-domain Approve DNS apply "
+            "audit proof for: "
+            + ", ".join(missing_domains),
             artifact,
         )
         return
@@ -2814,22 +2819,40 @@ def _gate_resume_audit_event_proves_finished_click(event: dict[str, Any]) -> boo
     )
 
 
-def _gate_resume_audit_event_proves_dns_apply_approval(event: dict[str, Any]) -> bool:
-    """Return whether an audit event proves the protected DNS approval action."""
+def _dns_apply_approval_domains(events: list[dict[str, Any]]) -> set[str]:
+    """Return domains with protected DNS approval events."""
+
+    domains: set[str] = set()
+    for event in events:
+        domain = _gate_resume_audit_event_dns_apply_domain(event)
+        if domain:
+            domains.add(domain)
+    return domains
+
+
+def _gate_resume_audit_event_dns_apply_domain(event: dict[str, Any]) -> str:
+    """Return the approved DNS domain from a protected DNS approval event."""
 
     if not _gate_resume_audit_event_proves_finished_click(event):
-        return False
+        return ""
     data = event.get("data", {})
     if not isinstance(data, dict):
-        return False
+        return ""
     gate_id = str(data.get("gate_id", "")).strip().lower()
     provider = str(data.get("provider", "")).strip().lower()
     classification = str(data.get("classification", "")).strip().lower()
-    return (
-        provider == "dns"
-        or classification == "dns-approval"
-        or gate_id.startswith("dns.")
-    )
+    if provider != "dns" and classification != "dns-approval" and not gate_id.startswith("dns."):
+        return ""
+    if not gate_id.startswith("dns.") or not gate_id.endswith(".approval"):
+        return ""
+    domain = gate_id.removeprefix("dns.").removesuffix(".approval").strip()
+    return domain if domain else ""
+
+
+def _gate_resume_audit_event_proves_dns_apply_approval(event: dict[str, Any]) -> bool:
+    """Return whether an audit event proves the protected DNS approval action."""
+
+    return bool(_gate_resume_audit_event_dns_apply_domain(event))
 
 
 def _gate_secret_targets(gate: dict[str, Any]) -> list[str]:
