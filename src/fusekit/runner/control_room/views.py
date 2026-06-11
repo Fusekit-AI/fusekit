@@ -35,6 +35,7 @@ def render_control_room(
     *,
     gate_path: Path | None = None,
     action_token: str = "",
+    csp_nonce: str = "",
 ) -> str:
     """Render a standalone HTML control-room page."""
 
@@ -42,13 +43,14 @@ def render_control_room(
     if action_token:
         control_payload["control_room_action_token"] = action_token
     payload = _safe_json(_public_payload(control_payload))
+    nonce_attr = f' nonce="{html.escape(csp_nonce)}"' if csp_nonce else ""
     return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FuseKit Control Room</title>
-  <style>{STYLE}</style>
+  <style{nonce_attr}>{STYLE}</style>
 </head>
 <body>
   <main class="shell">
@@ -68,8 +70,8 @@ def render_control_room(
       {_render_artifacts(job)}
     </section>
   </main>
-  <script id="job-data" type="application/json">{payload}</script>
-  <script>{SCRIPT}</script>
+  <script{nonce_attr} id="job-data" type="application/json">{payload}</script>
+  <script{nonce_attr}>{SCRIPT}</script>
 </body>
 </html>
 """
@@ -129,7 +131,7 @@ def _render_progress(job: JobState, payload: dict[str, Any]) -> str:
           <strong data-progress-label>{done}/{total} steps</strong>
         </div>
         <div class="meter" aria-label="Progress">
-          <span data-progress-bar style="width: {percent}%"></span>
+          <span data-progress-bar data-progress-percent="{percent}"></span>
         </div>
         <div class="stats">
           <span><strong data-count-running>{counts["running"]}</strong> running</span>

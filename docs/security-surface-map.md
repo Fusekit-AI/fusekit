@@ -11,7 +11,7 @@ Python package is the live control room in `fusekit.runner.control_room.server`.
 
 | Route | Method | State | Protection |
 | --- | --- | --- | --- |
-| `/` | `GET` | Read-only control-room HTML. | Local-only bind by default. Remote bind requires `FUSEKIT_ALLOW_REMOTE_CONTROL_ROOM=1` and a `secrets.token_urlsafe`-style `FUSEKIT_CONTROL_ROOM_TOKEN` with at least 32 URL-safe characters. `Cache-Control: no-store`, `X-Frame-Options: DENY`, CSP `frame-ancestors 'none'`, `form-action 'none'`. |
+| `/` | `GET` | Read-only control-room HTML. | Local-only bind by default. Remote bind requires `FUSEKIT_ALLOW_REMOTE_CONTROL_ROOM=1` and a `secrets.token_urlsafe`-style `FUSEKIT_CONTROL_ROOM_TOKEN` with at least 32 URL-safe characters. `Cache-Control: no-store`, `X-Frame-Options: DENY`, CSP `frame-ancestors 'none'`, `form-action 'none'`, `object-src 'none'`; generated control-room CSS/JS use per-response nonces instead of broad `unsafe-inline`, with inline style/script attributes disabled. |
 | `/index.html` | `GET` | Read-only control-room HTML. | Same as `/`. |
 | `/api/job` | `GET` | Read-only redacted job payload. | Same as `/`. |
 | `/api/gates/<gate_id>/pass` | `POST` | Marks one gate as `resume_requested` in `.fusekit/gates.json`; for setup-plan and DNS-approval gates this is the protected control-room approval signal consumed by the worker. | Requires `x-fusekit-control-room: resume`; rejects untrusted `Origin`; rejects browser-declared cross-site `Sec-Fetch-Site`; every state-changing POST must echo the page's per-control-room `x-fusekit-action-token`; remote access additionally requires token via bearer/query/cookie; no CORS headers are emitted; refuses secret-capture gates until every target is captured into the vault. |
@@ -116,6 +116,9 @@ or trigger commands:
 - Rejected state-changing POST responses keep `Cache-Control: no-store`,
   `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, CSP frame/form
   restrictions, and no CORS allow headers.
+- Served live control-room pages use per-response CSP nonces for the generated
+  stylesheet, bootstrap JSON, and event script, with inline style/script
+  attributes disabled.
 - The per-control-room action token is stored owner-only; existing valid token
   files have their permissions repaired before reuse.
 - Tokenized remote control rooms still reject attacker-origin gate POSTs before

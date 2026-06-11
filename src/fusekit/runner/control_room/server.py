@@ -125,7 +125,8 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                 return
             if route.path in {"/", "/index.html"}:
                 job = JobState.load(job_state)
-                self._write_html(_live_html(job, job_state))
+                csp_nonce = secrets.token_urlsafe(24)
+                self._write_html(_live_html(job, job_state, csp_nonce), csp_nonce=csp_nonce)
                 return
             self._write_not_found()
 
@@ -311,12 +312,12 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
             self._write_control_room_cookie()
             self.end_headers()
 
-        def _write_html(self, html: str) -> None:
+        def _write_html(self, html: str, *, csp_nonce: str = "") -> None:
             data = html.encode("utf-8")
             self.send_response(200)
             self.send_header("content-type", "text/html; charset=utf-8")
             self.send_header("content-length", str(len(data)))
-            self._write_security_headers()
+            self._write_security_headers(csp_nonce=csp_nonce)
             self._write_control_room_cookie()
             self.end_headers()
             self.wfile.write(data)
@@ -362,7 +363,13 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                 f"fusekit_control_room={expected}; HttpOnly; SameSite=Strict; Path=/",
             )
 
-        def _write_security_headers(self) -> None:
+        def _write_security_headers(self, *, csp_nonce: str = "") -> None:
+            if csp_nonce:
+                style_src = f"'nonce-{csp_nonce}'"
+                script_src = f"'nonce-{csp_nonce}'"
+            else:
+                style_src = "'none'"
+                script_src = "'none'"
             self.send_header("cache-control", "no-store")
             self.send_header("x-content-type-options", "nosniff")
             self.send_header("referrer-policy", "no-referrer")
@@ -373,9 +380,12 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                 "connect-src 'self'; "
                 "img-src 'self' data:; "
                 "frame-src http: https:; "
-                "style-src 'unsafe-inline'; "
-                "script-src 'unsafe-inline'; "
+                f"style-src {style_src}; "
+                "style-src-attr 'none'; "
+                f"script-src {script_src}; "
+                "script-src-attr 'none'; "
                 "base-uri 'none'; "
+                "object-src 'none'; "
                 "form-action 'none'; "
                 "frame-ancestors 'none'",
             )
@@ -396,11 +406,12 @@ def _control_room_gate_id(path: str, suffix: str) -> str | None:
     return decoded
 
 
-def _live_html(job: JobState, job_state: Path) -> str:
+def _live_html(job: JobState, job_state: Path, csp_nonce: str = "") -> str:
     return render_control_room(
         job,
         gate_path=job_state.parent / "gates.json",
         action_token=_control_room_action_token(job_state),
+        csp_nonce=csp_nonce,
     )
 
 

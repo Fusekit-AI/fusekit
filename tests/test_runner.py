@@ -2964,6 +2964,8 @@ def test_security_surface_map_documents_control_room_state_routes() -> None:
     assert "CLI-only fallback can use a non-echoing prompt or env handoff" in text
     assert "redirect back to the same route without the token query parameter" in text
     assert "does not stay in the address bar" in text
+    assert "per-response nonces instead of broad `unsafe-inline`" in text
+    assert "inline style/script attributes disabled" in text
     assert "emits no `Access-Control-Allow-Origin`" in text
     assert "`Access-Control-Allow-Methods`" in text
     assert "`Access-Control-Allow-Headers`" in text
@@ -3681,6 +3683,7 @@ def test_control_room_server_uses_local_only_and_security_headers(tmp_path) -> N
     try:
         with urlopen(f"http://127.0.0.1:{server.server_port}/", timeout=5) as response:
             headers = {key.lower(): value for key, value in response.headers.items()}
+            body = response.read().decode("utf-8")
     finally:
         server.shutdown()
         server.server_close()
@@ -3689,7 +3692,22 @@ def test_control_room_server_uses_local_only_and_security_headers(tmp_path) -> N
     assert headers["cache-control"] == "no-store"
     assert headers["x-content-type-options"] == "nosniff"
     assert headers["x-frame-options"] == "DENY"
-    assert "frame-ancestors 'none'" in headers["content-security-policy"]
+    csp = headers["content-security-policy"]
+    assert "frame-ancestors 'none'" in csp
+    assert "form-action 'none'" in csp
+    assert "base-uri 'none'" in csp
+    assert "object-src 'none'" in csp
+    assert "style-src-attr 'none'" in csp
+    assert "script-src-attr 'none'" in csp
+    assert "'unsafe-inline'" not in csp
+    nonce_match = re.search(r"script-src 'nonce-([^']+)'", csp)
+    assert nonce_match is not None
+    nonce = nonce_match.group(1)
+    assert f"style-src 'nonce-{nonce}'" in csp
+    assert body.count(f'nonce="{nonce}"') == 3
+    assert "<style" in body
+    assert '<script nonce="' in body
+    assert "style=" not in body
 
 
 def test_control_room_server_requires_remote_token(
