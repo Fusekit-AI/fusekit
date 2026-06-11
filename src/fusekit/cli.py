@@ -3652,13 +3652,15 @@ def _provider_strategy_checkpoint_resume_hint(
         )
     if provider == "resend":
         return (
-            "If this resurfaces, rerun setup so Resend records feed the DNS approval gate "
-            "before Cloudflare/DNS apply."
+            "If this resurfaces, keep the live control room open; FuseKit will retry "
+            "Resend setup, carry the Resend records into the DNS approval gate, and "
+            "pause there before Cloudflare/DNS apply."
         )
     if provider == "vercel":
         return (
-            "If this resurfaces, rerun setup after Resend and other provider values are "
-            "available so Vercel env wiring can stay deterministic."
+            "If this resurfaces, keep the live control room open while FuseKit waits "
+            "for upstream provider values, then reapplies the required Vercel env "
+            "wiring deterministically."
         )
     if provider in {"cloudflare", "dns"}:
         return (
@@ -3667,8 +3669,8 @@ def _provider_strategy_checkpoint_resume_hint(
         )
     if status == "failed":
         return (
-            "Fix the provider-owned blocker, then rerun FuseKit so the strategy can be "
-            "rechecked."
+            "Use the provider-route card in the live control room to resolve the "
+            "provider-owned blocker; FuseKit will recheck the strategy from there."
         )
     return "FuseKit recorded the deterministic provider route for resume and audit."
 

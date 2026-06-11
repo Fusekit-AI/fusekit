@@ -224,6 +224,7 @@ guided, or explicitly verified.
 | Missing Resend DNS receipt proof could still tell users to rerun setup so an artifact proves the right order, instead of reinforcing the public Resend-first flow. | Acceptance blockers now tell users to capture `RESEND_API_KEY`, let FuseKit create/reuse the Resend sending domain by API, and approve DNS only after Cloudflare/DNS shows the exact Resend verification records. |
 | Verification and rollback launch blockers could still use operator verbs like "run provider verification," "record checks," or "generate rollback metadata." | Harness, static control-room, and live control-room blockers now keep users in the live control room while FuseKit verifies every provider, resolves visible VM-browser gates, marks only safe pending waits, and writes provider rollback actions before launch. |
 | Remote bootstrap checkpoint recovery could still tell users to rerun from encrypted vault/job state after VM setup trouble. | Bootstrap checkpoint guidance now keeps users in the launcher/control room and says FuseKit will surface the next visible VM or provider gate there if setup needs attention. |
+| Provider-route recovery hints for Resend, Vercel, and failed custom routes could still tell users to rerun setup or rerun FuseKit. | Provider-route checkpoints now keep users in the live control room while FuseKit retries Resend setup, carries records into DNS approval, reapplies Vercel env wiring, or rechecks provider-owned blockers from the visible route card. |
 
 ## Open Acceptance Items
 
