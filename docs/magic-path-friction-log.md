@@ -239,6 +239,7 @@ guided, or explicitly verified.
 | Cloud Shell launcher clipboard fallback could tell Mac users to press `Command+C` but did not name the opened backup panel or the cross-platform `Ctrl+C` path. | Launcher copy feedback now says when the command is copied to paste into OCI, and if copying is blocked it opens/selects the backup command and tells users to press `Command+C` or `Ctrl+C` before pasting into Cloud Shell. |
 | Temporary live-control-room refresh failures could tell users to reopen or restart the control-room server, which sounds like a backend/operator task during a public demo. | Live refresh recovery now keeps users in the same control room and says FuseKit will keep trying to reconnect. |
 | Clicking `I finished this step` could leave the button disabled as `Checking again...` while provider verification continued, making a successful click look stuck if refresh lagged. | The control room now changes the clicked button to `Recheck requested` and says FuseKit accepted the step, is rechecking, and will show the next action in the same control room. |
+| Provider-gate open and finished-step failures could still mention static snapshots or low-level VM browser launch problems, making a live recovery feel disconnected from the launcher. | Live control-room action failures now keep the user in the current control room, translate VM browser launch failures into `Open live VM browser` recovery, and say FuseKit will keep the gate visible for retry. |
 
 ## Open Acceptance Items
 

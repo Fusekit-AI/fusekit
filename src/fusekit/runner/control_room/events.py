@@ -1457,7 +1457,8 @@ function controlRoomFailureMessage(payload, fallback) {
 
 function controlRoomFailureStatus(payload, fallback) {
   const parts = [];
-  const reason = String(payload?.error || payload?.message || "").trim();
+  const rawReason = String(payload?.error || payload?.message || "").trim();
+  const reason = publicFailureReason(rawReason, fallback);
   const summary = reason || fallback;
   if (summary) parts.push(summary);
   const missingTargets = Array.isArray(payload?.missing_targets)
@@ -1474,6 +1475,22 @@ function controlRoomFailureStatus(payload, fallback) {
     nextAction,
     summary,
   };
+}
+
+function publicFailureReason(reason, fallback) {
+  const text = String(reason || "").trim();
+  if (
+    text.includes("No VM browser binary") ||
+    text.includes("Could not open provider gate in VM browser") ||
+    text.includes("Could not prepare VM browser profile")
+  ) {
+    return (
+      "Could not open the provider gate inside the VM automatically. " +
+      "Open live VM browser and keep this control room open; " +
+      "FuseKit will keep the gate visible for retry."
+    );
+  }
+  return text || fallback;
 }
 
 function controlRoomFailureError(payload, fallback) {
@@ -1551,7 +1568,9 @@ document.addEventListener("click", async (event) => {
       if (!response.ok || !payload.ok) {
         throw controlRoomFailureError(
           payload,
-          "Could not open the provider gate inside the VM. Use Open live VM browser.",
+          "Could not open the provider gate inside the VM automatically. " +
+            "Open live VM browser and keep this control room open; " +
+            "FuseKit will keep the gate visible for retry.",
         );
       }
       setRefreshStatus(
@@ -1564,7 +1583,9 @@ document.addEventListener("click", async (event) => {
       );
     } catch (error) {
       const message = error?.message ||
-        "Could not open the provider gate inside the VM. Use Open live VM browser.";
+        "Could not open the provider gate inside the VM automatically. " +
+          "Open live VM browser and keep this control room open; " +
+          "FuseKit will keep the gate visible for retry.";
       setRefreshStatus(message, "stale");
       setGateActionStatus(gateId, error?.gateStatus || message, "stale");
     } finally {
@@ -1642,7 +1663,8 @@ document.addEventListener("click", async (event) => {
       if (!response.ok || !payload.ok) {
         throw controlRoomFailureError(
           payload,
-          "Could not record I finished this step from this snapshot. FuseKit will keep waiting.",
+          "Could not record I finished this step from this control room. " +
+            "Keep it open; FuseKit will keep waiting for the visible gate action.",
         );
       }
       gateButton.textContent = "Recheck requested";
@@ -1663,7 +1685,8 @@ document.addEventListener("click", async (event) => {
       gateButton.disabled = false;
       gateButton.textContent = originalText;
       const message = error?.message ||
-        "Could not record I finished this step from this snapshot. FuseKit will keep waiting.";
+        "Could not record I finished this step from this control room. " +
+          "Keep it open; FuseKit will keep waiting for the visible gate action.";
       setRefreshStatus(message, "stale");
       setGateActionStatus(gateId, error?.gateStatus || message, "stale");
     }

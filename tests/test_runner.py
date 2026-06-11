@@ -1233,9 +1233,16 @@ def test_control_room_renders_resume_requested_gate_as_rechecking(tmp_path) -> N
     assert "FuseKit accepted this step and is rechecking the provider now" in html
     assert "Keep this control room open; the next step will appear here" in html
     assert "Snowman is rechecking the provider now" not in html
-    assert "Could not record I finished this step from this snapshot" in html
+    assert "Could not record I finished this step from this control room" in html
+    assert "FuseKit will keep waiting for the visible gate action" in html
+    assert "from this snapshot" not in html
     assert "Could not mark the gate done" not in html
     assert "await refreshJob({ preserveStatus: true });" in html
+    assert "function publicFailureReason" in html
+    assert "Could not open the provider gate inside the VM automatically" in html
+    assert "FuseKit will keep the gate visible for retry" in html
+    assert "No VM browser binary" in html
+    assert "Use Open live VM browser" not in html
 
 
 def test_control_room_renders_vm_clipboard_capture_for_secret_gate(tmp_path) -> None:
