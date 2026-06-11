@@ -528,8 +528,8 @@ def test_control_room_payload_and_html_include_acceptance_blockers(tmp_path) -> 
                         "category": "Provider order",
                         "item": "Resend-before-DNS provider setup order",
                         "next_action": (
-                            "Run Resend domain setup before Cloudflare/DNS so records "
-                            "are included."
+                            "Capture RESEND_API_KEY first, then let FuseKit create or "
+                            "reuse the Resend domain by API before you approve DNS apply."
                         ),
                         "detail": (
                             "missing control_room.gate_open: "
@@ -554,7 +554,10 @@ def test_control_room_payload_and_html_include_acceptance_blockers(tmp_path) -> 
     assert "What must be fixed before recording" in html
     assert "Provider order" in html
     assert "Resend-before-DNS provider setup order" in html
-    assert "Run Resend domain setup before Cloudflare/DNS" in html
+    assert "Capture RESEND_API_KEY first" in html
+    assert "Resend domain by API" in html
+    assert "approve DNS apply" in html
+    assert "Run Resend domain setup before Cloudflare/DNS" not in html
     assert "missing control_room.gate_open" in html
     assert "provider.cloudflare.authorization" in html
     assert "card.detail" in html
@@ -634,6 +637,43 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
     assert "8 launch blockers" in html
     assert "acceptanceBlockers" in html
     assert "missingAcceptanceBlocker" in html
+
+
+def test_control_room_missing_provider_route_blockers_are_launcher_actionable(
+    tmp_path,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    acceptance_dir = tmp_path / "acceptance"
+    acceptance_dir.mkdir()
+    (acceptance_dir / "report.json").write_text(
+        json.dumps(
+            {
+                "launch_ready": False,
+                "missing": [
+                    "provider strategy decisions",
+                    "Resend-before-DNS provider setup order",
+                    "provider contract-health receipt proof",
+                ],
+                "blockers": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+
+    assert "Provider routes" in html
+    assert "provider strategy decisions" in html
+    assert "live launcher/control room" in html
+    assert "setup worker record" in html
+    assert "Resend-before-DNS provider setup order" in html
+    assert "Capture RESEND_API_KEY first" in html
+    assert "Resend domain by API" in html
+    assert "approve DNS apply" in html
+    assert "Run Resend domain setup before Cloudflare/DNS" not in html
+    assert "provider contract-health receipt proof" in html
+    assert "read-only provider health check before mutation" in html
+    assert "exact env-named Capture button" in html
 
 
 def test_control_room_unknown_acceptance_missing_uses_launcher_controls(tmp_path) -> None:

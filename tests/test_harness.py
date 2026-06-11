@@ -1249,7 +1249,8 @@ def test_acceptance_live_requires_real_provider_evidence(tmp_path) -> None:
     assert blockers["encrypted vault"]["category"] == "Vault"
     assert "vault capture enabled" in blockers["encrypted vault"]["next_action"]
     assert blockers["provider strategy decisions"]["category"] == "Provider routes"
-    assert "strategy recorder" in blockers["provider strategy decisions"]["next_action"]
+    assert "live launcher/control room" in blockers["provider strategy decisions"]["next_action"]
+    assert "setup worker record" in blockers["provider strategy decisions"]["next_action"]
 
 
 def test_acceptance_report_redacts_check_and_blocker_details(tmp_path) -> None:
@@ -2085,7 +2086,11 @@ def test_live_acceptance_requires_provider_route_recovery_checkpoints(tmp_path) 
     assert "provider route recovery checkpoints" in report.missing
     blockers = {blocker["item"]: blocker for blocker in report.blockers}
     assert blockers["provider route recovery checkpoints"]["category"] == "Provider routes"
-    assert "checkpoints.json" in blockers["provider route recovery checkpoints"]["next_action"]
+    next_action = blockers["provider route recovery checkpoints"]["next_action"]
+    assert "live launcher/control room" in next_action
+    assert "provider-route cards" in next_action
+    assert "next action and resume hint" in next_action
+    assert "checkpoints.json" not in next_action
 
 
 def test_acceptance_cli_checks_vault_without_leaking_secret(tmp_path, capsys) -> None:
@@ -2221,9 +2226,11 @@ domains:
     assert "Resend-before-DNS provider setup order" in report.missing
     blockers = {blocker["item"]: blocker for blocker in report.blockers}
     assert blockers["Resend-before-DNS provider setup order"]["category"] == "Provider order"
-    assert "Run Resend domain setup before Cloudflare/DNS" in blockers[
-        "Resend-before-DNS provider setup order"
-    ]["next_action"]
+    next_action = blockers["Resend-before-DNS provider setup order"]["next_action"]
+    assert "Capture RESEND_API_KEY first" in next_action
+    assert "Resend domain by API" in next_action
+    assert "approve DNS apply" in next_action
+    assert "Run Resend domain setup before Cloudflare/DNS" not in next_action
 
 
 def test_live_acceptance_requires_receipt_resend_dns_flow(tmp_path) -> None:
@@ -3128,7 +3135,10 @@ def test_live_acceptance_requires_provider_contract_health_before_api_setup(
     assert "provider contract-health receipt proof" in report.missing
     blockers = {blocker["item"]: blocker for blocker in report.blockers}
     assert blockers["provider contract-health receipt proof"]["category"] == "Provider routes"
-    assert "read-only contract-health check" in blockers[
+    assert "read-only provider health check before mutation" in blockers[
+        "provider contract-health receipt proof"
+    ]["next_action"]
+    assert "exact env-named Capture button" in blockers[
         "provider contract-health receipt proof"
     ]["next_action"]
 

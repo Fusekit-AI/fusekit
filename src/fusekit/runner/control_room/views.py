@@ -548,8 +548,9 @@ def _missing_acceptance_guidance(item: str) -> tuple[str, str]:
         "provider strategy decisions": (
             "Provider routes",
             (
-                "Run provider setup through the strategy recorder so API, vault, or "
-                "VM follow-me choices are proven."
+                "Keep the live launcher/control room open and let the setup worker record "
+                "whether each provider uses API, vault capture, or VM follow-me controls "
+                "before acceptance."
             ),
         ),
         "complete provider strategy evidence": (
@@ -570,7 +571,10 @@ def _missing_acceptance_guidance(item: str) -> tuple[str, str]:
         ),
         "Resend-before-DNS provider setup order": (
             "Provider order",
-            "Run Resend domain setup before Cloudflare/DNS so Resend DNS records are included.",
+            (
+                "Capture RESEND_API_KEY first, then let FuseKit create or reuse the "
+                "Resend domain by API before you approve DNS apply."
+            ),
         ),
         "Resend DNS records in receipt DNS proposal": (
             "Provider order",
@@ -595,8 +599,9 @@ def _missing_acceptance_guidance(item: str) -> tuple[str, str]:
         "provider contract-health receipt proof": (
             "Provider routes",
             (
-                "Let FuseKit rerun provider setup so each API route proves a read-only "
-                "provider health check before changing provider state."
+                "Let the setup worker run each API-backed provider route again so it "
+                "records a read-only provider health check before mutation; if a token "
+                "gate appears, use the exact env-named Capture button."
             ),
         ),
         "validated provider capability packs": (

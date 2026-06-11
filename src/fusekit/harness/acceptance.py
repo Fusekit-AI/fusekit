@@ -377,8 +377,9 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
         ),
         "provider strategy decisions": (
             "Provider routes",
-            "Run provider setup through the strategy recorder so API, vault, or "
-            "VM follow-me choices are proven.",
+            "Keep the live launcher/control room open and let the setup worker record "
+            "whether each provider uses API, vault capture, or VM follow-me controls "
+            "before acceptance.",
         ),
         "complete provider strategy evidence": (
             "Provider routes",
@@ -391,12 +392,14 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
         ),
         "provider route recovery checkpoints": (
             "Provider routes",
-            "Rerun setup so provider strategy decisions are written into checkpoints.json "
-            "with concrete resume guidance.",
+            "Keep the live launcher/control room open until provider-route cards show "
+            "the next action and resume hint; rerun the same live launcher only if "
+            "this report came from an older artifact set.",
         ),
         "Resend-before-DNS provider setup order": (
             "Provider order",
-            "Run Resend domain setup before Cloudflare/DNS so Resend DNS records are included.",
+            "Capture RESEND_API_KEY first, then let FuseKit create or reuse the "
+            "Resend domain by API before you approve DNS apply.",
         ),
         "Resend DNS records in receipt DNS proposal": (
             "Provider order",
@@ -416,8 +419,9 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
         ),
         "provider contract-health receipt proof": (
             "Provider routes",
-            "Rerun provider setup so every API-backed provider records a read-only "
-            "contract-health check before setup mutates provider state.",
+            "Let the setup worker run each API-backed provider route again so it "
+            "records a read-only provider health check before mutation; if a token "
+            "gate appears, use the exact env-named Capture button.",
         ),
         "guided human gates": (
             "Human gates",
@@ -580,26 +584,28 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
     if check.id == "provider_strategies.order":
         return (
             "Provider order",
-            "Run Resend domain setup before Cloudflare/DNS so Resend DNS records are available.",
+            "Capture RESEND_API_KEY first, then let FuseKit create or reuse the "
+            "Resend domain by API before you approve DNS apply.",
         )
     if check.id.startswith("provider_strategies."):
         if check.id == "provider_strategies.checkpoints":
             return (
                 "Provider routes",
-                "Rerun provider setup so each selected route is persisted into the recovery "
-                "map with a next action and resume hint.",
+                "Keep the live launcher/control room open until each provider-route card "
+                "shows a selected route, next action, and resume hint.",
             )
         if "resend.strategies" in check.detail.lower() and "evidence" in check.detail.lower():
             return (
                 "Provider routes",
                 (
-                    "Rerun Resend setup so strategy proof records that FuseKit owns "
-                    "domain/audience API setup after key capture."
+                    "Capture RESEND_API_KEY, then let FuseKit record that it owns "
+                    "Resend domain/audience API setup after key capture."
                 ),
             )
         return (
             "Provider routes",
-            "Rerun provider setup so strategy decisions are recorded and ordered correctly.",
+            "Keep the live launcher/control room open and let the setup worker record "
+            "provider route decisions in the correct order.",
         )
     if check.id.startswith("verification_report."):
         return (
@@ -629,9 +635,9 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
         if check.id == "receipt.provider_contract_health":
             return (
                 "Provider routes",
-                "Rerun provider setup so API-backed routes prove a read-only provider "
-                "health check before mutation; refresh or recapture the token if the "
-                "health check fails.",
+                "Let the setup worker rerun the API-backed route so it proves a "
+                "read-only provider health check before mutation; if the token is "
+                "expired or scoped wrong, use the exact env-named Capture button.",
             )
         return ("Receipt", "Regenerate the redacted setup receipt.")
     if check.id == "detonation.worker_state":
