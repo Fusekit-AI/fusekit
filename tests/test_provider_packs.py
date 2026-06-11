@@ -559,6 +559,41 @@ def test_provider_pack_rejects_local_browser_secret_capture_handoff(tmp_path) ->
         validate_provider_pack(bad)
 
 
+def test_provider_pack_rejects_local_tab_account_handoff(tmp_path) -> None:
+    pack = synthesize_provider_pack("stripe", tmp_path)
+    bad = replace(
+        pack,
+        handoff=replace(
+            pack.handoff,
+            account_steps=(
+                "Click Open provider gate in VM, then use a local tab if Stripe asks "
+                "for login.",
+            ),
+        ),
+    )
+
+    with pytest.raises(ProviderError, match="inside the VM browser"):
+        validate_provider_pack(bad)
+
+
+def test_provider_pack_rejects_host_tab_secret_capture_handoff(tmp_path) -> None:
+    pack = synthesize_provider_pack("stripe", tmp_path)
+    bad = replace(
+        pack,
+        handoff=replace(
+            pack.handoff,
+            secret_steps=(
+                "Copy STRIPE_SECRET_KEY inside the host tab, then click Capture "
+                "STRIPE_SECRET_KEY from VM clipboard. No paste into your computer is "
+                "needed because Capture reads the VM clipboard directly.",
+            ),
+        ),
+    )
+
+    with pytest.raises(ProviderError, match="inside the VM browser"):
+        validate_provider_pack(bad)
+
+
 def test_provider_pack_rejects_invalid_account_creation_mode(tmp_path) -> None:
     pack = synthesize_provider_pack("stripe", tmp_path)
     bad = replace(

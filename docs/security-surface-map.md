@@ -54,7 +54,7 @@ SSH session provisioned by FuseKit, or an encrypted vault/passphrase boundary.
 
 | Surface | State changed | Guardrail |
 | --- | --- | --- |
-| `fusekit install` / provider pack synthesis | Writes manifests and provider-pack JSON. | Local filesystem only; generated packs are validated for HTTPS URLs, raw-secret absence, prohibited bypass language, and tool-permission bindings. |
+| `fusekit install` / provider pack synthesis | Writes manifests and provider-pack JSON. | Local filesystem only; generated packs are validated for HTTPS URLs, raw-secret absence, prohibited bypass language, local/host browser-tab side channels, and tool-permission bindings. |
 | `fusekit unlock` / `fusekit request` | Opens encrypted vault or creates short-lived vault sessions. | Passphrase or short-lived session token required; session token is not persisted; session file is encrypted and owner-only. |
 | `fusekit authorize` | Captures approved provider secrets into the encrypted vault. | Public guided runs use exact env-target buttons such as `Capture RESEND_API_KEY from VM clipboard`; durable gates and provider strategies must not ship placeholder `Capture <TARGET> from VM clipboard` copy when the env target is known. CLI-only fallback can use a non-echoing prompt or env handoff. Raw secrets are redacted from output, logs, receipts, and control-room payloads. |
 | `fusekit apply` / `fusekit launch --runner local` | Runs provider setup recipes, writes receipts, audit logs, verification report, rollback metadata. | Provider strategy must select a deterministic API/CLI/browser/vault-capture lane; missing provider auth becomes a human gate; DNS apply requires explicit `approve_dns`. |

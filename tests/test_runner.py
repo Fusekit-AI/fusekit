@@ -3094,6 +3094,7 @@ def test_security_surface_map_documents_control_room_state_routes() -> None:
     )
     assert "must not ship placeholder `Capture <TARGET> from VM clipboard`" in text
     assert "CLI-only fallback can use a non-echoing prompt or env handoff" in text
+    assert "local/host browser-tab side channels" in text
     assert "redirect back to the same route without the token query parameter" in text
     assert "does not stay in the address bar" in text
     assert "per-response nonces instead of broad `unsafe-inline`" in text

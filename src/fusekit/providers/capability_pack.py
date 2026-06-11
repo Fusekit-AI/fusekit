@@ -60,6 +60,12 @@ NO_HOST_PASTE_PHRASES = (
     "do not paste it into your computer",
     "do not paste into your computer",
 )
+LAUNCHER_SIDE_CHANNEL_PHRASES = (
+    "local browser",
+    "local tab",
+    "host browser",
+    "host tab",
+)
 BUILT_IN_PROVIDERS = {"github", "vercel", "cloudflare", "dns"}
 FRAMEWORK_ENV_PREFIXES = {
     "astro",
@@ -783,13 +789,17 @@ def _validate_launcher_capture_handoff(pack: ProviderCapabilityPack) -> None:
         raise ProviderError(
             "Provider pack account_steps must name Open provider gate in VM."
         )
-    if "local browser" in account_text or "host browser" in account_text:
+    if any(phrase in account_text for phrase in LAUNCHER_SIDE_CHANNEL_PHRASES):
         raise ProviderError(
             "Provider pack account_steps must keep provider gates inside the VM browser."
         )
     if not pack.handoff.secret_steps:
         raise ProviderError("Provider pack must include launcher secret capture steps.")
     secret_text = " ".join(pack.handoff.secret_steps).lower()
+    if any(phrase in secret_text for phrase in LAUNCHER_SIDE_CHANNEL_PHRASES):
+        raise ProviderError(
+            "Provider pack secret_steps must keep secret capture inside the VM browser."
+        )
     for phrase in LAUNCHER_CAPTURE_PHRASES:
         if phrase not in secret_text:
             raise ProviderError(
@@ -799,10 +809,6 @@ def _validate_launcher_capture_handoff(pack: ProviderCapabilityPack) -> None:
     if not any(phrase in secret_text for phrase in NO_HOST_PASTE_PHRASES):
         raise ProviderError(
             "Provider pack secret_steps must tell users no paste into their computer is needed."
-        )
-    if "local browser" in secret_text or "host browser" in secret_text:
-        raise ProviderError(
-            "Provider pack secret_steps must keep secret capture inside the VM browser."
         )
     capture_targets = _launcher_capture_targets(pack)
     if capture_targets:
