@@ -455,9 +455,8 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
         "audited human gate interventions": (
             "Human gates",
             "Use the visible launcher controls for each gate: Open provider gate "
-            "in VM, exact env-named Capture buttons such as Capture RESEND_API_KEY "
-            "from VM clipboard for copy-once values, or I finished this step after "
-            "a non-secret provider confirmation.",
+            "in VM, exact env-named Capture buttons for copy-once values, or "
+            "I finished this step after a non-secret provider confirmation.",
         ),
         "resolved human gates": (
             "Human gates",
@@ -607,9 +606,8 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
                 return (
                     "Human gates",
                     "Use the visible launcher controls for each gate: Open provider gate "
-                    "in VM, exact env-named Capture buttons such as Capture RESEND_API_KEY "
-                    "from VM clipboard for copy-once values, or I finished this step after "
-                    "a non-secret provider confirmation.",
+                    "in VM, exact env-named Capture buttons for copy-once values, or "
+                    "I finished this step after a non-secret provider confirmation.",
                 )
         if check.id == "gates.resolved":
             exact_controls = _capture_controls_from_text(check.detail)
@@ -622,16 +620,15 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
                 )
             return (
                 "Human gates",
-                "Finish the visible VM-browser gate, then use the visible "
-                "env-named Capture button such as Capture RESEND_API_KEY from VM clipboard, "
-                "or the I finished this step button.",
+                "Finish the visible VM-browser gate, then use the exact env-named "
+                "Capture button shown on the active launcher gate, or the "
+                "I finished this step button.",
             )
         return (
             "Human gates",
             "Keep the live launcher/control room open while FuseKit rebuilds the gate "
             "so it shows Open provider gate in VM, an exact env-named Capture button "
-            "such as Capture RESEND_API_KEY from VM clipboard, or I finished this step "
-            "as the next visible action.",
+            "for copy-once values, or I finished this step as the next visible action.",
         )
     if check.id == "provider_strategies.order":
         return (

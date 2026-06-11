@@ -417,8 +417,7 @@ def summarize_strategy_action(
         f"Capture {target} from VM clipboard"
         if target
         else (
-            "the visible env-named Capture button, for example "
-            "Capture RESEND_API_KEY from VM clipboard"
+            "the exact env-named Capture button shown on the active launcher gate"
         )
     )
     next_action = (
@@ -491,8 +490,7 @@ def _strategy_follow_steps(pack: ProviderCapabilityPack | None) -> tuple[str, ..
         "Complete only provider-owned login, MFA, CAPTCHA, consent, billing, or token prompts.",
         (
             "If the provider reveals a copy-once token, copy it inside the VM browser and "
-            "click the visible env-named Capture button, for example "
-            "Capture RESEND_API_KEY from VM clipboard. "
+            "click the exact env-named Capture button shown on the active launcher gate. "
             "Do not paste it into your computer; Capture reads the VM clipboard directly."
         ),
         (

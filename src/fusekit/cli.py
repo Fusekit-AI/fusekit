@@ -4412,10 +4412,7 @@ def _capture_controls_for_env_names(env_names: Iterable[str]) -> str:
         if env_name.strip()
     ]
     if not controls:
-        return (
-            "the visible env-named Capture button such as "
-            "Capture RESEND_API_KEY from VM clipboard"
-        )
+        return "the exact env-named Capture button shown on the active launcher gate"
     if len(controls) == 1:
         return controls[0]
     return "these exact Capture buttons: " + ", ".join(controls)

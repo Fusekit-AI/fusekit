@@ -80,7 +80,7 @@ function publicCaptureInstruction(captureTargetList = []) {
     .filter((item) => item.trim() !== "Capture  from VM clipboard");
   if (labels.length === 1) return labels[0];
   if (labels.length > 1) return "one of these visible buttons: " + labels.join(", ");
-  return "the visible env-named Capture button such as Capture RESEND_API_KEY from VM clipboard";
+  return "the exact env-named Capture button shown on the active launcher gate";
 }
 
 function publicTarget(value) {

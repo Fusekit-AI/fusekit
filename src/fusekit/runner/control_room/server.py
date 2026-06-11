@@ -750,8 +750,7 @@ def _capture_button_labels(targets: Iterable[str]) -> str:
     ]
     if not labels:
         return (
-            "the visible env-named Capture button, for example "
-            "Capture RESEND_API_KEY from VM clipboard"
+            "the exact env-named Capture button shown on the active launcher gate"
         )
     return ", ".join(labels)
 

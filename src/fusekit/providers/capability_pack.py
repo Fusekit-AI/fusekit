@@ -1701,8 +1701,7 @@ def _launcher_capture_step(target: str) -> tuple[str, ...]:
         f"Capture {target} from VM clipboard"
         if target
         else (
-            "the visible env-named Capture button, for example "
-            "Capture RESEND_API_KEY from VM clipboard"
+            "the exact env-named Capture button shown on the active launcher gate"
         )
     )
     return (

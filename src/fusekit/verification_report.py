@@ -235,7 +235,10 @@ def _repair(
     if status == "passed":
         return "Nothing needed."
     if status == "skipped":
-        return "No action needed unless this optional check matters for launch proof."
+        return (
+            "This optional proof check was skipped. Keep going unless the launch "
+            "plan explicitly marks this proof as required."
+        )
     if status == "pending":
         return _pending_repair(provider, check, target=target, details=details)
     if status == "needs_human_gate":
@@ -368,8 +371,9 @@ def _capture_recovery_action(
     targets = _capture_targets(provider, target, details)
     if not targets:
         return (
-            "the visible env-named Capture button, for example "
-            "Capture RESEND_API_KEY from VM clipboard, for copy-once values"
+            "the exact Capture button named on the active launcher gate. If no "
+            "Capture button is visible, keep the control room open while FuseKit "
+            "rebuilds the provider proof and surfaces one highlighted next action"
         )
     labels = [f"Capture {candidate} from VM clipboard" for candidate in targets]
     if len(labels) == 1:
@@ -397,9 +401,10 @@ def _provider_gate_completion_action(
             + ", ".join(labels)
         )
     return (
-        "click I finished this step after the provider confirms. If FuseKit shows a "
-        "visible env-named Capture button for a copy-once value, for example "
-        "Capture RESEND_API_KEY from VM clipboard, use that Capture button instead"
+        "follow the single highlighted next action on the active launcher gate. "
+        "Click I finished this step only after the provider confirms; if the gate "
+        "names an env-specific Capture button for a copy-once value, use that "
+        "exact Capture button instead"
     )
 
 

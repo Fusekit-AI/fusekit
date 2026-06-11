@@ -134,12 +134,12 @@ def _strategy_decision() -> dict[str, object]:
     }
 
 
-def test_control_room_capture_label_fallback_uses_env_named_example() -> None:
+def test_control_room_capture_label_fallback_uses_active_gate_capture() -> None:
     label = _capture_button_labels(())
 
     assert "Capture <TARGET>" not in label
-    assert "visible env-named Capture button" in label
-    assert "Capture RESEND_API_KEY from VM clipboard" in label
+    assert "exact env-named Capture button shown on the active launcher gate" in label
+    assert "Capture RESEND_API_KEY from VM clipboard" not in label
 
 
 def test_runner_auto_uses_local_for_explicit_rehearsal(tmp_path) -> None:
@@ -3413,8 +3413,8 @@ def test_control_room_uses_privacy_mascot_for_secret_gates(tmp_path) -> None:
     assert "covering his eyes while secrets stay private" in visible_html
     assert "isPrivacyStep" in html
     assert (
-        "copy it inside the VM browser, then click the visible env-named "
-        "Capture button such as Capture RESEND_API_KEY from VM clipboard"
+        "copy it inside the VM browser, then click the exact env-named "
+        "Capture button shown on the active launcher gate"
         in visible_html
     )
     assert "visible env-named Capture from VM clipboard button" not in visible_html

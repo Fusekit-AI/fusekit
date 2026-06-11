@@ -1971,7 +1971,7 @@ def test_acceptance_blockers_explain_missing_gate_event_controls() -> None:
     next_action = blockers["gates.audited"]["next_action"]
     assert "Open provider gate in VM" in next_action
     assert "exact env-named Capture buttons" in next_action
-    assert "Capture RESEND_API_KEY from VM clipboard" in next_action
+    assert "Capture RESEND_API_KEY from VM clipboard" not in next_action
     assert "I finished this step" in next_action
 
 
@@ -5097,7 +5097,7 @@ def test_live_acceptance_rejects_malformed_gate_audit_event(tmp_path) -> None:
     next_action = blockers["audited human gate interventions"]["next_action"]
     assert "Open provider gate in VM" in next_action
     assert "exact env-named Capture buttons" in next_action
-    assert "Capture RESEND_API_KEY from VM clipboard" in next_action
+    assert "Capture RESEND_API_KEY from VM clipboard" not in next_action
     assert "I finished this step" in next_action
 
 

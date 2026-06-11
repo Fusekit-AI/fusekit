@@ -157,7 +157,7 @@ def test_provider_strategy_summary_uses_evidence_token_env_without_pack(tmp_path
     assert "target-specific Capture from VM clipboard button" not in action["next_action"]
 
 
-def test_provider_strategy_targetless_fallback_uses_env_named_example() -> None:
+def test_provider_strategy_targetless_fallback_uses_active_gate_capture() -> None:
     decision = ProviderStrategyDecision(
         provider="unknownpay",
         recipe_kind="unknownpay-project",
@@ -179,9 +179,11 @@ def test_provider_strategy_targetless_fallback_uses_env_named_example() -> None:
 
     assert "Capture <TARGET>" not in action["next_action"]
     assert "Capture <TARGET>" not in steps
-    assert "visible env-named Capture button" in action["next_action"]
-    assert "Capture RESEND_API_KEY from VM clipboard" in action["next_action"]
-    assert "visible env-named Capture button" in steps
+    assert "exact env-named Capture button shown on the active launcher gate" in action[
+        "next_action"
+    ]
+    assert "Capture RESEND_API_KEY from VM clipboard" not in action["next_action"]
+    assert "exact env-named Capture button shown on the active launcher gate" in steps
 
 
 def test_provider_strategy_uses_local_vault_for_capture_recipes(tmp_path) -> None:

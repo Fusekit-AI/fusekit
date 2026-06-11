@@ -239,10 +239,7 @@ def _public_capture_instruction(capture_targets: Iterable[str]) -> str:
         return labels[0]
     if len(labels) > 1:
         return "one of these visible buttons: " + ", ".join(labels)
-    return (
-        "the visible env-named Capture button such as "
-        "Capture RESEND_API_KEY from VM clipboard"
-    )
+    return "the exact env-named Capture button shown on the active launcher gate"
 
 
 def _public_target(value: Any) -> str:
