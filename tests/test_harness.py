@@ -228,6 +228,19 @@ def _write_minimum_live_artifacts(remote_fusekit: Path) -> None:
     (remote_fusekit / "gates.json").write_text(json.dumps({"gates": []}), "utf-8")
 
 
+def _dns_apply_approval_event() -> dict[str, object]:
+    return {
+        "event": "control_room.gate_resume_requested",
+        "data": {
+            "gate_id": "dns.moonlite.rsvp.approval",
+            "provider": "dns",
+            "classification": "dns-approval",
+            "status": "resume_requested",
+            "protected_action": True,
+        },
+    }
+
+
 def _write_minimum_resend_vercel_live_artifacts(remote_fusekit: Path) -> None:
     (remote_fusekit / "audit.jsonl").write_text('{"event":"provider.verify"}\n', "utf-8")
     (remote_fusekit / "verification_report.json").write_text(
@@ -2421,6 +2434,157 @@ def test_live_acceptance_accepts_receipt_resend_records_before_dns(tmp_path) -> 
     receipt_check = next(check for check in report.checks if check.id == "receipt.resend_dns_flow")
     assert receipt_check.status == "ok"
     assert "deterministic sending-domain contract" in receipt_check.detail
+
+
+def test_live_acceptance_requires_dns_apply_launcher_approval(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_cloudflare_manifest(app)
+    remote = tmp_path / "remote"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_live_artifacts(remote_fusekit)
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "actions": [
+                    {
+                        "action": "resend.domain",
+                        "status": "ok",
+                        "details": _resend_domain_receipt_details(
+                            dns_records=[
+                                {
+                                    "type": "MX",
+                                    "name": "send.moonlite.rsvp",
+                                    "value": "feedback-smtp.us-east-1.amazonses.com",
+                                }
+                            ],
+                        ),
+                    },
+                    {
+                        "action": "dns.propose",
+                        "status": "ok",
+                        "details": {
+                            "domain": "moonlite.rsvp",
+                            "changes": [
+                                {
+                                    "record": {
+                                        "type": "MX",
+                                        "name": "send.moonlite.rsvp",
+                                        "value": "feedback-smtp.us-east-1.amazonses.com",
+                                    }
+                                }
+                            ],
+                        },
+                    },
+                    {
+                        "action": "dns.apply",
+                        "status": "ok",
+                        "details": {"domain": "moonlite.rsvp", "applied": [{"id": "dns-1"}]},
+                    },
+                ],
+                "raw_secrets_exposed": 0,
+                "live_url": "https://moonlite.rsvp",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    approval_check = next(
+        check for check in report.checks if check.id == "receipt.dns_apply_approval"
+    )
+    assert report.launch_ready is False
+    assert approval_check.status == "failed"
+    assert "without protected Approve DNS apply audit proof" in approval_check.detail
+    assert "DNS apply approval audit proof" in report.missing
+    blockers = {blocker["item"]: blocker for blocker in report.blockers}
+    assert blockers["DNS apply approval audit proof"]["category"] == "DNS approval"
+    assert "Approve DNS apply" in blockers["DNS apply approval audit proof"]["next_action"]
+
+
+def test_live_acceptance_accepts_dns_apply_launcher_approval(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_cloudflare_manifest(app)
+    remote = tmp_path / "remote"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_live_artifacts(remote_fusekit)
+    (remote_fusekit / "audit.jsonl").write_text(
+        '{"event":"provider.verify"}\n'
+        + json.dumps(_dns_apply_approval_event(), sort_keys=True)
+        + "\n",
+        encoding="utf-8",
+    )
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "actions": [
+                    {
+                        "action": "resend.domain",
+                        "status": "ok",
+                        "details": _resend_domain_receipt_details(
+                            dns_records=[
+                                {
+                                    "type": "MX",
+                                    "name": "send.moonlite.rsvp",
+                                    "value": "feedback-smtp.us-east-1.amazonses.com",
+                                }
+                            ],
+                        ),
+                    },
+                    {
+                        "action": "dns.propose",
+                        "status": "ok",
+                        "details": {
+                            "domain": "moonlite.rsvp",
+                            "changes": [
+                                {
+                                    "record": {
+                                        "type": "MX",
+                                        "name": "send.moonlite.rsvp",
+                                        "value": "feedback-smtp.us-east-1.amazonses.com",
+                                    }
+                                }
+                            ],
+                        },
+                    },
+                    {
+                        "action": "dns.apply",
+                        "status": "ok",
+                        "details": {"domain": "moonlite.rsvp", "applied": [{"id": "dns-1"}]},
+                    },
+                ],
+                "raw_secrets_exposed": 0,
+                "live_url": "https://moonlite.rsvp",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    approval_check = next(
+        check for check in report.checks if check.id == "receipt.dns_apply_approval"
+    )
+    assert approval_check.status == "ok"
+    assert "protected Approve DNS apply audit proof" in approval_check.detail
 
 
 def test_live_acceptance_requires_receipt_resend_runtime_env_in_vercel(tmp_path) -> None:

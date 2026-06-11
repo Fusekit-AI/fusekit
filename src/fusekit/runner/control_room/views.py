@@ -566,6 +566,11 @@ def _missing_acceptance_guidance(item: str) -> tuple[str, str]:
                 "the DNS apply gate so Cloudflare receives the exact Resend records."
             ),
         ),
+        "DNS apply approval audit proof": (
+            "DNS approval",
+            "Use the visible Approve DNS apply control in the launcher before DNS records "
+            "are applied.",
+        ),
         "Resend runtime env in Vercel receipt": (
             "Deployment env",
             (

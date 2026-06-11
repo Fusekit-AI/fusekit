@@ -865,6 +865,10 @@ function missingAcceptanceBlocker(item) {
       "Let FuseKit create or reuse the Resend sending domain first, then approve " +
         "the DNS apply gate so Cloudflare receives the exact Resend records.",
     ],
+    "DNS apply approval audit proof": [
+      "DNS approval",
+      "Use the visible Approve DNS apply control in the launcher before DNS records are applied.",
+    ],
     "Resend runtime env in Vercel receipt": [
       "Deployment env",
       "Capture RESEND_API_KEY in the launcher, then let FuseKit create or reuse " +

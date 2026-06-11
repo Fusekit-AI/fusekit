@@ -165,14 +165,14 @@ def run_acceptance(
     )
     _check_vault(vault_path, passphrase, mode, checks, missing, ledger)
 
-    receipt_path = _app_relative(app_path, receipt_path) or (
-        evidence_fusekit_dir / "setup_receipt.json"
-    )
-    _check_receipt(receipt_path, manifest, mode, checks, missing, ledger)
-
     audit_log_path = _app_relative(app_path, audit_log_path) or (
         evidence_fusekit_dir / "audit.jsonl"
     )
+    receipt_path = _app_relative(app_path, receipt_path) or (
+        evidence_fusekit_dir / "setup_receipt.json"
+    )
+    _check_receipt(receipt_path, manifest, mode, audit_log_path, checks, missing, ledger)
+
     _check_audit_log(audit_log_path, mode, checks, missing)
     _check_verification_report(
         evidence_fusekit_dir / "verification_report.json",
@@ -403,6 +403,11 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
             "Rerun setup so the receipt proves Resend created/reused the sending domain "
             "and Cloudflare/DNS proposed the exact Resend verification records.",
         ),
+        "DNS apply approval audit proof": (
+            "DNS approval",
+            "Use the visible Approve DNS apply control in the launcher before DNS records "
+            "are applied.",
+        ),
         "Resend runtime env in Vercel receipt": (
             "Deployment env",
             "Capture RESEND_API_KEY in the launcher; FuseKit must then create or reuse "
@@ -609,6 +614,12 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
                 "Provider order",
                 "Create or reuse the Resend domain first, then approve the DNS apply gate.",
             )
+        if check.id == "receipt.dns_apply_approval":
+            return (
+                "DNS approval",
+                "Reopen the DNS approval gate in the launcher and click the visible "
+                "Approve DNS apply control before FuseKit applies DNS records.",
+            )
         if check.id == "receipt.resend_vercel_env":
             return (
                 "Deployment env",
@@ -797,6 +808,7 @@ def _check_receipt(
     receipt_path: Path,
     manifest: SetupManifest,
     mode: str,
+    audit_log_path: Path,
     checks: list[AcceptanceCheck],
     missing: list[str],
     ledger: HarnessLedger,
@@ -848,8 +860,89 @@ def _check_receipt(
             )
         )
     _check_receipt_resend_dns_flow(raw, manifest, mode, checks, missing, str(snapshot))
+    _check_receipt_dns_apply_approval(raw, mode, audit_log_path, checks, missing, str(snapshot))
     _check_receipt_resend_vercel_env_flow(raw, manifest, mode, checks, missing, str(snapshot))
     _check_receipt_provider_contract_health(raw, mode, checks, missing, str(snapshot))
+
+
+def _check_receipt_dns_apply_approval(
+    raw: Any,
+    mode: str,
+    audit_log_path: Path,
+    checks: list[AcceptanceCheck],
+    missing: list[str],
+    artifact: str,
+) -> None:
+    """Prove live DNS mutation had explicit protected launcher approval."""
+
+    if mode != "live":
+        return
+    actions = raw.get("actions", []) if isinstance(raw, dict) else []
+    if not isinstance(actions, list):
+        return
+    apply_actions = [
+        action
+        for action in actions
+        if isinstance(action, dict)
+        and str(action.get("action", "")).strip() == "dns.apply"
+        and str(action.get("status", "")).strip() == "ok"
+    ]
+    if not apply_actions:
+        return
+    applied_domains = sorted(
+        {
+            str(action.get("details", {}).get("domain", "")).strip()
+            for action in apply_actions
+            if isinstance(action.get("details", {}), dict)
+        }
+    )
+    applied_domains = [domain for domain in applied_domains if domain]
+    if not applied_domains:
+        _fail_dns_apply_approval(
+            checks,
+            missing,
+            "Receipt contains successful dns.apply without a domain.",
+            artifact,
+        )
+        return
+    audit_events, audit_error = _control_room_audit_events(audit_log_path)
+    if audit_error:
+        _fail_dns_apply_approval(checks, missing, audit_error, artifact)
+        return
+    if not any(_gate_resume_audit_event_proves_dns_apply_approval(event) for event in audit_events):
+        _fail_dns_apply_approval(
+            checks,
+            missing,
+            "Receipt applied DNS changes without protected Approve DNS apply audit proof for: "
+            + ", ".join(applied_domains),
+            artifact,
+        )
+        return
+    checks.append(
+        AcceptanceCheck(
+            "receipt.dns_apply_approval",
+            "ok",
+            "Receipt DNS apply is backed by protected Approve DNS apply audit proof.",
+            artifact,
+        )
+    )
+
+
+def _fail_dns_apply_approval(
+    checks: list[AcceptanceCheck],
+    missing: list[str],
+    detail: str,
+    artifact: str,
+) -> None:
+    checks.append(
+        AcceptanceCheck(
+            "receipt.dns_apply_approval",
+            "failed",
+            detail,
+            artifact,
+        )
+    )
+    missing.append("DNS apply approval audit proof")
 
 
 def _check_receipt_provider_contract_health(
@@ -2718,6 +2811,24 @@ def _gate_resume_audit_event_proves_finished_click(event: dict[str, Any]) -> boo
         and data.get("protected_action") is True
         and data.get("status") == "resume_requested"
         and bool(str(data.get("gate_id", "")).strip())
+    )
+
+
+def _gate_resume_audit_event_proves_dns_apply_approval(event: dict[str, Any]) -> bool:
+    """Return whether an audit event proves the protected DNS approval action."""
+
+    if not _gate_resume_audit_event_proves_finished_click(event):
+        return False
+    data = event.get("data", {})
+    if not isinstance(data, dict):
+        return False
+    gate_id = str(data.get("gate_id", "")).strip().lower()
+    provider = str(data.get("provider", "")).strip().lower()
+    classification = str(data.get("classification", "")).strip().lower()
+    return (
+        provider == "dns"
+        or classification == "dns-approval"
+        or gate_id.startswith("dns.")
     )
 
 
