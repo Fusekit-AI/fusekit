@@ -822,8 +822,9 @@ function missingAcceptanceBlocker(item) {
     "audited human gate interventions": [
       "Human gates",
       "Use the visible launcher controls for every gate: Open provider gate " +
-        "in VM, target-specific Capture from VM clipboard buttons for copy-once " +
-        "values, or I finished this step after a non-secret provider confirmation.",
+        "in VM, exact env-named Capture buttons such as Capture RESEND_API_KEY " +
+        "from VM clipboard for copy-once values, or I finished this step after " +
+        "a non-secret provider confirmation.",
     ],
     "resolved human gates": [
       "Human gates",
@@ -900,8 +901,9 @@ function missingAcceptanceBlocker(item) {
 function unknownAcceptanceBlockerAction(item) {
   return (
     `Keep the control room open while FuseKit regenerates launch evidence for ${item}. ` +
-    "Use any visible Open provider gate in VM, Capture from VM clipboard, " +
-    "I finished this step, Approve setup plan, or Approve DNS apply control that appears. " +
+    "Use any visible Open provider gate in VM, env-named Capture button such as " +
+    "Capture RESEND_API_KEY from VM clipboard, I finished this step, Approve setup plan, " +
+    "or Approve DNS apply control that appears. " +
     "If no specific launcher control appears, rerun the same live launch/acceptance so " +
     "FuseKit can rebuild this proof artifact."
   );

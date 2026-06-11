@@ -777,8 +777,9 @@ def _missing_token_capture_step(provider: str, target: str) -> str:
             f"Capture {capture_target} from VM clipboard."
         )
     return (
-        "Copy the approved token inside the VM browser, then click the target-specific "
-        "Capture from VM clipboard button."
+        "Copy the approved token inside the VM browser, then click the exact "
+        "env-named Capture button shown for that value, such as Capture RESEND_API_KEY "
+        "from VM clipboard."
     )
 
 

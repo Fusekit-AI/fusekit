@@ -3698,9 +3698,9 @@ def _provider_strategy_follow_steps(pack: ProviderCapabilityPack) -> tuple[str, 
             "steps in that VM browser."
         ),
         (
-            "If FuseKit shows Capture from VM clipboard buttons for named values, copy "
-            "each provider value inside the VM browser and click the visible button "
-            "named for that value, for example Capture CUSTOM_API_KEY from VM clipboard. "
+            "If FuseKit shows exact env-named Capture buttons, copy each provider "
+            "value inside the VM browser and click the visible button for that "
+            "value, for example Capture CUSTOM_API_KEY from VM clipboard. "
             "Do not paste it into your computer; Capture reads the VM clipboard directly."
         ),
         (
@@ -3713,8 +3713,9 @@ def _provider_strategy_follow_steps(pack: ProviderCapabilityPack) -> tuple[str, 
 def _provider_strategy_next_action() -> str:
     return (
         "Click Open provider gate in VM, complete the provider-owned gate in the VM browser, "
-        "then follow the exact FuseKit control shown here: Capture named values from the VM "
-        "clipboard, or click I finished this step for non-secret gates."
+        "then follow the exact FuseKit control shown here: click the env-named "
+        "Capture <ENV> from VM clipboard button for secret values, or click "
+        "I finished this step for non-secret gates."
     )
 
 
@@ -4319,6 +4320,9 @@ def _resend_runtime_follow_steps(
     steps = [
         "Use the live VM browser, not a local browser tab.",
     ]
+    capture_controls = ", ".join(
+        f"Capture {env_name} from VM clipboard" for env_name in env_names
+    ) or "the visible env-named Capture buttons"
     if "RESEND_API_KEY" in env_names:
         steps.extend(
             [
@@ -4370,9 +4374,9 @@ def _resend_runtime_follow_steps(
     steps.extend(
         [
             (
-                "Copy each requested value inside the VM browser, then click each "
-                "target-specific Capture from VM clipboard button. Do not paste it into "
-                "your computer; Capture reads the VM clipboard directly."
+                "Copy each requested value inside the VM browser, then click these "
+                f"exact controls: {capture_controls}. Do not paste values into your "
+                "computer; Capture reads the VM clipboard directly."
             ),
             (
                 "FuseKit will apply the captured values to Vercel and GitHub after "

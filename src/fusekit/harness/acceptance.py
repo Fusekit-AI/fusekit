@@ -422,8 +422,9 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
         "audited human gate interventions": (
             "Human gates",
             "Use the visible launcher controls for each gate: Open provider gate "
-            "in VM, target-specific Capture from VM clipboard buttons for copy-once "
-            "values, or I finished this step after a non-secret provider confirmation.",
+            "in VM, exact env-named Capture buttons such as Capture RESEND_API_KEY "
+            "from VM clipboard for copy-once values, or I finished this step after "
+            "a non-secret provider confirmation.",
         ),
         "resolved human gates": (
             "Human gates",
@@ -519,8 +520,9 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
                 return (
                     "Human gates",
                     "Use the visible launcher controls for each gate: Open provider gate "
-                    "in VM, target-specific Capture from VM clipboard buttons for copy-once "
-                    "values, or I finished this step after a non-secret provider confirmation.",
+                    "in VM, exact env-named Capture buttons such as Capture RESEND_API_KEY "
+                    "from VM clipboard for copy-once values, or I finished this step after "
+                    "a non-secret provider confirmation.",
                 )
             if "control_room.gate_open" in detail:
                 return (
@@ -540,7 +542,8 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
                 return (
                     "Human gates",
                     "Copy the provider token in the VM browser, then click the "
-                    "target-specific Capture from VM clipboard button.",
+                    "exact env-named Capture button shown for that value, such as "
+                    "Capture RESEND_API_KEY from VM clipboard.",
                 )
             if "control_room.gate_resume_requested" in detail:
                 return (
@@ -560,7 +563,8 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
             return (
                 "Human gates",
                 "Finish the visible VM-browser gate, then use the visible "
-                "target-specific Capture from VM clipboard or I finished this step button.",
+                "env-named Capture button such as Capture RESEND_API_KEY from VM clipboard, "
+                "or the I finished this step button.",
             )
         return (
             "Human gates",
@@ -638,8 +642,9 @@ def _unknown_launch_evidence_action(item: str) -> str:
 
     return (
         f"Keep the control room open while FuseKit regenerates launch evidence for {item}. "
-        "Use any visible Open provider gate in VM, Capture from VM clipboard, "
-        "I finished this step, Approve setup plan, or Approve DNS apply control that appears. "
+        "Use any visible Open provider gate in VM, env-named Capture button such as "
+        "Capture RESEND_API_KEY from VM clipboard, I finished this step, Approve setup plan, "
+        "or Approve DNS apply control that appears. "
         "If no specific launcher control appears, rerun the same live launch/acceptance so "
         "FuseKit can rebuild this proof artifact."
     )

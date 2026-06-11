@@ -1373,7 +1373,8 @@ def test_acceptance_blockers_keep_unknown_items_launcher_actionable() -> None:
         next_action = by_item[item]["next_action"]
         assert "Keep the control room open" in next_action
         assert "Open provider gate in VM" in next_action
-        assert "Capture from VM clipboard" in next_action
+        assert "env-named Capture button" in next_action
+        assert "Capture RESEND_API_KEY from VM clipboard" in next_action
         assert "I finished this step" in next_action
         assert "Approve DNS apply" in next_action
         assert "Repair missing launch evidence" not in next_action
@@ -1398,7 +1399,8 @@ def test_acceptance_blockers_explain_missing_gate_event_controls() -> None:
 
     next_action = blockers["gates.audited"]["next_action"]
     assert "Open provider gate in VM" in next_action
-    assert "Capture from VM clipboard" in next_action
+    assert "exact env-named Capture buttons" in next_action
+    assert "Capture RESEND_API_KEY from VM clipboard" in next_action
     assert "I finished this step" in next_action
 
 
@@ -3600,7 +3602,10 @@ def test_live_acceptance_requires_audited_control_room_gates(tmp_path) -> None:
     assert "Open provider gate in VM" in blockers[
         "audited human gate interventions"
     ]["next_action"]
-    assert "Capture from VM clipboard" in blockers[
+    assert "exact env-named Capture buttons" in blockers[
+        "audited human gate interventions"
+    ]["next_action"]
+    assert "Capture RESEND_API_KEY from VM clipboard" in blockers[
         "audited human gate interventions"
     ]["next_action"]
     assert "I finished this step" in blockers[
@@ -4168,7 +4173,8 @@ def test_live_acceptance_rejects_malformed_gate_audit_event(tmp_path) -> None:
     blockers = {blocker["item"]: blocker for blocker in report.blockers}
     next_action = blockers["audited human gate interventions"]["next_action"]
     assert "Open provider gate in VM" in next_action
-    assert "Capture from VM clipboard" in next_action
+    assert "exact env-named Capture buttons" in next_action
+    assert "Capture RESEND_API_KEY from VM clipboard" in next_action
     assert "I finished this step" in next_action
 
 

@@ -602,7 +602,9 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
     assert "audited human gate interventions" in html
     assert "Use the visible launcher controls for every gate" in html
     assert "Open provider gate in VM" in html
-    assert "target-specific Capture from VM clipboard buttons for copy-once values" in html
+    assert "exact env-named Capture buttons such as Capture RESEND_API_KEY" in html
+    assert "from VM clipboard for copy-once values" in html
+    assert "target-specific Capture from VM clipboard buttons" not in html
     assert "I finished this step after a non-secret provider confirmation" in html
     assert "Open, capture, or resume each control-room gate" not in html
     assert "guided human gates" in html
@@ -658,7 +660,7 @@ def test_control_room_unknown_acceptance_missing_uses_launcher_controls(tmp_path
     assert "Launch evidence" in html
     assert "Keep the control room open" in html
     assert "Open provider gate in VM" in html
-    assert "Capture from VM clipboard" in html
+    assert "env-named Capture button such as Capture RESEND_API_KEY from VM clipboard" in html
     assert "I finished this step" in html
     assert "Approve DNS apply" in html
     assert "Repair this acceptance item" not in html
