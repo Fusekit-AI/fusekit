@@ -1085,6 +1085,7 @@ def test_control_room_post_requests_human_gate_resume(tmp_path) -> None:
     assert events[-1]["event"] == "control_room.gate_resume_requested"
     assert events[-1]["data"]["gate_id"] == "provider.github.mfa.123"
     assert events[-1]["data"]["provider"] == "github"
+    assert events[-1]["data"]["protected_action"] is True
     assert events[-1]["data"]["status"] == "resume_requested"
 
 
@@ -1635,6 +1636,8 @@ def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -
         "control_room.gate_open",
         "control_room.gate_open",
     ]
+    assert events[-2]["data"]["protected_action"] is True
+    assert events[-1]["data"]["protected_action"] is True
     assert events[-2]["data"]["reused"] is False
     assert events[-1]["data"]["reused"] is True
     assert events[-1]["data"]["has_resume_url"] is True
@@ -1992,6 +1995,7 @@ def test_control_room_post_captures_vm_clipboard_into_vault(tmp_path, monkeypatc
     assert events[-1]["data"]["gate_id"] == "provider.resend.api-key-domain-access"
     assert events[-1]["data"]["target"] == "RESEND_API_KEY"
     assert events[-1]["data"]["record_id"] == "provider.resend.resend_api_key"
+    assert events[-1]["data"]["protected_action"] is True
     assert events[-1]["data"]["source"] == "vm-clipboard"
     assert events[-1]["data"]["storage"] == "encrypted-vault"
     assert "re_live_secret" not in json.dumps(payload)

@@ -869,6 +869,7 @@ def test_acceptance_provider_gate_open_proof_requires_non_reused_launch() -> Non
         "event": "control_room.gate_open",
         "data": {
             "gate_id": "provider.cloudflare.authorization",
+            "protected_action": True,
             "reused": False,
             "has_resume_url": True,
             "has_last_opened_url": True,
@@ -1660,6 +1661,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                         "data": {
                             "gate_id": "provider.openai.authorization",
                             "provider": "openai",
+                            "protected_action": True,
                             "has_last_opened_url": True,
                             "has_resume_url": True,
                             "reused": False,
@@ -1674,6 +1676,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                         "data": {
                             "gate_id": "provider.openai.authorization",
                             "provider": "openai",
+                            "protected_action": True,
                             "status": "passed",
                             "target": "OPENAI_API_KEY",
                             "record_id": "provider.openai.token",
@@ -1689,6 +1692,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                         "data": {
                             "gate_id": "provider.callback.review",
                             "provider": "provider",
+                            "protected_action": True,
                             "has_last_opened_url": True,
                             "has_resume_url": True,
                             "reused": False,
@@ -1703,6 +1707,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                         "data": {
                             "gate_id": "provider.callback.review",
                             "provider": "provider",
+                            "protected_action": True,
                             "status": "resume_requested",
                         },
                     },

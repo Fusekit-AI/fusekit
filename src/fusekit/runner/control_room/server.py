@@ -810,6 +810,7 @@ def _append_gate_audit(
     **extra: Any,
 ) -> None:
     payload = _gate_audit_payload(gate)
+    payload["protected_action"] = True
     payload.update(extra)
     _append_control_room_audit(job_state, event, payload)
 
@@ -845,6 +846,7 @@ def _append_capture_audit(
             "gate_id": gate_id,
             "target": target,
             "record_id": record_id,
+            "protected_action": True,
             "source": "vm-clipboard",
             "storage": "encrypted-vault",
         },

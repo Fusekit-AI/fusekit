@@ -2674,6 +2674,7 @@ def _gate_open_audit_event_proves_vm_open(event: dict[str, Any]) -> bool:
     return (
         str(event.get("event", "")) == "control_room.gate_open"
         and isinstance(data, dict)
+        and data.get("protected_action") is True
         and data.get("reused") is False
         and data.get("has_resume_url") is True
         and data.get("has_last_opened_url") is True
@@ -2688,6 +2689,7 @@ def _gate_capture_audit_event_proves_vault_capture(event: dict[str, Any]) -> boo
     return (
         str(event.get("event", "")) == "control_room.clipboard_capture"
         and isinstance(data, dict)
+        and data.get("protected_action") is True
         and data.get("source") == "vm-clipboard"
         and data.get("storage") == "encrypted-vault"
         and bool(str(data.get("gate_id", "")).strip())
@@ -2703,6 +2705,7 @@ def _gate_resume_audit_event_proves_finished_click(event: dict[str, Any]) -> boo
     return (
         str(event.get("event", "")) == "control_room.gate_resume_requested"
         and isinstance(data, dict)
+        and data.get("protected_action") is True
         and data.get("status") == "resume_requested"
         and bool(str(data.get("gate_id", "")).strip())
     )
