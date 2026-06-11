@@ -663,6 +663,31 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
     assert "missingAcceptanceBlocker" in html
 
 
+def test_control_room_encrypted_vault_missing_is_launcher_actionable(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    acceptance_dir = tmp_path / "acceptance"
+    acceptance_dir.mkdir()
+    (acceptance_dir / "report.json").write_text(
+        json.dumps(
+            {
+                "launch_ready": False,
+                "missing": ["encrypted vault"],
+                "blockers": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+
+    assert "Vault" in html
+    assert "encrypted vault" in html
+    assert "live launcher/control room" in html
+    assert "VM clipboard Capture controls" in html
+    assert "encrypted vault proof" in html
+    assert "Run the launcher with vault capture enabled" not in html
+
+
 def test_control_room_provider_pack_and_leak_scan_missing_are_launcher_actionable(
     tmp_path,
 ) -> None:

@@ -1248,6 +1248,10 @@ def test_acceptance_live_requires_real_provider_evidence(tmp_path) -> None:
     blockers = {blocker["item"]: blocker for blocker in report.blockers}
     assert blockers["encrypted vault"]["category"] == "Vault"
     assert "vault capture enabled" in blockers["encrypted vault"]["next_action"]
+    assert "live launcher/control room" in blockers["encrypted vault"]["next_action"]
+    assert "VM clipboard Capture controls" in blockers["encrypted vault"]["next_action"]
+    assert "encrypted vault proof" in blockers["encrypted vault"]["next_action"]
+    assert ".fusekit/fusekit.vault.json" not in blockers["encrypted vault"]["next_action"]
     assert blockers["redacted setup receipt"]["category"] == "Receipt"
     assert "live launcher/control room" in blockers["redacted setup receipt"]["next_action"]
     assert "redacted receipt with no raw secrets" in blockers[
@@ -1268,6 +1272,29 @@ def test_acceptance_live_requires_real_provider_evidence(tmp_path) -> None:
     assert blockers["provider strategy decisions"]["category"] == "Provider routes"
     assert "live launcher/control room" in blockers["provider strategy decisions"]["next_action"]
     assert "setup worker record" in blockers["provider strategy decisions"]["next_action"]
+
+
+def test_acceptance_vault_check_blocker_is_launcher_actionable() -> None:
+    blockers = {
+        blocker["item"]: blocker
+        for blocker in _acceptance_blockers(
+            [
+                AcceptanceCheck(
+                    "vault.exists",
+                    "failed",
+                    "Vault not found: .fusekit/fusekit.vault.json",
+                )
+            ],
+            [],
+        )
+    }
+
+    next_action = blockers["vault.exists"]["next_action"]
+    assert blockers["vault.exists"]["category"] == "Vault"
+    assert "live launcher/control room" in next_action
+    assert "VM clipboard Capture controls" in next_action
+    assert "encrypted vault proof" in next_action
+    assert "Regenerate or unlock" not in next_action
 
 
 def test_acceptance_report_redacts_check_and_blocker_details(tmp_path) -> None:

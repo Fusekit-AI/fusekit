@@ -352,8 +352,9 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
     guidance = {
         "encrypted vault": (
             "Vault",
-            "Run the live setup with vault capture enabled and retrieve "
-            ".fusekit/fusekit.vault.json.",
+            "Keep the live launcher/control room open with vault capture enabled "
+            "so provider secrets enter only through VM clipboard Capture controls "
+            "and FuseKit saves the encrypted vault proof.",
         ),
         "redacted setup receipt": (
             "Receipt",
@@ -626,7 +627,12 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
             "DNS/deploy waits.",
         )
     if check.id.startswith("vault."):
-        return ("Vault", "Regenerate or unlock the encrypted vault evidence.")
+        return (
+            "Vault",
+            "Keep the live launcher/control room open with vault capture enabled; "
+            "use the visible VM clipboard Capture controls for provider secrets so "
+            "FuseKit can save and unlock encrypted vault proof.",
+        )
     if check.id.startswith("receipt."):
         if check.id == "receipt.resend_dns_flow":
             return (
