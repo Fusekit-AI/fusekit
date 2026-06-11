@@ -3175,6 +3175,16 @@ def _check_visual_state(
     ledger: HarnessLedger,
 ) -> None:
     if not visual_path.exists():
+        if mode == "live":
+            checks.append(
+                AcceptanceCheck(
+                    "visual_state.safe",
+                    "missing",
+                    "Live visual session state not found: " + redact_public_path(visual_path),
+                )
+            )
+            missing.append("safe visual session state")
+            return
         checks.append(
             AcceptanceCheck(
                 "visual_state.safe",

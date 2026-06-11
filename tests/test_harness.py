@@ -241,6 +241,25 @@ def _dns_apply_approval_event(domain: str = "moonlite.rsvp") -> dict[str, object
     }
 
 
+def _write_safe_visual_state(fusekit_dir: Path) -> None:
+    (fusekit_dir / "visual.json").write_text(
+        json.dumps(
+            {
+                "runner": "novnc",
+                "status": "ready",
+                "interactive": True,
+                "novnc_url": "http://93.184.216.34:6080/vnc.html?autoconnect=1",
+                "control_room_url": (
+                    "http://93.184.216.34:8765/"
+                    "?token=viewer_token_abcdefghijklmnopqrstuvwxyz0123456789"
+                ),
+                "novnc_password": "viewer-password",
+            }
+        ),
+        "utf-8",
+    )
+
+
 def _write_minimum_resend_vercel_live_artifacts(remote_fusekit: Path) -> None:
     (remote_fusekit / "audit.jsonl").write_text('{"event":"provider.verify"}\n', "utf-8")
     (remote_fusekit / "verification_report.json").write_text(
@@ -299,6 +318,7 @@ def _write_minimum_resend_vercel_live_artifacts(remote_fusekit: Path) -> None:
         "utf-8",
     )
     (remote_fusekit / "gates.json").write_text(json.dumps({"gates": []}), "utf-8")
+    _write_safe_visual_state(remote_fusekit)
 
 
 def _provider_pack_api_setup_action(provider: str, recipe: str) -> dict[str, object]:
@@ -454,6 +474,99 @@ def test_acceptance_detonation_allows_redacted_survivor_artifacts(tmp_path) -> N
     assert checks[-1].status == "ok"
     assert "browser, visual, and auth scratch" in checks[-1].detail
     assert missing == []
+
+
+def test_acceptance_requires_visual_state_in_live_mode(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    checks: list[AcceptanceCheck] = []
+    missing: list[str] = []
+    ledger = HarnessLedger.create(fusekit_dir / "acceptance")
+
+    _check_visual_state(fusekit_dir / "visual.json", "live", checks, missing, ledger)
+
+    assert checks[-1].id == "visual_state.safe"
+    assert checks[-1].status == "missing"
+    assert "Live visual session state not found" in checks[-1].detail
+    assert str(tmp_path) not in checks[-1].detail
+    assert "safe visual session state" in missing
+
+
+def test_acceptance_allows_missing_visual_state_in_rehearsal_mode(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    checks: list[AcceptanceCheck] = []
+    missing: list[str] = []
+    ledger = HarnessLedger.create(fusekit_dir / "acceptance")
+
+    _check_visual_state(fusekit_dir / "visual.json", "rehearsal", checks, missing, ledger)
+
+    assert checks[-1].id == "visual_state.safe"
+    assert checks[-1].status == "ok"
+    assert "Visual session state not present" in checks[-1].detail
+    assert missing == []
+
+
+def test_live_acceptance_requires_visual_session_artifact(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    (remote_fusekit / "visual.json").unlink()
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "live_url": "https://moonlite.example",
+                "raw_secrets_exposed": 0,
+                "actions": [
+                    {"action": "resend.contract_health", "status": "ok", "details": {}},
+                    {
+                        "action": "resend.domain",
+                        "status": "ok",
+                        "details": _resend_domain_receipt_details(
+                            dns_records=[
+                                {
+                                    "name": "send.moonlite.rsvp",
+                                    "type": "MX",
+                                    "value": "feedback-smtp.us-east-1.amazonses.com",
+                                    "ttl": 300,
+                                    "priority": 10,
+                                }
+                            ]
+                        ),
+                    },
+                    {"action": "vercel.contract_health", "status": "ok", "details": {}},
+                    {
+                        "action": "vercel.env",
+                        "status": "ok",
+                        "details": {"project": "moonlite", "env": "RESEND_FROM_EMAIL"},
+                    },
+                ],
+            }
+        ),
+        "utf-8",
+    )
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    visual_check = next(check for check in report.checks if check.id == "visual_state.safe")
+    assert report.launch_ready is False
+    assert visual_check.status == "missing"
+    assert "Live visual session state not found" in visual_check.detail
+    assert "safe visual session state" in report.missing
+    blockers = {blocker["item"]: blocker for blocker in report.blockers}
+    assert blockers["safe visual session state"]["category"] == "Visual session"
+    assert "noVNC/control-room URLs" in blockers["safe visual session state"]["next_action"]
 
 
 def test_acceptance_rejects_unsafe_visual_state_survivor(tmp_path) -> None:
@@ -2309,6 +2422,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
         ),
         "utf-8",
     )
+    _write_safe_visual_state(remote_fusekit)
 
     report = run_acceptance(
         app,
