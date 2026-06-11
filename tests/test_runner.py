@@ -31,6 +31,7 @@ from fusekit.runner.control_room import (
 )
 from fusekit.runner.control_room import render_control_room
 from fusekit.runner.control_room.server import (
+    _capture_button_labels,
     _control_room_action_token,
     _control_room_vault_passphrase,
     _trusted_browser_origin,
@@ -125,6 +126,14 @@ def _strategy_decision() -> dict[str, object]:
             }
         ],
     }
+
+
+def test_control_room_capture_label_fallback_uses_env_named_example() -> None:
+    label = _capture_button_labels(())
+
+    assert "Capture <TARGET>" not in label
+    assert "visible env-named Capture button" in label
+    assert "Capture RESEND_API_KEY from VM clipboard" in label
 
 
 def test_runner_auto_uses_local_for_explicit_rehearsal(tmp_path) -> None:

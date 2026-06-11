@@ -4,6 +4,8 @@ from dataclasses import replace
 
 from fusekit.providers.capability_pack import SetupRecipe, synthesize_provider_pack
 from fusekit.providers.strategy import (
+    ProviderStrategy,
+    ProviderStrategyDecision,
     StrategySignal,
     choose_account_creation_strategy,
     choose_provider_strategy,
@@ -149,6 +151,33 @@ def test_provider_strategy_summary_uses_evidence_token_env_without_pack(tmp_path
     assert action["target"] == "NEWPAY_API_KEY"
     assert "Capture NEWPAY_API_KEY from VM clipboard" in action["next_action"]
     assert "target-specific Capture from VM clipboard button" not in action["next_action"]
+
+
+def test_provider_strategy_targetless_fallback_uses_env_named_example() -> None:
+    decision = ProviderStrategyDecision(
+        provider="unknownpay",
+        recipe_kind="unknownpay-project",
+        selected=ProviderStrategy(
+            kind="browser_guided",
+            label="Guided browser",
+            priority=50,
+            status="available",
+            deterministic=False,
+            implemented=True,
+            reason="Provider needs a guided account gate.",
+            evidence={"handoff_url": "https://unknownpay.example/tokens"},
+        ),
+        candidates=(),
+    )
+
+    action = summarize_strategy_action(decision)
+    steps = " ".join(action["follow_steps"])
+
+    assert "Capture <TARGET>" not in action["next_action"]
+    assert "Capture <TARGET>" not in steps
+    assert "visible env-named Capture button" in action["next_action"]
+    assert "Capture RESEND_API_KEY from VM clipboard" in action["next_action"]
+    assert "visible env-named Capture button" in steps
 
 
 def test_provider_strategy_uses_local_vault_for_capture_recipes(tmp_path) -> None:

@@ -726,7 +726,10 @@ def _capture_button_labels(targets: Iterable[str]) -> str:
         if target.strip()
     ]
     if not labels:
-        return "the visible Capture <TARGET> from VM clipboard button"
+        return (
+            "the visible env-named Capture button, for example "
+            "Capture RESEND_API_KEY from VM clipboard"
+        )
     return ", ".join(labels)
 
 

@@ -405,6 +405,28 @@ def test_verification_report_names_exact_multi_capture_buttons() -> None:
     assert "copy-once values" not in repair
 
 
+def test_verification_report_targetless_capture_fallback_uses_env_named_example() -> None:
+    report = VerificationReport(app_name="app")
+    report.add_provider_results(
+        "unknownpay",
+        [
+            VerificationResult(
+                provider="unknownpay",
+                kind="provider-gate",
+                target="",
+                status="needs_human_gate",
+                details={},
+            )
+        ],
+    )
+
+    repair = report.to_dict()["checks"][0]["repair"]
+
+    assert "Capture <TARGET>" not in repair
+    assert "visible env-named Capture button" in repair
+    assert "Capture RESEND_API_KEY from VM clipboard" in repair
+
+
 def test_verification_report_live_url_repairs_are_launcher_actionable() -> None:
     pending = VerificationReport(app_name="app")
     pending.add_live_url({"ok": False, "pending_safe": True})
