@@ -66,3 +66,15 @@ def test_friction_log_keeps_resend_recovery_launcher_owned() -> None:
     assert "regenerate the Resend runtime gate" not in text
     assert "keep the live launcher/control room open while FuseKit rebuilds" in text
     assert "only `RESEND_API_KEY` uses Capture" in text
+
+
+def test_friction_log_tracks_generic_capture_fallback_fix() -> None:
+    text = Path("docs/magic-path-friction-log.md").read_text(encoding="utf-8")
+
+    assert (
+        "Generic provider, verification, acceptance, and control-room fallback copy"
+        in text
+    )
+    assert "single highlighted launcher gate" in text
+    assert "exact env-named Capture button rendered for that gate" in text
+    assert "Resend-specific copy names `RESEND_API_KEY` only on real Resend" in text
