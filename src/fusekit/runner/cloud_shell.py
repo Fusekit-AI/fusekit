@@ -679,15 +679,27 @@ def render_cloud_shell_launcher(plan: CloudShellLaunchPlan) -> str:
     const status = document.querySelector('#status');
     const initial = JSON.parse(document.querySelector('#payload').textContent);
 
-    function shellQuote(value) {{
-      return "'" + value.replaceAll("'", "'\\\\''") + "'";
+    function utf8Base64(value) {{
+      const bytes = new TextEncoder().encode(value);
+      let binary = '';
+      bytes.forEach((byte) => {{
+        binary += String.fromCharCode(byte);
+      }});
+      return window.btoa(binary);
+    }}
+
+    function sourceAssignment(appSource) {{
+      const trimmed = appSource.trim();
+      if (!trimmed) {{
+        return 'app_source=';
+      }}
+      return `app_source="$(printf %s ${{utf8Base64(trimmed)}} | base64 -d)"`;
     }}
 
     function buildCommand(appSource) {{
-      const quotedSource = shellQuote(appSource.trim());
       return initial.bootstrap_command.replace(
         /^app_source=.*$/m,
-        `app_source=${{quotedSource}}`
+        sourceAssignment(appSource)
       );
     }}
 

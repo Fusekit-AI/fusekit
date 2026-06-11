@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import http.client
 import json
 import os
@@ -359,6 +360,10 @@ def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
     assert 'role="status"' in html
     assert "navigator.clipboard.writeText" in html
     assert "function fallbackCopy(text)" in html
+    assert "function sourceAssignment(appSource)" in html
+    assert "TextEncoder" in html
+    assert "base64 -d" in html
+    assert "function shellQuote" not in html
     assert "document.createElement('textarea')" in html
     assert "document.execCommand('copy')" in html
     assert "Press Command+C" in html
@@ -368,6 +373,36 @@ def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
     assert "Passphrase:" in plan.bootstrap_command
     assert "if [ -t 0 ]; then" in plan.bootstrap_command
     assert "stty -echo" in plan.bootstrap_command
+
+
+def test_cloud_shell_launcher_source_update_keeps_shell_command_safe() -> None:
+    plan = build_cloud_shell_launch_plan(
+        app_source="https://github.com/example/app.git",
+        launch_args=("--infer-ui",),
+    )
+    malicious_source = "https://github.com/example/app.git'; touch /tmp/fusekit-pwn #"
+    encoded = base64.b64encode(malicious_source.encode("utf-8")).decode("ascii")
+    updated = re.sub(
+        r"^app_source=.*$",
+        f'app_source="$(printf %s {encoded} | base64 -d)"',
+        plan.bootstrap_command,
+        flags=re.MULTILINE,
+    )
+    command = shlex.split(updated)
+
+    result = subprocess.run(
+        ["bash", "-n"],
+        input=command[2],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert command[:2] == ["bash", "-lc"]
+    assert result.returncode == 0, result.stderr
+    assert malicious_source not in updated
+    assert encoded in updated
+    assert "touch /tmp/fusekit-pwn" not in updated
 
 
 def test_cloud_shell_bootstrap_command_is_valid_shell() -> None:
