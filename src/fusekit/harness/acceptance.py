@@ -2441,8 +2441,14 @@ _FORBIDDEN_GUIDANCE_PHRASES = (
 )
 
 _LOCAL_BROWSER_GUIDANCE_PATTERNS = (
-    r"\b(?:open|use|launch|complete|finish|copy|paste)\b.{0,48}\b(?:local browser|local tab)\b",
-    r"\b(?:local browser|local tab)\b.{0,48}\b(?:open|use|copy|paste|complete|finish)\b",
+    (
+        r"\b(?:open|use|launch|complete|finish|copy|paste)\b.{0,48}"
+        r"\b(?:local browser|local tab|host browser|host tab)\b"
+    ),
+    (
+        r"\b(?:local browser|local tab|host browser|host tab)\b.{0,48}"
+        r"\b(?:open|use|copy|paste|complete|finish)\b"
+    ),
 )
 
 _MANUAL_ACTION_GUIDANCE_PATTERNS = (
@@ -2528,7 +2534,7 @@ def _local_browser_guidance_failure(text: str) -> str:
     for pattern in _LOCAL_BROWSER_GUIDANCE_PATTERNS:
         for match in re.finditer(pattern, text):
             if not _local_browser_match_is_negated(text, match.start()):
-                return "local browser"
+                return "local browser/host browser"
     return ""
 
 

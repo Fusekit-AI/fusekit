@@ -686,6 +686,32 @@ def test_acceptance_gate_guidance_rejects_local_browser_side_channel() -> None:
     assert any("local browser" in item for item in failures)
 
 
+def test_acceptance_gate_guidance_rejects_host_browser_side_channel() -> None:
+    failures = _unguided_gates(
+        [
+            {
+                "id": "provider.github.authorization",
+                "provider": "github",
+                "status": "passed",
+                "classification": "provider-authorization",
+                "resume_url": "https://github.com/settings/tokens",
+                "target": "GITHUB_TOKEN",
+                "follow_steps": [
+                    "Click Open provider gate in VM so GitHub opens in the VM browser.",
+                    "Use the host browser tab to finish token setup.",
+                    "Click Capture GITHUB_TOKEN from VM clipboard after copying it.",
+                ],
+                "next_action": "Capture GITHUB_TOKEN from VM clipboard.",
+                "resume_hint": "FuseKit will retry provider setup.",
+                "success_criteria": ["A GitHub token is captured in the encrypted vault."],
+                "avoid_steps": ["Do not grant unrelated permissions."],
+            }
+        ]
+    )
+
+    assert any("host browser" in item for item in failures)
+
+
 def test_acceptance_gate_guidance_rejects_return_to_fusekit_wording() -> None:
     failures = _unguided_gates(
         [
@@ -736,6 +762,35 @@ def test_acceptance_gate_guidance_allows_local_browser_warning() -> None:
                 "resume_hint": "FuseKit will retry provider setup.",
                 "success_criteria": ["A GitHub token is captured in the encrypted vault."],
                 "avoid_steps": ["Do not grant unrelated permissions."],
+            }
+        ]
+    )
+
+    assert failures == []
+
+
+def test_acceptance_gate_guidance_allows_host_browser_warning() -> None:
+    failures = _unguided_gates(
+        [
+            {
+                "id": "provider.github.authorization",
+                "provider": "github",
+                "status": "passed",
+                "classification": "provider-authorization",
+                "resume_url": "https://github.com/settings/tokens",
+                "target": "GITHUB_TOKEN",
+                "follow_steps": [
+                    "Click Open provider gate in VM so GitHub opens in the VM browser.",
+                    "Do not use the host browser tab for this gate.",
+                    (
+                        "Copy the token inside the VM browser and click "
+                        "Capture from VM clipboard."
+                    ),
+                ],
+                "next_action": "Capture GITHUB_TOKEN from VM clipboard.",
+                "resume_hint": "FuseKit will retry provider setup.",
+                "success_criteria": ["A GitHub token is captured in the encrypted vault."],
+                "avoid_steps": ["Never paste secrets into the host browser."],
             }
         ]
     )
@@ -1117,6 +1172,45 @@ def test_acceptance_human_strategy_rejects_local_browser_side_channel() -> None:
     assert any("local browser" in item for item in failures)
 
 
+def test_acceptance_human_strategy_rejects_host_browser_side_channel() -> None:
+    failures = _provider_strategy_shape_failures(
+        [
+            {
+                "provider": "github",
+                "strategies": [
+                    {
+                        "recipe": "github-repo-secrets",
+                        "status": "needs_human_gate",
+                        "target": "GITHUB_TOKEN",
+                        "follow_steps": [
+                            (
+                                "Click Open provider gate in VM so GitHub opens in "
+                                "the VM browser."
+                            ),
+                            "Use the host browser tab to finish token setup.",
+                            "Click Capture GITHUB_TOKEN from VM clipboard after copying it.",
+                        ],
+                        "next_action": "Capture GITHUB_TOKEN from VM clipboard.",
+                        "resume_hint": "FuseKit will retry GitHub setup.",
+                        "decision": {
+                            "selected": {
+                                "kind": "browser_guided",
+                                "status": "available",
+                                "deterministic": False,
+                                "implemented": False,
+                                "reason": "Missing provider token.",
+                            },
+                            "candidates": [{"kind": "browser_guided"}],
+                        },
+                    }
+                ],
+            }
+        ]
+    )
+
+    assert any("host browser" in item for item in failures)
+
+
 def test_acceptance_human_strategy_requires_exact_capture_control_label() -> None:
     failures = _provider_strategy_shape_failures(
         [
@@ -1258,6 +1352,23 @@ def test_acceptance_checkpoint_guidance_rejects_side_channels() -> None:
     )
 
     assert any("local browser" in item for item in failures)
+
+
+def test_acceptance_checkpoint_guidance_rejects_host_browser_side_channels() -> None:
+    failures = _provider_strategy_checkpoint_failures(
+        {"github": {"github-repo-secrets"}},
+        [
+            {
+                "id": "provider.github.routes",
+                "status": "waiting",
+                "detail": "github-repo-secrets uses browser_guided (needs_human_gate)",
+                "next_action": "Use the host browser tab to create the token.",
+                "resume_hint": "Click Capture GITHUB_TOKEN from VM clipboard after copy.",
+            }
+        ],
+    )
+
+    assert any("host browser" in item for item in failures)
 
 
 def test_acceptance_checkpoint_guidance_requires_open_gate_control() -> None:
