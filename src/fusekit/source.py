@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import tempfile
 import urllib.error
 import urllib.parse
@@ -191,6 +192,8 @@ def _request(url: str, *, token: str) -> urllib.request.Request:
 
 def _extract_single_root_zip(archive: Path, dest: Path) -> None:
     with zipfile.ZipFile(archive) as zipped:
+        for member in zipped.infolist():
+            _validate_zip_member(member)
         names = [name for name in zipped.namelist() if name and not name.endswith("/")]
         if not names:
             raise FuseKitError("GitHub source archive was empty.")
@@ -222,6 +225,24 @@ def _extract_single_root_zip(archive: Path, dest: Path) -> None:
             shutil.move(str(extracted_root), str(dest))
         finally:
             shutil.rmtree(staging, ignore_errors=True)
+
+
+def _validate_zip_member(member: zipfile.ZipInfo) -> None:
+    """Reject zip entries that are unsafe as app source files."""
+
+    name = member.filename
+    if not name or "\x00" in name or "\\" in name or name.startswith(("/", "~")):
+        raise FuseKitError("GitHub source archive contains unsafe paths.")
+    mode = (member.external_attr >> 16) & 0o777777
+    file_type = stat.S_IFMT(mode)
+    if file_type in {
+        stat.S_IFLNK,
+        stat.S_IFCHR,
+        stat.S_IFBLK,
+        stat.S_IFIFO,
+        stat.S_IFSOCK,
+    }:
+        raise FuseKitError("GitHub source archive contains unsupported file types.")
 
 
 def _within(path: Path, parent: Path) -> bool:

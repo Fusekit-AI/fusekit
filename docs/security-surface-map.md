@@ -88,9 +88,10 @@ SSH session provisioned by FuseKit, or an encrypted vault/passphrase boundary.
   explicit copy affordance.
 - Visual-session state is normalized before rendering so a corrupted `visual.json`
   cannot turn the control room into a clipboard-enabled arbitrary iframe.
-- Source archive extraction validates paths and single-root layout before replacing the
-  destination; remote artifact extraction validates target paths and does not use
-  `tar.extractall`.
+- Source archive extraction validates paths, single-root layout, and normal-file
+  zip metadata before replacing the destination; symlink, device, FIFO/socket,
+  absolute, and backslash entries are rejected. Remote artifact extraction
+  validates target paths and does not use `tar.extractall`.
 
 ## Browser Attack Model
 

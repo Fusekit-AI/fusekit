@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import stat
 import zipfile
 from urllib.request import Request
 
@@ -115,6 +116,47 @@ def test_fetch_github_source_rejects_unsafe_archive_paths(tmp_path) -> None:
         return Response(payload.getvalue())
 
     with pytest.raises(FuseKitError, match="unexpected layout"):
+        fetch_github_source_archive(
+            "https://github.com/owner/public.git",
+            tmp_path / "app",
+            opener=opener,
+        )
+
+
+def test_fetch_github_source_rejects_symlink_entries(tmp_path) -> None:
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, "w") as archive:
+        archive.writestr("repo-main/package.json", "{}")
+        link = zipfile.ZipInfo("repo-main/link")
+        link.external_attr = (stat.S_IFLNK | 0o777) << 16
+        archive.writestr(link, "../outside")
+
+    def opener(request: Request | str, timeout: float | None = None) -> Response:
+        url = request.full_url if isinstance(request, Request) else request
+        if url == "https://api.github.com/repos/owner/public":
+            return Response(json.dumps({"default_branch": "main"}).encode())
+        return Response(payload.getvalue())
+
+    with pytest.raises(FuseKitError, match="unsupported file types"):
+        fetch_github_source_archive(
+            "https://github.com/owner/public.git",
+            tmp_path / "app",
+            opener=opener,
+        )
+
+
+def test_fetch_github_source_rejects_backslash_paths(tmp_path) -> None:
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, "w") as archive:
+        archive.writestr("repo-main\\package.json", "{}")
+
+    def opener(request: Request | str, timeout: float | None = None) -> Response:
+        url = request.full_url if isinstance(request, Request) else request
+        if url == "https://api.github.com/repos/owner/public":
+            return Response(json.dumps({"default_branch": "main"}).encode())
+        return Response(payload.getvalue())
+
+    with pytest.raises(FuseKitError, match="unsafe paths"):
         fetch_github_source_archive(
             "https://github.com/owner/public.git",
             tmp_path / "app",
