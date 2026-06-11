@@ -489,32 +489,36 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
             if "api-generated resend values" in detail:
                 return (
                     "Human gates",
-                    "Regenerate the Resend runtime gate so Capture is used only for "
-                    "RESEND_API_KEY; generated sender and audience values must use "
-                    "Resend API setup retry.",
+                    "Keep the live launcher/control room open while FuseKit rebuilds "
+                    "the Resend runtime gate so Capture is used only for RESEND_API_KEY; "
+                    "generated sender and audience values must use Resend API setup retry.",
                 )
             if "manual resend domain/audience setup" in detail:
                 return (
                     "Human gates",
-                    "Regenerate the Resend gate so the user captures only the setup key; "
-                    "FuseKit must create or reuse domains and audiences through Resend API.",
+                    "Keep the live launcher/control room open while FuseKit rebuilds the "
+                    "Resend gate so the user captures only the setup key; FuseKit must "
+                    "create or reuse domains and audiences through Resend API.",
                 )
             if "missing resume_url" in detail:
                 return (
                     "Human gates",
-                    "Regenerate the provider gate with an Open provider gate in VM URL.",
+                    "Keep the live launcher/control room open while FuseKit rebuilds the "
+                    "provider gate with an Open provider gate in VM URL.",
                 )
             if "non-launcher wording" in detail:
                 return (
                     "Human gates",
-                    "Regenerate gate guidance so it names only visible launcher controls.",
+                    "Keep the live launcher/control room open while FuseKit rebuilds gate "
+                    "guidance so it names only visible launcher controls.",
                 )
             if "exact capture controls" in detail:
                 exact_controls = _capture_controls_from_text(check.detail)
                 if exact_controls:
                     return (
                         "Human gates",
-                        "Regenerate copy-once secret gates so they name the exact "
+                        "Keep the live launcher/control room open while FuseKit rebuilds "
+                        "copy-once secret gates so they name the exact "
                         + ", ".join(exact_controls)
                         + " control.",
                     )
@@ -523,18 +527,22 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
                 if exact_controls:
                     return (
                         "Human gates",
-                        "Regenerate copy-once secret gates so they name the exact "
+                        "Keep the live launcher/control room open while FuseKit rebuilds "
+                        "copy-once secret gates so they name the exact "
                         + ", ".join(exact_controls)
                         + " control.",
                     )
                 return (
                     "Human gates",
-                    "Regenerate copy-once secret gates so they name Capture from VM clipboard.",
+                    "Keep the live launcher/control room open while FuseKit rebuilds "
+                    "copy-once secret gates so they name an exact env-named Capture "
+                    "button such as Capture RESEND_API_KEY from VM clipboard.",
                 )
             if "vm browser path" in detail:
                 return (
                     "Human gates",
-                    "Regenerate provider gates so follow-me steps name the VM browser path.",
+                    "Keep the live launcher/control room open while FuseKit rebuilds "
+                    "provider gates so follow-me steps name the VM browser path.",
                 )
         if check.id == "gates.audited":
             if "missing gate events" in detail:
@@ -589,9 +597,10 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
             )
         return (
             "Human gates",
-            "Keep the control room open and regenerate the gate through the live launcher "
-            "so it shows Open provider gate in VM, Capture from VM clipboard, or "
-            "I finished this step as the next visible action.",
+            "Keep the live launcher/control room open while FuseKit rebuilds the gate "
+            "so it shows Open provider gate in VM, an exact env-named Capture button "
+            "such as Capture RESEND_API_KEY from VM clipboard, or I finished this step "
+            "as the next visible action.",
         )
     if check.id == "provider_strategies.order":
         return (

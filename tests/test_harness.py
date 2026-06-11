@@ -1372,6 +1372,7 @@ def test_acceptance_blockers_use_launcher_actionable_check_guidance() -> None:
 
     blockers = {blocker["item"]: blocker for blocker in _acceptance_blockers(checks, [])}
 
+    assert "live launcher/control room" in blockers["gates.guided"]["next_action"]
     assert "Open provider gate in VM URL" in blockers["gates.guided"]["next_action"]
     assert "I finished this step" in blockers["gates.audited"]["next_action"]
     assert "approve the DNS apply gate" in blockers["receipt.resend_dns_flow"]["next_action"]
@@ -1487,6 +1488,7 @@ def test_acceptance_blockers_name_exact_capture_control_from_guidance_failure() 
     next_action = blockers["gates.guided"]["next_action"]
     assert "Capture GITHUB_TOKEN from VM clipboard" in next_action
     assert "Capture from VM clipboard." not in next_action
+    assert "Regenerate copy-once secret gates" not in next_action
 
 
 def test_acceptance_blockers_name_exact_capture_control_from_audit_failure() -> None:
@@ -1529,8 +1531,10 @@ def test_acceptance_blockers_explain_resend_generated_value_recovery() -> None:
     )
 
     assert blockers[0]["item"] == "gates.guided"
+    assert "live launcher/control room" in blockers[0]["next_action"]
     assert "Capture is used only for RESEND_API_KEY" in blockers[0]["next_action"]
     assert "Resend API setup retry" in blockers[0]["next_action"]
+    assert "Regenerate the Resend runtime gate" not in blockers[0]["next_action"]
 
 
 def test_acceptance_blockers_explain_manual_resend_setup_recovery() -> None:
@@ -1549,8 +1553,10 @@ def test_acceptance_blockers_explain_manual_resend_setup_recovery() -> None:
     )
 
     assert blockers[0]["item"] == "gates.guided"
+    assert "live launcher/control room" in blockers[0]["next_action"]
     assert "captures only the setup key" in blockers[0]["next_action"]
     assert "domains and audiences through Resend API" in blockers[0]["next_action"]
+    assert "Regenerate the Resend gate" not in blockers[0]["next_action"]
 
 
 def test_resend_api_strategy_requires_domain_ownership_evidence() -> None:
