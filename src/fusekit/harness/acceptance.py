@@ -487,7 +487,24 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
                     "Human gates",
                     "Regenerate gate guidance so it names only visible launcher controls.",
                 )
+            if "exact capture controls" in detail:
+                exact_controls = _capture_controls_from_text(check.detail)
+                if exact_controls:
+                    return (
+                        "Human gates",
+                        "Regenerate copy-once secret gates so they name the exact "
+                        + ", ".join(exact_controls)
+                        + " control.",
+                    )
             if "capture from vm clipboard" in detail:
+                exact_controls = _capture_controls_from_text(check.detail)
+                if exact_controls:
+                    return (
+                        "Human gates",
+                        "Regenerate copy-once secret gates so they name the exact "
+                        + ", ".join(exact_controls)
+                        + " control.",
+                    )
                 return (
                     "Human gates",
                     "Regenerate copy-once secret gates so they name Capture from VM clipboard.",
@@ -512,6 +529,14 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
                     "FuseKit can audit it.",
                 )
             if "control_room.clipboard_capture" in detail:
+                exact_controls = _capture_controls_from_text(check.detail)
+                if exact_controls:
+                    return (
+                        "Human gates",
+                        "Copy the provider token in the VM browser, then click "
+                        + ", ".join(exact_controls)
+                        + ".",
+                    )
                 return (
                     "Human gates",
                     "Copy the provider token in the VM browser, then click the matching "
@@ -610,6 +635,13 @@ def _unknown_launch_evidence_action(item: str) -> str:
         "If no specific launcher control appears, rerun the same live launch/acceptance so "
         "FuseKit can rebuild this proof artifact."
     )
+
+
+def _capture_controls_from_text(value: str) -> list[str]:
+    targets = _copy_once_targets_mentioned(value)
+    if not targets:
+        targets = _env_targets_from_text(value)
+    return [f"Capture {target} from VM clipboard" for target in targets]
 
 
 def _load_or_scan_manifest(

@@ -1308,6 +1308,53 @@ def test_acceptance_blockers_explain_missing_gate_event_controls() -> None:
     assert "I finished this step" in next_action
 
 
+def test_acceptance_blockers_name_exact_capture_control_from_guidance_failure() -> None:
+    blockers = {
+        blocker["item"]: blocker
+        for blocker in _acceptance_blockers(
+            [
+                AcceptanceCheck(
+                    "gates.guided",
+                    "failed",
+                    (
+                        "provider.github.authorization.guidance does not name exact "
+                        "Capture controls: Capture GITHUB_TOKEN from VM clipboard"
+                    ),
+                )
+            ],
+            [],
+        )
+    }
+
+    next_action = blockers["gates.guided"]["next_action"]
+    assert "Capture GITHUB_TOKEN from VM clipboard" in next_action
+    assert "Capture from VM clipboard." not in next_action
+
+
+def test_acceptance_blockers_name_exact_capture_control_from_audit_failure() -> None:
+    blockers = {
+        blocker["item"]: blocker
+        for blocker in _acceptance_blockers(
+            [
+                AcceptanceCheck(
+                    "gates.audited",
+                    "failed",
+                    (
+                        "Control-room gates are missing redacted audit events: "
+                        "missing control_room.clipboard_capture: "
+                        "provider.openai.authorization:OPENAI_API_KEY"
+                    ),
+                )
+            ],
+            [],
+        )
+    }
+
+    next_action = blockers["gates.audited"]["next_action"]
+    assert "Capture OPENAI_API_KEY from VM clipboard" in next_action
+    assert "matching Capture from VM clipboard button" not in next_action
+
+
 def test_acceptance_blockers_explain_resend_generated_value_recovery() -> None:
     blockers = _acceptance_blockers(
         [
