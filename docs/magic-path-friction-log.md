@@ -192,6 +192,7 @@ guided, or explicitly verified.
 | Provider fallback gates could say "Return to FuseKit and click I finished this step," which is less precise than the launcher/control-room button a public user sees during a VM run. | Provider repair copy now tells users to click the visible `I finished this step` button in the control room, and launch acceptance rejects stale "return to FuseKit" wording in durable human-gate guidance. |
 | The provider route plan could still say "click I finished this step" without naming the visible control-room button, making the recovery map slightly less concrete than the gate cards. | Static and live route-plan copy now tells users to click the visible `I finished this step` button in the control room after provider-owned login, MFA, consent, or billing gates. |
 | Token route-plan copy said `Capture from VM clipboard for GITHUB_TOKEN`, which did not exactly match the visible button label a demo user must click. | Static and live route-plan copy now names target-specific controls such as `Capture GITHUB_TOKEN from VM clipboard`, matching the rendered launcher buttons exactly. |
+| Launch acceptance could still pass a target-specific secret gate if guidance only said `Capture from VM clipboard`, leaving users to infer which rendered button matched the provider token. | Human-gate and provider-strategy acceptance now require exact target-specific Capture control labels such as `Capture GITHUB_TOKEN from VM clipboard` for every env/token target. |
 
 ## Open Acceptance Items
 

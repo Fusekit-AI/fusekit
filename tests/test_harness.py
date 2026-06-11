@@ -556,6 +556,33 @@ def test_acceptance_gate_guidance_rejects_hidden_prompt_or_wrong_button() -> Non
     assert any("secret targets at I finished this step" in item for item in failures)
 
 
+def test_acceptance_gate_guidance_requires_exact_capture_control_label() -> None:
+    failures = _unguided_gates(
+        [
+            {
+                "id": "provider.github.authorization",
+                "provider": "github",
+                "status": "passed",
+                "classification": "provider-authorization",
+                "resume_url": "https://github.com/settings/tokens",
+                "target": "GITHUB_TOKEN",
+                "follow_steps": [
+                    "Click Open provider gate in VM so GitHub opens in the VM browser.",
+                    "Copy the token inside the VM browser.",
+                    "Click Capture from VM clipboard after copying GITHUB_TOKEN.",
+                ],
+                "next_action": "Click Capture from VM clipboard.",
+                "resume_hint": "FuseKit will retry provider setup.",
+                "success_criteria": ["A GitHub token is captured in the encrypted vault."],
+                "avoid_steps": ["Do not grant unrelated permissions."],
+            }
+        ]
+    )
+
+    assert any("exact Capture controls" in item for item in failures)
+    assert any("Capture GITHUB_TOKEN from VM clipboard" in item for item in failures)
+
+
 def test_acceptance_gate_guidance_rejects_local_browser_side_channel() -> None:
     failures = _unguided_gates(
         [
@@ -569,7 +596,7 @@ def test_acceptance_gate_guidance_rejects_local_browser_side_channel() -> None:
                 "follow_steps": [
                     "Click Open provider gate in VM so GitHub opens in the VM browser.",
                     "Use your local browser tab to copy the token.",
-                    "Click Capture from VM clipboard after copying GITHUB_TOKEN.",
+                    "Click Capture GITHUB_TOKEN from VM clipboard after copying it.",
                 ],
                 "next_action": "Capture GITHUB_TOKEN from VM clipboard.",
                 "resume_hint": "FuseKit will retry provider setup.",
@@ -680,7 +707,7 @@ def test_acceptance_gate_guidance_rejects_bad_success_or_avoid_panels() -> None:
                 "follow_steps": [
                     "Click Open provider gate in VM so GitHub opens in the VM browser.",
                     "Copy the token inside the VM browser.",
-                    "Click Capture from VM clipboard after copying GITHUB_TOKEN.",
+                    "Click Capture GITHUB_TOKEN from VM clipboard after copying it.",
                 ],
                 "next_action": "Capture GITHUB_TOKEN from VM clipboard.",
                 "resume_hint": "FuseKit will retry provider setup.",
@@ -908,7 +935,7 @@ def test_acceptance_human_strategy_rejects_local_browser_side_channel() -> None:
                                 "the VM browser."
                             ),
                             "Use a local browser tab to create the token.",
-                            "Click Capture from VM clipboard after copying GITHUB_TOKEN.",
+                            "Click Capture GITHUB_TOKEN from VM clipboard after copying it.",
                         ],
                         "next_action": "Capture GITHUB_TOKEN from VM clipboard.",
                         "resume_hint": "FuseKit will retry GitHub setup.",
@@ -931,6 +958,46 @@ def test_acceptance_human_strategy_rejects_local_browser_side_channel() -> None:
     assert any("local browser" in item for item in failures)
 
 
+def test_acceptance_human_strategy_requires_exact_capture_control_label() -> None:
+    failures = _provider_strategy_shape_failures(
+        [
+            {
+                "provider": "github",
+                "strategies": [
+                    {
+                        "recipe": "github-repo-secrets",
+                        "status": "needs_human_gate",
+                        "target": "GITHUB_TOKEN",
+                        "follow_steps": [
+                            (
+                                "Click Open provider gate in VM so GitHub opens "
+                                "in the VM browser."
+                            ),
+                            "Copy the token inside the VM browser.",
+                            "Click Capture from VM clipboard after copying GITHUB_TOKEN.",
+                        ],
+                        "next_action": "Click Capture from VM clipboard.",
+                        "resume_hint": "FuseKit will retry GitHub setup.",
+                        "decision": {
+                            "selected": {
+                                "kind": "browser_guided",
+                                "status": "available",
+                                "deterministic": False,
+                                "implemented": False,
+                                "reason": "Missing provider token.",
+                            },
+                            "candidates": [{"kind": "browser_guided"}],
+                        },
+                    }
+                ],
+            }
+        ]
+    )
+
+    assert any("exact Capture controls" in item for item in failures)
+    assert any("Capture GITHUB_TOKEN from VM clipboard" in item for item in failures)
+
+
 def test_acceptance_human_strategy_rejects_bad_success_or_avoid_panels() -> None:
     failures = _provider_strategy_shape_failures(
         [
@@ -947,7 +1014,7 @@ def test_acceptance_human_strategy_rejects_bad_success_or_avoid_panels() -> None
                                 "the VM browser."
                             ),
                             "Copy the token inside the VM browser.",
-                            "Click Capture from VM clipboard after copying GITHUB_TOKEN.",
+                            "Click Capture GITHUB_TOKEN from VM clipboard after copying it.",
                         ],
                         "next_action": "Capture GITHUB_TOKEN from VM clipboard.",
                         "resume_hint": "FuseKit will retry GitHub setup.",
@@ -1704,10 +1771,10 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                                 "the VM browser."
                             ),
                             "Complete login in the VM browser.",
-                            (
-                                "Copy the OpenAI key inside the VM browser and click "
-                                "Capture from VM clipboard."
-                            ),
+                        (
+                            "Copy the OpenAI key inside the VM browser and click "
+                            "Capture OPENAI_API_KEY from VM clipboard."
+                        ),
                         ],
                         "next_action": "No action needed.",
                         "resume_hint": "FuseKit verified this gate as passed.",

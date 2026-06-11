@@ -2253,10 +2253,19 @@ def _guidance_quality_failures(
         )
     secret_targets = _env_targets_from_text(target)
     if secret_targets:
-        if "capture from vm clipboard" not in action_lowered:
+        missing_exact = _missing_exact_capture_controls(secret_targets, action_lowered)
+        if (
+            "capture from vm clipboard" not in action_lowered
+            and len(missing_exact) == len(secret_targets)
+        ):
             failures.append(
                 f"{label}.guidance does not name Capture from VM clipboard for "
                 + ", ".join(secret_targets)
+            )
+        if missing_exact:
+            failures.append(
+                f"{label}.guidance does not name exact Capture controls: "
+                + ", ".join(missing_exact)
             )
         next_lower = next_action.lower()
         if "i finished this step" in next_lower and "capture" not in next_lower:
@@ -2317,6 +2326,14 @@ def _env_targets_from_text(value: str) -> list[str]:
             if _ENV_TARGET_RE.match(part.strip().upper())
         )
     )
+
+
+def _missing_exact_capture_controls(targets: list[str], text: str) -> list[str]:
+    return [
+        f"Capture {target} from VM clipboard"
+        for target in targets
+        if f"capture {target.lower()} from vm clipboard" not in text
+    ]
 
 
 def _copy_once_targets_mentioned(value: str) -> list[str]:

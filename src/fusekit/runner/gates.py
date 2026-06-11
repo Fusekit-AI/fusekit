@@ -255,8 +255,7 @@ class GateService:
         if missing:
             record.next_action = (
                 "Copy the next provider value in the VM browser, then click the matching "
-                "Capture from VM clipboard button for "
-                + ", ".join(sorted(missing))
+                + _capture_control_list(sorted(missing))
                 + "."
             )
             record.resume_hint = "FuseKit will resume automatically after every target is captured."
@@ -345,8 +344,7 @@ def _default_next_action(record: GateRecord) -> str:
         if missing:
             return (
                 "Copy the provider value in the VM browser, then click the matching "
-                "Capture from VM clipboard button for "
-                + ", ".join(sorted(missing))
+                + _capture_control_list(sorted(missing))
                 + "."
             )
         return "All required provider values are captured."
@@ -370,6 +368,13 @@ def _default_resume_hint(record: GateRecord) -> str:
         "FuseKit will retry verification after you click the visible "
         "I finished this step button in the control room."
     )
+
+
+def _capture_control_list(targets: list[str]) -> str:
+    if len(targets) == 1:
+        return f"Capture {targets[0]} from VM clipboard button"
+    labels = [f"Capture {target} from VM clipboard" for target in targets]
+    return "Capture buttons: " + ", ".join(labels)
 
 
 def _resume_next_action(record: GateRecord) -> str:
