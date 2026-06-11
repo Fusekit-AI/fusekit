@@ -13,7 +13,7 @@ import sys
 import time
 import uuid
 import webbrowser
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -4101,7 +4101,7 @@ def _provider_verification_gate(
             "target": "RESEND_API_KEY",
             "follow_steps": _resend_runtime_follow_steps(domain, ("RESEND_API_KEY",)),
             "next_action": (
-                "Capture RESEND_API_KEY from the VM clipboard; FuseKit will generate "
+                "Capture RESEND_API_KEY from VM clipboard; FuseKit will generate "
                 "Resend sender and audience values after the setup key is stored."
             ),
             "resume_hint": (
@@ -4145,8 +4145,10 @@ def _provider_verification_gate(
             "target": ",".join(resend_env_names),
             "follow_steps": _resend_runtime_follow_steps(domain, resend_env_names),
             "next_action": (
-                f"Capture {missing} from the VM clipboard so FuseKit can update the "
-                "provider environment without exposing the values."
+                "Click "
+                + _capture_controls_for_env_names(resend_env_names)
+                + " so FuseKit can update the provider environment without exposing "
+                "the values."
             ),
             "resume_hint": (
                 "FuseKit resumes automatically after every requested Resend value is "
@@ -4167,7 +4169,7 @@ def _provider_verification_gate(
             "target": "RESEND_API_KEY",
             "follow_steps": _resend_api_key_follow_steps(domain),
             "next_action": (
-                "Capture RESEND_API_KEY from the VM clipboard; do not click I finished "
+                "Capture RESEND_API_KEY from VM clipboard; do not click I finished "
                 "this step for copy-once secrets."
             ),
             "resume_hint": (
@@ -4386,6 +4388,19 @@ def _resend_runtime_follow_steps(
         ]
     )
     return tuple(steps)
+
+
+def _capture_controls_for_env_names(env_names: Iterable[str]) -> str:
+    controls = [
+        f"Capture {env_name.strip().upper()} from VM clipboard"
+        for env_name in env_names
+        if env_name.strip()
+    ]
+    if not controls:
+        return "the visible env-named Capture from VM clipboard button"
+    if len(controls) == 1:
+        return controls[0]
+    return "these exact Capture buttons: " + ", ".join(controls)
 
 
 def _resend_runtime_setup_retry_follow_steps(

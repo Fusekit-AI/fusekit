@@ -1714,7 +1714,8 @@ def test_verification_gate_records_resend_api_key_follow_me(tmp_path) -> None:
     assert "do not click Add domain" in " ".join(gate.follow_steps)
     assert "resumes automatically" in " ".join(gate.follow_steps)
     assert "Capture reads the VM clipboard directly" in " ".join(gate.follow_steps)
-    assert "Capture RESEND_API_KEY" in gate.next_action
+    assert "Capture RESEND_API_KEY from VM clipboard" in gate.next_action
+    assert "from the VM clipboard" not in gate.next_action
     assert "copy-once secrets" in gate.next_action
     assert "creates or reuses the Resend sending domain" in gate.resume_hint
     assert "Cloudflare DNS" in gate.resume_hint
@@ -2041,7 +2042,8 @@ def test_verification_gate_still_captures_missing_resend_api_key(tmp_path) -> No
     steps = " ".join(gate.follow_steps)
     assert gate.resume_url == "https://resend.com/api-keys"
     assert "Copy the API key only inside the VM browser" in steps
-    assert "Capture RESEND_API_KEY" in gate.next_action
+    assert "Capture RESEND_API_KEY from VM clipboard" in gate.next_action
+    assert "from the VM clipboard" not in gate.next_action
     assert "RESEND_FROM_EMAIL" not in gate.target
     assert "generate Resend sender and audience values" in gate.next_action
 
