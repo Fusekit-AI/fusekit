@@ -549,10 +549,18 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
                     "this step or approval button.",
                 )
         if check.id == "gates.resolved":
+            exact_controls = _capture_controls_from_text(check.detail)
+            if exact_controls:
+                return (
+                    "Human gates",
+                    "Finish the visible VM-browser gate, then click "
+                    + ", ".join(exact_controls)
+                    + ".",
+                )
             return (
                 "Human gates",
-                "Finish the visible VM-browser gate, then use the matching Capture "
-                "or I finished this step button.",
+                "Finish the visible VM-browser gate, then use the visible "
+                "target-specific Capture from VM clipboard or I finished this step button.",
             )
         return (
             "Human gates",

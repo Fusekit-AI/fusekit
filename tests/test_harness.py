@@ -1262,6 +1262,30 @@ def test_acceptance_blockers_use_launcher_actionable_check_guidance() -> None:
     assert "resume button" not in blockers["gates.resolved"]["next_action"]
 
 
+def test_acceptance_resolved_blocker_names_exact_capture_control() -> None:
+    blockers = {
+        blocker["item"]: blocker
+        for blocker in _acceptance_blockers(
+            [
+                AcceptanceCheck(
+                    "gates.resolved",
+                    "failed",
+                    (
+                        "Waiting provider gate still exists: "
+                        "provider.resend.authorization target RESEND_API_KEY"
+                    ),
+                )
+            ],
+            [],
+        )
+    }
+
+    next_action = blockers["gates.resolved"]["next_action"]
+    assert "Capture RESEND_API_KEY from VM clipboard" in next_action
+    assert "matching Capture" not in next_action
+    assert "target-specific Capture" not in next_action
+
+
 def test_acceptance_blockers_keep_unknown_items_launcher_actionable() -> None:
     blockers = _acceptance_blockers(
         [
