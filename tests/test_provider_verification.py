@@ -398,9 +398,10 @@ def test_verification_report_names_exact_multi_capture_buttons() -> None:
 
     repair = report.to_dict()["checks"][0]["repair"]
 
-    assert "each target-specific Capture button" in repair
+    assert "these exact Capture buttons" in repair
     assert "Capture CUSTOM_API_KEY from VM clipboard" in repair
     assert "Capture CUSTOM_WEBHOOK_SECRET from VM clipboard" in repair
+    assert "each target-specific Capture button" not in repair
     assert "copy-once values" not in repair
 
 

@@ -373,7 +373,7 @@ def _capture_recovery_action(
     labels = [f"Capture {candidate} from VM clipboard" for candidate in targets]
     if len(labels) == 1:
         return labels[0]
-    return "each target-specific Capture button: " + ", ".join(labels)
+    return "these exact Capture buttons: " + ", ".join(labels)
 
 
 def _capture_targets(
