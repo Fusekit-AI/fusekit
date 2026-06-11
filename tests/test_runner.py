@@ -1279,6 +1279,39 @@ def test_local_control_room_requires_action_token_for_gate_post(tmp_path) -> Non
     ].status == "waiting"
 
 
+def test_control_room_rejects_encoded_slash_gate_route(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    unsafe_gate_id = "provider.github/mfa.123"
+    GateService.load(tmp_path / "gates.json").wait(
+        unsafe_gate_id,
+        provider="github",
+        reason="MFA required",
+        classification="mfa",
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = (
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/gates/provider.github%2Fmfa.123/pass"
+        )
+        request = Request(url, method="POST", headers=_control_room_post_headers(tmp_path))
+        with pytest.raises(HTTPError) as exc:
+            urlopen(request, timeout=5)
+        payload = exc.value.read()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert exc.value.code == 404
+    assert payload == b""
+    assert GateService.load(tmp_path / "gates.json").records[unsafe_gate_id].status == "waiting"
+
+
 def test_control_room_reuses_action_token_with_owner_only_permissions(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job_path = tmp_path / "job.json"

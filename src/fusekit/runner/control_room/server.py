@@ -29,6 +29,7 @@ from fusekit.security.url import require_safe_url
 from fusekit.vault import Vault
 
 VISUAL_DISPLAY_PATTERN = re.compile(r"^(?:[A-Za-z0-9_.-]+)?:[0-9]+(?:\.[0-9]+)?$")
+CONTROL_ROOM_GATE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,200}$")
 TOKEN_PROVIDER_BY_ENV = {
     "CLOUDFLARE_API_TOKEN": "cloudflare",
     "GITHUB_TOKEN": "github",
@@ -147,9 +148,11 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
             ):
                 self._write_json({"ok": False, "error": "invalid action token"}, status=403)
                 return
-            prefix = "/api/gates/"
-            if route.path.startswith(prefix) and route.path.endswith("/pass"):
-                gate_id = unquote(route.path[len(prefix) : -len("/pass")])
+            gate_id = _control_room_gate_id(route.path, "/pass")
+            if gate_id is not None:
+                if not gate_id:
+                    self._write_not_found()
+                    return
                 service = GateService.load(job_state.parent / "gates.json")
                 if gate_id not in service.records:
                     self._write_json({"ok": False, "error": "gate not found"}, status=404)
@@ -182,8 +185,11 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                     }
                 )
                 return
-            if route.path.startswith(prefix) and route.path.endswith("/open"):
-                gate_id = unquote(route.path[len(prefix) : -len("/open")])
+            gate_id = _control_room_gate_id(route.path, "/open")
+            if gate_id is not None:
+                if not gate_id:
+                    self._write_not_found()
+                    return
                 service = GateService.load(job_state.parent / "gates.json")
                 open_gate = service.records.get(gate_id)
                 if open_gate is None:
@@ -232,8 +238,11 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                     }
                 )
                 return
-            if route.path.startswith(prefix) and route.path.endswith("/capture-clipboard"):
-                gate_id = unquote(route.path[len(prefix) : -len("/capture-clipboard")])
+            gate_id = _control_room_gate_id(route.path, "/capture-clipboard")
+            if gate_id is not None:
+                if not gate_id:
+                    self._write_not_found()
+                    return
                 try:
                     body = self._read_json_body()
                     captured = _capture_gate_clipboard_secret(
@@ -372,6 +381,19 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
             )
 
     return ControlRoomHandler
+
+
+def _control_room_gate_id(path: str, suffix: str) -> str | None:
+    """Return a safe gate id from a state-changing control-room route."""
+
+    prefix = "/api/gates/"
+    if not path.startswith(prefix) or not path.endswith(suffix):
+        return None
+    encoded = path[len(prefix) : -len(suffix)]
+    decoded = unquote(encoded)
+    if not CONTROL_ROOM_GATE_ID_PATTERN.fullmatch(decoded):
+        return ""
+    return decoded
 
 
 def _live_html(job: JobState, job_state: Path) -> str:
