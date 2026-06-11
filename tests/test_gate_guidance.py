@@ -143,7 +143,16 @@ def test_vercel_guidance_names_token_path() -> None:
 
 def test_resend_guidance_names_api_key_path() -> None:
     guidance = provider_gate_guidance("resend")
-    text = " ".join((guidance.title, guidance.body, *guidance.actions, guidance.reassurance))
+    text = " ".join(
+        (
+            guidance.title,
+            guidance.body,
+            *guidance.actions,
+            guidance.reassurance,
+            *guidance.success,
+            *guidance.avoid,
+        )
+    )
 
     assert "API Keys" in text
     assert "FuseKit email setup" in text

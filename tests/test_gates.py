@@ -82,6 +82,8 @@ def test_gate_service_persists_provider_success_and_avoid_guidance(tmp_path) -> 
     assert "success_criteria" in gate
     assert "avoid_steps" in gate
     assert any("All domains" in item for item in gate["follow_steps"])
+    assert any("Permission: Full access" in item for item in gate["success_criteria"])
+    assert any("Domain: All domains" in item for item in gate["success_criteria"])
     assert any("raw Resend API key value" in item for item in gate["success_criteria"])
     assert any(
         "No Resend domains or audiences need to exist" in item

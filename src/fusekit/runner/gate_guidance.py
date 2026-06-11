@@ -187,8 +187,9 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
                 "Full access, and choose Domain: All domains for this first setup key."
             ),
             (
-                "If the key card says Full access and All domains, the permissions are fine; "
-                "the missing piece is only the raw key value copied into FuseKit."
+                "If the key card says Permission: Full access and Domain: All domains, "
+                "the permissions are fine; the missing piece is only the raw key value "
+                "copied into FuseKit."
             ),
             (
                 "An existing key card that says Full access is not enough unless you already "
@@ -218,7 +219,10 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
         reassurance="FuseKit will use Resend's API and continue once the email key is captured.",
         success=(
             "A raw Resend API key value is copied from a new one-time reveal screen.",
-            "The first setup key has Full access so FuseKit can create the sending domain.",
+            (
+                "The first setup key shows Permission: Full access and Domain: All "
+                "domains so FuseKit can create the sending domain."
+            ),
             "No Resend domains or audiences need to exist before this key is captured.",
             "FuseKit owns domain creation, DNS record collection, and optional audience setup.",
         ),
