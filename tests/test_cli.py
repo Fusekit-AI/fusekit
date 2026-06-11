@@ -1742,6 +1742,10 @@ def test_verification_gate_records_resend_api_key_follow_me(tmp_path) -> None:
     assert "Permission: Full access" in " ".join(gate.follow_steps)
     assert "Domain: All domains" in " ".join(gate.follow_steps)
     assert "sending domain and audience for moonlite.rsvp" in " ".join(gate.follow_steps)
+    assert (
+        "Permission: Full access and Domain: All domains but you cannot copy its raw value"
+        in " ".join(gate.follow_steps)
+    )
     assert "raw value" in " ".join(gate.follow_steps)
     assert "does not reveal old key secrets again" in " ".join(gate.follow_steps)
     assert "No domains yet" in " ".join(gate.follow_steps)

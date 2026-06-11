@@ -4254,8 +4254,9 @@ def _resend_api_key_follow_steps(domain: str) -> tuple[str, ...]:
             f"key so FuseKit can create or reuse the sending domain and audience{domain_note}."
         ),
         (
-            "If an existing key already says Full access but you cannot copy its raw value, "
-            "create a new setup key; Resend does not reveal old key secrets again."
+            "If an existing key already says Permission: Full access and Domain: All "
+            "domains but you cannot copy its raw value, create a new setup key; Resend "
+            "does not reveal old key secrets again."
         ),
         (
             "If Resend shows No domains yet, stay on API Keys and do not click Add domain; "

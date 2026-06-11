@@ -160,6 +160,7 @@ def test_resend_guidance_names_api_key_path() -> None:
     assert "Permission: Full access" in text
     assert "Domain: All domains" in text
     assert "existing key card" in text
+    assert "Permission: Full access and Domain: All domains is not enough" in text
     assert "raw key value" in text
     assert "does not reveal old key secrets again" in text
     assert "before Cloudflare DNS" in text

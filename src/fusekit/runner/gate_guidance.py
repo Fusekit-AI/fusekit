@@ -192,9 +192,10 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
                 "copied into FuseKit."
             ),
             (
-                "An existing key card that says Full access is not enough unless you already "
-                "have the raw key value. Resend does not reveal old key secrets again; create "
-                "a new setup key if you cannot copy the existing value."
+                "An existing key card that says Permission: Full access and Domain: All "
+                "domains is not enough unless you already have the raw key value. Resend "
+                "does not reveal old key secrets again; create a new setup key if you "
+                "cannot copy the existing value."
             ),
             (
                 "Do not create Resend domains or audiences by hand. After capture, FuseKit "

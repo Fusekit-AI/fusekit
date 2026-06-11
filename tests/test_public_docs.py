@@ -37,7 +37,11 @@ def test_acceptance_runbook_uses_launcher_capture_for_public_recording() -> None
     assert "audience by API" in text
     assert "`Permission: Full access`" in text
     assert "`Domain: All domains`" in text
-    assert "A Resend row that says Full access is not enough by itself" in text
+    assert (
+        "A Resend row that says `Permission: Full access` and `Domain: All domains`"
+        in text
+    )
+    assert "is still not enough by itself" in text
     assert "Do not click Resend Add domain or Add audience" in text
     assert "unless a future FuseKit gate" not in text
     assert "unless FuseKit asks" not in text

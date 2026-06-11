@@ -68,9 +68,9 @@ advanced CLI fallback rehearsal, not the public no-thinking launcher path.
 - When creating the Resend setup key, choose `Permission: Full access` and
   `Domain: All domains`; FuseKit narrows the actual app wiring through the
   provider APIs and encrypted vault after capture.
-- A Resend row that says Full access is not enough by itself. If the raw key
-  value is not visible/copyable, create a new setup key and capture that raw
-  value into the encrypted vault.
+- A Resend row that says `Permission: Full access` and `Domain: All domains`
+  is still not enough by itself. If the raw key value is not visible/copyable,
+  create a new setup key and capture that raw value into the encrypted vault.
 - Do not click Resend Add domain or Add audience during the public path.
   FuseKit owns Resend domain and audience setup by API after key capture.
 

@@ -1440,13 +1440,14 @@ def _resend_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                     "Full access, and choose Domain: All domains for this first setup."
                 ),
                 (
-                    "An existing Full access key row is not enough by itself; FuseKit "
-                    "needs the raw key value captured into the encrypted vault."
+                    "An existing key row with Permission: Full access and Domain: All "
+                    "domains is not enough by itself; FuseKit needs the raw key value "
+                    "captured into the encrypted vault."
                 ),
                 (
-                    "If an existing key already has Full access but the raw value is not "
-                    "available, create a new setup key because Resend does not reveal old "
-                    "key secrets again."
+                    "If an existing key already has those selectors but the raw value is "
+                    "not available, create a new setup key because Resend does not reveal "
+                    "old key secrets again."
                 ),
                 (
                     "Copy RESEND_API_KEY once inside the VM browser, then click "
