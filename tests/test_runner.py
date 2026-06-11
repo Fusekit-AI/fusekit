@@ -352,6 +352,11 @@ def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
     assert "fusekit --version" in plan.bootstrap_command
     assert "rm -rf \"$HOME/.fusekit-runtime/openclaw\"" in plan.bootstrap_command
     assert "Git is required in OCI Cloud Shell for git+ FuseKit packages" in plan.bootstrap_command
+    assert "FuseKit will print the exact launch command below" in plan.bootstrap_command
+    assert "run it in this same Cloud Shell after the app files are present" in (
+        plan.bootstrap_command
+    )
+    assert "Then rerun the fusekit launch command printed below" not in plan.bootstrap_command
     assert "fusekit source fetch" in plan.bootstrap_command
     assert "--github-auth auto" in plan.bootstrap_command
     assert "--capture-stdin" in plan.bootstrap_command

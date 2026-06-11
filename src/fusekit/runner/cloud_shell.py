@@ -191,7 +191,10 @@ def build_cloud_shell_bootstrap_command(
                     "  mkdir -p \"$work/app\"",
                     "  printf '%s\\n' 'No app_source was supplied. Upload or clone the app into:'",
                     "  printf '%s\\n' \"$work/app\"",
-                    "  printf '%s\\n' 'Then rerun the fusekit launch command printed below.'",
+                    (
+                        "  printf '%s\\n' 'FuseKit will print the exact launch command below; "
+                        "run it in this same Cloud Shell after the app files are present.'"
+                    ),
                     "fi",
                     (
                         "if [ -f \"$work/app/fusekit.yaml\" ] || "
