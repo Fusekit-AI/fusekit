@@ -325,7 +325,8 @@ def _running_guidance(step: JobStep) -> tuple[str, str, str]:
     if step_id == "remote.bootstrap":
         return (
             "Wait while the VM installs FuseKit, OpenClaw, browser tools, and dependencies.",
-            "If setup fails, rerun from the same encrypted vault and job state.",
+            "Keep the launcher/control room open; if bootstrap needs attention, "
+            "FuseKit will surface the next visible VM or provider gate here.",
             "working",
         )
     if step_id == "app.upload":

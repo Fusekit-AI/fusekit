@@ -222,6 +222,24 @@ def test_job_state_writes_recovery_checkpoints(tmp_path) -> None:
     assert "Resend records feed DNS approval" in provider["resume_hint"]
 
 
+def test_remote_bootstrap_checkpoint_keeps_recovery_in_launcher(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job.mark("remote.bootstrap", "running", "remote bootstrap is installing dependencies")
+
+    bootstrap = next(
+        item for item in job.checkpoints if item.id == "remote.bootstrap"
+    )
+    html = render_control_room(job)
+
+    assert bootstrap.status == "running"
+    assert "launcher/control room" in bootstrap.resume_hint
+    assert "next visible VM or provider gate" in bootstrap.resume_hint
+    assert "rerun from the same encrypted vault and job state" not in bootstrap.resume_hint
+    assert "launcher/control room" in html
+    assert "next visible VM or provider gate" in html
+    assert "rerun from the same encrypted vault and job state" not in html
+
+
 def test_launch_run_state_contract_tracks_detonation_readiness(tmp_path) -> None:
     path = tmp_path / "run_state.json"
 

@@ -223,6 +223,7 @@ guided, or explicitly verified.
 | Missing redacted-receipt proof could still tell users to "rerun setup," making a live launcher pause sound like a backend task. | Harness, static control-room, and live control-room receipt blockers now tell users to keep the live launcher/control room open while the setup worker finishes provider setup and saves a redacted receipt with no raw secrets. |
 | Missing Resend DNS receipt proof could still tell users to rerun setup so an artifact proves the right order, instead of reinforcing the public Resend-first flow. | Acceptance blockers now tell users to capture `RESEND_API_KEY`, let FuseKit create/reuse the Resend sending domain by API, and approve DNS only after Cloudflare/DNS shows the exact Resend verification records. |
 | Verification and rollback launch blockers could still use operator verbs like "run provider verification," "record checks," or "generate rollback metadata." | Harness, static control-room, and live control-room blockers now keep users in the live control room while FuseKit verifies every provider, resolves visible VM-browser gates, marks only safe pending waits, and writes provider rollback actions before launch. |
+| Remote bootstrap checkpoint recovery could still tell users to rerun from encrypted vault/job state after VM setup trouble. | Bootstrap checkpoint guidance now keeps users in the launcher/control room and says FuseKit will surface the next visible VM or provider gate there if setup needs attention. |
 
 ## Open Acceptance Items
 
