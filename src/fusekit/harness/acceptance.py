@@ -404,8 +404,9 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
         ),
         "Resend DNS records in receipt DNS proposal": (
             "Provider order",
-            "Rerun setup so the receipt proves Resend created/reused the sending domain "
-            "and Cloudflare/DNS proposed the exact Resend verification records.",
+            "Capture RESEND_API_KEY first, let FuseKit create or reuse the Resend "
+            "sending domain by API, then approve DNS apply only after Cloudflare/DNS "
+            "shows the exact Resend verification records.",
         ),
         "DNS apply approval audit proof": (
             "DNS approval",
@@ -619,7 +620,9 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
         if check.id == "receipt.resend_dns_flow":
             return (
                 "Provider order",
-                "Create or reuse the Resend domain first, then approve the DNS apply gate.",
+                "Capture RESEND_API_KEY first, let FuseKit create or reuse the Resend "
+                "sending domain by API, then approve the DNS apply gate when it shows "
+                "the exact Resend verification records.",
             )
         if check.id == "receipt.dns_apply_approval":
             return (

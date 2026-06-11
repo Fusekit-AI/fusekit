@@ -2305,9 +2305,12 @@ def test_live_acceptance_requires_receipt_resend_dns_flow(tmp_path) -> None:
     assert "Resend DNS records in receipt DNS proposal" in report.missing
     blockers = {blocker["item"]: blocker for blocker in report.blockers}
     assert blockers["Resend DNS records in receipt DNS proposal"]["category"] == "Provider order"
-    assert "Cloudflare/DNS proposed the exact Resend verification records" in blockers[
-        "Resend DNS records in receipt DNS proposal"
-    ]["next_action"]
+    next_action = blockers["Resend DNS records in receipt DNS proposal"]["next_action"]
+    assert "Capture RESEND_API_KEY first" in next_action
+    assert "Resend sending domain by API" in next_action
+    assert "approve DNS apply only after Cloudflare/DNS shows" in next_action
+    assert "exact Resend verification records" in next_action
+    assert "Rerun setup so the receipt proves" not in next_action
 
 
 def test_live_acceptance_requires_resend_domain_contract_before_dns(tmp_path) -> None:
@@ -2374,9 +2377,9 @@ def test_live_acceptance_requires_resend_domain_contract_before_dns(tmp_path) ->
     assert receipt_check.status == "failed"
     assert "missing the Resend domain id" in receipt_check.detail
     blockers = {blocker["item"]: blocker for blocker in report.blockers}
-    assert "Resend created/reused the sending domain" in blockers[
-        "Resend DNS records in receipt DNS proposal"
-    ]["next_action"]
+    next_action = blockers["Resend DNS records in receipt DNS proposal"]["next_action"]
+    assert "Resend sending domain by API" in next_action
+    assert "approve DNS apply" in next_action
 
 
 def test_live_acceptance_accepts_receipt_resend_records_before_dns(tmp_path) -> None:
