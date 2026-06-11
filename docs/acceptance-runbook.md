@@ -27,7 +27,8 @@ and detonation.
 12. Show wrong passphrase fails.
 13. Show redacted receipt and audit log.
 14. Run `fusekit acceptance run --mode live`.
-15. Show `"launch_ready": true`.
+15. Show `"launch_ready": true`, `"public_launch_ready": true`, and
+    `"recording_ready": true`.
 16. Show detonation proof.
 
 ## Real Launch Command Shape
@@ -87,7 +88,8 @@ fusekit acceptance run /path/to/moonlite-rsvp \
 
 Do not publish the public walkthrough until:
 
-- the live acceptance report says `launch_ready: true`
+- the live acceptance report says `launch_ready: true`,
+  `public_launch_ready: true`, and `recording_ready: true`
 - the custom domain resolves
 - Resend API/domain verification passes
 - provider strategy order proves Resend ran before Cloudflare/DNS

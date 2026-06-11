@@ -43,6 +43,10 @@ def test_acceptance_runbook_uses_launcher_capture_for_public_recording() -> None
     )
     assert "is still not enough by itself" in text
     assert "Do not click Resend Add domain or Add audience" in text
+    assert "`public_launch_ready: true`" in text
+    assert "`recording_ready: true`" in text
+    assert '"public_launch_ready": true' in text
+    assert '"recording_ready": true' in text
     assert "unless a future FuseKit gate" not in text
     assert "unless FuseKit asks" not in text
     assert "Use the control-room VM browser and `Capture from VM clipboard` buttons" not in text
