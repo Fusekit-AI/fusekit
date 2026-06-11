@@ -759,6 +759,9 @@ function acceptanceCards(report) {
     typeof report.public_launch_ready === "boolean"
       ? report.public_launch_ready
       : Boolean(report.launch_ready && mode === "live");
+  const recordingReady =
+    typeof report.recording_ready === "boolean" ? report.recording_ready : publicReady;
+  const recordable = Boolean(publicReady && recordingReady);
   if (report.error) {
     return [
       {
@@ -774,7 +777,7 @@ function acceptanceCards(report) {
       },
     ];
   }
-  if (publicReady) {
+  if (recordable) {
     return [
       {
         status: "passed",
@@ -783,6 +786,22 @@ function acceptanceCards(report) {
         title: "Acceptance blockers are clear",
         body: "The live run has the required proof to be launch-ready.",
         foot: "Record the demo from this clean state.",
+      },
+    ];
+  }
+  if (publicReady) {
+    return [
+      {
+        status: "pending",
+        snow: "checking",
+        label: "Not recordable",
+        title: "Recording proof is still required",
+        body:
+          "The live run has public launch proof, but the report has not " +
+          "explicitly proven demo recording readiness.",
+        foot:
+          "Keep the live launcher/control room open while FuseKit finishes " +
+          "recording-readiness proof for the current provider run.",
       },
     ];
   }
@@ -992,17 +1011,23 @@ function renderAcceptance(job) {
     typeof report.public_launch_ready === "boolean"
       ? report.public_launch_ready
       : Boolean(report.launch_ready && mode === "live");
-  const summary = report.error
-    ? "acceptance report needs repair"
-    : publicReady
-      ? "launch-ready proof is clear"
-      : report.launch_ready && mode === "rehearsal"
-        ? "live acceptance still required"
-        : report.launch_ready
-          ? "public launch proof still required"
-      : blockers.length
-        ? `${blockers.length} launch blocker${blockers.length === 1 ? "" : "s"}`
-        : "acceptance proof is waiting";
+  const recordingReady =
+    typeof report.recording_ready === "boolean" ? report.recording_ready : publicReady;
+  const recordable = Boolean(publicReady && recordingReady);
+  let summary = "acceptance proof is waiting";
+  if (report.error) {
+    summary = "acceptance report needs repair";
+  } else if (recordable) {
+    summary = "launch-ready proof is clear";
+  } else if (publicReady) {
+    summary = "recording proof still required";
+  } else if (report.launch_ready && mode === "rehearsal") {
+    summary = "live acceptance still required";
+  } else if (report.launch_ready) {
+    summary = "public launch proof still required";
+  } else if (blockers.length) {
+    summary = `${blockers.length} launch blocker${blockers.length === 1 ? "" : "s"}`;
+  }
   const summaryNode = document.querySelector("[data-acceptance-overall]");
   if (summaryNode) summaryNode.textContent = summary;
   root.innerHTML = acceptanceCards(report)

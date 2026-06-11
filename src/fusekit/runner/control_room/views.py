@@ -414,6 +414,13 @@ def _render_acceptance_blockers(report: Any) -> str:
         if isinstance(public_ready_raw, bool)
         else ready and mode == "live"
     )
+    recording_ready_raw = report.get("recording_ready")
+    recording_ready = (
+        bool(recording_ready_raw)
+        if isinstance(recording_ready_raw, bool)
+        else public_ready
+    )
+    recordable = public_ready and recording_ready
     if error:
         cards = f"""
         <article class="trust-card failed">
@@ -429,7 +436,7 @@ def _render_acceptance_blockers(report: Any) -> str:
         </article>
 """
         summary = "acceptance report needs repair"
-    elif public_ready:
+    elif recordable:
         cards = """
         <article class="trust-card passed">
           <div class="trust-snow state-passed" aria-hidden="true"></div>
@@ -442,6 +449,21 @@ def _render_acceptance_blockers(report: Any) -> str:
         </article>
 """
         summary = "launch-ready proof is clear"
+    elif public_ready:
+        cards = """
+        <article class="trust-card pending">
+          <div class="trust-snow state-checking" aria-hidden="true"></div>
+          <div>
+            <span>Not recordable</span>
+            <strong>Recording proof is still required</strong>
+            <p>The live run has public launch proof, but the report has not
+            explicitly proven demo recording readiness.</p>
+            <em>Keep the live launcher/control room open while FuseKit finishes
+            recording-readiness proof for the current provider run.</em>
+          </div>
+        </article>
+"""
+        summary = "recording proof still required"
     elif ready and mode == "rehearsal":
         cards = """
         <article class="trust-card pending">

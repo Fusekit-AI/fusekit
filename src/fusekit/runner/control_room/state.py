@@ -258,6 +258,23 @@ def _read_acceptance_report(path: Path | None) -> dict[str, Any]:
     blockers = raw.get("blockers", [])
     if not isinstance(blockers, list):
         raw["blockers"] = []
+    mode = str(raw.get("mode", "") or "").strip().lower()
+    launch_ready = raw.get("launch_ready") is True
+    public_raw = raw.get("public_launch_ready")
+    public_ready = (
+        public_raw is True and launch_ready and mode == "live"
+        if isinstance(public_raw, bool)
+        else launch_ready and mode == "live"
+    )
+    recording_raw = raw.get("recording_ready")
+    recording_ready = (
+        recording_raw is True and public_ready
+        if isinstance(recording_raw, bool)
+        else public_ready
+    )
+    raw["launch_ready"] = launch_ready
+    raw["public_launch_ready"] = public_ready
+    raw["recording_ready"] = recording_ready
     return raw
 
 

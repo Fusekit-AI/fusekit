@@ -912,6 +912,49 @@ def test_control_room_acceptance_report_error_uses_launcher_controls(tmp_path) -
     assert "Rerun acceptance so FuseKit can rebuild launch-readiness proof" not in html
 
 
+def test_control_room_normalizes_legacy_live_acceptance_ready_state(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    acceptance_dir = tmp_path / "acceptance"
+    acceptance_dir.mkdir()
+    (acceptance_dir / "report.json").write_text(
+        json.dumps({"mode": "live", "launch_ready": True, "blockers": []}),
+        encoding="utf-8",
+    )
+
+    payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
+
+    assert payload["acceptance"]["launch_ready"] is True
+    assert payload["acceptance"]["public_launch_ready"] is True
+    assert payload["acceptance"]["recording_ready"] is True
+
+
+def test_control_room_rejects_string_acceptance_ready_flags(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    acceptance_dir = tmp_path / "acceptance"
+    acceptance_dir.mkdir()
+    (acceptance_dir / "report.json").write_text(
+        json.dumps(
+            {
+                "mode": "live",
+                "launch_ready": "true",
+                "public_launch_ready": "true",
+                "recording_ready": "true",
+                "blockers": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+    payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
+
+    assert payload["acceptance"]["launch_ready"] is False
+    assert payload["acceptance"]["public_launch_ready"] is False
+    assert payload["acceptance"]["recording_ready"] is False
+    assert "Acceptance blockers are clear" not in html.split("<script", 1)[0]
+    assert "Record the demo from this clean state." not in html.split("<script", 1)[0]
+
+
 def test_control_room_renders_acceptance_ready_state(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     acceptance_dir = tmp_path / "acceptance"
@@ -926,9 +969,40 @@ def test_control_room_renders_acceptance_ready_state(tmp_path) -> None:
 
     assert payload["acceptance"]["launch_ready"] is True
     assert payload["acceptance"]["mode"] == "live"
+    assert payload["acceptance"]["public_launch_ready"] is True
+    assert payload["acceptance"]["recording_ready"] is True
     assert "Acceptance blockers are clear" in html
     assert "The live run has the required proof to be launch-ready." in html
     assert "launch-ready proof is clear" in html
+
+
+def test_control_room_does_not_record_when_recording_proof_is_false(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    acceptance_dir = tmp_path / "acceptance"
+    acceptance_dir.mkdir()
+    (acceptance_dir / "report.json").write_text(
+        json.dumps(
+            {
+                "mode": "live",
+                "launch_ready": True,
+                "public_launch_ready": True,
+                "recording_ready": False,
+                "blockers": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+    payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
+    static_html = html.split("<script", 1)[0]
+
+    assert payload["acceptance"]["public_launch_ready"] is True
+    assert payload["acceptance"]["recording_ready"] is False
+    assert "Acceptance blockers are clear" not in static_html
+    assert "Record the demo from this clean state." not in static_html
+    assert "Recording proof is still required" in html
+    assert "recording proof still required" in html
 
 
 def test_control_room_does_not_treat_rehearsal_ready_as_recordable(tmp_path) -> None:
@@ -945,6 +1019,8 @@ def test_control_room_does_not_treat_rehearsal_ready_as_recordable(tmp_path) -> 
 
     assert payload["acceptance"]["launch_ready"] is True
     assert payload["acceptance"]["mode"] == "rehearsal"
+    assert payload["acceptance"]["public_launch_ready"] is False
+    assert payload["acceptance"]["recording_ready"] is False
     static_html = html.split("<script", 1)[0]
     assert "Live acceptance is still required" in html
     assert "Local rehearsal proof is clear, but it is not live provider evidence." in html
@@ -974,7 +1050,10 @@ def test_control_room_respects_explicit_public_launch_ready_flag(tmp_path) -> No
     )
 
     html = render_control_room(job, gate_path=tmp_path / "gates.json")
+    payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
 
+    assert payload["acceptance"]["public_launch_ready"] is False
+    assert payload["acceptance"]["recording_ready"] is False
     assert "Acceptance blockers are clear" not in html.split("<script", 1)[0]
     assert "Record the demo from this clean state." not in html.split("<script", 1)[0]
     assert "Public launch proof is still required" in html
