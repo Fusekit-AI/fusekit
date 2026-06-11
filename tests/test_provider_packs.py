@@ -75,6 +75,7 @@ def test_github_pack_handoff_names_fine_grained_scope_choices(tmp_path) -> None:
     assert "unrelated permissions at No access" in text
     assert "organization approval or SSO" in text
     assert "encrypted vault" in text
+    assert "Capture GITHUB_TOKEN from VM clipboard" in text
 
 
 def test_provider_pack_round_trips_and_rejects_raw_secret(tmp_path) -> None:
@@ -279,6 +280,7 @@ def test_cloudflare_pack_handoff_names_exact_token_wizard_choices(tmp_path) -> N
     assert "TTL blank" in text
     assert "Continue to summary" in text
     assert "Copy the token once inside the VM browser" in text
+    assert "Capture CLOUDFLARE_API_TOKEN from VM clipboard" in text
     assert "No paste into your computer is needed" in text
     assert "Capture reads the VM clipboard directly" in text
 
@@ -295,6 +297,7 @@ def test_vercel_pack_handoff_names_account_scope_choices(tmp_path) -> None:
     assert "set its scope to Personal Account or the exact team" in text
     assert "Use a short expiration" in text
     assert "Copy the token once inside the VM browser" in text
+    assert "Capture VERCEL_TOKEN from VM clipboard" in text
     assert "No paste into your computer is needed" in text
     assert "Capture reads the VM clipboard directly" in text
 
@@ -320,6 +323,7 @@ def test_resend_pack_handoff_explains_existing_key_secret_value(tmp_path) -> Non
     assert "does not reveal old key secrets again" in text
     assert "Open provider gate in VM" in text
     assert "Copy RESEND_API_KEY once inside the VM browser" in text
+    assert "Capture RESEND_API_KEY from VM clipboard" in text
     assert "domain ownership" not in text.lower()
     assert "domain setup screens" in text
     assert "domain ownership verification" not in pack.handoff.service_gates
@@ -340,6 +344,7 @@ def test_resend_handoff_never_opens_domains_before_api_key_capture() -> None:
     assert "existing Full access key row is not enough by itself" in text
     assert "raw key value captured into the encrypted vault" in text
     assert "Open provider gate in VM" in text
+    assert "Capture RESEND_API_KEY from VM clipboard" in text
 
 
 def test_common_provider_catalog_synthesizes_valid_specific_packs(tmp_path) -> None:
@@ -367,7 +372,7 @@ def test_common_provider_handoffs_use_launcher_capture_path(tmp_path) -> None:
         account_text = " ".join(pack.handoff.account_steps)
         text = " ".join(pack.handoff.secret_steps)
         assert "Open provider gate in VM" in account_text
-        assert "Capture from VM clipboard" in text
+        assert f"Capture {pack.handoff.token_env} from VM clipboard" in text
         assert "No paste into your computer is needed" in text
         assert "Capture reads the VM clipboard directly" in text
 
@@ -379,7 +384,7 @@ def test_inferred_provider_handoff_uses_launcher_capture_path(tmp_path) -> None:
 
     assert "Open provider gate in VM" in account_text
     assert "NEWPAY_API_KEY" in text
-    assert "Capture from VM clipboard" in text
+    assert "Capture NEWPAY_API_KEY from VM clipboard" in text
     assert "No paste into your computer is needed" in text
     assert "Capture reads the VM clipboard directly" in text
 
@@ -395,6 +400,24 @@ def test_provider_pack_rejects_vague_secret_capture_handoff(tmp_path) -> None:
     )
 
     with pytest.raises(ProviderError, match="Capture from VM clipboard"):
+        validate_provider_pack(bad)
+
+
+def test_provider_pack_rejects_generic_secret_capture_handoff(tmp_path) -> None:
+    pack = synthesize_provider_pack("stripe", tmp_path)
+    bad = replace(
+        pack,
+        handoff=replace(
+            pack.handoff,
+            secret_steps=(
+                "Copy the token inside the VM browser, then click the matching "
+                "Capture from VM clipboard button. No paste into your computer is "
+                "needed because Capture reads the VM clipboard directly.",
+            ),
+        ),
+    )
+
+    with pytest.raises(ProviderError, match="Capture STRIPE_SECRET_KEY from VM clipboard"):
         validate_provider_pack(bad)
 
 

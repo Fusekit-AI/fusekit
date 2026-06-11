@@ -29,6 +29,13 @@ CLI_BY_PROVIDER = {
     "vercel": "vercel",
     "cloudflare": "wrangler",
 }
+DEFAULT_TOKEN_ENV_BY_PROVIDER = {
+    "cloudflare": "CLOUDFLARE_API_TOKEN",
+    "dns": "CLOUDFLARE_API_TOKEN",
+    "github": "GITHUB_TOKEN",
+    "resend": "RESEND_API_KEY",
+    "vercel": "VERCEL_TOKEN",
+}
 
 
 @dataclass(frozen=True)
@@ -388,7 +395,16 @@ def summarize_strategy_action(
     selected = decision.selected
     resume_url = selected.evidence.get("handoff_url", "")
     needs_human_gate = selected.kind in {"browser_guided", "human_follow_me"}
-    target = pack.handoff.token_env if pack is not None else ""
+    target = (
+        pack.handoff.token_env
+        if pack is not None
+        else DEFAULT_TOKEN_ENV_BY_PROVIDER.get(decision.provider, "")
+    )
+    capture_action = (
+        f"Capture {target} from VM clipboard"
+        if target
+        else "the target-specific Capture from VM clipboard button"
+    )
     action = {
         "provider": decision.provider,
         "recipe": decision.recipe_kind,
@@ -399,7 +415,7 @@ def summarize_strategy_action(
         "next_action": (
             "Click Open provider gate in VM, complete login/MFA/CAPTCHA/consent/token "
             "creation in the VM browser, then copy any revealed token and click the "
-            "matching Capture from VM clipboard button. Do not paste it into your "
+            f"{capture_action}. Do not paste it into your "
             "computer; Capture reads the VM clipboard directly."
             if needs_human_gate
             else "Install or authorize a deterministic provider route, then retry."
@@ -431,7 +447,7 @@ def _strategy_follow_steps(pack: ProviderCapabilityPack | None) -> tuple[str, ..
         "Complete only provider-owned login, MFA, CAPTCHA, consent, billing, or token prompts.",
         (
             "If the provider reveals a copy-once token, copy it inside the VM browser and "
-            "click the matching Capture from VM clipboard button. Do not paste it into "
+            "click the target-specific Capture from VM clipboard button. Do not paste it into "
             "your computer; Capture reads the VM clipboard directly."
         ),
         (

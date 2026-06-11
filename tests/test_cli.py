@@ -1582,7 +1582,7 @@ def test_apply_records_provider_strategy_gate_when_token_is_missing(
     assert gate.target == "GITHUB_TOKEN"
     assert "fine-grained token" in " ".join(gate.follow_steps)
     assert "Click Open provider gate in VM" in gate.next_action
-    assert "matching Capture from VM clipboard button" in gate.next_action
+    assert "Capture GITHUB_TOKEN from VM clipboard" in gate.next_action
     assert "Capture reads the VM clipboard directly" in gate.next_action
     assert "retry this provider route" in gate.resume_hint
 
@@ -1595,7 +1595,7 @@ def test_apply_records_provider_strategy_gate_when_token_is_missing(
     assert strategy["target"] == "GITHUB_TOKEN"
     assert "fine-grained token" in " ".join(strategy["follow_steps"])
     assert "Resource owner" in " ".join(strategy["follow_steps"])
-    assert "matching Capture from VM clipboard button" in strategy["next_action"]
+    assert "Capture GITHUB_TOKEN from VM clipboard" in strategy["next_action"]
     assert "Capture reads the VM clipboard directly" in strategy["next_action"]
     assert "visible gate is finished" in strategy["resume_hint"]
 

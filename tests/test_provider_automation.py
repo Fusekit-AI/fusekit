@@ -876,8 +876,11 @@ def test_provider_setup_contract_health_failure_stops_before_mutation(
     assert gate["resume_url"] == "https://vercel.com/account/tokens"
     assert gate["target"] == "VERCEL_TOKEN"
     assert gate["contract_health_failed"] is True
-    assert "VERCEL_TOKEN" in gate["next_action"]
-    assert "read-only API health check" in " ".join(gate["follow_steps"])
+    assert "Capture VERCEL_TOKEN from VM clipboard" in gate["next_action"]
+    assert "matching Capture from VM clipboard button" not in gate["next_action"]
+    follow_steps = " ".join(gate["follow_steps"])
+    assert "read-only API health check" in follow_steps
+    assert "Capture VERCEL_TOKEN from VM clipboard" in follow_steps
     assert "invalid token" not in json.dumps(gate)
     actions = receipt.to_dict()["actions"]
     assert any(

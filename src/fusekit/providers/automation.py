@@ -246,8 +246,8 @@ def _provider_contract_health_gate(
     steps.extend(step for step in pack.handoff.secret_steps if step.strip())
     if token_env:
         steps.append(
-            f"Copy the fresh {token_env} value inside the VM browser and click the matching "
-            "Capture from VM clipboard button. Do not paste it into your computer; "
+            f"Copy the fresh {token_env} value inside the VM browser and click "
+            f"Capture {token_env} from VM clipboard. Do not paste it into your computer; "
             "Capture reads the VM clipboard directly."
         )
     else:
@@ -268,7 +268,7 @@ def _provider_contract_health_gate(
         "target": token_env,
         "next_action": (
             f"Click Open provider gate in VM, create or reveal a fresh {token_env}, copy it "
-            "inside the VM browser, then click the matching Capture from VM clipboard button. "
+            f"inside the VM browser, then click Capture {token_env} from VM clipboard. "
             "Do not paste it into your computer; Capture reads the VM clipboard directly."
             if token_env
             else "Click Open provider gate in VM, complete the provider-owned authorization, "

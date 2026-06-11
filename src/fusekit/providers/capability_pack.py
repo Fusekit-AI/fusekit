@@ -51,7 +51,6 @@ SERVICE_GATE_WORDS = (
     "verification",
 )
 LAUNCHER_CAPTURE_PHRASES = (
-    "capture from vm clipboard",
     "vm browser",
     "capture reads the vm clipboard directly",
 )
@@ -805,6 +804,17 @@ def _validate_launcher_capture_handoff(pack: ProviderCapabilityPack) -> None:
         raise ProviderError(
             "Provider pack secret_steps must keep secret capture inside the VM browser."
         )
+    if pack.handoff.token_env:
+        exact_capture = f"capture {pack.handoff.token_env.lower()} from vm clipboard"
+        if exact_capture not in secret_text:
+            raise ProviderError(
+                "Provider pack secret_steps must name the exact target-specific "
+                f"Capture {pack.handoff.token_env} from VM clipboard button."
+            )
+    elif "capture from vm clipboard" not in secret_text:
+        raise ProviderError(
+            "Provider pack secret_steps must use Capture from VM clipboard."
+        )
 
 
 def synthesize_provider_pack(
@@ -957,8 +967,9 @@ def _plaid_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                 "Open Developers > Keys and reveal the approved Sandbox or Development secret.",
                 (
                     "Copy PLAID_CLIENT_ID, PLAID_SECRET, and PLAID_ENV inside the VM browser, "
-                    "then click the matching Capture from VM clipboard buttons. No paste into "
-                    "your computer is needed because Capture reads the VM clipboard directly."
+                    "then click Capture PLAID_SECRET from VM clipboard and any other "
+                    "target-specific Capture buttons FuseKit shows. No paste into your computer "
+                    "is needed because Capture reads the VM clipboard directly."
                 ),
                 "Configure allowed products and redirect/webhook settings required by the app.",
             ),
@@ -1072,8 +1083,8 @@ def _github_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                     "named owner and repo."
                 ),
                 (
-                    "Copy the token once inside the VM browser, then click the matching "
-                    "Capture from VM clipboard button to store it in the encrypted vault. "
+                    "Copy the token once inside the VM browser, then click "
+                    "Capture GITHUB_TOKEN from VM clipboard to store it in the encrypted vault. "
                     "No paste into your computer is needed because Capture reads the VM "
                     "clipboard directly."
                 ),
@@ -1162,8 +1173,8 @@ def _vercel_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                 ),
                 "Use a short expiration.",
                 (
-                    "Copy the token once inside the VM browser, then click the matching "
-                    "Capture from VM clipboard button to store it in the encrypted vault. "
+                    "Copy the token once inside the VM browser, then click "
+                    "Capture VERCEL_TOKEN from VM clipboard to store it in the encrypted vault. "
                     "No paste into your computer is needed because Capture reads the VM "
                     "clipboard directly."
                 ),
@@ -1273,8 +1284,9 @@ def _cloudflare_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                     "requires them, then choose Continue to summary and Create Token."
                 ),
                 (
-                    "Copy the token once inside the VM browser, then click the matching "
-                    "Capture from VM clipboard button to store it in the encrypted vault. "
+                    "Copy the token once inside the VM browser, then click "
+                    "Capture CLOUDFLARE_API_TOKEN from VM clipboard to store it in the "
+                    "encrypted vault. "
                     "No paste into your computer is needed because Capture reads the VM "
                     "clipboard directly."
                 ),
@@ -1381,8 +1393,8 @@ def _resend_pack(evidence: ProviderEvidence) -> ProviderCapabilityPack:
                     "key secrets again."
                 ),
                 (
-                    "Copy RESEND_API_KEY once inside the VM browser, then click the matching "
-                    "Capture from VM clipboard button to store it in the encrypted vault. "
+                    "Copy RESEND_API_KEY once inside the VM browser, then click "
+                    "Capture RESEND_API_KEY from VM clipboard to store it in the encrypted vault. "
                     "No paste into your computer is needed because Capture reads the VM "
                     "clipboard directly."
                 ),
@@ -1597,17 +1609,23 @@ def _inferred_pack(provider: str, evidence: ProviderEvidence) -> ProviderCapabil
 
 
 def _launcher_secret_steps(steps: tuple[str, ...], target: str) -> tuple[str, ...]:
-    if any("Capture from VM clipboard" in step for step in steps):
+    exact_capture = f"Capture {target} from VM clipboard" if target else ""
+    if exact_capture and any(exact_capture in step for step in steps):
         return steps
     return (*steps, *_launcher_capture_step(target))
 
 
 def _launcher_capture_step(target: str) -> tuple[str, ...]:
     label = target or "the approved provider value"
+    capture_label = (
+        f"Capture {target} from VM clipboard"
+        if target
+        else "the target-specific Capture from VM clipboard button"
+    )
     return (
         (
             f"When the provider reveals {label}, copy it inside the VM browser and click "
-            "the matching Capture from VM clipboard button. No paste into your computer "
+            f"{capture_label}. No paste into your computer "
             "is needed because Capture reads the VM clipboard directly."
         ),
     )

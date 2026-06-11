@@ -71,9 +71,9 @@ HANDOFFS: dict[str, ProviderHandoff] = {
                 "named owner and repo."
             ),
             (
-                "Copy the token once inside the VM browser; FuseKit captures it into the "
-                "encrypted vault. No paste into your computer is needed because Capture "
-                "reads the VM clipboard directly."
+                "Copy the token once inside the VM browser, then click Capture GITHUB_TOKEN "
+                "from VM clipboard. FuseKit stores it in the encrypted vault. No paste into "
+                "your computer is needed because Capture reads the VM clipboard directly."
             ),
         ),
     ),
@@ -105,9 +105,9 @@ HANDOFFS: dict[str, ProviderHandoff] = {
             ),
             "Use a short expiration.",
             (
-                "Copy the token once inside the VM browser; FuseKit captures it into the "
-                "encrypted vault. No paste into your computer is needed because Capture "
-                "reads the VM clipboard directly."
+                "Copy the token once inside the VM browser, then click Capture VERCEL_TOKEN "
+                "from VM clipboard. FuseKit stores it in the encrypted vault. No paste into "
+                "your computer is needed because Capture reads the VM clipboard directly."
             ),
         ),
     ),
@@ -150,7 +150,8 @@ HANDOFFS: dict[str, ProviderHandoff] = {
                 "requires them, then choose Continue to summary and Create Token."
             ),
             (
-                "Copy the token once inside the VM browser; FuseKit captures it into the "
+                "Copy the token once inside the VM browser, then click "
+                "Capture CLOUDFLARE_API_TOKEN from VM clipboard. FuseKit stores it in the "
                 "encrypted vault. No paste into your computer is needed because Capture "
                 "reads the VM clipboard directly."
             ),
@@ -188,7 +189,8 @@ HANDOFFS: dict[str, ProviderHandoff] = {
                 "create a new setup key because Resend does not reveal old key secrets again."
             ),
             (
-                "Copy the API key once inside the VM browser; FuseKit captures it into the "
+                "Copy the API key once inside the VM browser, then click "
+                "Capture RESEND_API_KEY from VM clipboard. FuseKit stores it in the "
                 "encrypted vault. No paste into your computer is needed because Capture "
                 "reads the VM clipboard directly."
             ),

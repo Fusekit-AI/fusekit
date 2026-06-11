@@ -107,7 +107,7 @@ def test_provider_strategy_does_not_dead_end_on_unimplemented_cli(tmp_path) -> N
     assert decision.selected.kind == "browser_guided"
     assert action["status"] == "needs_human_gate"
     assert "Click Open provider gate in VM" in action["next_action"]
-    assert "matching Capture from VM clipboard button" in action["next_action"]
+    assert "Capture GITHUB_TOKEN from VM clipboard" in action["next_action"]
     assert "Capture reads the VM clipboard directly" in action["next_action"]
     assert (
         "visible I finished this step button in the control room"
@@ -134,7 +134,7 @@ def test_provider_strategy_action_can_carry_pack_follow_steps(tmp_path) -> None:
     assert "creates or reuses the sending domain through Resend's API" in steps
     assert "encrypted vault" in steps
     assert "Capture reads the VM clipboard directly" in steps
-    assert "matching Capture from VM clipboard button" in action["next_action"]
+    assert "Capture RESEND_API_KEY from VM clipboard" in action["next_action"]
 
 
 def test_provider_strategy_uses_local_vault_for_capture_recipes(tmp_path) -> None:
