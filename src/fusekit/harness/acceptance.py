@@ -2293,6 +2293,11 @@ def _guidance_quality_failures(
         )
     secret_targets = _env_targets_from_text(target)
     if secret_targets:
+        if "capture <target> from vm clipboard" in action_lowered:
+            failures.append(
+                f"{label}.guidance uses placeholder Capture <TARGET> despite concrete "
+                "secret targets"
+            )
         missing_exact = _missing_exact_capture_controls(secret_targets, action_lowered)
         if (
             "capture from vm clipboard" not in action_lowered
