@@ -46,3 +46,11 @@ def test_public_launch_readiness_requires_exact_capture_controls() -> None:
     assert "exact controls such as `Capture RESEND_API_KEY from VM clipboard`" in text
     assert "manual, placeholder, or" in text
     assert "targets must name `Capture from VM clipboard`" not in text
+
+
+def test_friction_log_keeps_resend_recovery_launcher_owned() -> None:
+    text = Path("docs/magic-path-friction-log.md").read_text(encoding="utf-8")
+
+    assert "regenerate the Resend runtime gate" not in text
+    assert "keep the live launcher/control room open while FuseKit rebuilds" in text
+    assert "only `RESEND_API_KEY` uses Capture" in text

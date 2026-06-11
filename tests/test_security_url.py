@@ -21,6 +21,27 @@ def test_require_safe_url_allows_https_and_loopback_http_only() -> None:
         require_safe_url("file:///tmp/secret")
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://127.0.0.1:8765/admin",
+        "https://localhost:8765/admin",
+        "https://10.0.0.5/provider",
+        "https://169.254.169.254/latest/meta-data",
+    ],
+)
+def test_require_safe_url_rejects_local_or_private_hosts_by_default(url: str) -> None:
+    with pytest.raises(FuseKitError, match="local or private network hosts"):
+        require_safe_url(url)
+
+
+def test_require_safe_url_allows_loopback_when_explicitly_requested() -> None:
+    assert (
+        require_safe_url("https://127.0.0.1:3000/health", allow_http_loopback=True)
+        == "https://127.0.0.1:3000/health"
+    )
+
+
 def test_require_relative_api_path_rejects_absolute_or_scheme_paths() -> None:
     assert require_relative_api_path("/v1/projects") == "/v1/projects"
 
@@ -30,4 +51,3 @@ def test_require_relative_api_path_rejects_absolute_or_scheme_paths() -> None:
         require_relative_api_path("//evil.example.test/v1")
     with pytest.raises(FuseKitError, match="relative"):
         require_relative_api_path("v1/projects")
-

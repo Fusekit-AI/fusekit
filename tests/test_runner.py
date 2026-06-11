@@ -2052,6 +2052,51 @@ def test_control_room_open_rejects_unsafe_gate_url_before_browser_launch(
     assert gate.status == "waiting"
 
 
+def test_control_room_open_rejects_local_network_gate_url_before_browser_launch(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.custom.authorization",
+        provider="custom",
+        reason="Custom token creation",
+        resume_url="https://127.0.0.1:8765/admin",
+        classification="consent",
+    )
+    monkeypatch.setenv("FUSEKIT_VISUAL_BROWSER", "/usr/bin/fake-chrome")
+    monkeypatch.setattr(
+        "fusekit.runner.control_room.server.subprocess.Popen",
+        lambda *args, **kwargs: pytest.fail("local gate URL must not launch a browser"),
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = (
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/gates/provider.custom.authorization/open"
+        )
+        request = Request(url, method="POST", headers=_control_room_post_headers(tmp_path))
+        with pytest.raises(HTTPError) as exc:
+            urlopen(request, timeout=5)
+        payload = json.loads(exc.value.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert exc.value.code == 400
+    assert payload == {
+        "error": "Provider gate URL must not target local or private network hosts.",
+        "ok": False,
+    }
+    gate = GateService.load(tmp_path / "gates.json").records["provider.custom.authorization"]
+    assert gate.last_opened_url == ""
+    assert gate.status == "waiting"
+
+
 def test_control_room_visual_browser_requires_profile_capable_binary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

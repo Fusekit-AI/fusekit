@@ -21,6 +21,8 @@ def require_safe_url(
         raise FuseKitError(f"{label} must not include credentials.")
     if not parsed.hostname:
         raise FuseKitError(f"{label} must include a host.")
+    if _is_unsafe_network_host(parsed.hostname) and not allow_http_loopback:
+        raise FuseKitError(f"{label} must not target local or private network hosts.")
     if parsed.scheme == "https":
         return url
     if parsed.scheme == "http" and allow_http_loopback and _is_loopback(parsed.hostname):
@@ -44,3 +46,14 @@ def _is_loopback(hostname: str) -> bool:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
         return False
+
+
+def _is_unsafe_network_host(hostname: str) -> bool:
+    host = hostname.strip().lower().strip("[]")
+    if host == "localhost":
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return not address.is_global

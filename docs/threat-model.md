@@ -73,8 +73,9 @@ Every state-changing control-room POST must keep all of these protections:
 The control room must never expose a route that accepts arbitrary shell
 commands, creates OS or application admin accounts, edits startup files, or
 installs persistence. Provider gate launches must validate the provider URL and
-run the browser with an argv list only, with provider/API/token/passphrase-style
-environment variables stripped from the spawned browser process. Clipboard
+reject local/private network targets before running the browser with an argv list
+only, with provider/API/token/passphrase-style environment variables stripped
+from the spawned browser process. Clipboard
 capture must validate the expected target shape, reject copied page URLs or multi-token blobs,
 and record audit fingerprints instead of raw secret text.
 
