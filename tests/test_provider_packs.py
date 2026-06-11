@@ -576,6 +576,31 @@ def test_provider_pack_rejects_local_tab_account_handoff(tmp_path) -> None:
         validate_provider_pack(bad)
 
 
+@pytest.mark.parametrize(
+    "account_step",
+    (
+        "Click Open provider gate in VM, then figure out any account prompts manually.",
+        "Click Open provider gate in VM, look at the provider screen and decide yourself.",
+        "Click Open provider gate in VM and complete extra identity checks if shown.",
+    ),
+)
+def test_provider_pack_rejects_vague_account_follow_me_steps(
+    tmp_path,
+    account_step: str,
+) -> None:
+    pack = synthesize_provider_pack("stripe", tmp_path)
+    bad = replace(
+        pack,
+        handoff=replace(
+            pack.handoff,
+            account_steps=(account_step,),
+        ),
+    )
+
+    with pytest.raises(ProviderError, match="follow-me instructions"):
+        validate_provider_pack(bad)
+
+
 def test_provider_pack_rejects_host_tab_secret_capture_handoff(tmp_path) -> None:
     pack = synthesize_provider_pack("stripe", tmp_path)
     bad = replace(

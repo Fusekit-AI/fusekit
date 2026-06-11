@@ -66,6 +66,13 @@ LAUNCHER_SIDE_CHANNEL_PHRASES = (
     "host browser",
     "host tab",
 )
+VAGUE_ACCOUNT_HANDOFF_PHRASES = (
+    "figure",
+    "yourself",
+    "manually",
+    "if shown",
+    "look at",
+)
 BUILT_IN_PROVIDERS = {"github", "vercel", "cloudflare", "dns"}
 FRAMEWORK_ENV_PREFIXES = {
     "astro",
@@ -792,6 +799,15 @@ def _validate_launcher_capture_handoff(pack: ProviderCapabilityPack) -> None:
     if any(phrase in account_text for phrase in LAUNCHER_SIDE_CHANNEL_PHRASES):
         raise ProviderError(
             "Provider pack account_steps must keep provider gates inside the VM browser."
+        )
+    vague_account_phrase = next(
+        (phrase for phrase in VAGUE_ACCOUNT_HANDOFF_PHRASES if phrase in account_text),
+        "",
+    )
+    if vague_account_phrase:
+        raise ProviderError(
+            "Provider pack account_steps must be follow-me instructions, not vague "
+            f"provider-screen interpretation: {vague_account_phrase}."
         )
     if not pack.handoff.secret_steps:
         raise ProviderError("Provider pack must include launcher secret capture steps.")
