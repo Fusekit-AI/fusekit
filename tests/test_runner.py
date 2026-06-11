@@ -404,6 +404,9 @@ def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
     assert "document.createElement('textarea')" in html
     assert "document.execCommand('copy')" in html
     assert "Press Command+C" in html
+    assert "Press Command+C or Ctrl+C" in html
+    assert "FuseKit opened the backup command and selected it" in html
+    assert "Open OCI Cloud Shell and paste it there" in html
     assert "command.select()" in html
     assert "command.closest('details').open = true" in html
     assert "command.value = buildCommand(source.value);" in html

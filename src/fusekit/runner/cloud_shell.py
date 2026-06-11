@@ -756,14 +756,15 @@ def render_cloud_shell_launcher(plan: CloudShellLaunchPlan) -> str:
       command.value = buildCommand(source.value);
       try {{
         await copyText(command.value);
-        status.textContent = 'Bootstrap command copied.';
+        status.textContent = 'Bootstrap command copied. Open OCI Cloud Shell and paste it there.';
       }} catch (error) {{
         command.closest('details').open = true;
         command.focus();
         command.select();
         command.setSelectionRange(0, command.value.length);
         status.textContent =
-          'Copy was blocked. Press Command+C; FuseKit selected the exact command.';
+          'Copy was blocked. FuseKit opened the backup command and selected it. ' +
+          'Press Command+C or Ctrl+C, then paste it into Cloud Shell.';
       }}
     }});
   </script>
