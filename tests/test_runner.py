@@ -3280,8 +3280,11 @@ def test_control_room_payload_and_html_include_visual_session(tmp_path) -> None:
                 "runner": "novnc",
                 "status": "ready",
                 "interactive": True,
-                "novnc_url": "http://203.0.113.10:6080/vnc.html?autoconnect=1",
-                "control_room_url": "http://203.0.113.10:8765/?token=test",
+                "novnc_url": "http://93.184.216.34:6080/vnc.html?autoconnect=1",
+                "control_room_url": (
+                    "http://93.184.216.34:8765/"
+                    "?token=viewer_token_abcdefghijklmnopqrstuvwxyz0123456789"
+                ),
                 "novnc_password": "viewer-password",
             }
         ),
@@ -3303,15 +3306,16 @@ def test_control_room_payload_and_html_include_visual_session(tmp_path) -> None:
     assert 'data-copy-label="password"' in html
     assert "Open live VM browser" in html
     assert "Copy live VM browser link" in html
+    assert "Open live control room" in html
     assert 'data-copy-label="live VM browser link"' in html
-    assert "http://203.0.113.10:6080/vnc.html?autoconnect=1" in html
+    assert "http://93.184.216.34:6080/vnc.html?autoconnect=1" in html
     assert "password=viewer-password" in html
     assert (
-        'href="http://203.0.113.10:6080/vnc.html?autoconnect=1&amp;password=viewer-password"'
+        'href="http://93.184.216.34:6080/vnc.html?autoconnect=1&amp;password=viewer-password"'
         in html
     )
     assert (
-        'data-copy="http://203.0.113.10:6080/vnc.html?autoconnect=1&amp;password=viewer-password"'
+        'data-copy="http://93.184.216.34:6080/vnc.html?autoconnect=1&amp;password=viewer-password"'
         in html
     )
     assert "withQueryParam(novncUrl, \"password\", password)" in html
@@ -3355,6 +3359,39 @@ def test_control_room_rejects_unsafe_visual_session_iframe_url(tmp_path) -> None
     assert "Visual session noVNC URL was not safe to embed." in html
 
 
+def test_control_room_rejects_visual_session_hostname_and_private_ip(tmp_path) -> None:
+    for host in ("attacker.example", "10.0.0.5", "127.0.0.1"):
+        job_root = tmp_path / host.replace(".", "-")
+        job = JobState.create("fk-test", job_root, "oci-free")
+        job_path = job_root / "job.json"
+        job.save(job_path)
+        (job_root / "visual.json").write_text(
+            json.dumps(
+                {
+                    "runner": "novnc",
+                    "status": "ready",
+                    "novnc_url": f"http://{host}:6080/vnc.html?autoconnect=1",
+                    "control_room_url": (
+                        f"http://{host}:8765/"
+                        "?token=viewer_token_abcdefghijklmnopqrstuvwxyz0123456789"
+                    ),
+                    "novnc_password": "viewer-password",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        payload = control_room_payload(job_path)
+        html = render_control_room(job, gate_path=job_root / "gates.json")
+
+        assert payload["visual"] == {
+            "status": "unavailable",
+            "error": "Visual session noVNC URL was not safe to embed.",
+        }
+        assert host not in html
+        assert "viewer-password" not in html
+
+
 def test_control_room_sanitizes_visual_session_urls_and_password(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job_path = tmp_path / "job.json"
@@ -3365,10 +3402,13 @@ def test_control_room_sanitizes_visual_session_urls_and_password(tmp_path) -> No
                 "runner": "novnc",
                 "status": "ready",
                 "novnc_url": (
-                    "http://203.0.113.10:6080/vnc.html?autoconnect=1"
+                    "http://93.184.216.34:6080/vnc.html?autoconnect=1"
                     "&resize=scale&password=leaked#frag"
                 ),
-                "control_room_url": "http://evil.example:8765/?token=test",
+                "control_room_url": (
+                    "http://10.0.0.5:8765/"
+                    "?token=viewer_token_abcdefghijklmnopqrstuvwxyz0123456789"
+                ),
                 "novnc_password": "bad\npassword",
             }
         ),
@@ -3379,13 +3419,13 @@ def test_control_room_sanitizes_visual_session_urls_and_password(tmp_path) -> No
     html = render_control_room(job, gate_path=tmp_path / "gates.json")
 
     assert payload["visual"]["novnc_url"] == (
-        "http://203.0.113.10:6080/vnc.html?autoconnect=1&resize=scale"
+        "http://93.184.216.34:6080/vnc.html?autoconnect=1&resize=scale"
     )
     assert "control_room_url" not in payload["visual"]
     assert "novnc_password" not in payload["visual"]
     assert "password=leaked" not in html
     assert "bad\npassword" not in html
-    assert "evil.example" not in html
+    assert "10.0.0.5" not in html
 
 
 def test_control_room_payload_and_html_include_provider_strategy_routes(tmp_path) -> None:

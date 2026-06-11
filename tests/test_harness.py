@@ -461,7 +461,7 @@ def test_acceptance_rejects_unsafe_visual_state_survivor(tmp_path) -> None:
                 "runner": "novnc",
                 "status": "ready",
                 "novnc_url": (
-                    "http://203.0.113.10:6080/vnc.html"
+                    "http://93.184.216.34:6080/vnc.html"
                     "?autoconnect=1&password=leaked#frag"
                 ),
                 "control_room_url": "http://evil.example:8765/?token=stolen",
@@ -496,8 +496,8 @@ def test_acceptance_allows_sanitized_visual_state_survivor(tmp_path) -> None:
             {
                 "runner": "novnc",
                 "status": "ready",
-                "novnc_url": "http://203.0.113.10:6080/vnc.html?autoconnect=1&resize=scale",
-                "control_room_url": f"http://203.0.113.10:8765/?token={control_room_token}",
+                "novnc_url": "http://93.184.216.34:6080/vnc.html?autoconnect=1&resize=scale",
+                "control_room_url": f"http://93.184.216.34:8765/?token={control_room_token}",
                 "novnc_password": "viewer-password",
             }
         ),
@@ -528,8 +528,8 @@ def test_acceptance_rejects_weak_visual_control_room_token(tmp_path) -> None:
             {
                 "runner": "novnc",
                 "status": "ready",
-                "novnc_url": "http://203.0.113.10:6080/vnc.html?autoconnect=1",
-                "control_room_url": "http://203.0.113.10:8765/?token=short",
+                "novnc_url": "http://93.184.216.34:6080/vnc.html?autoconnect=1",
+                "control_room_url": "http://93.184.216.34:8765/?token=short",
             }
         ),
         encoding="utf-8",
@@ -544,6 +544,38 @@ def test_acceptance_rejects_weak_visual_control_room_token(tmp_path) -> None:
     assert checks[-1].status == "failed"
     assert "control-room URL" in checks[-1].detail
     assert "safe visual session state" in missing
+
+
+def test_acceptance_rejects_visual_hostname_or_private_ip(tmp_path) -> None:
+    for host in ("attacker.example", "10.0.0.5"):
+        fusekit_dir = tmp_path / host.replace(".", "-") / ".fusekit"
+        fusekit_dir.mkdir(parents=True)
+        visual_path = fusekit_dir / "visual.json"
+        visual_path.write_text(
+            json.dumps(
+                {
+                    "runner": "novnc",
+                    "status": "ready",
+                    "novnc_url": f"http://{host}:6080/vnc.html?autoconnect=1",
+                    "control_room_url": (
+                        f"http://{host}:8765/"
+                        "?token=viewer_token_abcdefghijklmnopqrstuvwxyz0123456789"
+                    ),
+                }
+            ),
+            encoding="utf-8",
+        )
+        checks: list[AcceptanceCheck] = []
+        missing: list[str] = []
+        ledger = HarnessLedger.create(fusekit_dir / "acceptance")
+
+        _check_visual_state(visual_path, "live", checks, missing, ledger)
+
+        assert checks[-1].id == "visual_state.safe"
+        assert checks[-1].status == "failed"
+        assert "noVNC URL" in checks[-1].detail
+        assert "control-room URL" in checks[-1].detail
+        assert "safe visual session state" in missing
 
 
 def test_acceptance_gate_guidance_rejects_hidden_prompt_or_wrong_button() -> None:

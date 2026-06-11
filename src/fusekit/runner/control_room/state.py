@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
 from pathlib import Path
@@ -176,6 +177,8 @@ def _safe_visual_url(
         return "", ""
     if parsed.username or parsed.password or not parsed.hostname:
         return "", ""
+    if not _safe_visual_host(parsed.hostname):
+        return "", ""
     if require_vnc_path and not parsed.path.endswith("/vnc.html"):
         return "", ""
     query_pairs: list[tuple[str, str]] = []
@@ -190,6 +193,16 @@ def _safe_visual_url(
         (parsed.scheme, parsed.netloc, parsed.path or "/", "", query, "")
     )
     return safe_url, parsed.hostname.lower().strip("[]")
+
+
+def _safe_visual_host(hostname: str) -> bool:
+    """Allow only public IP VM hosts for embeddable visual sessions."""
+
+    try:
+        address = ipaddress.ip_address(hostname.strip("[]"))
+    except ValueError:
+        return False
+    return address.is_global
 
 
 def _safe_visual_password(value: str) -> bool:
