@@ -1001,7 +1001,10 @@ def test_control_room_renders_vm_clipboard_capture_for_secret_gate(tmp_path) -> 
         reason="Resend API key",
         classification="provider-authorization",
         target="RESEND_API_KEY",
-        follow_steps=("Copy the API key inside the VM.",),
+        follow_steps=(
+            "Copy the API key inside the VM.",
+            "When Resend reveals it, paste it into FuseKit's hidden prompt.",
+        ),
     )
 
     html = render_control_room(JobState.load(job_path), gate_path=tmp_path / "gates.json")
@@ -1011,7 +1014,9 @@ def test_control_room_renders_vm_clipboard_capture_for_secret_gate(tmp_path) -> 
     assert "Copy the provider value in the VM browser" in html
     assert "click the matching" not in html
     assert "Capture RESEND_API_KEY from VM clipboard below" in html
+    assert "click Capture RESEND_API_KEY from VM clipboard" in html
     assert "Capture from VM clipboard button below" not in html
+    assert "target-specific Capture" not in html
     assert "click Capture here" not in html
     assert "FuseKit will resume automatically after every target is captured." in html
     assert "reads only the VM clipboard" in html
@@ -2929,10 +2934,11 @@ def test_control_room_uses_privacy_mascot_for_secret_gates(tmp_path) -> None:
     assert "covering his eyes while secrets stay private" in html
     assert "isPrivacyStep" in html
     assert (
-        "copy it inside the VM browser, then click the target-specific "
+        "copy it inside the VM browser, then click the visible env-named "
         "Capture from VM clipboard button"
         in html
     )
+    assert "target-specific Capture" not in html
     assert "click the matching Capture from VM clipboard button" not in html
     assert "click Capture in FuseKit" not in html
     assert "paste it into FuseKit&#x27;s hidden prompt" not in html

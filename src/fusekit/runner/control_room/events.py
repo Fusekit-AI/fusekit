@@ -41,21 +41,23 @@ function label(status) {
 }
 
 function stepDetail(step) {
-  return publicCopy(step?.detail || "Queued and ready for the worker.");
+  return publicCopy(
+    step?.detail || "Queued and ready for the worker.",
+    captureTargets(step?.target),
+  );
 }
 
-function publicCopy(value) {
+function publicCopy(value, captureTargetList = []) {
   let text = String(value || "");
+  const captureInstruction = publicCaptureInstruction(captureTargetList);
   const replacements = [
     [
       "paste it into FuseKit's " + "hidden prompt",
-      "copy it inside the VM browser, then click the target-specific Capture from VM " +
-        "clipboard button",
+      "copy it inside the VM browser, then click " + captureInstruction,
     ],
     [
       "paste into FuseKit's " + "hidden prompt",
-      "copy inside the VM browser, then click the target-specific Capture from VM " +
-        "clipboard button",
+      "copy inside the VM browser, then click " + captureInstruction,
     ],
     ["hidden Cloud Shell prompts", "Capture from VM clipboard buttons"],
     ["hidden prompts/env handoff", "VM clipboard Capture fallback"],
@@ -66,6 +68,15 @@ function publicCopy(value) {
     text = text.replaceAll(oldText, newText);
   }
   return text;
+}
+
+function publicCaptureInstruction(captureTargetList = []) {
+  const labels = (captureTargetList || [])
+    .map((item) => `Capture ${String(item || "").toUpperCase()} from VM clipboard`)
+    .filter((item) => item.trim() !== "Capture  from VM clipboard");
+  if (labels.length === 1) return labels[0];
+  if (labels.length > 1) return "one of these visible buttons: " + labels.join(", ");
+  return "the visible env-named Capture from VM clipboard button";
 }
 
 function publicTarget(value) {
@@ -261,6 +272,7 @@ function renderGateHelp(step) {
   const provider = String(step.provider || "").trim().toLowerCase() ||
     inferGateProvider(`${step.id} ${step.label} ${step.detail}`);
   const guidance = gateGuidance(provider);
+  const captureTargetList = captureTargets(step.target);
   if (retrying) {
     const classification = step.classification
       ? [
@@ -268,8 +280,8 @@ function renderGateHelp(step) {
           `${escapeHtml(step.classification.replaceAll("_", " "))}</span>`,
         ].join("")
       : "";
-    const nextAction = publicCopy(step.next_action || "").trim();
-    const resumeHint = publicCopy(step.resume_hint || "").trim();
+    const nextAction = publicCopy(step.next_action || "", captureTargetList).trim();
+    const resumeHint = publicCopy(step.resume_hint || "", captureTargetList).trim();
     const nextBlock = nextAction || resumeHint
       ? [
           `<div class="gate-next">`,
@@ -283,7 +295,7 @@ function renderGateHelp(step) {
         <span>FuseKit is rechecking now</span>${classification}
         <strong>${escapeHtml(step.label || guidance.title)}</strong>
         <p>${escapeHtml(stepDetail(step))}</p>
-        <em>${escapeHtml(publicCopy(guidance.reassurance))}</em>
+        <em>${escapeHtml(publicCopy(guidance.reassurance, captureTargetList))}</em>
         ${nextBlock}
       </div>
     `;
@@ -318,7 +330,7 @@ function renderGateHelp(step) {
         `<strong>${escapeHtml(publicTarget(step.target))}</strong></p>`,
       ].join("")
     : "";
-  const hasCaptureTargets = captureTargets(step.target).length > 0;
+  const hasCaptureTargets = captureTargetList.length > 0;
   const resumeButton = step.id && !hasCaptureTargets
     ? [
         `<button class="gate-done" type="button" `,
@@ -327,8 +339,8 @@ function renderGateHelp(step) {
     : "";
   const captureButtons = renderCaptureButtons(step.id, step.target, step.captured_targets);
   const actionStatus = renderGateActionStatus(step.id);
-  const nextAction = publicCopy(step.next_action || "").trim();
-  const resumeHint = publicCopy(step.resume_hint || "").trim();
+  const nextAction = publicCopy(step.next_action || "", captureTargetList).trim();
+  const resumeHint = publicCopy(step.resume_hint || "", captureTargetList).trim();
   const nextBlock = nextAction || resumeHint
     ? [
         `<div class="gate-next">`,
@@ -337,7 +349,12 @@ function renderGateHelp(step) {
         `</div>`,
       ].join("")
     : "";
-  const criteriaBlock = renderGateCriteria(guidance, step.success_criteria, step.avoid_steps);
+  const criteriaBlock = renderGateCriteria(
+    guidance,
+    step.success_criteria,
+    step.avoid_steps,
+    captureTargetList,
+  );
   return `
     <div class="gate-help">
       <span>What you need to do</span>${classification}
@@ -345,9 +362,11 @@ function renderGateHelp(step) {
       <p>${escapeHtml(guidance.body)}</p>
       ${target}
       ${meta}
-      <ol>${followSteps.map((action) => `<li>${escapeHtml(publicCopy(action))}</li>`).join("")}</ol>
+      <ol>${followSteps
+        .map((action) => `<li>${escapeHtml(publicCopy(action, captureTargetList))}</li>`)
+        .join("")}</ol>
       ${criteriaBlock}
-      <em>${escapeHtml(guidance.reassurance)}</em>
+      <em>${escapeHtml(publicCopy(guidance.reassurance, captureTargetList))}</em>
       ${nextBlock}
       ${captureButtons}
       ${resumeButton}
@@ -361,7 +380,12 @@ function stringList(value) {
   return value.map((item) => String(item || "")).filter((item) => item.trim());
 }
 
-function renderGateCriteria(guidance, successCriteria = [], avoidSteps = []) {
+function renderGateCriteria(
+  guidance,
+  successCriteria = [],
+  avoidSteps = [],
+  captureTargetList = [],
+) {
   const blocks = [];
   const success = stringList(successCriteria).length
     ? stringList(successCriteria)
@@ -369,7 +393,7 @@ function renderGateCriteria(guidance, successCriteria = [], avoidSteps = []) {
   const avoid = stringList(avoidSteps).length ? stringList(avoidSteps) : stringList(guidance.avoid);
   if (success.length) {
     const rows = success
-      .map((item) => `<li>${escapeHtml(publicCopy(item))}</li>`)
+      .map((item) => `<li>${escapeHtml(publicCopy(item, captureTargetList))}</li>`)
       .join("");
     if (rows) {
       blocks.push(
@@ -380,7 +404,7 @@ function renderGateCriteria(guidance, successCriteria = [], avoidSteps = []) {
   }
   if (avoid.length) {
     const rows = avoid
-      .map((item) => `<li>${escapeHtml(publicCopy(item))}</li>`)
+      .map((item) => `<li>${escapeHtml(publicCopy(item, captureTargetList))}</li>`)
       .join("");
     if (rows) {
       blocks.push(`<div class="gate-criteria avoid"><strong>Avoid</strong><ul>${rows}</ul></div>`);

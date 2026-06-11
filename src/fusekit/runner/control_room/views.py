@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import json
 import time
+from collections.abc import Iterable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -198,20 +199,19 @@ def _render_step(step: JobStep, index: int) -> str:
 """
 
 
-def _public_copy(value: Any) -> str:
+def _public_copy(value: Any, capture_targets: Iterable[str] = ()) -> str:
     """Translate stale internal/fallback wording into launcher-safe user copy."""
 
     text = str(value or "")
+    capture_instruction = _public_capture_instruction(capture_targets)
     replacements = (
         (
             "paste it into FuseKit's hidden prompt",
-            "copy it inside the VM browser, then click the target-specific "
-            "Capture from VM clipboard button",
+            "copy it inside the VM browser, then click " + capture_instruction,
         ),
         (
             "paste into FuseKit's hidden prompt",
-            "copy inside the VM browser, then click the target-specific "
-            "Capture from VM clipboard button",
+            "copy inside the VM browser, then click " + capture_instruction,
         ),
         ("hidden Cloud Shell prompts", "Capture from VM clipboard buttons"),
         ("hidden prompts/env handoff", "VM clipboard Capture fallback"),
@@ -221,6 +221,19 @@ def _public_copy(value: Any) -> str:
     for old, new in replacements:
         text = text.replace(old, new)
     return text
+
+
+def _public_capture_instruction(capture_targets: Iterable[str]) -> str:
+    labels = [
+        f"Capture {target.strip().upper()} from VM clipboard"
+        for target in sorted(capture_targets)
+        if target.strip()
+    ]
+    if len(labels) == 1:
+        return labels[0]
+    if len(labels) > 1:
+        return "one of these visible buttons: " + ", ".join(labels)
+    return "the visible env-named Capture from VM clipboard button"
 
 
 def _public_target(value: Any) -> str:
@@ -1201,7 +1214,8 @@ def _focus_kicker(step: Any) -> str:
 def _step_detail(step: Any) -> str:
     if step is None:
         return "FuseKit is preserving encrypted and redacted artifacts."
-    return _public_copy(step.detail or "Queued and ready for the worker.")
+    capture_targets = _capture_targets(str(getattr(step, "target", "") or ""))
+    return _public_copy(step.detail or "Queued and ready for the worker.", capture_targets)
 
 
 def _render_gate_help(step: Any) -> str:
@@ -1213,12 +1227,13 @@ def _render_gate_help(step: Any) -> str:
         return ""
     guidance = _guidance_for_step(step)
     if retrying:
+        capture_targets = _capture_targets(str(getattr(step, "target", "") or ""))
         next_action = str(getattr(step, "next_action", "") or "").strip()
         resume_hint = str(getattr(step, "resume_hint", "") or "").strip()
         next_block = (
             "<div class=\"gate-next\">"
-            f"<strong>Next</strong><p>{html.escape(_public_copy(next_action))}</p>"
-            f"<em>{html.escape(_public_copy(resume_hint))}</em>"
+            f"<strong>Next</strong><p>{html.escape(_public_copy(next_action, capture_targets))}</p>"
+            f"<em>{html.escape(_public_copy(resume_hint, capture_targets))}</em>"
             "</div>"
             if next_action or resume_hint
             else ""
@@ -1234,7 +1249,7 @@ def _render_gate_help(step: Any) -> str:
           <span>FuseKit is rechecking now</span>{classification_label}
           <strong>{html.escape(str(getattr(step, "label", "") or guidance.title))}</strong>
           <p>{html.escape(_step_detail(step))}</p>
-          <em>{html.escape(_public_copy(guidance.reassurance))}</em>
+          <em>{html.escape(_public_copy(guidance.reassurance, capture_targets))}</em>
           {next_block}
         </div>
 """
@@ -1244,7 +1259,12 @@ def _render_gate_help(step: Any) -> str:
         if isinstance(follow_steps, list) and follow_steps
         else guidance.actions
     )
-    actions = "".join(f"<li>{html.escape(_public_copy(action))}</li>" for action in actions_source)
+    target = str(getattr(step, "target", "") or "")
+    capture_targets = _capture_targets(target)
+    actions = "".join(
+        f"<li>{html.escape(_public_copy(action, capture_targets))}</li>"
+        for action in actions_source
+    )
     resume_url = str(getattr(step, "resume_url", "") or "")
     gate_id = str(getattr(step, "id", "") or "")
     resume_link = (
@@ -1271,8 +1291,6 @@ def _render_gate_help(step: Any) -> str:
         if classification
         else ""
     )
-    target = str(getattr(step, "target", "") or "")
-    capture_targets = _capture_targets(target)
     captured_targets = tuple(
         str(item).strip().upper()
         for item in getattr(step, "captured_targets", ())
@@ -1296,8 +1314,8 @@ def _render_gate_help(step: Any) -> str:
     resume_hint = str(getattr(step, "resume_hint", "") or "").strip()
     next_block = (
         "<div class=\"gate-next\">"
-        f"<strong>Next</strong><p>{html.escape(_public_copy(next_action))}</p>"
-        f"<em>{html.escape(_public_copy(resume_hint))}</em>"
+        f"<strong>Next</strong><p>{html.escape(_public_copy(next_action, capture_targets))}</p>"
+        f"<em>{html.escape(_public_copy(resume_hint, capture_targets))}</em>"
         "</div>"
         if next_action or resume_hint
         else ""
@@ -1308,6 +1326,7 @@ def _render_gate_help(step: Any) -> str:
         guidance,
         success_criteria=success_criteria,
         avoid_steps=avoid_steps,
+        capture_targets=capture_targets,
     )
     return f"""
         <div class="gate-help">
@@ -1331,13 +1350,14 @@ def _render_gate_criteria(
     *,
     success_criteria: Any = None,
     avoid_steps: Any = None,
+    capture_targets: Iterable[str] = (),
 ) -> str:
     blocks: list[str] = []
     success = _string_list(success_criteria) or list(guidance.success)
     avoid = _string_list(avoid_steps) or list(guidance.avoid)
     if success:
         rows = "".join(
-            f"<li>{html.escape(_public_copy(item))}</li>"
+            f"<li>{html.escape(_public_copy(item, capture_targets))}</li>"
             for item in success
             if str(item).strip()
         )
@@ -1348,7 +1368,7 @@ def _render_gate_criteria(
             )
     if avoid:
         rows = "".join(
-            f"<li>{html.escape(_public_copy(item))}</li>"
+            f"<li>{html.escape(_public_copy(item, capture_targets))}</li>"
             for item in avoid
             if str(item).strip()
         )
