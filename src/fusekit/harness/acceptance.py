@@ -331,7 +331,7 @@ def _acceptance_blockers(
         if item in seen:
             continue
         seen.add(item)
-        category, action = _blocker_guidance(item)
+        category, action = _missing_item_blocker_guidance(item, checks)
         blockers.append({"item": item, "category": category, "next_action": action})
     for check in checks:
         if check.status == "ok" or check.id in seen:
@@ -498,6 +498,21 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
     )
 
 
+def _missing_item_blocker_guidance(
+    item: str,
+    checks: list[AcceptanceCheck],
+) -> tuple[str, str]:
+    check_id_by_missing_item = {
+        "audited human gate interventions": "gates.audited",
+    }
+    check_id = check_id_by_missing_item.get(item)
+    if check_id:
+        for check in checks:
+            if check.id == check_id and check.status not in {"ok", "skipped"}:
+                return _check_blocker_guidance(check)
+    return _blocker_guidance(item)
+
+
 def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
     if check.id.startswith("gates."):
         detail = check.detail.lower()
@@ -561,14 +576,6 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
                     "provider gates so follow-me steps name the VM browser path.",
                 )
         if check.id == "gates.audited":
-            if "missing gate events" in detail:
-                return (
-                    "Human gates",
-                    "Use the visible launcher controls for each gate: Open provider gate "
-                    "in VM, exact env-named Capture buttons such as Capture RESEND_API_KEY "
-                    "from VM clipboard for copy-once values, or I finished this step after "
-                    "a non-secret provider confirmation.",
-                )
             if "control_room.gate_open" in detail:
                 return (
                     "Human gates",
@@ -595,6 +602,14 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
                     "Human gates",
                     "After the provider confirms the step, click the visible I finished "
                     "this step or approval button.",
+                )
+            if "missing gate events" in detail:
+                return (
+                    "Human gates",
+                    "Use the visible launcher controls for each gate: Open provider gate "
+                    "in VM, exact env-named Capture buttons such as Capture RESEND_API_KEY "
+                    "from VM clipboard for copy-once values, or I finished this step after "
+                    "a non-secret provider confirmation.",
                 )
         if check.id == "gates.resolved":
             exact_controls = _capture_controls_from_text(check.detail)

@@ -2021,6 +2021,84 @@ def test_acceptance_blockers_name_exact_capture_control_from_audit_failure() -> 
     assert "matching Capture from VM clipboard button" not in next_action
 
 
+def test_acceptance_blockers_prioritize_exact_audit_action_over_generic_gate_events() -> None:
+    blockers = {
+        blocker["item"]: blocker
+        for blocker in _acceptance_blockers(
+            [
+                AcceptanceCheck(
+                    "gates.audited",
+                    "failed",
+                    (
+                        "Control-room gates are missing redacted audit events: "
+                        "missing gate events: provider.openai.authorization; "
+                        "missing control_room.clipboard_capture: "
+                        "provider.openai.authorization:OPENAI_API_KEY"
+                    ),
+                )
+            ],
+            ["audited human gate interventions"],
+        )
+    }
+
+    for item in ("gates.audited", "audited human gate interventions"):
+        next_action = blockers[item]["next_action"]
+        assert "Capture OPENAI_API_KEY from VM clipboard" in next_action
+        assert "Open provider gate in VM, exact env-named Capture buttons" not in next_action
+        assert "or I finished this step" not in next_action
+
+
+def test_acceptance_blockers_missing_gate_item_names_exact_open_control() -> None:
+    blockers = {
+        blocker["item"]: blocker
+        for blocker in _acceptance_blockers(
+            [
+                AcceptanceCheck(
+                    "gates.audited",
+                    "failed",
+                    (
+                        "Control-room gates are missing redacted audit events: "
+                        "missing gate events: provider.cloudflare.authorization; "
+                        "missing control_room.gate_open: provider.cloudflare.authorization"
+                    ),
+                )
+            ],
+            ["audited human gate interventions"],
+        )
+    }
+
+    next_action = blockers["audited human gate interventions"]["next_action"]
+    assert "Open each provider gate through Open provider gate in VM" in next_action
+    assert "exact env-named Capture buttons" not in next_action
+    assert "I finished this step" not in next_action
+
+
+def test_acceptance_blockers_missing_gate_item_names_exact_finished_control() -> None:
+    blockers = {
+        blocker["item"]: blocker
+        for blocker in _acceptance_blockers(
+            [
+                AcceptanceCheck(
+                    "gates.audited",
+                    "failed",
+                    (
+                        "Control-room gates are missing redacted audit events: "
+                        "missing gate events: provider.cloudflare.authorization; "
+                        "missing control_room.gate_resume_requested: "
+                        "provider.cloudflare.authorization"
+                    ),
+                )
+            ],
+            ["audited human gate interventions"],
+        )
+    }
+
+    next_action = blockers["audited human gate interventions"]["next_action"]
+    assert "click the visible I finished this step" in next_action
+    assert "Open provider gate in VM" not in next_action
+    assert "exact env-named Capture buttons" not in next_action
+
+
 def test_acceptance_blockers_explain_resend_generated_value_recovery() -> None:
     blockers = _acceptance_blockers(
         [
@@ -4445,16 +4523,13 @@ def test_live_acceptance_requires_audited_control_room_gates(tmp_path) -> None:
     assert "audited human gate interventions" in report.missing
     blockers = {blocker["item"]: blocker for blocker in report.blockers}
     assert blockers["audited human gate interventions"]["category"] == "Human gates"
-    assert "Open provider gate in VM" in blockers[
+    assert "click the visible I finished this step" in blockers[
         "audited human gate interventions"
     ]["next_action"]
-    assert "exact env-named Capture buttons" in blockers[
+    assert "Open provider gate in VM" not in blockers[
         "audited human gate interventions"
     ]["next_action"]
-    assert "Capture RESEND_API_KEY from VM clipboard" in blockers[
-        "audited human gate interventions"
-    ]["next_action"]
-    assert "I finished this step" in blockers[
+    assert "exact env-named Capture buttons" not in blockers[
         "audited human gate interventions"
     ]["next_action"]
 
