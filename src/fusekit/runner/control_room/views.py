@@ -714,11 +714,11 @@ def _missing_acceptance_guidance(item: str) -> tuple[str, str]:
 def _unknown_acceptance_blocker_action(item: str) -> str:
     return (
         f"Keep the control room open while FuseKit regenerates launch evidence for {item}. "
-        "Use any visible Open provider gate in VM, env-named Capture button such as "
-        "Capture RESEND_API_KEY from VM clipboard, I finished this step, Approve setup plan, "
-        "or Approve DNS apply control that appears. "
-        "If no specific launcher control appears, keep this live control room open "
-        "while FuseKit rebuilds this proof artifact."
+        "Follow the single highlighted next action on the matching launcher card; FuseKit "
+        "will name the exact Open provider gate in VM, env-named Capture button, "
+        "I finished this step, Approve setup plan, or Approve DNS apply control when "
+        "one is required. If no specific control appears, keep this live control room "
+        "open while FuseKit rebuilds this proof artifact."
     )
 
 

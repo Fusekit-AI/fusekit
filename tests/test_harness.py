@@ -1941,11 +1941,13 @@ def test_acceptance_blockers_keep_unknown_items_launcher_actionable() -> None:
     for item in ("custom launch proof", "provider_custom.unexpected_artifact"):
         next_action = by_item[item]["next_action"]
         assert "Keep the control room open" in next_action
+        assert "single highlighted next action" in next_action
         assert "Open provider gate in VM" in next_action
         assert "env-named Capture button" in next_action
-        assert "Capture RESEND_API_KEY from VM clipboard" in next_action
         assert "I finished this step" in next_action
         assert "Approve DNS apply" in next_action
+        assert "Use any visible" not in next_action
+        assert "Capture RESEND_API_KEY from VM clipboard" not in next_action
         assert "Repair missing launch evidence" not in next_action
         assert "Repair failed acceptance check" not in next_action
         assert "Repair this acceptance item" not in next_action

@@ -879,20 +879,24 @@ def test_control_room_unknown_acceptance_missing_uses_launcher_controls(tmp_path
 
     html = render_control_room(job, gate_path=tmp_path / "gates.json")
     payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
+    acceptance_html = _render_acceptance_blockers(payload["acceptance"])
 
     assert payload["acceptance"]["missing"] == ["custom provider launch proof"]
     assert payload["acceptance"]["blockers"] == []
-    assert "custom provider launch proof" in html
-    assert "Launch evidence" in html
-    assert "Keep the control room open" in html
-    assert "Open provider gate in VM" in html
-    assert "env-named Capture button such as Capture RESEND_API_KEY from VM clipboard" in html
-    assert "I finished this step" in html
-    assert "Approve DNS apply" in html
-    assert "Repair this acceptance item" not in html
-    assert "Run acceptance again after fixing this" not in html
-    assert "rerun the same live launch/acceptance" not in html
-    assert "keep this live control room open while FuseKit rebuilds" in html
+    assert "custom provider launch proof" in acceptance_html
+    assert "Launch evidence" in acceptance_html
+    assert "Keep the control room open" in acceptance_html
+    assert "single highlighted next action" in acceptance_html
+    assert "Open provider gate in VM" in acceptance_html
+    assert "env-named Capture button" in acceptance_html
+    assert "I finished this step" in acceptance_html
+    assert "Approve DNS apply" in acceptance_html
+    assert "Use any visible" not in acceptance_html
+    assert "Capture RESEND_API_KEY from VM clipboard" not in acceptance_html
+    assert "Repair this acceptance item" not in acceptance_html
+    assert "Run acceptance again after fixing this" not in acceptance_html
+    assert "rerun the same live launch/acceptance" not in acceptance_html
+    assert "keep this live control room open while FuseKit rebuilds" in acceptance_html
     assert "unknownAcceptanceBlockerAction" in html
 
 
