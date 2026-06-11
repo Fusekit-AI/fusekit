@@ -3233,6 +3233,18 @@ def _check_visual_state(
         if mode == "live":
             missing.append("safe visual session state")
         return
+    live_failures = _live_visual_state_failures(sanitized) if mode == "live" else []
+    if live_failures:
+        checks.append(
+            AcceptanceCheck(
+                "visual_state.safe",
+                "failed",
+                "Live visual session state is incomplete: " + ", ".join(live_failures) + ".",
+                str(snapshot),
+            )
+        )
+        missing.append("safe visual session state")
+        return
     checks.append(
         AcceptanceCheck(
             "visual_state.safe",
@@ -3256,6 +3268,25 @@ def _unsafe_visual_state_fields(raw: dict[str, Any], sanitized: dict[str, Any]) 
     ):
         unsafe.append("noVNC password metadata")
     return unsafe
+
+
+def _live_visual_state_failures(visual: dict[str, Any]) -> list[str]:
+    """Return missing live-session guarantees for public demo readiness."""
+
+    failures: list[str] = []
+    if str(visual.get("runner", "")).strip() != "novnc":
+        failures.append("runner must be novnc")
+    if str(visual.get("status", "")).strip() != "ready":
+        failures.append("status must be ready")
+    if visual.get("interactive") is not True:
+        failures.append("interactive must be true")
+    if not str(visual.get("novnc_url", "") or "").strip():
+        failures.append("safe noVNC URL is required")
+    if not str(visual.get("control_room_url", "") or "").strip():
+        failures.append("safe control-room URL is required")
+    if not str(visual.get("novnc_password", "") or "").strip():
+        failures.append("noVNC password metadata is required")
+    return failures
 
 
 def _check_leaks(

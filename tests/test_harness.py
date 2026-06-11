@@ -614,6 +614,7 @@ def test_acceptance_allows_sanitized_visual_state_survivor(tmp_path) -> None:
             {
                 "runner": "novnc",
                 "status": "ready",
+                "interactive": True,
                 "novnc_url": "http://93.184.216.34:6080/vnc.html?autoconnect=1&resize=scale",
                 "control_room_url": f"http://93.184.216.34:8765/?token={control_room_token}",
                 "novnc_password": "viewer-password",
@@ -635,6 +636,118 @@ def test_acceptance_allows_sanitized_visual_state_survivor(tmp_path) -> None:
     assert "viewer-password" not in snapshot
     assert control_room_token not in snapshot
     assert "[REDACTED sha256:" in snapshot
+
+
+def test_acceptance_live_visual_state_requires_ready_interactive_novnc_session(
+    tmp_path,
+) -> None:
+    cases: list[tuple[str, dict[str, object], str]] = [
+        ("missing-runner", {"runner": "xvfb"}, "runner must be novnc"),
+        ("not-ready", {"status": "starting"}, "status must be ready"),
+        ("not-interactive", {"interactive": False}, "interactive must be true"),
+        ("missing-novnc", {"novnc_url": ""}, "safe noVNC URL is required"),
+        (
+            "missing-control-room",
+            {"control_room_url": ""},
+            "safe control-room URL is required",
+        ),
+        (
+            "missing-password",
+            {"novnc_password": ""},
+            "noVNC password metadata is required",
+        ),
+    ]
+    for name, patch, expected in cases:
+        fusekit_dir = tmp_path / name / ".fusekit"
+        fusekit_dir.mkdir(parents=True)
+        visual_path = fusekit_dir / "visual.json"
+        visual = {
+            "runner": "novnc",
+            "status": "ready",
+            "interactive": True,
+            "novnc_url": "http://93.184.216.34:6080/vnc.html?autoconnect=1",
+            "control_room_url": (
+                "http://93.184.216.34:8765/"
+                "?token=viewer_token_abcdefghijklmnopqrstuvwxyz0123456789"
+            ),
+            "novnc_password": "viewer-password",
+        }
+        visual.update(patch)
+        visual_path.write_text(json.dumps(visual), encoding="utf-8")
+        checks: list[AcceptanceCheck] = []
+        missing: list[str] = []
+        ledger = HarnessLedger.create(fusekit_dir / "acceptance")
+
+        _check_visual_state(visual_path, "live", checks, missing, ledger)
+
+        assert checks[-1].id == "visual_state.safe"
+        assert checks[-1].status == "failed"
+        assert expected in checks[-1].detail
+        assert "safe visual session state" in missing
+
+
+def test_live_acceptance_rejects_partial_visual_session_artifact(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    (remote_fusekit / "visual.json").write_text(
+        json.dumps({"runner": "novnc", "status": "ready"}),
+        "utf-8",
+    )
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "live_url": "https://moonlite.example",
+                "raw_secrets_exposed": 0,
+                "actions": [
+                    {"action": "resend.contract_health", "status": "ok", "details": {}},
+                    {
+                        "action": "resend.domain",
+                        "status": "ok",
+                        "details": _resend_domain_receipt_details(
+                            dns_records=[
+                                {
+                                    "name": "send.moonlite.rsvp",
+                                    "type": "MX",
+                                    "value": "feedback-smtp.us-east-1.amazonses.com",
+                                    "ttl": 300,
+                                    "priority": 10,
+                                }
+                            ]
+                        ),
+                    },
+                    {"action": "vercel.contract_health", "status": "ok", "details": {}},
+                    {
+                        "action": "vercel.env",
+                        "status": "ok",
+                        "details": {"project": "moonlite", "env": "RESEND_FROM_EMAIL"},
+                    },
+                ],
+            }
+        ),
+        "utf-8",
+    )
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    visual_check = next(check for check in report.checks if check.id == "visual_state.safe")
+    assert report.launch_ready is False
+    assert visual_check.status == "failed"
+    assert "safe noVNC URL is required" in visual_check.detail
+    assert "safe control-room URL is required" in visual_check.detail
+    assert "interactive must be true" in visual_check.detail
+    assert "safe visual session state" in report.missing
 
 
 def test_acceptance_rejects_weak_visual_control_room_token(tmp_path) -> None:
