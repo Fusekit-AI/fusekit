@@ -1141,6 +1141,8 @@ def test_control_room_resend_setup_retry_uses_finished_button_not_capture(tmp_pa
     assert 'data-gate-capture="provider.resend.domain-setup-retry"' not in html
     assert 'data-gate-capture-target="RESEND_API_KEY"' not in html
     assert "Sending your approval so FuseKit can recheck" in html
+    assert "Recheck requested" in html
+    assert "FuseKit accepted this step and is rechecking the provider now" in html
     assert "Action status" in html
 
 
@@ -1228,7 +1230,9 @@ def test_control_room_renders_resume_requested_gate_as_rechecking(tmp_path) -> N
     assert "retrying provider verification now" in html
     assert "next guided blocker or success state" in html
     assert 'data-gate-pass="provider.cloudflare.authorization"' not in html
-    assert "Snowman is rechecking the provider now" in html
+    assert "FuseKit accepted this step and is rechecking the provider now" in html
+    assert "Keep this control room open; the next step will appear here" in html
+    assert "Snowman is rechecking the provider now" not in html
     assert "Could not record I finished this step from this snapshot" in html
     assert "Could not mark the gate done" not in html
     assert "await refreshJob({ preserveStatus: true });" in html

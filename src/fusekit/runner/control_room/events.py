@@ -1645,14 +1645,17 @@ document.addEventListener("click", async (event) => {
           "Could not record I finished this step from this snapshot. FuseKit will keep waiting.",
         );
       }
+      gateButton.textContent = "Recheck requested";
       setRefreshStatus(
         payload.message ||
-          "Snowman is rechecking the provider now. The next step will appear here.",
+          "FuseKit accepted this step and is rechecking the provider now. " +
+          "Keep this control room open; the next step will appear here.",
       );
       setGateActionStatus(
         gateId,
         payload.message ||
-          "FuseKit is rechecking the provider now. The next step will appear here.",
+          "FuseKit accepted this step and is rechecking the provider now. " +
+          "Keep this control room open; the next step will appear here.",
         "ok",
       );
       await refreshJob({ preserveStatus: true });
