@@ -98,6 +98,10 @@ Rehearsal mode proves the local product invariants without pretending a provider
 - `.fusekit/acceptance/report.json`
 - `.fusekit/acceptance/artifacts/*.json`
 
+In rehearsal mode, `launch_ready: true` means the local harness passed; the
+same report keeps `public_launch_ready: false` and `recording_ready: false`.
+Only live mode can set those public/demo readiness fields to true.
+
 Live mode will not mark the run ready unless it has an encrypted vault, a passphrase unlock proof, redacted receipt, redacted audit log, verified live URL in the receipt, a redacted verification report whose checks are passed or explicitly pending-safe, actionable rollback metadata, validated provider packs, clean leak scan, and detonated worker state. The harness creates public proof artifacts without raw secrets.
 
 After an OCI launch, point live acceptance at the retrieved remote artifact bundle so the harness reads the worker's encrypted/redacted evidence directly:
@@ -295,7 +299,7 @@ Acceptance evidence to preserve after a live run:
 - `.fusekit/fusekit.vault.json` opens only with the passphrase; wrong passphrase fails.
 - `.fusekit/setup_receipt.json` and `.fusekit/setup_receipt.md` contain no raw secrets.
 - `.fusekit/audit.jsonl` contains only redacted provider actions.
-- `.fusekit/acceptance/report.json` has `"launch_ready": true` from `fusekit acceptance run --mode live`.
+- `.fusekit/acceptance/report.json` has `"launch_ready": true`, `"public_launch_ready": true`, and `"recording_ready": true` from `fusekit acceptance run --mode live`.
 - `.fusekit/acceptance/ledger.jsonl` records scan, plan, pack, vault, receipt, leak-scan, and detonation proof events.
 - For OCI launches, `fusekit acceptance run --mode live --remote-artifacts .fusekit/remote-artifacts` ingests the remote worker's vault, receipt, audit log, verification report, and rollback metadata directly.
 - `fusekit leak-scan /path/to/generated-app` reports no plaintext setup secrets.

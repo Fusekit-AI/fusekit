@@ -1040,6 +1040,7 @@ def _cmd_acceptance_run(args: argparse.Namespace) -> int:
     else:
         print(f"Acceptance mode: {report.mode}")
         print(f"Launch ready: {str(report.launch_ready).lower()}")
+        print(f"Public launch ready: {str(report.public_launch_ready).lower()}")
         print(f"Report: {report.report_path}")
         print(f"Ledger: {report.ledger_path}")
         for check in report.checks:

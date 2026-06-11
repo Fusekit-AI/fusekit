@@ -755,6 +755,10 @@ function renderTrust(job) {
 function acceptanceCards(report) {
   const blockers = acceptanceBlockers(report);
   const mode = String(report.mode || "").trim().toLowerCase();
+  const publicReady =
+    typeof report.public_launch_ready === "boolean"
+      ? report.public_launch_ready
+      : Boolean(report.launch_ready && mode === "live");
   if (report.error) {
     return [
       {
@@ -770,7 +774,7 @@ function acceptanceCards(report) {
       },
     ];
   }
-  if (report.launch_ready && mode === "live") {
+  if (publicReady) {
     return [
       {
         status: "passed",
@@ -782,7 +786,7 @@ function acceptanceCards(report) {
       },
     ];
   }
-  if (report.launch_ready) {
+  if (report.launch_ready && mode === "rehearsal") {
     return [
       {
         status: "pending",
@@ -793,6 +797,20 @@ function acceptanceCards(report) {
         foot:
           "Keep using the live launcher/control room for the provider run; " +
           "FuseKit must collect live provider evidence before recording.",
+      },
+    ];
+  }
+  if (report.launch_ready) {
+    return [
+      {
+        status: "pending",
+        snow: "checking",
+        label: "Not recordable",
+        title: "Public launch proof is still required",
+        body: "The acceptance report has not explicitly proven public/demo readiness.",
+        foot:
+          "Keep the live launcher/control room open while FuseKit rebuilds " +
+          "launch-readiness proof from the current provider run.",
       },
     ];
   }
@@ -969,12 +987,19 @@ function renderAcceptance(job) {
   if (!root) return;
   const report = job.acceptance && typeof job.acceptance === "object" ? job.acceptance : {};
   const blockers = acceptanceBlockers(report);
+  const mode = String(report.mode || "").trim().toLowerCase();
+  const publicReady =
+    typeof report.public_launch_ready === "boolean"
+      ? report.public_launch_ready
+      : Boolean(report.launch_ready && mode === "live");
   const summary = report.error
     ? "acceptance report needs repair"
-    : report.launch_ready && String(report.mode || "").trim().toLowerCase() === "live"
+    : publicReady
       ? "launch-ready proof is clear"
-      : report.launch_ready
+      : report.launch_ready && mode === "rehearsal"
         ? "live acceptance still required"
+        : report.launch_ready
+          ? "public launch proof still required"
       : blockers.length
         ? `${blockers.length} launch blocker${blockers.length === 1 ? "" : "s"}`
         : "acceptance proof is waiting";

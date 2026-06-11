@@ -338,10 +338,13 @@ def test_acceptance_rehearsal_writes_ledger_and_report(tmp_path) -> None:
     report = run_acceptance(app, mode="rehearsal")
 
     assert report.launch_ready is True
+    assert report.public_launch_ready is False
     assert (app / "fusekit.yaml").exists()
     assert (app / ".fusekit" / "acceptance" / "ledger.jsonl").exists()
     report_json = json.loads((app / ".fusekit" / "acceptance" / "report.json").read_text())
     assert report_json["launch_ready"] is True
+    assert report_json["public_launch_ready"] is False
+    assert report_json["recording_ready"] is False
     assert report_json["blockers"] == []
     assert any(check["id"] == "manifest.scanned" for check in report_json["checks"])
 
@@ -363,6 +366,8 @@ def test_acceptance_report_serializes_public_paths(tmp_path) -> None:
 
     assert str(tmp_path) not in text
     assert payload["app_path"] == "app"
+    assert payload["public_launch_ready"] is False
+    assert payload["recording_ready"] is False
     assert payload["ledger_path"] == ".fusekit/acceptance/ledger.jsonl"
     assert payload["report_path"] == ".fusekit/acceptance/report.json"
     assert payload["checks"][0]["artifact"] == ".fusekit/acceptance/artifacts/gates.json"

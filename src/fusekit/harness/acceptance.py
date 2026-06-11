@@ -85,6 +85,12 @@ class AcceptanceReport:
     blockers: tuple[dict[str, str], ...] = ()
     created_at: float = field(default_factory=time.time)
 
+    @property
+    def public_launch_ready(self) -> bool:
+        """True only when live provider evidence proves public launch readiness."""
+
+        return self.mode == "live" and self.launch_ready
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize the report."""
 
@@ -92,6 +98,8 @@ class AcceptanceReport:
             "mode": self.mode,
             "app_path": redact_public_path(self.app_path),
             "launch_ready": self.launch_ready,
+            "public_launch_ready": self.public_launch_ready,
+            "recording_ready": self.public_launch_ready,
             "checks": [check.to_dict() for check in self.checks],
             "missing": list(self.missing),
             "blockers": [_redacted_blocker(blocker) for blocker in self.blockers],
@@ -240,7 +248,14 @@ def run_acceptance(
         blockers=tuple(_acceptance_blockers(checks, missing)),
     )
     report_path.write_text(json.dumps(report.to_dict(), indent=2, sort_keys=True) + "\n", "utf-8")
-    ledger.record("acceptance.finished", {"launch_ready": launch_ready, "missing": missing})
+    ledger.record(
+        "acceptance.finished",
+        {
+            "launch_ready": launch_ready,
+            "public_launch_ready": report.public_launch_ready,
+            "missing": missing,
+        },
+    )
     return report
 
 

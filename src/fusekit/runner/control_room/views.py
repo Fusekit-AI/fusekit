@@ -408,6 +408,12 @@ def _render_acceptance_blockers(report: Any) -> str:
     error = str(report.get("error", "") or "")
     ready = bool(report.get("launch_ready", False))
     mode = str(report.get("mode", "") or "").strip().lower()
+    public_ready_raw = report.get("public_launch_ready")
+    public_ready = (
+        bool(public_ready_raw)
+        if isinstance(public_ready_raw, bool)
+        else ready and mode == "live"
+    )
     if error:
         cards = f"""
         <article class="trust-card failed">
@@ -423,7 +429,7 @@ def _render_acceptance_blockers(report: Any) -> str:
         </article>
 """
         summary = "acceptance report needs repair"
-    elif ready and mode == "live":
+    elif public_ready:
         cards = """
         <article class="trust-card passed">
           <div class="trust-snow state-passed" aria-hidden="true"></div>
@@ -436,7 +442,7 @@ def _render_acceptance_blockers(report: Any) -> str:
         </article>
 """
         summary = "launch-ready proof is clear"
-    elif ready:
+    elif ready and mode == "rehearsal":
         cards = """
         <article class="trust-card pending">
           <div class="trust-snow state-checking" aria-hidden="true"></div>
@@ -450,6 +456,20 @@ def _render_acceptance_blockers(report: Any) -> str:
         </article>
 """
         summary = "live acceptance still required"
+    elif ready:
+        cards = """
+        <article class="trust-card pending">
+          <div class="trust-snow state-checking" aria-hidden="true"></div>
+          <div>
+            <span>Not recordable</span>
+            <strong>Public launch proof is still required</strong>
+            <p>The acceptance report has not explicitly proven public/demo readiness.</p>
+            <em>Keep the live launcher/control room open while FuseKit rebuilds
+            launch-readiness proof from the current provider run.</em>
+          </div>
+        </article>
+"""
+        summary = "public launch proof still required"
     elif blockers:
         cards = "\n".join(
             _render_acceptance_blocker_card(blocker)
