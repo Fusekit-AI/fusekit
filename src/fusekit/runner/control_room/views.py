@@ -514,8 +514,9 @@ def _missing_acceptance_guidance(item: str) -> tuple[str, str]:
         "audited human gate interventions": (
             "Human gates",
             (
-                "Open, capture, or resume each control-room gate through the launcher so "
-                "redacted audit events are written."
+                "Use the visible launcher controls for every gate: Open provider gate "
+                "in VM, Capture from VM clipboard for copy-once values, or I finished "
+                "this step after a non-secret provider confirmation."
             ),
         ),
         "resolved human gates": (

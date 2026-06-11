@@ -194,6 +194,7 @@ guided, or explicitly verified.
 | Token route-plan copy said `Capture from VM clipboard for GITHUB_TOKEN`, which did not exactly match the visible button label a demo user must click. | Static and live route-plan copy now names target-specific controls such as `Capture GITHUB_TOKEN from VM clipboard`, matching the rendered launcher buttons exactly. |
 | Launch acceptance could still pass a target-specific secret gate if guidance only said `Capture from VM clipboard`, leaving users to infer which rendered button matched the provider token. | Human-gate and provider-strategy acceptance now require exact target-specific Capture control labels such as `Capture GITHUB_TOKEN from VM clipboard` for every env/token target. |
 | Acceptance blocker recovery could still tell users to click a generic Capture control even when the failed proof named the missing token target. | `gates.guided` and `gates.audited` blockers now extract env/token targets from failure details and name exact recovery controls such as `Capture OPENAI_API_KEY from VM clipboard`. |
+| Control-room fallback cards for missing gate-audit proof said "open, capture, or resume," forcing users to translate backend verbs into visible launcher buttons. | Static and live control rooms now spell out the visible recovery controls: `Open provider gate in VM`, `Capture from VM clipboard`, and `I finished this step`. |
 
 ## Open Acceptance Items
 

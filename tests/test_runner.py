@@ -560,7 +560,11 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
     ]
     assert "Human gates" in html
     assert "audited human gate interventions" in html
-    assert "Open, capture, or resume each control-room gate through the launcher" in html
+    assert "Use the visible launcher controls for every gate" in html
+    assert "Open provider gate in VM" in html
+    assert "Capture from VM clipboard for copy-once values" in html
+    assert "I finished this step after a non-secret provider confirmation" in html
+    assert "Open, capture, or resume each control-room gate" not in html
     assert "guided human gates" in html
     assert "follow-me steps, next action, and resume hint" in html
     assert "Provider routes" in html
