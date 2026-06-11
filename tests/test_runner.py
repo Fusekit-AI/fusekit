@@ -100,6 +100,11 @@ def _assert_hardened_control_room_error_headers(response: HTTPError) -> None:
     assert headers["x-frame-options"] == "DENY"
     assert headers["x-content-type-options"] == "nosniff"
     assert headers["referrer-policy"] == "no-referrer"
+    assert "camera=()" in headers["permissions-policy"]
+    assert "microphone=()" in headers["permissions-policy"]
+    assert "geolocation=()" in headers["permissions-policy"]
+    assert "payment=()" in headers["permissions-policy"]
+    assert "usb=()" in headers["permissions-policy"]
     assert "content-security-policy" in headers
     assert "access-control-allow-origin" not in headers
     assert "access-control-allow-methods" not in headers
@@ -2966,6 +2971,9 @@ def test_security_surface_map_documents_control_room_state_routes() -> None:
     assert "does not stay in the address bar" in text
     assert "per-response nonces instead of broad `unsafe-inline`" in text
     assert "inline style/script attributes disabled" in text
+    assert "Permissions-Policy" in text
+    assert "camera, microphone, geolocation, payment" in text
+    assert "USB/HID/serial/Bluetooth" in text
     assert "emits no `Access-Control-Allow-Origin`" in text
     assert "`Access-Control-Allow-Methods`" in text
     assert "`Access-Control-Allow-Headers`" in text
@@ -3049,6 +3057,9 @@ def test_threat_model_documents_control_room_state_route_defenses() -> None:
     assert "no permissive CORS preflight response" in text
     assert "remote access disabled unless an explicit generated remote token is configured" in text
     assert "at least 32 URL-safe characters" in text
+    assert "Permissions-Policy" in text
+    assert "camera," in text
+    assert "USB/HID/serial/Bluetooth" in text
     assert "must never expose a route" in text
     assert "arbitrary shell" in text
     assert "creates OS or application admin accounts" in text
@@ -3155,6 +3166,9 @@ def test_control_room_rejects_cors_preflight_without_cors_headers(tmp_path) -> N
     assert response.status == 405
     assert "access-control-allow-origin" not in headers
     assert headers["x-frame-options"] == "DENY"
+    assert "camera=()" in headers["permissions-policy"]
+    assert "microphone=()" in headers["permissions-policy"]
+    assert "geolocation=()" in headers["permissions-policy"]
 
 
 def test_control_room_unknown_routes_keep_security_headers(tmp_path) -> None:
@@ -3195,6 +3209,9 @@ def test_control_room_unknown_routes_keep_security_headers(tmp_path) -> None:
         assert headers["cache-control"] == "no-store"
         assert headers["x-frame-options"] == "DENY"
         assert headers["x-content-type-options"] == "nosniff"
+        assert "camera=()" in headers["permissions-policy"]
+        assert "microphone=()" in headers["permissions-policy"]
+        assert "payment=()" in headers["permissions-policy"]
         assert "content-security-policy" in headers
         assert "access-control-allow-origin" not in headers
 
@@ -3692,6 +3709,11 @@ def test_control_room_server_uses_local_only_and_security_headers(tmp_path) -> N
     assert headers["cache-control"] == "no-store"
     assert headers["x-content-type-options"] == "nosniff"
     assert headers["x-frame-options"] == "DENY"
+    assert "camera=()" in headers["permissions-policy"]
+    assert "microphone=()" in headers["permissions-policy"]
+    assert "geolocation=()" in headers["permissions-policy"]
+    assert "payment=()" in headers["permissions-policy"]
+    assert "usb=()" in headers["permissions-policy"]
     csp = headers["content-security-policy"]
     assert "frame-ancestors 'none'" in csp
     assert "form-action 'none'" in csp

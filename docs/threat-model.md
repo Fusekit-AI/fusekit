@@ -67,6 +67,9 @@ Every state-changing control-room POST must keep all of these protections:
 - same-origin or loopback `Origin` validation
 - `Sec-Fetch-Site` rejection for browser-declared cross-site requests
 - no permissive CORS preflight response
+- restrictive `Permissions-Policy` response headers that deny camera,
+  microphone, geolocation, payment, USB/HID/serial/Bluetooth, and motion-sensor
+  browser features
 - remote access disabled unless an explicit generated remote token is configured
   with at least 32 URL-safe characters
 

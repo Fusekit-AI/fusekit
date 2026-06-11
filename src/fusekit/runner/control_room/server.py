@@ -71,6 +71,19 @@ REMOTE_CONTROL_ROOM_TOKEN_ERROR = (
     "Remote control room token must be generated with secrets.token_urlsafe "
     "and contain at least 32 URL-safe characters."
 )
+CONTROL_ROOM_PERMISSIONS_POLICY = (
+    "accelerometer=(), "
+    "bluetooth=(), "
+    "camera=(), "
+    "geolocation=(), "
+    "gyroscope=(), "
+    "hid=(), "
+    "magnetometer=(), "
+    "microphone=(), "
+    "payment=(), "
+    "serial=(), "
+    "usb=()"
+)
 
 
 def serve_control_room(job_state: Path, host: str = "127.0.0.1", port: int = 8765) -> str:
@@ -373,6 +386,7 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
             self.send_header("cache-control", "no-store")
             self.send_header("x-content-type-options", "nosniff")
             self.send_header("referrer-policy", "no-referrer")
+            self.send_header("permissions-policy", CONTROL_ROOM_PERMISSIONS_POLICY)
             self.send_header("x-frame-options", "DENY")
             self.send_header(
                 "content-security-policy",
