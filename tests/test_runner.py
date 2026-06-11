@@ -2498,6 +2498,19 @@ def test_control_room_clipboard_capture_rejects_placeholder_tokens(value: str) -
         _validate_clipboard_capture_value("CUSTOM_API_KEY", value)
 
 
+@pytest.mark.parametrize(
+    "value",
+    ["HTTPS://provider.example/token", "token-one,token-two", "token-one;token-two"],
+)
+def test_control_room_clipboard_capture_rejects_urls_and_multi_token_blobs(value: str) -> None:
+    with pytest.raises(FuseKitError) as exc:
+        _validate_clipboard_capture_value("CUSTOM_API_KEY", value)
+
+    message = str(exc.value)
+    assert "Capture CUSTOM_API_KEY from VM clipboard again" in message
+    assert "looks like a URL" in message or "looks like multiple copied values" in message
+
+
 def test_control_room_passphrase_uses_job_artifact(tmp_path, monkeypatch) -> None:
     job = JobState.create("fk-test", tmp_path, "source-fetch")
     job_path = tmp_path / "source-fetch-job.json"

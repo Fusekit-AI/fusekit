@@ -631,10 +631,15 @@ def _validate_clipboard_capture_value(target: str, value: str) -> None:
                 f"{normalized_target} must be one copied token with no spaces or line breaks. "
                 f"{_capture_retry_action(normalized_target, 'copy-once token')}"
             )
-        if value.startswith(("http://", "https://")):
+        if value.lower().startswith(("http://", "https://")):
             raise FuseKitError(
                 f"{normalized_target} looks like a URL. "
                 f"{_capture_retry_action(normalized_target, 'provider key value')}"
+            )
+        if "," in value or ";" in value:
+            raise FuseKitError(
+                f"{normalized_target} looks like multiple copied values, not one token. "
+                f"{_capture_retry_action(normalized_target, 'single provider key value')}"
             )
         if len(value) < 8:
             raise FuseKitError(

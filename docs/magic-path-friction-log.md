@@ -231,6 +231,7 @@ guided, or explicitly verified.
 | The no-app-source Cloud Shell fallback told users to "rerun the fusekit launch command," making a missing upload/source case sound like a failed launcher loop. | The bootstrap now keeps users in the same Cloud Shell and says FuseKit will print the exact launch command to run after app files are present. |
 | Acceptance report error and rehearsal-ready cards could still tell users to rerun or run acceptance, which sounded like an operator task outside the launcher. | Static and live control-room acceptance cards now keep users in the live launcher/control room while FuseKit rebuilds launch-readiness proof or gathers live provider evidence before recording. |
 | Acceptance blockers generated upstream for malformed gates could still say "Regenerate..." before the control room rendered them, making report-level recovery sound like backend repair work. | Harness blocker guidance now keeps users in the live launcher/control room while FuseKit rebuilds stale gate cards, Resend setup gates, provider URLs, and exact Capture controls. |
+| VM clipboard Capture rejected lowercase URLs and whitespace blobs, but uppercase copied URLs or comma/semicolon-separated token blobs could still look like a custom token. | Capture validation now rejects URL-looking values case-insensitively and refuses obvious multi-value clipboard blobs before anything enters the encrypted vault. |
 
 ## Open Acceptance Items
 
