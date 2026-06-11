@@ -454,7 +454,7 @@ def _parser() -> argparse.ArgumentParser:
         default=True,
         help=(
             "enable secure provider secret capture; launcher runs use VM clipboard "
-            "Capture from VM clipboard buttons, with terminal prompts only as fallback"
+            "env-named Capture buttons, with terminal prompts only as fallback"
         ),
     )
     launcher.add_argument(
@@ -4397,7 +4397,10 @@ def _capture_controls_for_env_names(env_names: Iterable[str]) -> str:
         if env_name.strip()
     ]
     if not controls:
-        return "the visible env-named Capture from VM clipboard button"
+        return (
+            "the visible env-named Capture button such as "
+            "Capture RESEND_API_KEY from VM clipboard"
+        )
     if len(controls) == 1:
         return controls[0]
     return "these exact Capture buttons: " + ", ".join(controls)

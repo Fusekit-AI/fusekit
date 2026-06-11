@@ -75,7 +75,7 @@ def test_generic_provider_guidance_distinguishes_capture_from_finished() -> None
     assert "button named for that value" in text
     assert "You do not need to paste it into your computer" in text
     assert "Capture reads the VM clipboard directly" in text
-    assert "If no Capture from VM clipboard button is shown" in text
+    assert "If no env-named Capture button is shown" in text
     assert "I finished this step" in text
     assert "matching button" not in text
     assert "figure" not in text.lower()

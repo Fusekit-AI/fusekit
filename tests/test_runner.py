@@ -890,7 +890,8 @@ def test_control_room_uses_gate_provider_for_guidance_when_id_is_generic(tmp_pat
     assert "Avoid" in html
     assert "Do not click Add domain when Resend says No domains yet." in html
     assert "Open provider gate in VM" in html
-    assert "Capture from VM clipboard" in html
+    assert "Capture RESEND_API_KEY from VM clipboard" in html
+    assert "Capture from VM clipboard" not in html
     assert "Copy the provider value in the VM browser" in html
     assert "resume automatically after every target is captured" in html
     assert "VM clipboard Capture and vault encryption keep secrets yours." in html
@@ -2976,9 +2977,10 @@ def test_control_room_uses_privacy_mascot_for_secret_gates(tmp_path) -> None:
     assert "isPrivacyStep" in html
     assert (
         "copy it inside the VM browser, then click the visible env-named "
-        "Capture from VM clipboard button"
+        "Capture button such as Capture RESEND_API_KEY from VM clipboard"
         in html
     )
+    assert "visible env-named Capture from VM clipboard button" not in html
     assert "target-specific Capture" not in html
     assert "click the matching Capture from VM clipboard button" not in html
     assert "click Capture in FuseKit" not in html

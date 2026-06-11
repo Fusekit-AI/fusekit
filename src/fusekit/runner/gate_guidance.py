@@ -294,8 +294,8 @@ _GENERIC = GateGuidance(
             "the VM clipboard directly."
         ),
         (
-            "If no Capture from VM clipboard button is shown, click I finished this step "
-            "after the provider confirms the gate is complete."
+            "If no env-named Capture button is shown, click I finished this step after "
+            "the provider confirms the gate is complete."
         ),
     ),
     reassurance="The worker remains alive and will retry this gate until it passes.",

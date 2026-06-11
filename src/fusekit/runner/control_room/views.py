@@ -213,10 +213,10 @@ def _public_copy(value: Any, capture_targets: Iterable[str] = ()) -> str:
             "paste into FuseKit's hidden prompt",
             "copy inside the VM browser, then click " + capture_instruction,
         ),
-        ("hidden Cloud Shell prompts", "Capture from VM clipboard buttons"),
-        ("hidden prompts/env handoff", "VM clipboard Capture fallback"),
-        ("hidden prompts", "VM clipboard Capture fallback"),
-        ("hidden prompt", "VM clipboard Capture"),
+        ("hidden Cloud Shell prompts", "exact env-named Capture buttons"),
+        ("hidden prompts/env handoff", "VM clipboard Capture controls"),
+        ("hidden prompts", "VM clipboard Capture controls"),
+        ("hidden prompt", "VM clipboard Capture control"),
     )
     for old, new in replacements:
         text = text.replace(old, new)
@@ -233,7 +233,10 @@ def _public_capture_instruction(capture_targets: Iterable[str]) -> str:
         return labels[0]
     if len(labels) > 1:
         return "one of these visible buttons: " + ", ".join(labels)
-    return "the visible env-named Capture from VM clipboard button"
+    return (
+        "the visible env-named Capture button such as "
+        "Capture RESEND_API_KEY from VM clipboard"
+    )
 
 
 def _public_target(value: Any) -> str:

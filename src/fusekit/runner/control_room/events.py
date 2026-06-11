@@ -59,10 +59,10 @@ function publicCopy(value, captureTargetList = []) {
       "paste into FuseKit's " + "hidden prompt",
       "copy inside the VM browser, then click " + captureInstruction,
     ],
-    ["hidden Cloud Shell prompts", "Capture from VM clipboard buttons"],
-    ["hidden prompts/env handoff", "VM clipboard Capture fallback"],
-    ["hidden prompts", "VM clipboard Capture fallback"],
-    ["hidden " + "prompt", "VM clipboard Capture"],
+    ["hidden Cloud Shell prompts", "exact env-named Capture buttons"],
+    ["hidden prompts/env handoff", "VM clipboard Capture controls"],
+    ["hidden prompts", "VM clipboard Capture controls"],
+    ["hidden " + "prompt", "VM clipboard Capture control"],
   ];
   for (const [oldText, newText] of replacements) {
     text = text.replaceAll(oldText, newText);
@@ -76,7 +76,7 @@ function publicCaptureInstruction(captureTargetList = []) {
     .filter((item) => item.trim() !== "Capture  from VM clipboard");
   if (labels.length === 1) return labels[0];
   if (labels.length > 1) return "one of these visible buttons: " + labels.join(", ");
-  return "the visible env-named Capture from VM clipboard button";
+  return "the visible env-named Capture button such as Capture RESEND_API_KEY from VM clipboard";
 }
 
 function publicTarget(value) {
