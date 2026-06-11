@@ -66,8 +66,9 @@ resume hint, plus matching redacted control-room audit proof, even if the gate
 later passed. Human-gate guidance must be launcher-actionable: provider gates
 must carry an openable provider URL for `Open provider gate in VM`, provider gates
 with URLs must send the user through the VM browser path, copy-once env/token
-targets must name `Capture from VM clipboard`, and public proof must reject
-hidden-prompt, side-channel, manual, or figure-it-out wording. Non-secret provider
+targets must name exact controls such as `Capture RESEND_API_KEY from VM clipboard`,
+and public proof must reject hidden-prompt, side-channel, manual, placeholder, or
+figure-it-out wording. Non-secret provider
 gates plus setup/DNS approval gates must also prove the visible
 `I finished this step`, `Approve setup plan`, or `Approve DNS apply` click through
 redacted `control_room.gate_resume_requested` audit events. Detonation proof must

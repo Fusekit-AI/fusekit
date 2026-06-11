@@ -48,8 +48,8 @@ fusekit launch /path/to/moonlite-rsvp \
   --control-room
 ```
 
-Use the control-room VM browser and `Capture from VM clipboard` buttons for
-copy-once provider keys during the recording. `--capture-stdin` is only for an
+Use the control-room VM browser and exact `Capture <ENV> from VM clipboard`
+buttons for copy-once provider keys during the recording. `--capture-stdin` is only for an
 advanced CLI fallback rehearsal, not the public no-thinking launcher path.
 
 ## Public Recording Rules

@@ -25,7 +25,7 @@ def test_acceptance_runbook_uses_launcher_capture_for_public_recording() -> None
     assert "--control-room" in launch_command
     assert "--infer-ui" in launch_command
     assert "--capture-stdin" not in launch_command
-    assert "Capture from VM clipboard" in text
+    assert "exact `Capture <ENV> from VM clipboard`" in text
     assert "not the public no-thinking launcher path" in text
     assert "Public Recording Rules" in text
     assert "Open provider gate in VM" in text
@@ -37,3 +37,12 @@ def test_acceptance_runbook_uses_launcher_capture_for_public_recording() -> None
     assert "audience by API" in text
     assert "A Resend row that says Full access is not enough by itself" in text
     assert "Do not click Resend Add domain or Add audience" in text
+    assert "Use the control-room VM browser and `Capture from VM clipboard` buttons" not in text
+
+
+def test_public_launch_readiness_requires_exact_capture_controls() -> None:
+    text = Path("docs/public-launch-readiness.md").read_text(encoding="utf-8")
+
+    assert "exact controls such as `Capture RESEND_API_KEY from VM clipboard`" in text
+    assert "manual, placeholder, or" in text
+    assert "targets must name `Capture from VM clipboard`" not in text
