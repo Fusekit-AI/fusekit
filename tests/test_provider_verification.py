@@ -370,10 +370,10 @@ def test_verification_report_uses_launcher_guidance_for_human_gates() -> None:
 
     assert "Open provider gate in VM" in repairs[0]
     assert "Capture CLOUDFLARE_API_TOKEN from VM clipboard" in repairs[0]
-    assert "I finished this step" in repairs[0]
+    assert "I finished this step" not in repairs[0]
     assert "Capture RESEND_API_KEY from VM clipboard" in repairs[1]
     assert "Open provider gate in VM" in repairs[2]
-    assert "Capture VERCEL_TOKEN from VM clipboard" in repairs[2]
+    assert "Capture VERCEL_TOKEN from VM clipboard" not in repairs[2]
     assert "I finished this step" in repairs[2]
     assert "Capture from VM clipboard for copy-once values" not in " ".join(repairs)
     assert "visible FuseKit Capture" not in " ".join(repairs)

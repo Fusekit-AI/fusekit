@@ -257,12 +257,11 @@ def _pending_repair(
     details: dict[str, Any] | None = None,
 ) -> str:
     if check == "provider_gate":
-        capture_action = _capture_recovery_action(provider, target, details)
+        completion_action = _provider_gate_completion_action(provider, target, details)
         return (
             "Finish the active upstream provider gate in the control room. Click "
             "Open provider gate in VM, complete the provider-owned step in that VM "
-            f"browser, then click {capture_action} or I finished this step for "
-            f"non-secret gates so FuseKit can verify {provider}."
+            f"browser, then {completion_action} so FuseKit can verify {provider}."
         )
     if check == "dns_record_exists":
         return (
@@ -296,12 +295,11 @@ def _human_gate_repair(
     target: str = "",
     details: dict[str, Any] | None = None,
 ) -> str:
-    capture_action = _capture_recovery_action(provider, target, details)
+    completion_action = _provider_gate_completion_action(provider, target, details)
     return (
         f"FuseKit is waiting for the {provider} screen that controls {check.replace('_', ' ')}. "
         "Click Open provider gate in VM, complete only the provider-owned prompt, "
-        f"then click {capture_action} or I finished this step for non-secret "
-        "confirmation gates."
+        f"then {completion_action}."
     )
 
 
@@ -379,15 +377,50 @@ def _capture_recovery_action(
     return "these exact Capture buttons: " + ", ".join(labels)
 
 
+def _provider_gate_completion_action(
+    provider: str,
+    target: str,
+    details: dict[str, Any] | None,
+) -> str:
+    """Return one visible control path for the provider gate repair."""
+
+    targets = _capture_targets(provider, target, details, include_defaults=False)
+    if not targets and _looks_like_token_gate_target(target):
+        targets = _capture_targets(provider, "", details, include_defaults=True)
+    if targets:
+        labels = [f"Capture {candidate} from VM clipboard" for candidate in targets]
+        if len(labels) == 1:
+            return f"copy the provider value inside the VM browser and click {labels[0]}"
+        return (
+            "copy each provider value inside the VM browser and click these exact "
+            "Capture buttons: "
+            + ", ".join(labels)
+        )
+    return (
+        "click I finished this step after the provider confirms. If FuseKit shows a "
+        "visible env-named Capture button for a copy-once value, for example "
+        "Capture RESEND_API_KEY from VM clipboard, use that Capture button instead"
+    )
+
+
+def _looks_like_token_gate_target(target: str) -> bool:
+    normalized = target.strip().lower().replace("_", "-")
+    return normalized.endswith(".token") or any(
+        marker in normalized for marker in (".api-key", "-api-key", ".api-token", "-api-token")
+    )
+
+
 def _capture_targets(
     provider: str,
     target: str,
     details: dict[str, Any] | None,
+    *,
+    include_defaults: bool = True,
 ) -> tuple[str, ...]:
     found: list[str] = []
     _collect_capture_targets(target, found)
     _collect_capture_targets(details or {}, found)
-    if not found:
+    if not found and include_defaults:
         found.extend(DEFAULT_CAPTURE_TARGETS_BY_PROVIDER.get(provider.lower(), ()))
     unique: list[str] = []
     for candidate in found:
