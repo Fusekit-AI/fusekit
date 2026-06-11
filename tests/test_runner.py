@@ -870,6 +870,25 @@ def test_control_room_unknown_acceptance_missing_uses_launcher_controls(tmp_path
     assert "unknownAcceptanceBlockerAction" in html
 
 
+def test_control_room_acceptance_report_error_uses_launcher_controls(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    acceptance_dir = tmp_path / "acceptance"
+    acceptance_dir.mkdir()
+    (acceptance_dir / "report.json").write_text("{not json", encoding="utf-8")
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+    payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
+
+    assert payload["acceptance"]["launch_ready"] is False
+    assert payload["acceptance"]["error"] == "Acceptance report could not be read from report.json"
+    assert "Acceptance report could not load" in html
+    assert "Acceptance report could not be read from report.json" in html
+    assert "live launcher/control room open" in html
+    assert "visible provider, DNS approval, and" in html
+    assert "Capture controls" in html
+    assert "Rerun acceptance so FuseKit can rebuild launch-readiness proof" not in html
+
+
 def test_control_room_renders_acceptance_ready_state(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     acceptance_dir = tmp_path / "acceptance"
@@ -906,9 +925,12 @@ def test_control_room_does_not_treat_rehearsal_ready_as_recordable(tmp_path) -> 
     static_html = html.split("<script", 1)[0]
     assert "Live acceptance is still required" in html
     assert "Local rehearsal proof is clear, but it is not live provider evidence." in html
+    assert "Keep using the live launcher/control room for the provider run" in html
+    assert "FuseKit must collect live provider evidence before recording." in html
     assert "live acceptance still required" in html
     assert "The live run has the required proof to be launch-ready." not in static_html
     assert "Record the demo from this clean state." not in static_html
+    assert "Run live acceptance after the provider run before recording the demo." not in html
     assert 'mode === "live"' in html
 
 

@@ -759,7 +759,10 @@ function acceptanceCards(report) {
         label: "Needs repair",
         title: "Acceptance report could not load",
         body: String(report.error),
-        foot: "Rerun acceptance so FuseKit can rebuild launch-readiness proof.",
+        foot:
+          "Keep the live launcher/control room open while FuseKit rebuilds " +
+          "launch-readiness proof; use visible provider, DNS approval, and " +
+          "Capture controls if they appear.",
       },
     ];
   }
@@ -783,7 +786,9 @@ function acceptanceCards(report) {
         label: "Rehearsal passed",
         title: "Live acceptance is still required",
         body: "Local rehearsal proof is clear, but it is not live provider evidence.",
-        foot: "Run live acceptance after the provider run before recording the demo.",
+        foot:
+          "Keep using the live launcher/control room for the provider run; " +
+          "FuseKit must collect live provider evidence before recording.",
       },
     ];
   }

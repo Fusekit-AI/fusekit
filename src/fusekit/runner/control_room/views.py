@@ -410,7 +410,9 @@ def _render_acceptance_blockers(report: Any) -> str:
             <span>Needs repair</span>
             <strong>Acceptance report could not load</strong>
             <p>{html.escape(error)}</p>
-            <em>Rerun acceptance so FuseKit can rebuild launch-readiness proof.</em>
+            <em>Keep the live launcher/control room open while FuseKit rebuilds
+            launch-readiness proof; use visible provider, DNS approval, and
+            Capture controls if they appear.</em>
           </div>
         </article>
 """
@@ -436,7 +438,8 @@ def _render_acceptance_blockers(report: Any) -> str:
             <span>Rehearsal passed</span>
             <strong>Live acceptance is still required</strong>
             <p>Local rehearsal proof is clear, but it is not live provider evidence.</p>
-            <em>Run live acceptance after the provider run before recording the demo.</em>
+            <em>Keep using the live launcher/control room for the provider run;
+            FuseKit must collect live provider evidence before recording.</em>
           </div>
         </article>
 """
