@@ -387,12 +387,14 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
         ),
         "complete provider strategy evidence": (
             "Provider routes",
-            "Record selected-route kind, status, deterministic/implemented flags, "
-            "reason, and candidates.",
+            "Keep the live launcher/control room open while FuseKit writes the "
+            "selected provider route, deterministic/implemented status, reason, "
+            "and fallback candidates for every provider route.",
         ),
         "complete provider strategy coverage": (
             "Provider routes",
-            "Record provider strategy evidence for every provider declared by the manifest.",
+            "Keep the live launcher/control room open until every manifest provider "
+            "has provider-route proof before acceptance.",
         ),
         "provider route recovery checkpoints": (
             "Provider routes",
@@ -430,8 +432,8 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
         ),
         "guided human gates": (
             "Human gates",
-            "Regenerate gate state with follow_steps, next_action, and resume_hint "
-            "for every control-room gate.",
+            "Keep the live launcher/control room open while FuseKit rebuilds each "
+            "gate card with follow-me steps, next action, and resume hint.",
         ),
         "audited human gate interventions": (
             "Human gates",
@@ -447,7 +449,8 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
         ),
         "validated provider capability packs": (
             "Provider packs",
-            "Generate and validate provider capability packs for the services in the manifest.",
+            "Keep the live launcher/control room open while FuseKit loads and "
+            "validates provider capability packs for the services in the manifest.",
         ),
         "safe visual session state": (
             "Visual session",
@@ -460,7 +463,9 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
         ),
         "clean leak scan": (
             "Security",
-            "Remove plaintext setup secrets from app files and artifacts, then rerun leak scan.",
+            "Keep the launcher/control room open while FuseKit runs the leak scan; "
+            "if it flags plaintext setup secrets, move them out of app files and "
+            "back into vault Capture/provider secret storage.",
         ),
         "detonated worker state": (
             "Detonation",
@@ -662,7 +667,9 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
     if check.id == "leak_scan.clean":
         return (
             "Security",
-            "Remove plaintext setup secrets from app files, then rerun the launch leak scan.",
+            "Keep the launcher/control room open while FuseKit runs the leak scan; "
+            "if it flags plaintext setup secrets, move them out of app files and "
+            "back into vault Capture/provider secret storage.",
         )
     return ("Launch evidence", _unknown_launch_evidence_action(check.id))
 

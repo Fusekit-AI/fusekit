@@ -593,6 +593,7 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
                 "missing": [
                     "audited human gate interventions",
                     "guided human gates",
+                    "complete provider strategy evidence",
                     "complete provider strategy coverage",
                     "complete provider verification coverage",
                     "complete rollback coverage",
@@ -612,6 +613,7 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
     assert payload["acceptance"]["missing"] == [
         "audited human gate interventions",
         "guided human gates",
+        "complete provider strategy evidence",
         "complete provider strategy coverage",
         "complete provider verification coverage",
         "complete rollback coverage",
@@ -629,10 +631,17 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
     assert "I finished this step after a non-secret provider confirmation" in html
     assert "Open, capture, or resume each control-room gate" not in html
     assert "guided human gates" in html
+    assert "live launcher/control room" in html
     assert "follow-me steps, next action, and resume hint" in html
+    assert "Regenerate gate state" not in html
     assert "Provider routes" in html
+    assert "complete provider strategy evidence" in html
+    assert "selected provider route" in html
+    assert "fallback candidates for every provider route" in html
+    assert "Record selected-route" not in html
     assert "complete provider strategy coverage" in html
-    assert "every provider declared by the manifest" in html
+    assert "every manifest provider has provider-route proof" in html
+    assert "Record provider strategy evidence" not in html
     assert "Verification" in html
     assert "complete provider verification coverage" in html
     assert "Let FuseKit verify every provider declared by the manifest before acceptance" in html
@@ -649,15 +658,38 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
     assert "create or reuse the Resend domain/audience values by API" in html
     assert "Capture or generate the required RESEND_* values" not in html
     assert "Detonation" in html
-    assert (
-        "plaintext worker, browser, visual, provider-auth, control-room, and gateway "
-        "scratch state"
-        in html
-    )
-    assert "plaintext worker, browser, visual, and auth scratch state" not in html
-    assert "8 launch blockers" in html
+    assert "9 launch blockers" in html
     assert "acceptanceBlockers" in html
     assert "missingAcceptanceBlocker" in html
+
+
+def test_control_room_provider_pack_and_leak_scan_missing_are_launcher_actionable(
+    tmp_path,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    acceptance_dir = tmp_path / "acceptance"
+    acceptance_dir.mkdir()
+    (acceptance_dir / "report.json").write_text(
+        json.dumps(
+            {
+                "launch_ready": False,
+                "missing": ["validated provider capability packs", "clean leak scan"],
+                "blockers": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+
+    assert "Provider packs" in html
+    assert "validated provider capability packs" in html
+    assert "loads and validates provider capability packs" in html
+    assert "Regenerate provider capability packs" not in html
+    assert "Security" in html
+    assert "clean leak scan" in html
+    assert "vault Capture/provider secret storage" in html
+    assert "rerun the launch leak scan" not in html
 
 
 def test_control_room_missing_provider_route_blockers_are_launcher_actionable(

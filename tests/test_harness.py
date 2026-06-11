@@ -3294,6 +3294,12 @@ def test_live_acceptance_requires_complete_provider_strategy_evidence(tmp_path) 
     assert strategy_check.status == "failed"
     assert "selected.status is missing" in strategy_check.detail
     assert "complete provider strategy evidence" in report.missing
+    blockers = {blocker["item"]: blocker for blocker in report.blockers}
+    next_action = blockers["complete provider strategy evidence"]["next_action"]
+    assert "live launcher/control room" in next_action
+    assert "selected provider route" in next_action
+    assert "fallback candidates" in next_action
+    assert "Record selected-route" not in next_action
 
 
 def test_live_acceptance_requires_guided_human_provider_strategy(tmp_path) -> None:
@@ -3380,6 +3386,11 @@ def test_live_acceptance_requires_guided_human_provider_strategy(tmp_path) -> No
     assert "github.strategies[0].next_action is missing" in strategy_check.detail
     assert "github.strategies[0].resume_hint is missing" in strategy_check.detail
     assert "complete provider strategy evidence" in report.missing
+    blockers = {blocker["item"]: blocker for blocker in report.blockers}
+    next_action = blockers["complete provider strategy evidence"]["next_action"]
+    assert "live launcher/control room" in next_action
+    assert "selected provider route" in next_action
+    assert "Record selected-route" not in next_action
 
 
 def test_live_acceptance_requires_strategy_coverage_for_manifest_providers(tmp_path) -> None:
@@ -3470,9 +3481,10 @@ domains:
     assert "complete provider strategy coverage" in report.missing
     blockers = {blocker["item"]: blocker for blocker in report.blockers}
     assert blockers["complete provider strategy coverage"]["category"] == "Provider routes"
-    assert "every provider declared by the manifest" in blockers[
-        "complete provider strategy coverage"
-    ]["next_action"]
+    next_action = blockers["complete provider strategy coverage"]["next_action"]
+    assert "live launcher/control room" in next_action
+    assert "every manifest provider has provider-route proof" in next_action
+    assert "Record provider strategy evidence" not in next_action
 
 
 def test_live_acceptance_requires_verification_coverage_for_manifest_providers(tmp_path) -> None:
@@ -3796,7 +3808,10 @@ def test_live_acceptance_requires_guided_control_room_gates(tmp_path) -> None:
     )
     assert "guided human gates" in report.missing
     blockers = {blocker["item"]: blocker for blocker in report.blockers}
-    assert "follow_steps" in blockers["guided human gates"]["next_action"]
+    next_action = blockers["guided human gates"]["next_action"]
+    assert "live launcher/control room" in next_action
+    assert "follow-me steps, next action, and resume hint" in next_action
+    assert "Regenerate gate state" not in next_action
 
 
 def test_live_acceptance_requires_audited_control_room_gates(tmp_path) -> None:

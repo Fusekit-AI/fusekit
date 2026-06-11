@@ -859,8 +859,8 @@ function missingAcceptanceBlocker(item) {
     ],
     "guided human gates": [
       "Human gates",
-      "Regenerate gate state so every control-room gate has follow-me steps, " +
-        "next action, and resume hint.",
+      "Keep the live launcher/control room open while FuseKit rebuilds each " +
+        "gate card with follow-me steps, next action, and resume hint.",
     ],
     "provider strategy decisions": [
       "Provider routes",
@@ -870,11 +870,14 @@ function missingAcceptanceBlocker(item) {
     ],
     "complete provider strategy evidence": [
       "Provider routes",
-      "Record selected-route kind, status, deterministic flags, reason, and candidates.",
+      "Keep the live launcher/control room open while FuseKit writes the " +
+        "selected provider route, deterministic status, reason, and fallback " +
+        "candidates for every provider route.",
     ],
     "complete provider strategy coverage": [
       "Provider routes",
-      "Record provider strategy evidence for every provider declared by the manifest.",
+      "Keep the live launcher/control room open until every manifest provider " +
+        "has provider-route proof before acceptance.",
     ],
     "complete provider verification coverage": [
       "Verification",
@@ -912,7 +915,8 @@ function missingAcceptanceBlocker(item) {
     ],
     "validated provider capability packs": [
       "Provider packs",
-      "Regenerate provider capability packs for this app's providers before setup runs.",
+      "Keep the live launcher/control room open while FuseKit loads and " +
+        "validates provider capability packs for this app's providers before setup runs.",
     ],
     "verified live URL": [
       "Deployment",
@@ -920,7 +924,9 @@ function missingAcceptanceBlocker(item) {
     ],
     "clean leak scan": [
       "Security",
-      "Remove plaintext setup secrets from app files and rerun the launch leak scan.",
+      "Keep the launcher/control room open while FuseKit runs the leak scan; " +
+        "if it flags plaintext setup secrets, move them out of app files and " +
+        "back into vault Capture/provider secret storage.",
     ],
     "detonated worker state": [
       "Detonation",
