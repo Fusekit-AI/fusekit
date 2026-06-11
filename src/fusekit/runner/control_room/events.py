@@ -955,8 +955,8 @@ function unknownAcceptanceBlockerAction(item) {
     "Use any visible Open provider gate in VM, env-named Capture button such as " +
     "Capture RESEND_API_KEY from VM clipboard, I finished this step, Approve setup plan, " +
     "or Approve DNS apply control that appears. " +
-    "If no specific launcher control appears, rerun the same live launch/acceptance so " +
-    "FuseKit can rebuild this proof artifact."
+    "If no specific launcher control appears, keep this live control room open " +
+    "while FuseKit rebuilds this proof artifact."
   );
 }
 

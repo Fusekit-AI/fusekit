@@ -1297,6 +1297,26 @@ def test_acceptance_vault_check_blocker_is_launcher_actionable() -> None:
     assert "Regenerate or unlock" not in next_action
 
 
+def test_acceptance_unknown_blocker_stays_in_current_control_room() -> None:
+    blockers = _acceptance_blockers(
+        [
+            AcceptanceCheck(
+                "custom.launch_proof",
+                "failed",
+                "Custom launch proof is missing.",
+            )
+        ],
+        [],
+    )
+
+    next_action = blockers[0]["next_action"]
+
+    assert blockers[0]["category"] == "Launch evidence"
+    assert "keep this live control room open while FuseKit rebuilds" in next_action
+    assert "rerun the same live launch/acceptance" not in next_action
+    assert "Run acceptance again" not in next_action
+
+
 def test_acceptance_report_redacts_check_and_blocker_details(tmp_path) -> None:
     raw_code = "abcdefghijklmnopqrstuvwxyz1234567890abcdef"
     check = AcceptanceCheck(
@@ -2144,6 +2164,8 @@ def test_live_acceptance_requires_provider_route_recovery_checkpoints(tmp_path) 
     assert "live launcher/control room" in next_action
     assert "provider-route cards" in next_action
     assert "next action and resume hint" in next_action
+    assert "keep this live control room open" in next_action
+    assert "rerun the same live launcher" not in next_action
     assert "checkpoints.json" not in next_action
 
 

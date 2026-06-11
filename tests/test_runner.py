@@ -876,6 +876,8 @@ def test_control_room_unknown_acceptance_missing_uses_launcher_controls(tmp_path
     assert "Approve DNS apply" in html
     assert "Repair this acceptance item" not in html
     assert "Run acceptance again after fixing this" not in html
+    assert "rerun the same live launch/acceptance" not in html
+    assert "keep this live control room open while FuseKit rebuilds" in html
     assert "unknownAcceptanceBlockerAction" in html
 
 
