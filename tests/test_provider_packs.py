@@ -349,6 +349,36 @@ def test_resend_handoff_never_opens_domains_before_api_key_capture() -> None:
     assert "Capture RESEND_API_KEY from VM clipboard" in text
 
 
+def test_resend_pack_rejects_missing_setup_key_selector_guidance(tmp_path) -> None:
+    pack = synthesize_provider_pack("resend", tmp_path)
+    base_secret_steps = tuple(pack.handoff.secret_steps)
+    bad_permission = replace(
+        pack,
+        handoff=replace(
+            pack.handoff,
+            secret_steps=tuple(
+                step.replace("Permission: Full access", "Full access")
+                for step in base_secret_steps
+            ),
+        ),
+    )
+    bad_domain = replace(
+        pack,
+        handoff=replace(
+            pack.handoff,
+            secret_steps=tuple(
+                step.replace("Domain: All domains", "All domains")
+                for step in base_secret_steps
+            ),
+        ),
+    )
+
+    with pytest.raises(ProviderError, match="Permission: Full access"):
+        validate_provider_pack(bad_permission)
+    with pytest.raises(ProviderError, match="Domain: All domains"):
+        validate_provider_pack(bad_domain)
+
+
 def test_common_provider_catalog_synthesizes_valid_specific_packs(tmp_path) -> None:
     providers = {"stripe", "supabase", "clerk", "neon", "upstash", "openai"}
 

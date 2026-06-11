@@ -828,6 +828,8 @@ def _validate_launcher_capture_handoff(pack: ProviderCapabilityPack) -> None:
         raise ProviderError(
             "Provider pack secret_steps must use Capture from VM clipboard."
         )
+    if pack.provider.strip().lower() == "resend":
+        _validate_resend_setup_key_handoff(secret_text)
 
 
 def _launcher_capture_targets(pack: ProviderCapabilityPack) -> tuple[str, ...]:
@@ -840,6 +842,19 @@ def _launcher_capture_targets(pack: ProviderCapabilityPack) -> tuple[str, ...]:
         if _requires_launcher_capture_label(secret, pack.provider):
             targets.append(secret)
     return tuple(dict.fromkeys(targets))
+
+
+def _validate_resend_setup_key_handoff(secret_text: str) -> None:
+    """Require exact Resend setup-key selectors for the public no-thinking path."""
+
+    if "permission: full access" not in secret_text:
+        raise ProviderError(
+            "Resend provider pack secret_steps must name Permission: Full access."
+        )
+    if "domain: all domains" not in secret_text:
+        raise ProviderError(
+            "Resend provider pack secret_steps must name Domain: All domains."
+        )
 
 
 def _requires_launcher_capture_label(secret: str, provider: str) -> bool:
