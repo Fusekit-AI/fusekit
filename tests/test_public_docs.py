@@ -78,3 +78,23 @@ def test_friction_log_tracks_generic_capture_fallback_fix() -> None:
     assert "single highlighted launcher gate" in text
     assert "exact env-named Capture button rendered for that gate" in text
     assert "Resend-specific copy names `RESEND_API_KEY` only on real Resend" in text
+
+
+def test_oci_runner_lane_defines_prepared_environment_contract() -> None:
+    text = Path("docs/oci-runner-lane.md").read_text(encoding="utf-8")
+
+    assert "prepared environment contract" in text
+    assert "expected x86_64 architecture" in text
+    assert "FuseKit runner helpers" in text
+    assert "Chromium smoke-test readiness" in text
+    assert "shared Chrome provider profile" in text
+    assert "before the first provider account gate" in text
+
+
+def test_northstar_next_slices_include_verified_runner_profile() -> None:
+    text = Path("docs/northstar-provider-strategy.md").read_text(encoding="utf-8")
+
+    assert "verified prepared-environment profile" in text
+    assert "OpenClaw/browser spine" in text
+    assert "noVNC" in text
+    assert "before provider gates are shown" in text

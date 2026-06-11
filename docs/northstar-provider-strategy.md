@@ -129,7 +129,11 @@ next action instead of falling back to generic setup-worker guidance.
 
 Next slices:
 
-1. Add official CLI executors for providers where CLI is more reliable.
-2. Add signed remote provider-pack registry support.
-3. Run a real OCI provider acceptance using GitHub, Vercel, Cloudflare, and a
+1. Promote the OCI runner into a verified prepared-environment profile: x86_64,
+   supported Ubuntu image, FuseKit runner helpers, OpenClaw/browser spine,
+   Playwright Chromium smoke test, noVNC, and shared Chrome provider profile
+   must pass before provider gates are shown.
+2. Add official CLI executors for providers where CLI is more reliable.
+3. Add signed remote provider-pack registry support.
+4. Run a real OCI provider acceptance using GitHub, Vercel, Cloudflare, and a
    disposable domain.

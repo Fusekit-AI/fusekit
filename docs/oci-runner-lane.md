@@ -115,6 +115,15 @@ Cloud-init should create a self-contained runner with no dependency on the user'
 5. Create `/var/lib/fusekit-runner` for transient worker state.
 6. Refuse to continue if verification fails, then either self-heal packages or return to a retryable human gate.
 
+The public launcher should treat this as a prepared environment contract, not as
+best-effort shell setup. A demo-ready run must prove the disposable VM has the
+expected x86_64 architecture, supported Ubuntu/browser dependency stack,
+FuseKit runner helpers, OpenClaw or the approved browser spine, Playwright
+Chromium smoke-test readiness, noVNC, and the shared Chrome provider profile
+before the first provider account gate is shown. If any of those checks fail,
+FuseKit should stop on a runner repair gate or select a verified prepared image
+instead of continuing into provider setup with a brittle partial toolchain.
+
 The app repo should be uploaded as a tarball over SSH, excluding `.git`, `.env`, existing `.fusekit`, caches, dependency folders, and known secret artifacts. Provider credentials must come from the encrypted vault or supervised handoff, not app files.
 
 The Cloud Shell bootstrap must preserve the user's actual launch intent. Provider targets, DNS scope, live URL checks, LLM settings, UI-inference flags, and the selected FuseKit package are forwarded from the launcher into Cloud Shell and again into the disposable VM when the Cloud Shell lane provisions a nested runner. This avoids the bad magic trick where the clean room starts successfully but forgets which services it was supposed to connect.
