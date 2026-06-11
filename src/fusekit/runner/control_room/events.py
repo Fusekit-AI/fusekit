@@ -837,12 +837,14 @@ function missingAcceptanceBlocker(item) {
     ],
     "safe verification report": [
       "Verification",
-      "Let FuseKit finish provider verification and resolve any visible provider " +
-        "gate it surfaces in the VM browser.",
+      "Keep the live launcher/control room open while FuseKit verifies every " +
+        "provider, resolves visible VM-browser gates, and marks DNS/deploy waits " +
+        "pending-safe only when they are safe to keep watching.",
     ],
     "rollback metadata": [
       "Rollback",
-      "Let FuseKit generate rollback actions from the redacted setup receipt.",
+      "Keep the live launcher/control room open after the redacted receipt is " +
+        "saved so FuseKit can write provider rollback actions before launch.",
     ],
     "audited human gate interventions": [
       "Human gates",
@@ -876,11 +878,11 @@ function missingAcceptanceBlocker(item) {
     ],
     "complete provider verification coverage": [
       "Verification",
-      "Record verification checks for every provider declared by the manifest.",
+      "Let FuseKit verify every provider declared by the manifest before acceptance.",
     ],
     "complete rollback coverage": [
       "Rollback",
-      "Record rollback metadata for every provider declared by the manifest.",
+      "Let FuseKit write rollback actions for every provider declared by the manifest.",
     ],
     "Resend-before-DNS provider setup order": [
       "Provider order",

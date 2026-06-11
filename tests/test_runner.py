@@ -617,9 +617,12 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
     assert "every provider declared by the manifest" in html
     assert "Verification" in html
     assert "complete provider verification coverage" in html
+    assert "Let FuseKit verify every provider declared by the manifest before acceptance" in html
+    assert "Record verification checks for every provider declared by the manifest" not in html
     assert "Rollback" in html
     assert "complete rollback coverage" in html
-    assert "Record rollback metadata for every provider declared by the manifest" in html
+    assert "Let FuseKit write rollback actions for every provider declared by the manifest" in html
+    assert "Record rollback metadata for every provider declared by the manifest" not in html
     assert "Provider order" in html
     assert "Resend DNS records in receipt DNS proposal" in html
     assert "Cloudflare receives the exact Resend records" in html
@@ -698,6 +701,35 @@ def test_control_room_missing_receipt_blocker_is_launcher_actionable(tmp_path) -
     assert "setup worker finish provider setup" in html
     assert "redacted receipt with no raw secrets" in html
     assert "Rerun setup so the worker writes a redacted setup receipt" not in html
+
+
+def test_control_room_missing_verification_and_rollback_are_launcher_actionable(
+    tmp_path,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    acceptance_dir = tmp_path / "acceptance"
+    acceptance_dir.mkdir()
+    (acceptance_dir / "report.json").write_text(
+        json.dumps(
+            {
+                "launch_ready": False,
+                "missing": ["safe verification report", "rollback metadata"],
+                "blockers": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+
+    assert "safe verification report" in html
+    assert "live launcher/control room" in html
+    assert "VM-browser gates" in html
+    assert "pending-safe only when they are safe to keep watching" in html
+    assert "Run provider verification" not in html
+    assert "rollback metadata" in html
+    assert "provider rollback actions before launch" in html
+    assert "Generate rollback metadata" not in html
 
 
 def test_control_room_unknown_acceptance_missing_uses_launcher_controls(tmp_path) -> None:

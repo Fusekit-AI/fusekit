@@ -362,19 +362,22 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
         ),
         "safe verification report": (
             "Verification",
-            "Run provider verification until checks pass or are explicitly pending-safe.",
+            "Keep the live launcher/control room open while FuseKit verifies every "
+            "provider, resolves visible VM-browser gates, and marks DNS/deploy waits "
+            "pending-safe only when they are safe to keep watching.",
         ),
         "complete provider verification coverage": (
             "Verification",
-            "Record verification checks for every provider declared by the manifest.",
+            "Let FuseKit verify every provider declared by the manifest before acceptance.",
         ),
         "rollback metadata": (
             "Rollback",
-            "Generate rollback metadata from the redacted setup receipt before launch.",
+            "Keep the live launcher/control room open after the redacted receipt is "
+            "saved so FuseKit can write provider rollback actions before launch.",
         ),
         "complete rollback coverage": (
             "Rollback",
-            "Record rollback metadata for every provider declared by the manifest.",
+            "Let FuseKit write rollback actions for every provider declared by the manifest.",
         ),
         "provider strategy decisions": (
             "Provider routes",
@@ -612,7 +615,9 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
     if check.id.startswith("verification_report."):
         return (
             "Verification",
-            "Rerun provider verification and resolve failed or unsafe pending checks.",
+            "Keep the live launcher/control room open while FuseKit verifies every "
+            "provider, resolves visible VM-browser gates, and keeps only safe pending "
+            "DNS/deploy waits.",
         )
     if check.id.startswith("vault."):
         return ("Vault", "Regenerate or unlock the encrypted vault evidence.")

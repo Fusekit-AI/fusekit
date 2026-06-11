@@ -1254,6 +1254,17 @@ def test_acceptance_live_requires_real_provider_evidence(tmp_path) -> None:
         "redacted setup receipt"
     ]["next_action"]
     assert "Rerun setup" not in blockers["redacted setup receipt"]["next_action"]
+    assert blockers["safe verification report"]["category"] == "Verification"
+    assert "live launcher/control room" in blockers["safe verification report"]["next_action"]
+    assert "VM-browser gates" in blockers["safe verification report"]["next_action"]
+    assert "pending-safe" in blockers["safe verification report"]["next_action"]
+    assert "Run provider verification" not in blockers["safe verification report"]["next_action"]
+    assert blockers["rollback metadata"]["category"] == "Rollback"
+    assert "live launcher/control room" in blockers["rollback metadata"]["next_action"]
+    assert "provider rollback actions before launch" in blockers[
+        "rollback metadata"
+    ]["next_action"]
+    assert "Generate rollback metadata" not in blockers["rollback metadata"]["next_action"]
     assert blockers["provider strategy decisions"]["category"] == "Provider routes"
     assert "live launcher/control room" in blockers["provider strategy decisions"]["next_action"]
     assert "setup worker record" in blockers["provider strategy decisions"]["next_action"]
@@ -3573,9 +3584,9 @@ domains:
     assert "complete provider verification coverage" in report.missing
     blockers = {blocker["item"]: blocker for blocker in report.blockers}
     assert blockers["complete provider verification coverage"]["category"] == "Verification"
-    assert "every provider declared by the manifest" in blockers[
-        "complete provider verification coverage"
-    ]["next_action"]
+    next_action = blockers["complete provider verification coverage"]["next_action"]
+    assert "Let FuseKit verify every provider declared by the manifest" in next_action
+    assert "Record verification checks" not in next_action
 
 
 def test_live_acceptance_requires_rollback_coverage_for_manifest_providers(tmp_path) -> None:
@@ -3692,9 +3703,12 @@ domains:
     assert "complete rollback coverage" in report.missing
     blockers = {blocker["item"]: blocker for blocker in report.blockers}
     assert blockers["complete rollback coverage"]["category"] == "Rollback"
-    assert "every provider declared by the manifest" in blockers[
-        "complete rollback coverage"
-    ]["next_action"]
+    next_action = blockers["complete rollback coverage"]["next_action"]
+    assert (
+        "Let FuseKit write rollback actions for every provider declared by the manifest"
+        in next_action
+    )
+    assert "Record rollback metadata" not in next_action
 
 
 def test_live_acceptance_requires_guided_control_room_gates(tmp_path) -> None:
