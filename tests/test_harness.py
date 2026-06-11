@@ -10,6 +10,7 @@ from fusekit.harness.acceptance import (
     AcceptanceReport,
     _acceptance_blockers,
     _check_detonation,
+    _check_runner_readiness,
     _check_visual_state,
     _gate_open_audit_event_proves_vm_open,
     _gate_resume_audit_requirements,
@@ -226,6 +227,7 @@ def _write_minimum_live_artifacts(remote_fusekit: Path) -> None:
         "utf-8",
     )
     (remote_fusekit / "gates.json").write_text(json.dumps({"gates": []}), "utf-8")
+    _write_runner_readiness(remote_fusekit)
 
 
 def _dns_apply_approval_event(domain: str = "moonlite.rsvp") -> dict[str, object]:
@@ -254,6 +256,32 @@ def _write_safe_visual_state(fusekit_dir: Path) -> None:
                     "?token=viewer_token_abcdefghijklmnopqrstuvwxyz0123456789"
                 ),
                 "novnc_password": "viewer-password",
+            }
+        ),
+        "utf-8",
+    )
+
+
+def _write_runner_readiness(fusekit_dir: Path) -> None:
+    (fusekit_dir / "runner_readiness.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.runner-readiness.v1",
+                "status": "ready",
+                "architecture": "x86_64",
+                "checks": {
+                    "x86_64_architecture": True,
+                    "runner_helpers": True,
+                    "visual_commands": True,
+                    "novnc": True,
+                    "openclaw": True,
+                    "playwright_chromium": True,
+                    "shared_provider_browser_profile": True,
+                },
+                "provider_browser_profile": (
+                    "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+                ),
+                "playwright_browsers_path": "/opt/fusekit-playwright-browsers",
             }
         ),
         "utf-8",
@@ -318,6 +346,7 @@ def _write_minimum_resend_vercel_live_artifacts(remote_fusekit: Path) -> None:
         "utf-8",
     )
     (remote_fusekit / "gates.json").write_text(json.dumps({"gates": []}), "utf-8")
+    _write_runner_readiness(remote_fusekit)
     _write_safe_visual_state(remote_fusekit)
 
 
@@ -504,6 +533,83 @@ def test_acceptance_allows_missing_visual_state_in_rehearsal_mode(tmp_path) -> N
     assert checks[-1].id == "visual_state.safe"
     assert checks[-1].status == "ok"
     assert "Visual session state not present" in checks[-1].detail
+    assert missing == []
+
+
+def test_acceptance_requires_runner_readiness_in_live_mode(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    checks: list[AcceptanceCheck] = []
+    missing: list[str] = []
+    ledger = HarnessLedger.create(fusekit_dir / "acceptance")
+
+    _check_runner_readiness(
+        fusekit_dir / "runner_readiness.json", "live", checks, missing, ledger
+    )
+
+    assert checks[-1].id == "runner_readiness.prepared"
+    assert checks[-1].status == "missing"
+    assert "Live runner readiness proof not found" in checks[-1].detail
+    assert str(tmp_path) not in checks[-1].detail
+    assert "prepared runner readiness proof" in missing
+
+
+def test_acceptance_rejects_incomplete_runner_readiness(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    readiness = fusekit_dir / "runner_readiness.json"
+    readiness.write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.runner-readiness.v1",
+                "status": "ready",
+                "architecture": "aarch64",
+                "checks": {
+                    "x86_64_architecture": False,
+                    "runner_helpers": True,
+                    "visual_commands": True,
+                    "novnc": True,
+                    "openclaw": True,
+                    "playwright_chromium": False,
+                    "shared_provider_browser_profile": True,
+                },
+                "provider_browser_profile": "/tmp/profile",
+                "playwright_browsers_path": "",
+            }
+        ),
+        "utf-8",
+    )
+    checks: list[AcceptanceCheck] = []
+    missing: list[str] = []
+    ledger = HarnessLedger.create(fusekit_dir / "acceptance")
+
+    _check_runner_readiness(readiness, "live", checks, missing, ledger)
+
+    assert checks[-1].id == "runner_readiness.prepared"
+    assert checks[-1].status == "failed"
+    assert "architecture must be x86_64" in checks[-1].detail
+    assert "x86_64_architecture must be true" in checks[-1].detail
+    assert "playwright_chromium must be true" in checks[-1].detail
+    assert "shared provider browser profile path is required" in checks[-1].detail
+    assert "Playwright browser cache path is required" in checks[-1].detail
+    assert "prepared runner readiness proof" in missing
+
+
+def test_acceptance_allows_complete_runner_readiness(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    _write_runner_readiness(fusekit_dir)
+    checks: list[AcceptanceCheck] = []
+    missing: list[str] = []
+    ledger = HarnessLedger.create(fusekit_dir / "acceptance")
+
+    _check_runner_readiness(
+        fusekit_dir / "runner_readiness.json", "live", checks, missing, ledger
+    )
+
+    assert checks[-1].id == "runner_readiness.prepared"
+    assert checks[-1].status == "ok"
+    assert "Prepared x86_64 browser runner proof is present" in checks[-1].detail
     assert missing == []
 
 
@@ -2651,6 +2757,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
         ),
         "utf-8",
     )
+    _write_runner_readiness(remote_fusekit)
     _write_safe_visual_state(remote_fusekit)
 
     report = run_acceptance(

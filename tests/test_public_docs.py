@@ -144,3 +144,14 @@ def test_friction_log_tracks_visual_query_value_sanitization() -> None:
     assert "autoconnect=1" in text
     assert "resize=scale" in text
     assert "reject the visual session before rendering" in text
+
+
+def test_friction_log_tracks_runner_readiness_artifact() -> None:
+    text = Path("docs/magic-path-friction-log.md").read_text(encoding="utf-8")
+
+    assert "`fusekit-runner-verify` could stop a bad VM" in text
+    assert ".fusekit/runner_readiness.json" in text
+    assert "artifact retrieval requires it" in text
+    assert "live acceptance fails unless the proof shows x86_64" in text
+    assert "Playwright Chromium" in text
+    assert "shared provider browser profile" in text

@@ -4363,6 +4363,10 @@ def test_remote_bootstrap_artifacts_are_self_contained() -> None:
     ) in cloud_init
     assert "chromium-browser" not in cloud_init
     assert "sync_playwright" in cloud_init
+    assert "fusekit.runner-readiness.v1" in cloud_init
+    assert "/var/lib/fusekit-runner/runner-readiness.json" in cloud_init
+    assert "playwright_chromium" in cloud_init
+    assert "shared_provider_browser_profile" in cloud_init
     assert "xvfb fluxbox x11vnc novnc websockify xterm" in cloud_init
     assert "fusekit-visual-start" in cloud_init
     assert "websockify --web \"$novnc_web\" 0.0.0.0:6080 localhost:5900" in cloud_init
@@ -4424,6 +4428,21 @@ def test_remote_artifact_bundle_requires_survivor_files(tmp_path) -> None:
     (tmp_path / ".fusekit" / "checkpoints.json").write_text("{}", encoding="utf-8")
 
     with pytest.raises(FuseKitError, match="fusekit.vault.json"):
+        _validate_artifact_bundle(tmp_path)
+
+    for name in (
+        "fusekit.vault.json",
+        "audit.jsonl",
+        "setup_receipt.json",
+        "job.json",
+        "checkpoints.json",
+        "verification_report.json",
+        "rollback_plan.json",
+        "provider_strategies.json",
+    ):
+        (tmp_path / ".fusekit" / name).write_text("{}", encoding="utf-8")
+
+    with pytest.raises(FuseKitError, match="runner_readiness.json"):
         _validate_artifact_bundle(tmp_path)
 
 
@@ -5392,6 +5411,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
             verification = tmp_path / "verification_report.json"
             rollback = tmp_path / "rollback_plan.json"
             strategies = tmp_path / "provider_strategies.json"
+            runner_readiness = tmp_path / "runner_readiness.json"
             payload.write_text("{}", encoding="utf-8")
             gates.write_text('{"gates":[]}', encoding="utf-8")
             checkpoints.write_text('{"checkpoints":[]}', encoding="utf-8")
@@ -5404,6 +5424,10 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
                 encoding="utf-8",
             )
             strategies.write_text('{"providers":[]}', encoding="utf-8")
+            runner_readiness.write_text(
+                '{"schema_version":"fusekit.runner-readiness.v1","status":"ready"}',
+                encoding="utf-8",
+            )
             archive.add(payload, arcname=".fusekit/job.json")
             archive.add(gates, arcname=".fusekit/gates.json")
             archive.add(checkpoints, arcname=".fusekit/checkpoints.json")
@@ -5413,6 +5437,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
             archive.add(verification, arcname=".fusekit/verification_report.json")
             archive.add(rollback, arcname=".fusekit/rollback_plan.json")
             archive.add(strategies, arcname=".fusekit/provider_strategies.json")
+            archive.add(runner_readiness, arcname=".fusekit/runner_readiness.json")
             archive.close()
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
@@ -5467,6 +5492,12 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
     )
     assert any(
         command[0] == "scp" and command[-1].endswith("/.fusekit/fusekit.vault.json")
+        for command in calls
+    )
+    assert any(
+        command[0] == "ssh"
+        and "runner-readiness.json" in command[-1]
+        and ".fusekit/runner_readiness.json" in command[-1]
         for command in calls
     )
     assert any("fusekit launch . --runner local --yes" in command[-1] for command in calls)

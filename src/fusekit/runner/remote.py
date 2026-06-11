@@ -189,6 +189,30 @@ write_files:
           assert page.title() == 'fusekit-ok'
           browser.close()
       PY
+      /opt/fusekit-python/bin/python - <<'PY'
+      import json
+      import platform
+      from pathlib import Path
+      readiness = dict(
+          schema_version="fusekit.runner-readiness.v1",
+          status="ready",
+          architecture=platform.machine(),
+          checks=dict(
+              x86_64_architecture=True,
+              runner_helpers=True,
+              visual_commands=True,
+              novnc=True,
+              openclaw=True,
+              playwright_chromium=True,
+              shared_provider_browser_profile=True,
+          ),
+          provider_browser_profile="/var/lib/fusekit-runner/visual/chrome-provider-profile",
+          playwright_browsers_path="{playwright_browsers_path}",
+      )
+      target = Path("/var/lib/fusekit-runner/runner-readiness.json")
+      target.write_text(json.dumps(readiness, sort_keys=True) + "\\n", encoding="utf-8")
+      target.chmod(0o600)
+      PY
   - path: /usr/local/sbin/fusekit-runner-loop-once
     permissions: '0755'
     content: |
@@ -349,6 +373,15 @@ def execute_remote_setup(
         _run_checked(
             run,
             [
+                *ssh,
+                remote,
+                "cp /var/lib/fusekit-runner/runner-readiness.json "
+                "/var/lib/fusekit-runner/app/.fusekit/runner_readiness.json",
+            ],
+        )
+        _run_checked(
+            run,
+            [
                 *scp,
                 str(vault_snapshot),
                 f"{remote}:/var/lib/fusekit-runner/app/.fusekit/fusekit.vault.json",
@@ -407,7 +440,7 @@ def execute_remote_setup(
             ".fusekit/setup_receipt.json .fusekit/setup_receipt.md .fusekit/job.json "
             ".fusekit/checkpoints.json .fusekit/verification_report.json "
             ".fusekit/rollback_plan.json .fusekit/provider_strategies.json "
-            ".fusekit/gates.json; "
+            ".fusekit/gates.json .fusekit/runner_readiness.json; "
             "existing=''; "
             "for path in \"$@\"; do [ -f \"$path\" ] && existing=\"$existing $path\"; done; "
             "[ -n \"$existing\" ] || exit 44; "
@@ -629,6 +662,7 @@ def _validate_artifact_bundle(output_dir: Path) -> str:
         ".fusekit/verification_report.json",
         ".fusekit/rollback_plan.json",
         ".fusekit/provider_strategies.json",
+        ".fusekit/runner_readiness.json",
     )
     missing = [path for path in required if not (output_dir / path).is_file()]
     if missing:

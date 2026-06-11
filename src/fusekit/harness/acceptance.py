@@ -50,6 +50,16 @@ DETONATION_PLAINTEXT_PATHS = (
     "chrome.log",
 )
 
+REQUIRED_RUNNER_READINESS_CHECKS = (
+    "x86_64_architecture",
+    "runner_helpers",
+    "visual_commands",
+    "novnc",
+    "openclaw",
+    "playwright_chromium",
+    "shared_provider_browser_profile",
+)
+
 
 @dataclass(frozen=True)
 class AcceptanceCheck:
@@ -224,6 +234,13 @@ def run_acceptance(
     _check_rollback_metadata(
         evidence_fusekit_dir / "rollback_plan.json",
         manifest,
+        mode,
+        checks,
+        missing,
+        ledger,
+    )
+    _check_runner_readiness(
+        evidence_fusekit_dir / "runner_readiness.json",
         mode,
         checks,
         missing,
@@ -3265,6 +3282,108 @@ def _check_visual_state(
             str(snapshot),
         )
     )
+
+
+def _check_runner_readiness(
+    readiness_path: Path,
+    mode: str,
+    checks: list[AcceptanceCheck],
+    missing: list[str],
+    ledger: HarnessLedger,
+) -> None:
+    """Require proof that the disposable runner was prepared before provider gates."""
+
+    if not readiness_path.exists():
+        if mode == "live":
+            checks.append(
+                AcceptanceCheck(
+                    "runner_readiness.prepared",
+                    "missing",
+                    "Live runner readiness proof not found: "
+                    + redact_public_path(readiness_path),
+                )
+            )
+            missing.append("prepared runner readiness proof")
+            return
+        checks.append(
+            AcceptanceCheck(
+                "runner_readiness.prepared",
+                "ok",
+                "Runner readiness proof not present; rehearsal does not require a live runner.",
+            )
+        )
+        return
+    try:
+        raw = json.loads(readiness_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        checks.append(
+            AcceptanceCheck(
+                "runner_readiness.prepared",
+                "failed",
+                "Runner readiness proof could not be read as a JSON object.",
+            )
+        )
+        if mode == "live":
+            missing.append("prepared runner readiness proof")
+        return
+    if not isinstance(raw, dict):
+        checks.append(
+            AcceptanceCheck(
+                "runner_readiness.prepared",
+                "failed",
+                "Runner readiness proof was not a JSON object.",
+            )
+        )
+        if mode == "live":
+            missing.append("prepared runner readiness proof")
+        return
+    snapshot = ledger.snapshot_json("runner-readiness", raw)
+    failures = _runner_readiness_failures(raw)
+    if failures:
+        checks.append(
+            AcceptanceCheck(
+                "runner_readiness.prepared",
+                "failed",
+                "Runner readiness proof is incomplete: " + ", ".join(failures) + ".",
+                str(snapshot),
+            )
+        )
+        if mode == "live":
+            missing.append("prepared runner readiness proof")
+        return
+    checks.append(
+        AcceptanceCheck(
+            "runner_readiness.prepared",
+            "ok",
+            "Prepared x86_64 browser runner proof is present.",
+            str(snapshot),
+        )
+    )
+
+
+def _runner_readiness_failures(readiness: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    if str(readiness.get("schema_version", "")).strip() != "fusekit.runner-readiness.v1":
+        failures.append("schema_version must be fusekit.runner-readiness.v1")
+    if str(readiness.get("status", "")).strip() != "ready":
+        failures.append("status must be ready")
+    if str(readiness.get("architecture", "")).strip().lower() not in {"x86_64", "amd64"}:
+        failures.append("architecture must be x86_64")
+    checks = readiness.get("checks")
+    if not isinstance(checks, dict):
+        failures.append("checks must be a JSON object")
+    else:
+        for name in REQUIRED_RUNNER_READINESS_CHECKS:
+            if checks.get(name) is not True:
+                failures.append(f"{name} must be true")
+    if (
+        str(readiness.get("provider_browser_profile", "")).strip()
+        != "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+    ):
+        failures.append("shared provider browser profile path is required")
+    if not str(readiness.get("playwright_browsers_path", "")).strip():
+        failures.append("Playwright browser cache path is required")
+    return failures
 
 
 def _unsafe_visual_state_fields(raw: dict[str, Any], sanitized: dict[str, Any]) -> list[str]:
