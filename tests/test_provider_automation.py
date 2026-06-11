@@ -125,7 +125,8 @@ def test_github_pack_setup_reports_browser_strategy_when_token_missing(tmp_path)
     assert deploy_key["status"] == "needs_human_gate"
     assert deploy_key["strategy"] == "browser_guided"
     assert deploy_key["strategy_decision"]["selected"]["kind"] == "browser_guided"
-    assert "login/MFA/CAPTCHA/consent" in deploy_key["next_action"]
+    assert "follow the GitHub steps below" in deploy_key["next_action"]
+    assert "create or reveal the GitHub API token" in deploy_key["next_action"]
     assert "fine-grained token named FuseKit setup" in " ".join(deploy_key["follow_steps"])
     assert "Resource owner" in " ".join(deploy_key["follow_steps"])
     assert "visible gate is finished" in deploy_key["resume_hint"]

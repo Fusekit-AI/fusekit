@@ -129,6 +129,8 @@ def test_provider_strategy_action_can_carry_pack_follow_steps(tmp_path) -> None:
 
     assert action["resume_url"] == "https://resend.com/api-keys"
     assert action["target"] == "RESEND_API_KEY"
+    assert "follow the Resend steps below" in action["next_action"]
+    assert "create or reveal the Resend API key" in action["next_action"]
     assert "Open provider gate in VM" in steps
     assert "Resend opens in the VM browser" in steps
     assert "Permission: Full access" in steps
@@ -138,6 +140,7 @@ def test_provider_strategy_action_can_carry_pack_follow_steps(tmp_path) -> None:
     assert "encrypted vault" in steps
     assert "Capture reads the VM clipboard directly" in steps
     assert "Capture RESEND_API_KEY from VM clipboard" in action["next_action"]
+    assert "login/MFA/CAPTCHA/consent/token creation" not in action["next_action"]
 
 
 def test_provider_strategy_summary_uses_evidence_token_env_without_pack(tmp_path) -> None:

@@ -421,6 +421,11 @@ def summarize_strategy_action(
             "Capture RESEND_API_KEY from VM clipboard"
         )
     )
+    next_action = (
+        _strategy_human_next_action(pack, capture_action, target)
+        if needs_human_gate
+        else "Install or authorize a deterministic provider route, then retry."
+    )
     action = {
         "provider": decision.provider,
         "recipe": decision.recipe_kind,
@@ -428,14 +433,7 @@ def summarize_strategy_action(
         "status": "needs_human_gate" if needs_human_gate else selected.status,
         "reason": selected.reason,
         "resume_url": resume_url,
-        "next_action": (
-            "Click Open provider gate in VM, complete login/MFA/CAPTCHA/consent/token "
-            "creation in the VM browser, then copy any revealed token and click the "
-            f"{capture_action}. Do not paste it into your "
-            "computer; Capture reads the VM clipboard directly."
-            if needs_human_gate
-            else "Install or authorize a deterministic provider route, then retry."
-        ),
+        "next_action": next_action,
         "follow_steps": _strategy_follow_steps(pack) if needs_human_gate else (),
         "resume_hint": (
             "FuseKit will retry this provider route after the visible gate is finished "
@@ -447,6 +445,36 @@ def summarize_strategy_action(
     if needs_human_gate and target:
         action["target"] = target
     return action
+
+
+def _strategy_human_next_action(
+    pack: ProviderCapabilityPack | None,
+    capture_action: str,
+    target: str,
+) -> str:
+    """Return the headline action for a provider-owned authorization gate."""
+
+    if pack is not None:
+        display = pack.display_name or pack.provider
+        token_label = pack.handoff.token_label or target or "provider setup value"
+        if target:
+            return (
+                f"Click Open provider gate in VM, follow the {display} steps below to "
+                f"create or reveal the {token_label}, copy it inside the VM browser, "
+                f"then click {capture_action}. Do not paste it into your computer; "
+                "Capture reads the VM clipboard directly."
+            )
+        return (
+            f"Click Open provider gate in VM, follow the {display} steps below, then "
+            "click the visible I finished this step button in the control room after "
+            "the provider confirms."
+        )
+    return (
+        "Click Open provider gate in VM, complete login/MFA/CAPTCHA/consent/token "
+        "creation in the VM browser, then copy any revealed token and click the "
+        f"{capture_action}. Do not paste it into your computer; Capture reads the "
+        "VM clipboard directly."
+    )
 
 
 def _strategy_follow_steps(pack: ProviderCapabilityPack | None) -> tuple[str, ...]:
