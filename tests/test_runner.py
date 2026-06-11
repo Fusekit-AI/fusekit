@@ -41,6 +41,7 @@ from fusekit.runner.control_room.server import (
     _visual_display,
     _vm_clipboard_text,
 )
+from fusekit.runner.control_room.views import _render_acceptance_blockers
 from fusekit.runner.gates import GateService
 from fusekit.runner.job import JobState
 from fusekit.runner.loop import run_remote_loop
@@ -903,6 +904,8 @@ def test_control_room_acceptance_report_error_uses_launcher_controls(tmp_path) -
     payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
 
     assert payload["acceptance"]["launch_ready"] is False
+    assert payload["acceptance"]["public_launch_ready"] is False
+    assert payload["acceptance"]["recording_ready"] is False
     assert payload["acceptance"]["error"] == "Acceptance report could not be read from report.json"
     assert "Acceptance report could not load" in html
     assert "Acceptance report could not be read from report.json" in html
@@ -953,6 +956,22 @@ def test_control_room_rejects_string_acceptance_ready_flags(tmp_path) -> None:
     assert payload["acceptance"]["recording_ready"] is False
     assert "Acceptance blockers are clear" not in html.split("<script", 1)[0]
     assert "Record the demo from this clean state." not in html.split("<script", 1)[0]
+
+
+def test_control_room_renderer_rejects_malformed_public_ready_field() -> None:
+    html = _render_acceptance_blockers(
+        {
+            "mode": "live",
+            "launch_ready": True,
+            "public_launch_ready": "true",
+            "recording_ready": True,
+            "blockers": [],
+        }
+    )
+
+    assert "Acceptance blockers are clear" not in html
+    assert "Record the demo from this clean state." not in html
+    assert "Public launch proof is still required" in html
 
 
 def test_control_room_renders_acceptance_ready_state(tmp_path) -> None:

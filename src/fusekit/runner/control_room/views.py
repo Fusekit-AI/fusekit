@@ -408,18 +408,8 @@ def _render_acceptance_blockers(report: Any) -> str:
     error = str(report.get("error", "") or "")
     ready = bool(report.get("launch_ready", False))
     mode = str(report.get("mode", "") or "").strip().lower()
-    public_ready_raw = report.get("public_launch_ready")
-    public_ready = (
-        bool(public_ready_raw)
-        if isinstance(public_ready_raw, bool)
-        else ready and mode == "live"
-    )
-    recording_ready_raw = report.get("recording_ready")
-    recording_ready = (
-        bool(recording_ready_raw)
-        if isinstance(recording_ready_raw, bool)
-        else public_ready
-    )
+    public_ready = _acceptance_public_ready(report, ready, mode)
+    recording_ready = _acceptance_recording_ready(report, public_ready)
     recordable = public_ready and recording_ready
     if error:
         cards = f"""
@@ -527,6 +517,18 @@ def _render_acceptance_blockers(report: Any) -> str:
       <div class="acceptance-grid" data-acceptance-blockers>{cards}</div>
     </section>
 """
+
+
+def _acceptance_public_ready(report: dict[str, Any], ready: bool, mode: str) -> bool:
+    if "public_launch_ready" in report:
+        return report.get("public_launch_ready") is True and ready and mode == "live"
+    return ready and mode == "live"
+
+
+def _acceptance_recording_ready(report: dict[str, Any], public_ready: bool) -> bool:
+    if "recording_ready" in report:
+        return report.get("recording_ready") is True and public_ready
+    return public_ready
 
 
 def _acceptance_blockers(report: dict[str, Any]) -> list[dict[str, Any]]:

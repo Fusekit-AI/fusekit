@@ -246,12 +246,16 @@ def _read_acceptance_report(path: Path | None) -> dict[str, Any]:
     except (OSError, json.JSONDecodeError):
         return {
             "launch_ready": False,
+            "public_launch_ready": False,
+            "recording_ready": False,
             "blockers": [],
             "error": f"Acceptance report could not be read from {path.name}",
         }
     if not isinstance(raw, dict):
         return {
             "launch_ready": False,
+            "public_launch_ready": False,
+            "recording_ready": False,
             "blockers": [],
             "error": f"Acceptance report from {path.name} was not a JSON object",
         }

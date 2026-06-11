@@ -755,12 +755,8 @@ function renderTrust(job) {
 function acceptanceCards(report) {
   const blockers = acceptanceBlockers(report);
   const mode = String(report.mode || "").trim().toLowerCase();
-  const publicReady =
-    typeof report.public_launch_ready === "boolean"
-      ? report.public_launch_ready
-      : Boolean(report.launch_ready && mode === "live");
-  const recordingReady =
-    typeof report.recording_ready === "boolean" ? report.recording_ready : publicReady;
+  const publicReady = acceptancePublicReady(report, mode);
+  const recordingReady = acceptanceRecordingReady(report, publicReady);
   const recordable = Boolean(publicReady && recordingReady);
   if (report.error) {
     return [
@@ -856,6 +852,20 @@ function acceptanceCards(report) {
       foot: "Keep the control room open while setup and verification run.",
     },
   ];
+}
+
+function acceptancePublicReady(report, mode) {
+  if (Object.prototype.hasOwnProperty.call(report, "public_launch_ready")) {
+    return report.public_launch_ready === true && report.launch_ready === true && mode === "live";
+  }
+  return report.launch_ready === true && mode === "live";
+}
+
+function acceptanceRecordingReady(report, publicReady) {
+  if (Object.prototype.hasOwnProperty.call(report, "recording_ready")) {
+    return report.recording_ready === true && publicReady;
+  }
+  return publicReady;
 }
 
 function acceptanceBlockers(report) {
@@ -1007,12 +1017,8 @@ function renderAcceptance(job) {
   const report = job.acceptance && typeof job.acceptance === "object" ? job.acceptance : {};
   const blockers = acceptanceBlockers(report);
   const mode = String(report.mode || "").trim().toLowerCase();
-  const publicReady =
-    typeof report.public_launch_ready === "boolean"
-      ? report.public_launch_ready
-      : Boolean(report.launch_ready && mode === "live");
-  const recordingReady =
-    typeof report.recording_ready === "boolean" ? report.recording_ready : publicReady;
+  const publicReady = acceptancePublicReady(report, mode);
+  const recordingReady = acceptanceRecordingReady(report, publicReady);
   const recordable = Boolean(publicReady && recordingReady);
   let summary = "acceptance proof is waiting";
   if (report.error) {
