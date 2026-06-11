@@ -236,6 +236,7 @@ def _provider_contract_health_gate(
     token_env = pack.handoff.token_env.strip().upper()
     resume_url = _provider_handoff_url(pack)
     display = pack.display_name or pack.provider
+    token_label = pack.handoff.token_label or token_env or "provider setup token"
     steps = [
         (
             f"The existing {display} token failed a read-only API health check, so "
@@ -267,8 +268,9 @@ def _provider_contract_health_gate(
         "resume_url": resume_url,
         "target": token_env,
         "next_action": (
-            f"Click Open provider gate in VM, create or reveal a fresh {token_env}, copy it "
-            f"inside the VM browser, then click Capture {token_env} from VM clipboard. "
+            f"Click Open provider gate in VM, follow the {display} steps below to "
+            f"create or reveal a fresh {token_label}, copy it inside the VM browser, "
+            f"then click Capture {token_env} from VM clipboard. "
             "Do not paste it into your computer; Capture reads the VM clipboard directly."
             if token_env
             else "Click Open provider gate in VM, complete the provider-owned authorization, "
