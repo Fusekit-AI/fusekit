@@ -9,7 +9,7 @@ import secrets
 import shutil
 import subprocess
 from collections.abc import Iterable
-from http.cookies import SimpleCookie
+from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -302,7 +302,10 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
             cookie_header = self.headers.get("Cookie", "")
             if cookie_header:
                 cookies = SimpleCookie()
-                cookies.load(cookie_header)
+                try:
+                    cookies.load(cookie_header)
+                except CookieError:
+                    return ""
                 morsel = cookies.get("fusekit_control_room")
                 if morsel is not None:
                     return morsel.value

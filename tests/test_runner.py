@@ -3104,6 +3104,8 @@ def test_security_surface_map_documents_control_room_state_routes() -> None:
     assert "clipboard-enabled arbitrary iframe" in text
     assert "action token is stored owner-only" in text
     assert "permissions repaired before reuse" in text
+    assert "Malformed token cookie headers are treated as absent credentials" in text
+    assert "normal invalid-token response" in text
     assert "Public guided runs use exact env-target buttons" in text
     assert "Capture RESEND_API_KEY from VM clipboard" in text
     assert (
@@ -3995,6 +3997,45 @@ def test_control_room_does_not_cookie_unsafe_remote_token(
         ),
         "ok": False,
     }
+    assert "set-cookie" not in headers
+
+
+def test_tokenized_control_room_ignores_malformed_cookie_header(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FUSEKIT_CONTROL_ROOM_TOKEN", REMOTE_CONTROL_ROOM_TOKEN)
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+
+    class BrokenCookie:
+        def load(self, value: str) -> None:
+            from http.cookies import CookieError
+
+            raise CookieError("malformed cookie")
+
+    monkeypatch.setattr("fusekit.runner.control_room.server.SimpleCookie", BrokenCookie)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_port}"
+        request = Request(
+            f"{base}/api/job",
+            headers={"Cookie": f"fusekit_control_room={REMOTE_CONTROL_ROOM_TOKEN}"},
+        )
+        with pytest.raises(HTTPError) as exc:
+            urlopen(request, timeout=5)
+        headers = {key.lower(): value for key, value in exc.value.headers.items()}
+        payload = json.loads(exc.value.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert exc.value.code == 403
+    assert payload == {"error": "invalid control-room token", "ok": False}
     assert "set-cookie" not in headers
 
 

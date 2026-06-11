@@ -128,6 +128,8 @@ or trigger commands:
   a `secrets.token_urlsafe`-style token with at least 32 URL-safe characters;
   token cookies are emitted only for token-url-safe values and are `HttpOnly`
   and `SameSite=Strict`.
+- Malformed token cookie headers are treated as absent credentials, returning a
+  normal invalid-token response instead of raising out of the request handler.
 - Browser GETs that authenticate with `?token=` set the control-room cookie and
   redirect back to the same route without the token query parameter so the token
   does not stay in the address bar for recordings, screenshots, or browser history.
