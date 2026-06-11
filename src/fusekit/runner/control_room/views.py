@@ -591,10 +591,11 @@ def _missing_acceptance_guidance(item: str) -> tuple[str, str]:
         "audited human gate interventions": (
             "Human gates",
             (
-                "Use the visible launcher controls for every gate: Open provider gate "
-                "in VM, exact env-named Capture buttons such as Capture RESEND_API_KEY "
-                "from VM clipboard for copy-once values, or I finished this step after "
-                "a non-secret provider confirmation."
+                "Use the matching gate card's single visible next action: Open provider "
+                "gate in VM when it asks to open a provider page, Capture the exact "
+                "env-named value such as RESEND_API_KEY from VM clipboard for copy-once "
+                "secrets, and click I finished this step only after a non-secret provider "
+                "confirmation."
             ),
         ),
         "resolved human gates": (

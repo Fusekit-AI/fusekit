@@ -650,12 +650,14 @@ def test_control_room_renders_acceptance_missing_when_blockers_absent(tmp_path) 
     ]
     assert "Human gates" in html
     assert "audited human gate interventions" in html
-    assert "Use the visible launcher controls for every gate" in html
+    assert "matching gate card&#x27;s single visible next action" in html
     assert "Open provider gate in VM" in html
-    assert "exact env-named Capture buttons such as Capture RESEND_API_KEY" in html
-    assert "from VM clipboard for copy-once values" in html
+    assert "Capture the exact env-named value such as RESEND_API_KEY" in html
+    assert "VM clipboard for copy-once secrets" in html
     assert "target-specific Capture from VM clipboard buttons" not in html
-    assert "I finished this step after a non-secret provider confirmation" in html
+    assert "I finished this step only after a non-secret provider confirmation" in html
+    assert "Use the visible launcher controls for every gate" not in html
+    assert "or I finished this step" not in html
     assert "Open, capture, or resume each control-room gate" not in html
     assert "guided human gates" in html
     assert "live launcher/control room" in html
