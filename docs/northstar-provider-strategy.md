@@ -29,6 +29,40 @@ The preferred order is:
 The browser remains a first-class strategy. It should be the concierge for
 human/provider gates, not the only source of truth for setup success.
 
+## Background Agent Contract
+
+FuseKit's durable implementation model is a governed background agent running
+inside a prepared, disposable cloud workstation. The user should be able to
+start the lane, pass provider-owned trust gates, and then watch or resume the
+same run without managing shells, local browser profiles, provider docs, or
+manual cleanup.
+
+The contract is:
+
+- Prepared runner profile first: x86_64, supported browser dependencies,
+  OpenClaw or the approved browser spine, Playwright smoke test, noVNC, shared
+  provider browser profile, helper binaries, and vault access must be verified
+  before provider gates appear.
+- Deterministic scripts first, guided browser second: use provider APIs or
+  official CLIs when they are proven healthy; use browser automation and
+  human follow-me only for provider-owned login, MFA, CAPTCHA, consent,
+  billing, or copy-once-token gates.
+- One observable control room: status timeline, route plan, current blocker,
+  VM browser, exact Capture controls, approvals, audit state, and recovery
+  hints must all live in the launcher/control room.
+- Event-sourced run journal: every provider open, Capture, approval, retry,
+  generated provider value, DNS proposal/apply, verification result, rollback
+  action, and detonation step is recorded as redacted evidence for resume and
+  acceptance.
+- Policy boundaries by default: provider secrets stay in the encrypted vault or
+  provider-native secret stores, state-changing browser actions require
+  control-room CSRF/action-token proof, provider navigation stays in the VM
+  browser, and plaintext worker/browser/auth scratch is detonated after proof is
+  preserved.
+- Human gates are real gates only: FuseKit must not ask the user to interpret
+  provider order of operations, choose scopes from memory, paste host-side
+  commands, compare DNS records, or debug runner setup during the public path.
+
 ## Strategy Graph
 
 Every provider-pack setup recipe gets a strategy decision:

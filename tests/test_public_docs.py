@@ -11,9 +11,12 @@ def test_readme_real_provider_path_names_resend_and_vm_capture() -> None:
     assert "Bundled GitHub, Resend, Vercel, and Cloudflare behavior" in text
     assert "RESEND_API_KEY" in text
     assert "Capture from VM clipboard" in text
+    assert "exact env-named FuseKit control" in text
+    assert "`Capture RESEND_API_KEY from VM clipboard`" in text
     assert "one-time `RESEND_API_KEY` capture from the VM" in text
     assert "FuseKit then owns Resend domain/audience setup by API before DNS" in text
     assert "browser surface" not in text.lower()
+    assert "matching FuseKit `Capture from VM clipboard` button" not in text
 
 
 def test_acceptance_runbook_uses_launcher_capture_for_public_recording() -> None:
@@ -98,6 +101,31 @@ def test_northstar_next_slices_include_verified_runner_profile() -> None:
     assert "OpenClaw/browser spine" in text
     assert "noVNC" in text
     assert "before provider gates are shown" in text
+
+
+def test_northstar_defines_background_agent_contract() -> None:
+    text = Path("docs/northstar-provider-strategy.md").read_text(encoding="utf-8")
+
+    assert "Background Agent Contract" in text
+    assert "prepared, disposable cloud workstation" in text
+    assert "Prepared runner profile first" in text
+    assert "Deterministic scripts first, guided browser second" in text
+    assert "One observable control room" in text
+    assert "Event-sourced run journal" in text
+    assert "Policy boundaries by default" in text
+    assert "Human gates are real gates only" in text
+
+
+def test_public_launch_readiness_requires_background_agent_evidence() -> None:
+    text = Path("docs/public-launch-readiness.md").read_text(encoding="utf-8")
+
+    assert "disposable background workstation was ready before the first provider gate" in text
+    assert "x86_64 architecture" in text
+    assert "approved browser spine" in text
+    assert "Playwright smoke test" in text
+    assert "shared provider browser profile" in text
+    assert "provider opens, Capture clicks" in text
+    assert "raw secrets and provider callback tokens redacted" in text
 
 
 def test_friction_log_tracks_runner_verify_prepared_environment_fix() -> None:

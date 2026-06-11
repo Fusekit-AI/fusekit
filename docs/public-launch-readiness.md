@@ -53,6 +53,13 @@ leak scan, resolved durable gate state, and detonated worker state. Complete
 route decisions include the selected route kind, status, deterministic/implemented
 flags, reason, and considered candidates, so the control room can explain whether
 FuseKit used API automation, secure vault capture, or VM follow-me. When both
+the prepared runner profile and provider gates are present, the run must prove
+the disposable background workstation was ready before the first provider gate:
+x86_64 architecture, approved browser spine, Playwright smoke test, noVNC,
+shared provider browser profile, helper binaries, and vault access. The run
+journal must also show the control-room path for provider opens, Capture clicks,
+setup/DNS approvals, retries, generated provider values, verification, rollback,
+and detonation, with raw secrets and provider callback tokens redacted. When both
 provider route decisions and launch checkpoints are present, the checkpoint
 recovery map must preserve the same provider-route next actions so refreshed
 launcher sessions do not regress to generic setup guidance. When both
