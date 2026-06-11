@@ -32,6 +32,7 @@ from fusekit.runner.control_room import render_control_room
 from fusekit.runner.control_room.server import (
     _control_room_action_token,
     _control_room_vault_passphrase,
+    _trusted_browser_origin,
     _validate_clipboard_capture_value,
     _visual_browser_binary,
     _visual_browser_env,
@@ -1200,6 +1201,42 @@ def test_control_room_reuses_action_token_with_owner_only_permissions(tmp_path) 
 
     assert token == existing
     assert token_path.stat().st_mode & 0o777 == 0o600
+
+
+def test_control_room_origin_check_rejects_spoofed_loopback_hosts(monkeypatch) -> None:
+    monkeypatch.delenv("FUSEKIT_CONTROL_ROOM_TOKEN", raising=False)
+
+    assert _trusted_browser_origin("http://127.0.0.1:8765", "127.0.0.1:8765")
+    assert _trusted_browser_origin("http://localhost:8765", "localhost:8765")
+    assert not _trusted_browser_origin(
+        "http://127.0.0.1.attacker.example:8765",
+        "127.0.0.1:8765",
+    )
+    assert not _trusted_browser_origin(
+        "http://127.0.0.1@attacker.example:8765",
+        "127.0.0.1:8765",
+    )
+    assert not _trusted_browser_origin(
+        "http://attacker.example#127.0.0.1:8765",
+        "127.0.0.1:8765",
+    )
+    assert not _trusted_browser_origin("file://127.0.0.1:8765", "127.0.0.1:8765")
+
+
+def test_remote_control_room_origin_requires_same_host_with_access_token(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("FUSEKIT_CONTROL_ROOM_TOKEN", REMOTE_CONTROL_ROOM_TOKEN)
+
+    assert _trusted_browser_origin("http://runner.example:8765", "runner.example:8765")
+    assert not _trusted_browser_origin(
+        "http://attacker.example:8765",
+        "runner.example:8765",
+    )
+    assert not _trusted_browser_origin(
+        "http://runner.example:9999",
+        "runner.example:8765",
+    )
 
 
 @pytest.mark.parametrize(

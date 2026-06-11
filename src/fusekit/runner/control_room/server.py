@@ -927,14 +927,30 @@ def _trusted_browser_origin(origin: str | None, host: str | None) -> bool:
 
     if not origin:
         return True
-    normalized_origin = origin.lower().removeprefix("http://").removeprefix("https://")
-    normalized_origin = normalized_origin.rstrip("/")
-    normalized_host = (host or "").lower()
-    if os.environ.get("FUSEKIT_CONTROL_ROOM_TOKEN") and normalized_origin == normalized_host:
-        return True
-    return normalized_origin == normalized_host and _is_loopback(
-        _hostname_without_port(normalized_host)
+    parsed_origin = urlparse(origin.strip())
+    if (
+        parsed_origin.scheme not in {"http", "https"}
+        or not parsed_origin.netloc
+        or parsed_origin.username
+        or parsed_origin.password
+        or parsed_origin.path
+        or parsed_origin.params
+        or parsed_origin.query
+        or parsed_origin.fragment
+    ):
+        return False
+    origin_authority = _parsed_host_port(parsed_origin)
+    host_authority = _header_host_port(host or "")
+    if origin_authority is None or host_authority is None:
+        return False
+    origin_host, origin_port = origin_authority
+    host_name, host_port = host_authority
+    same_origin = origin_host == host_name and (
+        host_port is None or origin_port == host_port
     )
+    if os.environ.get("FUSEKIT_CONTROL_ROOM_TOKEN") and same_origin:
+        return True
+    return same_origin and _is_loopback(host_name)
 
 
 def _trusted_fetch_site(value: str | None) -> bool:
@@ -989,3 +1005,19 @@ def _hostname_without_port(value: str) -> str:
     if value.startswith("[") and "]" in value:
         return value[1 : value.index("]")]
     return value.split(":", 1)[0]
+
+
+def _parsed_host_port(route: Any) -> tuple[str, int | None] | None:
+    try:
+        hostname = getattr(route, "hostname", None)
+        port = getattr(route, "port", None)
+    except ValueError:
+        return None
+    if not hostname:
+        return None
+    return hostname.strip().lower().strip("[]"), port
+
+
+def _header_host_port(value: str) -> tuple[str, int | None] | None:
+    parsed = urlparse(f"//{value.strip()}")
+    return _parsed_host_port(parsed)
