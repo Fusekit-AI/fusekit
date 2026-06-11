@@ -16,7 +16,7 @@ def test_provider_gate_guidance_is_plain_language_and_non_secret() -> None:
     assert "Vercel" in guidance.title
     assert "sign in" in " ".join(guidance.actions).lower()
     assert "VM browser" in " ".join(guidance.actions)
-    assert "Capture from VM clipboard" in " ".join(guidance.actions)
+    assert "Capture VERCEL_TOKEN from VM clipboard" in " ".join(guidance.actions)
     assert "Capture reads the VM clipboard directly" in " ".join(guidance.actions)
     assert "token" not in guidance.reassurance.lower()
     assert "secret" not in guidance.reassurance.lower()
@@ -97,7 +97,7 @@ def test_cloudflare_guidance_names_scoped_token_path() -> None:
     assert "Continue to summary" in text
     assert "encrypted vault" in text
     assert "Open provider gate in VM" in text
-    assert "Capture from VM clipboard" in text
+    assert "Capture CLOUDFLARE_API_TOKEN from VM clipboard" in text
     assert "Capture reads the VM clipboard directly" in text
 
 
@@ -118,7 +118,7 @@ def test_github_guidance_names_repo_scoped_permissions() -> None:
     assert "Metadata read-only" in text
     assert "encrypted vault" in text
     assert "Open provider gate in VM" in text
-    assert "Capture from VM clipboard" in text
+    assert "Capture GITHUB_TOKEN from VM clipboard" in text
     assert "Capture reads the VM clipboard directly" in text
 
 
@@ -136,7 +136,7 @@ def test_vercel_guidance_names_token_path() -> None:
     assert "personal account or team" in text
     assert "encrypted vault" in text
     assert "Open provider gate in VM" in text
-    assert "Capture from VM clipboard" in text
+    assert "Capture VERCEL_TOKEN from VM clipboard" in text
 
 
 def test_resend_guidance_names_api_key_path() -> None:
@@ -157,7 +157,7 @@ def test_resend_guidance_names_api_key_path() -> None:
     assert "unless FuseKit asks" not in text
     assert "encrypted vault" in text
     assert "Open provider gate in VM" in text
-    assert "Capture from VM clipboard" in text
+    assert "Capture RESEND_API_KEY from VM clipboard" in text
 
 
 def test_infer_gate_provider_from_step_detail() -> None:

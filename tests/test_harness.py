@@ -1599,7 +1599,10 @@ def test_acceptance_allows_gate_service_default_provider_guidance(tmp_path) -> N
 
     assert _unguided_gates(gates) == []
     assert any("Open provider gate in VM" in step for step in gates[0]["follow_steps"])
-    assert any("Capture from VM clipboard" in step for step in gates[0]["follow_steps"])
+    assert any(
+        "Capture GITHUB_TOKEN from VM clipboard" in step
+        for step in gates[0]["follow_steps"]
+    )
 
 
 def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:

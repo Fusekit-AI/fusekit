@@ -61,7 +61,8 @@ def test_gate_service_default_capture_copy_names_vm_clipboard_button(tmp_path) -
         "Capture RESEND_API_KEY from VM clipboard button."
     )
     assert any(
-        "Capture from VM clipboard" in item for item in gate.to_dict()["follow_steps"]
+        "Capture RESEND_API_KEY from VM clipboard" in item
+        for item in gate.to_dict()["follow_steps"]
     )
 
 

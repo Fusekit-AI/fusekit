@@ -854,7 +854,7 @@ def test_control_room_resend_setup_retry_uses_finished_button_not_capture(tmp_pa
     assert "Click I finished this step" in html
     assert 'data-gate-pass="provider.resend.domain-setup-retry"' in html
     assert 'data-gate-capture="provider.resend.domain-setup-retry"' not in html
-    assert "Capture RESEND_API_KEY from VM clipboard" not in html
+    assert 'data-gate-capture-target="RESEND_API_KEY"' not in html
     assert "Sending your approval so FuseKit can recheck" in html
     assert "Action status" in html
 

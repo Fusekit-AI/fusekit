@@ -61,7 +61,7 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
             ),
             (
                 "When GitHub reveals the token once, copy it inside the VM browser and click "
-                "the matching Capture from VM clipboard button; FuseKit stores it only in the "
+                "Capture GITHUB_TOKEN from VM clipboard; FuseKit stores it only in the "
                 "encrypted vault. You do not need to paste it into your computer; Capture "
                 "reads the VM clipboard directly."
             ),
@@ -106,7 +106,7 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
             ),
             (
                 "When Vercel reveals the token once, copy it inside the VM browser and click "
-                "the matching Capture from VM clipboard button; FuseKit stores it only in the "
+                "Capture VERCEL_TOKEN from VM clipboard; FuseKit stores it only in the "
                 "encrypted vault. You do not need to paste it into your computer; Capture "
                 "reads the VM clipboard directly."
             ),
@@ -152,7 +152,7 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
             ),
             (
                 "When Cloudflare reveals the token once, copy it inside the VM browser and click "
-                "the matching Capture from VM clipboard button; FuseKit stores it only in the "
+                "Capture CLOUDFLARE_API_TOKEN from VM clipboard; FuseKit stores it only in the "
                 "encrypted vault. You do not need to paste it into your computer; Capture "
                 "reads the VM clipboard directly."
             ),
@@ -206,7 +206,7 @@ _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
             ),
             (
                 "When Resend reveals the API key once, copy it inside the VM browser and click "
-                "the matching Capture from VM clipboard button; FuseKit stores it only in the "
+                "Capture RESEND_API_KEY from VM clipboard; FuseKit stores it only in the "
                 "encrypted vault. You do not need to paste it into your computer; Capture "
                 "reads the VM clipboard directly."
             ),
