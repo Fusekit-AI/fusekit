@@ -604,6 +604,42 @@ def test_acceptance_rejects_unsafe_visual_state_survivor(tmp_path) -> None:
     assert "safe visual session state" in missing
 
 
+def test_acceptance_rejects_unexpected_visual_query_values(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    visual_path = fusekit_dir / "visual.json"
+    visual_path.write_text(
+        json.dumps(
+            {
+                "runner": "novnc",
+                "status": "ready",
+                "interactive": True,
+                "novnc_url": (
+                    "http://93.184.216.34:6080/vnc.html"
+                    "?autoconnect=javascript&resize=evil"
+                ),
+                "control_room_url": (
+                    "http://93.184.216.34:8765/"
+                    "?token=viewer_token_abcdefghijklmnopqrstuvwxyz0123456789"
+                ),
+                "novnc_password": "viewer-password",
+            }
+        ),
+        encoding="utf-8",
+    )
+    checks: list[AcceptanceCheck] = []
+    missing: list[str] = []
+    ledger = HarnessLedger.create(fusekit_dir / "acceptance")
+
+    _check_visual_state(visual_path, "live", checks, missing, ledger)
+
+    assert checks[-1].id == "visual_state.safe"
+    assert checks[-1].status == "failed"
+    assert "noVNC URL" in checks[-1].detail
+    assert "javascript" not in checks[-1].detail
+    assert "safe visual session state" in missing
+
+
 def test_acceptance_allows_sanitized_visual_state_survivor(tmp_path) -> None:
     fusekit_dir = tmp_path / "app" / ".fusekit"
     fusekit_dir.mkdir(parents=True)

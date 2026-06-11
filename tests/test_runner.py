@@ -3102,6 +3102,7 @@ def test_security_surface_map_documents_control_room_state_routes() -> None:
     assert "never raw secret text" in text
     assert "state is sanitized before the browser payload sees it" in text
     assert "clipboard-enabled arbitrary iframe" in text
+    assert "expected noVNC query keys and generated values are preserved" in text
     assert "action token is stored owner-only" in text
     assert "permissions repaired before reuse" in text
     assert "Malformed token cookie headers are treated as absent credentials" in text
@@ -3626,6 +3627,40 @@ def test_control_room_sanitizes_visual_session_urls_and_password(tmp_path) -> No
     assert "password=leaked" not in html
     assert "bad\npassword" not in html
     assert "10.0.0.5" not in html
+
+
+def test_control_room_rejects_unexpected_visual_session_query_values(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    (tmp_path / "visual.json").write_text(
+        json.dumps(
+            {
+                "runner": "novnc",
+                "status": "ready",
+                "novnc_url": (
+                    "http://93.184.216.34:6080/vnc.html"
+                    "?autoconnect=javascript&resize=evil"
+                ),
+                "control_room_url": (
+                    "http://93.184.216.34:8765/"
+                    "?token=viewer_token_abcdefghijklmnopqrstuvwxyz0123456789"
+                ),
+                "novnc_password": "viewer-password",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = control_room_payload(job_path)
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+
+    assert payload["visual"] == {
+        "status": "unavailable",
+        "error": "Visual session noVNC URL was not safe to embed.",
+    }
+    assert "javascript" not in html
+    assert "viewer-password" not in html
 
 
 def test_control_room_payload_and_html_include_provider_strategy_routes(tmp_path) -> None:

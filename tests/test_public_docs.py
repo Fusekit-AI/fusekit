@@ -107,3 +107,12 @@ def test_friction_log_tracks_runner_verify_prepared_environment_fix() -> None:
     assert "`fusekit-runner-verify` now fails before provider setup" in text
     assert "Playwright Chromium can launch" in text
     assert "shared Chrome provider profile path exists" in text
+
+
+def test_friction_log_tracks_visual_query_value_sanitization() -> None:
+    text = Path("docs/magic-path-friction-log.md").read_text(encoding="utf-8")
+
+    assert "checking their values" in text
+    assert "autoconnect=1" in text
+    assert "resize=scale" in text
+    assert "reject the visual session before rendering" in text

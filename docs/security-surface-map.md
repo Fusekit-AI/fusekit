@@ -24,8 +24,9 @@ Python package is the live control room in `fusekit.runner.control_room.server`.
 The live VM browser iframe is not a general-purpose embed surface. Visual session
 state is sanitized before the browser payload sees it: the noVNC URL must be
 HTTP(S), credential-free, hosted on a public IP VM, and end in `/vnc.html`; only
-expected noVNC query keys are preserved; the live control-room link is kept only
-when it is HTTP(S), credential-free, hosted on the same public IP as noVNC, and
+expected noVNC query keys and generated values are preserved; the live
+control-room link is kept only when it is HTTP(S), credential-free, hosted on
+the same public IP as noVNC, and
 not a hostname, loopback, or private-network target; tokenized control-room links
 keep a `token` query only when it has the same 32+ URL-safe shape required by the
 remote server, and public snapshots redact the token value; unsafe visual

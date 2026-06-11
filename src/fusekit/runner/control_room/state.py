@@ -17,6 +17,10 @@ from fusekit.runner.run_state import LaunchRunState
 SAFE_URL_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,256}$")
 EXPECTED_NOVNC_PORT = 6080
 EXPECTED_CONTROL_ROOM_PORT = 8765
+SAFE_NOVNC_QUERY_VALUES = {
+    "autoconnect": {"1"},
+    "resize": {"scale"},
+}
 
 
 def control_room_payload(job: JobState, *, gate_path: Path | None = None) -> dict[str, Any]:
@@ -197,6 +201,8 @@ def _safe_visual_url(
         if key not in allowed_query_keys:
             continue
         if key == "token" and not SAFE_URL_TOKEN_PATTERN.fullmatch(item):
+            return "", ""
+        if require_vnc_path and item not in SAFE_NOVNC_QUERY_VALUES.get(key, set()):
             return "", ""
         query_pairs.append((key, item))
     query = urlencode(query_pairs)
