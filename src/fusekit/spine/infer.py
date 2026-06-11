@@ -43,6 +43,17 @@ SAFE_KEYS = {
     "ArrowLeft",
     "ArrowRight",
 }
+CAPTURE_TARGET_RE = re.compile(
+    r"\b[A-Z][A-Z0-9_]*(?:API_KEY|API_TOKEN|ACCESS_TOKEN|REFRESH_TOKEN|TOKEN|SECRET)\b"
+)
+DEFAULT_CAPTURE_TARGETS_BY_PROVIDER = {
+    "cloudflare": "CLOUDFLARE_API_TOKEN",
+    "dns": "CLOUDFLARE_API_TOKEN",
+    "github": "GITHUB_TOKEN",
+    "openai": "OPENAI_API_KEY",
+    "resend": "RESEND_API_KEY",
+    "vercel": "VERCEL_TOKEN",
+}
 GateRecorder = Callable[[str, str, str, str, str, tuple[str, ...], str], str]
 GatePassedChecker = Callable[[str], bool]
 
@@ -697,6 +708,7 @@ def _classification(
 def _follow_me_steps(provider: str, kind: str, target: str) -> tuple[str, ...]:
     safe_target = _public_target_hint(target)
     target_step = f"Use the highlighted provider control: {safe_target}." if safe_target else ""
+    capture_step = _missing_token_capture_step(provider, safe_target)
     templates = {
         "login": (
             f"FuseKit opened the {provider} sign-in screen for you.",
@@ -726,10 +738,7 @@ def _follow_me_steps(provider: str, kind: str, target: str) -> tuple[str, ...]:
         "missing_token": (
             "Open the provider's API key or token page.",
             "Create a scoped token/key for this app when the provider asks.",
-            (
-                "Copy the approved token inside the VM browser, then click the target-specific "
-                "Capture from VM clipboard button."
-            ),
+            capture_step,
         ),
         "api_error": (
             "Keep the provider page open while FuseKit checks for an API fallback.",
@@ -758,6 +767,26 @@ def _follow_me_steps(provider: str, kind: str, target: str) -> tuple[str, ...]:
     }
     steps = templates.get(kind, templates["unknown_ui_drift"])
     return tuple(step for step in ((target_step,) if target_step else ()) + steps if step)
+
+
+def _missing_token_capture_step(provider: str, target: str) -> str:
+    capture_target = _capture_target_for_missing_token(provider, target)
+    if capture_target:
+        return (
+            "Copy the approved token inside the VM browser, then click "
+            f"Capture {capture_target} from VM clipboard."
+        )
+    return (
+        "Copy the approved token inside the VM browser, then click the target-specific "
+        "Capture from VM clipboard button."
+    )
+
+
+def _capture_target_for_missing_token(provider: str, target: str) -> str:
+    match = CAPTURE_TARGET_RE.search(target or "")
+    if match:
+        return match.group(0)
+    return DEFAULT_CAPTURE_TARGETS_BY_PROVIDER.get(provider.strip().lower(), "")
 
 
 def _append_stump_events(

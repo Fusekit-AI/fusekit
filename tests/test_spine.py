@@ -490,6 +490,29 @@ def test_stump_classifier_covers_provider_gate_types() -> None:
         assert result.follow_steps
 
 
+def test_stump_missing_token_steps_name_exact_capture_control() -> None:
+    snapshot = json.dumps({"elements": [{"text": "Create API key", "ref": "ref-1"}]})
+    result = classify_ui_stump(provider="resend", snapshot=snapshot)
+    text = " ".join(result.follow_steps)
+
+    assert result.kind == "missing_token"
+    assert "Capture RESEND_API_KEY from VM clipboard" in text
+    assert "target-specific Capture from VM clipboard button" not in text
+
+
+def test_stump_missing_token_steps_use_explicit_custom_capture_target() -> None:
+    result = classify_ui_stump(
+        provider="newpay",
+        snapshot=json.dumps({"elements": [{"text": "Reveal token", "ref": "ref-1"}]}),
+        target="NEWPAY_API_KEY",
+    )
+    text = " ".join(result.follow_steps)
+
+    assert result.kind == "missing_token"
+    assert "Capture NEWPAY_API_KEY from VM clipboard" in text
+    assert "target-specific Capture from VM clipboard button" not in text
+
+
 def test_stump_follow_me_steps_do_not_delegate_interpretation() -> None:
     forbidden = ("look at", "figure", "yourself", "manually", "if shown")
     for kind in (
@@ -519,7 +542,7 @@ def test_stump_follow_me_steps_do_not_delegate_interpretation() -> None:
         else:
             assert any(
                 anchor in text
-                for anchor in ("i finished this step", "capture from vm clipboard")
+                for anchor in ("i finished this step", "capture resend_api_key from vm clipboard")
             )
 
 
