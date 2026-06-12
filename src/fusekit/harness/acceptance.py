@@ -2762,20 +2762,11 @@ def _check_receipt_resend_dns_flow(
         )
         return
     resend_index = _first_receipt_action(actions, "resend.domain", status="ok")
-    dns_index = _first_receipt_action(actions, "dns.propose", status="ok")
-    if resend_index is None or dns_index is None:
+    if resend_index is None:
         _fail_resend_dns_receipt(
             checks,
             missing,
-            "Receipt must include successful resend.domain and dns.propose actions.",
-            artifact,
-        )
-        return
-    if resend_index > dns_index:
-        _fail_resend_dns_receipt(
-            checks,
-            missing,
-            "Receipt put DNS proposal before Resend domain setup.",
+            "Receipt must include a successful resend.domain action.",
             artifact,
         )
         return
@@ -2785,6 +2776,33 @@ def _check_receipt_resend_dns_flow(
             checks,
             missing,
             contract_failure,
+            artifact,
+        )
+        return
+    resend_domain = _receipt_action_domain(actions[resend_index])
+    manifest_domains = _manifest_domain_names(manifest)
+    if manifest_domains and resend_domain not in manifest_domains:
+        _fail_resend_dns_receipt(
+            checks,
+            missing,
+            "Receipt resend.domain must target a manifest domain before DNS proposal.",
+            artifact,
+        )
+        return
+    dns_index = _first_dns_proposal_for_domain(actions, resend_domain, status="ok")
+    if dns_index is None:
+        _fail_resend_dns_receipt(
+            checks,
+            missing,
+            f"Receipt must include a successful dns.propose action for {resend_domain}.",
+            artifact,
+        )
+        return
+    if resend_index > dns_index:
+        _fail_resend_dns_receipt(
+            checks,
+            missing,
+            "Receipt put DNS proposal for the Resend domain before Resend domain setup.",
             artifact,
         )
         return
@@ -2813,7 +2831,7 @@ def _check_receipt_resend_dns_flow(
             "receipt.resend_dns_flow",
             "ok",
             "Receipt proves Resend domain setup emitted DNS records before DNS proposal "
-            "with a deterministic sending-domain contract.",
+            f"for {resend_domain} with a deterministic sending-domain contract.",
             artifact,
         )
     )
@@ -2845,6 +2863,9 @@ def _resend_receipt_domain_contract_failure(action: dict[str, Any]) -> str:
     details = action.get("details", {})
     if not isinstance(details, dict):
         return "Receipt resend.domain details are missing or malformed."
+    domain = _receipt_action_domain(action)
+    if not domain:
+        return "Receipt resend.domain is missing the Resend domain name."
     domain_id = str(details.get("domain_id", "") or "").strip()
     if not domain_id:
         return "Receipt resend.domain is missing the Resend domain id."
@@ -2884,6 +2905,35 @@ def _first_receipt_action(
             continue
         return index
     return None
+
+
+def _first_dns_proposal_for_domain(
+    actions: list[Any],
+    domain: str,
+    *,
+    status: str = "",
+) -> int | None:
+    for index, action in enumerate(actions):
+        if not isinstance(action, dict):
+            continue
+        if str(action.get("action", "")).strip() != "dns.propose":
+            continue
+        if status and str(action.get("status", "")).strip() != status:
+            continue
+        if _receipt_action_domain(action) == domain:
+            return index
+    return None
+
+
+def _receipt_action_domain(action: dict[str, Any]) -> str:
+    details = action.get("details", {})
+    if not isinstance(details, dict):
+        return ""
+    return str(details.get("domain", "") or "").strip().lower()
+
+
+def _manifest_domain_names(manifest: SetupManifest) -> set[str]:
+    return {domain.domain.strip().lower() for domain in manifest.domains if domain.domain.strip()}
 
 
 def _resend_receipt_dns_records(action: dict[str, Any]) -> set[tuple[str, str, str]]:

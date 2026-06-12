@@ -5661,16 +5661,15 @@ def test_live_acceptance_requires_receipt_resend_dns_flow(tmp_path) -> None:
                     {
                         "action": "resend.domain",
                         "status": "ok",
-                        "details": {
-                            "domain": "moonlite.rsvp",
-                            "dns_records": [
+                        "details": _resend_domain_receipt_details(
+                            dns_records=[
                                 {
                                     "type": "MX",
                                     "name": "send.moonlite.rsvp",
                                     "value": "feedback-smtp.us-east-1.amazonses.com",
                                 }
                             ],
-                        },
+                        ),
                     },
                 ],
                 "raw_secrets_exposed": 0,
@@ -5690,7 +5689,7 @@ def test_live_acceptance_requires_receipt_resend_dns_flow(tmp_path) -> None:
     receipt_check = next(check for check in report.checks if check.id == "receipt.resend_dns_flow")
     assert report.launch_ready is False
     assert receipt_check.status == "failed"
-    assert "DNS proposal before Resend domain setup" in receipt_check.detail
+    assert "DNS proposal for the Resend domain before Resend domain setup" in receipt_check.detail
     assert "Resend DNS records in receipt DNS proposal" in report.missing
     blockers = {blocker["item"]: blocker for blocker in report.blockers}
     assert blockers["Resend DNS records in receipt DNS proposal"]["category"] == "Provider order"
@@ -5839,6 +5838,61 @@ def test_live_acceptance_accepts_receipt_resend_records_before_dns(tmp_path) -> 
     receipt_check = next(check for check in report.checks if check.id == "receipt.resend_dns_flow")
     assert receipt_check.status == "ok"
     assert "deterministic sending-domain contract" in receipt_check.detail
+
+
+def test_live_acceptance_requires_resend_dns_proposal_for_same_domain(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_cloudflare_manifest(app)
+    remote = tmp_path / "remote"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_live_artifacts(remote_fusekit)
+    resend_record = {
+        "type": "MX",
+        "name": "send.moonlite.rsvp",
+        "value": "feedback-smtp.us-east-1.amazonses.com",
+    }
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "actions": [
+                    {
+                        "action": "resend.domain",
+                        "status": "ok",
+                        "details": _resend_domain_receipt_details(
+                            dns_records=[resend_record],
+                        ),
+                    },
+                    {
+                        "action": "dns.propose",
+                        "status": "ok",
+                        "details": {
+                            "domain": "other.example",
+                            "changes": [{"record": resend_record}],
+                        },
+                    },
+                ],
+                "raw_secrets_exposed": 0,
+                "live_url": "https://moonlite.rsvp",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    receipt_check = next(check for check in report.checks if check.id == "receipt.resend_dns_flow")
+    assert report.launch_ready is False
+    assert receipt_check.status == "failed"
+    assert "dns.propose action for moonlite.rsvp" in receipt_check.detail
 
 
 def test_live_acceptance_requires_dns_apply_launcher_approval(tmp_path) -> None:

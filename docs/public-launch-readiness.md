@@ -75,8 +75,9 @@ Resend and DNS are present, the provider strategy artifact must prove Resend ran
 before Cloudflare/DNS so Resend-generated domain records are included in the
 approved DNS changes. The setup receipt must independently prove the same flow:
 `resend.domain` succeeds first, returns DNS records, and a later `dns.propose`
-action contains those exact Resend records. When the app deploys through Vercel
-and declares `RESEND_*` runtime variables, the receipt must also prove that
+action for the same manifest domain contains those exact Resend records. When
+the app deploys through Vercel and declares `RESEND_*` runtime variables, the
+receipt must also prove that
 `vercel.env` configured each required Resend runtime key. Any durable human gate
 recorded during the run must include follow-me steps, a plain next action, and a
 resume hint, plus matching redacted control-room audit proof, even if the gate
