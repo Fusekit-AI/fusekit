@@ -1743,8 +1743,18 @@ function renderDetonationReceipt(job) {
   }
   const compartmentScope = String(summary.compartment_scope || "");
   const compartmentReady = ["detonated", "preserved"].includes(compartmentScope);
+  const workerCleanup = summary.remote_worker_cleanup &&
+    typeof summary.remote_worker_cleanup === "object"
+    ? summary.remote_worker_cleanup
+    : {};
   root.innerHTML = [
     detonationResourceCard("remote_worker", "Remote worker state", summary.remote_worker === true),
+    detonationResourceCard(
+      "remote_worker_cleanup",
+      "Remote worker cleanup proof",
+      remoteWorkerCleanupReady(workerCleanup),
+      remoteWorkerCleanupDetail(workerCleanup),
+    ),
     detonationResourceCard(
       "compute_instance",
       "OCI VM instance",
@@ -1764,6 +1774,32 @@ function renderDetonationReceipt(job) {
         : "Root tenancy or root compartment scope was preserved by design.",
     ),
   ].join("");
+}
+
+function remoteWorkerCleanupReady(cleanup) {
+  return (
+    String(cleanup.schema_version || "") === "fusekit.remote-worker-cleanup.v1" &&
+    String(cleanup.status || "") === "detonated" &&
+    cleanup.host_machine_state_required === false &&
+    Array.isArray(cleanup.paths) &&
+    cleanup.paths.length > 0 &&
+    Array.isArray(cleanup.process_patterns) &&
+    cleanup.process_patterns.length > 0
+  );
+}
+
+function remoteWorkerCleanupDetail(cleanup) {
+  if (!remoteWorkerCleanupReady(cleanup)) {
+    return (
+      "Waiting for explicit VM worker cleanup proof before no-trace " +
+      "detonation is trusted."
+    );
+  }
+  return (
+    `Targeted ${cleanup.paths.length} disposable VM paths and ` +
+    `${cleanup.process_patterns.length} runner process classes; ` +
+    "host-machine state was not required."
+  );
 }
 
 function pendingRunRecordCard(title, detail, source) {

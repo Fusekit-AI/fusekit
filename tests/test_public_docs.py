@@ -193,3 +193,5 @@ def test_friction_log_tracks_remote_worker_cleanup_proof() -> None:
     assert "fusekit.remote-worker-cleanup.v1" in text
     assert "host_machine_state_required=false" in text
     assert "live acceptance fail closed unless that proof is present" in text
+    assert "Remote worker cleanup proof" in text
+    assert "host-machine state was not required" in text

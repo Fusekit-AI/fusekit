@@ -1668,12 +1668,20 @@ def _render_detonation_receipt(run_record: Any) -> str:
     receipt = receipt if isinstance(receipt, dict) else {}
     summary = receipt.get("resource_summary", {})
     summary = summary if isinstance(summary, dict) else {}
+    worker_cleanup = summary.get("remote_worker_cleanup", {})
+    worker_cleanup = worker_cleanup if isinstance(worker_cleanup, dict) else {}
     cards = "\n".join(
         (
             _render_detonation_resource_card(
                 "remote_worker",
                 "Remote worker state",
                 summary.get("remote_worker") is True,
+            ),
+            _render_detonation_resource_card(
+                "remote_worker_cleanup",
+                "Remote worker cleanup proof",
+                _remote_worker_cleanup_ready(worker_cleanup),
+                detail=_remote_worker_cleanup_detail(worker_cleanup),
             ),
             _render_detonation_resource_card(
                 "compute_instance",
@@ -1714,11 +1722,38 @@ def _render_detonation_receipt(run_record: Any) -> str:
       </div>
       <p class="muted">
         FuseKit records resource classes, not secret values: worker state, VM instance,
-        network resources, compartment scope, and any provider delete failures.
+        disposable browser/auth/passphrase/log cleanup proof, network resources,
+        compartment scope, and any provider delete failures.
       </p>
       <div class="run-state-grid" data-detonation-receipt-checks>{cards}</div>
     </section>
 """
+
+
+def _remote_worker_cleanup_ready(cleanup: dict[str, Any]) -> bool:
+    return (
+        str(cleanup.get("schema_version", "") or "") == "fusekit.remote-worker-cleanup.v1"
+        and str(cleanup.get("status", "") or "") == "detonated"
+        and cleanup.get("host_machine_state_required") is False
+        and bool(cleanup.get("paths"))
+        and bool(cleanup.get("process_patterns"))
+    )
+
+
+def _remote_worker_cleanup_detail(cleanup: dict[str, Any]) -> str:
+    if not _remote_worker_cleanup_ready(cleanup):
+        return (
+            "Waiting for explicit VM worker cleanup proof before no-trace "
+            "detonation is trusted."
+        )
+    paths = cleanup.get("paths", [])
+    processes = cleanup.get("process_patterns", [])
+    path_count = len(paths) if isinstance(paths, list) else 0
+    process_count = len(processes) if isinstance(processes, list) else 0
+    return (
+        f"Targeted {path_count} disposable VM paths and {process_count} runner "
+        "process classes; host-machine state was not required."
+    )
 
 
 def _render_detonation_resource_card(

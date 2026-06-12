@@ -1238,6 +1238,10 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
     assert 'data-recording-contract-check="detonation"' in html
     assert "OCI cleanup left no worker trace" in html
     assert "OCI VM detonated" in html
+    assert 'data-detonation-resource="remote_worker_cleanup"' in html
+    assert "Remote worker cleanup proof" in html
+    assert "disposable VM paths" in html
+    assert "host-machine state was not required" in html
     assert 'data-detonation-resource="compute_instance"' in html
     assert "Root tenancy or root compartment scope was preserved by design." in html
 
@@ -1251,6 +1255,7 @@ def test_live_control_room_refreshes_all_run_record_proof_panels() -> None:
         ("renderAuditTrail(job)", "data-audit-trail-checks"),
         ("renderRecordingContract(job)", "data-recording-contract-checks"),
         ("renderDetonationReceipt(job)", "data-detonation-receipt-checks"),
+        ("remoteWorkerCleanupReady(workerCleanup)", "remote_worker_cleanup"),
     ):
         assert renderer in SCRIPT
         assert selector in SCRIPT
