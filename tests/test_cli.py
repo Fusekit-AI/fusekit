@@ -591,6 +591,38 @@ def test_dns_approval_accepts_control_room_resume(
     assert gate.status == "passed"
 
 
+def test_dns_approval_control_room_surfaces_gate_without_terminal_prompt(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    gate_id = "dns.moonlite.rsvp.approval"
+    args = argparse.Namespace(
+        app=app,
+        approve_dns=False,
+        control_room=True,
+        gate_max_attempts=1,
+        gate_retry_seconds=0,
+    )
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda *args, **kwargs: pytest.fail(
+            "control-room DNS approval must use the launcher button, not stdin"
+        ),
+    )
+    monkeypatch.setattr("fusekit.cli.time.sleep", lambda _seconds: None)
+
+    with pytest.raises(FuseKitError, match="DNS approval for moonlite.rsvp"):
+        _await_dns_approval(args, "moonlite.rsvp")
+
+    gate = GateService.load(app / ".fusekit" / "gates.json").records[gate_id]
+    assert gate.status == "waiting"
+    assert gate.classification == "dns-approval"
+    assert gate.next_action == "Approve applying the DNS records for moonlite.rsvp."
+    assert "Click Approve DNS apply" in " ".join(gate.follow_steps)
+
+
 def test_playwright_fallback_is_headless_without_display(monkeypatch) -> None:
     args = argparse.Namespace(spine="openclaw", headless_browser=False)
     monkeypatch.delenv("DISPLAY", raising=False)

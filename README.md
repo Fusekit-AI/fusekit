@@ -220,7 +220,14 @@ By default, `launch` uses `--fusekit-gates service-only`: it writes `.fusekit/se
 
 Human gates are resumable checkpoints, not terminal failures. By default FuseKit waits forever at service-created gates such as provider login/MFA/CAPTCHA/billing/consent/token capture. If a wait cycle times out, FuseKit re-runs the browser handoff step to return to the same provider checkpoint and continues waiting. `--gate-retry-seconds` controls the retry interval, and `--gate-max-attempts` is available for CI or tests; the default `0` means no maximum.
 
-Use `--approve-dns` as the upfront DNS execution scope when the setup should apply DNS records. Without that scope, service-only mode proposes DNS and records rollback metadata without pausing mid-run. Billing, payment, destructive infrastructure, and arbitrary SSH execution must be declared as upfront execution scope; FuseKit does not add surprise mid-run approval prompts.
+DNS apply is always explicit. Public control-room runs surface an `Approve DNS apply`
+gate after Resend and the app have produced the exact DNS records, then continue
+through the DNS provider API after that protected launcher click is recorded.
+`--approve-dns` remains available as an upfront CLI execution scope for advanced
+or CI-style runs that should apply DNS without pausing at the launcher gate.
+Billing, payment, destructive infrastructure, and arbitrary SSH execution must be
+declared as upfront execution scope; FuseKit does not add surprise mid-run
+approval prompts.
 
 `--capture-stdin` is an advanced CLI fallback that uses a non-echoing prompt. Public launcher runs should use the VM browser `Capture from VM clipboard` buttons instead. Tokens are not echoed and are not written to receipts or audit logs. If you prefer environment variables for local CLI work, omit `--capture-stdin` and set `GITHUB_TOKEN`, `VERCEL_TOKEN`, or `CLOUDFLARE_API_TOKEN` before running `authorize`.
 

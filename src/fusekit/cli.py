@@ -3112,19 +3112,20 @@ def _await_dns_approval(
                 reason=f"explicit DNS apply approval for {domain}",
             )
             return
-        try:
-            answer = input(f"Approve DNS apply for {domain}? [y/N] ").strip().lower()
-        except (EOFError, OSError):
-            answer = ""
-        if answer in {"y", "yes"}:
-            args.approve_dns = True
-            _record_gate_passed(
-                args,
-                gate_id,
-                provider="dns",
-                reason=f"explicit DNS apply approval for {domain}",
-            )
-            return
+        if not bool(getattr(args, "control_room", False)):
+            try:
+                answer = input(f"Approve DNS apply for {domain}? [y/N] ").strip().lower()
+            except (EOFError, OSError):
+                answer = ""
+            if answer in {"y", "yes"}:
+                args.approve_dns = True
+                _record_gate_passed(
+                    args,
+                    gate_id,
+                    provider="dns",
+                    reason=f"explicit DNS apply approval for {domain}",
+                )
+                return
         _record_gate_waiting(
             args,
             gate_id,
