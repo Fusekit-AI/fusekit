@@ -5180,6 +5180,10 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
             )
         if detonation_scope.get("resume_until_complete") is not True:
             failures.append("durable_state.detonation_scope.resume_until_complete must be true")
+        if detonation_scope.get("host_machine_state_required") is not False:
+            failures.append(
+                "durable_state.detonation_scope.host_machine_state_required must be false"
+            )
         no_trace_statement = str(detonation_scope.get("no_trace_statement", "") or "")
         if (
             "no FuseKit worker state remains" not in no_trace_statement

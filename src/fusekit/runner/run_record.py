@@ -706,6 +706,7 @@ def _durable_state_summary(
             "must_delete": list(VOLATILE_WORKER_SURFACES),
             "must_preserve": list(DETONATION_PRESERVES),
             "resume_until_complete": True,
+            "host_machine_state_required": False,
             "no_trace_statement": (
                 "Public OCI runs keep durable encrypted/redacted state outside the "
                 "disposable VM until completion, then detonate VM/browser/auth scratch "
@@ -1278,6 +1279,7 @@ def _recording_durable_state_ready(record: dict[str, Any]) -> bool:
         and not any(_recording_volatile_marker(item) for item in preserve_values)
         and str(scope.get("schema_version", "") or "") == DETONATION_SCOPE_SCHEMA_VERSION
         and scope.get("resume_until_complete") is True
+        and scope.get("host_machine_state_required") is False
         and str(scope.get("mode", "") or "") == "worker-and-oci-workspace"
         and set(VOLATILE_WORKER_SURFACES).issubset({str(item) for item in scope_deletes})
         and {str(item) for item in scope_preserves} == preserve_values

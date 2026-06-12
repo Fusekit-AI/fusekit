@@ -496,6 +496,7 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     assert "provider-auth" in record["durable_state"]["detonation_scope"]["must_delete"]
     assert "run_record" in record["durable_state"]["detonation_scope"]["must_preserve"]
     assert record["durable_state"]["detonation_scope"]["resume_until_complete"] is True
+    assert record["durable_state"]["detonation_scope"]["host_machine_state_required"] is False
     assert (
         "no FuseKit worker state remains"
         in record["durable_state"]["detonation_scope"]["no_trace_statement"]
@@ -1246,6 +1247,10 @@ def test_recording_contract_rejects_volatile_durable_state_survivors(tmp_path) -
 
     assert _recording_durable_state_ready(record) is True
     assert _recording_worker_replacement_ready(record) is True
+
+    record["durable_state"]["detonation_scope"]["host_machine_state_required"] = True
+    assert _recording_durable_state_ready(record) is False
+    record["durable_state"]["detonation_scope"]["host_machine_state_required"] = False
 
     record["durable_state"]["sources"].append(
         {

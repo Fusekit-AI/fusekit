@@ -211,7 +211,8 @@ volatile detonation targets.
 The same Run Record also carries `fusekit.detonation-scope.v1`: the public-lane
 contract for what must be destroyed, what may survive, and why the run can keep
 resuming until completion without leaving FuseKit worker state on the user's
-machine or in the OCI workspace. The scope must include browser profiles,
+machine or in the OCI workspace. The scope must carry
+`host_machine_state_required=false` and include browser profiles,
 provider-auth scratch, passphrase files, uploaded app archives, control-room and
 gateway logs, and the disposable compute workspace. The only survivors are the
 encrypted vault and redacted proof artifacts such as job state, checkpoints,

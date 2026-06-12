@@ -304,6 +304,7 @@ def _durable_state() -> dict[str, object]:
                 "run_record",
             ],
             "resume_until_complete": True,
+            "host_machine_state_required": False,
             "no_trace_statement": (
                 "Public OCI runs preserve encrypted state until completion, then "
                 "detonate the disposable VM so no FuseKit worker state remains in "
@@ -4571,6 +4572,7 @@ def test_acceptance_run_record_requires_no_trace_detonation_scope(tmp_path) -> N
         "must_delete": ["worker"],
         "must_preserve": ["encrypted_vault"],
         "resume_until_complete": False,
+        "host_machine_state_required": True,
         "no_trace_statement": "cleanup ran",
     }
 
@@ -4580,6 +4582,10 @@ def test_acceptance_run_record_requires_no_trace_detonation_scope(tmp_path) -> N
     assert "durable_state.detonation_scope.must_delete is incomplete" in failures
     assert "durable_state.detonation_scope.must_preserve is incomplete" in failures
     assert "durable_state.detonation_scope.resume_until_complete must be true" in failures
+    assert (
+        "durable_state.detonation_scope.host_machine_state_required must be false"
+        in failures
+    )
     assert "durable_state.detonation_scope.no_trace_statement is incomplete" in failures
 
 
