@@ -14,6 +14,7 @@ from fusekit.runner.run_state import LaunchRunState
 RUN_RECORD_SCHEMA_VERSION = "fusekit.run-record.v1"
 DURABLE_STATE_SCHEMA_VERSION = "fusekit.durable-state.v1"
 DETONATION_SCOPE_SCHEMA_VERSION = "fusekit.detonation-scope.v1"
+EVIDENCE_INVENTORY_SCHEMA_VERSION = "fusekit.evidence-inventory.v1"
 DURABLE_STATE_SOURCES = (
     ("encrypted_vault", "fusekit.vault.json", "encrypted capability vault", "encrypted"),
     ("job_state", "job.json", "runner job state", "non-secret"),
@@ -55,6 +56,26 @@ DETONATION_PRESERVES = (
     "rollback_plan",
     "run_record",
 )
+LOG_EVIDENCE_FILENAMES = frozenset(
+    {
+        "audit.jsonl",
+        "gate_events.jsonl",
+        "ledger.jsonl",
+        "control-room.log",
+        "openclaw-gateway.log",
+        "x11vnc.log",
+        "websockify.log",
+        "chrome.log",
+        "openclaw-auth-pty.log",
+    }
+)
+VISUAL_EVIDENCE_FILENAMES = frozenset(
+    {
+        "visual.json",
+        "runner_readiness.json",
+    }
+)
+SCREENSHOT_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp"})
 
 
 def build_run_record(
@@ -75,6 +96,7 @@ def build_run_record(
     run_state = _read_run_state(root / "run_state.json")
     artifacts = _artifact_records(job, root)
     durable_state = _durable_state_summary(root, run_state, artifacts)
+    evidence = _evidence_inventory(root, artifacts)
     return {
         "schema_version": RUN_RECORD_SCHEMA_VERSION,
         "id": job.id,
@@ -97,6 +119,7 @@ def build_run_record(
             "record_count": len(vault_index or []),
         },
         "artifacts": artifacts,
+        "evidence": evidence,
         "verification": verification,
         "acceptance": _acceptance_summary(acceptance),
         "detonation": _detonation_summary(run_state, workspace_detonation),
@@ -272,6 +295,159 @@ def _artifact_records(job: JobState, root: Path) -> list[dict[str, Any]]:
         if path.exists():
             records.append({"name": name, "path": str(path), "exists": True})
     return records
+
+
+def _evidence_inventory(
+    root: Path,
+    artifacts: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Build a non-secret inventory of proof logs and visual evidence."""
+
+    candidates = _evidence_candidates(root, artifacts)
+    logs = _evidence_records(candidates, kind="log")
+    screenshots = _evidence_records(candidates, kind="screenshot")
+    visual = _evidence_records(candidates, kind="visual")
+    receipts = _evidence_records(candidates, kind="receipt")
+    return {
+        "schema_version": EVIDENCE_INVENTORY_SCHEMA_VERSION,
+        "logs": logs,
+        "screenshots": screenshots,
+        "visual": visual,
+        "receipts": receipts,
+        "counts": {
+            "logs": len(logs),
+            "screenshots": len(screenshots),
+            "visual": len(visual),
+            "receipts": len(receipts),
+        },
+        "statement": (
+            "Run evidence is inventoried by path and type only; log contents, "
+            "screenshots, provider URLs, clipboard values, and raw secrets are not "
+            "embedded in the Run Record."
+        ),
+    }
+
+
+def _evidence_candidates(
+    root: Path,
+    artifacts: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    candidates: dict[str, dict[str, Any]] = {}
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            continue
+        raw_path = str(artifact.get("path", "") or "").strip()
+        if not raw_path:
+            continue
+        path = Path(raw_path)
+        _add_evidence_candidate(
+            candidates,
+            root=root,
+            path=path,
+            source=str(artifact.get("name", "") or "artifact"),
+            exists=artifact.get("exists") is True,
+        )
+    for relative in (
+        "audit.jsonl",
+        "gate_events.jsonl",
+        "acceptance/ledger.jsonl",
+        "setup_receipt.json",
+        "setup_receipt.md",
+        "verification_report.json",
+        "acceptance/report.json",
+        "rollback.json",
+        "rollback_metadata.json",
+        "visual.json",
+        "runner_readiness.json",
+        "visual/control-room.log",
+        "visual/openclaw-gateway.log",
+        "visual/x11vnc.log",
+        "visual/websockify.log",
+        "visual/chrome.log",
+    ):
+        path = root / relative
+        if path.exists():
+            _add_evidence_candidate(
+                candidates,
+                root=root,
+                path=path,
+                source="known-proof",
+                exists=True,
+            )
+    for directory in (root / "visual", root / "screenshots", root / "acceptance" / "artifacts"):
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.rglob("*")):
+            if path.is_file() and (
+                path.suffix.lower() in SCREENSHOT_SUFFIXES
+                or path.name in LOG_EVIDENCE_FILENAMES
+            ):
+                _add_evidence_candidate(
+                    candidates,
+                    root=root,
+                    path=path,
+                    source="discovered-proof",
+                    exists=True,
+                )
+    return list(candidates.values())
+
+
+def _add_evidence_candidate(
+    candidates: dict[str, dict[str, Any]],
+    *,
+    root: Path,
+    path: Path,
+    source: str,
+    exists: bool,
+) -> None:
+    if not exists:
+        return
+    display_path = _display_evidence_path(root, path)
+    kind = _evidence_kind(path)
+    if kind == "artifact":
+        return
+    candidates[display_path] = {
+        "path": display_path,
+        "kind": kind,
+        "source": source,
+        "exists": True,
+    }
+
+
+def _display_evidence_path(root: Path, path: Path) -> str:
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _evidence_kind(path: Path) -> str:
+    name = path.name
+    suffix = path.suffix.lower()
+    if suffix in SCREENSHOT_SUFFIXES or "screenshot" in name.lower():
+        return "screenshot"
+    if name in LOG_EVIDENCE_FILENAMES or suffix in {".log", ".jsonl"}:
+        return "log"
+    if name in VISUAL_EVIDENCE_FILENAMES:
+        return "visual"
+    if name in {
+        "setup_receipt.json",
+        "setup_receipt.md",
+        "verification_report.json",
+        "report.json",
+        "rollback.json",
+        "rollback_metadata.json",
+    }:
+        return "receipt"
+    return "artifact"
+
+
+def _evidence_records(candidates: list[dict[str, Any]], *, kind: str) -> list[dict[str, Any]]:
+    return [
+        candidate
+        for candidate in sorted(candidates, key=lambda item: str(item.get("path", "")))
+        if candidate.get("kind") == kind
+    ]
 
 
 def _durable_state_summary(

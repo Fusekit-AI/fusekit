@@ -242,7 +242,12 @@ def test_job_state_writes_recovery_checkpoints(tmp_path) -> None:
 def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci")
     job.mark("setup.execute", "waiting", "Cloudflare token gate is visible")
+    (tmp_path / "audit.jsonl").write_text('{"event":"ok"}\n', encoding="utf-8")
     job.add_artifact("audit_log", tmp_path / "audit.jsonl")
+    (tmp_path / "setup_receipt.json").write_text('{"actions":[]}\n', encoding="utf-8")
+    (tmp_path / "visual").mkdir()
+    (tmp_path / "visual" / "provider-gate.png").write_bytes(b"not-a-real-png")
+    (tmp_path / "visual" / "control-room.log").write_text("ready\n", encoding="utf-8")
     (tmp_path / "fusekit.vault.json").write_text("encrypted", encoding="utf-8")
     update_run_state(
         tmp_path / "run_state.json",
@@ -301,6 +306,10 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     )
     (tmp_path / "verification_report.json").write_text(
         '{"checks":[{"provider":"cloudflare","status":"pending_safe"}]}',
+        encoding="utf-8",
+    )
+    (tmp_path / "visual.json").write_text(
+        json.dumps({"runner": "novnc", "status": "ready"}),
         encoding="utf-8",
     )
     (tmp_path / "workspace_detonation.json").write_text(
@@ -434,6 +443,19 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     assert record["vault"]["record_count"] == 1
     assert record["vault"]["records"][0]["id"] == "provider.cloudflare.token"
     assert record["detonation"]["workspace_receipt"]["status"] == "complete"
+    assert record["evidence"]["schema_version"] == "fusekit.evidence-inventory.v1"
+    assert record["evidence"]["counts"]["logs"] >= 2
+    assert record["evidence"]["counts"]["screenshots"] == 1
+    assert record["evidence"]["counts"]["visual"] >= 2
+    assert record["evidence"]["counts"]["receipts"] >= 2
+    assert any(item["path"] == "audit.jsonl" for item in record["evidence"]["logs"])
+    assert any(
+        item["path"] == "visual/provider-gate.png"
+        for item in record["evidence"]["screenshots"]
+    )
+    assert any(item["path"] == "visual.json" for item in record["evidence"]["visual"])
+    assert "raw secrets are not embedded" in record["evidence"]["statement"]
+    assert "not-a-real-png" not in json.dumps(record["evidence"])
     assert any(item["name"] == "audit_log" for item in record["artifacts"])
 
 

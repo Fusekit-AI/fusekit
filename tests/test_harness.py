@@ -207,6 +207,47 @@ def _durable_state() -> dict[str, object]:
     }
 
 
+def _evidence_inventory() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.evidence-inventory.v1",
+        "logs": [
+            {
+                "path": "audit.jsonl",
+                "kind": "log",
+                "source": "known-proof",
+                "exists": True,
+            }
+        ],
+        "screenshots": [],
+        "visual": [
+            {
+                "path": "visual.json",
+                "kind": "visual",
+                "source": "known-proof",
+                "exists": True,
+            }
+        ],
+        "receipts": [
+            {
+                "path": "setup_receipt.json",
+                "kind": "receipt",
+                "source": "known-proof",
+                "exists": True,
+            }
+        ],
+        "counts": {
+            "logs": 1,
+            "screenshots": 0,
+            "visual": 1,
+            "receipts": 1,
+        },
+        "statement": (
+            "Run evidence is inventoried by path and type only; raw secrets are not "
+            "embedded in the Run Record."
+        ),
+    }
+
+
 def _resend_domain_receipt_details(
     *,
     dns_records: list[dict[str, str]] | None = None,
@@ -562,6 +603,7 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
                 "provider_strategies": {"providers": []},
                 "vault": {"record_count": 0, "records": []},
                 "artifacts": [],
+                "evidence": _evidence_inventory(),
                 "verification": {"checks": []},
                 "acceptance": {},
                 "detonation": {
@@ -3512,6 +3554,40 @@ def test_acceptance_run_record_requires_no_trace_detonation_scope(tmp_path) -> N
         "durable_state.detonation_scope.resume_until_complete must be true" in failures
     )
     assert "durable_state.detonation_scope.no_trace_statement is incomplete" in failures
+
+
+def test_acceptance_run_record_requires_non_secret_evidence_inventory(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+
+    record["evidence"] = {
+        "schema_version": "fusekit.evidence-inventory.v1",
+        "logs": [
+            {
+                "path": "control-room.log?token=secret",
+                "kind": "log",
+                "source": "known-proof",
+                "exists": True,
+            }
+        ],
+        "screenshots": "missing",
+        "visual": [{"path": "", "kind": "visual", "exists": False}],
+        "receipts": [{"path": "setup_receipt.json", "kind": "artifact", "exists": True}],
+        "counts": {"logs": 1},
+        "statement": "evidence files",
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert "evidence.logs[0].path contains credential query text" in failures
+    assert "evidence.screenshots is missing" in failures
+    assert "evidence.visual[0].path is missing" in failures
+    assert "evidence.visual[0].exists must be true" in failures
+    assert "evidence.receipts[0].kind is unsupported" in failures
+    assert "evidence.counts.screenshots is missing" in failures
+    assert "evidence.statement is missing non-secret inventory guidance" in failures
 
 
 def test_acceptance_run_record_requires_evented_gate_wake_proof(tmp_path) -> None:

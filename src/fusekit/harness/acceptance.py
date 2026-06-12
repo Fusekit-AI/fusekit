@@ -450,7 +450,8 @@ def _check_run_record(
             "run_record.complete",
             "ok",
             "Central Run Record ties launch state, gates, provider routes, artifacts, "
-            "approvals, errors, verification, vault metadata, and detonation proof.",
+            "evidence logs/screenshots, approvals, errors, verification, vault metadata, "
+            "and detonation proof.",
             str(snapshot),
         )
     )
@@ -515,6 +516,9 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
                 if isinstance(record, dict) and "value" in record:
                     failures.append(f"vault.records[{index}] exposes a raw value")
     _require_list_field(raw, "artifacts", failures)
+    evidence = _require_dict_field(raw, "evidence", failures)
+    if evidence is not None:
+        failures.extend(_evidence_inventory_shape_failures(evidence))
     _require_dict_field(raw, "verification", failures)
     detonation = _require_dict_field(raw, "detonation", failures)
     if detonation is not None:
@@ -529,6 +533,47 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
             failures.extend(_workspace_detonation_receipt_failures(workspace_receipt))
     _require_list_field(raw, "approvals", failures)
     _require_list_field(raw, "errors", failures)
+    return failures
+
+
+def _evidence_inventory_shape_failures(evidence: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    if str(evidence.get("schema_version", "")).strip() != "fusekit.evidence-inventory.v1":
+        failures.append("evidence.schema_version is unsupported")
+    for evidence_field in ("logs", "screenshots", "visual", "receipts"):
+        records = evidence.get(evidence_field)
+        if not isinstance(records, list):
+            failures.append(f"evidence.{evidence_field} is missing")
+            continue
+        for index, record in enumerate(records):
+            label = f"evidence.{evidence_field}[{index}]"
+            if not isinstance(record, dict):
+                failures.append(f"{label} is not an object")
+                continue
+            path = str(record.get("path", "") or "")
+            if not path.strip():
+                failures.append(f"{label}.path is missing")
+            if "token=" in path.lower() or "password=" in path.lower():
+                failures.append(f"{label}.path contains credential query text")
+            if record.get("exists") is not True:
+                failures.append(f"{label}.exists must be true")
+            if str(record.get("kind", "") or "") not in {
+                "log",
+                "screenshot",
+                "visual",
+                "receipt",
+            }:
+                failures.append(f"{label}.kind is unsupported")
+    counts = evidence.get("counts", {})
+    if not isinstance(counts, dict):
+        failures.append("evidence.counts is missing")
+    else:
+        for evidence_field in ("logs", "screenshots", "visual", "receipts"):
+            if not isinstance(counts.get(evidence_field), int):
+                failures.append(f"evidence.counts.{evidence_field} is missing")
+    statement = str(evidence.get("statement", "") or "")
+    if "path and type only" not in statement or "raw secrets are not embedded" not in statement:
+        failures.append("evidence.statement is missing non-secret inventory guidance")
     return failures
 
 
