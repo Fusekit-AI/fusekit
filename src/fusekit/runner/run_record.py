@@ -1428,12 +1428,38 @@ def _recording_automation_boundary_ready(record: dict[str, Any]) -> bool:
     if not isinstance(boundary, dict):
         return False
     counts = boundary.get("counts", {})
+    routes = boundary.get("routes", [])
+    post_gate = boundary.get("post_gate_automation", {})
+    allowed = boundary.get("vnc_allowed_for", [])
+    required_allowed = {
+        "login",
+        "mfa",
+        "captcha",
+        "consent",
+        "payment",
+        "copy_once_secret",
+    }
+    if not isinstance(counts, dict) or not isinstance(routes, list):
+        return False
+    fusekit_owned = [
+        route for route in routes if isinstance(route, dict) and route.get("owner") == "fusekit"
+    ]
+    human_gate = [
+        route for route in routes if isinstance(route, dict) and route.get("owner") == "human_gate"
+    ]
     return (
         str(boundary.get("status", "") or "") == "ready"
         and boundary.get("resume_after_worker_replace") is True
         and boundary.get("no_user_machine_state") is True
-        and isinstance(counts, dict)
+        and str(boundary.get("detonation_scope", "") or "") == "worker-and-oci-workspace"
+        and isinstance(allowed, list)
+        and required_allowed.issubset({str(item) for item in allowed})
         and _safe_int(counts.get("blocked"), 1) == 0
+        and _safe_int(counts.get("fusekit_owned"), -1) == len(fusekit_owned)
+        and _safe_int(counts.get("human_gate"), -1) == len(human_gate)
+        and isinstance(post_gate, dict)
+        and isinstance(post_gate.get("api_or_cli_routes"), list)
+        and isinstance(post_gate.get("human_gate_routes"), list)
     )
 
 

@@ -74,6 +74,7 @@ from fusekit.runner.remote import (
     should_include_app_path,
 )
 from fusekit.runner.run_record import (
+    _recording_automation_boundary_ready,
     _recording_detonation_ready,
     _recording_human_actions_ready,
     _recording_provider_playbook_ready,
@@ -695,6 +696,55 @@ def test_recording_human_actions_required_when_gates_or_wakes_exist() -> None:
         "unguided": [],
     }
     assert _recording_human_actions_ready(record) is True
+
+
+def test_recording_automation_boundary_requires_complete_route_proof() -> None:
+    record = {
+        "automation_boundary": {
+            "schema_version": "fusekit.automation-boundary.v1",
+            "status": "ready",
+            "resume_after_worker_replace": True,
+            "detonation_scope": "worker-and-oci-workspace",
+            "no_user_machine_state": True,
+            "vnc_allowed_for": [
+                "login",
+                "mfa",
+                "captcha",
+                "consent",
+                "payment",
+                "copy_once_secret",
+            ],
+            "routes": [
+                {"owner": "fusekit", "route": "api"},
+                {"owner": "human_gate", "route": "browser_guided"},
+            ],
+            "counts": {"fusekit_owned": 1, "human_gate": 1, "blocked": 0},
+            "post_gate_automation": {
+                "api_or_cli_routes": ["resend:resend-domain"],
+                "human_gate_routes": ["resend:resend-api-key"],
+            },
+        }
+    }
+
+    assert _recording_automation_boundary_ready(record) is True
+
+    record["automation_boundary"]["counts"]["human_gate"] = 0
+    assert _recording_automation_boundary_ready(record) is False
+    record["automation_boundary"]["counts"]["human_gate"] = 1
+    record["automation_boundary"]["vnc_allowed_for"] = ["login"]
+    assert _recording_automation_boundary_ready(record) is False
+    record["automation_boundary"]["vnc_allowed_for"] = [
+        "login",
+        "mfa",
+        "captcha",
+        "consent",
+        "payment",
+        "copy_once_secret",
+    ]
+    record["automation_boundary"]["post_gate_automation"]["api_or_cli_routes"] = (
+        "resend:resend-domain"
+    )
+    assert _recording_automation_boundary_ready(record) is False
 
 
 def test_recording_provider_playbook_requires_public_order() -> None:
