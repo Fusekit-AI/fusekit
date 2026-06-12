@@ -22,9 +22,11 @@ from fusekit.cli import (
     _ordered_provider_services,
     _playwright_headless,
     _provider_strategy_checkpoint_resume_hint,
+    _provider_strategy_next_action,
     _provider_verification_acceptable,
     _provider_verification_attempt_config,
     _rebase_setup_artifacts,
+    _record_provider_strategy_gates,
     _record_provider_verification_gates,
     _repair_navigation_completed,
     _run_handoff,
@@ -1660,6 +1662,43 @@ def test_apply_records_provider_strategy_gate_when_token_is_missing(
     assert "Capture GITHUB_TOKEN from VM clipboard" in strategy["next_action"]
     assert "Capture reads the VM clipboard directly" in strategy["next_action"]
     assert "visible gate is finished" in strategy["resume_hint"]
+
+
+def test_provider_strategy_fallback_next_action_names_pack_capture_button(tmp_path) -> None:
+    pack = synthesize_provider_pack("vercel", tmp_path)
+
+    action = _provider_strategy_next_action(pack)
+
+    assert "Capture VERCEL_TOKEN from VM clipboard" in action
+    assert "Capture <ENV>" not in action
+    assert "I finished this step" in action
+
+
+def test_provider_strategy_gate_fallback_records_exact_capture_button(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    args = argparse.Namespace(app=app)
+    pack = synthesize_provider_pack("vercel", app)
+    result = {
+        "provider": "vercel",
+        "setup": [
+            {
+                "kind": "vercel-env",
+                "strategy": "browser_guided",
+                "status": "needs_human_gate",
+                "reason": "Vercel authorization is required.",
+            }
+        ],
+    }
+
+    _record_provider_strategy_gates(args, pack, result)
+
+    gate = GateService.load(app / ".fusekit" / "gates.json").records[
+        "provider.vercel.vercel-env"
+    ]
+    assert "Capture VERCEL_TOKEN from VM clipboard" in gate.next_action
+    assert "Capture <ENV>" not in gate.next_action
+    assert "I finished this step" in gate.next_action
 
 
 def test_apply_writes_verification_report_when_provider_check_fails(tmp_path) -> None:

@@ -3514,11 +3514,14 @@ def _record_provider_strategy_gates(
             if isinstance(item_steps, (list, tuple))
             else _provider_strategy_follow_steps(pack)
         )
-        next_action = str(item.get("next_action", "") or "") or _provider_strategy_next_action()
+        target = str(item.get("target", "") or "").strip().upper()
+        next_action = str(item.get("next_action", "") or "") or _provider_strategy_next_action(
+            pack,
+            target=target,
+        )
         resume_hint = str(item.get("resume_hint", "") or "") or (
             "FuseKit will retry this provider route after you finish the gate."
         )
-        target = str(item.get("target", "") or "").strip().upper()
         gate_id = f"provider.{provider}.{_strategy_gate_slug(recipe)}"
         _record_gate_waiting(
             args,
@@ -3618,7 +3621,9 @@ def _provider_strategy_checkpoint_next_action(
 ) -> str:
     human_gate = _first_strategy_with_status(strategies, "needs_human_gate")
     if human_gate is not None:
-        return str(human_gate.get("next_action", "") or "") or _provider_strategy_next_action()
+        return str(human_gate.get("next_action", "") or "") or _provider_strategy_next_action(
+            target=str(human_gate.get("target", "") or ""),
+        )
     if provider == "resend":
         return (
             "Nothing to do manually in Resend; FuseKit creates or reuses the domain by API, "
@@ -3714,13 +3719,45 @@ def _provider_strategy_follow_steps(pack: ProviderCapabilityPack) -> tuple[str, 
     )
 
 
-def _provider_strategy_next_action() -> str:
+def _provider_strategy_next_action(
+    pack: ProviderCapabilityPack | None = None,
+    *,
+    target: str = "",
+) -> str:
+    capture_targets = _provider_strategy_capture_targets(pack, target)
+    if capture_targets:
+        capture_labels = [
+            f"Capture {capture_target} from VM clipboard"
+            for capture_target in capture_targets
+        ]
+        capture_copy = (
+            f"click {capture_labels[0]}"
+            if len(capture_labels) == 1
+            else "click these exact buttons: " + ", ".join(capture_labels)
+        )
+    else:
+        capture_copy = "click the exact env-named Capture button shown here"
     return (
         "Click Open provider gate in VM, complete the provider-owned gate in the VM browser, "
-        "then follow the exact FuseKit control shown here: click the env-named "
-        "Capture <ENV> from VM clipboard button for secret values, or click "
+        "then follow the exact FuseKit control shown here: "
+        f"{capture_copy} for secret values, or click "
         "I finished this step for non-secret gates."
     )
+
+
+def _provider_strategy_capture_targets(
+    pack: ProviderCapabilityPack | None,
+    target: str = "",
+) -> tuple[str, ...]:
+    candidates: list[str] = []
+    normalized_target = target.strip().upper()
+    if normalized_target:
+        candidates.append(normalized_target)
+    if pack is not None:
+        if pack.handoff.token_env:
+            candidates.append(pack.handoff.token_env.strip().upper())
+        candidates.extend(secret.strip().upper() for secret in pack.required_secrets)
+    return tuple(dict.fromkeys(candidate for candidate in candidates if candidate))
 
 
 def _provider_strategy_resume_url(pack: ProviderCapabilityPack) -> str:
