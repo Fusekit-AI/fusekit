@@ -28,6 +28,7 @@ from fusekit.runner.control_room.state import (
     EXPECTED_PROVIDER_BROWSER_PROFILE,
     _sanitized_visual_state,
 )
+from fusekit.runner.run_record import RUN_RECORD_SCHEMA_VERSION
 from fusekit.scanner import scan_repo
 from fusekit.security import redact_public_path, redact_public_text, scan_for_secret_leaks
 from fusekit.vault.bundle import Vault
@@ -161,6 +162,13 @@ def run_acceptance(
     ledger.record("acceptance.started", {"mode": mode, "app_path": redact_public_path(app_path)})
     if remote_fusekit_dir is not None:
         _record_remote_artifacts(remote_fusekit_dir, checks, ledger)
+    _check_run_record(
+        evidence_fusekit_dir / "run_record.json",
+        mode,
+        checks,
+        missing,
+        ledger,
+    )
 
     manifest_path = _app_relative(app_path, manifest_path) or (app_path / "fusekit.yaml")
     manifest = _load_or_scan_manifest(app_path, manifest_path, checks, ledger)
@@ -323,6 +331,7 @@ def _record_remote_artifacts(
         "rollback_plan.json",
         "provider_strategies.json",
         "checkpoints.json",
+        "run_record.json",
         "gates.json",
     )
     inventory = {
@@ -346,6 +355,166 @@ def _record_remote_artifacts(
             str(snapshot),
         )
     )
+
+
+def _check_run_record(
+    path: Path,
+    mode: str,
+    checks: list[AcceptanceCheck],
+    missing: list[str],
+    ledger: HarnessLedger,
+) -> None:
+    if mode != "live":
+        checks.append(
+            AcceptanceCheck(
+                "run_record.complete",
+                "skipped",
+                "Central Run Record is required only for live OCI evidence.",
+            )
+        )
+        return
+    if not path.exists():
+        missing.append("central run record")
+        checks.append(
+            AcceptanceCheck(
+                "run_record.complete",
+                "missing",
+                "Live launch evidence must include .fusekit/run_record.json.",
+            )
+        )
+        return
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        missing.append("central run record")
+        checks.append(
+            AcceptanceCheck(
+                "run_record.complete",
+                "failed",
+                f"Run Record could not be read: {type(exc).__name__}.",
+                str(path),
+            )
+        )
+        return
+    if not isinstance(raw, dict):
+        missing.append("central run record")
+        checks.append(
+            AcceptanceCheck(
+                "run_record.complete",
+                "failed",
+                "Run Record must be a JSON object.",
+                str(path),
+            )
+        )
+        return
+    failures = _run_record_shape_failures(raw)
+    summary = {
+        "schema_version": raw.get("schema_version"),
+        "id": raw.get("id"),
+        "status": raw.get("status"),
+        "field_count": len(raw),
+        "providers": raw.get("provider_gates", {}).get("providers", [])
+        if isinstance(raw.get("provider_gates"), dict)
+        else [],
+        "artifact_count": len(raw.get("artifacts", []))
+        if isinstance(raw.get("artifacts"), list)
+        else 0,
+        "vault_record_count": raw.get("vault", {}).get("record_count")
+        if isinstance(raw.get("vault"), dict)
+        else None,
+    }
+    snapshot = ledger.snapshot_json("run-record-summary", summary)
+    if failures:
+        missing.append("central run record")
+        checks.append(
+            AcceptanceCheck(
+                "run_record.complete",
+                "failed",
+                "Run Record is incomplete: " + "; ".join(failures),
+                str(snapshot),
+            )
+        )
+        return
+    checks.append(
+        AcceptanceCheck(
+            "run_record.complete",
+            "ok",
+            "Central Run Record ties launch state, gates, provider routes, artifacts, "
+            "approvals, errors, verification, vault metadata, and detonation proof.",
+            str(snapshot),
+        )
+    )
+
+
+def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    if raw.get("schema_version") != RUN_RECORD_SCHEMA_VERSION:
+        failures.append("schema_version is unsupported")
+    for key in ("id", "status", "app_path", "runner"):
+        if not str(raw.get(key, "") or "").strip():
+            failures.append(f"{key} is missing")
+    _require_dict_field(raw, "state", failures)
+    _require_list_field(raw, "steps", failures)
+    _require_list_field(raw, "checkpoints", failures)
+    provider_gates = _require_dict_field(raw, "provider_gates", failures)
+    if provider_gates is not None:
+        if not isinstance(provider_gates.get("total"), int):
+            failures.append("provider_gates.total is missing")
+        _require_list_field(provider_gates, "records", failures, prefix="provider_gates")
+        _require_dict_field(provider_gates, "statuses", failures, prefix="provider_gates")
+        _require_list_field(provider_gates, "providers", failures, prefix="provider_gates")
+    _require_dict_field(raw, "provider_strategies", failures)
+    vault = _require_dict_field(raw, "vault", failures)
+    if vault is not None:
+        if not isinstance(vault.get("record_count"), int):
+            failures.append("vault.record_count is missing")
+        records = _require_list_field(vault, "records", failures, prefix="vault")
+        if records is not None:
+            for index, record in enumerate(records):
+                if isinstance(record, dict) and "value" in record:
+                    failures.append(f"vault.records[{index}] exposes a raw value")
+    _require_list_field(raw, "artifacts", failures)
+    _require_dict_field(raw, "verification", failures)
+    detonation = _require_dict_field(raw, "detonation", failures)
+    if detonation is not None:
+        if not isinstance(detonation.get("preflight_safe"), bool):
+            failures.append("detonation.preflight_safe is missing")
+        if not isinstance(detonation.get("workspace_detonated"), bool):
+            failures.append("detonation.workspace_detonated is missing")
+        _require_dict_field(detonation, "workspace_receipt", failures, prefix="detonation")
+    _require_list_field(raw, "approvals", failures)
+    _require_list_field(raw, "errors", failures)
+    return failures
+
+
+def _require_dict_field(
+    raw: dict[str, Any],
+    key: str,
+    failures: list[str],
+    *,
+    prefix: str = "",
+) -> dict[str, Any] | None:
+    value = raw.get(key)
+    label = f"{prefix}.{key}" if prefix else key
+    if not isinstance(value, dict):
+        failures.append(f"{label} is missing")
+        return None
+    return value
+
+
+def _require_list_field(
+    raw: dict[str, Any],
+    key: str,
+    failures: list[str],
+    *,
+    prefix: str = "",
+) -> list[Any] | None:
+    value = raw.get(key)
+    label = f"{prefix}.{key}" if prefix else key
+    if not isinstance(value, list):
+        failures.append(f"{label} is missing")
+        return None
+    return value
 
 
 def _acceptance_blockers(
@@ -402,6 +571,12 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
             "Receipt",
             "Keep the live launcher/control room open and let the setup worker finish "
             "provider setup so FuseKit can save a redacted receipt with no raw secrets.",
+        ),
+        "central run record": (
+            "Run record",
+            "Keep the current control room open while FuseKit writes the central Run "
+            "Record that ties together state, gates, provider routes, verifier checks, "
+            "approvals, artifacts, errors, vault metadata, and detonation proof.",
         ),
         "safe verification report": (
             "Verification",
@@ -682,6 +857,13 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
             "Provider routes",
             "Keep the live launcher/control room open and let the setup worker record "
             "provider route decisions in the correct order.",
+        )
+    if check.id == "run_record.complete":
+        return (
+            "Run record",
+            "Keep the current control room open while FuseKit rebuilds the central "
+            "Run Record from the latest job state, gates, provider routes, verifier "
+            "checks, approvals, artifacts, errors, vault metadata, and detonation proof.",
         )
     if check.id.startswith("verification_report."):
         return (

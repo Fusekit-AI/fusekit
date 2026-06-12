@@ -242,6 +242,7 @@ def _write_minimum_live_artifacts(remote_fusekit: Path) -> None:
     )
     (remote_fusekit / "gates.json").write_text(json.dumps({"gates": []}), "utf-8")
     _write_runner_readiness(remote_fusekit)
+    _write_minimum_run_record(remote_fusekit)
 
 
 def _dns_apply_approval_event(domain: str = "moonlite.rsvp") -> dict[str, object]:
@@ -299,6 +300,50 @@ def _write_runner_readiness(fusekit_dir: Path) -> None:
                     "/var/lib/fusekit-runner/visual/chrome-provider-profile"
                 ),
                 "playwright_browsers_path": "/opt/fusekit-playwright-browsers",
+            }
+        ),
+        "utf-8",
+    )
+
+
+def _write_minimum_run_record(fusekit_dir: Path) -> None:
+    (fusekit_dir / "run_record.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.run-record.v1",
+                "id": "fk-live-test",
+                "status": "done",
+                "app_path": "/var/lib/fusekit-runner/app",
+                "runner": "local",
+                "created_at": 1.0,
+                "updated_at": 2.0,
+                "state": {
+                    "app_repo_known": True,
+                    "runner_selected": True,
+                    "vault_created": True,
+                    "detonation_safe": True,
+                    "workspace_detonated": True,
+                },
+                "steps": [],
+                "checkpoints": [],
+                "provider_gates": {
+                    "total": 0,
+                    "statuses": {},
+                    "providers": [],
+                    "records": [],
+                },
+                "provider_strategies": {"providers": []},
+                "vault": {"record_count": 0, "records": []},
+                "artifacts": [],
+                "verification": {"checks": []},
+                "acceptance": {},
+                "detonation": {
+                    "preflight_safe": True,
+                    "workspace_detonated": True,
+                    "workspace_receipt": {},
+                },
+                "approvals": [],
+                "errors": [],
             }
         ),
         "utf-8",
@@ -365,6 +410,7 @@ def _write_minimum_resend_vercel_live_artifacts(remote_fusekit: Path) -> None:
     (remote_fusekit / "gates.json").write_text(json.dumps({"gates": []}), "utf-8")
     _write_runner_readiness(remote_fusekit)
     _write_safe_visual_state(remote_fusekit)
+    _write_minimum_run_record(remote_fusekit)
 
 
 def _provider_pack_api_setup_action(provider: str, recipe: str) -> dict[str, object]:
@@ -2865,6 +2911,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
     )
     _write_runner_readiness(remote_fusekit)
     _write_safe_visual_state(remote_fusekit)
+    _write_minimum_run_record(remote_fusekit)
 
     report = run_acceptance(
         app,
@@ -2878,6 +2925,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
     assert report.recording_ready is True
     check_ids = {check.id for check in report.checks}
     assert "remote_artifacts.loaded" in check_ids
+    assert "run_record.complete" in check_ids
     assert "verification_report.safe" in check_ids
     assert "provider_strategies.recorded" in check_ids
     assert "provider_strategies.checkpoints" in check_ids
@@ -2987,6 +3035,67 @@ def test_live_acceptance_requires_provider_route_recovery_checkpoints(tmp_path) 
     assert "keep this live control room open" in next_action
     assert "rerun the same live launcher" not in next_action
     assert "checkpoints.json" not in next_action
+
+
+def test_live_acceptance_requires_central_run_record(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    (remote_fusekit / "run_record.json").unlink()
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "live_url": "https://moonlite.example",
+                "raw_secrets_exposed": 0,
+                "actions": [
+                    {"action": "resend.contract_health", "status": "ok", "details": {}},
+                    {
+                        "action": "resend.domain",
+                        "status": "ok",
+                        "details": _resend_domain_receipt_details(
+                            dns_records=[
+                                {
+                                    "name": "send.moonlite.rsvp",
+                                    "type": "MX",
+                                    "value": "feedback-smtp.us-east-1.amazonses.com",
+                                    "ttl": 300,
+                                    "priority": 10,
+                                }
+                            ]
+                        ),
+                    },
+                    {"action": "vercel.contract_health", "status": "ok", "details": {}},
+                    {
+                        "action": "vercel.env",
+                        "status": "ok",
+                        "details": {"project": "moonlite", "env": "RESEND_FROM_EMAIL"},
+                    },
+                ],
+            }
+        ),
+        "utf-8",
+    )
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    run_record_check = next(check for check in report.checks if check.id == "run_record.complete")
+    assert report.launch_ready is False
+    assert run_record_check.status == "missing"
+    assert "central run record" in report.missing
+    blockers = {blocker["item"]: blocker for blocker in report.blockers}
+    assert blockers["central run record"]["category"] == "Run record"
+    assert "current control room" in blockers["central run record"]["next_action"]
 
 
 def test_acceptance_cli_checks_vault_without_leaking_secret(tmp_path, capsys) -> None:
