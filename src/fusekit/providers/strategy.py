@@ -443,6 +443,9 @@ def summarize_strategy_action(
     }
     if needs_human_gate and target:
         action["target"] = target
+    if needs_human_gate:
+        action["success_criteria"] = _strategy_success_criteria(pack, capture_action, target)
+        action["avoid_steps"] = _strategy_avoid_steps(target, capture_action)
     return action
 
 
@@ -498,3 +501,45 @@ def _strategy_follow_steps(pack: ProviderCapabilityPack | None) -> tuple[str, ..
             "button in the control room after the provider confirms."
         ),
     )
+
+
+def _strategy_success_criteria(
+    pack: ProviderCapabilityPack | None,
+    capture_action: str,
+    target: str,
+) -> tuple[str, ...]:
+    """Return a compact done-state checklist for provider route summaries."""
+
+    if target:
+        token_label = (
+            pack.handoff.token_label
+            if pack is not None and pack.handoff.token_label
+            else target
+        )
+        return (
+            "The provider account, project, repo, zone, or domain shown by FuseKit "
+            "is selected.",
+            f"The raw {token_label} value is copied inside the shared VM browser.",
+            f"The visible {capture_action} control has captured the value into "
+            "the encrypted vault.",
+        )
+    return (
+        "The provider shows the named approval, login, billing, consent, "
+        "or setup step as complete.",
+        "The visible I finished this step button is clicked only after that provider "
+        "confirmation.",
+    )
+
+
+def _strategy_avoid_steps(target: str, capture_action: str) -> tuple[str, ...]:
+    """Return the provider-route traps users should avoid during a public demo."""
+
+    avoid = [
+        "Do not use a local browser or host tab for this provider gate.",
+        "Do not paste provider secrets into the terminal, local browser, or host clipboard.",
+    ]
+    if target:
+        avoid.append(
+            f"Do not click I finished this step for {target}; use {capture_action} instead."
+        )
+    return tuple(avoid)

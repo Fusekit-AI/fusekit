@@ -1835,6 +1835,10 @@ def _provider_strategy_shape_failures(providers: Any) -> list[str]:
                     failures.append(f"{label}.next_action is missing")
                 if not str(strategy.get("resume_hint", "")).strip():
                     failures.append(f"{label}.resume_hint is missing")
+                if not _string_list_field(strategy.get("success_criteria")):
+                    failures.append(f"{label}.success_criteria is missing")
+                if not _string_list_field(strategy.get("avoid_steps")):
+                    failures.append(f"{label}.avoid_steps is missing")
                 failures.extend(
                     _guidance_quality_failures(
                         label,

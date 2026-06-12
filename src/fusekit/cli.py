@@ -1826,7 +1826,16 @@ def _cmd_runner_detonate(args: argparse.Namespace) -> int:
         preserve=[Path(".fusekit/fusekit.vault.json"), args.job_state],
     )
     if job is not None:
-        job.mark("detonate.workspace", "done", f"{args.scope} detonation requested")
+        if _workspace_detonation_complete(remote_deleted):
+            job.mark("detonate.workspace", "done", f"{args.scope} detonation requested")
+        else:
+            job.mark("detonate.workspace", "failed", f"{args.scope} detonation incomplete")
+        _write_workspace_detonation_receipt(
+            args,
+            job,
+            remote_deleted,
+            reason=f"manual {args.scope} detonation",
+        )
         job.save(args.job_state)
     print(
         json.dumps(
@@ -1840,7 +1849,7 @@ def _cmd_runner_detonate(args: argparse.Namespace) -> int:
             sort_keys=True,
         )
     )
-    return 0
+    return 0 if _workspace_detonation_complete(remote_deleted) else 1
 
 
 def _resolve_launch_runner(args: argparse.Namespace) -> RunnerResolution:
@@ -2149,7 +2158,14 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
         job.mark("setup.execute", "failed", "remote FuseKit launch failed")
         if not args.no_detonate:
             remote_deleted = _detonate_oci_workspace(args, workspace, vault)
-            job.mark("detonate.workspace", "done", "workspace detonation attempted after failure")
+            _record_workspace_detonation(
+                args,
+                job,
+                remote_deleted,
+                reason="remote setup failure",
+                success_detail="workspace detonated after failed remote setup",
+                failure_detail="workspace detonation incomplete after failed remote setup",
+            )
         else:
             job.mark("detonate.workspace", "skipped", "workspace retained by --no-detonate")
         _save_launch_job(args, job)
@@ -2193,10 +2209,13 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
         )
         if not args.no_detonate:
             remote_deleted = _detonate_oci_workspace(args, workspace, vault)
-            job.mark(
-                "detonate.workspace",
-                "done",
-                "workspace detonation attempted after failed verification",
+            _record_workspace_detonation(
+                args,
+                job,
+                remote_deleted,
+                reason="failed remote verification",
+                success_detail="workspace detonated after failed verification",
+                failure_detail="workspace detonation incomplete after failed verification",
             )
         else:
             job.mark("detonate.workspace", "skipped", "workspace retained by --no-detonate")
@@ -2220,7 +2239,19 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
         _run_remote_detonation_preflight(args, Path(artifacts["output_dir"]))
         _mark_run_state(args, detonation_safe=True)
         remote_deleted = _detonate_oci_workspace(args, workspace, vault)
-        job.mark("detonate.workspace", "done", "remote worker and OCI workspace detonated")
+        detonation_complete = _record_workspace_detonation(
+            args,
+            job,
+            remote_deleted,
+            reason="successful launch",
+            success_detail="remote worker and OCI workspace detonated",
+            failure_detail="OCI workspace detonation incomplete after successful launch",
+        )
+        if not detonation_complete:
+            _save_launch_job(args, job)
+            raise FuseKitError(
+                "OCI workspace detonation was incomplete; see workspace_detonation.json."
+            )
     _save_launch_job(args, job)
     _detonate_openclaw_state_if_requested(args)
     print(
@@ -2273,6 +2304,55 @@ def _detonate_oci_workspace(
     except FuseKitError as exc:
         remote_deleted["failed.workspace"] = str(exc)
     return remote_deleted
+
+
+def _record_workspace_detonation(
+    args: argparse.Namespace,
+    job: JobState,
+    remote_deleted: dict[str, str],
+    *,
+    reason: str,
+    success_detail: str,
+    failure_detail: str,
+) -> bool:
+    complete = _workspace_detonation_complete(remote_deleted)
+    _write_workspace_detonation_receipt(args, job, remote_deleted, reason=reason)
+    if complete:
+        _mark_run_state(args, workspace_detonated=True)
+        job.mark("detonate.workspace", "done", success_detail)
+    else:
+        job.mark("detonate.workspace", "failed", failure_detail)
+    return complete
+
+
+def _workspace_detonation_complete(remote_deleted: dict[str, str]) -> bool:
+    return not any(key.startswith("failed.") for key in remote_deleted)
+
+
+def _write_workspace_detonation_receipt(
+    args: argparse.Namespace,
+    job: JobState,
+    remote_deleted: dict[str, str],
+    *,
+    reason: str,
+) -> Path:
+    path = Path(args.job_state).parent / "workspace_detonation.json"
+    failures = {
+        key: _redact_cli_error(str(value))
+        for key, value in sorted(remote_deleted.items())
+        if key.startswith("failed.")
+    }
+    payload: dict[str, Any] = {
+        "status": "incomplete" if failures else "complete",
+        "reason": reason,
+        "deleted": sorted(key for key in remote_deleted if not key.startswith("failed.")),
+        "failures": failures,
+        "updated_at": time.time(),
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", "utf-8")
+    job.add_artifact("workspace_detonation", path)
+    return path
 
 
 def _run_remote_detonation_preflight(args: argparse.Namespace, output_dir: Path) -> None:
@@ -3488,6 +3568,18 @@ def _provider_strategy_record(result: dict[str, Any]) -> dict[str, object]:
             steps = [str(step).strip() for step in follow_steps if str(step).strip()]
             if steps:
                 strategy["follow_steps"] = steps
+        success_criteria = item.get("success_criteria")
+        if isinstance(success_criteria, (list, tuple)):
+            criteria = [
+                str(step).strip() for step in success_criteria if str(step).strip()
+            ]
+            if criteria:
+                strategy["success_criteria"] = criteria
+        avoid_steps = item.get("avoid_steps")
+        if isinstance(avoid_steps, (list, tuple)):
+            avoid = [str(step).strip() for step in avoid_steps if str(step).strip()]
+            if avoid:
+                strategy["avoid_steps"] = avoid
         strategies.append(strategy)
     return {"provider": str(result.get("provider", "")), "strategies": strategies}
 

@@ -22,6 +22,7 @@ RUN_STATE_FIELDS = (
     "provider_checks_passed_or_pending_safe",
     "receipt_written",
     "detonation_safe",
+    "workspace_detonated",
 )
 
 
@@ -39,6 +40,7 @@ class LaunchRunState:
     provider_checks_passed_or_pending_safe: bool = False
     receipt_written: bool = False
     detonation_safe: bool = False
+    workspace_detonated: bool = False
     updated_at: float = field(default_factory=time.time)
     notes: tuple[str, ...] = ()
 

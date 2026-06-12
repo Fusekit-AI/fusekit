@@ -111,6 +111,10 @@ def test_provider_strategy_does_not_dead_end_on_unimplemented_cli(tmp_path) -> N
     assert "Click Open provider gate in VM" in action["next_action"]
     assert "Capture GITHUB_TOKEN from VM clipboard" in action["next_action"]
     assert "Capture reads the VM clipboard directly" in action["next_action"]
+    assert "success_criteria" in action
+    assert "avoid_steps" in action
+    assert "Capture GITHUB_TOKEN from VM clipboard" in " ".join(action["success_criteria"])
+    assert "Do not use a local browser" in " ".join(action["avoid_steps"])
     assert (
         "visible I finished this step button in the control room"
         in " ".join(action["follow_steps"])
@@ -140,6 +144,8 @@ def test_provider_strategy_action_can_carry_pack_follow_steps(tmp_path) -> None:
     assert "encrypted vault" in steps
     assert "Capture reads the VM clipboard directly" in steps
     assert "Capture RESEND_API_KEY from VM clipboard" in action["next_action"]
+    assert "Capture RESEND_API_KEY from VM clipboard" in " ".join(action["success_criteria"])
+    assert "Do not use a local browser" in " ".join(action["avoid_steps"])
     assert "login/MFA/CAPTCHA/consent/token creation" not in action["next_action"]
 
 
@@ -154,6 +160,10 @@ def test_provider_strategy_summary_uses_evidence_token_env_without_pack(tmp_path
     assert decision.selected.evidence["token_env"] == "NEWPAY_API_KEY"
     assert action["target"] == "NEWPAY_API_KEY"
     assert "Capture NEWPAY_API_KEY from VM clipboard" in action["next_action"]
+    assert "Capture NEWPAY_API_KEY from VM clipboard" in " ".join(action["success_criteria"])
+    assert "Do not click I finished this step for NEWPAY_API_KEY" in " ".join(
+        action["avoid_steps"]
+    )
     assert "target-specific Capture from VM clipboard button" not in action["next_action"]
 
 
@@ -184,6 +194,8 @@ def test_provider_strategy_targetless_fallback_uses_active_gate_capture() -> Non
     ]
     assert "Capture RESEND_API_KEY from VM clipboard" not in action["next_action"]
     assert "exact env-named Capture button shown on the active launcher gate" in steps
+    assert "success_criteria" in action
+    assert "avoid_steps" in action
 
 
 def test_provider_strategy_uses_local_vault_for_capture_recipes(tmp_path) -> None:

@@ -180,6 +180,12 @@ fusekit runner detonate --runner oci --scope workspace
 7. Delete local OCI session token and generated signing keys unless they were explicitly saved into the encrypted vault for reuse.
 8. Preserve only encrypted vault and redacted audit/receipt artifacts.
 
+Every workspace detonation writes `.fusekit/workspace_detonation.json` with a
+non-secret list of deleted resource categories and redacted failure summaries. A
+successful launch is not allowed to finish green if any OCI or remote-worker
+cleanup step reports a `failed.*` deletion key; the detonation checkpoint turns
+red so the user knows the clean-room VM was not fully destroyed.
+
 Full OCI tenancy/account deletion is not a default detonation target. It should be a separate destructive workflow with explicit user approval.
 
 ## CLI Surface

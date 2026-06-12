@@ -97,6 +97,20 @@ def _gate_guidance_fields(provider: str) -> dict[str, list[str]]:
     }
 
 
+def _strategy_guidance_fields(target: str = "GITHUB_TOKEN") -> dict[str, list[str]]:
+    return {
+        "success_criteria": [
+            "The provider account named by FuseKit is selected.",
+            f"The visible Capture {target} from VM clipboard control captured the value.",
+        ],
+        "avoid_steps": [
+            "Do not use a local browser or host tab for this provider gate.",
+            f"Do not click I finished this step for {target}; use Capture {target} "
+            "from VM clipboard.",
+        ],
+    }
+
+
 def _write_resend_cloudflare_manifest(app: Path) -> None:
     (app / "fusekit.yaml").write_text(
         """
@@ -1578,6 +1592,50 @@ def test_acceptance_human_strategy_guidance_must_be_launcher_actionable() -> Non
     assert any("non-launcher wording" in item for item in failures)
     assert any("VM browser path" in item for item in failures)
     assert any("Capture from VM clipboard" in item for item in failures)
+
+
+def test_acceptance_human_strategy_accepts_success_and_avoid_panels() -> None:
+    failures = _provider_strategy_shape_failures(
+        [
+            {
+                "provider": "github",
+                "strategies": [
+                    {
+                        "recipe": "github-repo-secrets",
+                        "status": "needs_human_gate",
+                        "target": "GITHUB_TOKEN",
+                        "follow_steps": [
+                            (
+                                "Click Open provider gate in VM so GitHub opens in "
+                                "the VM browser."
+                            ),
+                            "Copy the token inside the shared VM browser.",
+                            "Click Capture GITHUB_TOKEN from VM clipboard.",
+                        ],
+                        "next_action": (
+                            "Click Open provider gate in VM, copy the token inside "
+                            "the VM browser, then click Capture GITHUB_TOKEN from "
+                            "VM clipboard."
+                        ),
+                        "resume_hint": "FuseKit will retry GitHub setup after capture.",
+                        **_strategy_guidance_fields("GITHUB_TOKEN"),
+                        "decision": {
+                            "selected": {
+                                "kind": "browser_guided",
+                                "status": "available",
+                                "deterministic": False,
+                                "implemented": False,
+                                "reason": "Missing provider token.",
+                            },
+                            "candidates": [{"kind": "browser_guided"}],
+                        },
+                    }
+                ],
+            }
+        ]
+    )
+
+    assert failures == []
 
 
 def test_acceptance_human_strategy_rejects_local_browser_side_channel() -> None:
@@ -4206,6 +4264,8 @@ def test_live_acceptance_requires_guided_human_provider_strategy(tmp_path) -> No
     assert "github.strategies[0].follow_steps is missing" in strategy_check.detail
     assert "github.strategies[0].next_action is missing" in strategy_check.detail
     assert "github.strategies[0].resume_hint is missing" in strategy_check.detail
+    assert "github.strategies[0].success_criteria is missing" in strategy_check.detail
+    assert "github.strategies[0].avoid_steps is missing" in strategy_check.detail
     assert "complete provider strategy evidence" in report.missing
     blockers = {blocker["item"]: blocker for blocker in report.blockers}
     next_action = blockers["complete provider strategy evidence"]["next_action"]

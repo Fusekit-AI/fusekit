@@ -23,11 +23,13 @@ from fusekit.cli import (
     _playwright_headless,
     _provider_strategy_checkpoint_resume_hint,
     _provider_strategy_next_action,
+    _provider_strategy_record,
     _provider_verification_acceptable,
     _provider_verification_attempt_config,
     _rebase_setup_artifacts,
     _record_provider_strategy_gates,
     _record_provider_verification_gates,
+    _record_workspace_detonation,
     _repair_navigation_completed,
     _run_handoff,
     _run_manifest_provider_pack_setup,
@@ -63,6 +65,97 @@ from fusekit.runner.oci_live import OciWorkspace
 from fusekit.spine.playbooks import BrowserPlaybookEvent
 from fusekit.vault import Vault
 from fusekit.verification_report import VerificationReport
+
+
+def test_provider_strategy_record_preserves_guidance_panels() -> None:
+    record = _provider_strategy_record(
+        {
+            "provider": "github",
+            "setup": [
+                {
+                    "kind": "github-repo-secrets",
+                    "status": "needs_human_gate",
+                    "strategy": "browser_guided",
+                    "target": "GITHUB_TOKEN",
+                    "next_action": (
+                        "Click Open provider gate in VM, copy the token, then click "
+                        "Capture GITHUB_TOKEN from VM clipboard."
+                    ),
+                    "resume_hint": "FuseKit will retry GitHub setup after capture.",
+                    "follow_steps": [
+                        "Click Open provider gate in VM.",
+                        "Copy the token inside the shared VM browser.",
+                    ],
+                    "success_criteria": [
+                        "Capture GITHUB_TOKEN from VM clipboard captured the raw token.",
+                    ],
+                    "avoid_steps": [
+                        "Do not use a local browser for this provider gate.",
+                    ],
+                    "strategy_decision": {
+                        "selected": {
+                            "kind": "browser_guided",
+                            "status": "available",
+                            "deterministic": False,
+                            "implemented": True,
+                            "reason": "Provider token is missing.",
+                        },
+                        "candidates": [
+                            {
+                                "kind": "browser_guided",
+                                "status": "available",
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+    )
+
+    strategy = record["strategies"][0]
+    assert strategy["success_criteria"] == [
+        "Capture GITHUB_TOKEN from VM clipboard captured the raw token.",
+    ]
+    assert strategy["avoid_steps"] == [
+        "Do not use a local browser for this provider gate.",
+    ]
+
+
+def test_workspace_detonation_receipt_fails_closed_and_redacts(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    job_state = app / ".fusekit" / "job.json"
+    args = argparse.Namespace(job_state=job_state)
+    job = JobState.create("fk-test", app, "oci")
+
+    complete = _record_workspace_detonation(
+        args,
+        job,
+        {
+            "instance": "ocid1.instance.oc1..example",
+            "failed.vcn": (
+                "delete failed at https://example.invalid/?token=secret-token"
+                "&password=secret-password"
+            ),
+        },
+        reason="test cleanup",
+        success_detail="workspace detonated",
+        failure_detail="workspace detonation incomplete",
+    )
+
+    assert complete is False
+    assert job.status == "failed"
+    assert any(
+        step.id == "detonate.workspace" and step.status == "failed"
+        for step in job.steps
+    )
+    receipt = json.loads(
+        (app / ".fusekit" / "workspace_detonation.json").read_text(encoding="utf-8")
+    )
+    assert receipt["status"] == "incomplete"
+    assert receipt["deleted"] == ["instance"]
+    assert "secret-token" not in json.dumps(receipt)
+    assert "secret-password" not in json.dumps(receipt)
 
 
 def test_rebase_setup_artifacts_rebases_report_and_rollback(tmp_path) -> None:
@@ -3123,6 +3216,13 @@ def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch)
     assert run_state["provider_checks_passed_or_pending_safe"] is True
     assert run_state["receipt_written"] is True
     assert run_state["detonation_safe"] is True
+    assert run_state["workspace_detonated"] is True
+    detonation = json.loads(
+        (app / ".fusekit" / "workspace_detonation.json").read_text(encoding="utf-8")
+    )
+    assert detonation["status"] == "complete"
+    assert detonation["deleted"] == ["instance"]
+    assert detonation["failures"] == {}
     checkpoints = json.loads((app / ".fusekit" / "checkpoints.json").read_text(encoding="utf-8"))
     assert checkpoints["job_id"] == job["id"]
     assert any(item["id"] == "detonate.workspace" for item in checkpoints["checkpoints"])

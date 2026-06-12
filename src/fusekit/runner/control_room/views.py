@@ -1056,6 +1056,7 @@ _RUN_STATE_LABELS = {
     "provider_checks_passed_or_pending_safe": "Provider checks",
     "receipt_written": "Receipt",
     "detonation_safe": "Detonation",
+    "workspace_detonated": "Destroyed",
 }
 
 _RUN_STATE_DETAILS = {
@@ -1098,6 +1099,10 @@ _RUN_STATE_DETAILS = {
     "detonation_safe": (
         "Preflight passed and detonation can run.",
         "Waiting for vault, audit, receipt, verification, rollback, and leak checks.",
+    ),
+    "workspace_detonated": (
+        "Disposable OCI workspace is destroyed.",
+        "Waiting for the remote worker, VM, network, and temporary OCI resources to be deleted.",
     ),
 }
 
