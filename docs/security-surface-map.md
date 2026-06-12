@@ -40,6 +40,12 @@ accepts arbitrary commands, resource identifiers, DNS record bodies, or raw appr
 payloads from the browser; the worker interprets only the durable gate id/status
 that FuseKit already created.
 
+Gate capture and resume actions also append redacted `.fusekit/gate_events.jsonl`
+wake events. These events prove that a human approval or VM-clipboard capture
+occurred and can wake retry/resume logic after an OCI worker is killed or
+recreated. They store gate ids, provider names, statuses, and env-target labels,
+but never raw clipboard values, provider tokens, URLs, or command payloads.
+
 Gate target text is also display-redacted before it reaches the browser payload.
 FuseKit preserves useful target shape such as domains, env names, and redacted query
 keys, but token-like values, callback codes, API keys, and long opaque strings are

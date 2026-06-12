@@ -257,6 +257,13 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
         reason="Capture Cloudflare API token",
         resume_url="https://dash.cloudflare.com/profile/api-tokens",
     )
+    GateService.load(tmp_path / "gates.json").mark_captured(
+        "provider.cloudflare.authorization",
+        "CLOUDFLARE_API_TOKEN",
+    )
+    GateService.load(tmp_path / "gates.json").request_resume(
+        "provider.cloudflare.authorization",
+    )
     (tmp_path / "provider_strategies.json").write_text(
         '{"providers":[{"provider":"cloudflare","strategies":[]}]}',
         encoding="utf-8",
@@ -290,6 +297,12 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     assert record["state"]["workspace_detonated"] is True
     assert record["provider_gates"]["total"] == 1
     assert record["provider_gates"]["providers"] == ["cloudflare"]
+    assert record["wake_events"]["total"] == 2
+    assert record["wake_events"]["event_counts"] == {
+        "clipboard_captured": 1,
+        "resume_requested": 1,
+    }
+    assert record["wake_events"]["events"][0]["target"] == "CLOUDFLARE_API_TOKEN"
     assert record["vault"]["record_count"] == 1
     assert record["vault"]["records"][0]["id"] == "provider.cloudflare.token"
     assert record["detonation"]["workspace_receipt"]["status"] == "complete"
@@ -5506,6 +5519,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
             archive = tarfile.open(stdout_path, "w:gz")
             payload = tmp_path / "job.json"
             gates = tmp_path / "gates.json"
+            gate_events = tmp_path / "gate_events.jsonl"
             checkpoints = tmp_path / "checkpoints.json"
             run_record = tmp_path / "run_record.json"
             vault_file = tmp_path / "fusekit.vault.json"
@@ -5517,6 +5531,10 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
             runner_readiness = tmp_path / "runner_readiness.json"
             payload.write_text("{}", encoding="utf-8")
             gates.write_text('{"gates":[]}', encoding="utf-8")
+            gate_events.write_text(
+                '{"event":"resume_requested","gate_id":"provider.test"}\n',
+                encoding="utf-8",
+            )
             checkpoints.write_text('{"checkpoints":[]}', encoding="utf-8")
             run_record.write_text(
                 '{"schema_version":"fusekit.run-record.v1","id":"fk-test"}',
@@ -5537,6 +5555,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
             )
             archive.add(payload, arcname=".fusekit/job.json")
             archive.add(gates, arcname=".fusekit/gates.json")
+            archive.add(gate_events, arcname=".fusekit/gate_events.jsonl")
             archive.add(checkpoints, arcname=".fusekit/checkpoints.json")
             archive.add(run_record, arcname=".fusekit/run_record.json")
             archive.add(vault_file, arcname=".fusekit/fusekit.vault.json")
@@ -5677,6 +5696,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         if command[0] == "ssh"
     )
     assert (tmp_path / "out" / ".fusekit" / "gates.json").exists()
+    assert (tmp_path / "out" / ".fusekit" / "gate_events.jsonl").exists()
     assert (tmp_path / "out" / ".fusekit" / "checkpoints.json").exists()
     assert (tmp_path / "out" / ".fusekit" / "run_record.json").exists()
     assert (tmp_path / "out" / ".fusekit" / "fusekit.vault.json").exists()
@@ -5686,6 +5706,11 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
     assert (tmp_path / "out" / ".fusekit" / "rollback_plan.json").exists()
     assert (tmp_path / "out" / ".fusekit" / "provider_strategies.json").exists()
     assert any(".fusekit/gates.json" in command[-1] for command in calls if command[0] == "ssh")
+    assert any(
+        ".fusekit/gate_events.jsonl" in command[-1]
+        for command in calls
+        if command[0] == "ssh"
+    )
     assert any(
         ".fusekit/checkpoints.json" in command[-1]
         for command in calls

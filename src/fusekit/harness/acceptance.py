@@ -463,6 +463,12 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
         _require_list_field(provider_gates, "records", failures, prefix="provider_gates")
         _require_dict_field(provider_gates, "statuses", failures, prefix="provider_gates")
         _require_list_field(provider_gates, "providers", failures, prefix="provider_gates")
+    wake_events = _require_dict_field(raw, "wake_events", failures)
+    if wake_events is not None:
+        if not isinstance(wake_events.get("total"), int):
+            failures.append("wake_events.total is missing")
+        _require_dict_field(wake_events, "event_counts", failures, prefix="wake_events")
+        _require_list_field(wake_events, "events", failures, prefix="wake_events")
     _require_dict_field(raw, "provider_strategies", failures)
     vault = _require_dict_field(raw, "vault", failures)
     if vault is not None:

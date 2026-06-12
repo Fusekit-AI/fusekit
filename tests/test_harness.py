@@ -332,6 +332,7 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
                     "providers": [],
                     "records": [],
                 },
+                "wake_events": {"total": 0, "event_counts": {}, "events": []},
                 "provider_strategies": {"providers": []},
                 "vault": {"record_count": 0, "records": []},
                 "artifacts": [],

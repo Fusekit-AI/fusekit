@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -235,6 +236,7 @@ class GateService:
         record.resume_hint = _resume_hint(record)
         record.updated_at = time.time()
         self.save()
+        self._append_wake_event("resume_requested", record)
 
     def mark_opened(self, gate_id: str, url: str) -> None:
         """Record that the provider gate was opened in the shared VM browser."""
@@ -266,6 +268,7 @@ class GateService:
             )
         record.updated_at = time.time()
         self.save()
+        self._append_wake_event("clipboard_captured", record, target=normalized)
 
     def fail_gate(self, gate_id: str) -> None:
         """Mark a gate as failed."""
@@ -293,6 +296,30 @@ class GateService:
             + "\n",
         )
 
+    def _append_wake_event(
+        self,
+        event: str,
+        record: GateRecord,
+        *,
+        target: str = "",
+    ) -> None:
+        """Append a non-secret wake event consumed by resume/audit surfaces."""
+
+        payload = {
+            "schema_version": "fusekit.gate-wake.v1",
+            "id": uuid.uuid4().hex,
+            "event": event,
+            "gate_id": record.id,
+            "provider": record.provider,
+            "classification": record.classification,
+            "status": record.status,
+            "target": target,
+            "target_count": len(_capture_targets(record.target)),
+            "captured_targets": list(record.captured_targets),
+            "created_at": time.time(),
+        }
+        _append_jsonl_private(self.path.with_name("gate_events.jsonl"), payload)
+
 
 def _atomic_write_private(path: Path, content: str) -> None:
     temp = path.with_name(f".{path.name}.tmp")
@@ -309,6 +336,14 @@ def _atomic_write_private(path: Path, content: str) -> None:
         except OSError:
             pass
         raise
+
+
+def _append_jsonl_private(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    with os.fdopen(fd, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, sort_keys=True) + "\n")
+    path.chmod(0o600)
 
 
 def _capture_targets(target: str) -> set[str]:

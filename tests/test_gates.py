@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fusekit.runner.gates import GateService
 
 
@@ -104,6 +106,22 @@ def test_gate_service_resume_request_can_resurface_after_failed_recheck(tmp_path
     assert retrying.captured_targets == ("RESEND_API_KEY",)
     assert retrying.next_action == "FuseKit is retrying provider verification now."
     assert "next guided blocker" in retrying.resume_hint
+    events = [
+        json.loads(line)
+        for line in (tmp_path / "gate_events.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert [event["event"] for event in events] == [
+        "clipboard_captured",
+        "resume_requested",
+    ]
+    assert events[0]["schema_version"] == "fusekit.gate-wake.v1"
+    assert events[0]["gate_id"] == "resend-auth"
+    assert events[0]["provider"] == "resend"
+    assert events[0]["target"] == "RESEND_API_KEY"
+    assert events[0]["captured_targets"] == ["RESEND_API_KEY"]
+    assert events[1]["status"] == "resume_requested"
+    assert "secret" not in json.dumps(events).lower()
 
     resurfaced = GateService.load(path).wait(
         "resend-auth",

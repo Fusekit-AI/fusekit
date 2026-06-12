@@ -27,6 +27,7 @@ def build_run_record(
     acceptance = _read_json_object(root / "acceptance" / "report.json")
     workspace_detonation = _read_json_object(root / "workspace_detonation.json")
     provider_strategies = _read_json_object(root / "provider_strategies.json")
+    wake_events = _read_gate_wake_events(root / "gate_events.jsonl")
     run_state = _read_run_state(root / "run_state.json")
     artifacts = _artifact_records(job, root)
     return {
@@ -41,6 +42,7 @@ def build_run_record(
         "steps": [step.to_dict() for step in job.steps],
         "checkpoints": [checkpoint.to_dict() for checkpoint in job.checkpoints],
         "provider_gates": _gate_summary(gates),
+        "wake_events": _wake_event_summary(wake_events),
         "provider_strategies": provider_strategies or {"providers": []},
         "vault": {
             "records": vault_index or [],
@@ -108,6 +110,47 @@ def _read_gates(path: Path) -> list[dict[str, Any]]:
     return records
 
 
+def _read_gate_wake_events(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    events: list[dict[str, Any]] = []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return [
+            {
+                "schema_version": "fusekit.gate-wake.v1",
+                "event": "unreadable",
+                "gate_id": "unknown",
+                "provider": "",
+                "status": "invalid",
+                "target": "",
+                "created_at": 0,
+            }
+        ]
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            raw = json.loads(line)
+        except json.JSONDecodeError:
+            events.append(
+                {
+                    "schema_version": "fusekit.gate-wake.v1",
+                    "event": "invalid",
+                    "gate_id": "unknown",
+                    "provider": "",
+                    "status": "invalid",
+                    "target": "",
+                    "created_at": 0,
+                }
+            )
+            continue
+        if isinstance(raw, dict):
+            events.append(_redacted_wake_event(raw))
+    return events
+
+
 def _gate_summary(gates: list[dict[str, Any]]) -> dict[str, Any]:
     statuses: dict[str, int] = {}
     providers: set[str] = set()
@@ -122,6 +165,34 @@ def _gate_summary(gates: list[dict[str, Any]]) -> dict[str, Any]:
         "statuses": statuses,
         "providers": sorted(providers),
         "records": gates,
+    }
+
+
+def _wake_event_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
+    counts: dict[str, int] = {}
+    for event in events:
+        name = str(event.get("event", "unknown") or "unknown")
+        counts[name] = counts.get(name, 0) + 1
+    return {
+        "total": len(events),
+        "event_counts": counts,
+        "events": events[-50:],
+    }
+
+
+def _redacted_wake_event(raw: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "schema_version": str(raw.get("schema_version", "fusekit.gate-wake.v1")),
+        "id": str(raw.get("id", "")),
+        "event": str(raw.get("event", "unknown") or "unknown"),
+        "gate_id": str(raw.get("gate_id", "unknown") or "unknown"),
+        "provider": str(raw.get("provider", "") or ""),
+        "classification": str(raw.get("classification", "") or ""),
+        "status": str(raw.get("status", "unknown") or "unknown"),
+        "target": str(raw.get("target", "") or ""),
+        "target_count": _safe_int(raw.get("target_count"), 0),
+        "captured_targets": _safe_string_list(raw.get("captured_targets", [])),
+        "created_at": _safe_float(raw.get("created_at"), 0),
     }
 
 
@@ -141,10 +212,12 @@ def _artifact_records(job: JobState, root: Path) -> list[dict[str, Any]]:
         "checkpoints",
         "run_state",
         "gates",
+        "gate_events",
         "workspace_detonation",
         "run_record",
     ):
-        path = root / f"{name}.json"
+        suffix = "jsonl" if name == "gate_events" else "json"
+        path = root / f"{name}.{suffix}"
         if any(record["name"] == name for record in records):
             continue
         if path.exists():
@@ -234,3 +307,37 @@ def _error_summary(
                 }
             )
     return errors
+
+
+def _safe_string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if isinstance(item, str)]
+
+
+def _safe_int(value: object, default: int) -> int:
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return default
+    return default
+
+
+def _safe_float(value: object, default: float) -> float:
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return default
+    return default
