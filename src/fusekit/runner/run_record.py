@@ -58,6 +58,19 @@ VOLATILE_WORKER_SURFACES = (
     "websockify.log",
     "chrome.log",
 )
+VOLATILE_DURABLE_STATE_MARKERS = tuple(
+    sorted(
+        {
+            *VOLATILE_WORKER_SURFACES,
+            ".log",
+            "clipboard-history",
+            "local-browser",
+            "vm-scratch",
+        },
+        key=len,
+        reverse=True,
+    )
+)
 DETONATION_PRESERVES = (
     "encrypted_vault",
     "job_state",
@@ -1231,14 +1244,74 @@ def _recording_durable_state_ready(record: dict[str, Any]) -> bool:
         return False
     scope = durable.get("detonation_scope", {})
     replacement = durable.get("worker_replacement_contract", {})
+    sources = durable.get("sources", [])
+    runner_failures = durable.get("runner_profile_failures", [])
+    volatile_surfaces = durable.get("volatile_worker_surfaces", [])
+    preserves = durable.get("detonation_preserves", [])
+    if (
+        not isinstance(scope, dict)
+        or not isinstance(replacement, dict)
+        or not isinstance(sources, list)
+        or not isinstance(runner_failures, list)
+        or not isinstance(volatile_surfaces, list)
+        or not isinstance(preserves, list)
+    ):
+        return False
+    required_sources = {source[0] for source in DURABLE_STATE_SOURCES}
+    source_ids = {
+        str(source.get("id", "") or "")
+        for source in sources
+        if isinstance(source, dict) and source.get("exists") is True
+    }
+    preserve_values = {str(item) for item in preserves}
+    scope_preserves = scope.get("must_preserve", [])
+    scope_deletes = scope.get("must_delete", [])
+    if not isinstance(scope_preserves, list) or not isinstance(scope_deletes, list):
+        return False
     return (
-        durable.get("resume_ready") is True
-        and isinstance(scope, dict)
+        str(durable.get("schema_version", "") or "") == DURABLE_STATE_SCHEMA_VERSION
+        and durable.get("resume_ready") is True
+        and durable.get("runner_profile_ready") is True
+        and not runner_failures
+        and not durable.get("missing")
+        and required_sources.issubset(source_ids)
+        and all(_recording_durable_source_ready(source) for source in sources)
+        and set(VOLATILE_WORKER_SURFACES).issubset({str(item) for item in volatile_surfaces})
+        and preserve_values == set(DETONATION_PRESERVES)
+        and not any(_recording_volatile_marker(item) for item in preserve_values)
+        and str(scope.get("schema_version", "") or "") == DETONATION_SCOPE_SCHEMA_VERSION
         and scope.get("resume_until_complete") is True
         and str(scope.get("mode", "") or "") == "worker-and-oci-workspace"
-        and isinstance(replacement, dict)
+        and set(VOLATILE_WORKER_SURFACES).issubset({str(item) for item in scope_deletes})
+        and {str(item) for item in scope_preserves} == preserve_values
+        and not any(_recording_volatile_marker(item) for item in scope_preserves)
         and replacement.get("can_recreate_worker") is True
         and replacement.get("host_machine_state_required") is False
+        and "no FuseKit worker state remains" in str(
+            scope.get("no_trace_statement", "") or ""
+        )
+        and "OCI workspace" in str(scope.get("no_trace_statement", "") or "")
+    )
+
+
+def _recording_durable_source_ready(source: object) -> bool:
+    if not isinstance(source, dict):
+        return False
+    source_id = str(source.get("id", "") or "")
+    path = str(source.get("path", "") or "")
+    secret_class = str(source.get("secret_class", "") or "")
+    return (
+        bool(source_id)
+        and bool(path)
+        and not path.startswith("/")
+        and source.get("exists") is True
+        and secret_class in {"encrypted", "non-secret"}
+        and not _recording_volatile_marker(
+            " ".join(
+                str(source.get(field, "") or "")
+                for field in ("id", "path", "role")
+            )
+        )
     )
 
 
@@ -1261,6 +1334,8 @@ def _recording_worker_replacement_ready(record: dict[str, Any]) -> bool:
         return False
     required_resume_sources = {source[0] for source in DURABLE_STATE_SOURCES}
     required_volatile = set(VOLATILE_WORKER_SURFACES)
+    resume_source_values = {str(item) for item in resume_sources}
+    volatile_surface_values = {str(item) for item in volatile_surfaces}
     return (
         replacement.get("worker_is_disposable") is True
         and replacement.get("can_recreate_worker") is True
@@ -1268,12 +1343,25 @@ def _recording_worker_replacement_ready(record: dict[str, Any]) -> bool:
         and str(replacement.get("required_runner_profile", "") or "") == "oci-visual-browser-x86_64"
         and replacement.get("host_machine_state_required") is False
         and str(replacement.get("state_owner", "") or "") == "encrypted-vault-and-run-record"
-        and required_resume_sources.issubset({str(item) for item in resume_sources})
-        and {str(item) for item in resume_sources}.issubset(source_ids)
-        and required_volatile.issubset({str(item) for item in volatile_surfaces})
+        and required_resume_sources.issubset(resume_source_values)
+        and resume_source_values.issubset(source_ids)
+        and not any(_recording_volatile_marker(item) for item in resume_source_values)
+        and required_volatile.issubset(volatile_surface_values)
         and "encrypted/redacted" in str(replacement.get("statement", "") or "")
         and "host clipboard history" in str(replacement.get("statement", "") or "")
+        and "plaintext VM scratch" in str(replacement.get("statement", "") or "")
     )
+
+
+def _recording_volatile_marker(value: object) -> str:
+    text = str(value or "").strip().lower().replace("_", "-")
+    if not text:
+        return ""
+    for marker in VOLATILE_DURABLE_STATE_MARKERS:
+        normalized = marker.lower().replace("_", "-")
+        if normalized in text:
+            return marker
+    return ""
 
 
 def _recording_runner_profile_ready(record: dict[str, Any]) -> bool:

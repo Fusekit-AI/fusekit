@@ -77,10 +77,12 @@ from fusekit.runner.run_record import (
     _recording_audit_trail_ready,
     _recording_automation_boundary_ready,
     _recording_detonation_ready,
+    _recording_durable_state_ready,
     _recording_evidence_ready,
     _recording_human_actions_ready,
     _recording_provider_playbook_ready,
     _recording_verifiers_ready,
+    _recording_worker_replacement_ready,
     write_run_record,
 )
 from fusekit.runner.run_state import LaunchRunState, update_run_state
@@ -1088,10 +1090,113 @@ def test_run_record_recording_contract_blocks_missing_provider_playbook(tmp_path
 
     assert record["durable_state"]["resume_ready"] is True
     assert record["provider_playbook"]["step_count"] == 0
+    assert _recording_durable_state_ready(record) is True
+    assert _recording_worker_replacement_ready(record) is True
     assert record["recording_contract"]["checks"]["worker_replacement"] is True
     assert record["recording_contract"]["checks"]["provider_playbook"] is False
     assert record["recording_contract"]["recording_ready"] is False
     assert record["recording_contract"]["blockers"] == ["provider_playbook"]
+
+
+def test_recording_contract_rejects_volatile_durable_state_survivors(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci")
+    job.mark("setup.execute", "done", "provider setup finished")
+    (tmp_path / "audit.jsonl").write_text('{"event":"ok"}\n', encoding="utf-8")
+    job.add_artifact("audit_log", tmp_path / "audit.jsonl")
+    (tmp_path / "fusekit.vault.json").write_text("encrypted", encoding="utf-8")
+    (tmp_path / "provider_strategies.json").write_text(
+        json.dumps({"providers": []}),
+        encoding="utf-8",
+    )
+    (tmp_path / "gates.json").write_text(json.dumps({"gates": []}), encoding="utf-8")
+    (tmp_path / "setup_receipt.json").write_text(
+        json.dumps({"actions": [{"action": "resend.domain", "status": "passed"}]}),
+        encoding="utf-8",
+    )
+    (tmp_path / "verification_report.json").write_text(
+        json.dumps({"checks": [{"provider": "resend", "status": "passed"}]}),
+        encoding="utf-8",
+    )
+    (tmp_path / "visual.json").write_text(
+        json.dumps({"runner": "novnc", "status": "ready"}),
+        encoding="utf-8",
+    )
+    _write_runner_readiness(tmp_path)
+    (tmp_path / "workspace_detonation.json").write_text(
+        json.dumps(
+            {
+                "status": "complete",
+                "deleted": [
+                    "boot_volume",
+                    "ephemeral_public_ip",
+                    "instance",
+                    "internet_gateway",
+                    "network_security_group",
+                    "remote_worker",
+                    "route_table",
+                    "security_list",
+                    "subnet",
+                    "vcn",
+                ],
+                "failures": {},
+                "resource_summary": {
+                    "schema_version": "fusekit.workspace-detonation-resources.v1",
+                    "remote_worker": True,
+                    "remote_worker_cleanup": remote_worker_cleanup_proof(),
+                    "compute_instance": True,
+                    "boot_volume_deleted": True,
+                    "ephemeral_public_ip_released": True,
+                    "network_resources": [
+                        "internet_gateway",
+                        "network_security_group",
+                        "route_table",
+                        "security_list",
+                        "subnet",
+                        "vcn",
+                    ],
+                    "network_resources_missing": [],
+                    "network_resources_deleted": True,
+                    "compartment_scope": "preserved",
+                    "missing": [],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    update_run_state(
+        tmp_path / "run_state.json",
+        app_repo_known=True,
+        runner_selected=True,
+        vault_created=True,
+        detonation_safe=True,
+        workspace_detonated=True,
+    )
+    (tmp_path / "gate_events.jsonl").write_text("", encoding="utf-8")
+    job.save(tmp_path / "job.json")
+    record = json.loads(
+        write_run_record(job, path=tmp_path / "run_record.json").read_text(encoding="utf-8")
+    )
+
+    assert _recording_durable_state_ready(record) is True
+    assert _recording_worker_replacement_ready(record) is True
+
+    record["durable_state"]["sources"].append(
+        {
+            "id": "local_browser_profile",
+            "path": "browser-profile/Default",
+            "role": "local browser profile",
+            "secret_class": "non-secret",
+            "exists": True,
+        }
+    )
+    record["durable_state"]["detonation_preserves"].append("browser-profile")
+    record["durable_state"]["detonation_scope"]["must_preserve"].append("browser-profile")
+    record["durable_state"]["worker_replacement_contract"]["resume_sources"].append(
+        "local_browser_profile"
+    )
+
+    assert _recording_durable_state_ready(record) is False
+    assert _recording_worker_replacement_ready(record) is False
 
 
 def test_run_record_recording_contract_blocks_thin_runner_profile(tmp_path) -> None:
