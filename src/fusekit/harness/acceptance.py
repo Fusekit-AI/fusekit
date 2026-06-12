@@ -568,8 +568,15 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
                 if record_count != len(records):
                     failures.append("vault.record_count must match vault.records")
             for index, record in enumerate(records):
-                if isinstance(record, dict) and "value" in record:
-                    failures.append(f"vault.records[{index}] exposes a raw value")
+                label = f"vault.records[{index}]"
+                if not isinstance(record, dict):
+                    failures.append(f"{label} is not an object")
+                    continue
+                for field in ("id", "kind", "provider", "label"):
+                    if not str(record.get(field, "") or "").strip():
+                        failures.append(f"{label}.{field} is missing")
+                if "value" in record:
+                    failures.append(f"{label} exposes a raw value")
     audit_trail = _require_dict_field(raw, "audit_trail", failures)
     if audit_trail is not None:
         failures.extend(_audit_trail_shape_failures(audit_trail, raw))

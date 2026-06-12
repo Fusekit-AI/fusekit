@@ -4744,6 +4744,33 @@ def test_acceptance_run_record_requires_vault_count_to_match_records(tmp_path) -
     assert "vault.record_count must match vault.records" in failures
 
 
+def test_acceptance_run_record_requires_shaped_vault_metadata(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["vault"] = {
+        "record_count": 1,
+        "records": [
+            {
+                "id": "",
+                "kind": "",
+                "provider": "",
+                "label": "",
+                "value": "secret-should-not-survive",
+            }
+        ],
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert "vault.records[0].id is missing" in failures
+    assert "vault.records[0].kind is missing" in failures
+    assert "vault.records[0].provider is missing" in failures
+    assert "vault.records[0].label is missing" in failures
+    assert "vault.records[0] exposes a raw value" in failures
+
+
 def test_acceptance_run_record_requires_guided_human_action_trace(tmp_path) -> None:
     fusekit_dir = tmp_path / ".fusekit"
     fusekit_dir.mkdir()
