@@ -914,32 +914,32 @@ def _strategy_plan_items(providers: list[Any]) -> list[str]:
         for record in records
     )
     has_api = any(_strategy_route(record) == "api" for record in records)
-    if has_resend_domain:
-        items.append(
-            "First, FuseKit creates or reuses the Resend sending domain by API; "
-            "do not click Add domain in Resend."
-        )
-    if has_resend_domain and has_dns:
-        items.append(
-            "Then FuseKit carries the Resend DNS records into the DNS approval gate "
-            "with the app records before Cloudflare/DNS apply runs."
-        )
-    if has_vercel_resend_env:
-        items.append(
-            "After RESEND_API_KEY capture lets FuseKit create or reuse the Resend "
-            "domain/audience values by API, FuseKit writes the required RESEND_* runtime "
-            "variables into Vercel before deployment verification."
-        )
     if token_targets:
         capture_labels = ", ".join(
             f"Capture {target} from VM clipboard" for target in token_targets
         )
         items.append(
-            "If a provider token gate appears, click Open provider gate in VM, copy "
-            "the value inside the shared VM browser, then click "
+            "First, if a provider token gate appears, click Open provider gate in VM, "
+            "copy the value inside the shared VM browser, then click "
             f"{capture_labels}."
         )
-    elif has_human_gate:
+    if has_resend_domain:
+        prefix = "Then" if token_targets else "First"
+        items.append(
+            f"{prefix}, FuseKit creates or reuses the Resend sending domain by API; "
+            "do not click Add domain in Resend."
+        )
+    if has_vercel_resend_env:
+        items.append(
+            "Then FuseKit writes the required RESEND_* runtime variables into Vercel "
+            "after Resend domain/audience values exist."
+        )
+    if has_resend_domain and has_dns:
+        items.append(
+            "Then FuseKit carries the Resend DNS records and app records into the DNS "
+            "approval gate before Cloudflare/DNS apply runs."
+        )
+    if not token_targets and has_human_gate:
         items.append(
             "For provider-owned login, MFA, consent, or billing gates, click Open "
             "provider gate in VM, finish the prompt in the shared VM browser, then "

@@ -5130,7 +5130,7 @@ def test_control_room_payload_and_html_include_provider_strategy_routes(tmp_path
     assert "the matching Capture from VM clipboard button" not in strategy_html
     assert "then click Capture from VM clipboard." not in strategy_html
     assert "Route plan" in html
-    assert "If a provider token gate appears, click Open provider gate in VM" in html
+    assert "First, if a provider token gate appears, click Open provider gate in VM" in html
     assert "copy the value inside the shared VM browser" in html
     assert "Capture GITHUB_TOKEN from VM clipboard" in html
 
@@ -5382,9 +5382,20 @@ def test_control_room_route_plan_explains_resend_dns_and_vercel_order(tmp_path) 
 
     assert "Route plan" in html
     assert "First, FuseKit creates or reuses the Resend sending domain by API" in html
-    assert "Then FuseKit carries the Resend DNS records into the DNS approval gate" in html
-    assert "After RESEND_API_KEY capture lets FuseKit create or reuse the Resend" in html
-    assert "create or reuse the Resend domain/audience values by API" in html
+    assert "Then FuseKit writes the required RESEND_* runtime variables into Vercel" in html
+    assert "after Resend domain/audience values exist" in html
+    assert "Then FuseKit carries the Resend DNS records and app records" in html
+    assert (
+        html.index("First, FuseKit creates or reuses the Resend sending domain by API")
+        < html.index("Then FuseKit writes the required RESEND_* runtime variables into Vercel")
+        < html.index("Then FuseKit carries the Resend DNS records and app records")
+    )
+    assert "Then FuseKit writes the required RESEND_* runtime variables into Vercel" in SCRIPT
+    assert "Then FuseKit carries the Resend DNS records and app records" in SCRIPT
+    assert (
+        SCRIPT.index("Then FuseKit writes the required RESEND_* runtime variables into Vercel")
+        < SCRIPT.index("Then FuseKit carries the Resend DNS records and app records")
+    )
     assert "Capture or generate the required RESEND_* values" not in html
 
 

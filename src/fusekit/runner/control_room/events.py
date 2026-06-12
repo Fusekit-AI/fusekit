@@ -1172,35 +1172,36 @@ function providerStrategyPlanItems(providers) {
   );
   const hasApi = records.some((record) => strategyRoute(record) === "api");
   const items = [];
-  if (hasResendDomain) {
-    items.push(
-      "First, FuseKit creates or reuses the Resend sending domain by API; " +
-      "do not click Add domain in Resend.",
-    );
-  }
-  if (hasResendDomain && hasDns) {
-    items.push(
-      "Then FuseKit carries the Resend DNS records into the DNS approval gate " +
-      "with the app records before Cloudflare/DNS apply runs.",
-    );
-  }
-  if (hasVercelResendEnv) {
-    items.push(
-      "After RESEND_API_KEY capture lets FuseKit create or reuse the Resend " +
-      "domain/audience values by API, FuseKit writes the required RESEND_* runtime " +
-      "variables into Vercel before deployment verification.",
-    );
-  }
   if (tokenTargets.length) {
     const captureLabels = tokenTargets
       .map((target) => `Capture ${target} from VM clipboard`)
       .join(", ");
     items.push(
-      "If a provider token gate appears, click Open provider gate in VM, copy " +
-      "the value inside the shared VM browser, then click " +
+      "First, if a provider token gate appears, click Open provider gate in VM, " +
+      "copy the value inside the shared VM browser, then click " +
       `${captureLabels}.`,
     );
-  } else if (hasHumanGate) {
+  }
+  if (hasResendDomain) {
+    const prefix = tokenTargets.length ? "Then" : "First";
+    items.push(
+      `${prefix}, FuseKit creates or reuses the Resend sending domain by API; ` +
+      "do not click Add domain in Resend.",
+    );
+  }
+  if (hasVercelResendEnv) {
+    items.push(
+      "Then FuseKit writes the required RESEND_* runtime variables into Vercel " +
+      "after Resend domain/audience values exist.",
+    );
+  }
+  if (hasResendDomain && hasDns) {
+    items.push(
+      "Then FuseKit carries the Resend DNS records and app records into the DNS " +
+      "approval gate before Cloudflare/DNS apply runs.",
+    );
+  }
+  if (!tokenTargets.length && hasHumanGate) {
     items.push(
       "For provider-owned login, MFA, consent, or billing gates, click Open " +
       "provider gate in VM, finish the prompt in the shared VM browser, then " +
