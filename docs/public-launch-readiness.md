@@ -90,13 +90,16 @@ gates plus setup/DNS approval gates must also prove the visible
 `I finished this step`, `Approve setup plan`, or `Approve DNS apply` click through
 redacted `control_room.gate_resume_requested` audit events. The Run Record's
 wake-event summary must match `gate_events.jsonl`, so Capture and approval audit
-entries remain anchored to the raw event stream that woke the worker. Detonation proof must
+entries remain anchored to the raw event stream that woke the worker. The Run
+Record must retain the full redacted audit sequence, not a truncated tail, so
+long provider retries and repeated approvals remain reviewable after detonation.
+Detonation proof must
 cover worker/temp state plus browser profile,
 visual-session scratch, OpenClaw/auth state, passphrase files, uploaded app archives,
 and FuseKit-controlled control-room/gateway logs; only encrypted or redacted proof
 artifacts may survive. The central Run Record must also include
 `durable_state` proof showing that the encrypted vault, job state, run state,
-checkpoints, gates, and provider route decisions all survived outside the
+checkpoints, gates, gate events, and provider route decisions all survived outside the
 disposable worker, so the OCI VM can be replaced or detonated without losing the
 run. It must also include a non-secret `fusekit.evidence-inventory.v1` inventory
 for logs, screenshots, visual state, and receipts by path and type only, so the

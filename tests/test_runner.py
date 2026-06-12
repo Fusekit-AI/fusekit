@@ -19,6 +19,7 @@ from urllib.request import Request, urlopen
 import pytest
 import yaml
 
+from fusekit.audit import AuditLog
 from fusekit.errors import FuseKitError, VaultError
 from fusekit.rollback import execute_native_rollback, plan_rollback, start_over
 from fusekit.runner.broker import resolve_runner
@@ -952,6 +953,35 @@ def test_run_record_retains_all_redacted_wake_events(tmp_path) -> None:
     )
     assert "secret-token" not in json.dumps(record["audit_trail"]).lower()
     assert "bearer " not in json.dumps(record["audit_trail"]).lower()
+
+
+def test_run_record_retains_all_redacted_audit_log_entries(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci")
+    audit = AuditLog(tmp_path / "audit.jsonl")
+    for index in range(55):
+        audit.record(
+            "provider.retry",
+            {
+                "attempt": index,
+                "token": f"secret-token-{index}",
+                "message": "retrying provider setup",
+            },
+        )
+
+    record_path = write_run_record(job, path=tmp_path / "run_record.json")
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    entries = [
+        entry
+        for entry in record["audit_trail"]["entries"]
+        if entry["source"] == "audit.jsonl" and entry["action"] == "provider.retry"
+    ]
+
+    assert len(entries) == 55
+    assert record["audit_trail"]["counts"]["provider_action"] == 55
+    assert entries[0]["audit_log_index"] == 1
+    assert entries[-1]["audit_log_index"] == 55
+    assert "secret-token" not in json.dumps(record["audit_trail"]).lower()
+    assert "retrying provider setup" not in json.dumps(record["audit_trail"]).lower()
 
 
 def test_control_room_payload_includes_run_record(tmp_path) -> None:

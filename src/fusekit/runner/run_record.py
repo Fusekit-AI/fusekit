@@ -1059,7 +1059,7 @@ def _audit_entries_from_audit_log(path: Path) -> list[dict[str, Any]]:
     except OSError:
         return []
     entries: list[dict[str, Any]] = []
-    for line in lines[-20:]:
+    for line_number, line in enumerate(lines, start=1):
         if not line.strip():
             continue
         try:
@@ -1078,6 +1078,7 @@ def _audit_entries_from_audit_log(path: Path) -> list[dict[str, Any]]:
                 "provider": _provider_from_action(event_name),
                 "status": "recorded",
                 "source": "audit.jsonl",
+                "audit_log_index": line_number,
                 "summary": _audit_event_summary(event_name),
             }
         )
@@ -1130,10 +1131,10 @@ def _audit_event_summary(event_name: str) -> str:
 
 
 def _dedupe_audit_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    seen: set[tuple[str, str, str, str, str]] = set()
+    seen: set[tuple[str, str, str, str, str, str]] = set()
     unique: list[dict[str, Any]] = []
     for entry in entries:
-        normalized = {
+        normalized: dict[str, Any] = {
             "category": str(entry.get("category", "") or ""),
             "action": str(entry.get("action", "") or ""),
             "provider": str(entry.get("provider", "") or ""),
@@ -1147,12 +1148,16 @@ def _dedupe_audit_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]
         wake_event_id = str(entry.get("wake_event_id", "") or "")
         if wake_event_id:
             normalized["wake_event_id"] = wake_event_id
+        audit_log_index = entry.get("audit_log_index")
+        if audit_log_index is not None:
+            normalized["audit_log_index"] = _safe_int(audit_log_index, 0)
         key = (
             normalized["category"],
             normalized["action"],
             normalized["provider"],
             normalized.get("target", ""),
             normalized.get("wake_event_id", ""),
+            str(normalized.get("audit_log_index", "")),
         )
         if key in seen:
             continue
