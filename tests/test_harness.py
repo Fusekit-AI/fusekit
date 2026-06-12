@@ -4315,6 +4315,42 @@ def test_live_acceptance_requires_run_record_provider_strategies_to_match_artifa
     assert "central run record" in report.missing
 
 
+def test_live_acceptance_requires_run_record_provider_playbook_to_match_artifact(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    record_path = remote_fusekit / "run_record.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    record["provider_playbook"]["steps"][0]["instruction"] = (
+        "Stale instruction: open a local provider tab and figure out the setup."
+    )
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    run_record_check = next(check for check in report.checks if check.id == "run_record.complete")
+    assert report.launch_ready is False
+    assert run_record_check.status == "failed"
+    assert (
+        "provider_playbook in Run Record must match provider_strategies.json playbook"
+        in run_record_check.detail
+    )
+    assert "central run record" in report.missing
+
+
 def test_live_acceptance_requires_run_record_verifiers_to_match_report(
     tmp_path,
 ) -> None:

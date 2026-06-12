@@ -440,6 +440,9 @@ def _check_run_record(
         _run_record_provider_strategy_consistency_failures(raw, provider_strategies_path)
     )
     failures.extend(
+        _run_record_provider_playbook_consistency_failures(raw, provider_strategies_path)
+    )
+    failures.extend(
         _run_record_verifier_consistency_failures(raw, verification_report_path)
     )
     failures.extend(
@@ -1011,6 +1014,59 @@ def _run_record_provider_strategy_consistency_failures(
             )
         ]
     return []
+
+
+def _run_record_provider_playbook_consistency_failures(
+    run_record: dict[str, Any],
+    provider_strategies_path: Path,
+) -> list[str]:
+    if not provider_strategies_path.exists():
+        return []
+    try:
+        artifact = json.loads(provider_strategies_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(artifact, dict):
+        return []
+    artifact_signature = _provider_playbook_signature(artifact.get("playbook", {}))
+    if not artifact_signature:
+        return []
+    run_signature = _provider_playbook_signature(run_record.get("provider_playbook", {}))
+    if run_signature != artifact_signature:
+        return [
+            (
+                "provider_playbook in Run Record must match "
+                "provider_strategies.json playbook"
+            )
+        ]
+    return []
+
+
+def _provider_playbook_signature(raw: Any) -> tuple[Any, ...]:
+    if not isinstance(raw, dict):
+        return ()
+    steps = raw.get("steps", [])
+    notes = raw.get("safety_notes", [])
+    if not isinstance(steps, list) or not isinstance(notes, list):
+        return ()
+    step_rows: list[tuple[str, str, str, str, str]] = []
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        step_rows.append(
+            (
+                str(step.get("id", "") or "").strip(),
+                str(step.get("provider", "") or "").strip(),
+                str(step.get("route", "") or "").strip(),
+                str(step.get("control", "") or "").strip(),
+                str(step.get("instruction", "") or "").strip(),
+            )
+        )
+    return (
+        str(raw.get("schema_version", "") or "").strip(),
+        tuple(step_rows),
+        tuple(str(note).strip() for note in notes),
+    )
 
 
 def _provider_strategy_signature(raw: Any) -> tuple[tuple[Any, ...], ...]:
