@@ -95,8 +95,11 @@ disposable worker, so the OCI VM can be replaced or detonated without losing the
 run. It must also include a non-secret `fusekit.evidence-inventory.v1` inventory
 for logs, screenshots, visual state, and receipts by path and type only, so the
 demo can prove what happened without embedding screenshots, provider URLs,
-clipboard values, or raw secret text. Public OCI acceptance also requires a
-`fusekit.detonation-scope.v1` proof
+clipboard values, or raw secret text. The Run Record must also include a
+`fusekit.human-action-trace.v1` summary that maps every recorded provider open,
+VM-clipboard Capture, and approval click to a visible control-room gate and its
+follow-me instructions, with no unguided actions. Public OCI acceptance also
+requires a `fusekit.detonation-scope.v1` proof
 that names the complete no-trace destroy set, including provider-auth scratch,
 browser profiles, passphrase files, uploaded app archives, control-room logs,
 gateway logs, and the disposable OCI workspace, while preserving only encrypted

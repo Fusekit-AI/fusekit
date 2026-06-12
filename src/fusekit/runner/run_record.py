@@ -15,6 +15,7 @@ RUN_RECORD_SCHEMA_VERSION = "fusekit.run-record.v1"
 DURABLE_STATE_SCHEMA_VERSION = "fusekit.durable-state.v1"
 DETONATION_SCOPE_SCHEMA_VERSION = "fusekit.detonation-scope.v1"
 EVIDENCE_INVENTORY_SCHEMA_VERSION = "fusekit.evidence-inventory.v1"
+HUMAN_ACTION_TRACE_SCHEMA_VERSION = "fusekit.human-action-trace.v1"
 DURABLE_STATE_SOURCES = (
     ("encrypted_vault", "fusekit.vault.json", "encrypted capability vault", "encrypted"),
     ("job_state", "job.json", "runner job state", "non-secret"),
@@ -97,6 +98,7 @@ def build_run_record(
     artifacts = _artifact_records(job, root)
     durable_state = _durable_state_summary(root, run_state, artifacts)
     evidence = _evidence_inventory(root, artifacts)
+    human_actions = _human_action_trace(gates, wake_events)
     return {
         "schema_version": RUN_RECORD_SCHEMA_VERSION,
         "id": job.id,
@@ -113,6 +115,7 @@ def build_run_record(
         "runner_profile": _runner_profile_summary(runner_readiness),
         "provider_playbook": _provider_playbook_summary(provider_strategies),
         "wake_events": _wake_event_summary(wake_events),
+        "human_actions": human_actions,
         "provider_strategies": provider_strategies or {"providers": []},
         "vault": {
             "records": vault_index or [],
@@ -265,6 +268,175 @@ def _redacted_wake_event(raw: dict[str, Any]) -> dict[str, Any]:
         "captured_targets": _safe_string_list(raw.get("captured_targets", [])),
         "created_at": _safe_float(raw.get("created_at"), 0),
     }
+
+
+def _human_action_trace(
+    gates: list[dict[str, Any]],
+    wake_events: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Summarize visible human actions for rehearsal review."""
+
+    known_gates = {str(gate.get("id", "") or ""): gate for gate in gates}
+    actions: list[dict[str, Any]] = []
+    for gate in gates:
+        opened_at = _safe_float(gate.get("last_opened_at"), 0)
+        if opened_at > 0:
+            actions.append(
+                _human_action_record(
+                    gate,
+                    action="open_provider_gate",
+                    visible_control="Open provider gate in VM",
+                    created_at=opened_at,
+                    target="",
+                    known_gate=True,
+                )
+            )
+    for event in wake_events:
+        if not isinstance(event, dict):
+            continue
+        gate_id = str(event.get("gate_id", "") or "")
+        gate = known_gates.get(
+            gate_id,
+            {
+                "id": gate_id,
+                "provider": str(event.get("provider", "") or ""),
+                "classification": str(event.get("classification", "") or ""),
+            },
+        )
+        event_name = str(event.get("event", "") or "")
+        target = str(event.get("target", "") or "")
+        if event_name == "clipboard_captured":
+            control = (
+                f"Capture {target} from VM clipboard"
+                if target
+                else "Capture from VM clipboard"
+            )
+            action = "capture_vm_clipboard"
+        elif event_name == "resume_requested":
+            if _resume_event_is_capture_auto_wake(event):
+                continue
+            control = _resume_visible_control(gate)
+            action = "confirm_gate_finished"
+        else:
+            control = event_name or "unknown"
+            action = event_name or "unknown"
+        actions.append(
+            _human_action_record(
+                gate,
+                action=action,
+                visible_control=control,
+                created_at=_safe_float(event.get("created_at"), 0),
+                target=target,
+                known_gate=gate_id in known_gates,
+            )
+        )
+    actions.sort(key=lambda item: (_safe_float(item.get("created_at"), 0), item["gate_id"]))
+    counts: dict[str, int] = {}
+    for action_record in actions:
+        name = str(action_record.get("action", "") or "unknown")
+        counts[name] = counts.get(name, 0) + 1
+    unguided = [
+        {
+            "gate_id": str(action_record.get("gate_id", "")),
+            "action": str(action_record.get("action", "")),
+            "reason": str(action_record.get("guidance_gap", "")),
+        }
+        for action_record in actions
+        if action_record.get("guided") is not True
+    ]
+    return {
+        "schema_version": HUMAN_ACTION_TRACE_SCHEMA_VERSION,
+        "total": len(actions),
+        "counts": counts,
+        "actions": actions,
+        "unguided": unguided,
+        "statement": (
+            "Every recorded human action should map to one visible control-room gate "
+            "and its current follow-me instructions; the trace contains no raw provider "
+            "URLs, clipboard values, passwords, tokens, or screenshots."
+        ),
+    }
+
+
+def _resume_event_is_capture_auto_wake(event: dict[str, Any]) -> bool:
+    target_count = _safe_int(event.get("target_count"), 0)
+    captured_targets = _safe_string_list(event.get("captured_targets", []))
+    return target_count > 0 and len(captured_targets) >= target_count
+
+
+def _human_action_record(
+    gate: dict[str, Any],
+    *,
+    action: str,
+    visible_control: str,
+    created_at: float,
+    target: str,
+    known_gate: bool,
+) -> dict[str, Any]:
+    gate_id = str(gate.get("id", "") or "")
+    provider = str(gate.get("provider", "") or "")
+    classification = str(gate.get("classification", "") or "")
+    guided, gap = _human_action_guidance_status(
+        gate,
+        action=action,
+        target=target,
+        known_gate=known_gate,
+    )
+    return {
+        "gate_id": gate_id,
+        "provider": provider,
+        "classification": classification,
+        "action": action,
+        "visible_control": visible_control,
+        "target": target,
+        "guided": guided,
+        "guidance_gap": gap,
+        "created_at": created_at,
+    }
+
+
+def _human_action_guidance_status(
+    gate: dict[str, Any],
+    *,
+    action: str,
+    target: str,
+    known_gate: bool,
+) -> tuple[bool, str]:
+    if not known_gate:
+        return False, "action did not match a durable gate"
+    text = " ".join(
+        (
+            str(gate.get("next_action", "") or ""),
+            str(gate.get("resume_hint", "") or ""),
+            " ".join(_safe_string_list(gate.get("follow_steps", []))),
+            " ".join(_safe_string_list(gate.get("success_criteria", []))),
+        )
+    )
+    if action == "open_provider_gate":
+        if str(gate.get("resume_url", "") or "").strip() and "Open provider gate in VM" in text:
+            return True, ""
+        return False, "provider gate open lacked visible VM-browser guidance"
+    if action == "capture_vm_clipboard":
+        if target and f"Capture {target} from VM clipboard" in text:
+            return True, ""
+        return False, "clipboard capture lacked exact env-named Capture guidance"
+    if action == "confirm_gate_finished":
+        if _resume_visible_control(gate) in text or str(gate.get("classification", "")) in {
+            "dns-approval",
+            "setup-approval",
+        }:
+            return True, ""
+        return False, "resume click lacked exact finished/approval guidance"
+    return False, "unsupported human action"
+
+
+def _resume_visible_control(gate: dict[str, Any]) -> str:
+    classification = str(gate.get("classification", "") or "")
+    if classification == "dns-approval":
+        return "Approve DNS apply"
+    if classification == "setup-approval":
+        return "Approve setup plan"
+    return "I finished this step"
 
 
 def _artifact_records(job: JobState, root: Path) -> list[dict[str, Any]]:

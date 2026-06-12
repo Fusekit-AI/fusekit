@@ -63,6 +63,7 @@ def render_control_room(
     {_render_recovery(job)}
     {_render_run_state(control_payload.get("run_state", {}))}
     {_render_durable_state(control_payload.get("run_record", {}))}
+    {_render_human_actions(control_payload.get("run_record", {}))}
     {_render_acceptance_blockers(control_payload.get("acceptance", {}))}
     {_render_provider_strategies(control_payload.get("provider_strategies", {}))}
     {_render_trust(control_payload.get("verification", {}))}
@@ -1271,6 +1272,81 @@ def _render_durable_source_card(source: dict[str, Any]) -> str:
             <strong>{html.escape(title)}</strong>
             <p>{html.escape(detail)}</p>
             <em>{html.escape(source_id.replace('_', ' '))}</em>
+          </div>
+        </article>
+"""
+
+
+def _render_human_actions(run_record: Any) -> str:
+    run_record = run_record if isinstance(run_record, dict) else {}
+    human_actions = run_record.get("human_actions", {})
+    human_actions = human_actions if isinstance(human_actions, dict) else {}
+    actions = human_actions.get("actions", [])
+    actions = actions if isinstance(actions, list) else []
+    cards = "\n".join(
+        _render_human_action_card(action)
+        for action in actions[:6]
+        if isinstance(action, dict)
+    )
+    if not cards:
+        cards = """
+        <article class="trust-card pending">
+          <div class="trust-snow state-checking" aria-hidden="true"></div>
+          <div>
+            <span>Pending</span>
+            <strong>Human action trace</strong>
+            <p>Waiting for guided provider opens, captures, or approvals.</p>
+            <em>human actions</em>
+          </div>
+        </article>
+"""
+    total = human_actions.get("total", 0)
+    unguided = human_actions.get("unguided", [])
+    unguided_count = len(unguided) if isinstance(unguided, list) else 0
+    summary = (
+        "all actions guided"
+        if actions and unguided_count == 0
+        else "waiting for guided actions"
+    )
+    return f"""
+    <section class="run-state-panel" aria-label="Human action trace">
+      <div class="section-head compact">
+        <div>
+          <span class="section-kicker">Rehearsal audit</span>
+          <h2>Human actions matched to gates</h2>
+        </div>
+        <span class="live-pill" data-human-action-overall>{html.escape(summary)}</span>
+      </div>
+      <p class="muted">
+        FuseKit records visible gate opens, VM-clipboard captures, and approval clicks
+        without storing provider URLs, clipboard values, tokens, or screenshots.
+        Total recorded actions: {html.escape(str(total))}.
+      </p>
+      <div class="run-state-grid" data-human-action-checks>{cards}</div>
+    </section>
+"""
+
+
+def _render_human_action_card(action: dict[str, Any]) -> str:
+    guided = action.get("guided") is True
+    status = "passed" if guided else "failed"
+    snow = "passed" if guided else "failed"
+    title = str(action.get("visible_control", "") or action.get("action", "") or "human action")
+    provider = str(action.get("provider", "") or "provider")
+    gate_id = str(action.get("gate_id", "") or "gate")
+    detail = (
+        "Matched to the current control-room gate instructions."
+        if guided
+        else str(action.get("guidance_gap", "") or "Missing guided control-room proof.")
+    )
+    return f"""
+        <article class="trust-card {status}" data-human-action="{html.escape(gate_id)}">
+          <div class="trust-snow state-{snow}" aria-hidden="true"></div>
+          <div>
+            <span>{html.escape(status_label(status))}</span>
+            <strong>{html.escape(title)}</strong>
+            <p>{html.escape(detail)}</p>
+            <em>{html.escape(provider)}</em>
           </div>
         </article>
 """

@@ -257,19 +257,21 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
         detonation_safe=True,
         workspace_detonated=True,
     )
-    GateService.load(tmp_path / "gates.json").wait(
+    gate_service = GateService.load(tmp_path / "gates.json")
+    gate_service.wait(
         "provider.cloudflare.authorization",
         provider="cloudflare",
         target="CLOUDFLARE_API_TOKEN",
         reason="Capture Cloudflare API token",
         resume_url="https://dash.cloudflare.com/profile/api-tokens",
     )
-    GateService.load(tmp_path / "gates.json").mark_captured(
+    gate_service.mark_opened(
+        "provider.cloudflare.authorization",
+        "https://dash.cloudflare.com/profile/api-tokens",
+    )
+    gate_service.mark_captured(
         "provider.cloudflare.authorization",
         "CLOUDFLARE_API_TOKEN",
-    )
-    GateService.load(tmp_path / "gates.json").request_resume(
-        "provider.cloudflare.authorization",
     )
     (tmp_path / "provider_strategies.json").write_text(
         json.dumps(
@@ -434,12 +436,22 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     assert "Capture CLOUDFLARE_API_TOKEN" in record["provider_playbook"]["steps"][0][
         "instruction"
     ]
-    assert record["wake_events"]["total"] == 2
+    assert record["wake_events"]["total"] == 1
     assert record["wake_events"]["event_counts"] == {
         "clipboard_captured": 1,
-        "resume_requested": 1,
     }
     assert record["wake_events"]["events"][0]["target"] == "CLOUDFLARE_API_TOKEN"
+    assert record["human_actions"]["schema_version"] == "fusekit.human-action-trace.v1"
+    assert record["human_actions"]["total"] == 2
+    assert record["human_actions"]["counts"] == {
+        "capture_vm_clipboard": 1,
+        "open_provider_gate": 1,
+    }
+    assert record["human_actions"]["unguided"] == []
+    controls = {item["visible_control"] for item in record["human_actions"]["actions"]}
+    assert "Open provider gate in VM" in controls
+    assert "Capture CLOUDFLARE_API_TOKEN from VM clipboard" in controls
+    assert "https://dash.cloudflare.com" not in json.dumps(record["human_actions"])
     assert record["vault"]["record_count"] == 1
     assert record["vault"]["records"][0]["id"] == "provider.cloudflare.token"
     assert record["detonation"]["workspace_receipt"]["status"] == "complete"
@@ -515,6 +527,30 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
                         "because encrypted/redacted state is the source of truth."
                     ),
                 },
+                "human_actions": {
+                    "schema_version": "fusekit.human-action-trace.v1",
+                    "total": 1,
+                    "counts": {"capture_vm_clipboard": 1},
+                    "actions": [
+                        {
+                            "gate_id": "provider.resend.authorization",
+                            "provider": "resend",
+                            "classification": "authorization",
+                            "action": "capture_vm_clipboard",
+                            "visible_control": "Capture RESEND_API_KEY from VM clipboard",
+                            "target": "RESEND_API_KEY",
+                            "guided": True,
+                            "guidance_gap": "",
+                            "created_at": 2.0,
+                        }
+                    ],
+                    "unguided": [],
+                    "statement": (
+                        "Every recorded human action should map to one visible "
+                        "control-room gate and its current follow-me instructions; "
+                        "the trace contains no raw provider URLs."
+                    ),
+                },
             }
         ),
         encoding="utf-8",
@@ -529,6 +565,10 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
     assert "worker can be replaced" in html
     assert 'data-durable-state-source="encrypted_vault"' in html
     assert "encrypted capability vault" in html
+    assert payload["run_record"]["human_actions"]["total"] == 1
+    assert "Human actions matched to gates" in html
+    assert "Capture RESEND_API_KEY from VM clipboard" in html
+    assert "all actions guided" in html
 
 
 def test_remote_bootstrap_checkpoint_keeps_recovery_in_launcher(tmp_path) -> None:

@@ -488,6 +488,9 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
             failures.append("wake_events.total is missing")
         _require_dict_field(wake_events, "event_counts", failures, prefix="wake_events")
         _require_list_field(wake_events, "events", failures, prefix="wake_events")
+    human_actions = _require_dict_field(raw, "human_actions", failures)
+    if human_actions is not None:
+        failures.extend(_human_action_trace_shape_failures(human_actions))
     if provider_gates is not None and wake_events is not None:
         failures.extend(_run_record_wake_event_failures(provider_gates, wake_events))
     _require_dict_field(raw, "provider_strategies", failures)
@@ -574,6 +577,61 @@ def _evidence_inventory_shape_failures(evidence: dict[str, Any]) -> list[str]:
     statement = str(evidence.get("statement", "") or "")
     if "path and type only" not in statement or "raw secrets are not embedded" not in statement:
         failures.append("evidence.statement is missing non-secret inventory guidance")
+    return failures
+
+
+def _human_action_trace_shape_failures(human_actions: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    if str(human_actions.get("schema_version", "")).strip() != "fusekit.human-action-trace.v1":
+        failures.append("human_actions.schema_version is unsupported")
+    actions = human_actions.get("actions", [])
+    counts = human_actions.get("counts", {})
+    unguided = human_actions.get("unguided", [])
+    if not isinstance(actions, list):
+        failures.append("human_actions.actions is missing")
+        actions = []
+    if not isinstance(counts, dict):
+        failures.append("human_actions.counts is missing")
+        counts = {}
+    if not isinstance(unguided, list):
+        failures.append("human_actions.unguided is missing")
+        unguided = []
+    if _safe_int(human_actions.get("total")) != len(actions):
+        failures.append("human_actions.total must match human_actions.actions")
+    actual_counts: dict[str, int] = {}
+    for index, action in enumerate(actions):
+        label = f"human_actions.actions[{index}]"
+        if not isinstance(action, dict):
+            failures.append(f"{label} is not an object")
+            continue
+        action_name = str(action.get("action", "") or "")
+        if action_name not in {
+            "open_provider_gate",
+            "capture_vm_clipboard",
+            "confirm_gate_finished",
+        }:
+            failures.append(f"{label}.action is unsupported")
+        else:
+            actual_counts[action_name] = actual_counts.get(action_name, 0) + 1
+        if not str(action.get("gate_id", "") or "").strip():
+            failures.append(f"{label}.gate_id is missing")
+        if not str(action.get("visible_control", "") or "").strip():
+            failures.append(f"{label}.visible_control is missing")
+        if action.get("guided") is not True:
+            failures.append(f"{label}.guided must be true")
+        if action_name == "capture_vm_clipboard":
+            target = str(action.get("target", "") or "")
+            visible_control = str(action.get("visible_control", "") or "")
+            if not target or f"Capture {target} from VM clipboard" != visible_control:
+                failures.append(f"{label}.visible_control must match the captured target")
+    for action_name, expected in actual_counts.items():
+        if _safe_int(counts.get(action_name)) != expected:
+            failures.append(f"human_actions.counts.{action_name} must match actions")
+    if unguided:
+        failures.append("human_actions.unguided must be empty")
+    statement = str(human_actions.get("statement", "") or "")
+    if "visible control-room gate" not in statement or "no raw provider" not in statement:
+        failures.append("human_actions.statement is missing guided-action guidance")
     return failures
 
 

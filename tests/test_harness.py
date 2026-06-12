@@ -248,6 +248,21 @@ def _evidence_inventory() -> dict[str, object]:
     }
 
 
+def _human_action_trace() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.human-action-trace.v1",
+        "total": 0,
+        "counts": {},
+        "actions": [],
+        "unguided": [],
+        "statement": (
+            "Every recorded human action should map to one visible control-room gate "
+            "and its current follow-me instructions; the trace contains no raw provider "
+            "URLs, clipboard values, passwords, tokens, or screenshots."
+        ),
+    }
+
+
 def _resend_domain_receipt_details(
     *,
     dns_records: list[dict[str, str]] | None = None,
@@ -600,6 +615,7 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
                     "playwright_browsers_path": "/opt/fusekit-playwright-browsers",
                 },
                 "wake_events": {"total": 0, "event_counts": {}, "events": []},
+                "human_actions": _human_action_trace(),
                 "provider_strategies": {"providers": []},
                 "vault": {"record_count": 0, "records": []},
                 "artifacts": [],
@@ -3588,6 +3604,59 @@ def test_acceptance_run_record_requires_non_secret_evidence_inventory(tmp_path) 
     assert "evidence.receipts[0].kind is unsupported" in failures
     assert "evidence.counts.screenshots is missing" in failures
     assert "evidence.statement is missing non-secret inventory guidance" in failures
+
+
+def test_acceptance_run_record_requires_guided_human_action_trace(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+
+    record["human_actions"] = {
+        "schema_version": "fusekit.human-action-trace.v1",
+        "total": 2,
+        "counts": {"capture_vm_clipboard": 1},
+        "actions": [
+            {
+                "gate_id": "provider.resend.authorization",
+                "provider": "resend",
+                "classification": "authorization",
+                "action": "capture_vm_clipboard",
+                "visible_control": "Capture GITHUB_TOKEN from VM clipboard",
+                "target": "RESEND_API_KEY",
+                "guided": True,
+                "created_at": 1.0,
+            },
+            {
+                "gate_id": "",
+                "provider": "resend",
+                "classification": "authorization",
+                "action": "open_provider_gate",
+                "visible_control": "",
+                "guided": False,
+                "created_at": 2.0,
+            },
+        ],
+        "unguided": [
+            {
+                "gate_id": "",
+                "action": "open_provider_gate",
+                "reason": "action did not match a durable gate",
+            }
+        ],
+        "statement": "human clicked around",
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert "human_actions.total must match human_actions.actions" not in failures
+    assert "human_actions.actions[0].visible_control must match the captured target" in failures
+    assert "human_actions.actions[1].gate_id is missing" in failures
+    assert "human_actions.actions[1].visible_control is missing" in failures
+    assert "human_actions.actions[1].guided must be true" in failures
+    assert "human_actions.counts.open_provider_gate must match actions" in failures
+    assert "human_actions.unguided must be empty" in failures
+    assert "human_actions.statement is missing guided-action guidance" in failures
 
 
 def test_acceptance_run_record_requires_evented_gate_wake_proof(tmp_path) -> None:
