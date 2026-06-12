@@ -68,6 +68,7 @@ from fusekit.runner.remote import (
     _extract_artifacts,
     detonate_remote_worker,
     execute_remote_setup,
+    remote_worker_cleanup_proof,
     render_cloud_init,
     should_include_app_path,
 )
@@ -406,6 +407,7 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
                 "resource_summary": {
                     "schema_version": "fusekit.workspace-detonation-resources.v1",
                     "remote_worker": True,
+                    "remote_worker_cleanup": remote_worker_cleanup_proof(),
                     "compute_instance": True,
                     "network_resources": [
                         "internet_gateway",
@@ -763,6 +765,7 @@ def test_run_record_recording_contract_blocks_missing_provider_playbook(tmp_path
                 "resource_summary": {
                     "schema_version": "fusekit.workspace-detonation-resources.v1",
                     "remote_worker": True,
+                    "remote_worker_cleanup": remote_worker_cleanup_proof(),
                     "compute_instance": True,
                     "network_resources": [
                         "internet_gateway",
@@ -872,6 +875,7 @@ def test_run_record_recording_contract_blocks_thin_runner_profile(tmp_path) -> N
                 "resource_summary": {
                     "schema_version": "fusekit.workspace-detonation-resources.v1",
                     "remote_worker": True,
+                    "remote_worker_cleanup": remote_worker_cleanup_proof(),
                     "compute_instance": True,
                     "network_resources": [
                         "internet_gateway",
@@ -1174,6 +1178,7 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
                                 "fusekit.workspace-detonation-resources.v1"
                             ),
                             "remote_worker": True,
+                            "remote_worker_cleanup": remote_worker_cleanup_proof(),
                             "compute_instance": True,
                             "network_resources": [
                                 "internet_gateway",
@@ -7256,10 +7261,16 @@ def test_remote_detonation_cleans_visual_and_control_processes() -> None:
         calls.append(command)
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
-    detonate_remote_worker(workspace=workspace, vault=vault, runner=runner)
+    proof = detonate_remote_worker(workspace=workspace, vault=vault, runner=runner)
 
     assert len(calls) == 1
     command = calls[0][-1]
+    assert proof["schema_version"] == "fusekit.remote-worker-cleanup.v1"
+    assert proof["status"] == "detonated"
+    assert proof["host_machine_state_required"] is False
+    assert "/var/lib/fusekit-runner/app" in proof["paths"]
+    assert "/var/lib/fusekit-runner/visual" in proof["paths"]
+    assert "[o]penclaw gateway run.*19002" in proof["process_patterns"]
     assert "sudo -n sh -c" in command
     assert "|| sh -c" in command
     assert "[f]usekit control-room --serve" in command

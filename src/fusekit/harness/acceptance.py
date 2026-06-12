@@ -35,6 +35,11 @@ from fusekit.runner.readiness import (
 from fusekit.runner.readiness import (
     runner_readiness_failures as _runner_readiness_failures,
 )
+from fusekit.runner.remote import (
+    REMOTE_WORKER_CLEANUP_SCHEMA_VERSION,
+    REMOTE_WORKER_PATH_TARGETS,
+    REMOTE_WORKER_PROCESS_PATTERNS,
+)
 from fusekit.runner.run_record import (
     AUDIT_TRAIL_SCHEMA_VERSION,
     AUTOMATION_BOUNDARY_SCHEMA_VERSION,
@@ -1549,6 +1554,11 @@ def _workspace_detonation_receipt_failures(receipt: dict[str, Any]) -> list[str]
             )
         if resource_summary.get("remote_worker") is not True:
             failures.append("detonation.workspace_receipt.remote_worker must be true")
+        failures.extend(
+            _remote_worker_cleanup_receipt_failures(
+                resource_summary.get("remote_worker_cleanup")
+            )
+        )
         if resource_summary.get("compute_instance") is not True:
             failures.append("detonation.workspace_receipt.compute_instance must be true")
         if resource_summary.get("network_resources_deleted") is not True:
@@ -1586,6 +1596,43 @@ def _workspace_detonation_receipt_failures(receipt: dict[str, Any]) -> list[str]
                     "detonation.workspace_receipt.resource_summary.statement is incomplete"
                 )
                 break
+    return failures
+
+
+def _remote_worker_cleanup_receipt_failures(raw: object) -> list[str]:
+    if not isinstance(raw, dict):
+        return ["detonation.workspace_receipt.remote_worker_cleanup is missing"]
+    failures: list[str] = []
+    if str(raw.get("schema_version", "") or "") != REMOTE_WORKER_CLEANUP_SCHEMA_VERSION:
+        failures.append(
+            "detonation.workspace_receipt.remote_worker_cleanup.schema_version is unsupported"
+        )
+    if str(raw.get("status", "") or "") != "detonated":
+        failures.append(
+            "detonation.workspace_receipt.remote_worker_cleanup.status must be detonated"
+        )
+    process_patterns = raw.get("process_patterns", [])
+    if not isinstance(process_patterns, list) or set(REMOTE_WORKER_PROCESS_PATTERNS) - {
+        str(item) for item in process_patterns
+    }:
+        failures.append(
+            "detonation.workspace_receipt.remote_worker_cleanup.process_patterns is incomplete"
+        )
+    paths = raw.get("paths", [])
+    if not isinstance(paths, list) or set(REMOTE_WORKER_PATH_TARGETS) - {
+        str(item) for item in paths
+    }:
+        failures.append("detonation.workspace_receipt.remote_worker_cleanup.paths is incomplete")
+    if raw.get("host_machine_state_required") is not False:
+        failures.append(
+            "detonation.workspace_receipt.remote_worker_cleanup.host_machine_state_required "
+            "must be false"
+        )
+    statement = str(raw.get("statement", "") or "").lower()
+    if "user" not in statement or "machine" not in statement:
+        failures.append(
+            "detonation.workspace_receipt.remote_worker_cleanup.statement is incomplete"
+        )
     return failures
 
 

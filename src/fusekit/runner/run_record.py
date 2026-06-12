@@ -11,6 +11,11 @@ from typing import Any
 from fusekit.runner.gates import GateRecord
 from fusekit.runner.job import JobState
 from fusekit.runner.readiness import runner_readiness_failures
+from fusekit.runner.remote import (
+    REMOTE_WORKER_CLEANUP_SCHEMA_VERSION,
+    REMOTE_WORKER_PATH_TARGETS,
+    REMOTE_WORKER_PROCESS_PATTERNS,
+)
 from fusekit.runner.run_state import LaunchRunState
 from fusekit.security import redact_public_text
 
@@ -1415,6 +1420,11 @@ def _recording_detonation_ready(record: dict[str, Any]) -> bool:
         if isinstance(resource_summary, dict)
         else ["resource_summary"]
     )
+    cleanup = (
+        resource_summary.get("remote_worker_cleanup", {})
+        if isinstance(resource_summary, dict)
+        else {}
+    )
     return (
         detonation.get("preflight_safe") is True
         and detonation.get("workspace_detonated") is True
@@ -1424,6 +1434,7 @@ def _recording_detonation_ready(record: dict[str, Any]) -> bool:
         and not failures
         and isinstance(resource_summary, dict)
         and resource_summary.get("remote_worker") is True
+        and _recording_remote_worker_cleanup_ready(cleanup)
         and resource_summary.get("compute_instance") is True
         and resource_summary.get("network_resources_deleted") is True
         and isinstance(network_resources, list)
@@ -1432,6 +1443,22 @@ def _recording_detonation_ready(record: dict[str, Any]) -> bool:
         and not network_resources_missing
         and isinstance(missing, list)
         and not missing
+    )
+
+
+def _recording_remote_worker_cleanup_ready(raw: object) -> bool:
+    if not isinstance(raw, dict):
+        return False
+    process_patterns = raw.get("process_patterns", [])
+    paths = raw.get("paths", [])
+    if not isinstance(process_patterns, list) or not isinstance(paths, list):
+        return False
+    return (
+        str(raw.get("schema_version", "") or "") == REMOTE_WORKER_CLEANUP_SCHEMA_VERSION
+        and str(raw.get("status", "") or "") == "detonated"
+        and raw.get("host_machine_state_required") is False
+        and set(REMOTE_WORKER_PROCESS_PATTERNS).issubset({str(item) for item in process_patterns})
+        and set(REMOTE_WORKER_PATH_TARGETS).issubset({str(item) for item in paths})
     )
 
 

@@ -65,6 +65,7 @@ from fusekit.providers.verification import VerificationResult
 from fusekit.runner.gates import GateService
 from fusekit.runner.job import JobState
 from fusekit.runner.oci_live import OciWorkspace
+from fusekit.runner.remote import remote_worker_cleanup_proof
 from fusekit.spine.playbooks import BrowserPlaybookEvent
 from fusekit.vault import Vault
 from fusekit.verification_report import VerificationReport
@@ -285,7 +286,7 @@ def test_workspace_detonation_requires_every_network_resource(tmp_path) -> None:
     args = argparse.Namespace(job_state=job_state)
     job = JobState.create("fk-test", app, "oci")
     partial_cleanup = {
-        "remote_worker": "detonated",
+        "remote_worker": remote_worker_cleanup_proof(),
         "instance": "ocid1.instance.oc1..example",
         "vcn": "ocid1.vcn.oc1..example",
     }
@@ -320,6 +321,43 @@ def test_workspace_detonation_requires_every_network_resource(tmp_path) -> None:
         step.id == "detonate.workspace" and step.status == "failed"
         for step in job.steps
     )
+
+
+def test_workspace_detonation_rejects_legacy_remote_worker_string(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    job_state = app / ".fusekit" / "job.json"
+    args = argparse.Namespace(job_state=job_state)
+    job = JobState.create("fk-test", app, "oci")
+    cleanup = {
+        "remote_worker": "detonated",
+        "instance": "ocid1.instance.oc1..example",
+        "internet_gateway": "ocid1.internetgateway.oc1..example",
+        "network_security_group": "ocid1.networksecuritygroup.oc1..example",
+        "route_table": "ocid1.routetable.oc1..example",
+        "security_list": "ocid1.securitylist.oc1..example",
+        "subnet": "ocid1.subnet.oc1..example",
+        "vcn": "ocid1.vcn.oc1..example",
+    }
+
+    complete = _record_workspace_detonation(
+        args,
+        job,
+        cleanup,
+        reason="test cleanup",
+        success_detail="workspace detonated",
+        failure_detail="workspace detonation incomplete",
+    )
+
+    receipt = json.loads(
+        (app / ".fusekit" / "workspace_detonation.json").read_text(encoding="utf-8")
+    )
+    assert complete is False
+    assert _workspace_detonation_complete(cleanup) is False
+    assert receipt["status"] == "incomplete"
+    assert receipt["resource_summary"]["remote_worker"] is False
+    assert receipt["resource_summary"]["remote_worker_cleanup"] == {}
+    assert receipt["resource_summary"]["missing"] == ["remote_worker"]
 
 
 def test_rebase_setup_artifacts_rebases_report_and_rollback(tmp_path) -> None:
@@ -3458,7 +3496,10 @@ def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch)
         return {"artifact_archive": "artifacts.tar.gz", "output_dir": str(remote_artifacts)}
 
     monkeypatch.setattr("fusekit.cli.execute_remote_setup", fake_remote_setup)
-    monkeypatch.setattr("fusekit.cli.detonate_remote_worker", lambda **kwargs: None)
+    monkeypatch.setattr(
+        "fusekit.cli.detonate_remote_worker",
+        lambda **kwargs: remote_worker_cleanup_proof(),
+    )
     monkeypatch.setattr(
         "fusekit.cli.load_oci_auth_from_vault_or_config",
         lambda *args, **kwargs: object(),
@@ -3981,7 +4022,7 @@ def test_launch_detonates_oci_workspace_after_remote_failure(tmp_path, monkeypat
     monkeypatch.setattr("fusekit.cli.execute_remote_setup", fail_remote_setup)
     monkeypatch.setattr(
         "fusekit.cli.detonate_remote_worker",
-        lambda **kwargs: detonated.append("worker"),
+        lambda **kwargs: (detonated.append("worker"), remote_worker_cleanup_proof())[1],
     )
     monkeypatch.setattr(
         "fusekit.cli.load_oci_auth_from_vault_or_config",

@@ -25,6 +25,7 @@ from fusekit.harness.acceptance import (
 from fusekit.harness.ledger import HarnessLedger
 from fusekit.runner.gate_guidance import provider_gate_guidance
 from fusekit.runner.gates import GateService
+from fusekit.runner.remote import remote_worker_cleanup_proof
 from fusekit.vault import Vault
 
 
@@ -181,6 +182,7 @@ def _workspace_detonation_receipt() -> dict[str, object]:
         "resource_summary": {
             "schema_version": "fusekit.workspace-detonation-resources.v1",
             "remote_worker": True,
+            "remote_worker_cleanup": remote_worker_cleanup_proof(),
             "compute_instance": True,
             "network_resources": [
                 "internet_gateway",

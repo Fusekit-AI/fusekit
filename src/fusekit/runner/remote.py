@@ -42,6 +42,26 @@ CONTROL_ROOM_PORT = 8765
 NOVNC_PORT = 6080
 VISUAL_DISPLAY = ":99"
 PROVIDER_BROWSER_PROFILE = "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+REMOTE_WORKER_CLEANUP_SCHEMA_VERSION = "fusekit.remote-worker-cleanup.v1"
+REMOTE_WORKER_PROCESS_PATTERNS = (
+    "[f]usekit control-room --serve",
+    "[o]penclaw gateway run.*19002",
+    "[c]hrome-linux.*/chrome",
+    "[w]ebsockify.*6080",
+    "[x]11vnc.*5900",
+    "[X]vfb :99",
+    "[f]luxbox",
+)
+REMOTE_WORKER_PATH_TARGETS = (
+    "/var/lib/fusekit-runner/app",
+    "/var/lib/fusekit-runner/tmp",
+    "/var/lib/fusekit-runner/openclaw-state",
+    "/var/lib/fusekit-runner/passphrase",
+    "/var/lib/fusekit-runner/app.tar.gz",
+    "/var/lib/fusekit-runner/visual",
+    "/var/lib/fusekit-runner/control-room.log",
+    "/var/lib/fusekit-runner/openclaw-gateway.log",
+)
 
 
 class CommandRunner(Protocol):
@@ -518,12 +538,29 @@ def execute_remote_setup(
     }
 
 
+def remote_worker_cleanup_proof(*, status: str = "detonated") -> dict[str, object]:
+    """Return the redacted worker cleanup proof stored in detonation receipts."""
+
+    return {
+        "schema_version": REMOTE_WORKER_CLEANUP_SCHEMA_VERSION,
+        "status": status,
+        "process_patterns": list(REMOTE_WORKER_PROCESS_PATTERNS),
+        "paths": list(REMOTE_WORKER_PATH_TARGETS),
+        "host_machine_state_required": False,
+        "statement": (
+            "FuseKit targeted only disposable VM worker, browser, visual, "
+            "provider-auth, passphrase, and transient log state; the user's "
+            "machine is not part of runner cleanup."
+        ),
+    }
+
+
 def detonate_remote_worker(
     *,
     workspace: OciWorkspace,
     vault: Vault,
     runner: CommandRunner | None = None,
-) -> None:
+) -> dict[str, object]:
     """Remove remote plaintext worker state over SSH."""
 
     key = _workspace_ssh_private_key(vault, workspace.id)
@@ -533,22 +570,9 @@ def detonate_remote_worker(
         key_path.write_text(key, encoding="utf-8")
         key_path.chmod(0o600)
         remote = _workspace_remote(workspace)
-        cleanup_script = (
-            "pkill -f '[f]usekit control-room --serve' || true; "
-            "pkill -f '[o]penclaw gateway run.*19002' || true; "
-            "pkill -f '[c]hrome-linux.*/chrome' || true; "
-            "pkill -f '[w]ebsockify.*6080' || true; "
-            "pkill -f '[x]11vnc.*5900' || true; "
-            "pkill -f '[X]vfb :99' || true; "
-            "pkill -f '[f]luxbox' || true; "
-            "rm -rf /var/lib/fusekit-runner/app "
-            "/var/lib/fusekit-runner/tmp "
-            "/var/lib/fusekit-runner/openclaw-state "
-            "/var/lib/fusekit-runner/passphrase "
-            "/var/lib/fusekit-runner/app.tar.gz "
-            "/var/lib/fusekit-runner/visual "
-            "/var/lib/fusekit-runner/control-room.log "
-            "/var/lib/fusekit-runner/openclaw-gateway.log"
+        cleanup_script = " ".join(
+            [f"pkill -f {quote(pattern)} || true;" for pattern in REMOTE_WORKER_PROCESS_PATTERNS]
+            + ["rm -rf " + " ".join(quote(path) for path in REMOTE_WORKER_PATH_TARGETS)]
         )
         command = (
             "sudo -n sh -c "
@@ -558,6 +582,7 @@ def detonate_remote_worker(
             + quote(cleanup_script)
         )
         _run_checked(run, [*_ssh_base(key_path), remote, command])
+    return remote_worker_cleanup_proof()
 
 
 def _quote_args(args: tuple[str, ...]) -> str:

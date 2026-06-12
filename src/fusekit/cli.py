@@ -96,7 +96,13 @@ from fusekit.runner.oci_live import (
     latest_workspace_from_vault,
     load_oci_auth_from_vault_or_config,
 )
-from fusekit.runner.remote import detonate_remote_worker, execute_remote_setup
+from fusekit.runner.remote import (
+    REMOTE_WORKER_CLEANUP_SCHEMA_VERSION,
+    REMOTE_WORKER_PATH_TARGETS,
+    REMOTE_WORKER_PROCESS_PATTERNS,
+    detonate_remote_worker,
+    execute_remote_setup,
+)
 from fusekit.runner.run_record import write_run_record
 from fusekit.runner.run_state import LaunchRunState, update_run_state
 from fusekit.runner.server import serve_control_room
@@ -1811,14 +1817,16 @@ def _cmd_runner_receipt(args: argparse.Namespace) -> int:
 
 def _cmd_runner_detonate(args: argparse.Namespace) -> int:
     job = JobState.load(args.job_state) if args.job_state.exists() else None
-    remote_deleted: dict[str, str] = {}
+    remote_deleted: dict[str, Any] = {}
     if args.runner == "oci" and args.vault.exists():
         passphrase = _passphrase(args)
         vault = open_or_create(args.vault, passphrase)
         try:
             workspace = latest_workspace_from_vault(vault)
-            detonate_remote_worker(workspace=workspace, vault=vault)
-            remote_deleted["remote_worker"] = "detonated"
+            remote_deleted["remote_worker"] = detonate_remote_worker(
+                workspace=workspace,
+                vault=vault,
+            )
             auth = load_oci_auth_from_vault_or_config(vault, config_file=None)
             remote_deleted.update(OciProvisioner(auth).detonate(workspace))
         except FuseKitError as exc:
@@ -2300,11 +2308,10 @@ def _detonate_oci_workspace(
     args: argparse.Namespace,
     workspace: OciWorkspace,
     vault: Vault,
-) -> dict[str, str]:
-    remote_deleted: dict[str, str] = {}
+) -> dict[str, Any]:
+    remote_deleted: dict[str, Any] = {}
     try:
-        detonate_remote_worker(workspace=workspace, vault=vault)
-        remote_deleted["remote_worker"] = "detonated"
+        remote_deleted["remote_worker"] = detonate_remote_worker(workspace=workspace, vault=vault)
     except FuseKitError as exc:
         remote_deleted["failed.remote_worker"] = str(exc)
     try:
@@ -2321,7 +2328,7 @@ def _detonate_oci_workspace(
 def _record_workspace_detonation(
     args: argparse.Namespace,
     job: JobState,
-    remote_deleted: dict[str, str],
+    remote_deleted: dict[str, Any],
     *,
     reason: str,
     success_detail: str,
@@ -2337,7 +2344,7 @@ def _record_workspace_detonation(
     return complete
 
 
-def _workspace_detonation_complete(remote_deleted: dict[str, str]) -> bool:
+def _workspace_detonation_complete(remote_deleted: dict[str, Any]) -> bool:
     return not any(key.startswith("failed.") for key in remote_deleted) and not (
         _workspace_detonation_missing_resources(remote_deleted)
     )
@@ -2355,10 +2362,12 @@ WORKSPACE_NETWORK_RESOURCE_KEYS = frozenset(
 )
 
 
-def _workspace_detonation_missing_resources(remote_deleted: dict[str, str]) -> list[str]:
+def _workspace_detonation_missing_resources(remote_deleted: dict[str, Any]) -> list[str]:
     deleted = {key for key in remote_deleted if not key.startswith("failed.")}
     missing: list[str] = []
-    if "remote_worker" not in deleted:
+    if "remote_worker" not in deleted or not _remote_worker_cleanup_complete(
+        remote_deleted.get("remote_worker")
+    ):
         missing.append("remote_worker")
     if "instance" not in deleted:
         missing.append("compute_instance")
@@ -2370,7 +2379,7 @@ def _workspace_detonation_missing_resources(remote_deleted: dict[str, str]) -> l
 def _write_workspace_detonation_receipt(
     args: argparse.Namespace,
     job: JobState,
-    remote_deleted: dict[str, str],
+    remote_deleted: dict[str, Any],
     *,
     reason: str,
 ) -> Path:
@@ -2395,13 +2404,15 @@ def _write_workspace_detonation_receipt(
     return path
 
 
-def _workspace_detonation_resource_summary(remote_deleted: dict[str, str]) -> dict[str, Any]:
+def _workspace_detonation_resource_summary(remote_deleted: dict[str, Any]) -> dict[str, Any]:
     deleted = {key for key in remote_deleted if not key.startswith("failed.")}
     network_resources = sorted(deleted.intersection(WORKSPACE_NETWORK_RESOURCE_KEYS))
     network_resources_missing = sorted(WORKSPACE_NETWORK_RESOURCE_KEYS - deleted)
+    worker_cleanup = _remote_worker_cleanup_summary(remote_deleted.get("remote_worker"))
     return {
         "schema_version": "fusekit.workspace-detonation-resources.v1",
-        "remote_worker": "remote_worker" in deleted,
+        "remote_worker": _remote_worker_cleanup_complete(remote_deleted.get("remote_worker")),
+        "remote_worker_cleanup": worker_cleanup,
         "compute_instance": "instance" in deleted,
         "network_resources": network_resources,
         "network_resources_missing": network_resources_missing,
@@ -2415,6 +2426,39 @@ def _workspace_detonation_resource_summary(remote_deleted: dict[str, str]) -> di
             "root compartment scope may be preserved when no throwaway compartment was created."
         ),
     }
+
+
+def _remote_worker_cleanup_summary(value: object) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        "schema_version": str(value.get("schema_version", "") or ""),
+        "status": str(value.get("status", "") or ""),
+        "process_patterns": _string_list(value.get("process_patterns")),
+        "paths": _string_list(value.get("paths")),
+        "host_machine_state_required": value.get("host_machine_state_required") is True,
+        "statement": _redact_cli_error(str(value.get("statement", "") or "")),
+    }
+
+
+def _remote_worker_cleanup_complete(value: object) -> bool:
+    if not isinstance(value, dict):
+        return False
+    process_patterns = set(_string_list(value.get("process_patterns")))
+    paths = set(_string_list(value.get("paths")))
+    return (
+        str(value.get("schema_version", "") or "") == REMOTE_WORKER_CLEANUP_SCHEMA_VERSION
+        and str(value.get("status", "") or "") == "detonated"
+        and value.get("host_machine_state_required") is False
+        and set(REMOTE_WORKER_PROCESS_PATTERNS).issubset(process_patterns)
+        and set(REMOTE_WORKER_PATH_TARGETS).issubset(paths)
+    )
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value]
 
 
 def _run_remote_detonation_preflight(args: argparse.Namespace, output_dir: Path) -> None:

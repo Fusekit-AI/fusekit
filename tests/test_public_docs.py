@@ -184,3 +184,12 @@ def test_friction_log_tracks_runner_readiness_artifact() -> None:
     assert "live acceptance fails unless the proof shows x86_64" in text
     assert "Playwright Chromium" in text
     assert "shared provider browser profile" in text
+
+
+def test_friction_log_tracks_remote_worker_cleanup_proof() -> None:
+    text = Path("docs/magic-path-friction-log.md").read_text(encoding="utf-8")
+
+    assert "bare `remote_worker` success string" in text
+    assert "fusekit.remote-worker-cleanup.v1" in text
+    assert "host_machine_state_required=false" in text
+    assert "live acceptance fail closed unless that proof is present" in text
