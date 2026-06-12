@@ -41,6 +41,7 @@ from fusekit.cli import (
     _ui_navigator_from_vault,
     _verify_apply_live_url,
     _verify_provider_packs,
+    _workspace_detonation_complete,
     main,
 )
 from fusekit.detonation.preflight import verification_report_allows_detonation
@@ -220,12 +221,64 @@ def test_workspace_detonation_receipt_fails_closed_and_redacts(tmp_path) -> None
     assert receipt["resource_summary"]["remote_worker"] is False
     assert receipt["resource_summary"]["compute_instance"] is True
     assert receipt["resource_summary"]["network_resources_deleted"] is False
+    assert receipt["resource_summary"]["network_resources_missing"] == [
+        "internet_gateway",
+        "network_security_group",
+        "route_table",
+        "security_list",
+        "subnet",
+        "vcn",
+    ]
     assert receipt["resource_summary"]["missing"] == [
         "remote_worker",
         "network_resources",
     ]
     assert "secret-token" not in json.dumps(receipt)
     assert "secret-password" not in json.dumps(receipt)
+
+
+def test_workspace_detonation_requires_every_network_resource(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    job_state = app / ".fusekit" / "job.json"
+    args = argparse.Namespace(job_state=job_state)
+    job = JobState.create("fk-test", app, "oci")
+    partial_cleanup = {
+        "remote_worker": "detonated",
+        "instance": "ocid1.instance.oc1..example",
+        "vcn": "ocid1.vcn.oc1..example",
+    }
+
+    complete = _record_workspace_detonation(
+        args,
+        job,
+        partial_cleanup,
+        reason="test cleanup",
+        success_detail="workspace detonated",
+        failure_detail="workspace detonation incomplete",
+    )
+
+    receipt = json.loads(
+        (app / ".fusekit" / "workspace_detonation.json").read_text(encoding="utf-8")
+    )
+    assert complete is False
+    assert _workspace_detonation_complete(partial_cleanup) is False
+    assert receipt["status"] == "incomplete"
+    assert receipt["deleted"] == ["instance", "remote_worker", "vcn"]
+    assert receipt["resource_summary"]["network_resources"] == ["vcn"]
+    assert receipt["resource_summary"]["network_resources_deleted"] is False
+    assert receipt["resource_summary"]["network_resources_missing"] == [
+        "internet_gateway",
+        "network_security_group",
+        "route_table",
+        "security_list",
+        "subnet",
+    ]
+    assert receipt["resource_summary"]["missing"] == ["network_resources"]
+    assert any(
+        step.id == "detonate.workspace" and step.status == "failed"
+        for step in job.steps
+    )
 
 
 def test_rebase_setup_artifacts_rebases_report_and_rollback(tmp_path) -> None:

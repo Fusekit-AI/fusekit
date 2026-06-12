@@ -2343,11 +2343,8 @@ def _workspace_detonation_complete(remote_deleted: dict[str, str]) -> bool:
     )
 
 
-def _workspace_detonation_missing_resources(remote_deleted: dict[str, str]) -> list[str]:
-    if not remote_deleted:
-        return []
-    deleted = {key for key in remote_deleted if not key.startswith("failed.")}
-    network_keys = {
+WORKSPACE_NETWORK_RESOURCE_KEYS = frozenset(
+    {
         "subnet",
         "route_table",
         "internet_gateway",
@@ -2355,12 +2352,19 @@ def _workspace_detonation_missing_resources(remote_deleted: dict[str, str]) -> l
         "security_list",
         "vcn",
     }
+)
+
+
+def _workspace_detonation_missing_resources(remote_deleted: dict[str, str]) -> list[str]:
+    if not remote_deleted:
+        return []
+    deleted = {key for key in remote_deleted if not key.startswith("failed.")}
     missing: list[str] = []
     if "remote_worker" not in deleted:
         missing.append("remote_worker")
     if "instance" not in deleted:
         missing.append("compute_instance")
-    if not deleted.intersection(network_keys):
+    if WORKSPACE_NETWORK_RESOURCE_KEYS - deleted:
         missing.append("network_resources")
     return missing
 
@@ -2395,20 +2399,15 @@ def _write_workspace_detonation_receipt(
 
 def _workspace_detonation_resource_summary(remote_deleted: dict[str, str]) -> dict[str, Any]:
     deleted = {key for key in remote_deleted if not key.startswith("failed.")}
-    network_keys = {
-        "subnet",
-        "route_table",
-        "internet_gateway",
-        "network_security_group",
-        "security_list",
-        "vcn",
-    }
+    network_resources = sorted(deleted.intersection(WORKSPACE_NETWORK_RESOURCE_KEYS))
+    network_resources_missing = sorted(WORKSPACE_NETWORK_RESOURCE_KEYS - deleted)
     return {
         "schema_version": "fusekit.workspace-detonation-resources.v1",
         "remote_worker": "remote_worker" in deleted,
         "compute_instance": "instance" in deleted,
-        "network_resources": sorted(deleted.intersection(network_keys)),
-        "network_resources_deleted": bool(deleted.intersection(network_keys)),
+        "network_resources": network_resources,
+        "network_resources_missing": network_resources_missing,
+        "network_resources_deleted": not network_resources_missing,
         "compartment_deleted": "compartment" in deleted,
         "compartment_scope": "detonated" if "compartment" in deleted else "preserved",
         "missing": _workspace_detonation_missing_resources(remote_deleted),

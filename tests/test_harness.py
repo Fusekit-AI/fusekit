@@ -136,6 +136,7 @@ def _workspace_detonation_receipt() -> dict[str, object]:
                 "subnet",
                 "vcn",
             ],
+            "network_resources_missing": [],
             "network_resources_deleted": True,
             "compartment_deleted": False,
             "compartment_scope": "preserved",

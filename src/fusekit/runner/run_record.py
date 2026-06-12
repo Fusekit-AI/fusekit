@@ -1338,6 +1338,24 @@ def _recording_detonation_ready(record: dict[str, Any]) -> bool:
     receipt = detonation.get("workspace_receipt", {})
     failures = receipt.get("failures", {}) if isinstance(receipt, dict) else {}
     resource_summary = receipt.get("resource_summary", {}) if isinstance(receipt, dict) else {}
+    required_network_resources = {
+        "internet_gateway",
+        "network_security_group",
+        "route_table",
+        "security_list",
+        "subnet",
+        "vcn",
+    }
+    network_resources = (
+        resource_summary.get("network_resources", [])
+        if isinstance(resource_summary, dict)
+        else []
+    )
+    network_resources_missing = (
+        resource_summary.get("network_resources_missing", [])
+        if isinstance(resource_summary, dict)
+        else ["network_resources_missing"]
+    )
     missing = (
         resource_summary.get("missing", [])
         if isinstance(resource_summary, dict)
@@ -1354,6 +1372,10 @@ def _recording_detonation_ready(record: dict[str, Any]) -> bool:
         and resource_summary.get("remote_worker") is True
         and resource_summary.get("compute_instance") is True
         and resource_summary.get("network_resources_deleted") is True
+        and isinstance(network_resources, list)
+        and not (required_network_resources - {str(item) for item in network_resources})
+        and isinstance(network_resources_missing, list)
+        and not network_resources_missing
         and isinstance(missing, list)
         and not missing
     )

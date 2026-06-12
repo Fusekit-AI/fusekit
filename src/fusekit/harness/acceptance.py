@@ -970,10 +970,24 @@ def _workspace_detonation_receipt_failures(receipt: dict[str, Any]) -> list[str]
     if str(receipt.get("status", "")).strip() != "complete":
         failures.append("detonation.workspace_receipt.status must be complete")
     deleted = receipt.get("deleted", [])
+    required_network_resources = {
+        "internet_gateway",
+        "network_security_group",
+        "route_table",
+        "security_list",
+        "subnet",
+        "vcn",
+    }
+    deleted_set = {str(item) for item in deleted} if isinstance(deleted, list) else set()
     if not isinstance(deleted, list) or not deleted:
         failures.append("detonation.workspace_receipt.deleted is missing")
-    elif "instance" not in {str(item) for item in deleted}:
-        failures.append("detonation.workspace_receipt.deleted must include instance")
+    else:
+        if "instance" not in deleted_set:
+            failures.append("detonation.workspace_receipt.deleted must include instance")
+        if required_network_resources - deleted_set:
+            failures.append(
+                "detonation.workspace_receipt.deleted must include all network resources"
+            )
     failures_field = receipt.get("failures")
     if not isinstance(failures_field, dict):
         failures.append("detonation.workspace_receipt.failures is missing")
@@ -1000,6 +1014,25 @@ def _workspace_detonation_receipt_failures(receipt: dict[str, Any]) -> list[str]
             failures.append("detonation.workspace_receipt.compute_instance must be true")
         if resource_summary.get("network_resources_deleted") is not True:
             failures.append("detonation.workspace_receipt.network_resources must be deleted")
+        network_resources = resource_summary.get("network_resources", [])
+        if not isinstance(network_resources, list):
+            failures.append(
+                "detonation.workspace_receipt.resource_summary.network_resources is missing"
+            )
+        elif required_network_resources - {str(item) for item in network_resources}:
+            failures.append(
+                "detonation.workspace_receipt.resource_summary.network_resources is incomplete"
+            )
+        network_missing = resource_summary.get("network_resources_missing", [])
+        if not isinstance(network_missing, list):
+            failures.append(
+                "detonation.workspace_receipt.resource_summary.network_resources_missing is missing"
+            )
+        elif network_missing:
+            failures.append(
+                "detonation.workspace_receipt.resource_summary.network_resources_missing "
+                "must be empty"
+            )
         missing = resource_summary.get("missing", [])
         if not isinstance(missing, list):
             failures.append("detonation.workspace_receipt.resource_summary.missing is missing")
