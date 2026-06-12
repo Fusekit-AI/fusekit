@@ -287,6 +287,10 @@ class GateService:
 
         record = self.records[gate_id]
         normalized = target.strip().upper()
+        if normalized in {item.strip().upper() for item in record.captured_targets}:
+            existing_event_id = self._existing_capture_wake_event_id(record, normalized)
+            if existing_event_id:
+                return existing_event_id
         event_id = uuid.uuid4().hex
         event_at = time.time()
         record.captured_targets = tuple(dict.fromkeys((*record.captured_targets, normalized)))
@@ -316,6 +320,33 @@ class GateService:
             created_at=event_at,
         )
         return event_id
+
+    def _existing_capture_wake_event_id(self, record: GateRecord, target: str) -> str:
+        """Return the first existing clipboard-capture wake event for a target."""
+
+        events_path = self.path.with_name("gate_events.jsonl")
+        try:
+            lines = events_path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return ""
+        for line in lines:
+            if not line.strip():
+                continue
+            try:
+                raw = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(raw, dict):
+                continue
+            if (
+                raw.get("event") == "clipboard_captured"
+                and str(raw.get("gate_id", "") or "") == record.id
+                and str(raw.get("target", "") or "").strip().upper() == target
+            ):
+                event_id = str(raw.get("id", "") or "").strip()
+                if event_id:
+                    return event_id
+        return ""
 
     def fail_gate(self, gate_id: str) -> None:
         """Mark a gate as failed."""

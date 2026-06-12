@@ -186,6 +186,34 @@ def test_gate_service_partial_capture_names_vm_clipboard_button(tmp_path) -> Non
     assert gate.last_wake_event == "clipboard_captured"
 
 
+def test_gate_service_mark_captured_is_idempotent_for_existing_target(tmp_path) -> None:
+    path = tmp_path / "gates.json"
+    service = GateService.load(path)
+    service.wait(
+        "provider.custom.runtime-values",
+        provider="custom",
+        reason="Runtime values",
+        target="CUSTOM_API_KEY,CUSTOM_WEBHOOK_SECRET",
+    )
+    first_event_id = service.mark_captured("provider.custom.runtime-values", "CUSTOM_API_KEY")
+    gate_events_path = tmp_path / "gate_events.jsonl"
+    original_gate_events = gate_events_path.read_text(encoding="utf-8")
+    original_record = GateService.load(path).records["provider.custom.runtime-values"]
+
+    second_event_id = GateService.load(path).mark_captured(
+        "provider.custom.runtime-values",
+        "CUSTOM_API_KEY",
+    )
+
+    assert second_event_id == first_event_id
+    assert gate_events_path.read_text(encoding="utf-8") == original_gate_events
+    reloaded = GateService.load(path).records["provider.custom.runtime-values"]
+    assert reloaded.captured_targets == ("CUSTOM_API_KEY",)
+    assert reloaded.last_wake_event_id == first_event_id
+    assert reloaded.last_wake_event == "clipboard_captured"
+    assert reloaded.last_wake_event_at == original_record.last_wake_event_at
+
+
 def test_gate_service_resume_request_uses_approval_specific_copy(tmp_path) -> None:
     path = tmp_path / "gates.json"
     service = GateService.load(path)
