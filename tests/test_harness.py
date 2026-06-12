@@ -109,7 +109,15 @@ def _provider_playbook() -> dict[str, object]:
     }
 
 
-def _run_record_provider_strategies() -> dict[str, object]:
+def _run_record_provider_strategies(fusekit_dir: Path | None = None) -> dict[str, object]:
+    if fusekit_dir is not None:
+        path = fusekit_dir / "provider_strategies.json"
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            raw = {}
+        if isinstance(raw, dict) and raw.get("schema_version") == "fusekit.provider-strategies.v1":
+            return raw
     return {
         "schema_version": "fusekit.provider-strategies.v1",
         "providers": [
@@ -961,7 +969,7 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
                 "human_actions": _human_action_trace(),
                 "automation_boundary": _automation_boundary(),
                 "verifiers": _verifier_summary(),
-                "provider_strategies": _run_record_provider_strategies(),
+                "provider_strategies": _run_record_provider_strategies(fusekit_dir),
                 "vault": {"record_count": 0, "records": []},
                 "audit_trail": _audit_trail(),
                 "recording_contract": _recording_contract(),
@@ -3973,6 +3981,40 @@ def test_live_acceptance_requires_central_run_record(tmp_path) -> None:
     blockers = {blocker["item"]: blocker for blocker in report.blockers}
     assert blockers["central run record"]["category"] == "Run record"
     assert "current control room" in blockers["central run record"]["next_action"]
+
+
+def test_live_acceptance_requires_run_record_provider_strategies_to_match_artifact(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    record_path = remote_fusekit / "run_record.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    record["provider_strategies"]["providers"][0]["strategies"][0]["status"] = "stale"
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    run_record_check = next(check for check in report.checks if check.id == "run_record.complete")
+    assert report.launch_ready is False
+    assert run_record_check.status == "failed"
+    assert (
+        "provider_strategies in Run Record must match provider_strategies.json"
+        in run_record_check.detail
+    )
+    assert "central run record" in report.missing
 
 
 def test_acceptance_run_record_requires_complete_workspace_detonation_receipt(

@@ -103,7 +103,8 @@ VM-clipboard Capture, and approval click to a visible control-room gate and its
 follow-me instructions, with no unguided actions. It must carry the same
 provider-strategy contract as the standalone provider route artifact: schema
 version, provider list, strategy rows, selected route status, and fallback
-candidates must be present so the ordered route plan survives OCI detonation.
+candidates must be present and match the artifact's route decisions so the
+ordered route plan survives OCI detonation without drift.
 Public OCI acceptance also
 requires a `fusekit.detonation-scope.v1` proof
 that names the complete no-trace destroy set, including provider-auth scratch,

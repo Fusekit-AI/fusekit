@@ -169,6 +169,7 @@ def run_acceptance(
         _record_remote_artifacts(remote_fusekit_dir, checks, ledger)
     _check_run_record(
         evidence_fusekit_dir / "run_record.json",
+        evidence_fusekit_dir / "provider_strategies.json",
         mode,
         checks,
         missing,
@@ -372,6 +373,7 @@ def _record_remote_artifacts(
 
 def _check_run_record(
     path: Path,
+    provider_strategies_path: Path,
     mode: str,
     checks: list[AcceptanceCheck],
     missing: list[str],
@@ -421,6 +423,9 @@ def _check_run_record(
         )
         return
     failures = _run_record_shape_failures(raw)
+    failures.extend(
+        _run_record_provider_strategy_consistency_failures(raw, provider_strategies_path)
+    )
     summary = {
         "schema_version": raw.get("schema_version"),
         "id": raw.get("id"),
@@ -793,6 +798,83 @@ def _provider_strategy_summary_shape_failures(strategies: dict[str, Any]) -> lis
             if not isinstance(candidates, list) or not candidates:
                 failures.append(f"{strategy_label}.decision.candidates is missing")
     return failures
+
+
+def _run_record_provider_strategy_consistency_failures(
+    run_record: dict[str, Any],
+    provider_strategies_path: Path,
+) -> list[str]:
+    if not provider_strategies_path.exists():
+        return []
+    try:
+        artifact = json.loads(provider_strategies_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(artifact, dict):
+        return []
+    run_signature = _provider_strategy_signature(run_record.get("provider_strategies", {}))
+    artifact_signature = _provider_strategy_signature(artifact)
+    if not artifact_signature:
+        return []
+    if run_signature != artifact_signature:
+        return [
+            (
+                "provider_strategies in Run Record must match "
+                "provider_strategies.json route decisions"
+            )
+        ]
+    return []
+
+
+def _provider_strategy_signature(raw: Any) -> tuple[tuple[Any, ...], ...]:
+    if not isinstance(raw, dict):
+        return ()
+    providers = raw.get("providers", [])
+    if not isinstance(providers, list):
+        return ()
+    rows: list[tuple[Any, ...]] = []
+    for provider_record in providers:
+        if not isinstance(provider_record, dict):
+            continue
+        provider = str(provider_record.get("provider", "") or "").strip().lower()
+        strategies = provider_record.get("strategies", [])
+        if not provider or not isinstance(strategies, list):
+            continue
+        for strategy in strategies:
+            if not isinstance(strategy, dict):
+                continue
+            decision = strategy.get("decision", {})
+            selected = decision.get("selected", {}) if isinstance(decision, dict) else {}
+            candidates = decision.get("candidates", []) if isinstance(decision, dict) else []
+            selected = selected if isinstance(selected, dict) else {}
+            rows.append(
+                (
+                    provider,
+                    str(strategy.get("recipe", "") or "").strip().lower(),
+                    str(strategy.get("strategy", "") or "").strip(),
+                    str(strategy.get("status", "") or "").strip(),
+                    str(selected.get("kind", "") or "").strip(),
+                    str(selected.get("status", "") or "").strip(),
+                    _provider_strategy_candidate_signature(candidates),
+                )
+            )
+    return tuple(sorted(rows))
+
+
+def _provider_strategy_candidate_signature(candidates: Any) -> tuple[tuple[str, str], ...]:
+    if not isinstance(candidates, list):
+        return ()
+    rows = []
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        rows.append(
+            (
+                str(candidate.get("kind", "") or "").strip(),
+                str(candidate.get("status", "") or "").strip(),
+            )
+        )
+    return tuple(sorted(rows))
 
 
 def _verifier_summary_shape_failures(verifiers: dict[str, Any]) -> list[str]:
