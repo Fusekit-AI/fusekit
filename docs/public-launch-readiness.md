@@ -127,7 +127,10 @@ the public demo cannot rely on hidden local browser profiles, host clipboard
 history, or VM scratch state. The Run Record's workspace
 detonation receipt must match the standalone `workspace_detonation.json` artifact,
 so the public demo cannot claim that the OCI VM, worker process, or network
-resources were destroyed from stale central state alone.
+resources were destroyed from stale central state alone. The final recording
+contract must also agree with the Run Record error list: public demo readiness
+is false if any unresolved error remains, even when all other proof sections
+look shaped correctly.
 
 ## Acceptance Path
 

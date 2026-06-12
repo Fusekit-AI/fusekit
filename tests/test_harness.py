@@ -4996,6 +4996,26 @@ def test_acceptance_run_record_requires_recording_contract(tmp_path) -> None:
     assert "recording_contract.statement is missing public demo guidance" in failures
 
 
+def test_acceptance_run_record_recording_contract_errors_empty_matches_errors(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["errors"] = [
+        {
+            "source": "verification",
+            "id": "resend",
+            "detail": "Resend verification still needs repair.",
+        }
+    ]
+
+    failures = _run_record_shape_failures(record)
+
+    assert "recording_contract.checks.errors_empty must match errors" in failures
+
+
 def test_acceptance_run_record_requires_evented_gate_wake_proof(tmp_path) -> None:
     fusekit_dir = tmp_path / ".fusekit"
     fusekit_dir.mkdir()

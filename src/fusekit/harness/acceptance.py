@@ -558,7 +558,12 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
         failures.extend(_audit_trail_shape_failures(audit_trail, raw))
     recording_contract = _require_dict_field(raw, "recording_contract", failures)
     if recording_contract is not None:
-        failures.extend(_recording_contract_shape_failures(recording_contract))
+        failures.extend(
+            _recording_contract_shape_failures(
+                recording_contract,
+                raw.get("errors", []),
+            )
+        )
     _require_list_field(raw, "artifacts", failures)
     evidence = _require_dict_field(raw, "evidence", failures)
     if evidence is not None:
@@ -1335,7 +1340,10 @@ def _audit_entry_expected_wake_event(entry: dict[str, Any]) -> str:
     return ""
 
 
-def _recording_contract_shape_failures(contract: dict[str, Any]) -> list[str]:
+def _recording_contract_shape_failures(
+    contract: dict[str, Any],
+    errors: Any = (),
+) -> list[str]:
     failures: list[str] = []
     if (
         str(contract.get("schema_version", "")).strip()
@@ -1375,6 +1383,8 @@ def _recording_contract_shape_failures(contract: dict[str, Any]) -> list[str]:
             "recording_contract.blockers must be empty: "
             + ", ".join(str(item) for item in blockers)
         )
+    if isinstance(errors, list) and errors:
+        failures.append("recording_contract.checks.errors_empty must match errors")
     statement = str(contract.get("statement", "") or "").lower()
     for required in ("public demo", "provider playbooks", "guided human actions", "detonation"):
         if required not in statement:
