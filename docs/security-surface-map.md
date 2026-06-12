@@ -17,7 +17,7 @@ routes cannot appear without an explicit state-change and protection classificat
 | `/` | `GET` | Read-only control-room HTML. | Local-only bind by default. Remote bind requires `FUSEKIT_ALLOW_REMOTE_CONTROL_ROOM=1` and a `secrets.token_urlsafe`-style `FUSEKIT_CONTROL_ROOM_TOKEN` with at least 32 URL-safe characters. `Cache-Control: no-store`, `X-Frame-Options: DENY`, CSP `frame-ancestors 'none'`, `form-action 'none'`, `object-src 'none'`; generated control-room CSS/JS use per-response nonces instead of broad `unsafe-inline`, with inline style/script attributes disabled; `Permissions-Policy` disables camera, microphone, geolocation, payment, USB/HID/serial/Bluetooth, and motion sensors. |
 | `/index.html` | `GET` | Read-only control-room HTML. | Same as `/`. |
 | `/api/job` | `GET` | Read-only redacted job payload. | Same as `/`. |
-| `/api/gates/<gate_id>/pass` | `POST` | Marks an active gate as `resume_requested` in `.fusekit/gates.json`; for setup-plan and DNS-approval gates this is the protected control-room approval signal consumed by the worker. | Requires `x-fusekit-control-room: resume`; rejects untrusted `Origin`; rejects browser-declared cross-site `Sec-Fetch-Site`; every state-changing POST must echo the page's per-control-room `x-fusekit-action-token`; remote access additionally requires token via bearer/query/cookie; no CORS headers are emitted; refuses secret-capture gates until every target is captured into the vault; stale `passed` or already `resume_requested` gates acknowledge current state without mutating gates, appending audit, or minting wake proof. |
+| `/api/gates/<gate_id>/pass` | `POST` | Marks an active gate as `resume_requested` in `.fusekit/gates.json`; for setup-plan and DNS-approval gates this is the protected control-room approval signal consumed by the worker. | Requires `x-fusekit-control-room: resume`; rejects untrusted `Origin`; rejects browser-declared cross-site or same-site `Sec-Fetch-Site`; every state-changing POST must echo the page's per-control-room `x-fusekit-action-token`; remote access additionally requires token via bearer/query/cookie; no CORS headers are emitted; refuses secret-capture gates until every target is captured into the vault; stale `passed` or already `resume_requested` gates acknowledge current state without mutating gates, appending audit, or minting wake proof. |
 | `/api/gates/<gate_id>/open` | `POST` | Opens an active gate's provider URL in the shared VM browser and records debounce metadata. | Same POST protections as `/pass`; stale `passed` or already `resume_requested` gates acknowledge current state without launching Chrome, mutating gates, or appending open-audit proof; URL is read from the durable gate record and validated with `require_safe_url`, including rejection of local/private network targets by default; launches only executable Chrome/Chromium-family binaries through a fixed argv list, not caller-supplied commands; strips token/key/password/auth/session-style environment variables before spawning the browser; responses expose only the browser executable name, not runner filesystem paths; repeated active opens are debounced. |
 | `/api/gates/<gate_id>/capture-clipboard` | `POST` | Reads the VM clipboard for one approved capture target, writes it into the encrypted vault, and marks capture progress. | Same POST protections as `/pass`; request body must be bounded `application/json`; target must match the gate's env-style allowlist; clipboard value size/text is bounded; stale captures are rejected after the gate auto-resumes for verification; duplicate captures for a target already stored in the encrypted vault acknowledge current state without rereading the VM clipboard, rewriting vault records, appending audit, or minting wake proof; response includes only target/record metadata, never raw secret text. |
 
@@ -30,7 +30,7 @@ The route inventory uses these protection class labels:
   require the generated remote token when the control room is remotely bound.
 - `control-room-header-origin-fetch-site-action-token` for every state-changing
   gate POST, meaning the request must carry the explicit control-room header,
-  same-origin/loopback `Origin`, non-cross-site `Sec-Fetch-Site`, and the
+  same-origin/loopback `Origin`, non-cross-site/non-same-site `Sec-Fetch-Site`, and the
   owner-only per-page action token.
 - `security-headers-no-cors-posts-auth-before-404` for unknown routes, meaning
   security headers and no CORS allow headers are emitted, and unknown POSTs must
@@ -143,10 +143,13 @@ or trigger commands:
 - Setup-plan and DNS approvals use the same protected `/pass` route as other gates:
   the browser can only request resume for a pre-existing FuseKit gate id, while the
   CLI worker owns the setup plan and DNS record content it will apply.
-- If a browser sends `Origin`, it must match the control-room host and be loopback for
-  local untokened control rooms.
-- If a browser sends `Sec-Fetch-Site: cross-site`, FuseKit rejects the state-changing
-  POST even when other headers are present.
+- Browser metadata is treated as a browser-origin guard, not as a local automation
+  requirement: if a request sends `Origin`, it must match the control-room host and
+  be loopback for local untokened control rooms; if it sends
+  `Sec-Fetch-Site: cross-site` or `same-site`, FuseKit rejects the state-changing
+  POST even when other headers are present. Requests without browser metadata still
+  require the control-room header and owner-only action token, preserving deterministic
+  runner/local automation without widening the browser CSRF surface.
 - Local and remote state-changing POSTs require the explicit
   `x-fusekit-action-token` header from the live control-room page instead of
   accepting cookie-authenticated or loopback POSTs alone.

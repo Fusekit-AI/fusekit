@@ -37,6 +37,7 @@ from fusekit.runner.control_room.server import (
     _control_room_action_token,
     _control_room_vault_passphrase,
     _trusted_browser_origin,
+    _trusted_fetch_site,
     _validate_clipboard_capture_value,
     _visual_browser_binary,
     _visual_browser_env,
@@ -2810,6 +2811,15 @@ def test_remote_control_room_origin_requires_same_host_with_access_token(
         "http://runner.example:9999",
         "runner.example:8765",
     )
+
+
+def test_control_room_browser_metadata_policy_preserves_local_automation() -> None:
+    assert _trusted_browser_origin(None, "127.0.0.1:8765") is True
+    assert _trusted_fetch_site(None) is True
+    assert _trusted_fetch_site("same-origin") is True
+    assert _trusted_fetch_site("none") is True
+    assert _trusted_fetch_site("same-site") is False
+    assert _trusted_fetch_site("cross-site") is False
 
 
 @pytest.mark.parametrize(

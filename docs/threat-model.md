@@ -64,14 +64,19 @@ Every state-changing control-room POST must keep all of these protections:
 
 - the `x-fusekit-control-room: resume` header
 - the per-page `x-fusekit-action-token` value
-- same-origin or loopback `Origin` validation
-- `Sec-Fetch-Site` rejection for browser-declared cross-site requests
+- same-origin or loopback `Origin` validation when the client sends `Origin`
+- `Sec-Fetch-Site` rejection for browser-declared cross-site or same-site requests
 - no permissive CORS preflight response
 - restrictive `Permissions-Policy` response headers that deny camera,
   microphone, geolocation, payment, USB/HID/serial/Bluetooth, and motion-sensor
   browser features
 - remote access disabled unless an explicit generated remote token is configured
   with at least 32 URL-safe characters
+
+Non-browser runner/local automation can omit `Origin` and `Sec-Fetch-Site`, but it
+still cannot mutate state without the explicit control-room header and owner-only
+action token. Browser-origin requests that declare a different site are rejected
+before any gate, vault, or provider-browser mutation.
 
 The control room must never expose a route that accepts arbitrary shell
 commands, creates OS or application admin accounts, edits startup files, or
