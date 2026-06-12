@@ -229,9 +229,27 @@ Billing, payment, destructive infrastructure, and arbitrary SSH execution must b
 declared as upfront execution scope; FuseKit does not add surprise mid-run
 approval prompts.
 
-`--capture-stdin` is an advanced CLI fallback that uses a non-echoing prompt. Public launcher runs should use the VM browser `Capture from VM clipboard` buttons instead. Tokens are not echoed and are not written to receipts or audit logs. If you prefer environment variables for local CLI work, omit `--capture-stdin` and set `GITHUB_TOKEN`, `VERCEL_TOKEN`, or `CLOUDFLARE_API_TOKEN` before running `authorize`.
+`--capture-stdin` is an advanced CLI fallback that uses a non-echoing prompt.
+Public launcher runs should use the exact env-named VM browser Capture buttons,
+for example `Capture RESEND_API_KEY from VM clipboard`. Tokens are not echoed and
+are not written to receipts or audit logs. If you prefer environment variables
+for local CLI work, omit `--capture-stdin` and set `GITHUB_TOKEN`,
+`VERCEL_TOKEN`, or `CLOUDFLARE_API_TOKEN` before running `authorize`.
 
-Private GitHub app repos do not require SSH keys or local Git setup. In the OCI lane, the bootstrap asks for the vault passphrase first, then runs `fusekit source fetch` to retrieve the app source. Public repos download immediately through GitHub HTTPS archives. Private repos trigger a GitHub service gate: the user signs in, approves a scoped GitHub App installation when `FUSEKIT_GITHUB_APP_INSTALL_URL` is configured, or creates a fine-grained token as the fallback. FuseKit runs OpenClaw inference for this step by default, gives GitHub-specific "follow the highlighted control" guidance, and asks OpenClaw to spotlight provider-screen areas that need human attention. Public launcher runs capture the approved token through the VM browser `Capture from VM clipboard` flow; local CLI fallbacks can use `GITHUB_TOKEN` or `GITHUB_APP_INSTALLATION_TOKEN`. FuseKit encrypts the token into the vault as `provider.github.token`, fetches the repo without putting the token in the URL or command line, and then continues the setup launch.
+Private GitHub app repos do not require SSH keys or local Git setup. In the OCI
+lane, the bootstrap asks for the vault passphrase first, then runs
+`fusekit source fetch` to retrieve the app source. Public repos download
+immediately through GitHub HTTPS archives. Private repos trigger a GitHub service
+gate: the user signs in, approves a scoped GitHub App installation when
+`FUSEKIT_GITHUB_APP_INSTALL_URL` is configured, or creates a fine-grained token as
+the fallback. FuseKit runs OpenClaw inference for this step by default, gives
+GitHub-specific "follow the highlighted control" guidance, and asks OpenClaw to
+spotlight provider-screen areas that need human attention. Public launcher runs
+capture the approved token through the exact env-named VM browser Capture button,
+such as `Capture GITHUB_TOKEN from VM clipboard`; local CLI fallbacks can use
+`GITHUB_TOKEN` or `GITHUB_APP_INSTALLATION_TOKEN`. FuseKit encrypts the token into
+the vault as `provider.github.token`, fetches the repo without putting the token
+in the URL or command line, and then continues the setup launch.
 
 OpenClaw is the default handoff spine. In the magic lane, OpenClaw runs on the OCI VM and owns the browser/computer-use layer; FuseKit only supplies the setup intent, inferred navigation loop, vault, and provider rules. Playwright remains available as `--spine playwright` for local debugging or environments where OpenClaw is unavailable, but it is not the normal user-facing lane. Use `--dry-run-spine` to inspect playbooks without opening a browser. Use `--infer-ui` to let FuseKit observe the provider page through OpenClaw, ask the configured LLM for the next safe UI action, execute allowed clicks/fills/navigation, and wait durably at service gates until the human passes them. The inferred action plane records before/after observations, uses efficient interactive JSON snapshots, supports richer wait conditions, rejects unsafe non-HTTPS navigation, cross-provider navigation, and unsafe key presses, starts/stops browser traces when supported, and writes redacted recovery events when a provider page changes under it. When the LLM can identify the provider-screen control that needs human attention, FuseKit scrolls it into view and asks the browser spine to highlight it instead of leaving the user to hunt. When provider-pack verification fails or remains pending, FuseKit can feed the redacted verification error back into a bounded inferred UI repair pass, then rerun verification before failing the launch. Use `--openclaw-profile chrome` to route through an existing Chrome profile when OpenClaw is configured for its Chrome extension relay.
 

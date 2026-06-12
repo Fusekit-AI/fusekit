@@ -10,9 +10,11 @@ def test_readme_real_provider_path_names_resend_and_vm_capture() -> None:
     assert "The V1 real path is GitHub + Resend + Vercel + Cloudflare DNS." in text
     assert "Bundled GitHub, Resend, Vercel, and Cloudflare behavior" in text
     assert "RESEND_API_KEY" in text
-    assert "Capture from VM clipboard" in text
     assert "exact env-named FuseKit control" in text
     assert "`Capture RESEND_API_KEY from VM clipboard`" in text
+    assert "`Capture GITHUB_TOKEN from VM clipboard`" in text
+    assert "VM browser `Capture from VM clipboard` buttons" not in text
+    assert "VM browser `Capture from VM clipboard` flow" not in text
     assert "one-time `RESEND_API_KEY` capture from the VM" in text
     assert "FuseKit then owns Resend domain/audience setup by API before DNS" in text
     assert "browser surface" not in text.lower()
