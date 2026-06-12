@@ -2598,6 +2598,20 @@ def test_control_room_clipboard_capture_accepts_expected_token_shapes(
 
 
 @pytest.mark.parametrize(
+    ("target", "value"),
+    [
+        ("CLOUDFLARE_API_TOKEN", "abcdefghijklmnopqrstuvwxyz123456"),
+        ("VERCEL_TOKEN", "abcdefghijklmnopqrstuvwxyz123456"),
+    ],
+)
+def test_control_room_clipboard_capture_does_not_require_unguaranteed_prefixes(
+    target: str,
+    value: str,
+) -> None:
+    _validate_clipboard_capture_value(target, value)
+
+
+@pytest.mark.parametrize(
     ("target", "value", "message"),
     [
         (
