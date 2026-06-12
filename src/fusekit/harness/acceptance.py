@@ -492,6 +492,9 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
             failures.extend(_runner_profile_contract_failures(profile_contract))
         _require_dict_field(runner_profile, "checks", failures, prefix="runner_profile")
         _require_dict_field(runner_profile, "observed", failures, prefix="runner_profile")
+    provider_playbook = _require_dict_field(raw, "provider_playbook", failures)
+    if provider_playbook is not None:
+        failures.extend(_provider_playbook_shape_failures(provider_playbook))
     vault = _require_dict_field(raw, "vault", failures)
     if vault is not None:
         if not isinstance(vault.get("record_count"), int):
@@ -3676,6 +3679,53 @@ def _runner_profile_contract_failures(profile: dict[str, Any]) -> list[str]:
                 "runner profile required_health_checks missing " + ", ".join(missing)
             )
     return failures
+
+
+def _provider_playbook_shape_failures(playbook: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    if str(playbook.get("schema_version", "")).strip() != "fusekit.provider-playbook.v1":
+        failures.append("provider_playbook.schema_version is unsupported")
+    steps = playbook.get("steps", [])
+    if not isinstance(steps, list) or not steps:
+        failures.append("provider_playbook.steps is missing")
+    else:
+        for index, step in enumerate(steps):
+            label = f"provider_playbook.steps[{index}]"
+            if not isinstance(step, dict):
+                failures.append(f"{label} is not an object")
+                continue
+            if not str(step.get("id", "")).strip():
+                failures.append(f"{label}.id is missing")
+            instruction = str(step.get("instruction", "") or "")
+            if not instruction.strip():
+                failures.append(f"{label}.instruction is missing")
+            if _provider_playbook_instruction_is_unsafe(instruction):
+                failures.append(f"{label}.instruction asks for unsafe provider work")
+    safety_notes = playbook.get("safety_notes", [])
+    if not isinstance(safety_notes, list) or not safety_notes:
+        failures.append("provider_playbook.safety_notes is missing")
+    else:
+        notes = " ".join(str(note) for note in safety_notes)
+        for required in (
+            "VM browser",
+            "Do not create Resend domains or audiences manually",
+            "Do not paste provider secrets into the host computer",
+        ):
+            if required not in notes:
+                failures.append(f"provider_playbook.safety_notes must include {required}")
+    return failures
+
+
+def _provider_playbook_instruction_is_unsafe(instruction: str) -> bool:
+    text = instruction.lower()
+    unsafe_patterns = (
+        "paste provider secrets into the host",
+        "create resend domains manually",
+        "create resend audiences manually",
+        "click add domain in resend",
+        "click add audience in resend",
+    )
+    return any(pattern in text for pattern in unsafe_patterns)
 
 
 def _int_field(value: object, default: int) -> int:

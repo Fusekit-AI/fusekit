@@ -72,6 +72,40 @@ def _resend_audience_strategy_decision() -> dict[str, object]:
     )
 
 
+def _provider_playbook() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.provider-playbook.v1",
+        "steps": [
+            {
+                "id": "resend.capture_key",
+                "provider": "resend",
+                "control": "Capture RESEND_API_KEY from VM clipboard",
+                "instruction": (
+                    "Capture RESEND_API_KEY from VM clipboard if the Resend API route "
+                    "is not already authorized."
+                ),
+            },
+            {
+                "id": "resend.domain_api",
+                "provider": "resend",
+                "route": "api",
+                "instruction": (
+                    "FuseKit creates or reuses the Resend sending domain through the "
+                    "Resend API."
+                ),
+            },
+        ],
+        "safety_notes": [
+            "Use the launcher and shared VM browser for provider gates.",
+            (
+                "Do not create Resend domains or audiences manually; FuseKit owns "
+                "those API setup steps."
+            ),
+            "Do not paste provider secrets into the host computer; Capture reads the VM clipboard.",
+        ],
+    }
+
+
 def _resend_domain_receipt_details(
     *,
     dns_records: list[dict[str, str]] | None = None,
@@ -370,6 +404,7 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
                     "providers": [],
                     "records": [],
                 },
+                "provider_playbook": _provider_playbook(),
                 "runner_profile": {
                     "status": "ready",
                     "architecture": "x86_64",
@@ -464,6 +499,7 @@ def _write_minimum_resend_vercel_live_artifacts(remote_fusekit: Path) -> None:
         json.dumps(
             {
                 "schema_version": "fusekit.provider-strategies.v1",
+                "playbook": _provider_playbook(),
                 "providers": [
                     {
                         "provider": "resend",

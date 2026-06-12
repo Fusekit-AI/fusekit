@@ -3910,10 +3910,221 @@ def _write_provider_strategy_artifact(
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "schema_version": "fusekit.provider-strategies.v1",
+        "playbook": _provider_playbook(strategy_runs),
         "providers": strategy_runs,
     }
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return path
+
+
+def _provider_playbook(strategy_runs: list[dict[str, object]]) -> dict[str, object]:
+    """Build the durable plain-language provider playbook for the control room."""
+
+    records = list(_iter_provider_strategy_items(strategy_runs))
+    steps: list[dict[str, object]] = []
+    if any(_is_resend_domain_api_record(record) for record in records):
+        steps.append(
+            _playbook_step(
+                "resend.capture_key",
+                (
+                    "Capture RESEND_API_KEY from VM clipboard if the Resend API route "
+                    "is not already authorized."
+                ),
+                control="Capture RESEND_API_KEY from VM clipboard",
+                provider="resend",
+            )
+        )
+        steps.append(
+            _playbook_step(
+                "resend.domain_api",
+                "FuseKit creates or reuses the Resend sending domain through the Resend API.",
+                provider="resend",
+                route="api",
+            )
+        )
+    if any(_is_resend_audience_api_record(record) for record in records):
+        steps.append(
+            _playbook_step(
+                "resend.audience_api",
+                (
+                    "FuseKit creates or reuses a Resend audience by API only when the "
+                    "app requires one."
+                ),
+                provider="resend",
+                route="api",
+            )
+        )
+    if any(_is_dns_record(record) for record in records):
+        steps.append(
+            _playbook_step(
+                "dns.approval",
+                (
+                    "FuseKit carries app and provider-generated DNS records into the "
+                    "DNS approval gate before apply."
+                ),
+                control="Approve DNS apply",
+                provider="dns",
+            )
+        )
+    if any(_is_vercel_env_record(record) for record in records):
+        steps.append(
+            _playbook_step(
+                "vercel.env_api",
+                (
+                    "FuseKit writes required runtime variables into Vercel after "
+                    "upstream provider values exist."
+                ),
+                provider="vercel",
+                route="api",
+            )
+        )
+    for target in _human_gate_targets(records):
+        steps.append(
+            _playbook_step(
+                f"capture.{target.lower()}",
+                (
+                    "Open the provider gate in the VM browser, copy the approved value "
+                    f"there, then click Capture {target} from VM clipboard."
+                ),
+                control=f"Capture {target} from VM clipboard",
+            )
+        )
+    if any(_is_non_secret_human_gate(record) for record in records):
+        steps.append(
+            _playbook_step(
+                "provider.finished_step",
+                (
+                    "For provider-owned login, MFA, consent, billing, or verification gates, "
+                    "finish the prompt in the VM browser, then click I finished this step."
+                ),
+                control="I finished this step",
+            )
+        )
+    if not steps and records:
+        steps.append(
+            _playbook_step(
+                "provider.routes",
+                (
+                    "FuseKit recorded deterministic provider routes; no user action "
+                    "is needed unless a gate appears."
+                ),
+            )
+        )
+    return {
+        "schema_version": "fusekit.provider-playbook.v1",
+        "steps": steps,
+        "safety_notes": [
+            "Use the launcher and shared VM browser for provider gates.",
+            (
+                "Do not create Resend domains or audiences manually; FuseKit owns "
+                "those API setup steps."
+            ),
+            "Do not paste provider secrets into the host computer; Capture reads the VM clipboard.",
+        ],
+    }
+
+
+def _playbook_step(
+    step_id: str,
+    instruction: str,
+    *,
+    control: str = "",
+    provider: str = "",
+    route: str = "",
+) -> dict[str, object]:
+    payload: dict[str, object] = {"id": step_id, "instruction": instruction}
+    if control:
+        payload["control"] = control
+    if provider:
+        payload["provider"] = provider
+    if route:
+        payload["route"] = route
+    return payload
+
+
+def _iter_provider_strategy_items(
+    strategy_runs: list[dict[str, object]],
+) -> Iterable[dict[str, object]]:
+    for provider_record in strategy_runs:
+        provider = str(provider_record.get("provider", "") or "").strip().lower()
+        strategies = provider_record.get("strategies", [])
+        if not isinstance(strategies, list):
+            continue
+        for strategy in strategies:
+            if not isinstance(strategy, dict):
+                continue
+            item = {str(key): value for key, value in strategy.items()}
+            item["provider"] = provider
+            yield item
+
+
+def _strategy_evidence(item: dict[str, object]) -> dict[str, object]:
+    decision = item.get("decision", {})
+    if not isinstance(decision, dict):
+        return {}
+    selected = decision.get("selected", {})
+    if not isinstance(selected, dict):
+        return {}
+    evidence = selected.get("evidence", {})
+    if not isinstance(evidence, dict):
+        return {}
+    return evidence
+
+
+def _strategy_route_kind(item: dict[str, object]) -> str:
+    return str(item.get("strategy", "") or "").strip()
+
+
+def _strategy_recipe(item: dict[str, object]) -> str:
+    return str(item.get("recipe", "") or "").strip()
+
+
+def _is_resend_domain_api_record(item: dict[str, object]) -> bool:
+    return (
+        str(item.get("provider", "")) == "resend"
+        and _strategy_recipe(item) == "resend-domain"
+        and _strategy_route_kind(item) == "api"
+        and str(_strategy_evidence(item).get("downstream_order", "")) == "before_dns_apply"
+    )
+
+
+def _is_resend_audience_api_record(item: dict[str, object]) -> bool:
+    return (
+        str(item.get("provider", "")) == "resend"
+        and _strategy_recipe(item) == "resend-audience"
+        and _strategy_route_kind(item) == "api"
+        and str(_strategy_evidence(item).get("api_owns", "")) == "audience"
+    )
+
+
+def _is_dns_record(item: dict[str, object]) -> bool:
+    provider = str(item.get("provider", ""))
+    return provider in {"cloudflare", "dns"} or "dns" in _strategy_recipe(item)
+
+
+def _is_vercel_env_record(item: dict[str, object]) -> bool:
+    return (
+        str(item.get("provider", "")) == "vercel"
+        and _strategy_route_kind(item) == "api"
+        and "env" in _strategy_recipe(item)
+    )
+
+
+def _human_gate_targets(records: list[dict[str, object]]) -> list[str]:
+    targets = {
+        str(item.get("target", "") or "").strip().upper()
+        for item in records
+        if _strategy_route_kind(item) in {"browser_guided", "human_follow_me"}
+        and str(item.get("target", "") or "").strip()
+    }
+    return sorted(target for target in targets if target)
+
+
+def _is_non_secret_human_gate(item: dict[str, object]) -> bool:
+    return (
+        _strategy_route_kind(item) in {"browser_guided", "human_follow_me"}
+        and not str(item.get("target", "") or "").strip()
+    )
 
 
 def _provider_strategy_artifact_path(vault_path: Path) -> Path:

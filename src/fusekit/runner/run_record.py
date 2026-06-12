@@ -44,6 +44,7 @@ def build_run_record(
         "checkpoints": [checkpoint.to_dict() for checkpoint in job.checkpoints],
         "provider_gates": _gate_summary(gates),
         "runner_profile": _runner_profile_summary(runner_readiness),
+        "provider_playbook": _provider_playbook_summary(provider_strategies),
         "wake_events": _wake_event_summary(wake_events),
         "provider_strategies": provider_strategies or {"providers": []},
         "vault": {
@@ -242,6 +243,20 @@ def _runner_profile_summary(runner_readiness: dict[str, Any]) -> dict[str, Any]:
         "checks": checks if isinstance(checks, dict) else {},
         "provider_browser_profile": str(runner_readiness.get("provider_browser_profile", "")),
         "playwright_browsers_path": str(runner_readiness.get("playwright_browsers_path", "")),
+    }
+
+
+def _provider_playbook_summary(provider_strategies: dict[str, Any]) -> dict[str, Any]:
+    playbook = provider_strategies.get("playbook", {})
+    if not isinstance(playbook, dict):
+        return {}
+    steps = playbook.get("steps", [])
+    notes = playbook.get("safety_notes", [])
+    return {
+        "schema_version": str(playbook.get("schema_version", "")),
+        "step_count": len(steps) if isinstance(steps, list) else 0,
+        "steps": steps if isinstance(steps, list) else [],
+        "safety_notes": notes if isinstance(notes, list) else [],
     }
 
 

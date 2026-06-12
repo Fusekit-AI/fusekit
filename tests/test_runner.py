@@ -265,7 +265,36 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
         "provider.cloudflare.authorization",
     )
     (tmp_path / "provider_strategies.json").write_text(
-        '{"providers":[{"provider":"cloudflare","strategies":[]}]}',
+        json.dumps(
+            {
+                "playbook": {
+                    "schema_version": "fusekit.provider-playbook.v1",
+                    "steps": [
+                        {
+                            "id": "cloudflare.capture_key",
+                            "control": "Capture CLOUDFLARE_API_TOKEN from VM clipboard",
+                            "instruction": (
+                                "Open the provider gate in the VM browser, copy the "
+                                "approved value there, then click Capture "
+                                "CLOUDFLARE_API_TOKEN from VM clipboard."
+                            ),
+                        }
+                    ],
+                    "safety_notes": [
+                        "Use the launcher and shared VM browser for provider gates.",
+                        (
+                            "Do not create Resend domains or audiences manually; "
+                            "FuseKit owns those API setup steps."
+                        ),
+                        (
+                            "Do not paste provider secrets into the host computer; "
+                            "Capture reads the VM clipboard."
+                        ),
+                    ],
+                },
+                "providers": [{"provider": "cloudflare", "strategies": []}],
+            }
+        ),
         encoding="utf-8",
     )
     (tmp_path / "verification_report.json").write_text(
@@ -354,6 +383,11 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
         "oci-visual-browser-x86_64"
     )
     assert record["runner_profile"]["observed"]["memory_mib"] == 24576
+    assert record["provider_playbook"]["schema_version"] == "fusekit.provider-playbook.v1"
+    assert record["provider_playbook"]["step_count"] == 1
+    assert "Capture CLOUDFLARE_API_TOKEN" in record["provider_playbook"]["steps"][0][
+        "instruction"
+    ]
     assert record["wake_events"]["total"] == 2
     assert record["wake_events"]["event_counts"] == {
         "clipboard_captured": 1,

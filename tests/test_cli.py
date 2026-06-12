@@ -21,6 +21,7 @@ from fusekit.cli import (
     _local_verification_job_result,
     _ordered_provider_services,
     _playwright_headless,
+    _provider_playbook,
     _provider_strategy_checkpoint_resume_hint,
     _provider_strategy_next_action,
     _provider_strategy_record,
@@ -119,6 +120,67 @@ def test_provider_strategy_record_preserves_guidance_panels() -> None:
     assert strategy["avoid_steps"] == [
         "Do not use a local browser for this provider gate.",
     ]
+
+
+def test_provider_playbook_records_resend_domain_first_path() -> None:
+    playbook = _provider_playbook(
+        [
+            {
+                "provider": "resend",
+                "strategies": [
+                    {
+                        "recipe": "resend-domain",
+                        "strategy": "api",
+                        "status": "ok",
+                        "decision": {
+                            "selected": {
+                                "kind": "api",
+                                "evidence": {
+                                    "api_owns": "domain",
+                                    "downstream_order": "before_dns_apply",
+                                },
+                            }
+                        },
+                    }
+                ],
+            },
+            {
+                "provider": "cloudflare",
+                "strategies": [
+                    {
+                        "recipe": "cloudflare-dns",
+                        "strategy": "api",
+                        "status": "ok",
+                        "decision": {"selected": {"kind": "api"}},
+                    }
+                ],
+            },
+            {
+                "provider": "vercel",
+                "strategies": [
+                    {
+                        "recipe": "vercel-env",
+                        "strategy": "api",
+                        "status": "ok",
+                        "decision": {"selected": {"kind": "api"}},
+                    }
+                ],
+            },
+        ]
+    )
+
+    assert playbook["schema_version"] == "fusekit.provider-playbook.v1"
+    steps = playbook["steps"]
+    assert isinstance(steps, list)
+    instructions = [str(step["instruction"]) for step in steps if isinstance(step, dict)]
+    assert instructions[0].startswith("Capture RESEND_API_KEY")
+    assert "Resend sending domain through the Resend API" in instructions[1]
+    assert "DNS approval gate before apply" in instructions[2]
+    assert "runtime variables into Vercel" in instructions[3]
+    assert "Do not create Resend domains or audiences manually" in " ".join(
+        str(note) for note in playbook["safety_notes"]  # type: ignore[index]
+    )
+    assert "Click Add domain" not in json.dumps(playbook)
 
 
 def test_workspace_detonation_receipt_fails_closed_and_redacts(tmp_path) -> None:
