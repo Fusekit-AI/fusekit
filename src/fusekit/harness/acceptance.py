@@ -1008,6 +1008,14 @@ def _run_record_wake_event_failures(
     resumed_gate_ids = {
         gate_id for gate_id, _target in _wake_event_pairs(events, "resume_requested")
     }
+    event_ids = _wake_event_ids(events)
+    event_ids_by_name = {
+        name: ids
+        for name, ids in (
+            ("clipboard_captured", _wake_event_ids(events, "clipboard_captured")),
+            ("resume_requested", _wake_event_ids(events, "resume_requested")),
+        )
+    }
     for gate in records:
         if not isinstance(gate, dict):
             continue
@@ -1023,7 +1031,50 @@ def _run_record_wake_event_failures(
         if str(gate.get("status", "") or "") in {"resume_requested", "resolved"}:
             if gate_id not in resumed_gate_ids:
                 failures.append(f"wake_events missing resume_requested for {gate_id}")
+            wake_id = str(gate.get("last_wake_event_id", "") or "").strip()
+            if not wake_id:
+                failures.append(
+                    f"provider_gates.records[{gate_id}].last_wake_event_id is missing"
+                )
+            elif wake_id not in event_ids_by_name["resume_requested"]:
+                failures.append(
+                    "provider_gates.records"
+                    f"[{gate_id}].last_wake_event_id must match a resume_requested wake event"
+                )
+            if str(gate.get("last_wake_event", "") or "") != "resume_requested":
+                failures.append(
+                    f"provider_gates.records[{gate_id}].last_wake_event must be resume_requested"
+                )
+        elif gate.get("captured_targets"):
+            wake_id = str(gate.get("last_wake_event_id", "") or "").strip()
+            if not wake_id:
+                failures.append(
+                    f"provider_gates.records[{gate_id}].last_wake_event_id is missing"
+                )
+            elif wake_id not in event_ids_by_name["clipboard_captured"]:
+                failures.append(
+                    "provider_gates.records"
+                    f"[{gate_id}].last_wake_event_id must match a clipboard_captured wake event"
+                )
+        wake_id = str(gate.get("last_wake_event_id", "") or "").strip()
+        if wake_id and wake_id not in event_ids:
+            failures.append(
+                f"provider_gates.records[{gate_id}].last_wake_event_id has no wake event"
+            )
     return failures
+
+
+def _wake_event_ids(events: list[Any], event_name: str = "") -> set[str]:
+    ids: set[str] = set()
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        if event_name and str(event.get("event", "") or "") != event_name:
+            continue
+        event_id = str(event.get("id", "") or "").strip()
+        if event_id:
+            ids.add(event_id)
+    return ids
 
 
 def _wake_event_pairs(events: list[Any], event_name: str) -> set[tuple[str, str]]:

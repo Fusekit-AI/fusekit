@@ -4129,13 +4129,25 @@ def test_acceptance_run_record_requires_evented_gate_wake_proof(tmp_path) -> Non
         "wake_events missing clipboard_captured for "
         "provider.cloudflare.authorization:CLOUDFLARE_API_TOKEN"
     ) in failures
+    assert (
+        "provider_gates.records[provider.cloudflare.authorization].last_wake_event_id "
+        "is missing"
+    ) in failures
+    assert (
+        "provider_gates.records[provider.cloudflare.authorization].last_wake_event "
+        "must be resume_requested"
+    ) in failures
 
+    record["provider_gates"]["records"][0]["last_wake_event_id"] = "wake-resume-1"
+    record["provider_gates"]["records"][0]["last_wake_event"] = "resume_requested"
+    record["provider_gates"]["records"][0]["last_wake_event_at"] = 2.0
     record["wake_events"] = {
         "total": 2,
         "event_counts": {"clipboard_captured": 1, "resume_requested": 1},
         "events": [
             {
                 "schema_version": "fusekit.gate-wake.v1",
+                "id": "wake-capture-1",
                 "event": "clipboard_captured",
                 "gate_id": "provider.cloudflare.authorization",
                 "provider": "cloudflare",
@@ -4145,6 +4157,7 @@ def test_acceptance_run_record_requires_evented_gate_wake_proof(tmp_path) -> Non
             },
             {
                 "schema_version": "fusekit.gate-wake.v1",
+                "id": "wake-resume-1",
                 "event": "resume_requested",
                 "gate_id": "provider.cloudflare.authorization",
                 "provider": "cloudflare",

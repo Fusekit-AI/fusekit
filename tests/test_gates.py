@@ -121,6 +121,9 @@ def test_gate_service_resume_request_can_resurface_after_failed_recheck(tmp_path
     assert events[0]["target"] == "RESEND_API_KEY"
     assert events[0]["captured_targets"] == ["RESEND_API_KEY"]
     assert events[1]["status"] == "resume_requested"
+    assert retrying.last_wake_event_id == events[1]["id"]
+    assert retrying.last_wake_event == "resume_requested"
+    assert retrying.last_wake_event_at == events[1]["created_at"]
     assert "secret" not in json.dumps(events).lower()
 
     resurfaced = GateService.load(path).wait(
@@ -134,6 +137,7 @@ def test_gate_service_resume_request_can_resurface_after_failed_recheck(tmp_path
     assert resurfaced.attempts == 2
     assert resurfaced.reason == "token still missing"
     assert resurfaced.captured_targets == ()
+    assert resurfaced.last_wake_event_id == events[1]["id"]
 
 
 def test_gate_service_partial_capture_names_vm_clipboard_button(tmp_path) -> None:
@@ -155,6 +159,11 @@ def test_gate_service_partial_capture_names_vm_clipboard_button(tmp_path) -> Non
         "Capture CUSTOM_WEBHOOK_SECRET from VM clipboard."
     )
     assert "resume automatically" in gate.resume_hint
+    event = json.loads((tmp_path / "gate_events.jsonl").read_text(encoding="utf-8"))
+    assert event["event"] == "clipboard_captured"
+    assert event["target"] == "CUSTOM_API_KEY"
+    assert gate.last_wake_event_id == event["id"]
+    assert gate.last_wake_event == "clipboard_captured"
 
 
 def test_gate_service_resume_request_uses_approval_specific_copy(tmp_path) -> None:

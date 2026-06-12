@@ -71,6 +71,9 @@ class GateRecord:
     last_opened_url: str = ""
     last_opened_at: float = 0.0
     captured_targets: tuple[str, ...] = ()
+    last_wake_event_id: str = ""
+    last_wake_event: str = ""
+    last_wake_event_at: float = 0.0
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
 
@@ -96,6 +99,9 @@ class GateRecord:
             "last_opened_url": self.last_opened_url,
             "last_opened_at": self.last_opened_at,
             "captured_targets": list(self.captured_targets),
+            "last_wake_event_id": self.last_wake_event_id,
+            "last_wake_event": self.last_wake_event,
+            "last_wake_event_at": self.last_wake_event_at,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -121,6 +127,9 @@ class GateRecord:
             last_opened_url=str(raw.get("last_opened_url", "")),
             last_opened_at=_float_value(raw.get("last_opened_at"), 0.0),
             captured_targets=_normalized_string_tuple(raw.get("captured_targets", [])),
+            last_wake_event_id=str(raw.get("last_wake_event_id", "")),
+            last_wake_event=str(raw.get("last_wake_event", "")),
+            last_wake_event_at=_float_value(raw.get("last_wake_event_at"), 0.0),
             created_at=_float_value(raw.get("created_at"), time.time()),
             updated_at=_float_value(raw.get("updated_at"), time.time()),
         )
@@ -189,10 +198,16 @@ class GateService:
             captured_targets = (
                 () if record.status == "resume_requested" else record.captured_targets
             )
+            last_wake_event_id = record.last_wake_event_id
+            last_wake_event = record.last_wake_event
+            last_wake_event_at = record.last_wake_event_at
         else:
             last_opened_url = ""
             last_opened_at = 0.0
             captured_targets = ()
+            last_wake_event_id = ""
+            last_wake_event = ""
+            last_wake_event_at = 0.0
         record = GateRecord(
             id=gate_id,
             provider=provider,
@@ -210,6 +225,9 @@ class GateService:
             last_opened_url=last_opened_url,
             last_opened_at=last_opened_at,
             captured_targets=captured_targets,
+            last_wake_event_id=last_wake_event_id,
+            last_wake_event=last_wake_event,
+            last_wake_event_at=last_wake_event_at,
             created_at=created_at,
             updated_at=time.time(),
         )
@@ -231,12 +249,22 @@ class GateService:
         """Mark a gate as ready for FuseKit to retry verification."""
 
         record = self.records[gate_id]
+        event_id = uuid.uuid4().hex
+        event_at = time.time()
         record.status = "resume_requested"
         record.next_action = _resume_next_action(record)
         record.resume_hint = _resume_hint(record)
-        record.updated_at = time.time()
+        record.last_wake_event_id = event_id
+        record.last_wake_event = "resume_requested"
+        record.last_wake_event_at = event_at
+        record.updated_at = event_at
         self.save()
-        self._append_wake_event("resume_requested", record)
+        self._append_wake_event(
+            "resume_requested",
+            record,
+            event_id=event_id,
+            created_at=event_at,
+        )
 
     def mark_opened(self, gate_id: str, url: str) -> None:
         """Record that the provider gate was opened in the shared VM browser."""
@@ -252,6 +280,8 @@ class GateService:
 
         record = self.records[gate_id]
         normalized = target.strip().upper()
+        event_id = uuid.uuid4().hex
+        event_at = time.time()
         record.captured_targets = tuple(dict.fromkeys((*record.captured_targets, normalized)))
         missing = _capture_targets(record.target) - set(record.captured_targets)
         if missing:
@@ -266,9 +296,18 @@ class GateService:
             record.resume_hint = (
                 "FuseKit requested verification automatically; watch for the next provider check."
             )
-        record.updated_at = time.time()
+        record.last_wake_event_id = event_id
+        record.last_wake_event = "clipboard_captured"
+        record.last_wake_event_at = event_at
+        record.updated_at = event_at
         self.save()
-        self._append_wake_event("clipboard_captured", record, target=normalized)
+        self._append_wake_event(
+            "clipboard_captured",
+            record,
+            target=normalized,
+            event_id=event_id,
+            created_at=event_at,
+        )
 
     def fail_gate(self, gate_id: str) -> None:
         """Mark a gate as failed."""
@@ -302,12 +341,14 @@ class GateService:
         record: GateRecord,
         *,
         target: str = "",
+        event_id: str = "",
+        created_at: float = 0.0,
     ) -> None:
         """Append a non-secret wake event consumed by resume/audit surfaces."""
 
         payload = {
             "schema_version": "fusekit.gate-wake.v1",
-            "id": uuid.uuid4().hex,
+            "id": event_id or uuid.uuid4().hex,
             "event": event,
             "gate_id": record.id,
             "provider": record.provider,
@@ -316,7 +357,7 @@ class GateService:
             "target": target,
             "target_count": len(_capture_targets(record.target)),
             "captured_targets": list(record.captured_targets),
-            "created_at": time.time(),
+            "created_at": created_at or time.time(),
         }
         _append_jsonl_private(self.path.with_name("gate_events.jsonl"), payload)
 
