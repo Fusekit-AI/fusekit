@@ -171,6 +171,7 @@ def run_acceptance(
         evidence_fusekit_dir / "run_record.json",
         evidence_fusekit_dir / "provider_strategies.json",
         evidence_fusekit_dir / "verification_report.json",
+        evidence_fusekit_dir / "workspace_detonation.json",
         mode,
         checks,
         missing,
@@ -376,6 +377,7 @@ def _check_run_record(
     path: Path,
     provider_strategies_path: Path,
     verification_report_path: Path,
+    workspace_detonation_path: Path,
     mode: str,
     checks: list[AcceptanceCheck],
     missing: list[str],
@@ -430,6 +432,9 @@ def _check_run_record(
     )
     failures.extend(
         _run_record_verifier_consistency_failures(raw, verification_report_path)
+    )
+    failures.extend(
+        _run_record_detonation_consistency_failures(raw, workspace_detonation_path)
     )
     summary = {
         "schema_version": raw.get("schema_version"),
@@ -955,6 +960,47 @@ def _run_record_verifier_signature(raw: Any) -> tuple[tuple[str, str, str, bool]
             )
         )
     return tuple(sorted(rows))
+
+
+def _run_record_detonation_consistency_failures(
+    run_record: dict[str, Any],
+    workspace_detonation_path: Path,
+) -> list[str]:
+    if not workspace_detonation_path.exists():
+        return []
+    try:
+        artifact = json.loads(workspace_detonation_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(artifact, dict):
+        return []
+    detonation = run_record.get("detonation", {})
+    receipt = (
+        detonation.get("workspace_receipt", {})
+        if isinstance(detonation, dict)
+        else {}
+    )
+    if _detonation_receipt_signature(receipt) != _detonation_receipt_signature(artifact):
+        return [
+            (
+                "detonation.workspace_receipt in Run Record must match "
+                "workspace_detonation.json"
+            )
+        ]
+    return []
+
+
+def _detonation_receipt_signature(raw: Any) -> Any:
+    if isinstance(raw, dict):
+        return tuple(
+            sorted((str(key), _detonation_receipt_signature(value)) for key, value in raw.items())
+        )
+    if isinstance(raw, list):
+        normalized = [_detonation_receipt_signature(item) for item in raw]
+        return tuple(sorted(normalized, key=repr))
+    if isinstance(raw, str | int | float | bool) or raw is None:
+        return raw
+    return str(raw)
 
 
 def _verifier_summary_shape_failures(verifiers: dict[str, Any]) -> list[str]:

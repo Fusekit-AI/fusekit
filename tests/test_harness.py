@@ -4114,6 +4114,40 @@ def test_live_acceptance_requires_run_record_verifiers_to_match_report(
     assert "central run record" in report.missing
 
 
+def test_live_acceptance_requires_run_record_detonation_to_match_receipt(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    record_path = remote_fusekit / "run_record.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    record["detonation"]["workspace_receipt"]["reason"] = "stale receipt"
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    run_record_check = next(check for check in report.checks if check.id == "run_record.complete")
+    assert report.launch_ready is False
+    assert run_record_check.status == "failed"
+    assert (
+        "detonation.workspace_receipt in Run Record must match workspace_detonation.json"
+        in run_record_check.detail
+    )
+    assert "central run record" in report.missing
+
+
 def test_acceptance_run_record_requires_complete_workspace_detonation_receipt(
     tmp_path,
 ) -> None:

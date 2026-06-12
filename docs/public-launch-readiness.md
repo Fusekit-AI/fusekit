@@ -113,7 +113,10 @@ requires a `fusekit.detonation-scope.v1` proof
 that names the complete no-trace destroy set, including provider-auth scratch,
 browser profiles, passphrase files, uploaded app archives, control-room logs,
 gateway logs, and the disposable OCI workspace, while preserving only encrypted
-or redacted run artifacts until completion.
+or redacted run artifacts until completion. The Run Record's workspace
+detonation receipt must match the standalone `workspace_detonation.json` artifact,
+so the public demo cannot claim that the OCI VM, worker process, or network
+resources were destroyed from stale central state alone.
 
 ## Acceptance Path
 
