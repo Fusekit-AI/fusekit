@@ -32,6 +32,7 @@ def control_room_payload(job: JobState, *, gate_path: Path | None = None) -> dic
     payload = job.to_dict()
     payload["verification"] = _read_verification_report(_verification_report_path(job, gate_path))
     payload["run_state"] = _read_run_state(_run_state_path(job, gate_path))
+    payload["run_record"] = _read_run_record(_run_record_path(job, gate_path))
     payload["visual"] = _read_visual_state(_visual_state_path(job, gate_path))
     payload["provider_strategies"] = _read_provider_strategies(
         _provider_strategies_path(job, gate_path)
@@ -120,6 +121,29 @@ def _read_run_state(path: Path | None) -> dict[str, Any]:
         state = LaunchRunState()
         state.notes = ("Run state could not be read; FuseKit will rebuild it from checkpoints.",)
         return state.to_dict()
+
+
+def _run_record_path(job: JobState, gate_path: Path | None) -> Path | None:
+    artifact = job.artifacts.get("run_record", "")
+    if artifact:
+        return Path(artifact)
+    if gate_path is not None:
+        return gate_path.parent / "run_record.json"
+    return None
+
+
+def _read_run_record(path: Path | None) -> dict[str, Any]:
+    if path is None or not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"error": f"Run record could not be read from {path.name}"}
+    if not isinstance(raw, dict):
+        return {"error": f"Run record from {path.name} was not a JSON object"}
+    if raw.get("schema_version") != "fusekit.run-record.v1":
+        return {"error": f"Run record from {path.name} has an unsupported schema"}
+    return raw
 
 
 def _visual_state_path(job: JobState, gate_path: Path | None) -> Path | None:

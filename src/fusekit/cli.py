@@ -97,6 +97,7 @@ from fusekit.runner.oci_live import (
     load_oci_auth_from_vault_or_config,
 )
 from fusekit.runner.remote import detonate_remote_worker, execute_remote_setup
+from fusekit.runner.run_record import write_run_record
 from fusekit.runner.run_state import LaunchRunState, update_run_state
 from fusekit.runner.server import serve_control_room
 from fusekit.runtime import bootstrap_runtime, doctor
@@ -1343,11 +1344,11 @@ def _cmd_setup(args: argparse.Namespace) -> int:
                 "skipped",
                 "worker scratch state retained by --no-detonate",
             )
-        _save_launch_job(args, job)
+        _save_launch_job(args, job, vault_index=vault.public_index())
         return 0
     except FuseKitError:
         job.mark("setup.execute", "failed", "local setup worker did not complete")
-        _save_launch_job(args, job)
+        _save_launch_job(args, job, vault_index=vault.public_index())
         raise
 
 
@@ -1836,6 +1837,7 @@ def _cmd_runner_detonate(args: argparse.Namespace) -> int:
             remote_deleted,
             reason=f"manual {args.scope} detonation",
         )
+        write_run_record(job, path=args.job_state.with_name("run_record.json"))
         job.save(args.job_state)
     print(
         json.dumps(
@@ -2051,7 +2053,12 @@ def _detonate_openclaw_state_if_requested(args: argparse.Namespace) -> None:
     print(json.dumps({"detonated_openclaw_state": removed}, indent=2, sort_keys=True))
 
 
-def _save_launch_job(args: argparse.Namespace, job: JobState) -> None:
+def _save_launch_job(
+    args: argparse.Namespace,
+    job: JobState,
+    *,
+    vault_index: list[dict[str, Any]] | None = None,
+) -> None:
     """Persist job, checkpoints, and the static control room when requested."""
 
     args.job_state.parent.mkdir(parents=True, exist_ok=True)
@@ -2061,6 +2068,10 @@ def _save_launch_job(args: argparse.Namespace, job: JobState) -> None:
     checkpoints_path = args.job_state.with_name("checkpoints.json")
     if job.artifacts.get("checkpoints") != str(checkpoints_path):
         job.add_artifact("checkpoints", checkpoints_path)
+    run_record_path = args.job_state.with_name("run_record.json")
+    if job.artifacts.get("run_record") != str(run_record_path):
+        job.add_artifact("run_record", run_record_path)
+    write_run_record(job, path=run_record_path, vault_index=vault_index)
     if getattr(args, "control_room", False):
         control_path = args.job_state.parent / "control-room.html"
         if job.artifacts.get("control_room") != str(control_path):
@@ -2168,7 +2179,7 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
             )
         else:
             job.mark("detonate.workspace", "skipped", "workspace retained by --no-detonate")
-        _save_launch_job(args, job)
+        _save_launch_job(args, job, vault_index=vault.public_index())
         raise
     job.mark("remote.bootstrap", "done", "remote setup completed")
     _mark_run_state(args, browser_ready=True, provider_sessions_known=True)
@@ -2219,7 +2230,7 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
             )
         else:
             job.mark("detonate.workspace", "skipped", "workspace retained by --no-detonate")
-        _save_launch_job(args, job)
+        _save_launch_job(args, job, vault_index=vault.public_index())
         raise FuseKitError(
             "Remote verification did not reach a passed or pending-safe state."
         )
@@ -2248,11 +2259,11 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
             failure_detail="OCI workspace detonation incomplete after successful launch",
         )
         if not detonation_complete:
-            _save_launch_job(args, job)
+            _save_launch_job(args, job, vault_index=vault.public_index())
             raise FuseKitError(
                 "OCI workspace detonation was incomplete; see workspace_detonation.json."
             )
-    _save_launch_job(args, job)
+    _save_launch_job(args, job, vault_index=vault.public_index())
     _detonate_openclaw_state_if_requested(args)
     print(
         json.dumps(

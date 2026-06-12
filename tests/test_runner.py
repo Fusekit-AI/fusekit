@@ -68,6 +68,7 @@ from fusekit.runner.remote import (
     render_cloud_init,
     should_include_app_path,
 )
+from fusekit.runner.run_record import write_run_record
 from fusekit.runner.run_state import LaunchRunState, update_run_state
 from fusekit.runner.server import _handler, _is_loopback, control_room_payload, serve_control_room
 from fusekit.security import scan_for_secret_leaks
@@ -235,6 +236,75 @@ def test_job_state_writes_recovery_checkpoints(tmp_path) -> None:
     assert provider["status"] == "done"
     assert provider["detail"] == "resend-domain uses api (ok)"
     assert "Resend records feed DNS approval" in provider["resume_hint"]
+
+
+def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci")
+    job.mark("setup.execute", "waiting", "Cloudflare token gate is visible")
+    job.add_artifact("audit_log", tmp_path / "audit.jsonl")
+    update_run_state(
+        tmp_path / "run_state.json",
+        app_repo_known=True,
+        runner_selected=True,
+        vault_created=True,
+        detonation_safe=True,
+        workspace_detonated=True,
+    )
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.cloudflare.authorization",
+        provider="cloudflare",
+        target="CLOUDFLARE_API_TOKEN",
+        reason="Capture Cloudflare API token",
+        resume_url="https://dash.cloudflare.com/profile/api-tokens",
+    )
+    (tmp_path / "provider_strategies.json").write_text(
+        '{"providers":[{"provider":"cloudflare","strategies":[]}]}',
+        encoding="utf-8",
+    )
+    (tmp_path / "verification_report.json").write_text(
+        '{"checks":[{"provider":"cloudflare","status":"pending_safe"}]}',
+        encoding="utf-8",
+    )
+    (tmp_path / "workspace_detonation.json").write_text(
+        '{"status":"complete","deleted":["instance"],"failures":{}}',
+        encoding="utf-8",
+    )
+
+    record_path = write_run_record(
+        job,
+        path=tmp_path / "run_record.json",
+        vault_index=[
+            {
+                "id": "provider.cloudflare.token",
+                "kind": "provider_token",
+                "provider": "cloudflare",
+                "label": "Cloudflare API token",
+                "metadata": {"source": "vm-clipboard"},
+            }
+        ],
+    )
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+
+    assert record["schema_version"] == "fusekit.run-record.v1"
+    assert record["id"] == "fk-test"
+    assert record["state"]["workspace_detonated"] is True
+    assert record["provider_gates"]["total"] == 1
+    assert record["provider_gates"]["providers"] == ["cloudflare"]
+    assert record["vault"]["record_count"] == 1
+    assert record["vault"]["records"][0]["id"] == "provider.cloudflare.token"
+    assert record["detonation"]["workspace_receipt"]["status"] == "complete"
+    assert any(item["name"] == "audit_log" for item in record["artifacts"])
+
+
+def test_control_room_payload_includes_run_record(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    write_run_record(job, path=tmp_path / "run_record.json")
+    job.add_artifact("run_record", tmp_path / "run_record.json")
+
+    payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
+
+    assert payload["run_record"]["schema_version"] == "fusekit.run-record.v1"
+    assert payload["run_record"]["id"] == "fk-test"
 
 
 def test_remote_bootstrap_checkpoint_keeps_recovery_in_launcher(tmp_path) -> None:
@@ -4467,6 +4537,7 @@ def test_remote_artifact_bundle_requires_survivor_files(tmp_path) -> None:
         "setup_receipt.json",
         "job.json",
         "checkpoints.json",
+        "run_record.json",
         "verification_report.json",
         "rollback_plan.json",
         "provider_strategies.json",
@@ -5436,6 +5507,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
             payload = tmp_path / "job.json"
             gates = tmp_path / "gates.json"
             checkpoints = tmp_path / "checkpoints.json"
+            run_record = tmp_path / "run_record.json"
             vault_file = tmp_path / "fusekit.vault.json"
             audit = tmp_path / "audit.jsonl"
             receipt = tmp_path / "setup_receipt.json"
@@ -5446,6 +5518,10 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
             payload.write_text("{}", encoding="utf-8")
             gates.write_text('{"gates":[]}', encoding="utf-8")
             checkpoints.write_text('{"checkpoints":[]}', encoding="utf-8")
+            run_record.write_text(
+                '{"schema_version":"fusekit.run-record.v1","id":"fk-test"}',
+                encoding="utf-8",
+            )
             vault_file.write_text("encrypted", encoding="utf-8")
             audit.write_text('{"event":"ok"}\n', encoding="utf-8")
             receipt.write_text('{"actions":[]}', encoding="utf-8")
@@ -5462,6 +5538,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
             archive.add(payload, arcname=".fusekit/job.json")
             archive.add(gates, arcname=".fusekit/gates.json")
             archive.add(checkpoints, arcname=".fusekit/checkpoints.json")
+            archive.add(run_record, arcname=".fusekit/run_record.json")
             archive.add(vault_file, arcname=".fusekit/fusekit.vault.json")
             archive.add(audit, arcname=".fusekit/audit.jsonl")
             archive.add(receipt, arcname=".fusekit/setup_receipt.json")
@@ -5601,6 +5678,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
     )
     assert (tmp_path / "out" / ".fusekit" / "gates.json").exists()
     assert (tmp_path / "out" / ".fusekit" / "checkpoints.json").exists()
+    assert (tmp_path / "out" / ".fusekit" / "run_record.json").exists()
     assert (tmp_path / "out" / ".fusekit" / "fusekit.vault.json").exists()
     assert (tmp_path / "out" / ".fusekit" / "audit.jsonl").exists()
     assert (tmp_path / "out" / ".fusekit" / "setup_receipt.json").exists()
@@ -5610,6 +5688,11 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
     assert any(".fusekit/gates.json" in command[-1] for command in calls if command[0] == "ssh")
     assert any(
         ".fusekit/checkpoints.json" in command[-1]
+        for command in calls
+        if command[0] == "ssh"
+    )
+    assert any(
+        ".fusekit/run_record.json" in command[-1]
         for command in calls
         if command[0] == "ssh"
     )
