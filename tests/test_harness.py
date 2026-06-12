@@ -725,6 +725,7 @@ def _recording_contract() -> dict[str, object]:
         "recording_ready": True,
         "checks": {
             "durable_state": True,
+            "worker_replacement": True,
             "runner_profile": True,
             "provider_playbook": True,
             "human_actions": True,
@@ -737,9 +738,10 @@ def _recording_contract() -> dict[str, object]:
         },
         "blockers": [],
         "statement": (
-            "A public demo is recordable only when durable OCI state, ordered "
-            "provider playbooks, guided human actions, live provider verifiers, "
-            "and no-trace detonation all agree."
+            "A public demo is recordable only when durable OCI state, worker "
+            "replacement from encrypted/redacted sources, ordered provider "
+            "playbooks, guided human actions, live provider verifiers, and "
+            "no-trace detonation all agree."
         ),
     }
 
@@ -5108,6 +5110,7 @@ def test_acceptance_run_record_requires_recording_contract(tmp_path) -> None:
         "recording_ready": False,
         "checks": {
             "durable_state": True,
+            "worker_replacement": True,
             "runner_profile": True,
             "provider_playbook": True,
             "human_actions": False,
@@ -5132,6 +5135,26 @@ def test_acceptance_run_record_requires_recording_contract(tmp_path) -> None:
         in failures
     )
     assert "recording_contract.statement is missing public demo guidance" in failures
+
+
+def test_acceptance_run_record_requires_recording_worker_replacement_check(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["recording_contract"]["recording_ready"] = False
+    record["recording_contract"]["checks"]["worker_replacement"] = False
+    record["recording_contract"]["blockers"] = ["worker_replacement"]
+
+    failures = _run_record_shape_failures(record)
+
+    assert "recording_contract.checks.worker_replacement must be true" in failures
+    assert (
+        "recording_contract.blockers must be empty: worker_replacement"
+        in failures
+    )
 
 
 def test_acceptance_run_record_recording_contract_errors_empty_matches_errors(

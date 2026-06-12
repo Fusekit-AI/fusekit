@@ -802,6 +802,7 @@ def test_run_record_recording_contract_blocks_missing_provider_playbook(tmp_path
 
     assert record["durable_state"]["resume_ready"] is True
     assert record["provider_playbook"]["step_count"] == 0
+    assert record["recording_contract"]["checks"]["worker_replacement"] is True
     assert record["recording_contract"]["checks"]["provider_playbook"] is False
     assert record["recording_contract"]["recording_ready"] is False
     assert record["recording_contract"]["blockers"] == ["provider_playbook"]
@@ -917,10 +918,12 @@ def test_run_record_recording_contract_blocks_thin_runner_profile(tmp_path) -> N
     ] is False
     assert record["recording_contract"]["checks"]["runner_profile"] is False
     assert record["recording_contract"]["checks"]["durable_state"] is False
+    assert record["recording_contract"]["checks"]["worker_replacement"] is False
     assert record["recording_contract"]["checks"]["automation_boundary"] is False
     assert record["recording_contract"]["recording_ready"] is False
     assert record["recording_contract"]["blockers"] == [
         "durable_state",
+        "worker_replacement",
         "runner_profile",
         "automation_boundary",
     ]
@@ -1207,6 +1210,7 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
                     "recording_ready": True,
                     "checks": {
                         "durable_state": True,
+                        "worker_replacement": True,
                         "runner_profile": True,
                         "provider_playbook": True,
                         "human_actions": True,
@@ -1220,6 +1224,7 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
                     "blockers": [],
                     "statement": (
                         "A public demo is recordable only when durable OCI state, "
+                        "worker replacement from encrypted/redacted sources, "
                         "ordered provider playbooks, guided human actions, live "
                         "provider verifiers, and no-trace detonation all agree."
                     ),

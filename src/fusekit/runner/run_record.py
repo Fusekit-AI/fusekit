@@ -1201,6 +1201,7 @@ def _recording_contract_summary(record: dict[str, Any]) -> dict[str, Any]:
 
     checks = {
         "durable_state": _recording_durable_state_ready(record),
+        "worker_replacement": _recording_worker_replacement_ready(record),
         "runner_profile": _recording_runner_profile_ready(record),
         "provider_playbook": _recording_provider_playbook_ready(record),
         "human_actions": _recording_human_actions_ready(record),
@@ -1219,9 +1220,10 @@ def _recording_contract_summary(record: dict[str, Any]) -> dict[str, Any]:
         "blockers": blockers,
         "statement": (
             "A public demo is recordable only when the Run Record proves durable "
-            "OCI state, the x86 visual runner, ordered provider playbooks, guided "
-            "human actions, post-gate automation, live provider verifiers, audit "
-            "evidence, and no-trace detonation all agree."
+            "OCI state, worker replacement from encrypted/redacted sources, the "
+            "x86 visual runner, ordered provider playbooks, guided human actions, "
+            "post-gate automation, live provider verifiers, audit evidence, and "
+            "no-trace detonation all agree."
         ),
     }
 
@@ -1240,6 +1242,41 @@ def _recording_durable_state_ready(record: dict[str, Any]) -> bool:
         and isinstance(replacement, dict)
         and replacement.get("can_recreate_worker") is True
         and replacement.get("host_machine_state_required") is False
+    )
+
+
+def _recording_worker_replacement_ready(record: dict[str, Any]) -> bool:
+    durable = record.get("durable_state", {})
+    if not isinstance(durable, dict):
+        return False
+    sources = durable.get("sources", [])
+    source_ids = {
+        str(source.get("id", "") or "")
+        for source in sources
+        if isinstance(source, dict) and source.get("exists") is True
+    }
+    replacement = durable.get("worker_replacement_contract", {})
+    if not isinstance(replacement, dict):
+        return False
+    resume_sources = replacement.get("resume_sources", [])
+    volatile_surfaces = replacement.get("volatile_surfaces", [])
+    if not isinstance(resume_sources, list) or not isinstance(volatile_surfaces, list):
+        return False
+    required_resume_sources = {source[0] for source in DURABLE_STATE_SOURCES}
+    required_volatile = set(VOLATILE_WORKER_SURFACES)
+    return (
+        replacement.get("worker_is_disposable") is True
+        and replacement.get("can_recreate_worker") is True
+        and replacement.get("runner_profile_ready") is True
+        and str(replacement.get("required_runner_profile", "") or "")
+        == "oci-visual-browser-x86_64"
+        and replacement.get("host_machine_state_required") is False
+        and str(replacement.get("state_owner", "") or "") == "encrypted-vault-and-run-record"
+        and required_resume_sources.issubset({str(item) for item in resume_sources})
+        and {str(item) for item in resume_sources}.issubset(source_ids)
+        and required_volatile.issubset({str(item) for item in volatile_surfaces})
+        and "encrypted/redacted" in str(replacement.get("statement", "") or "")
+        and "host clipboard history" in str(replacement.get("statement", "") or "")
     )
 
 

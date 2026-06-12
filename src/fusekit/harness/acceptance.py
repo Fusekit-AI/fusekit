@@ -1474,6 +1474,7 @@ def _recording_contract_shape_failures(
     checks = contract.get("checks", {})
     required_checks = {
         "durable_state",
+        "worker_replacement",
         "runner_profile",
         "provider_playbook",
         "human_actions",
@@ -1505,7 +1506,13 @@ def _recording_contract_shape_failures(
     if isinstance(errors, list) and errors:
         failures.append("recording_contract.checks.errors_empty must match errors")
     statement = str(contract.get("statement", "") or "").lower()
-    for required in ("public demo", "provider playbooks", "guided human actions", "detonation"):
+    for required in (
+        "public demo",
+        "worker replacement",
+        "provider playbooks",
+        "guided human actions",
+        "detonation",
+    ):
         if required not in statement:
             failures.append("recording_contract.statement is missing " + required + " guidance")
             break

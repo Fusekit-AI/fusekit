@@ -139,11 +139,14 @@ history, or VM scratch state. The Run Record's workspace
 detonation receipt must match the standalone `workspace_detonation.json` artifact,
 so the public demo cannot claim that the OCI VM, worker process, or network
 resources were destroyed from stale central state alone. The final recording
-contract must also agree with the Run Record error list: public demo readiness
-is false if any unresolved error remains, even when all other proof sections
-look shaped correctly. Error entries themselves must be redacted and shaped as
-source/id/detail records; provider callback URLs, bearer strings, raw tokens,
-passwords, and long secret-like values are not allowed in the durable Run Record.
+contract must expose `worker_replacement` as its own green check, separate from
+general durable-state readiness, so the demo cannot hide an unproven kill/recreate
+drill inside a broader status summary. It must also agree with the Run Record
+error list: public demo readiness is false if any unresolved error remains, even
+when all other proof sections look shaped correctly. Error entries themselves
+must be redacted and shaped as source/id/detail records; provider callback URLs,
+bearer strings, raw tokens, passwords, and long secret-like values are not
+allowed in the durable Run Record.
 The same redaction rule applies to Run Record step and checkpoint timeline text,
 because those recovery surfaces survive OCI detonation and may be shown in the
 control room.
