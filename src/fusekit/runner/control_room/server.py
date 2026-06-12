@@ -231,9 +231,15 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                         status=400,
                     )
                     return
-                service.request_resume(gate_id)
+                wake_event_id = service.request_resume(gate_id)
                 gate = service.records[gate_id]
-                _append_gate_audit(job_state, "control_room.gate_resume_requested", gate)
+                _append_gate_audit(
+                    job_state,
+                    "control_room.gate_resume_requested",
+                    gate,
+                    wake_event_id=wake_event_id,
+                    wake_event="resume_requested",
+                )
                 self._write_json(
                     {
                         "ok": True,
@@ -610,22 +616,30 @@ def _capture_gate_clipboard_secret(
             {"env": target, "source": "vm-clipboard", "alias_of": record_id},
         )
     vault.save(vault_path, passphrase)
-    service.mark_captured(gate_id, target)
+    capture_wake_event_id = service.mark_captured(gate_id, target)
     gate = service.records[gate_id]
     captured_targets = set(gate.captured_targets)
     status = "captured"
+    resume_wake_event_id = ""
     message = (
         f"{target} captured into the encrypted vault. "
         "Capture the remaining required values to continue."
     )
     if allowed_targets.issubset(captured_targets):
-        service.request_resume(gate_id)
+        resume_wake_event_id = service.request_resume(gate_id)
         status = "resume_requested"
         message = (
             "All required values were captured into the encrypted vault. "
             "FuseKit will retry provider verification."
         )
-    _append_capture_audit(job_state, gate_id, target, record_id)
+    _append_capture_audit(
+        job_state,
+        gate_id,
+        target,
+        record_id,
+        capture_wake_event_id=capture_wake_event_id,
+        resume_wake_event_id=resume_wake_event_id,
+    )
     return {
         "gate_id": gate_id,
         "target": target,
@@ -917,6 +931,8 @@ def _gate_audit_payload(gate: Any) -> dict[str, Any]:
         "captured_count": len(captured_targets),
         "has_resume_url": bool(str(getattr(gate, "resume_url", "") or "")),
         "has_last_opened_url": bool(str(getattr(gate, "last_opened_url", "") or "")),
+        "last_wake_event_id": str(getattr(gate, "last_wake_event_id", "") or ""),
+        "last_wake_event": str(getattr(gate, "last_wake_event", "") or ""),
     }
 
 
@@ -925,19 +941,22 @@ def _append_capture_audit(
     gate_id: str,
     target: str,
     record_id: str,
+    *,
+    capture_wake_event_id: str = "",
+    resume_wake_event_id: str = "",
 ) -> None:
-    _append_control_room_audit(
-        job_state,
-        "control_room.clipboard_capture",
-        {
-            "gate_id": gate_id,
-            "target": target,
-            "record_id": record_id,
-            "protected_action": True,
-            "source": "vm-clipboard",
-            "storage": "encrypted-vault",
-        },
-    )
+    payload = {
+        "gate_id": gate_id,
+        "target": target,
+        "record_id": record_id,
+        "protected_action": True,
+        "source": "vm-clipboard",
+        "storage": "encrypted-vault",
+        "capture_wake_event_id": capture_wake_event_id,
+    }
+    if resume_wake_event_id:
+        payload["resume_wake_event_id"] = resume_wake_event_id
+    _append_control_room_audit(job_state, "control_room.clipboard_capture", payload)
 
 
 def _append_control_room_audit(

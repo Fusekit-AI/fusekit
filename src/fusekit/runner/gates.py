@@ -245,7 +245,7 @@ class GateService:
         record.updated_at = time.time()
         self.save()
 
-    def request_resume(self, gate_id: str) -> None:
+    def request_resume(self, gate_id: str) -> str:
         """Mark a gate as ready for FuseKit to retry verification."""
 
         record = self.records[gate_id]
@@ -265,6 +265,7 @@ class GateService:
             event_id=event_id,
             created_at=event_at,
         )
+        return event_id
 
     def mark_opened(self, gate_id: str, url: str) -> None:
         """Record that the provider gate was opened in the shared VM browser."""
@@ -275,7 +276,7 @@ class GateService:
         record.updated_at = time.time()
         self.save()
 
-    def mark_captured(self, gate_id: str, target: str) -> None:
+    def mark_captured(self, gate_id: str, target: str) -> str:
         """Record a captured target value for progress-aware multi-secret gates."""
 
         record = self.records[gate_id]
@@ -308,6 +309,7 @@ class GateService:
             event_id=event_id,
             created_at=event_at,
         )
+        return event_id
 
     def fail_gate(self, gate_id: str) -> None:
         """Mark a gate as failed."""

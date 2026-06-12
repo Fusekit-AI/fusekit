@@ -3619,13 +3619,17 @@ def _check_gate_audit_events(
         if mode == "live":
             missing.append("audited human gate interventions")
         return
+    wake_ids_by_name, _wake_error = _control_room_wake_event_ids(gates_path)
     captured_targets = {
         (
             str(event.get("data", {}).get("gate_id", "")),
             str(event.get("data", {}).get("target", "")),
         )
         for event in audit_events
-        if _gate_capture_audit_event_proves_vault_capture(event)
+        if _gate_capture_audit_event_proves_vault_capture(
+            event,
+            wake_ids_by_name.get("clipboard_captured", set()),
+        )
     }
     opened_gate_ids = {
         str(event.get("data", {}).get("gate_id", ""))
@@ -3635,7 +3639,10 @@ def _check_gate_audit_events(
     resumed_gate_ids = {
         str(event.get("data", {}).get("gate_id", ""))
         for event in audit_events
-        if _gate_resume_audit_event_proves_finished_click(event)
+        if _gate_resume_audit_event_proves_finished_click(
+            event,
+            wake_ids_by_name.get("resume_requested", set()),
+        )
     }
     audited_gate_ids = {
         gate_id for gate_id, _target in captured_targets
@@ -3786,31 +3793,51 @@ def _gate_open_audit_event_proves_vm_open(event: dict[str, Any]) -> bool:
     )
 
 
-def _gate_capture_audit_event_proves_vault_capture(event: dict[str, Any]) -> bool:
+def _gate_capture_audit_event_proves_vault_capture(
+    event: dict[str, Any],
+    wake_event_ids: set[str] | None = None,
+) -> bool:
     """Return whether an audit event proves safe VM clipboard capture."""
 
     data = event.get("data")
+    wake_event_id = ""
+    if isinstance(data, dict):
+        wake_event_id = str(data.get("capture_wake_event_id", "") or "").strip()
     return (
         str(event.get("event", "")) == "control_room.clipboard_capture"
         and isinstance(data, dict)
         and data.get("protected_action") is True
         and data.get("source") == "vm-clipboard"
         and data.get("storage") == "encrypted-vault"
+        and (
+            wake_event_ids is None
+            or (bool(wake_event_id) and wake_event_id in wake_event_ids)
+        )
         and bool(str(data.get("gate_id", "")).strip())
         and bool(str(data.get("target", "")).strip())
         and bool(str(data.get("record_id", "")).strip())
     )
 
 
-def _gate_resume_audit_event_proves_finished_click(event: dict[str, Any]) -> bool:
+def _gate_resume_audit_event_proves_finished_click(
+    event: dict[str, Any],
+    wake_event_ids: set[str] | None = None,
+) -> bool:
     """Return whether an audit event proves the protected finished-step action."""
 
     data = event.get("data")
+    wake_event_id = ""
+    if isinstance(data, dict):
+        wake_event_id = str(data.get("wake_event_id", "") or "").strip()
     return (
         str(event.get("event", "")) == "control_room.gate_resume_requested"
         and isinstance(data, dict)
         and data.get("protected_action") is True
         and data.get("status") == "resume_requested"
+        and (
+            wake_event_ids is None
+            or (bool(wake_event_id) and wake_event_id in wake_event_ids)
+        )
         and bool(str(data.get("gate_id", "")).strip())
     )
 
@@ -3885,6 +3912,33 @@ def _control_room_audit_events(audit_log_path: Path) -> tuple[list[dict[str, Any
         if str(event.get("event", "")) in allowed_events:
             events.append(event)
     return events, ""
+
+
+def _control_room_wake_event_ids(gates_path: Path) -> tuple[dict[str, set[str]], str]:
+    """Return non-secret gate wake event ids grouped by event name."""
+
+    wake_path = gates_path.with_name("gate_events.jsonl")
+    ids: dict[str, set[str]] = {}
+    if not wake_path.exists():
+        return ids, "Gate wake events were not available for audit proof."
+    try:
+        lines = wake_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ids, "Gate wake events could not be read for audit proof."
+    for line_number, line in enumerate(lines, start=1):
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            return ids, f"Gate wake events contain malformed JSONL at line {line_number}."
+        if not isinstance(event, dict):
+            return ids, f"Gate wake event line {line_number} is not a JSON object."
+        event_name = str(event.get("event", "") or "").strip()
+        event_id = str(event.get("id", "") or "").strip()
+        if event_name and event_id:
+            ids.setdefault(event_name, set()).add(event_id)
+    return ids, ""
 
 
 def _check_rollback_metadata(

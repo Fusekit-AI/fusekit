@@ -12,7 +12,9 @@ from fusekit.harness.acceptance import (
     _check_detonation,
     _check_runner_readiness,
     _check_visual_state,
+    _gate_capture_audit_event_proves_vault_capture,
     _gate_open_audit_event_proves_vm_open,
+    _gate_resume_audit_event_proves_finished_click,
     _gate_resume_audit_requirements,
     _provider_strategy_checkpoint_failures,
     _provider_strategy_shape_failures,
@@ -645,16 +647,49 @@ def _write_minimum_live_artifacts(remote_fusekit: Path) -> None:
     _write_minimum_run_record(remote_fusekit)
 
 
-def _dns_apply_approval_event(domain: str = "moonlite.rsvp") -> dict[str, object]:
+def _dns_apply_approval_event(
+    domain: str = "moonlite.rsvp",
+    *,
+    wake_event_id: str = "",
+) -> dict[str, object]:
+    data: dict[str, object] = {
+        "gate_id": f"dns.{domain}.approval",
+        "provider": "dns",
+        "classification": "dns-approval",
+        "status": "resume_requested",
+        "protected_action": True,
+    }
+    if wake_event_id:
+        data["wake_event_id"] = wake_event_id
     return {
         "event": "control_room.gate_resume_requested",
-        "data": {
-            "gate_id": f"dns.{domain}.approval",
-            "provider": "dns",
-            "classification": "dns-approval",
-            "status": "resume_requested",
-            "protected_action": True,
-        },
+        "data": data,
+    }
+
+
+def _gate_wake_event(
+    event_id: str,
+    event: str,
+    gate_id: str,
+    *,
+    provider: str,
+    classification: str = "",
+    status: str = "resume_requested",
+    target: str = "",
+    captured_targets: list[str] | None = None,
+) -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.gate-wake.v1",
+        "id": event_id,
+        "event": event,
+        "gate_id": gate_id,
+        "provider": provider,
+        "classification": classification,
+        "status": status,
+        "target": target,
+        "target_count": len(captured_targets or []),
+        "captured_targets": captured_targets or [],
+        "created_at": 1780000000.0,
     }
 
 
@@ -2134,6 +2169,59 @@ def test_acceptance_provider_gate_open_proof_requires_non_reused_launch() -> Non
     assert _gate_open_audit_event_proves_vm_open(reused_event) is False
 
 
+def test_acceptance_gate_audit_proof_requires_matching_wake_event_id() -> None:
+    capture_event = {
+        "event": "control_room.clipboard_capture",
+        "data": {
+            "gate_id": "provider.openai.authorization",
+            "target": "OPENAI_API_KEY",
+            "record_id": "provider.openai.token",
+            "protected_action": True,
+            "source": "vm-clipboard",
+            "storage": "encrypted-vault",
+            "capture_wake_event_id": "wake-capture-1",
+        },
+    }
+    resume_event = {
+        "event": "control_room.gate_resume_requested",
+        "data": {
+            "gate_id": "provider.cloudflare.authorization",
+            "protected_action": True,
+            "status": "resume_requested",
+            "wake_event_id": "wake-resume-1",
+        },
+    }
+
+    assert (
+        _gate_capture_audit_event_proves_vault_capture(
+            capture_event,
+            {"wake-capture-1"},
+        )
+        is True
+    )
+    assert (
+        _gate_capture_audit_event_proves_vault_capture(
+            capture_event,
+            {"stale-capture-id"},
+        )
+        is False
+    )
+    assert (
+        _gate_resume_audit_event_proves_finished_click(
+            resume_event,
+            {"wake-resume-1"},
+        )
+        is True
+    )
+    assert (
+        _gate_resume_audit_event_proves_finished_click(
+            resume_event,
+            {"stale-resume-id"},
+        )
+        is False
+    )
+
+
 def test_acceptance_human_strategy_guidance_must_be_launcher_actionable() -> None:
     failures = _provider_strategy_shape_failures(
         [
@@ -3197,6 +3285,8 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
         "ghp_secret_for_harness",
     )
     vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    openai_capture_wake_id = "wake-openai-capture"
+    callback_resume_wake_id = "wake-callback-resume"
     (remote_fusekit / "audit.jsonl").write_text(
         "\n".join(
             [
@@ -3228,6 +3318,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                             "record_id": "provider.openai.token",
                             "source": "vm-clipboard",
                             "storage": "encrypted-vault",
+                            "capture_wake_event_id": openai_capture_wake_id,
                         },
                     },
                     sort_keys=True,
@@ -3255,8 +3346,40 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                             "provider": "provider",
                             "protected_action": True,
                             "status": "resume_requested",
+                            "wake_event_id": callback_resume_wake_id,
                         },
                     },
+                    sort_keys=True,
+                ),
+            ]
+        )
+        + "\n",
+        "utf-8",
+    )
+    (remote_fusekit / "gate_events.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    _gate_wake_event(
+                        openai_capture_wake_id,
+                        "clipboard_captured",
+                        "provider.openai.authorization",
+                        provider="openai",
+                        classification="provider-authorization",
+                        status="passed",
+                        target="OPENAI_API_KEY",
+                        captured_targets=["OPENAI_API_KEY"],
+                    ),
+                    sort_keys=True,
+                ),
+                json.dumps(
+                    _gate_wake_event(
+                        callback_resume_wake_id,
+                        "resume_requested",
+                        "provider.callback.review",
+                        provider="provider",
+                        classification="provider-verification",
+                    ),
                     sort_keys=True,
                 ),
             ]
@@ -4608,9 +4731,24 @@ def test_live_acceptance_accepts_dns_apply_launcher_approval(tmp_path) -> None:
     vault = Vault.empty()
     vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
     _write_minimum_live_artifacts(remote_fusekit)
+    dns_resume_wake_id = "wake-dns-approval"
     (remote_fusekit / "audit.jsonl").write_text(
         '{"event":"provider.verify"}\n'
-        + json.dumps(_dns_apply_approval_event(), sort_keys=True)
+        + json.dumps(_dns_apply_approval_event(wake_event_id=dns_resume_wake_id), sort_keys=True)
+        + "\n",
+        encoding="utf-8",
+    )
+    (remote_fusekit / "gate_events.jsonl").write_text(
+        json.dumps(
+            _gate_wake_event(
+                dns_resume_wake_id,
+                "resume_requested",
+                "dns.moonlite.rsvp.approval",
+                provider="dns",
+                classification="dns-approval",
+            ),
+            sort_keys=True,
+        )
         + "\n",
         encoding="utf-8",
     )

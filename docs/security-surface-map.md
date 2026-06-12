@@ -60,6 +60,11 @@ wake events. These events prove that a human approval or VM-clipboard capture
 occurred and can wake retry/resume logic after an OCI worker is killed or
 recreated. They store gate ids, provider names, statuses, and env-target labels,
 but never raw clipboard values, provider tokens, URLs, or command payloads.
+Control-room capture and resume audit entries include the corresponding wake
+event id, and live acceptance requires that id to exist in `gate_events.jsonl`
+before the action counts as proof. This prevents a standalone `I finished this
+step` audit line from looking like a durable, resumable run after the VM is
+detonated.
 
 Gate target text is also display-redacted before it reaches the browser payload.
 FuseKit preserves useful target shape such as domains, env names, and redacted query
