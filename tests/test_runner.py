@@ -74,6 +74,7 @@ from fusekit.runner.remote import (
     should_include_app_path,
 )
 from fusekit.runner.run_record import (
+    _recording_detonation_ready,
     _recording_human_actions_ready,
     _recording_provider_playbook_ready,
     write_run_record,
@@ -723,6 +724,43 @@ def test_recording_provider_playbook_requires_public_order() -> None:
     ]
 
     assert _recording_provider_playbook_ready(record) is True
+
+
+def test_run_record_recording_detonation_requires_boot_volume_deletion() -> None:
+    receipt = {
+        "status": "complete",
+        "failures": {},
+        "resource_summary": {
+            "schema_version": "fusekit.workspace-detonation-resources.v1",
+            "remote_worker": True,
+            "remote_worker_cleanup": remote_worker_cleanup_proof(),
+            "compute_instance": True,
+            "boot_volume_deleted": False,
+            "ephemeral_public_ip_released": True,
+            "network_resources": [
+                "internet_gateway",
+                "network_security_group",
+                "route_table",
+                "security_list",
+                "subnet",
+                "vcn",
+            ],
+            "network_resources_missing": [],
+            "network_resources_deleted": True,
+            "missing": [],
+        },
+    }
+    record = {
+        "detonation": {
+            "preflight_safe": True,
+            "workspace_detonated": True,
+            "workspace_receipt": receipt,
+        }
+    }
+
+    assert _recording_detonation_ready(record) is False
+    receipt["resource_summary"]["boot_volume_deleted"] = True
+    assert _recording_detonation_ready(record) is True
 
 
 def test_run_record_recording_contract_blocks_missing_provider_playbook(tmp_path) -> None:

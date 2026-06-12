@@ -1510,6 +1510,7 @@ def _recording_detonation_ready(record: dict[str, Any]) -> bool:
         and resource_summary.get("remote_worker") is True
         and _recording_remote_worker_cleanup_ready(cleanup)
         and resource_summary.get("compute_instance") is True
+        and resource_summary.get("boot_volume_deleted") is True
         and resource_summary.get("ephemeral_public_ip_released") is True
         and resource_summary.get("network_resources_deleted") is True
         and isinstance(network_resources, list)
