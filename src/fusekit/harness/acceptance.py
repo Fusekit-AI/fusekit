@@ -173,6 +173,7 @@ def run_acceptance(
         evidence_fusekit_dir / "verification_report.json",
         evidence_fusekit_dir / "workspace_detonation.json",
         evidence_fusekit_dir / "gate_events.jsonl",
+        evidence_fusekit_dir / "runner_readiness.json",
         mode,
         checks,
         missing,
@@ -380,6 +381,7 @@ def _check_run_record(
     verification_report_path: Path,
     workspace_detonation_path: Path,
     gate_events_path: Path,
+    runner_readiness_path: Path,
     mode: str,
     checks: list[AcceptanceCheck],
     missing: list[str],
@@ -440,6 +442,9 @@ def _check_run_record(
     )
     failures.extend(_run_record_evidence_inventory_consistency_failures(raw, path.parent))
     failures.extend(_run_record_wake_events_consistency_failures(raw, gate_events_path))
+    failures.extend(
+        _run_record_runner_profile_consistency_failures(raw, runner_readiness_path)
+    )
     summary = {
         "schema_version": raw.get("schema_version"),
         "id": raw.get("id"),
@@ -1111,6 +1116,65 @@ def _wake_event_signature(events: Any) -> tuple[tuple[Any, ...], ...]:
             )
         )
     return tuple(sorted(rows))
+
+
+def _run_record_runner_profile_consistency_failures(
+    run_record: dict[str, Any],
+    runner_readiness_path: Path,
+) -> list[str]:
+    if not runner_readiness_path.exists():
+        return []
+    try:
+        artifact = json.loads(runner_readiness_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(artifact, dict):
+        return []
+    artifact_signature = _runner_readiness_signature(artifact)
+    if not artifact_signature:
+        return []
+    run_signature = _runner_profile_signature(run_record.get("runner_profile", {}))
+    if run_signature != artifact_signature:
+        return ["runner_profile in Run Record must match runner_readiness.json"]
+    return []
+
+
+def _runner_readiness_signature(raw: Any) -> Any:
+    if not isinstance(raw, dict):
+        return ()
+    return _detonation_receipt_signature(
+        {
+            "schema_version": str(raw.get("schema_version", "") or ""),
+            "status": str(raw.get("status", "") or ""),
+            "architecture": str(raw.get("architecture", "") or ""),
+            "profile_contract": raw.get("profile_contract", {})
+            if isinstance(raw.get("profile_contract"), dict)
+            else {},
+            "observed": raw.get("observed", {}) if isinstance(raw.get("observed"), dict) else {},
+            "checks": raw.get("checks", {}) if isinstance(raw.get("checks"), dict) else {},
+            "provider_browser_profile": str(raw.get("provider_browser_profile", "") or ""),
+            "playwright_browsers_path": str(raw.get("playwright_browsers_path", "") or ""),
+        }
+    )
+
+
+def _runner_profile_signature(raw: Any) -> Any:
+    if not isinstance(raw, dict):
+        return ()
+    return _detonation_receipt_signature(
+        {
+            "schema_version": str(raw.get("schema_version", "") or ""),
+            "status": str(raw.get("status", "") or ""),
+            "architecture": str(raw.get("architecture", "") or ""),
+            "profile_contract": raw.get("profile_contract", {})
+            if isinstance(raw.get("profile_contract"), dict)
+            else {},
+            "observed": raw.get("observed", {}) if isinstance(raw.get("observed"), dict) else {},
+            "checks": raw.get("checks", {}) if isinstance(raw.get("checks"), dict) else {},
+            "provider_browser_profile": str(raw.get("provider_browser_profile", "") or ""),
+            "playwright_browsers_path": str(raw.get("playwright_browsers_path", "") or ""),
+        }
+    )
 
 
 def _detonation_receipt_signature(raw: Any) -> Any:

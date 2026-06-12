@@ -1082,6 +1082,83 @@ def _write_runner_readiness(fusekit_dir: Path) -> None:
     )
 
 
+def _runner_profile_from_readiness_fixture(fusekit_dir: Path) -> dict[str, object]:
+    path = fusekit_dir / "runner_readiness.json"
+    if path.exists():
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            return {
+                "schema_version": str(raw.get("schema_version", "") or ""),
+                "status": str(raw.get("status", "") or ""),
+                "architecture": str(raw.get("architecture", "") or ""),
+                "profile_contract": raw.get("profile_contract", {})
+                if isinstance(raw.get("profile_contract"), dict)
+                else {},
+                "observed": raw.get("observed", {})
+                if isinstance(raw.get("observed"), dict)
+                else {},
+                "checks": raw.get("checks", {})
+                if isinstance(raw.get("checks"), dict)
+                else {},
+                "provider_browser_profile": str(raw.get("provider_browser_profile", "") or ""),
+                "playwright_browsers_path": str(raw.get("playwright_browsers_path", "") or ""),
+            }
+    return {
+        "schema_version": "fusekit.runner-readiness.v1",
+        "status": "ready",
+        "architecture": "x86_64",
+        "profile_contract": {
+            "schema_version": "fusekit.runner-profile.v1",
+            "name": "oci-visual-browser-x86_64",
+            "architecture": "x86_64",
+            "os_family": "linux",
+            "supported_os_ids": ["ubuntu", "ol"],
+            "min_memory_mib": 15360,
+            "ports": {
+                "ssh": 22,
+                "control_room": 8765,
+                "novnc": 6080,
+                "vnc_loopback": 5900,
+                "openclaw_gateway_loopback": 19002,
+            },
+            "browser_stack": {
+                "spine": "openclaw",
+                "automation": "playwright",
+                "browser": "chromium",
+                "shared_provider_profile": (
+                    "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+                ),
+            },
+            "required_health_checks": [
+                "x86_64_architecture",
+                "runner_helpers",
+                "visual_commands",
+                "novnc",
+                "openclaw",
+                "playwright_chromium",
+                "shared_provider_browser_profile",
+            ],
+        },
+        "observed": {
+            "os_id": "ubuntu",
+            "os_version": "24.04",
+            "memory_mib": 24576,
+            "python": "3.12.0",
+        },
+        "checks": {
+            "x86_64_architecture": True,
+            "runner_helpers": True,
+            "visual_commands": True,
+            "novnc": True,
+            "openclaw": True,
+            "playwright_chromium": True,
+            "shared_provider_browser_profile": True,
+        },
+        "provider_browser_profile": "/var/lib/fusekit-runner/visual/chrome-provider-profile",
+        "playwright_browsers_path": "/opt/fusekit-playwright-browsers",
+    }
+
+
 def _write_minimum_run_record(fusekit_dir: Path) -> None:
     (fusekit_dir / "run_record.json").write_text(
         json.dumps(
@@ -1110,52 +1187,7 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
                 },
                 "durable_state": _durable_state(),
                 "provider_playbook": _provider_playbook(),
-                "runner_profile": {
-                    "status": "ready",
-                    "architecture": "x86_64",
-                    "profile_contract": {
-                        "schema_version": "fusekit.runner-profile.v1",
-                        "name": "oci-visual-browser-x86_64",
-                        "architecture": "x86_64",
-                        "os_family": "linux",
-                        "supported_os_ids": ["ubuntu", "ol"],
-                        "min_memory_mib": 15360,
-                        "ports": {
-                            "ssh": 22,
-                            "control_room": 8765,
-                            "novnc": 6080,
-                            "vnc_loopback": 5900,
-                            "openclaw_gateway_loopback": 19002,
-                        },
-                        "browser_stack": {
-                            "spine": "openclaw",
-                            "automation": "playwright",
-                            "browser": "chromium",
-                            "shared_provider_profile": (
-                                "/var/lib/fusekit-runner/visual/chrome-provider-profile"
-                            ),
-                        },
-                        "required_health_checks": [
-                            "x86_64_architecture",
-                            "runner_helpers",
-                            "visual_commands",
-                            "novnc",
-                            "openclaw",
-                            "playwright_chromium",
-                            "shared_provider_browser_profile",
-                        ],
-                    },
-                    "observed": {
-                        "os_id": "ubuntu",
-                        "os_version": "24.04",
-                        "memory_mib": 24576,
-                    },
-                    "checks": {},
-                    "provider_browser_profile": (
-                        "/var/lib/fusekit-runner/visual/chrome-provider-profile"
-                    ),
-                    "playwright_browsers_path": "/opt/fusekit-playwright-browsers",
-                },
+                "runner_profile": _runner_profile_from_readiness_fixture(fusekit_dir),
                 "wake_events": _wake_event_summary_fixture(fusekit_dir),
                 "human_actions": _human_action_trace(),
                 "automation_boundary": _automation_boundary(),
@@ -4350,6 +4382,40 @@ def test_live_acceptance_requires_run_record_wake_events_to_match_gate_events(
     assert report.launch_ready is False
     assert run_record_check.status == "failed"
     assert "wake_events in Run Record must match gate_events.jsonl" in run_record_check.detail
+    assert "central run record" in report.missing
+
+
+def test_live_acceptance_requires_run_record_runner_profile_to_match_readiness(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    record_path = remote_fusekit / "run_record.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    record["runner_profile"]["observed"]["memory_mib"] = 1024
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    run_record_check = next(check for check in report.checks if check.id == "run_record.complete")
+    assert report.launch_ready is False
+    assert run_record_check.status == "failed"
+    assert (
+        "runner_profile in Run Record must match runner_readiness.json"
+        in run_record_check.detail
+    )
     assert "central run record" in report.missing
 
 
