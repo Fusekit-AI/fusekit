@@ -4463,6 +4463,8 @@ def test_security_surface_map_documents_control_room_state_routes() -> None:
     }
     for route in mapped_routes - {"unknown"}:
         assert route in text
+    assert "State-changing POSTs reject `?token=` authentication in the URL" in text
+    assert "cleaned control-room cookie or bearer token plus the per-page" in text
     assert "`CONTROL_ROOM_ROUTE_SURFACE`" in text
     assert "control-room-header-origin-fetch-site-action-token" in text
     assert "security-headers-no-cors-posts-auth-before-404" in text
@@ -5630,6 +5632,53 @@ def test_tokenized_control_room_rejects_cross_site_gate_post(
         server.server_close()
         thread.join(timeout=5)
 
+    assert GateService.load(tmp_path / "gates.json").records[
+        "provider.github.mfa.123"
+    ].status == "waiting"
+
+
+def test_tokenized_control_room_rejects_query_token_gate_post(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FUSEKIT_CONTROL_ROOM_TOKEN", REMOTE_CONTROL_ROOM_TOKEN)
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.github.mfa.123",
+        provider="github",
+        reason="MFA required",
+        classification="mfa",
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = (
+            f"http://127.0.0.1:{server.server_port}"
+            f"/api/gates/provider.github.mfa.123/pass?token={REMOTE_CONTROL_ROOM_TOKEN}"
+        )
+        request = Request(
+            url,
+            method="POST",
+            headers=_control_room_post_headers(tmp_path),
+        )
+        with pytest.raises(HTTPError) as exc:
+            urlopen(request, timeout=5)
+        headers = {key.lower(): value for key, value in exc.value.headers.items()}
+        payload = json.loads(exc.value.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert exc.value.code == 403
+    assert payload == {
+        "error": "control-room token query is not accepted for POST",
+        "ok": False,
+    }
+    assert "set-cookie" not in headers
     assert GateService.load(tmp_path / "gates.json").records[
         "provider.github.mfa.123"
     ].status == "waiting"

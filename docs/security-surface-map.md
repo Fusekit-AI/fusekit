@@ -173,6 +173,9 @@ or trigger commands:
 - Browser GETs that authenticate with `?token=` set the control-room cookie and
   redirect back to the same route without the token query parameter so the token
   does not stay in the address bar for recordings, screenshots, or browser history.
+- State-changing POSTs reject `?token=` authentication in the URL. Remote POSTs
+  must use the cleaned control-room cookie or bearer token plus the per-page
+  action token, keeping remote credentials out of mutable action URLs.
 - The browser client does not reuse the remote access token as the
   `x-fusekit-action-token`; state-changing requests use only the owner-only action
   token embedded in the served control-room payload.

@@ -190,6 +190,15 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:  # noqa: N802
             route = urlparse(self.path)
+            if _query_token(route):
+                self._write_json(
+                    {
+                        "ok": False,
+                        "error": "control-room token query is not accepted for POST",
+                    },
+                    status=403,
+                )
+                return
             if not self._authorize_request(route):
                 return
             if self.headers.get("x-fusekit-control-room") != "resume":
