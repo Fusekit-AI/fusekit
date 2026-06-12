@@ -1080,6 +1080,7 @@ def test_acceptance_report_serializes_public_paths(tmp_path) -> None:
     assert str(tmp_path) not in text
     assert payload["app_path"] == "app"
     assert payload["public_launch_ready"] is False
+    assert payload["recording_proof_ready"] is False
     assert payload["recording_ready"] is False
     assert payload["ledger_path"] == ".fusekit/acceptance/ledger.jsonl"
     assert payload["report_path"] == ".fusekit/acceptance/report.json"
@@ -1092,6 +1093,15 @@ def test_acceptance_report_names_recording_readiness_contract(tmp_path) -> None:
         mode="live",
         app_path=str(app),
         launch_ready=True,
+        checks=(AcceptanceCheck("run_record.complete", "ok", "Run Record complete."),),
+        ledger_path=str(app / ".fusekit" / "acceptance" / "ledger.jsonl"),
+        report_path=str(app / ".fusekit" / "acceptance" / "report.json"),
+        recording_proof_ready=True,
+    )
+    unproved_live_report = AcceptanceReport(
+        mode="live",
+        app_path=str(app),
+        launch_ready=True,
         checks=(),
         ledger_path=str(app / ".fusekit" / "acceptance" / "ledger.jsonl"),
         report_path=str(app / ".fusekit" / "acceptance" / "report.json"),
@@ -1100,14 +1110,21 @@ def test_acceptance_report_names_recording_readiness_contract(tmp_path) -> None:
         mode="rehearsal",
         app_path=str(app),
         launch_ready=True,
-        checks=(),
+        checks=(AcceptanceCheck("run_record.complete", "ok", "Run Record complete."),),
         ledger_path=str(app / ".fusekit" / "acceptance" / "ledger.jsonl"),
         report_path=str(app / ".fusekit" / "acceptance" / "report.json"),
+        recording_proof_ready=True,
     )
 
     assert live_report.public_launch_ready is True
+    assert live_report.recording_proof_ready is True
     assert live_report.recording_ready is True
+    assert live_report.to_dict()["recording_proof_ready"] is True
     assert live_report.to_dict()["recording_ready"] is True
+    assert unproved_live_report.public_launch_ready is True
+    assert unproved_live_report.recording_proof_ready is False
+    assert unproved_live_report.recording_ready is False
+    assert unproved_live_report.to_dict()["recording_ready"] is False
     assert rehearsal_report.public_launch_ready is False
     assert rehearsal_report.recording_ready is False
     assert rehearsal_report.to_dict()["recording_ready"] is False
@@ -3659,6 +3676,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
     report_json = json.loads((app / ".fusekit" / "acceptance" / "report.json").read_text())
     assert report_json["launch_ready"] is True
     assert report_json["public_launch_ready"] is True
+    assert report_json["recording_proof_ready"] is True
     assert report_json["recording_ready"] is True
     assert report_json["blockers"] == []
     assert any(check["id"] == "remote_artifacts.loaded" for check in report_json["checks"])

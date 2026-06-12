@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -99,6 +100,7 @@ class AcceptanceReport:
     report_path: str
     missing: tuple[str, ...] = ()
     blockers: tuple[dict[str, str], ...] = ()
+    recording_proof_ready: bool = False
     created_at: float = field(default_factory=time.time)
 
     @property
@@ -111,7 +113,7 @@ class AcceptanceReport:
     def recording_ready(self) -> bool:
         """True only when live evidence proves the run is safe to demo-record."""
 
-        return self.public_launch_ready
+        return self.public_launch_ready and self.recording_proof_ready
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the report."""
@@ -121,6 +123,7 @@ class AcceptanceReport:
             "app_path": redact_public_path(self.app_path),
             "launch_ready": self.launch_ready,
             "public_launch_ready": self.public_launch_ready,
+            "recording_proof_ready": self.recording_proof_ready,
             "recording_ready": self.recording_ready,
             "checks": [check.to_dict() for check in self.checks],
             "missing": list(self.missing),
@@ -272,6 +275,7 @@ def run_acceptance(
     launch_ready = all(check.status == "ok" for check in checks) and not missing
     if mode == "rehearsal":
         launch_ready = all(check.status in {"ok", "skipped"} for check in checks)
+    recording_proof_ready = _recording_proof_ready(checks)
     report_path = output_dir / "report.json"
     report = AcceptanceReport(
         mode=mode,
@@ -282,6 +286,7 @@ def run_acceptance(
         report_path=str(report_path),
         missing=tuple(missing),
         blockers=tuple(_acceptance_blockers(checks, missing)),
+        recording_proof_ready=recording_proof_ready,
     )
     report_path.write_text(json.dumps(report.to_dict(), indent=2, sort_keys=True) + "\n", "utf-8")
     ledger.record(
@@ -294,6 +299,12 @@ def run_acceptance(
         },
     )
     return report
+
+
+def _recording_proof_ready(checks: Iterable[AcceptanceCheck]) -> bool:
+    """True when live acceptance includes the complete demo-recording contract."""
+
+    return any(check.id == "run_record.complete" and check.status == "ok" for check in checks)
 
 
 def _app_relative(app_path: Path, path: Path | None) -> Path | None:

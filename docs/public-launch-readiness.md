@@ -38,13 +38,15 @@ The run is launch-ready only when `.fusekit/acceptance/report.json` contains:
   "launch_ready": true,
   "mode": "live",
   "public_launch_ready": true,
+  "recording_proof_ready": true,
   "recording_ready": true
 }
 ```
 
 `launch_ready: true` in rehearsal mode only means the local product invariants
 passed. A public walkthrough is ready to record only when live mode also writes
-`public_launch_ready: true` and `recording_ready: true`.
+`public_launch_ready: true`, `recording_proof_ready: true`, and
+`recording_ready: true`.
 
 Live mode does not claim provider success without proof. It requires the real encrypted vault,
 passphrase unlock proof, redacted setup receipt, redacted audit log, live URL in
