@@ -4649,6 +4649,109 @@ def test_control_room_rejects_stale_capture_after_gate_resumes(
     assert vault.require("provider.resend.token").value == "re_first_secret_from_vm_clipboard"
 
 
+def test_control_room_duplicate_final_capture_repairs_missing_resume(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    vault_path = tmp_path / "fusekit.vault.json"
+    audit_path = tmp_path / "audit.jsonl"
+    passphrase_path = tmp_path / "passphrase"
+    passphrase_path.write_text("passphrase\n", encoding="utf-8")
+    vault = Vault.empty()
+    vault.put(
+        "provider.resend.resend_api_key",
+        "provider_token",
+        "resend",
+        "RESEND_API_KEY",
+        "re_recovered_secret",
+        {"env": "RESEND_API_KEY", "source": "vm-clipboard"},
+    )
+    vault.save(vault_path, "passphrase")
+    job.add_artifact("vault", vault_path)
+    job.add_artifact("audit_log", audit_path)
+    job.save(job_path)
+    service = GateService.load(tmp_path / "gates.json")
+    service.wait(
+        "provider.resend.api-key-domain-access",
+        provider="resend",
+        reason="Resend API key",
+        classification="provider-authorization",
+        target="RESEND_API_KEY",
+    )
+    capture_wake_event_id = GateService.load(tmp_path / "gates.json").mark_captured(
+        "provider.resend.api-key-domain-access",
+        "RESEND_API_KEY",
+    )
+    gate_events_before = (tmp_path / "gate_events.jsonl").read_text(encoding="utf-8")
+    monkeypatch.setenv("FUSEKIT_PASSPHRASE_FILE", str(passphrase_path))
+    monkeypatch.setattr(
+        "fusekit.runner.control_room.server._vm_clipboard_text",
+        lambda job_state: pytest.fail("resume repair reread the VM clipboard"),
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = (
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/gates/provider.resend.api-key-domain-access/capture-clipboard"
+        )
+        request = Request(
+            url,
+            data=json.dumps({"target": "RESEND_API_KEY"}).encode("utf-8"),
+            method="POST",
+            headers=_control_room_post_headers(tmp_path, **{"content-type": "application/json"}),
+        )
+        with urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert payload == {
+        "captured_targets": ["RESEND_API_KEY"],
+        "gate_id": "provider.resend.api-key-domain-access",
+        "message": (
+            "RESEND_API_KEY was captured into the encrypted vault. FuseKit will "
+            "create or reuse the Resend sending domain by API, collect the returned "
+            "DNS records, and keep Cloudflare DNS waiting until those records are ready."
+        ),
+        "ok": True,
+        "record_id": "provider.resend.resend_api_key",
+        "capture_wake_event_id": capture_wake_event_id,
+        "resume_wake_event_id": payload["resume_wake_event_id"],
+        "status": "resume_requested",
+        "target": "RESEND_API_KEY",
+    }
+    assert payload["resume_wake_event_id"]
+    gate = GateService.load(tmp_path / "gates.json").records[
+        "provider.resend.api-key-domain-access"
+    ]
+    assert gate.status == "resume_requested"
+    assert gate.last_wake_event_id == payload["resume_wake_event_id"]
+    gate_events_after = (tmp_path / "gate_events.jsonl").read_text(encoding="utf-8")
+    assert gate_events_after.startswith(gate_events_before)
+    event_names = [
+        json.loads(line)["event"]
+        for line in gate_events_after.splitlines()
+        if line.strip()
+    ]
+    assert event_names == ["clipboard_captured", "resume_requested"]
+    audit_events = [
+        json.loads(line)
+        for line in audit_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert audit_events[-1]["event"] == "control_room.clipboard_capture"
+    assert audit_events[-1]["data"]["capture_wake_event_id"] == capture_wake_event_id
+    assert audit_events[-1]["data"]["resume_wake_event_id"] == payload["resume_wake_event_id"]
+    assert Vault.open(vault_path, "passphrase").require(
+        "provider.resend.resend_api_key"
+    ).value == "re_recovered_secret"
+
+
 def test_control_room_capture_is_idempotent_for_already_captured_target(
     tmp_path,
     monkeypatch,
