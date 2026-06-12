@@ -1496,14 +1496,58 @@ def _recording_audit_trail_ready(record: dict[str, Any]) -> bool:
     entries = audit_trail.get("entries", [])
     if not isinstance(entries, list) or not entries:
         return False
-    categories = {
-        str(entry.get("category", "") or "") for entry in entries if isinstance(entry, dict)
-    }
+    actual_counts: dict[str, int] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            return False
+        category = str(entry.get("category", "") or "")
+        if not category:
+            return False
+        actual_counts[category] = actual_counts.get(category, 0) + 1
+    counts = audit_trail.get("counts", {})
+    if not isinstance(counts, dict):
+        return False
+    required_categories = _recording_required_audit_categories(record)
     return (
         _safe_int(audit_trail.get("entry_count"), -1) == len(entries)
-        and "detonation" in categories
-        and ("provider_action" in categories or "credential_capture" in categories)
+        and all(
+            _safe_int(counts.get(category), -1) == count
+            for category, count in actual_counts.items()
+        )
+        and all(actual_counts.get(category, 0) >= 1 for category in required_categories)
     )
+
+
+def _recording_required_audit_categories(record: dict[str, Any]) -> set[str]:
+    required: set[str] = set()
+    wake_events = record.get("wake_events", {})
+    events = wake_events.get("events", []) if isinstance(wake_events, dict) else []
+    if isinstance(events, list):
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            event_name = str(event.get("event", "") or "")
+            classification = str(event.get("classification", "") or "")
+            if event_name == "clipboard_captured":
+                required.add("credential_capture")
+            if event_name == "resume_requested":
+                required.add("human_approval")
+            if event_name == "resume_requested" and classification == "dns-approval":
+                required.add("dns_write")
+    approvals = record.get("approvals", [])
+    if isinstance(approvals, list) and approvals:
+        required.add("human_approval")
+    vault = record.get("vault", {})
+    if isinstance(vault, dict) and _safe_int(vault.get("record_count"), 0) > 0:
+        required.add("credential_capture")
+    detonation = record.get("detonation", {})
+    if isinstance(detonation, dict) and detonation.get("workspace_detonated") is True:
+        required.add("detonation")
+    verification = record.get("verification", {})
+    checks = verification.get("checks", []) if isinstance(verification, dict) else []
+    if isinstance(checks, list) and checks:
+        required.add("provider_action")
+    return required
 
 
 def _recording_evidence_ready(record: dict[str, Any]) -> bool:

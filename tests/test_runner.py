@@ -74,6 +74,7 @@ from fusekit.runner.remote import (
     should_include_app_path,
 )
 from fusekit.runner.run_record import (
+    _recording_audit_trail_ready,
     _recording_automation_boundary_ready,
     _recording_detonation_ready,
     _recording_evidence_ready,
@@ -829,6 +830,56 @@ def test_recording_evidence_requires_screenshot_for_visual_runner() -> None:
     record["runner_profile"]["profile_contract"] = {"name": "api-only"}
     record["evidence"]["counts"]["screenshots"] = 0
     assert _recording_evidence_ready(record) is True
+
+
+def test_recording_audit_trail_requires_categories_for_observed_proof() -> None:
+    record = {
+        "wake_events": {
+            "events": [
+                {
+                    "event": "clipboard_captured",
+                    "gate_id": "provider.resend.authorization",
+                    "target": "RESEND_API_KEY",
+                },
+                {
+                    "event": "resume_requested",
+                    "gate_id": "dns.moonlite.rsvp.approval",
+                    "classification": "dns-approval",
+                },
+            ]
+        },
+        "approvals": [{"id": "dns.moonlite.rsvp.approval"}],
+        "vault": {"record_count": 1},
+        "detonation": {"workspace_detonated": True},
+        "verification": {"checks": [{"provider": "resend", "status": "passed"}]},
+        "audit_trail": {
+            "entry_count": 3,
+            "counts": {
+                "credential_capture": 1,
+                "provider_action": 1,
+                "detonation": 1,
+            },
+            "entries": [
+                {"category": "credential_capture"},
+                {"category": "provider_action"},
+                {"category": "detonation"},
+            ],
+        },
+    }
+
+    assert _recording_audit_trail_ready(record) is False
+    record["audit_trail"]["entry_count"] = 5
+    record["audit_trail"]["counts"]["human_approval"] = 1
+    record["audit_trail"]["counts"]["dns_write"] = 1
+    record["audit_trail"]["entries"].extend(
+        [
+            {"category": "human_approval"},
+            {"category": "dns_write"},
+        ]
+    )
+    assert _recording_audit_trail_ready(record) is True
+    record["audit_trail"]["counts"]["dns_write"] = 0
+    assert _recording_audit_trail_ready(record) is False
 
 
 def test_recording_provider_playbook_requires_public_order() -> None:
