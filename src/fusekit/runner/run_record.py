@@ -1031,7 +1031,7 @@ def _audit_entries_from_receipt(receipt: dict[str, Any]) -> list[dict[str, Any]]
     if not isinstance(actions, list):
         return []
     entries: list[dict[str, Any]] = []
-    for action in actions:
+    for receipt_action_index, action in enumerate(actions, start=1):
         if not isinstance(action, dict):
             continue
         action_name = str(action.get("action", "") or "").strip()
@@ -1045,6 +1045,7 @@ def _audit_entries_from_receipt(receipt: dict[str, Any]) -> list[dict[str, Any]]
                 "provider": _provider_from_action(action_name),
                 "status": str(action.get("status", "") or "recorded"),
                 "source": "setup_receipt.json",
+                "receipt_action_index": receipt_action_index,
                 "summary": _receipt_action_summary(category, action_name),
             }
         )
@@ -1131,7 +1132,7 @@ def _audit_event_summary(event_name: str) -> str:
 
 
 def _dedupe_audit_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    seen: set[tuple[str, str, str, str, str, str]] = set()
+    seen: set[tuple[str, str, str, str, str, str, str]] = set()
     unique: list[dict[str, Any]] = []
     for entry in entries:
         normalized: dict[str, Any] = {
@@ -1151,6 +1152,9 @@ def _dedupe_audit_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]
         audit_log_index = entry.get("audit_log_index")
         if audit_log_index is not None:
             normalized["audit_log_index"] = _safe_int(audit_log_index, 0)
+        receipt_action_index = entry.get("receipt_action_index")
+        if receipt_action_index is not None:
+            normalized["receipt_action_index"] = _safe_int(receipt_action_index, 0)
         key = (
             normalized["category"],
             normalized["action"],
@@ -1158,6 +1162,7 @@ def _dedupe_audit_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]
             normalized.get("target", ""),
             normalized.get("wake_event_id", ""),
             str(normalized.get("audit_log_index", "")),
+            str(normalized.get("receipt_action_index", "")),
         )
         if key in seen:
             continue

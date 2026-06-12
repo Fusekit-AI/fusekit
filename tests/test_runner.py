@@ -984,6 +984,42 @@ def test_run_record_retains_all_redacted_audit_log_entries(tmp_path) -> None:
     assert "retrying provider setup" not in json.dumps(record["audit_trail"]).lower()
 
 
+def test_run_record_retains_all_redacted_receipt_actions(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci")
+    actions = [
+        {
+            "action": "dns.apply",
+            "status": "passed",
+            "details": {
+                "domain": "moonlite.rsvp",
+                "token": f"secret-token-{index}",
+                "record": f"example-{index}.moonlite.rsvp",
+            },
+        }
+        for index in range(55)
+    ]
+    (tmp_path / "setup_receipt.json").write_text(
+        json.dumps({"actions": actions}),
+        encoding="utf-8",
+    )
+
+    record_path = write_run_record(job, path=tmp_path / "run_record.json")
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    entries = [
+        entry
+        for entry in record["audit_trail"]["entries"]
+        if entry["source"] == "setup_receipt.json" and entry["action"] == "dns.apply"
+    ]
+
+    assert len(entries) == 55
+    assert record["audit_trail"]["counts"]["dns_write"] == 55
+    assert entries[0]["receipt_action_index"] == 1
+    assert entries[-1]["receipt_action_index"] == 55
+    audit_json = json.dumps(record["audit_trail"]).lower()
+    assert "secret-token" not in audit_json
+    assert "example-54.moonlite.rsvp" not in audit_json
+
+
 def test_control_room_payload_includes_run_record(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     write_run_record(job, path=tmp_path / "run_record.json")
