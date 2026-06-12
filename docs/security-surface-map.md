@@ -166,7 +166,8 @@ or trigger commands:
 - Remote control rooms reject weak or non-URL-safe tokens at startup and require
   a `secrets.token_urlsafe`-style token with at least 32 URL-safe characters;
   token cookies are emitted only for token-url-safe values and are `HttpOnly`
-  and `SameSite=Strict`.
+  and `SameSite=Strict` with an eight-hour `Max-Age`, so recording/session
+  convenience does not create an unbounded browser credential.
 - Malformed token cookie headers are treated as absent credentials, returning a
   normal invalid-token response instead of raising out of the request handler.
 - Browser GETs that authenticate with `?token=` set the control-room cookie and

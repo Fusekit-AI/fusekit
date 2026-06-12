@@ -128,6 +128,7 @@ CONTROL_ROOM_PERMISSIONS_POLICY = (
     "serial=(), "
     "usb=()"
 )
+CONTROL_ROOM_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 8
 
 
 def serve_control_room(job_state: Path, host: str = "127.0.0.1", port: int = 8765) -> str:
@@ -470,7 +471,10 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                 return
             self.send_header(
                 "set-cookie",
-                f"fusekit_control_room={expected}; HttpOnly; SameSite=Strict; Path=/",
+                (
+                    f"fusekit_control_room={expected}; HttpOnly; SameSite=Strict; "
+                    f"Path=/; Max-Age={CONTROL_ROOM_COOKIE_MAX_AGE_SECONDS}"
+                ),
             )
 
         def _write_security_headers(self, *, csp_nonce: str = "") -> None:

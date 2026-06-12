@@ -5406,6 +5406,7 @@ def test_control_room_server_requires_remote_token(
     assert "HttpOnly" in cookie
     assert "SameSite=Strict" in cookie
     assert "Path=/" in cookie
+    assert "Max-Age=28800" in cookie
     assert payload["id"] == "fk-test"
 
 
@@ -5510,6 +5511,7 @@ def test_tokenized_control_room_cleans_query_token_on_api_get(
     assert headers["location"] == "/api/job?view=compact"
     assert REMOTE_CONTROL_ROOM_TOKEN not in headers["location"]
     assert f"fusekit_control_room={REMOTE_CONTROL_ROOM_TOKEN}" in headers["set-cookie"]
+    assert "Max-Age=28800" in headers["set-cookie"]
 
 
 def test_tokenized_control_room_rejects_cross_site_gate_post(
