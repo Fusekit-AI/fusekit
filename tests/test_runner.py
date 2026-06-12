@@ -5315,7 +5315,9 @@ def test_control_room_explains_deterministic_provider_route(tmp_path) -> None:
     assert "do not click Add domain in Resend" in html
     assert "unless FuseKit asks" not in html
     assert "FuseKit creates or reuses the Resend domain" in html
-    assert "then waits for DNS approval" in html
+    assert "downstream Vercel env wiring" in html
+    assert "complete record set" in html
+    assert "collects DNS records, then waits for DNS approval" not in html
     assert "hand DNS records to DNS" in html
 
 

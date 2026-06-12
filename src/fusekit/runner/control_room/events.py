@@ -1338,7 +1338,9 @@ function providerStrategyRouteSummary(provider, strategy, selected) {
     ) {
       return (
         "API automation: FuseKit creates or reuses the Resend domain, " +
-        "collects DNS records, then waits for DNS approval."
+        "collects DNS records, lets downstream Vercel env wiring consume " +
+        "generated values, then waits for DNS approval with the complete " +
+        "record set."
       );
     }
     if (

@@ -1077,7 +1077,9 @@ def _strategy_route_summary(provider: str, strategy: dict[str, Any], selected: A
             if evidence.get("downstream_order") == "before_dns_apply":
                 return (
                     "API automation: FuseKit creates or reuses the Resend domain, "
-                    "collects DNS records, then waits for DNS approval."
+                    "collects DNS records, lets downstream Vercel env wiring consume "
+                    "generated values, then waits for DNS approval with the complete "
+                    "record set."
                 )
         if provider.lower() == "resend" and recipe == "resend-audience":
             if evidence.get("conditional") == "only_when_app_requires_audience":

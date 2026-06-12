@@ -3791,7 +3791,8 @@ def _provider_strategy_checkpoint_next_action(
     if provider == "resend":
         return (
             "Nothing to do manually in Resend; FuseKit creates or reuses the domain by API, "
-            "then waits for DNS approval after Resend records exist."
+            "uses generated values for downstream Vercel env wiring, then waits for DNS "
+            "approval after the complete record set is ready."
         )
     if provider == "vercel":
         return (
@@ -3824,8 +3825,9 @@ def _provider_strategy_checkpoint_resume_hint(
     if provider == "resend":
         return (
             "If this resurfaces, keep the live control room open; FuseKit will retry "
-            "Resend setup, carry the Resend records into the DNS approval gate, and "
-            "pause there before Cloudflare/DNS apply."
+            "Resend setup, let downstream Vercel env wiring consume the generated "
+            "values, then carry the complete record set into the DNS approval gate "
+            "before Cloudflare/DNS apply."
         )
     if provider == "vercel":
         return (

@@ -648,7 +648,10 @@ def test_manifest_setup_feeds_resend_dns_records_to_cloudflare(monkeypatch, tmp_
     assert resend_checkpoint["status"] == "done"
     assert resend_checkpoint["detail"] == "resend-domain uses api (ok)"
     assert "Nothing to do manually in Resend" in resend_checkpoint["next_action"]
+    assert "downstream Vercel env wiring" in resend_checkpoint["next_action"]
+    assert "complete record set" in resend_checkpoint["next_action"]
     assert "live control room" in resend_checkpoint["resume_hint"]
+    assert "downstream Vercel env wiring" in resend_checkpoint["resume_hint"]
     assert "DNS approval gate" in resend_checkpoint["resume_hint"]
     assert "rerun setup" not in resend_checkpoint["resume_hint"]
 
@@ -671,6 +674,7 @@ def test_provider_route_resume_hints_stay_in_live_control_room() -> None:
     )
 
     assert "live control room" in resend_hint
+    assert "downstream Vercel env wiring" in resend_hint
     assert "DNS approval gate" in resend_hint
     assert "rerun setup" not in resend_hint
     assert "live control room" in vercel_hint
