@@ -1384,7 +1384,11 @@ def _recording_provider_playbook_ready(record: dict[str, Any]) -> bool:
         return False
     if not all(
         isinstance(step, dict)
+        and str(step.get("id", "") or "").strip()
         and str(step.get("instruction", "") or "").strip()
+        and not _provider_playbook_instruction_unsafe(
+            str(step.get("instruction", "") or "")
+        )
         and str(step.get("provider", "") or "").strip()
         and _provider_playbook_step_route_ready(step)
         and _provider_playbook_step_control_ready(step)
@@ -1412,6 +1416,7 @@ def _provider_playbook_step_route_ready(step: dict[str, Any]) -> bool:
 
 
 def _provider_playbook_step_control_ready(step: dict[str, Any]) -> bool:
+    step_id = str(step.get("id", "") or "").strip()
     route = str(step.get("route", "") or "").strip()
     control = str(step.get("control", "") or "").strip()
     if not control:
@@ -1419,6 +1424,12 @@ def _provider_playbook_step_control_ready(step: dict[str, Any]) -> bool:
     if route == "api":
         return control == "FuseKit API worker"
     if route in {"browser_guided", "local_vault"}:
+        if (
+            step_id.startswith("resend.")
+            and route == "browser_guided"
+            and control != "Capture RESEND_API_KEY from VM clipboard"
+        ):
+            return False
         return control.startswith("Capture ") and control.endswith(" from VM clipboard")
     if route == "human_follow_me":
         return control in {
@@ -1429,6 +1440,18 @@ def _provider_playbook_step_control_ready(step: dict[str, Any]) -> bool:
     if route == "official_cli":
         return control in {"FuseKit CLI worker", "FuseKit API worker"}
     return False
+
+
+def _provider_playbook_instruction_unsafe(instruction: str) -> bool:
+    text = instruction.lower()
+    unsafe_patterns = (
+        "paste provider secrets into the host",
+        "create resend domains manually",
+        "create resend audiences manually",
+        "click add domain in resend",
+        "click add audience in resend",
+    )
+    return any(pattern in text for pattern in unsafe_patterns)
 
 
 def _provider_playbook_order_failures(steps: list[Any]) -> list[str]:

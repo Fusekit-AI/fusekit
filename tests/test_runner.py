@@ -1005,6 +1005,23 @@ def test_recording_provider_playbook_requires_public_order() -> None:
 
     assert _recording_provider_playbook_ready(record) is True
 
+    record["provider_playbook"]["steps"][0]["control"] = (
+        "Capture CLOUDFLARE_API_TOKEN from VM clipboard"
+    )
+    assert _recording_provider_playbook_ready(record) is False
+
+    record["provider_playbook"]["steps"][0]["control"] = (
+        "Capture RESEND_API_KEY from VM clipboard"
+    )
+    record["provider_playbook"]["steps"][1]["instruction"] = "Click Add domain in Resend."
+    assert _recording_provider_playbook_ready(record) is False
+
+    record["provider_playbook"]["steps"][1]["instruction"] = (
+        "FuseKit creates or reuses the Resend domain by API."
+    )
+    record["provider_playbook"]["steps"][1]["id"] = ""
+    assert _recording_provider_playbook_ready(record) is False
+
 
 def test_run_record_recording_detonation_requires_deleted_resource_proof() -> None:
     receipt = {
