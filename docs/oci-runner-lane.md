@@ -196,6 +196,15 @@ Every live Run Record also carries `fusekit.durable-state.v1` evidence. That
 evidence names the encrypted/redacted sources required to resume after replacing
 the worker, and it names the VM/browser/auth/log surfaces that are intentionally
 volatile detonation targets.
+The same Run Record also carries `fusekit.detonation-scope.v1`: the public-lane
+contract for what must be destroyed, what may survive, and why the run can keep
+resuming until completion without leaving FuseKit worker state on the user's
+machine or in the OCI workspace. The scope must include browser profiles,
+provider-auth scratch, passphrase files, uploaded app archives, control-room and
+gateway logs, and the disposable compute workspace. The only survivors are the
+encrypted vault and redacted proof artifacts such as job state, checkpoints,
+gate events, provider strategies, verification, rollback, detonation receipt,
+and the Run Record itself.
 
 Full OCI tenancy/account deletion is not a default detonation target. It should be a separate destructive workflow with explicit user approval.
 

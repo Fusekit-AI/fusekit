@@ -57,7 +57,9 @@ The contract is:
 - Disposable workers, durable state: the Run Record must prove that encrypted
   vault state, job state, checkpoints, gates, and provider route decisions
   survive outside the OCI worker before the worker can be treated as safely
-  replaceable or detonated.
+  replaceable or detonated. It must also carry a detonation scope that names
+  every volatile VM/browser/auth/log surface to destroy and every encrypted or
+  redacted survivor artifact to preserve until the run is complete.
 - Policy boundaries by default: provider secrets stay in the encrypted vault or
   provider-native secret stores, state-changing browser actions require
   control-room CSRF/action-token proof, provider navigation stays in the VM

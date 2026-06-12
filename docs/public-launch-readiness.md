@@ -92,7 +92,11 @@ artifacts may survive. The central Run Record must also include
 `durable_state` proof showing that the encrypted vault, job state, run state,
 checkpoints, gates, and provider route decisions all survived outside the
 disposable worker, so the OCI VM can be replaced or detonated without losing the
-run.
+run. Public OCI acceptance also requires a `fusekit.detonation-scope.v1` proof
+that names the complete no-trace destroy set, including provider-auth scratch,
+browser profiles, passphrase files, uploaded app archives, control-room logs,
+gateway logs, and the disposable OCI workspace, while preserving only encrypted
+or redacted run artifacts until completion.
 
 ## Acceptance Path
 

@@ -175,6 +175,30 @@ def _durable_state() -> dict[str, object]:
         ],
         "volatile_worker_surfaces": ["worker", "visual", "openclaw-state"],
         "detonation_preserves": ["encrypted_vault", "workspace_detonation", "run_record"],
+        "detonation_scope": {
+            "schema_version": "fusekit.detonation-scope.v1",
+            "mode": "worker-and-oci-workspace",
+            "must_delete": [
+                "worker",
+                "browser-profile",
+                "provider-auth",
+                "passphrase",
+                "app.tar.gz",
+                "control-room.log",
+                "openclaw-gateway.log",
+            ],
+            "must_preserve": [
+                "encrypted_vault",
+                "workspace_detonation",
+                "run_record",
+            ],
+            "resume_until_complete": True,
+            "no_trace_statement": (
+                "Public OCI runs preserve encrypted state until completion, then "
+                "detonate the disposable VM so no FuseKit worker state remains in "
+                "the OCI workspace."
+            ),
+        },
         "workspace_detonated": True,
         "statement": (
             "FuseKit can replace or detonate the disposable OCI worker without losing "
@@ -3462,6 +3486,32 @@ def test_acceptance_run_record_requires_complete_workspace_detonation_receipt(
     assert "detonation.workspace_receipt.failures must be empty" in failures
     assert "detonation.workspace_receipt.reason is missing" in failures
     assert "detonation.workspace_receipt.updated_at is missing" in failures
+
+
+def test_acceptance_run_record_requires_no_trace_detonation_scope(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+
+    record["durable_state"]["detonation_scope"] = {
+        "schema_version": "fusekit.detonation-scope.v1",
+        "mode": "worker-only",
+        "must_delete": ["worker"],
+        "must_preserve": ["encrypted_vault"],
+        "resume_until_complete": False,
+        "no_trace_statement": "cleanup ran",
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert "durable_state.detonation_scope.mode is unsupported" in failures
+    assert "durable_state.detonation_scope.must_delete is incomplete" in failures
+    assert "durable_state.detonation_scope.must_preserve is incomplete" in failures
+    assert (
+        "durable_state.detonation_scope.resume_until_complete must be true" in failures
+    )
+    assert "durable_state.detonation_scope.no_trace_statement is incomplete" in failures
 
 
 def test_acceptance_run_record_requires_evented_gate_wake_proof(tmp_path) -> None:

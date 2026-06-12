@@ -408,6 +408,18 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
         "provider_strategies",
     }
     assert "visual" in record["durable_state"]["volatile_worker_surfaces"]
+    assert record["durable_state"]["detonation_scope"]["schema_version"] == (
+        "fusekit.detonation-scope.v1"
+    )
+    assert record["durable_state"]["detonation_scope"]["mode"] == (
+        "worker-and-oci-workspace"
+    )
+    assert "provider-auth" in record["durable_state"]["detonation_scope"]["must_delete"]
+    assert "run_record" in record["durable_state"]["detonation_scope"]["must_preserve"]
+    assert record["durable_state"]["detonation_scope"]["resume_until_complete"] is True
+    assert "no FuseKit worker state remains" in record["durable_state"][
+        "detonation_scope"
+    ]["no_trace_statement"]
     assert record["provider_playbook"]["schema_version"] == "fusekit.provider-playbook.v1"
     assert record["provider_playbook"]["step_count"] == 1
     assert "Capture CLOUDFLARE_API_TOKEN" in record["provider_playbook"]["steps"][0][

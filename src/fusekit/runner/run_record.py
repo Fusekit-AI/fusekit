@@ -13,6 +13,7 @@ from fusekit.runner.run_state import LaunchRunState
 
 RUN_RECORD_SCHEMA_VERSION = "fusekit.run-record.v1"
 DURABLE_STATE_SCHEMA_VERSION = "fusekit.durable-state.v1"
+DETONATION_SCOPE_SCHEMA_VERSION = "fusekit.detonation-scope.v1"
 DURABLE_STATE_SOURCES = (
     ("encrypted_vault", "fusekit.vault.json", "encrypted capability vault", "encrypted"),
     ("job_state", "job.json", "runner job state", "non-secret"),
@@ -40,6 +41,19 @@ VOLATILE_WORKER_SURFACES = (
     "x11vnc.log",
     "websockify.log",
     "chrome.log",
+)
+DETONATION_PRESERVES = (
+    "encrypted_vault",
+    "job_state",
+    "run_state",
+    "checkpoints",
+    "gates",
+    "gate_events",
+    "provider_strategies",
+    "workspace_detonation",
+    "verification_report",
+    "rollback_plan",
+    "run_record",
 )
 
 
@@ -292,19 +306,20 @@ def _durable_state_summary(
         "missing": missing,
         "sources": sources,
         "volatile_worker_surfaces": list(VOLATILE_WORKER_SURFACES),
-        "detonation_preserves": [
-            "encrypted_vault",
-            "job_state",
-            "run_state",
-            "checkpoints",
-            "gates",
-            "gate_events",
-            "provider_strategies",
-            "workspace_detonation",
-            "verification_report",
-            "rollback_plan",
-            "run_record",
-        ],
+        "detonation_preserves": list(DETONATION_PRESERVES),
+        "detonation_scope": {
+            "schema_version": DETONATION_SCOPE_SCHEMA_VERSION,
+            "mode": "worker-and-oci-workspace",
+            "must_delete": list(VOLATILE_WORKER_SURFACES),
+            "must_preserve": list(DETONATION_PRESERVES),
+            "resume_until_complete": True,
+            "no_trace_statement": (
+                "Public OCI runs keep durable encrypted/redacted state outside the "
+                "disposable VM until completion, then detonate VM/browser/auth scratch "
+                "so no FuseKit worker state remains on the user's machine or in the "
+                "OCI workspace."
+            ),
+        },
         "workspace_detonated": run_state.get("workspace_detonated") is True,
         "statement": (
             "FuseKit can replace or detonate the disposable OCI worker without losing "

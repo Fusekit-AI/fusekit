@@ -3889,6 +3889,44 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
         {str(item) for item in preserves}
     ):
         failures.append("durable_state.detonation_preserves is incomplete")
+    detonation_scope = durable_state.get("detonation_scope")
+    if not isinstance(detonation_scope, dict):
+        failures.append("durable_state.detonation_scope is missing")
+    else:
+        if (
+            str(detonation_scope.get("schema_version", "")).strip()
+            != "fusekit.detonation-scope.v1"
+        ):
+            failures.append("durable_state.detonation_scope.schema_version is unsupported")
+        if str(detonation_scope.get("mode", "")).strip() != "worker-and-oci-workspace":
+            failures.append("durable_state.detonation_scope.mode is unsupported")
+        must_delete = detonation_scope.get("must_delete", [])
+        required_delete = {
+            "worker",
+            "browser-profile",
+            "provider-auth",
+            "passphrase",
+            "app.tar.gz",
+            "control-room.log",
+            "openclaw-gateway.log",
+        }
+        if not isinstance(must_delete, list) or not required_delete.issubset(
+            {str(item) for item in must_delete}
+        ):
+            failures.append("durable_state.detonation_scope.must_delete is incomplete")
+        must_preserve = detonation_scope.get("must_preserve", [])
+        if not isinstance(must_preserve, list) or not {"encrypted_vault", "run_record"}.issubset(
+            {str(item) for item in must_preserve}
+        ):
+            failures.append("durable_state.detonation_scope.must_preserve is incomplete")
+        if detonation_scope.get("resume_until_complete") is not True:
+            failures.append("durable_state.detonation_scope.resume_until_complete must be true")
+        no_trace_statement = str(detonation_scope.get("no_trace_statement", "") or "")
+        if (
+            "no FuseKit worker state remains" not in no_trace_statement
+            or "OCI workspace" not in no_trace_statement
+        ):
+            failures.append("durable_state.detonation_scope.no_trace_statement is incomplete")
     statement = str(durable_state.get("statement", "") or "")
     if "disposable OCI worker" not in statement or "encrypted/redacted state" not in statement:
         failures.append("durable_state.statement is missing durable-worker guidance")
