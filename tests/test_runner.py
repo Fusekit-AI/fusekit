@@ -726,7 +726,7 @@ def test_recording_provider_playbook_requires_public_order() -> None:
     assert _recording_provider_playbook_ready(record) is True
 
 
-def test_run_record_recording_detonation_requires_boot_volume_deletion() -> None:
+def test_run_record_recording_detonation_requires_deleted_resource_proof() -> None:
     receipt = {
         "status": "complete",
         "failures": {},
@@ -760,6 +760,19 @@ def test_run_record_recording_detonation_requires_boot_volume_deletion() -> None
 
     assert _recording_detonation_ready(record) is False
     receipt["resource_summary"]["boot_volume_deleted"] = True
+    assert _recording_detonation_ready(record) is False
+    receipt["deleted"] = [
+        "boot_volume",
+        "ephemeral_public_ip",
+        "instance",
+        "internet_gateway",
+        "network_security_group",
+        "remote_worker",
+        "route_table",
+        "security_list",
+        "subnet",
+        "vcn",
+    ]
     assert _recording_detonation_ready(record) is True
 
 
