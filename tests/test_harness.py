@@ -750,6 +750,16 @@ domains: []
 
 def _write_minimum_live_artifacts(remote_fusekit: Path) -> None:
     (remote_fusekit / "audit.jsonl").write_text('{"event":"provider.verify"}\n', "utf-8")
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "live_url": "https://moonlite.example",
+                "raw_secrets_exposed": 0,
+                "actions": [],
+            }
+        ),
+        "utf-8",
+    )
     (remote_fusekit / "workspace_detonation.json").write_text(
         json.dumps(_workspace_detonation_receipt()),
         "utf-8",
@@ -1064,6 +1074,16 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
 
 def _write_minimum_resend_vercel_live_artifacts(remote_fusekit: Path) -> None:
     (remote_fusekit / "audit.jsonl").write_text('{"event":"provider.verify"}\n', "utf-8")
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "live_url": "https://moonlite.example",
+                "raw_secrets_exposed": 0,
+                "actions": [],
+            }
+        ),
+        "utf-8",
+    )
     (remote_fusekit / "workspace_detonation.json").write_text(
         json.dumps(_workspace_detonation_receipt()),
         "utf-8",
@@ -4145,6 +4165,41 @@ def test_live_acceptance_requires_run_record_detonation_to_match_receipt(
         "detonation.workspace_receipt in Run Record must match workspace_detonation.json"
         in run_record_check.detail
     )
+    assert "central run record" in report.missing
+
+
+def test_live_acceptance_requires_run_record_evidence_inventory_to_match_files(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    record_path = remote_fusekit / "run_record.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    record["evidence"]["logs"][0]["path"] = "missing-audit.jsonl"
+    record["evidence"]["receipts"][0]["kind"] = "log"
+    record["evidence"]["counts"]["visual"] = 99
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    run_record_check = next(check for check in report.checks if check.id == "run_record.complete")
+    assert report.launch_ready is False
+    assert run_record_check.status == "failed"
+    assert "evidence.logs[0].path must exist in retrieved artifacts" in run_record_check.detail
+    assert "evidence.receipts[0].kind must be receipt" in run_record_check.detail
+    assert "evidence.counts.visual must match evidence.visual" in run_record_check.detail
     assert "central run record" in report.missing
 
 

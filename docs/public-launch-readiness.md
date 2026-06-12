@@ -97,7 +97,10 @@ disposable worker, so the OCI VM can be replaced or detonated without losing the
 run. It must also include a non-secret `fusekit.evidence-inventory.v1` inventory
 for logs, screenshots, visual state, and receipts by path and type only, so the
 demo can prove what happened without embedding screenshots, provider URLs,
-clipboard values, or raw secret text. The Run Record must also include a
+clipboard values, or raw secret text. Live acceptance must prove every inventoried
+evidence path is a relative file inside the retrieved `.fusekit` artifact bundle
+and that inventory counts match the listed records, so stale or invented survivor
+paths cannot make a demo look ready. The Run Record must also include a
 `fusekit.human-action-trace.v1` summary that maps every recorded provider open,
 VM-clipboard Capture, and approval click to a visible control-room gate and its
 follow-me instructions, with no unguided actions. It must carry the same

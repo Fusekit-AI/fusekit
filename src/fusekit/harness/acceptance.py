@@ -436,6 +436,7 @@ def _check_run_record(
     failures.extend(
         _run_record_detonation_consistency_failures(raw, workspace_detonation_path)
     )
+    failures.extend(_run_record_evidence_inventory_consistency_failures(raw, path.parent))
     summary = {
         "schema_version": raw.get("schema_version"),
         "id": raw.get("id"),
@@ -609,6 +610,58 @@ def _evidence_inventory_shape_failures(evidence: dict[str, Any]) -> list[str]:
     statement = str(evidence.get("statement", "") or "")
     if "path and type only" not in statement or "raw secrets are not embedded" not in statement:
         failures.append("evidence.statement is missing non-secret inventory guidance")
+    return failures
+
+
+def _run_record_evidence_inventory_consistency_failures(
+    run_record: dict[str, Any],
+    evidence_root: Path,
+) -> list[str]:
+    evidence = run_record.get("evidence", {})
+    if not isinstance(evidence, dict):
+        return []
+    failures: list[str] = []
+    root = evidence_root.resolve()
+    expected_kinds = {
+        "logs": "log",
+        "screenshots": "screenshot",
+        "visual": "visual",
+        "receipts": "receipt",
+    }
+    counts = evidence.get("counts", {})
+    counts = counts if isinstance(counts, dict) else {}
+    for evidence_field, expected_kind in expected_kinds.items():
+        records = evidence.get(evidence_field, [])
+        if not isinstance(records, list):
+            continue
+        if counts.get(evidence_field) != len(records):
+            failures.append(
+                f"evidence.counts.{evidence_field} must match evidence.{evidence_field}"
+            )
+        for index, record in enumerate(records):
+            label = f"evidence.{evidence_field}[{index}]"
+            if not isinstance(record, dict):
+                continue
+            if str(record.get("kind", "") or "") != expected_kind:
+                failures.append(f"{label}.kind must be {expected_kind}")
+            path_text = str(record.get("path", "") or "").strip()
+            if not path_text:
+                continue
+            evidence_path = Path(path_text)
+            if evidence_path.is_absolute():
+                failures.append(f"{label}.path must be relative to .fusekit")
+                continue
+            if ".." in evidence_path.parts:
+                failures.append(f"{label}.path must stay inside .fusekit")
+                continue
+            candidate = (root / evidence_path).resolve()
+            try:
+                candidate.relative_to(root)
+            except ValueError:
+                failures.append(f"{label}.path must stay inside .fusekit")
+                continue
+            if record.get("exists") is True and not candidate.is_file():
+                failures.append(f"{label}.path must exist in retrieved artifacts")
     return failures
 
 
