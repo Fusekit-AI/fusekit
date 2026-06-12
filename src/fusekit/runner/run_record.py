@@ -985,6 +985,7 @@ def _audit_entries_from_wake_event(
                 "target": target,
                 "status": "captured",
                 "source": "gate_events.jsonl",
+                "wake_event_id": str(event.get("id", "") or ""),
                 "summary": f"{target or 'Provider value'} was captured from the VM clipboard.",
             }
         ]
@@ -999,6 +1000,7 @@ def _audit_entries_from_wake_event(
                 "provider": provider,
                 "status": "approved",
                 "source": "gate_events.jsonl",
+                "wake_event_id": str(event.get("id", "") or ""),
                 "summary": "A visible control-room approval woke the setup worker.",
             }
         ]
@@ -1109,7 +1111,7 @@ def _audit_event_summary(event_name: str) -> str:
 
 
 def _dedupe_audit_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    seen: set[tuple[str, str, str, str]] = set()
+    seen: set[tuple[str, str, str, str, str]] = set()
     unique: list[dict[str, Any]] = []
     for entry in entries:
         normalized = {
@@ -1123,11 +1125,15 @@ def _dedupe_audit_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]
         target = str(entry.get("target", "") or "")
         if target:
             normalized["target"] = target
+        wake_event_id = str(entry.get("wake_event_id", "") or "")
+        if wake_event_id:
+            normalized["wake_event_id"] = wake_event_id
         key = (
             normalized["category"],
             normalized["action"],
             normalized["provider"],
             normalized.get("target", ""),
+            normalized.get("wake_event_id", ""),
         )
         if key in seen:
             continue

@@ -402,6 +402,7 @@ def _audit_trail() -> dict[str, object]:
                 "target": "RESEND_API_KEY",
                 "status": "captured",
                 "source": "gate_events.jsonl",
+                "wake_event_id": "wake-resend-capture",
                 "summary": "RESEND_API_KEY was captured from the VM clipboard.",
             },
             {
@@ -426,6 +427,7 @@ def _audit_trail() -> dict[str, object]:
                 "provider": "dns",
                 "status": "approved",
                 "source": "gate_events.jsonl",
+                "wake_event_id": "wake-dns-approval",
                 "summary": "A visible control-room approval woke the setup worker.",
             },
             {
@@ -853,7 +855,29 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
                     ),
                     "playwright_browsers_path": "/opt/fusekit-playwright-browsers",
                 },
-                "wake_events": {"total": 0, "event_counts": {}, "events": []},
+                "wake_events": {
+                    "total": 2,
+                    "event_counts": {"clipboard_captured": 1, "resume_requested": 1},
+                    "events": [
+                        {
+                            "id": "wake-resend-capture",
+                            "event": "clipboard_captured",
+                            "gate_id": "provider.resend.authorization",
+                            "provider": "resend",
+                            "classification": "provider-authorization",
+                            "status": "passed",
+                            "target": "RESEND_API_KEY",
+                        },
+                        {
+                            "id": "wake-dns-approval",
+                            "event": "resume_requested",
+                            "gate_id": "dns.moonlite.rsvp.approval",
+                            "provider": "dns",
+                            "classification": "dns-approval",
+                            "status": "resume_requested",
+                        },
+                    ],
+                },
                 "human_actions": _human_action_trace(),
                 "automation_boundary": _automation_boundary(),
                 "verifiers": _verifier_summary(),
@@ -4169,6 +4193,7 @@ def test_acceptance_run_record_requires_redacted_audit_trail(tmp_path) -> None:
     failures = _run_record_shape_failures(record)
 
     assert "audit_trail.entries[0].summary contains credential-looking text" in failures
+    assert "audit_trail.entries[0].wake_event_id is missing" in failures
     assert "audit_trail must include dns_write" in failures
     assert "audit_trail must include human_approval" in failures
     assert "audit_trail must include detonation" in failures
@@ -4289,6 +4314,15 @@ def test_acceptance_run_record_requires_evented_gate_wake_proof(tmp_path) -> Non
             },
         ],
     }
+    record["audit_trail"]["entries"][0]["provider"] = "cloudflare"
+    record["audit_trail"]["entries"][0]["target"] = "CLOUDFLARE_API_TOKEN"
+    record["audit_trail"]["entries"][0]["wake_event_id"] = "wake-capture-1"
+    record["audit_trail"]["entries"][0]["summary"] = (
+        "CLOUDFLARE_API_TOKEN was captured from the VM clipboard."
+    )
+    record["audit_trail"]["entries"][3]["provider"] = "cloudflare"
+    record["audit_trail"]["entries"][3]["action"] = "control_room.confirm_gate_finished"
+    record["audit_trail"]["entries"][3]["wake_event_id"] = "wake-resume-1"
 
     assert _run_record_shape_failures(record) == []
 

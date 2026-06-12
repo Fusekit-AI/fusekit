@@ -65,6 +65,10 @@ event id, and live acceptance requires that id to exist in `gate_events.jsonl`
 before the action counts as proof. This prevents a standalone `I finished this
 step` audit line from looking like a durable, resumable run after the VM is
 detonated.
+The central Run Record carries those same non-secret wake event ids on audit
+trail entries derived from gate events, so post-detonation review does not need
+plaintext browser state or raw log reconstruction to prove which protected
+action woke the worker.
 
 Gate target text is also display-redacted before it reaches the browser payload.
 FuseKit preserves useful target shape such as domains, env names, and redacted query

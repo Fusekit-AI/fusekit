@@ -524,6 +524,12 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     assert record["audit_trail"]["counts"]["detonation"] == 1
     audit_categories = {entry["category"] for entry in record["audit_trail"]["entries"]}
     assert {"credential_capture", "provider_action", "detonation"} <= audit_categories
+    capture_audit = next(
+        entry
+        for entry in record["audit_trail"]["entries"]
+        if entry["action"] == "control_room.capture_vm_clipboard"
+    )
+    assert capture_audit["wake_event_id"] == record["wake_events"]["events"][0]["id"]
     assert "https://dash.cloudflare.com" not in json.dumps(record["audit_trail"])
     assert record["recording_contract"]["schema_version"] == (
         "fusekit.recording-contract.v1"

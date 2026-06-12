@@ -784,6 +784,7 @@ def _audit_trail_shape_failures(
     run_record: dict[str, Any],
 ) -> list[str]:
     failures: list[str] = []
+    wake_ids_by_name = _run_record_wake_event_ids_by_name(run_record)
     if str(audit_trail.get("schema_version", "")).strip() != AUDIT_TRAIL_SCHEMA_VERSION:
         failures.append("audit_trail.schema_version is unsupported")
     entries = audit_trail.get("entries", [])
@@ -820,6 +821,13 @@ def _audit_trail_shape_failures(
             value = str(entry.get(text_field, "") or "")
             if _contains_secretish_audit_text(value):
                 failures.append(f"{label}.{text_field} contains credential-looking text")
+        expected_wake_name = _audit_entry_expected_wake_event(entry)
+        if expected_wake_name:
+            wake_event_id = str(entry.get("wake_event_id", "") or "").strip()
+            if not wake_event_id:
+                failures.append(f"{label}.wake_event_id is missing")
+            elif wake_event_id not in wake_ids_by_name.get(expected_wake_name, set()):
+                failures.append(f"{label}.wake_event_id does not match wake_events")
     for category, expected in actual_counts.items():
         if _safe_int(counts.get(category)) != expected:
             failures.append(f"audit_trail.counts.{category} must match entries")
@@ -832,6 +840,38 @@ def _audit_trail_shape_failures(
             failures.append("audit_trail.statement is missing audit-first guidance")
             break
     return failures
+
+
+def _run_record_wake_event_ids_by_name(
+    run_record: dict[str, Any],
+) -> dict[str, set[str]]:
+    wake_events = run_record.get("wake_events", {})
+    events = wake_events.get("events", []) if isinstance(wake_events, dict) else []
+    ids: dict[str, set[str]] = {}
+    if not isinstance(events, list):
+        return ids
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        event_name = str(event.get("event", "") or "").strip()
+        event_id = str(event.get("id", "") or "").strip()
+        if event_name and event_id:
+            ids.setdefault(event_name, set()).add(event_id)
+    return ids
+
+
+def _audit_entry_expected_wake_event(entry: dict[str, Any]) -> str:
+    if str(entry.get("source", "") or "") != "gate_events.jsonl":
+        return ""
+    action = str(entry.get("action", "") or "")
+    if action == "control_room.capture_vm_clipboard":
+        return "clipboard_captured"
+    if action in {
+        "control_room.approve_dns_apply",
+        "control_room.confirm_gate_finished",
+    }:
+        return "resume_requested"
+    return ""
 
 
 def _recording_contract_shape_failures(contract: dict[str, Any]) -> list[str]:
