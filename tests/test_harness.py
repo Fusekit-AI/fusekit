@@ -5180,6 +5180,39 @@ def test_acceptance_run_record_rejects_unredacted_timeline_entries(tmp_path) -> 
     assert "checkpoints[0].detail contains credential-looking text" in failures
 
 
+def test_acceptance_run_record_rejects_nested_unredacted_survivor_values(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["provider_strategies"]["providers"][0]["strategies"][0]["decision"][
+        "selected"
+    ]["evidence"]["debug_token"] = "token=leaked-provider-token"
+    record["verification"]["checks"][0]["details"] = {
+        "callback": "https://provider.example/callback?code=secret-code"
+    }
+    record["detonation"]["workspace_receipt"]["failures"] = {
+        "cleanup": "Bearer abcdefghijklmnopqrstuvwxyz1234567890"
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert (
+        "run_record.provider_strategies.providers[0].strategies[0].decision."
+        "selected.evidence.debug_token contains credential-looking text"
+    ) in failures
+    assert (
+        "run_record.verification.checks[0].details.callback contains "
+        "credential-looking text"
+    ) in failures
+    assert (
+        "run_record.detonation.workspace_receipt.failures.cleanup contains "
+        "credential-looking text"
+    ) in failures
+
+
 def test_acceptance_run_record_requires_evented_gate_wake_proof(tmp_path) -> None:
     fusekit_dir = tmp_path / ".fusekit"
     fusekit_dir.mkdir()
