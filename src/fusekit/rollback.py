@@ -227,5 +227,6 @@ def start_over(app_path: Path) -> dict[str, Any]:
             fusekit_dir / "setup_receipt.json",
             fusekit_dir / "setup_receipt.md",
         ],
+        workspace_root=app_path,
     )
     return {"removed": removed, "preserved": "vault, audit log, and receipts"}

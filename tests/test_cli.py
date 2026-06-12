@@ -2494,6 +2494,23 @@ def test_detonate_command_uses_paths_argument(tmp_path, capsys) -> None:
     assert not worker.exists()
 
 
+def test_detonate_command_can_scope_paths_to_workspace_root(tmp_path) -> None:
+    workspace = tmp_path / "app"
+    outside = tmp_path / "outside"
+    worker = workspace / ".fusekit" / "worker"
+    workspace.mkdir()
+    outside.mkdir()
+    worker.mkdir(parents=True)
+
+    assert main(["detonate", str(worker), "--workspace-root", str(workspace)]) == 0
+
+    outside_worker = outside / "worker"
+    outside_worker.mkdir()
+    with pytest.raises(ValueError, match="outside workspace root"):
+        main(["detonate", str(outside_worker), "--workspace-root", str(workspace)])
+    assert outside_worker.exists()
+
+
 def test_authorize_handoff_captures_hidden_token(monkeypatch, tmp_path, capsys) -> None:
     vault = tmp_path / "vault.json"
     passphrase = tmp_path / "passphrase.txt"

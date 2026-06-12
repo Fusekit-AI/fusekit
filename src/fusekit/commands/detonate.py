@@ -11,6 +11,10 @@ from fusekit.detonation.cleanup import detonate as detonate_paths
 def run(args: argparse.Namespace) -> int:
     """Remove plaintext worker state while preserving requested artifacts."""
 
-    removed = detonate_paths(args.paths, preserve=args.preserve)
+    removed = detonate_paths(
+        args.paths,
+        preserve=args.preserve,
+        workspace_root=getattr(args, "workspace_root", None),
+    )
     print(json.dumps({"detonated": removed}, indent=2, sort_keys=True))
     return 0

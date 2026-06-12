@@ -391,6 +391,12 @@ def _parser() -> argparse.ArgumentParser:
         default=[Path(".fusekit/worker"), Path(".fusekit/tmp")],
     )
     detonate.add_argument("--preserve", action="append", type=Path, default=[])
+    detonate.add_argument(
+        "--workspace-root",
+        type=Path,
+        default=None,
+        help="refuse to delete paths outside this disposable workspace root",
+    )
     detonate.set_defaults(handler=detonate_command.run)
 
     unlock = sub.add_parser("unlock", help="unlock a vault and print non-secret metadata")
@@ -1324,8 +1330,6 @@ def _cmd_setup(args: argparse.Namespace) -> int:
         if not args.no_detonate and verification_detonation_safe:
             _run_local_detonation_preflight(args, app_path)
             detonation_targets = [app_path / ".fusekit" / "worker", app_path / ".fusekit" / "tmp"]
-            if bool(getattr(args, "_detonate_openclaw_state", False)):
-                detonation_targets.append(openclaw_state_home())
             removed = detonate_paths(
                 detonation_targets,
                 preserve=[
@@ -1336,7 +1340,10 @@ def _cmd_setup(args: argparse.Namespace) -> int:
                     args.verification_report,
                     args.rollback_json,
                 ],
+                workspace_root=app_path,
             )
+            if bool(getattr(args, "_detonate_openclaw_state", False)):
+                removed.extend(detonate_paths([openclaw_state_home()], preserve=[]))
             job.mark("detonate.workspace", "done", "local worker scratch state detonated")
             print(json.dumps({"detonated": removed}, indent=2, sort_keys=True))
         elif not args.no_detonate:
@@ -1584,7 +1591,11 @@ def _cmd_receipt(args: argparse.Namespace) -> int:
 
 
 def _cmd_detonate(args: argparse.Namespace) -> int:
-    removed = detonate_paths(args.paths, preserve=args.preserve)
+    removed = detonate_paths(
+        args.paths,
+        preserve=args.preserve,
+        workspace_root=getattr(args, "workspace_root", None),
+    )
     print(json.dumps({"removed": removed}, indent=2, sort_keys=True))
     return 0
 
@@ -1831,6 +1842,7 @@ def _cmd_runner_detonate(args: argparse.Namespace) -> int:
     removed = detonate_paths(
         [Path(".fusekit/worker"), Path(".fusekit/tmp")],
         preserve=[Path(".fusekit/fusekit.vault.json"), args.job_state],
+        workspace_root=Path.cwd(),
     )
     if job is not None:
         if _workspace_detonation_complete(remote_deleted):
