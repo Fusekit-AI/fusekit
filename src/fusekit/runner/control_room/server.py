@@ -279,6 +279,30 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                 if open_gate is None:
                     self._write_json({"ok": False, "error": "gate not found"}, status=404)
                     return
+                if open_gate.status == "passed":
+                    self._write_json(
+                        {
+                            "ok": True,
+                            "gate_id": gate_id,
+                            "status": "passed",
+                            "browser": "",
+                            "reused": True,
+                            "message": _gate_already_passed_message(open_gate),
+                        }
+                    )
+                    return
+                if open_gate.status == "resume_requested":
+                    self._write_json(
+                        {
+                            "ok": True,
+                            "gate_id": gate_id,
+                            "status": "resume_requested",
+                            "browser": "",
+                            "reused": True,
+                            "message": _gate_already_resuming_message(open_gate),
+                        }
+                    )
+                    return
                 try:
                     safe_url = require_safe_url(open_gate.resume_url, label="Provider gate URL")
                 except FuseKitError as exc:

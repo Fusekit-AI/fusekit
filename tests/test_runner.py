@@ -2994,6 +2994,109 @@ def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -
     assert "dash.cloudflare.com" not in audit_path.read_text(encoding="utf-8")
 
 
+def test_control_room_post_open_is_idempotent_for_already_resuming_gate(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    audit_path = tmp_path / "audit.jsonl"
+    job.add_artifact("audit_log", audit_path)
+    job.save(job_path)
+    service = GateService.load(tmp_path / "gates.json")
+    service.wait(
+        "provider.cloudflare.authorization",
+        provider="cloudflare",
+        reason="Cloudflare token creation",
+        resume_url="https://dash.cloudflare.com/profile/api-tokens",
+        classification="consent",
+    )
+    service.request_resume("provider.cloudflare.authorization")
+    gates_before = (tmp_path / "gates.json").read_text(encoding="utf-8")
+    gate_events_before = (tmp_path / "gate_events.jsonl").read_text(encoding="utf-8")
+    calls: list[object] = []
+    monkeypatch.setattr(
+        "fusekit.runner.control_room.server.subprocess.Popen",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = (
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/gates/provider.cloudflare.authorization/open"
+        )
+        request = Request(url, method="POST", headers=_control_room_post_headers(tmp_path))
+        with urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert payload["ok"] is True
+    assert payload["status"] == "resume_requested"
+    assert payload["browser"] == ""
+    assert payload["reused"] is True
+    assert "next guided blocker" in payload["message"]
+    assert calls == []
+    assert (tmp_path / "gates.json").read_text(encoding="utf-8") == gates_before
+    assert (tmp_path / "gate_events.jsonl").read_text(encoding="utf-8") == gate_events_before
+    assert not audit_path.exists()
+
+
+def test_control_room_post_open_does_not_reopen_passed_gate(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    audit_path = tmp_path / "audit.jsonl"
+    job.add_artifact("audit_log", audit_path)
+    job.save(job_path)
+    service = GateService.load(tmp_path / "gates.json")
+    service.wait(
+        "provider.cloudflare.authorization",
+        provider="cloudflare",
+        reason="Cloudflare token creation",
+        resume_url="https://dash.cloudflare.com/profile/api-tokens",
+        classification="consent",
+    )
+    service.pass_gate("provider.cloudflare.authorization")
+    gates_before = (tmp_path / "gates.json").read_text(encoding="utf-8")
+    calls: list[object] = []
+    monkeypatch.setattr(
+        "fusekit.runner.control_room.server.subprocess.Popen",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = (
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/gates/provider.cloudflare.authorization/open"
+        )
+        request = Request(url, method="POST", headers=_control_room_post_headers(tmp_path))
+        with urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert payload["ok"] is True
+    assert payload["status"] == "passed"
+    assert payload["browser"] == ""
+    assert payload["reused"] is True
+    assert payload["message"] == "FuseKit verified this gate as passed."
+    assert calls == []
+    assert (tmp_path / "gates.json").read_text(encoding="utf-8") == gates_before
+    assert not (tmp_path / "gate_events.jsonl").exists()
+    assert not audit_path.exists()
+
+
 def test_control_room_visual_browser_env_strips_secrets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
