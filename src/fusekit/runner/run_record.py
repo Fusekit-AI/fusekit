@@ -34,6 +34,7 @@ DURABLE_STATE_SOURCES = (
     ("run_state", "run_state.json", "launch state contract", "non-secret"),
     ("checkpoints", "checkpoints.json", "resume checkpoints", "non-secret"),
     ("gates", "gates.json", "provider gate state", "non-secret"),
+    ("gate_events", "gate_events.jsonl", "evented resume wake proof", "non-secret"),
     ("provider_strategies", "provider_strategies.json", "provider route decisions", "non-secret"),
     ("runner_readiness", "runner_readiness.json", "runner profile readiness proof", "non-secret"),
 )

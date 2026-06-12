@@ -473,6 +473,7 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
         "run_state",
         "checkpoints",
         "gates",
+        "gate_events",
         "provider_strategies",
         "runner_readiness",
     }
@@ -792,6 +793,7 @@ def test_run_record_recording_contract_blocks_missing_provider_playbook(tmp_path
         detonation_safe=True,
         workspace_detonated=True,
     )
+    (tmp_path / "gate_events.jsonl").write_text("", encoding="utf-8")
     job.save(tmp_path / "job.json")
 
     record_path = write_run_record(job, path=tmp_path / "run_record.json")

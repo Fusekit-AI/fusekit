@@ -5040,6 +5040,7 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
             "run_state",
             "checkpoints",
             "gates",
+            "gate_events",
             "provider_strategies",
             "runner_readiness",
         }
@@ -5165,6 +5166,7 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
             "run_state",
             "checkpoints",
             "gates",
+            "gate_events",
             "provider_strategies",
             "runner_readiness",
         }

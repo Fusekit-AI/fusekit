@@ -3090,6 +3090,7 @@ def test_save_launch_job_writes_durable_state_after_job_state_exists(tmp_path) -
         encoding="utf-8",
     )
     (fusekit_dir / "gates.json").write_text(json.dumps({"gates": []}), encoding="utf-8")
+    (fusekit_dir / "gate_events.jsonl").write_text("", encoding="utf-8")
     (fusekit_dir / "runner_readiness.json").write_text(
         json.dumps(
             {

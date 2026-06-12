@@ -248,6 +248,13 @@ def _durable_state() -> dict[str, object]:
                 "exists": True,
             },
             {
+                "id": "gate_events",
+                "path": "gate_events.jsonl",
+                "role": "evented resume wake proof",
+                "secret_class": "non-secret",
+                "exists": True,
+            },
+            {
                 "id": "provider_strategies",
                 "path": "provider_strategies.json",
                 "role": "provider route decisions",
@@ -312,6 +319,7 @@ def _durable_state() -> dict[str, object]:
                 "run_state",
                 "checkpoints",
                 "gates",
+                "gate_events",
                 "provider_strategies",
                 "runner_readiness",
             ],
@@ -4553,12 +4561,12 @@ def test_acceptance_run_record_requires_runner_profile_for_worker_replacement(
     record["durable_state"]["sources"] = [
         source
         for source in record["durable_state"]["sources"]
-        if source.get("id") != "runner_readiness"
+        if source.get("id") not in {"runner_readiness", "gate_events"}
     ]
 
     failures = _run_record_shape_failures(record)
 
-    assert "durable_state.sources missing runner_readiness" in failures
+    assert "durable_state.sources missing gate_events, runner_readiness" in failures
     assert "durable_state.runner_profile_ready must be true" in failures
     assert any(
         failure.startswith("durable_state.runner_profile_failures must be empty")
@@ -4609,6 +4617,7 @@ def test_acceptance_run_record_requires_coherent_worker_replacement_contract(
         "run_state",
         "checkpoints",
         "gates",
+        "gate_events",
         "provider_strategies",
         "runner_readiness",
         "local_browser_profile",
