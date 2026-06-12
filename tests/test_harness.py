@@ -17,6 +17,7 @@ from fusekit.harness.acceptance import (
     _provider_strategy_checkpoint_failures,
     _provider_strategy_shape_failures,
     _rollback_provider_names,
+    _run_record_shape_failures,
     _unguided_gates,
 )
 from fusekit.harness.ledger import HarnessLedger
@@ -106,6 +107,16 @@ def _provider_playbook() -> dict[str, object]:
     }
 
 
+def _workspace_detonation_receipt() -> dict[str, object]:
+    return {
+        "status": "complete",
+        "reason": "remote worker and OCI workspace detonated",
+        "deleted": ["instance"],
+        "failures": {},
+        "updated_at": 2.0,
+    }
+
+
 def _durable_state() -> dict[str, object]:
     return {
         "schema_version": "fusekit.durable-state.v1",
@@ -154,9 +165,16 @@ def _durable_state() -> dict[str, object]:
                 "secret_class": "non-secret",
                 "exists": True,
             },
+            {
+                "id": "workspace_detonation",
+                "path": "workspace_detonation.json",
+                "role": "OCI detonation receipt",
+                "secret_class": "non-secret",
+                "exists": True,
+            },
         ],
         "volatile_worker_surfaces": ["worker", "visual", "openclaw-state"],
-        "detonation_preserves": ["encrypted_vault", "run_record"],
+        "detonation_preserves": ["encrypted_vault", "workspace_detonation", "run_record"],
         "workspace_detonated": True,
         "statement": (
             "FuseKit can replace or detonate the disposable OCI worker without losing "
@@ -293,6 +311,10 @@ domains: []
 
 def _write_minimum_live_artifacts(remote_fusekit: Path) -> None:
     (remote_fusekit / "audit.jsonl").write_text('{"event":"provider.verify"}\n', "utf-8")
+    (remote_fusekit / "workspace_detonation.json").write_text(
+        json.dumps(_workspace_detonation_receipt()),
+        "utf-8",
+    )
     (remote_fusekit / "verification_report.json").write_text(
         json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
         "utf-8",
@@ -521,7 +543,7 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
                 "detonation": {
                     "preflight_safe": True,
                     "workspace_detonated": True,
-                    "workspace_receipt": {},
+                    "workspace_receipt": _workspace_detonation_receipt(),
                 },
                 "approvals": [],
                 "errors": [],
@@ -533,6 +555,10 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
 
 def _write_minimum_resend_vercel_live_artifacts(remote_fusekit: Path) -> None:
     (remote_fusekit / "audit.jsonl").write_text('{"event":"provider.verify"}\n', "utf-8")
+    (remote_fusekit / "workspace_detonation.json").write_text(
+        json.dumps(_workspace_detonation_receipt()),
+        "utf-8",
+    )
     (remote_fusekit / "verification_report.json").write_text(
         json.dumps(
             {
@@ -3403,6 +3429,39 @@ def test_live_acceptance_requires_central_run_record(tmp_path) -> None:
     blockers = {blocker["item"]: blocker for blocker in report.blockers}
     assert blockers["central run record"]["category"] == "Run record"
     assert "current control room" in blockers["central run record"]["next_action"]
+
+
+def test_acceptance_run_record_requires_complete_workspace_detonation_receipt(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+
+    record["state"]["detonation_safe"] = False
+    record["state"]["workspace_detonated"] = False
+    record["detonation"] = {
+        "preflight_safe": False,
+        "workspace_detonated": False,
+        "workspace_receipt": {
+            "status": "incomplete",
+            "deleted": ["subnet"],
+            "failures": {"failed.instance": "409 Conflict"},
+        },
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert "state.detonation_safe must be true" in failures
+    assert "state.workspace_detonated must be true" in failures
+    assert "detonation.preflight_safe must be true" in failures
+    assert "detonation.workspace_detonated must be true" in failures
+    assert "detonation.workspace_receipt.status must be complete" in failures
+    assert "detonation.workspace_receipt.deleted must include instance" in failures
+    assert "detonation.workspace_receipt.failures must be empty" in failures
+    assert "detonation.workspace_receipt.reason is missing" in failures
+    assert "detonation.workspace_receipt.updated_at is missing" in failures
 
 
 def test_acceptance_cli_checks_vault_without_leaking_secret(tmp_path, capsys) -> None:

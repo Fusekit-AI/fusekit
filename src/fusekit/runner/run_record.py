@@ -300,6 +300,7 @@ def _durable_state_summary(
             "gates",
             "gate_events",
             "provider_strategies",
+            "workspace_detonation",
             "verification_report",
             "rollback_plan",
             "run_record",

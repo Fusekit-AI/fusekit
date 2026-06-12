@@ -303,7 +303,15 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
         encoding="utf-8",
     )
     (tmp_path / "workspace_detonation.json").write_text(
-        '{"status":"complete","deleted":["instance"],"failures":{}}',
+        json.dumps(
+            {
+                "status": "complete",
+                "reason": "remote worker and OCI workspace detonated",
+                "deleted": ["instance"],
+                "failures": {},
+                "updated_at": 2.0,
+            }
+        ),
         encoding="utf-8",
     )
     (tmp_path / "runner_readiness.json").write_text(

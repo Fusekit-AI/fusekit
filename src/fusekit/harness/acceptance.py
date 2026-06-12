@@ -463,7 +463,12 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
     for key in ("id", "status", "app_path", "runner"):
         if not str(raw.get(key, "") or "").strip():
             failures.append(f"{key} is missing")
-    _require_dict_field(raw, "state", failures)
+    state = _require_dict_field(raw, "state", failures)
+    if state is not None:
+        if state.get("detonation_safe") is not True:
+            failures.append("state.detonation_safe must be true")
+        if state.get("workspace_detonated") is not True:
+            failures.append("state.workspace_detonated must be true")
     _require_list_field(raw, "steps", failures)
     _require_list_field(raw, "checkpoints", failures)
     provider_gates = _require_dict_field(raw, "provider_gates", failures)
@@ -511,13 +516,38 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
     _require_dict_field(raw, "verification", failures)
     detonation = _require_dict_field(raw, "detonation", failures)
     if detonation is not None:
-        if not isinstance(detonation.get("preflight_safe"), bool):
-            failures.append("detonation.preflight_safe is missing")
-        if not isinstance(detonation.get("workspace_detonated"), bool):
-            failures.append("detonation.workspace_detonated is missing")
-        _require_dict_field(detonation, "workspace_receipt", failures, prefix="detonation")
+        if detonation.get("preflight_safe") is not True:
+            failures.append("detonation.preflight_safe must be true")
+        if detonation.get("workspace_detonated") is not True:
+            failures.append("detonation.workspace_detonated must be true")
+        workspace_receipt = _require_dict_field(
+            detonation, "workspace_receipt", failures, prefix="detonation"
+        )
+        if workspace_receipt is not None:
+            failures.extend(_workspace_detonation_receipt_failures(workspace_receipt))
     _require_list_field(raw, "approvals", failures)
     _require_list_field(raw, "errors", failures)
+    return failures
+
+
+def _workspace_detonation_receipt_failures(receipt: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    if str(receipt.get("status", "")).strip() != "complete":
+        failures.append("detonation.workspace_receipt.status must be complete")
+    deleted = receipt.get("deleted", [])
+    if not isinstance(deleted, list) or not deleted:
+        failures.append("detonation.workspace_receipt.deleted is missing")
+    elif "instance" not in {str(item) for item in deleted}:
+        failures.append("detonation.workspace_receipt.deleted must include instance")
+    failures_field = receipt.get("failures")
+    if not isinstance(failures_field, dict):
+        failures.append("detonation.workspace_receipt.failures is missing")
+    elif failures_field:
+        failures.append("detonation.workspace_receipt.failures must be empty")
+    if not str(receipt.get("reason", "") or "").strip():
+        failures.append("detonation.workspace_receipt.reason is missing")
+    if not isinstance(receipt.get("updated_at"), int | float):
+        failures.append("detonation.workspace_receipt.updated_at is missing")
     return failures
 
 
