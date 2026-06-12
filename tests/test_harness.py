@@ -597,6 +597,114 @@ def _audit_trail() -> dict[str, object]:
     }
 
 
+def _read_gate_events_fixture(fusekit_dir: Path) -> list[dict[str, object]]:
+    path = fusekit_dir / "gate_events.jsonl"
+    if not path.exists():
+        return _minimum_gate_wake_events()
+    events: list[dict[str, object]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        raw = json.loads(line)
+        if isinstance(raw, dict):
+            events.append(raw)
+    return events or _minimum_gate_wake_events()
+
+
+def _wake_event_summary_fixture(fusekit_dir: Path) -> dict[str, object]:
+    events = _read_gate_events_fixture(fusekit_dir)
+    counts: dict[str, int] = {}
+    for event in events:
+        event_name = str(event.get("event", "") or "unknown")
+        counts[event_name] = counts.get(event_name, 0) + 1
+    return {"total": len(events), "event_counts": counts, "events": events}
+
+
+def _audit_trail_from_gate_events(fusekit_dir: Path) -> dict[str, object]:
+    events = _read_gate_events_fixture(fusekit_dir)
+    entries: list[dict[str, object]] = []
+    has_dns_approval = False
+    for event in events:
+        event_name = str(event.get("event", "") or "")
+        classification = str(event.get("classification", "") or "")
+        provider = str(event.get("provider", "") or "")
+        wake_event_id = str(event.get("id", "") or "")
+        if event_name == "clipboard_captured":
+            target = str(event.get("target", "") or "")
+            entries.append(
+                {
+                    "category": "credential_capture",
+                    "action": "control_room.capture_vm_clipboard",
+                    "provider": provider,
+                    "target": target,
+                    "status": "captured",
+                    "source": "gate_events.jsonl",
+                    "wake_event_id": wake_event_id,
+                    "summary": f"{target or 'Provider value'} was captured from the VM clipboard.",
+                }
+            )
+        if event_name == "resume_requested":
+            has_dns_approval = has_dns_approval or classification == "dns-approval"
+            entries.append(
+                {
+                    "category": "human_approval",
+                    "action": "control_room.approve_dns_apply"
+                    if classification == "dns-approval"
+                    else "control_room.confirm_gate_finished",
+                    "provider": provider,
+                    "status": "approved",
+                    "source": "gate_events.jsonl",
+                    "wake_event_id": wake_event_id,
+                    "summary": "A visible control-room approval woke the setup worker.",
+                }
+            )
+    entries.append(
+        {
+            "category": "provider_action",
+            "action": "resend.domain",
+            "provider": "resend",
+            "status": "passed",
+            "source": "setup_receipt.json",
+            "summary": "FuseKit recorded provider action resend.domain.",
+        }
+    )
+    if has_dns_approval:
+        entries.append(
+            {
+                "category": "dns_write",
+                "action": "dns.apply",
+                "provider": "dns",
+                "status": "passed",
+                "source": "setup_receipt.json",
+                "summary": "FuseKit recorded a DNS write or DNS-record apply action.",
+            }
+        )
+    entries.append(
+        {
+            "category": "detonation",
+            "action": "oci.workspace.detonate",
+            "provider": "oci",
+            "status": "complete",
+            "source": "workspace_detonation.json",
+            "summary": "FuseKit recorded disposable OCI worker and workspace cleanup.",
+        }
+    )
+    counts: dict[str, int] = {}
+    for entry in entries:
+        category = str(entry.get("category", "") or "")
+        counts[category] = counts.get(category, 0) + 1
+    return {
+        "schema_version": "fusekit.audit-trail.v1",
+        "entry_count": len(entries),
+        "counts": counts,
+        "entries": entries,
+        "statement": (
+            "Credential captures, provider actions, DNS writes, human approvals, "
+            "and detonation events are summarized without storing raw secrets."
+        ),
+    }
+
+
 def _recording_contract() -> dict[str, object]:
     return {
         "schema_version": "fusekit.recording-contract.v1",
@@ -750,6 +858,7 @@ domains: []
 
 def _write_minimum_live_artifacts(remote_fusekit: Path) -> None:
     (remote_fusekit / "audit.jsonl").write_text('{"event":"provider.verify"}\n', "utf-8")
+    _write_minimum_gate_events(remote_fusekit)
     (remote_fusekit / "setup_receipt.json").write_text(
         json.dumps(
             {
@@ -854,6 +963,37 @@ def _gate_wake_event(
         "captured_targets": captured_targets or [],
         "created_at": 1780000000.0,
     }
+
+
+def _minimum_gate_wake_events() -> list[dict[str, object]]:
+    return [
+        _gate_wake_event(
+            "wake-resend-capture",
+            "clipboard_captured",
+            "provider.resend.authorization",
+            provider="resend",
+            classification="provider-authorization",
+            status="passed",
+            target="RESEND_API_KEY",
+            captured_targets=["RESEND_API_KEY"],
+        ),
+        _gate_wake_event(
+            "wake-dns-approval",
+            "resume_requested",
+            "dns.moonlite.rsvp.approval",
+            provider="dns",
+            classification="dns-approval",
+            status="resume_requested",
+        ),
+    ]
+
+
+def _write_minimum_gate_events(fusekit_dir: Path) -> None:
+    fusekit_dir.joinpath("gate_events.jsonl").write_text(
+        "\n".join(json.dumps(event, sort_keys=True) for event in _minimum_gate_wake_events())
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def _write_safe_visual_state(fusekit_dir: Path) -> None:
@@ -1016,35 +1156,13 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
                     ),
                     "playwright_browsers_path": "/opt/fusekit-playwright-browsers",
                 },
-                "wake_events": {
-                    "total": 2,
-                    "event_counts": {"clipboard_captured": 1, "resume_requested": 1},
-                    "events": [
-                        {
-                            "id": "wake-resend-capture",
-                            "event": "clipboard_captured",
-                            "gate_id": "provider.resend.authorization",
-                            "provider": "resend",
-                            "classification": "provider-authorization",
-                            "status": "passed",
-                            "target": "RESEND_API_KEY",
-                        },
-                        {
-                            "id": "wake-dns-approval",
-                            "event": "resume_requested",
-                            "gate_id": "dns.moonlite.rsvp.approval",
-                            "provider": "dns",
-                            "classification": "dns-approval",
-                            "status": "resume_requested",
-                        },
-                    ],
-                },
+                "wake_events": _wake_event_summary_fixture(fusekit_dir),
                 "human_actions": _human_action_trace(),
                 "automation_boundary": _automation_boundary(),
                 "verifiers": _verifier_summary_from_report(fusekit_dir),
                 "provider_strategies": _run_record_provider_strategies(fusekit_dir),
                 "vault": {"record_count": 0, "records": []},
-                "audit_trail": _audit_trail(),
+                "audit_trail": _audit_trail_from_gate_events(fusekit_dir),
                 "recording_contract": _recording_contract(),
                 "artifacts": [],
                 "evidence": _evidence_inventory(),
@@ -1074,6 +1192,7 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
 
 def _write_minimum_resend_vercel_live_artifacts(remote_fusekit: Path) -> None:
     (remote_fusekit / "audit.jsonl").write_text('{"event":"provider.verify"}\n', "utf-8")
+    _write_minimum_gate_events(remote_fusekit)
     (remote_fusekit / "setup_receipt.json").write_text(
         json.dumps(
             {
@@ -4203,6 +4322,37 @@ def test_live_acceptance_requires_run_record_evidence_inventory_to_match_files(
     assert "central run record" in report.missing
 
 
+def test_live_acceptance_requires_run_record_wake_events_to_match_gate_events(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    record_path = remote_fusekit / "run_record.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    record["wake_events"]["events"][0]["target"] = "STALE_API_KEY"
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    run_record_check = next(check for check in report.checks if check.id == "run_record.complete")
+    assert report.launch_ready is False
+    assert run_record_check.status == "failed"
+    assert "wake_events in Run Record must match gate_events.jsonl" in run_record_check.detail
+    assert "central run record" in report.missing
+
+
 def test_acceptance_run_record_requires_complete_workspace_detonation_receipt(
     tmp_path,
 ) -> None:
@@ -4794,15 +4944,57 @@ def test_acceptance_run_record_requires_evented_gate_wake_proof(tmp_path) -> Non
             },
         ],
     }
-    record["audit_trail"]["entries"][0]["provider"] = "cloudflare"
-    record["audit_trail"]["entries"][0]["target"] = "CLOUDFLARE_API_TOKEN"
-    record["audit_trail"]["entries"][0]["wake_event_id"] = "wake-capture-1"
-    record["audit_trail"]["entries"][0]["summary"] = (
-        "CLOUDFLARE_API_TOKEN was captured from the VM clipboard."
-    )
-    record["audit_trail"]["entries"][3]["provider"] = "cloudflare"
-    record["audit_trail"]["entries"][3]["action"] = "control_room.confirm_gate_finished"
-    record["audit_trail"]["entries"][3]["wake_event_id"] = "wake-resume-1"
+    record["audit_trail"] = {
+        "schema_version": "fusekit.audit-trail.v1",
+        "entry_count": 4,
+        "counts": {
+            "credential_capture": 1,
+            "human_approval": 1,
+            "provider_action": 1,
+            "detonation": 1,
+        },
+        "entries": [
+            {
+                "category": "credential_capture",
+                "action": "control_room.capture_vm_clipboard",
+                "provider": "cloudflare",
+                "target": "CLOUDFLARE_API_TOKEN",
+                "status": "captured",
+                "source": "gate_events.jsonl",
+                "wake_event_id": "wake-capture-1",
+                "summary": "CLOUDFLARE_API_TOKEN was captured from the VM clipboard.",
+            },
+            {
+                "category": "human_approval",
+                "action": "control_room.confirm_gate_finished",
+                "provider": "cloudflare",
+                "status": "approved",
+                "source": "gate_events.jsonl",
+                "wake_event_id": "wake-resume-1",
+                "summary": "A visible control-room approval woke the setup worker.",
+            },
+            {
+                "category": "provider_action",
+                "action": "cloudflare.dns",
+                "provider": "cloudflare",
+                "status": "passed",
+                "source": "setup_receipt.json",
+                "summary": "FuseKit recorded provider action cloudflare.dns.",
+            },
+            {
+                "category": "detonation",
+                "action": "oci.workspace.detonate",
+                "provider": "oci",
+                "status": "complete",
+                "source": "workspace_detonation.json",
+                "summary": "FuseKit recorded disposable OCI worker and workspace cleanup.",
+            },
+        ],
+        "statement": (
+            "Credential captures, provider actions, DNS writes, human approvals, "
+            "and detonation events are summarized without storing raw secrets."
+        ),
+    }
 
     assert _run_record_shape_failures(record) == []
 

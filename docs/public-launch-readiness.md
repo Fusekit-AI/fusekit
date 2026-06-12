@@ -86,7 +86,9 @@ and public proof must reject hidden-prompt, side-channel, manual, placeholder, o
 figure-it-out wording. Non-secret provider
 gates plus setup/DNS approval gates must also prove the visible
 `I finished this step`, `Approve setup plan`, or `Approve DNS apply` click through
-redacted `control_room.gate_resume_requested` audit events. Detonation proof must
+redacted `control_room.gate_resume_requested` audit events. The Run Record's
+wake-event summary must match `gate_events.jsonl`, so Capture and approval audit
+entries remain anchored to the raw event stream that woke the worker. Detonation proof must
 cover worker/temp state plus browser profile,
 visual-session scratch, OpenClaw/auth state, passphrase files, uploaded app archives,
 and FuseKit-controlled control-room/gateway logs; only encrypted or redacted proof

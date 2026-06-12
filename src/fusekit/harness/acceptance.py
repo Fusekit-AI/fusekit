@@ -172,6 +172,7 @@ def run_acceptance(
         evidence_fusekit_dir / "provider_strategies.json",
         evidence_fusekit_dir / "verification_report.json",
         evidence_fusekit_dir / "workspace_detonation.json",
+        evidence_fusekit_dir / "gate_events.jsonl",
         mode,
         checks,
         missing,
@@ -378,6 +379,7 @@ def _check_run_record(
     provider_strategies_path: Path,
     verification_report_path: Path,
     workspace_detonation_path: Path,
+    gate_events_path: Path,
     mode: str,
     checks: list[AcceptanceCheck],
     missing: list[str],
@@ -437,6 +439,7 @@ def _check_run_record(
         _run_record_detonation_consistency_failures(raw, workspace_detonation_path)
     )
     failures.extend(_run_record_evidence_inventory_consistency_failures(raw, path.parent))
+    failures.extend(_run_record_wake_events_consistency_failures(raw, gate_events_path))
     summary = {
         "schema_version": raw.get("schema_version"),
         "id": raw.get("id"),
@@ -1041,6 +1044,73 @@ def _run_record_detonation_consistency_failures(
             )
         ]
     return []
+
+
+def _run_record_wake_events_consistency_failures(
+    run_record: dict[str, Any],
+    gate_events_path: Path,
+) -> list[str]:
+    run_signature = _run_record_wake_event_signature(run_record)
+    if not run_signature:
+        return []
+    if not gate_events_path.exists():
+        return ["wake_events in Run Record require gate_events.jsonl"]
+    artifact_signature, error = _gate_events_jsonl_signature(gate_events_path)
+    if error:
+        return [error]
+    if run_signature != artifact_signature:
+        return ["wake_events in Run Record must match gate_events.jsonl"]
+    return []
+
+
+def _run_record_wake_event_signature(run_record: dict[str, Any]) -> tuple[tuple[Any, ...], ...]:
+    wake_events = run_record.get("wake_events", {})
+    events = wake_events.get("events", []) if isinstance(wake_events, dict) else []
+    return _wake_event_signature(events)
+
+
+def _gate_events_jsonl_signature(path: Path) -> tuple[tuple[tuple[Any, ...], ...], str]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return (), "gate_events.jsonl could not be read for Run Record wake proof"
+    events: list[dict[str, Any]] = []
+    for line_number, line in enumerate(lines, start=1):
+        if not line.strip():
+            continue
+        try:
+            raw = json.loads(line)
+        except json.JSONDecodeError:
+            return (), f"gate_events.jsonl contains malformed JSONL at line {line_number}"
+        if not isinstance(raw, dict):
+            return (), f"gate_events.jsonl line {line_number} is not an object"
+        events.append(raw)
+    return _wake_event_signature(events), ""
+
+
+def _wake_event_signature(events: Any) -> tuple[tuple[Any, ...], ...]:
+    if not isinstance(events, list):
+        return ()
+    rows: list[tuple[Any, ...]] = []
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        captured_targets = event.get("captured_targets", [])
+        if not isinstance(captured_targets, list):
+            captured_targets = []
+        rows.append(
+            (
+                str(event.get("id", "") or "").strip(),
+                str(event.get("event", "") or "unknown").strip(),
+                str(event.get("gate_id", "") or "unknown").strip(),
+                str(event.get("provider", "") or "").strip(),
+                str(event.get("classification", "") or "").strip(),
+                str(event.get("status", "") or "unknown").strip(),
+                str(event.get("target", "") or "").strip(),
+                tuple(sorted(str(target) for target in captured_targets if str(target))),
+            )
+        )
+    return tuple(sorted(rows))
 
 
 def _detonation_receipt_signature(raw: Any) -> Any:
