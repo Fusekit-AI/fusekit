@@ -74,6 +74,7 @@ from fusekit.runner.remote import (
     should_include_app_path,
 )
 from fusekit.runner.run_record import (
+    _human_action_trace,
     _recording_audit_trail_ready,
     _recording_automation_boundary_ready,
     _recording_detonation_ready,
@@ -658,6 +659,47 @@ def test_recording_human_actions_require_exact_visible_controls() -> None:
     ]
 
     assert _recording_human_actions_ready(record) is True
+
+
+def test_human_action_trace_requires_exact_approval_control_guidance() -> None:
+    gates = [
+        {
+            "id": "dns.moonlite.rsvp.approval",
+            "provider": "dns",
+            "classification": "dns-approval",
+            "next_action": "Review the DNS records and continue.",
+            "resume_hint": "FuseKit will apply DNS after approval.",
+            "follow_steps": ["Review the record list."],
+            "success_criteria": [],
+        }
+    ]
+    wake_events = [
+        {
+            "id": "wake-dns",
+            "event": "resume_requested",
+            "gate_id": "dns.moonlite.rsvp.approval",
+            "provider": "dns",
+            "classification": "dns-approval",
+            "created_at": 1.0,
+        }
+    ]
+
+    trace = _human_action_trace(gates, wake_events)
+
+    assert trace["actions"][0]["visible_control"] == "Approve DNS apply"
+    assert trace["actions"][0]["guided"] is False
+    assert trace["unguided"] == [
+        {
+            "gate_id": "dns.moonlite.rsvp.approval",
+            "action": "confirm_gate_finished",
+            "reason": "resume click lacked exact finished/approval guidance",
+        }
+    ]
+    gates[0]["next_action"] = "Click Approve DNS apply after reviewing the DNS changes."
+    trace = _human_action_trace(gates, wake_events)
+
+    assert trace["actions"][0]["guided"] is True
+    assert trace["unguided"] == []
 
 
 def test_recording_human_actions_required_when_gates_or_wakes_exist() -> None:

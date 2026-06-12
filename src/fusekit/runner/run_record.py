@@ -465,10 +465,7 @@ def _human_action_guidance_status(
             return True, ""
         return False, "clipboard capture lacked exact env-named Capture guidance"
     if action == "confirm_gate_finished":
-        if _resume_visible_control(gate) in text or str(gate.get("classification", "")) in {
-            "dns-approval",
-            "setup-approval",
-        }:
+        if _resume_visible_control(gate) in text:
             return True, ""
         return False, "resume click lacked exact finished/approval guidance"
     return False, "unsupported human action"
