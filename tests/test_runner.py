@@ -424,6 +424,24 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     assert any(item["name"] == "audit_log" for item in record["artifacts"])
 
 
+def test_run_record_retains_all_redacted_wake_events(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci")
+    service = GateService.load(tmp_path / "gates.json")
+    for index in range(55):
+        gate_id = f"provider.demo.{index}"
+        service.wait(gate_id, provider="demo", reason="approve provider gate")
+        service.request_resume(gate_id)
+
+    record_path = write_run_record(job, path=tmp_path / "run_record.json")
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+
+    assert record["wake_events"]["total"] == 55
+    assert len(record["wake_events"]["events"]) == 55
+    assert record["wake_events"]["events"][0]["gate_id"] == "provider.demo.0"
+    assert record["wake_events"]["events"][-1]["gate_id"] == "provider.demo.54"
+    assert "secret" not in json.dumps(record["wake_events"]).lower()
+
+
 def test_control_room_payload_includes_run_record(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     write_run_record(job, path=tmp_path / "run_record.json")

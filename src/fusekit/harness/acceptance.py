@@ -487,6 +487,8 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
             failures.append("wake_events.total is missing")
         _require_dict_field(wake_events, "event_counts", failures, prefix="wake_events")
         _require_list_field(wake_events, "events", failures, prefix="wake_events")
+    if provider_gates is not None and wake_events is not None:
+        failures.extend(_run_record_wake_event_failures(provider_gates, wake_events))
     _require_dict_field(raw, "provider_strategies", failures)
     runner_profile = _require_dict_field(raw, "runner_profile", failures)
     if runner_profile is not None:
@@ -549,6 +551,70 @@ def _workspace_detonation_receipt_failures(receipt: dict[str, Any]) -> list[str]
     if not isinstance(receipt.get("updated_at"), int | float):
         failures.append("detonation.workspace_receipt.updated_at is missing")
     return failures
+
+
+def _run_record_wake_event_failures(
+    provider_gates: dict[str, Any],
+    wake_events: dict[str, Any],
+) -> list[str]:
+    failures: list[str] = []
+    records = provider_gates.get("records", [])
+    events = wake_events.get("events", [])
+    counts = wake_events.get("event_counts", {})
+    if (
+        not isinstance(records, list)
+        or not isinstance(events, list)
+        or not isinstance(counts, dict)
+    ):
+        return failures
+    if _safe_int(wake_events.get("total")) != len(events):
+        failures.append("wake_events.total must match wake_events.events")
+    actual_counts: dict[str, int] = {}
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        name = str(event.get("event", "") or "")
+        if name:
+            actual_counts[name] = actual_counts.get(name, 0) + 1
+    for name, expected in actual_counts.items():
+        if _safe_int(counts.get(name)) != expected:
+            failures.append(f"wake_events.event_counts.{name} must match events")
+
+    captured_pairs = _wake_event_pairs(events, "clipboard_captured")
+    resumed_gate_ids = {
+        gate_id for gate_id, _target in _wake_event_pairs(events, "resume_requested")
+    }
+    for gate in records:
+        if not isinstance(gate, dict):
+            continue
+        gate_id = str(gate.get("id", "") or "").strip()
+        if not gate_id:
+            continue
+        for target in _gate_secret_targets(gate):
+            if (gate_id, target) not in captured_pairs:
+                failures.append(
+                    "wake_events missing clipboard_captured for "
+                    f"{gate_id}:{target}"
+                )
+        if str(gate.get("status", "") or "") in {"resume_requested", "resolved"}:
+            if gate_id not in resumed_gate_ids:
+                failures.append(f"wake_events missing resume_requested for {gate_id}")
+    return failures
+
+
+def _wake_event_pairs(events: list[Any], event_name: str) -> set[tuple[str, str]]:
+    pairs: set[tuple[str, str]] = set()
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        if str(event.get("event", "") or "") != event_name:
+            continue
+        gate_id = str(event.get("gate_id", "") or "").strip()
+        if not gate_id:
+            continue
+        target = str(event.get("target", "") or "").strip()
+        pairs.add((gate_id, target))
+    return pairs
 
 
 def _require_dict_field(

@@ -210,7 +210,7 @@ def _wake_event_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "total": len(events),
         "event_counts": counts,
-        "events": events[-50:],
+        "events": events,
     }
 
 

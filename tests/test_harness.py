@@ -3464,6 +3464,74 @@ def test_acceptance_run_record_requires_complete_workspace_detonation_receipt(
     assert "detonation.workspace_receipt.updated_at is missing" in failures
 
 
+def test_acceptance_run_record_requires_evented_gate_wake_proof(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["provider_gates"] = {
+        "total": 1,
+        "statuses": {"resume_requested": 1},
+        "providers": ["cloudflare"],
+        "records": [
+            {
+                "id": "provider.cloudflare.authorization",
+                "provider": "cloudflare",
+                "status": "resume_requested",
+                "target": "CLOUDFLARE_API_TOKEN",
+                "captured_targets": ["CLOUDFLARE_API_TOKEN"],
+            }
+        ],
+    }
+    record["wake_events"] = {
+        "total": 1,
+        "event_counts": {"resume_requested": 1},
+        "events": [
+            {
+                "schema_version": "fusekit.gate-wake.v1",
+                "event": "resume_requested",
+                "gate_id": "provider.cloudflare.authorization",
+                "provider": "cloudflare",
+                "status": "resume_requested",
+                "created_at": 2.0,
+            }
+        ],
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert (
+        "wake_events missing clipboard_captured for "
+        "provider.cloudflare.authorization:CLOUDFLARE_API_TOKEN"
+    ) in failures
+
+    record["wake_events"] = {
+        "total": 2,
+        "event_counts": {"clipboard_captured": 1, "resume_requested": 1},
+        "events": [
+            {
+                "schema_version": "fusekit.gate-wake.v1",
+                "event": "clipboard_captured",
+                "gate_id": "provider.cloudflare.authorization",
+                "provider": "cloudflare",
+                "target": "CLOUDFLARE_API_TOKEN",
+                "captured_targets": ["CLOUDFLARE_API_TOKEN"],
+                "created_at": 1.0,
+            },
+            {
+                "schema_version": "fusekit.gate-wake.v1",
+                "event": "resume_requested",
+                "gate_id": "provider.cloudflare.authorization",
+                "provider": "cloudflare",
+                "status": "resume_requested",
+                "created_at": 2.0,
+            },
+        ],
+    }
+
+    assert _run_record_shape_failures(record) == []
+
+
 def test_acceptance_cli_checks_vault_without_leaking_secret(tmp_path, capsys) -> None:
     app = tmp_path / "app"
     app.mkdir()
