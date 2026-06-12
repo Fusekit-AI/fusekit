@@ -1398,6 +1398,14 @@ def _audit_trail_shape_failures(
             value = str(entry.get(text_field, "") or "")
             if _contains_secretish_audit_text(value):
                 failures.append(f"{label}.{text_field} contains credential-looking text")
+        source = str(entry.get("source", "") or "").strip()
+        if source == "audit.jsonl" and _safe_int(entry.get("audit_log_index")) <= 0:
+            failures.append(f"{label}.audit_log_index is missing")
+        if (
+            source == "setup_receipt.json"
+            and _safe_int(entry.get("receipt_action_index")) <= 0
+        ):
+            failures.append(f"{label}.receipt_action_index is missing")
         expected_wake_name = _audit_entry_expected_wake_event(entry)
         if expected_wake_name:
             wake_event_id = str(entry.get("wake_event_id", "") or "").strip()

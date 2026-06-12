@@ -677,6 +677,7 @@ def _audit_trail_from_gate_events(fusekit_dir: Path) -> dict[str, object]:
             "provider": "resend",
             "status": "passed",
             "source": "setup_receipt.json",
+            "receipt_action_index": 1,
             "summary": "FuseKit recorded provider action resend.domain.",
         }
     )
@@ -688,6 +689,7 @@ def _audit_trail_from_gate_events(fusekit_dir: Path) -> dict[str, object]:
                 "provider": "dns",
                 "status": "passed",
                 "source": "setup_receipt.json",
+                "receipt_action_index": 2,
                 "summary": "FuseKit recorded a DNS write or DNS-record apply action.",
             }
         )
@@ -5049,8 +5051,8 @@ def test_acceptance_run_record_requires_redacted_audit_trail(tmp_path) -> None:
     record["verification"] = {"checks": [{"provider": "resend", "status": "passed"}]}
     record["audit_trail"] = {
         "schema_version": "fusekit.audit-trail.v1",
-        "entry_count": 2,
-        "counts": {"credential_capture": 1, "provider_action": 1},
+        "entry_count": 3,
+        "counts": {"credential_capture": 1, "provider_action": 2},
         "entries": [
             {
                 "category": "credential_capture",
@@ -5069,6 +5071,16 @@ def test_acceptance_run_record_requires_redacted_audit_trail(tmp_path) -> None:
                 "source": "setup_receipt.json",
                 "summary": "FuseKit recorded provider action resend.domain.",
             },
+            {
+                "category": "provider_action",
+                "action": "provider.retry",
+                "provider": "",
+                "status": "recorded",
+                "source": "audit.jsonl",
+                "summary": (
+                    "FuseKit recorded audit event provider.retry with secret values redacted."
+                ),
+            },
         ],
         "statement": "Audit happened.",
     }
@@ -5077,6 +5089,8 @@ def test_acceptance_run_record_requires_redacted_audit_trail(tmp_path) -> None:
 
     assert "audit_trail.entries[0].summary contains credential-looking text" in failures
     assert "audit_trail.entries[0].wake_event_id is missing" in failures
+    assert "audit_trail.entries[1].receipt_action_index is missing" in failures
+    assert "audit_trail.entries[2].audit_log_index is missing" in failures
     assert "audit_trail must include dns_write" in failures
     assert "audit_trail must include human_approval" in failures
     assert "audit_trail must include detonation" in failures
@@ -5334,6 +5348,7 @@ def test_acceptance_run_record_requires_evented_gate_wake_proof(tmp_path) -> Non
                 "provider": "cloudflare",
                 "status": "passed",
                 "source": "setup_receipt.json",
+                "receipt_action_index": 1,
                 "summary": "FuseKit recorded provider action cloudflare.dns.",
             },
             {
