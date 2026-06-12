@@ -30,6 +30,7 @@ from fusekit.runner.control_room import (
     control_room_payload as static_control_room_payload,
 )
 from fusekit.runner.control_room import render_control_room
+from fusekit.runner.control_room.events import SCRIPT
 from fusekit.runner.control_room.server import (
     CONTROL_ROOM_ROUTE_SURFACE,
     _capture_button_labels,
@@ -821,6 +822,20 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
     assert "OCI VM detonated" in html
     assert 'data-detonation-resource="compute_instance"' in html
     assert "Root tenancy or root compartment scope was preserved by design." in html
+
+
+def test_live_control_room_refreshes_all_run_record_proof_panels() -> None:
+    for renderer, selector in (
+        ("renderDurableState(job)", "data-durable-state-checks"),
+        ("renderHumanActions(job)", "data-human-action-checks"),
+        ("renderAutomationBoundary(job)", "data-automation-boundary-checks"),
+        ("renderRunRecordVerifiers(job)", "data-verifier-checks"),
+        ("renderAuditTrail(job)", "data-audit-trail-checks"),
+        ("renderRecordingContract(job)", "data-recording-contract-checks"),
+        ("renderDetonationReceipt(job)", "data-detonation-receipt-checks"),
+    ):
+        assert renderer in SCRIPT
+        assert selector in SCRIPT
 
 
 def test_remote_bootstrap_checkpoint_keeps_recovery_in_launcher(tmp_path) -> None:

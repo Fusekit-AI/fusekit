@@ -1518,6 +1518,287 @@ function renderDurableState(job) {
     .join("");
 }
 
+function renderHumanActions(job) {
+  const root = document.querySelector("[data-human-action-checks]");
+  if (!root) return;
+  const humanActions = job.run_record?.human_actions || {};
+  const actions = Array.isArray(humanActions.actions) ? humanActions.actions : [];
+  const unguided = Array.isArray(humanActions.unguided) ? humanActions.unguided : [];
+  const summaryNode = document.querySelector("[data-human-action-overall]");
+  if (summaryNode) {
+    summaryNode.textContent = actions.length && !unguided.length
+      ? "all actions guided"
+      : "waiting for guided actions";
+  }
+  if (!actions.length) {
+    root.innerHTML = pendingRunRecordCard(
+      "Human action trace",
+      "Waiting for guided provider opens, captures, or approvals.",
+      "human actions",
+    );
+    return;
+  }
+  root.innerHTML = actions.slice(0, 6).map((action) => {
+    const guided = action?.guided === true;
+    const status = guided ? "passed" : "failed";
+    const snow = guided ? "passed" : "failed";
+    const title = String(action?.visible_control || action?.action || "human action");
+    const provider = String(action?.provider || "provider");
+    const gateId = String(action?.gate_id || "gate");
+    const detail = guided
+      ? "Matched to the current control-room gate instructions."
+      : String(action?.guidance_gap || "Missing guided control-room proof.");
+    return trustCard(status, snow, title, detail, provider, {
+      "data-human-action": gateId,
+    });
+  }).join("");
+}
+
+function renderAutomationBoundary(job) {
+  const root = document.querySelector("[data-automation-boundary-checks]");
+  if (!root) return;
+  const boundary = job.run_record?.automation_boundary || {};
+  const routes = Array.isArray(boundary.routes) ? boundary.routes : [];
+  const counts = boundary.counts && typeof boundary.counts === "object" ? boundary.counts : {};
+  const summaryNode = document.querySelector("[data-automation-boundary-overall]");
+  if (summaryNode) {
+    summaryNode.textContent = boundary.status === "ready" && boundary.no_user_machine_state === true
+      ? "VNC limited to gates"
+      : "automation boundary pending";
+  }
+  if (!routes.length) {
+    root.innerHTML = pendingRunRecordCard(
+      "Automation boundary",
+      "Waiting for provider route proof before FuseKit can show what humans touch.",
+      "automation boundary",
+    );
+    return;
+  }
+  root.innerHTML = routes.slice(0, 6).map((route) => {
+    const owner = String(route?.owner || "");
+    const passed = owner === "fusekit" && route?.implemented === true;
+    const gate = owner === "human_gate";
+    const status = passed || gate ? "passed" : "pending";
+    const provider = String(route?.provider || "provider");
+    const recipe = String(route?.recipe || "setup");
+    const routeKind = String(route?.route || "route").replaceAll("_", " ");
+    const detail = passed
+      ? "FuseKit runs this through deterministic provider automation after authorization."
+      : gate
+        ? "Human interaction is limited to provider-owned login, consent, or copy-once prompts."
+        : "Waiting for a deterministic route or guided human-gate fallback.";
+    return trustCard(
+      status,
+      status === "passed" ? "passed" : "checking",
+      `${provider} · ${recipe}`,
+      detail,
+      routeKind,
+      {"data-automation-boundary-route": provider},
+    );
+  }).join("");
+  const paragraph = root.closest(".run-state-panel")?.querySelector("p.muted");
+  if (paragraph) {
+    const statement = String(
+      boundary.statement ||
+      "FuseKit is collecting route proof before declaring the worker disposable.",
+    );
+    paragraph.textContent = (
+      `${statement} FuseKit-owned routes: ${counts.fusekit_owned || 0}; ` +
+      `human-gate routes: ${counts.human_gate || 0}.`
+    );
+  }
+}
+
+function renderRunRecordVerifiers(job) {
+  const root = document.querySelector("[data-verifier-checks]");
+  if (!root) return;
+  const verifiers = job.run_record?.verifiers || {};
+  const checks = Array.isArray(verifiers.checks) ? verifiers.checks : [];
+  const summaryNode = document.querySelector("[data-verifier-overall]");
+  if (summaryNode) {
+    summaryNode.textContent = verifiers.all_passed_or_pending_safe === true
+      ? "all verifiers green or pending-safe"
+      : "verifiers still running";
+  }
+  if (!checks.length) {
+    root.innerHTML = pendingRunRecordCard(
+      "Live verifier ledger",
+      "Waiting for provider verification checks to be recorded.",
+      "verifiers",
+    );
+    return;
+  }
+  root.innerHTML = checks.slice(0, 6).map((check) => {
+    const rawStatus = String(check?.status || "pending");
+    const passed = ["passed", "pending_safe", "skipped"].includes(rawStatus);
+    const status = passed ? "passed" : "pending";
+    const provider = String(check?.provider || "provider");
+    const checkName = String(check?.check || "provider_status");
+    const detail = rawStatus === "passed"
+      ? "Verifier passed against the live provider state."
+      : rawStatus === "pending_safe"
+        ? "Verifier is pending-safe; FuseKit can keep retrying without user work."
+        : rawStatus === "skipped"
+          ? "Optional verifier was skipped."
+          : "Verifier is still waiting for live evidence.";
+    return trustCard(
+      status,
+      passed ? "passed" : "checking",
+      `${provider} · ${checkName}`,
+      detail,
+      rawStatus.replaceAll("_", " "),
+      {"data-verifier-provider": provider},
+    );
+  }).join("");
+}
+
+function renderAuditTrail(job) {
+  const root = document.querySelector("[data-audit-trail-checks]");
+  if (!root) return;
+  const auditTrail = job.run_record?.audit_trail || {};
+  const entries = Array.isArray(auditTrail.entries) ? auditTrail.entries : [];
+  const summaryNode = document.querySelector("[data-audit-trail-overall]");
+  if (summaryNode) {
+    summaryNode.textContent = `${Number(auditTrail.entry_count || 0)} redacted entries`;
+  }
+  if (!entries.length) {
+    root.innerHTML = pendingRunRecordCard(
+      "Audit trail",
+      "Waiting for credential, provider, approval, or detonation evidence.",
+      "audit trail",
+    );
+    return;
+  }
+  root.innerHTML = entries.slice(0, 6).map((entry) => {
+    const category = String(entry?.category || "audit");
+    const provider = String(entry?.provider || "fusekit");
+    const action = String(entry?.action || "action");
+    const status = String(entry?.status || "recorded");
+    const summary = String(entry?.summary || "FuseKit recorded a redacted action.");
+    return trustCard(
+      "passed",
+      "passed",
+      category.replaceAll("_", " "),
+      summary,
+      `${provider} · ${action} · ${status}`,
+      {"data-audit-category": category},
+    );
+  }).join("");
+}
+
+function renderRecordingContract(job) {
+  const root = document.querySelector("[data-recording-contract-checks]");
+  if (!root) return;
+  const contract = job.run_record?.recording_contract || {};
+  const checks = contract.checks && typeof contract.checks === "object" ? contract.checks : {};
+  const blockers = Array.isArray(contract.blockers) ? contract.blockers : [];
+  const summaryNode = document.querySelector("[data-recording-contract-overall]");
+  if (summaryNode) {
+    summaryNode.textContent = contract.recording_ready === true
+      ? "recordable with no trace"
+      : `${blockers.length} proof items pending`;
+  }
+  const names = Object.keys(checks);
+  if (!names.length) {
+    root.innerHTML = pendingRunRecordCard(
+      "Recording contract",
+      "Waiting for the central Run Record to prove demo readiness.",
+      "recording contract",
+    );
+    return;
+  }
+  root.innerHTML = names.map((name) => {
+    const ready = checks[name] === true;
+    const status = ready ? "passed" : "pending";
+    const detail = ready
+      ? "This proof input is present and agrees with the Run Record."
+      : "Waiting for this proof before the public demo can be recorded.";
+    return trustCard(
+      status,
+      ready ? "passed" : "checking",
+      name.replaceAll("_", " "),
+      detail,
+      "recording readiness",
+      {"data-recording-contract-check": name},
+    );
+  }).join("");
+}
+
+function renderDetonationReceipt(job) {
+  const root = document.querySelector("[data-detonation-receipt-checks]");
+  if (!root) return;
+  const receipt = job.run_record?.detonation?.workspace_receipt || {};
+  const summary = receipt.resource_summary && typeof receipt.resource_summary === "object"
+    ? receipt.resource_summary
+    : {};
+  const missing = Array.isArray(summary.missing) ? summary.missing : [];
+  const summaryNode = document.querySelector("[data-detonation-receipt-overall]");
+  if (summaryNode) {
+    summaryNode.textContent = receipt.status === "complete" && !missing.length
+      ? "OCI VM detonated"
+      : `${missing.length} cleanup classes pending`;
+  }
+  const compartmentScope = String(summary.compartment_scope || "");
+  const compartmentReady = ["detonated", "preserved"].includes(compartmentScope);
+  root.innerHTML = [
+    detonationResourceCard("remote_worker", "Remote worker state", summary.remote_worker === true),
+    detonationResourceCard(
+      "compute_instance",
+      "OCI VM instance",
+      summary.compute_instance === true,
+    ),
+    detonationResourceCard(
+      "network_resources",
+      "FuseKit network resources",
+      summary.network_resources_deleted === true,
+    ),
+    detonationResourceCard(
+      "compartment_scope",
+      "Compartment scope",
+      compartmentReady,
+      summary.compartment_deleted === true
+        ? "Throwaway compartment deleted."
+        : "Root tenancy or root compartment scope was preserved by design.",
+    ),
+  ].join("");
+}
+
+function pendingRunRecordCard(title, detail, source) {
+  return trustCard("pending", "checking", title, detail, source);
+}
+
+function detonationResourceCard(name, title, ready, detail = "") {
+  return trustCard(
+    ready ? "passed" : "pending",
+    ready ? "passed" : "checking",
+    title,
+    detail || (
+      ready
+        ? "This cleanup class is represented in the detonation receipt."
+        : "Waiting for this cleanup class before no-trace proof is complete."
+    ),
+    "no-trace cleanup",
+    {"data-detonation-resource": name},
+  );
+}
+
+function trustCard(status, snow, title, detail, meta, attrs = {}) {
+  const attrText = Object.entries(attrs)
+    .map(([key, value]) => ` ${key}="${escapeAttr(value)}"`)
+    .join("");
+  return `
+    <article class="trust-card ${classToken(status)}"${attrText}>
+      <div class="trust-snow state-${classToken(snow)}" aria-hidden="true"></div>
+      <div>
+        <span>${escapeHtml(label(status))}</span>
+        <strong>${escapeHtml(title)}</strong>
+        <p>${escapeHtml(detail)}</p>
+        <em>${escapeHtml(meta)}</em>
+      </div>
+    </article>
+  `;
+}
+
 function render(job) {
   const prog = progress(job);
   const counts = statusCounts(job.steps);
@@ -1563,6 +1844,12 @@ function render(job) {
   renderCheckpoints(job);
   renderRunState(job);
   renderDurableState(job);
+  renderHumanActions(job);
+  renderAutomationBoundary(job);
+  renderRunRecordVerifiers(job);
+  renderAuditTrail(job);
+  renderRecordingContract(job);
+  renderDetonationReceipt(job);
   renderAcceptance(job);
   renderTrust(job);
   renderProviderStrategies(job);
