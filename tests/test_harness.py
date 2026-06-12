@@ -4722,6 +4722,28 @@ def test_acceptance_run_record_requires_non_secret_evidence_inventory(tmp_path) 
     assert "evidence.statement is missing non-secret inventory guidance" in failures
 
 
+def test_acceptance_run_record_requires_vault_count_to_match_records(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["vault"] = {
+        "record_count": 2,
+        "records": [
+            {
+                "id": "provider.resend.token",
+                "kind": "provider_token",
+                "provider": "resend",
+                "label": "Resend API key",
+            }
+        ],
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert "vault.record_count must match vault.records" in failures
+
+
 def test_acceptance_run_record_requires_guided_human_action_trace(tmp_path) -> None:
     fusekit_dir = tmp_path / ".fusekit"
     fusekit_dir.mkdir()
@@ -5084,7 +5106,17 @@ def test_acceptance_run_record_requires_redacted_audit_trail(tmp_path) -> None:
         ],
     }
     record["approvals"] = [{"id": "dns.moonlite.rsvp.approval", "provider": "dns"}]
-    record["vault"] = {"record_count": 1, "records": []}
+    record["vault"] = {
+        "record_count": 1,
+        "records": [
+            {
+                "id": "provider.resend.token",
+                "kind": "provider_token",
+                "provider": "resend",
+                "label": "Resend API key",
+            }
+        ],
+    }
     record["detonation"]["workspace_detonated"] = True
     record["verification"] = {"checks": [{"provider": "resend", "status": "passed"}]}
     record["audit_trail"] = {

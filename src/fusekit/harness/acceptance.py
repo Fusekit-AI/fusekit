@@ -559,10 +559,14 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
         failures.extend(_verifier_summary_shape_failures(verifiers))
     vault = _require_dict_field(raw, "vault", failures)
     if vault is not None:
-        if not isinstance(vault.get("record_count"), int):
+        record_count = vault.get("record_count")
+        if not isinstance(record_count, int) or isinstance(record_count, bool):
             failures.append("vault.record_count is missing")
         records = _require_list_field(vault, "records", failures, prefix="vault")
         if records is not None:
+            if isinstance(record_count, int) and not isinstance(record_count, bool):
+                if record_count != len(records):
+                    failures.append("vault.record_count must match vault.records")
             for index, record in enumerate(records):
                 if isinstance(record, dict) and "value" in record:
                     failures.append(f"vault.records[{index}] exposes a raw value")
