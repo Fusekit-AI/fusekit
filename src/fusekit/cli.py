@@ -2071,15 +2071,14 @@ def _save_launch_job(
     run_record_path = args.job_state.with_name("run_record.json")
     if job.artifacts.get("run_record") != str(run_record_path):
         job.add_artifact("run_record", run_record_path)
-    write_run_record(job, path=run_record_path, vault_index=vault_index)
+    control_path = args.job_state.parent / "control-room.html"
     if getattr(args, "control_room", False):
-        control_path = args.job_state.parent / "control-room.html"
         if job.artifacts.get("control_room") != str(control_path):
             job.add_artifact("control_room", control_path)
-        job.save(args.job_state)
-        write_control_room(job, control_path)
-        return
     job.save(args.job_state)
+    write_run_record(job, path=run_record_path, vault_index=vault_index)
+    if getattr(args, "control_room", False):
+        write_control_room(job, control_path)
 
 
 def _run_state_path(args: argparse.Namespace) -> Path:

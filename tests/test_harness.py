@@ -106,6 +106,65 @@ def _provider_playbook() -> dict[str, object]:
     }
 
 
+def _durable_state() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.durable-state.v1",
+        "resume_ready": True,
+        "missing": [],
+        "sources": [
+            {
+                "id": "encrypted_vault",
+                "path": "fusekit.vault.json",
+                "role": "encrypted capability vault",
+                "secret_class": "encrypted",
+                "exists": True,
+            },
+            {
+                "id": "job_state",
+                "path": "job.json",
+                "role": "runner job state",
+                "secret_class": "non-secret",
+                "exists": True,
+            },
+            {
+                "id": "run_state",
+                "path": "run_state.json",
+                "role": "launch state contract",
+                "secret_class": "non-secret",
+                "exists": True,
+            },
+            {
+                "id": "checkpoints",
+                "path": "checkpoints.json",
+                "role": "resume checkpoints",
+                "secret_class": "non-secret",
+                "exists": True,
+            },
+            {
+                "id": "gates",
+                "path": "gates.json",
+                "role": "provider gate state",
+                "secret_class": "non-secret",
+                "exists": True,
+            },
+            {
+                "id": "provider_strategies",
+                "path": "provider_strategies.json",
+                "role": "provider route decisions",
+                "secret_class": "non-secret",
+                "exists": True,
+            },
+        ],
+        "volatile_worker_surfaces": ["worker", "visual", "openclaw-state"],
+        "detonation_preserves": ["encrypted_vault", "run_record"],
+        "workspace_detonated": True,
+        "statement": (
+            "FuseKit can replace or detonate the disposable OCI worker without losing "
+            "the run because encrypted/redacted state is the source of truth."
+        ),
+    }
+
+
 def _resend_domain_receipt_details(
     *,
     dns_records: list[dict[str, str]] | None = None,
@@ -404,6 +463,7 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
                     "providers": [],
                     "records": [],
                 },
+                "durable_state": _durable_state(),
                 "provider_playbook": _provider_playbook(),
                 "runner_profile": {
                     "status": "ready",

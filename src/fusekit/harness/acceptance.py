@@ -473,6 +473,9 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
         _require_list_field(provider_gates, "records", failures, prefix="provider_gates")
         _require_dict_field(provider_gates, "statuses", failures, prefix="provider_gates")
         _require_list_field(provider_gates, "providers", failures, prefix="provider_gates")
+    durable_state = _require_dict_field(raw, "durable_state", failures)
+    if durable_state is not None:
+        failures.extend(_durable_state_shape_failures(durable_state))
     wake_events = _require_dict_field(raw, "wake_events", failures)
     if wake_events is not None:
         if not isinstance(wake_events.get("total"), int):
@@ -3678,6 +3681,62 @@ def _runner_profile_contract_failures(profile: dict[str, Any]) -> list[str]:
             failures.append(
                 "runner profile required_health_checks missing " + ", ".join(missing)
             )
+    return failures
+
+
+def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    if str(durable_state.get("schema_version", "")).strip() != "fusekit.durable-state.v1":
+        failures.append("durable_state.schema_version is unsupported")
+    if durable_state.get("resume_ready") is not True:
+        missing = durable_state.get("missing", [])
+        detail = ", ".join(str(item) for item in missing) if isinstance(missing, list) else ""
+        failures.append(f"durable_state.resume_ready is not true{': ' + detail if detail else ''}")
+    sources = durable_state.get("sources", [])
+    if not isinstance(sources, list) or not sources:
+        failures.append("durable_state.sources is missing")
+    else:
+        source_ids: set[str] = set()
+        for index, source in enumerate(sources):
+            label = f"durable_state.sources[{index}]"
+            if not isinstance(source, dict):
+                failures.append(f"{label} is not an object")
+                continue
+            source_id = str(source.get("id", "") or "").strip()
+            if not source_id:
+                failures.append(f"{label}.id is missing")
+            else:
+                source_ids.add(source_id)
+            if source.get("exists") is not True:
+                failures.append(f"{label}.exists must be true")
+            if str(source.get("path", "") or "").startswith("/"):
+                failures.append(f"{label}.path must be relative")
+            if str(source.get("secret_class", "") or "") not in {"encrypted", "non-secret"}:
+                failures.append(f"{label}.secret_class is unsupported")
+        required = {
+            "encrypted_vault",
+            "job_state",
+            "run_state",
+            "checkpoints",
+            "gates",
+            "provider_strategies",
+        }
+        missing_ids = sorted(required - source_ids)
+        if missing_ids:
+            failures.append("durable_state.sources missing " + ", ".join(missing_ids))
+    volatile = durable_state.get("volatile_worker_surfaces", [])
+    if not isinstance(volatile, list) or not {"worker", "visual", "openclaw-state"}.issubset(
+        {str(item) for item in volatile}
+    ):
+        failures.append("durable_state.volatile_worker_surfaces is incomplete")
+    preserves = durable_state.get("detonation_preserves", [])
+    if not isinstance(preserves, list) or not {"encrypted_vault", "run_record"}.issubset(
+        {str(item) for item in preserves}
+    ):
+        failures.append("durable_state.detonation_preserves is incomplete")
+    statement = str(durable_state.get("statement", "") or "")
+    if "disposable OCI worker" not in statement or "encrypted/redacted state" not in statement:
+        failures.append("durable_state.statement is missing durable-worker guidance")
     return failures
 
 

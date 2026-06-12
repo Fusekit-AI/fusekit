@@ -12,6 +12,35 @@ from fusekit.runner.job import JobState
 from fusekit.runner.run_state import LaunchRunState
 
 RUN_RECORD_SCHEMA_VERSION = "fusekit.run-record.v1"
+DURABLE_STATE_SCHEMA_VERSION = "fusekit.durable-state.v1"
+DURABLE_STATE_SOURCES = (
+    ("encrypted_vault", "fusekit.vault.json", "encrypted capability vault", "encrypted"),
+    ("job_state", "job.json", "runner job state", "non-secret"),
+    ("run_state", "run_state.json", "launch state contract", "non-secret"),
+    ("checkpoints", "checkpoints.json", "resume checkpoints", "non-secret"),
+    ("gates", "gates.json", "provider gate state", "non-secret"),
+    ("provider_strategies", "provider_strategies.json", "provider route decisions", "non-secret"),
+)
+VOLATILE_WORKER_SURFACES = (
+    "worker",
+    "tmp",
+    "browser",
+    "browser-profile",
+    "chrome-profile",
+    "playwright-profile",
+    "provider-auth",
+    "auth-state",
+    "openclaw",
+    "openclaw-state",
+    "visual",
+    "passphrase",
+    "app.tar.gz",
+    "control-room.log",
+    "openclaw-gateway.log",
+    "x11vnc.log",
+    "websockify.log",
+    "chrome.log",
+)
 
 
 def build_run_record(
@@ -31,6 +60,7 @@ def build_run_record(
     wake_events = _read_gate_wake_events(root / "gate_events.jsonl")
     run_state = _read_run_state(root / "run_state.json")
     artifacts = _artifact_records(job, root)
+    durable_state = _durable_state_summary(root, run_state, artifacts)
     return {
         "schema_version": RUN_RECORD_SCHEMA_VERSION,
         "id": job.id,
@@ -43,6 +73,7 @@ def build_run_record(
         "steps": [step.to_dict() for step in job.steps],
         "checkpoints": [checkpoint.to_dict() for checkpoint in job.checkpoints],
         "provider_gates": _gate_summary(gates),
+        "durable_state": durable_state,
         "runner_profile": _runner_profile_summary(runner_readiness),
         "provider_playbook": _provider_playbook_summary(provider_strategies),
         "wake_events": _wake_event_summary(wake_events),
@@ -227,6 +258,59 @@ def _artifact_records(job: JobState, root: Path) -> list[dict[str, Any]]:
         if path.exists():
             records.append({"name": name, "path": str(path), "exists": True})
     return records
+
+
+def _durable_state_summary(
+    root: Path,
+    run_state: dict[str, Any],
+    artifacts: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Summarize whether a run can survive replacing the disposable worker."""
+
+    artifact_names = {
+        str(record.get("name", "")): bool(record.get("exists"))
+        for record in artifacts
+        if isinstance(record, dict)
+    }
+    sources: list[dict[str, Any]] = []
+    for source_id, filename, role, secret_class in DURABLE_STATE_SOURCES:
+        path = root / filename
+        exists = path.exists() or artifact_names.get(source_id, False)
+        sources.append(
+            {
+                "id": source_id,
+                "path": filename,
+                "role": role,
+                "secret_class": secret_class,
+                "exists": exists,
+            }
+        )
+    missing = [source["id"] for source in sources if not source["exists"]]
+    return {
+        "schema_version": DURABLE_STATE_SCHEMA_VERSION,
+        "resume_ready": not missing,
+        "missing": missing,
+        "sources": sources,
+        "volatile_worker_surfaces": list(VOLATILE_WORKER_SURFACES),
+        "detonation_preserves": [
+            "encrypted_vault",
+            "job_state",
+            "run_state",
+            "checkpoints",
+            "gates",
+            "gate_events",
+            "provider_strategies",
+            "verification_report",
+            "rollback_plan",
+            "run_record",
+        ],
+        "workspace_detonated": run_state.get("workspace_detonated") is True,
+        "statement": (
+            "FuseKit can replace or detonate the disposable OCI worker without losing "
+            "the run when resume_ready is true; plaintext VM/browser/auth scratch is "
+            "volatile and encrypted/redacted state is the source of truth."
+        ),
+    }
 
 
 def _runner_profile_summary(runner_readiness: dict[str, Any]) -> dict[str, Any]:

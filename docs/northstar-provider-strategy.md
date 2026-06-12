@@ -54,6 +54,10 @@ The contract is:
   generated provider value, DNS proposal/apply, verification result, rollback
   action, and detonation step is recorded as redacted evidence for resume and
   acceptance.
+- Disposable workers, durable state: the Run Record must prove that encrypted
+  vault state, job state, checkpoints, gates, and provider route decisions
+  survive outside the OCI worker before the worker can be treated as safely
+  replaceable or detonated.
 - Policy boundaries by default: provider secrets stay in the encrypted vault or
   provider-native secret stores, state-changing browser actions require
   control-room CSRF/action-token proof, provider navigation stays in the VM

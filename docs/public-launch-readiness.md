@@ -88,7 +88,11 @@ redacted `control_room.gate_resume_requested` audit events. Detonation proof mus
 cover worker/temp state plus browser profile,
 visual-session scratch, OpenClaw/auth state, passphrase files, uploaded app archives,
 and FuseKit-controlled control-room/gateway logs; only encrypted or redacted proof
-artifacts may survive.
+artifacts may survive. The central Run Record must also include
+`durable_state` proof showing that the encrypted vault, job state, run state,
+checkpoints, gates, and provider route decisions all survived outside the
+disposable worker, so the OCI VM can be replaced or detonated without losing the
+run.
 
 ## Acceptance Path
 

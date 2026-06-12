@@ -35,6 +35,7 @@ from fusekit.cli import (
     _run_handoff,
     _run_manifest_provider_pack_setup,
     _runtime_env_secrets,
+    _save_launch_job,
     _sleep_for_gate,
     _start_openclaw_auth_terminal,
     _ui_navigator_from_vault,
@@ -2930,6 +2931,61 @@ def test_setup_runs_one_command_rehearsal_and_detonates(tmp_path) -> None:
     assert run_state["app_repo_known"] is True
     assert run_state["runner_selected"] is True
     assert run_state["vault_created"] is True
+
+
+def test_save_launch_job_writes_durable_state_after_job_state_exists(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    args = argparse.Namespace(
+        job_state=fusekit_dir / "job.json",
+        control_room=False,
+    )
+    job = JobState.create("fk-test", tmp_path, "oci")
+    (fusekit_dir / "fusekit.vault.json").write_text("encrypted", encoding="utf-8")
+    (fusekit_dir / "run_state.json").write_text(
+        json.dumps({"vault_created": True, "workspace_detonated": False}),
+        encoding="utf-8",
+    )
+    (fusekit_dir / "gates.json").write_text(json.dumps({"gates": []}), encoding="utf-8")
+    (fusekit_dir / "provider_strategies.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.provider-strategies.v1",
+                "playbook": {
+                    "schema_version": "fusekit.provider-playbook.v1",
+                    "steps": [
+                        {
+                            "id": "resend.capture_key",
+                            "instruction": (
+                                "Capture RESEND_API_KEY from VM clipboard."
+                            ),
+                        }
+                    ],
+                    "safety_notes": [
+                        "Use the launcher and shared VM browser for provider gates.",
+                        (
+                            "Do not create Resend domains or audiences manually; "
+                            "FuseKit owns those API setup steps."
+                        ),
+                        (
+                            "Do not paste provider secrets into the host computer; "
+                            "Capture reads the VM clipboard."
+                        ),
+                    ],
+                },
+                "providers": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    _save_launch_job(args, job)
+
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    assert (fusekit_dir / "job.json").exists()
+    assert (fusekit_dir / "checkpoints.json").exists()
+    assert record["durable_state"]["resume_ready"] is True
+    assert record["durable_state"]["missing"] == []
 
 
 def test_local_launch_control_room_has_truth_artifacts(tmp_path) -> None:

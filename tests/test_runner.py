@@ -242,6 +242,7 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     job = JobState.create("fk-test", tmp_path, "oci")
     job.mark("setup.execute", "waiting", "Cloudflare token gate is visible")
     job.add_artifact("audit_log", tmp_path / "audit.jsonl")
+    (tmp_path / "fusekit.vault.json").write_text("encrypted", encoding="utf-8")
     update_run_state(
         tmp_path / "run_state.json",
         app_repo_known=True,
@@ -357,6 +358,7 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
         ),
         encoding="utf-8",
     )
+    job.save(tmp_path / "job.json")
 
     record_path = write_run_record(
         job,
@@ -383,6 +385,20 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
         "oci-visual-browser-x86_64"
     )
     assert record["runner_profile"]["observed"]["memory_mib"] == 24576
+    assert record["durable_state"]["schema_version"] == "fusekit.durable-state.v1"
+    assert record["durable_state"]["resume_ready"] is True
+    assert record["durable_state"]["missing"] == []
+    assert {
+        item["id"] for item in record["durable_state"]["sources"] if item["exists"]
+    } >= {
+        "encrypted_vault",
+        "job_state",
+        "run_state",
+        "checkpoints",
+        "gates",
+        "provider_strategies",
+    }
+    assert "visual" in record["durable_state"]["volatile_worker_surfaces"]
     assert record["provider_playbook"]["schema_version"] == "fusekit.provider-playbook.v1"
     assert record["provider_playbook"]["step_count"] == 1
     assert "Capture CLOUDFLARE_API_TOKEN" in record["provider_playbook"]["steps"][0][

@@ -192,6 +192,11 @@ successful launch is not allowed to finish green if any OCI or remote-worker
 cleanup step reports a `failed.*` deletion key; the detonation checkpoint turns
 red so the user knows the clean-room VM was not fully destroyed.
 
+Every live Run Record also carries `fusekit.durable-state.v1` evidence. That
+evidence names the encrypted/redacted sources required to resume after replacing
+the worker, and it names the VM/browser/auth/log surfaces that are intentionally
+volatile detonation targets.
+
 Full OCI tenancy/account deletion is not a default detonation target. It should be a separate destructive workflow with explicit user approval.
 
 ## CLI Surface
