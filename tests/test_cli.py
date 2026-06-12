@@ -237,6 +237,47 @@ def test_workspace_detonation_receipt_fails_closed_and_redacts(tmp_path) -> None
     assert "secret-password" not in json.dumps(receipt)
 
 
+def test_workspace_detonation_requires_reported_cleanup_scope(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    job_state = app / ".fusekit" / "job.json"
+    args = argparse.Namespace(job_state=job_state)
+    job = JobState.create("fk-test", app, "oci")
+
+    complete = _record_workspace_detonation(
+        args,
+        job,
+        {},
+        reason="test cleanup",
+        success_detail="workspace detonated",
+        failure_detail="workspace detonation incomplete",
+    )
+
+    receipt = json.loads(
+        (app / ".fusekit" / "workspace_detonation.json").read_text(encoding="utf-8")
+    )
+    assert complete is False
+    assert _workspace_detonation_complete({}) is False
+    assert receipt["status"] == "incomplete"
+    assert receipt["deleted"] == []
+    assert receipt["resource_summary"]["remote_worker"] is False
+    assert receipt["resource_summary"]["compute_instance"] is False
+    assert receipt["resource_summary"]["network_resources_deleted"] is False
+    assert receipt["resource_summary"]["network_resources_missing"] == [
+        "internet_gateway",
+        "network_security_group",
+        "route_table",
+        "security_list",
+        "subnet",
+        "vcn",
+    ]
+    assert receipt["resource_summary"]["missing"] == [
+        "remote_worker",
+        "compute_instance",
+        "network_resources",
+    ]
+
+
 def test_workspace_detonation_requires_every_network_resource(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()

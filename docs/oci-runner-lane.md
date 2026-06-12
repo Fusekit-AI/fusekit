@@ -197,6 +197,10 @@ FuseKit-created network resources were covered. Root tenancy/root compartment
 scope is recorded as preserved by design when FuseKit did not create a
 throwaway compartment; deleting the user's tenancy or root compartment is never
 part of default detonation.
+An empty cleanup report is treated as incomplete rather than successful: the
+receipt must positively name remote-worker cleanup, OCI VM termination, and every
+standard FuseKit-created network resource class before the workspace can be
+considered detonated.
 
 Every live Run Record also carries `fusekit.durable-state.v1` evidence. That
 evidence names the encrypted/redacted sources required to resume after replacing

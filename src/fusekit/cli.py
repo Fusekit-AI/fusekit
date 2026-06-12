@@ -2356,8 +2356,6 @@ WORKSPACE_NETWORK_RESOURCE_KEYS = frozenset(
 
 
 def _workspace_detonation_missing_resources(remote_deleted: dict[str, str]) -> list[str]:
-    if not remote_deleted:
-        return []
     deleted = {key for key in remote_deleted if not key.startswith("failed.")}
     missing: list[str] = []
     if "remote_worker" not in deleted:

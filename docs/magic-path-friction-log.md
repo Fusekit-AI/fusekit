@@ -304,6 +304,7 @@ guided, or explicitly verified.
 | Run Record errors, steps, or checkpoints could carry raw provider callback URLs, bearer text, token-looking strings, or unshaped error values from failed verification/gate/detonation payloads. | Run Record error and timeline collection now redacts callback URLs and token-shaped material before writing, and live acceptance rejects error, step, or checkpoint entries that are unshaped or still contain credential-looking text. |
 | Tokenized remote control-room links cleaned the token out of the address bar, but the resulting browser cookie had no explicit lifetime. | Remote control-room cookies now remain `HttpOnly` and `SameSite=Strict` and also carry an eight-hour `Max-Age`, keeping public demo sessions convenient without creating unbounded browser credentials. |
 | Run Record human-action proof could name exact visible controls while still pointing at a stale or nonexistent provider gate, or capturing the wrong provider token for the gate being shown. | Live acceptance now ties every recorded human action to an existing `provider_gates.records` id and rejects copy-once Capture actions unless the captured env target matches that gate's declared target. |
+| An empty OCI cleanup result could be interpreted as a complete workspace detonation because no missing resource classes were derived from the blank report. | Workspace detonation now fails closed unless cleanup positively reports remote-worker cleanup, OCI VM termination, and all standard FuseKit-created network resource classes. |
 
 ## Open Acceptance Items
 
