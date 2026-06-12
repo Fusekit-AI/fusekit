@@ -921,7 +921,7 @@ def test_control_room_acceptance_report_error_uses_launcher_controls(tmp_path) -
     assert "Rerun acceptance so FuseKit can rebuild launch-readiness proof" not in html
 
 
-def test_control_room_normalizes_legacy_live_acceptance_ready_state(tmp_path) -> None:
+def test_control_room_rejects_legacy_live_acceptance_without_public_flags(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     acceptance_dir = tmp_path / "acceptance"
     acceptance_dir.mkdir()
@@ -933,8 +933,8 @@ def test_control_room_normalizes_legacy_live_acceptance_ready_state(tmp_path) ->
     payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
 
     assert payload["acceptance"]["launch_ready"] is True
-    assert payload["acceptance"]["public_launch_ready"] is True
-    assert payload["acceptance"]["recording_ready"] is True
+    assert payload["acceptance"]["public_launch_ready"] is False
+    assert payload["acceptance"]["recording_ready"] is False
 
 
 def test_control_room_rejects_string_acceptance_ready_flags(tmp_path) -> None:
@@ -985,7 +985,15 @@ def test_control_room_renders_acceptance_ready_state(tmp_path) -> None:
     acceptance_dir = tmp_path / "acceptance"
     acceptance_dir.mkdir()
     (acceptance_dir / "report.json").write_text(
-        json.dumps({"mode": "live", "launch_ready": True, "blockers": []}),
+        json.dumps(
+            {
+                "mode": "live",
+                "launch_ready": True,
+                "public_launch_ready": True,
+                "recording_ready": True,
+                "blockers": [],
+            }
+        ),
         encoding="utf-8",
     )
 

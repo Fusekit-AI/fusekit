@@ -517,15 +517,11 @@ def _render_acceptance_blockers(report: Any) -> str:
 
 
 def _acceptance_public_ready(report: dict[str, Any], ready: bool, mode: str) -> bool:
-    if "public_launch_ready" in report:
-        return report.get("public_launch_ready") is True and ready and mode == "live"
-    return ready and mode == "live"
+    return report.get("public_launch_ready") is True and ready and mode == "live"
 
 
 def _acceptance_recording_ready(report: dict[str, Any], public_ready: bool) -> bool:
-    if "recording_ready" in report:
-        return report.get("recording_ready") is True and public_ready
-    return public_ready
+    return report.get("recording_ready") is True and public_ready
 
 
 def _acceptance_blockers(report: dict[str, Any]) -> list[dict[str, Any]]:

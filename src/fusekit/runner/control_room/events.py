@@ -855,17 +855,11 @@ function acceptanceCards(report) {
 }
 
 function acceptancePublicReady(report, mode) {
-  if (Object.prototype.hasOwnProperty.call(report, "public_launch_ready")) {
-    return report.public_launch_ready === true && report.launch_ready === true && mode === "live";
-  }
-  return report.launch_ready === true && mode === "live";
+  return report.public_launch_ready === true && report.launch_ready === true && mode === "live";
 }
 
 function acceptanceRecordingReady(report, publicReady) {
-  if (Object.prototype.hasOwnProperty.call(report, "recording_ready")) {
-    return report.recording_ready === true && publicReady;
-  }
-  return publicReady;
+  return report.recording_ready === true && publicReady;
 }
 
 function acceptanceBlockers(report) {
