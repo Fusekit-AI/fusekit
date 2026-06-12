@@ -1380,6 +1380,8 @@ def _recording_human_actions_ready(record: dict[str, Any]) -> bool:
     unguided = human_actions.get("unguided", [])
     if not isinstance(actions, list) or not isinstance(unguided, list):
         return False
+    if _recording_human_actions_required(record) and not actions:
+        return False
     return (
         _safe_int(human_actions.get("total"), -1) == len(actions)
         and not unguided
@@ -1407,6 +1409,18 @@ def _recording_human_action_control_ready(action: dict[str, Any]) -> bool:
             "Approve setup plan",
         }
     return False
+
+
+def _recording_human_actions_required(record: dict[str, Any]) -> bool:
+    provider_gates = record.get("provider_gates", {})
+    if isinstance(provider_gates, dict) and _safe_int(provider_gates.get("total"), 0) > 0:
+        return True
+    wake_events = record.get("wake_events", {})
+    if isinstance(wake_events, dict) and _safe_int(wake_events.get("total"), 0) > 0:
+        return True
+    boundary = record.get("automation_boundary", {})
+    counts = boundary.get("counts", {}) if isinstance(boundary, dict) else {}
+    return isinstance(counts, dict) and _safe_int(counts.get("human_gate"), 0) > 0
 
 
 def _recording_automation_boundary_ready(record: dict[str, Any]) -> bool:

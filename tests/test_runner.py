@@ -654,6 +654,49 @@ def test_recording_human_actions_require_exact_visible_controls() -> None:
     assert _recording_human_actions_ready(record) is True
 
 
+def test_recording_human_actions_required_when_gates_or_wakes_exist() -> None:
+    record = {
+        "provider_gates": {"total": 0},
+        "wake_events": {"total": 0},
+        "automation_boundary": {"counts": {"human_gate": 0}},
+        "human_actions": {
+            "schema_version": "fusekit.human-action-trace.v1",
+            "total": 0,
+            "counts": {},
+            "actions": [],
+            "unguided": [],
+        },
+    }
+
+    assert _recording_human_actions_ready(record) is True
+
+    record["provider_gates"]["total"] = 1
+    assert _recording_human_actions_ready(record) is False
+    record["provider_gates"]["total"] = 0
+    record["wake_events"]["total"] = 1
+    assert _recording_human_actions_ready(record) is False
+    record["wake_events"]["total"] = 0
+    record["automation_boundary"]["counts"]["human_gate"] = 1
+    assert _recording_human_actions_ready(record) is False
+
+    record["human_actions"] = {
+        "schema_version": "fusekit.human-action-trace.v1",
+        "total": 1,
+        "counts": {"confirm_gate_finished": 1},
+        "actions": [
+            {
+                "gate_id": "dns.example.com.approval",
+                "action": "confirm_gate_finished",
+                "visible_control": "Approve DNS apply",
+                "target": "",
+                "guided": True,
+            }
+        ],
+        "unguided": [],
+    }
+    assert _recording_human_actions_ready(record) is True
+
+
 def test_recording_provider_playbook_requires_public_order() -> None:
     record: dict[str, Any] = {
         "provider_playbook": {
