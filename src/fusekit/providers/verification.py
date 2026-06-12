@@ -556,9 +556,11 @@ def _verify_vercel_env(
             (
                 "Vercel is missing required app runtime environment variables: "
                 + ", ".join(missing)
-                + ". FuseKit will recover through launcher controls: Capture copy-once "
-                "provider values from the VM clipboard, regenerate API-owned provider "
-                "values, then reapply Vercel env before verifying the deployment."
+                + ". FuseKit will recover through launcher controls: use exact "
+                "env-named Capture buttons only when a copy-once provider token gate "
+                "appears, regenerate API-owned provider values such as RESEND_FROM_EMAIL "
+                "or RESEND_AUDIENCE_ID, then reapply Vercel env before verifying the "
+                "deployment."
             ),
         )
     return VerificationResult(

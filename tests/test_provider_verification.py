@@ -946,8 +946,10 @@ def test_vercel_env_missing_runtime_values_needs_human_gate(monkeypatch) -> None
     assert "RESEND_FROM_EMAIL" in reason
     assert "Capture or derive" not in reason
     assert "launcher controls" in reason
-    assert "Capture copy-once provider values from the VM clipboard" in reason
-    assert "regenerate API-owned provider values" in reason
+    assert "Capture copy-once provider values" not in reason
+    assert "exact env-named Capture buttons" in reason
+    assert "only when a copy-once provider token gate appears" in reason
+    assert "regenerate API-owned provider values such as RESEND_FROM_EMAIL" in reason
 
 
 def test_webhook_secret_mismatch_reports_failed() -> None:
