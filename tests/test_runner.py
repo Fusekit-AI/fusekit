@@ -76,6 +76,7 @@ from fusekit.runner.remote import (
 from fusekit.runner.run_record import (
     _recording_automation_boundary_ready,
     _recording_detonation_ready,
+    _recording_evidence_ready,
     _recording_human_actions_ready,
     _recording_provider_playbook_ready,
     _recording_verifiers_ready,
@@ -800,6 +801,36 @@ def test_recording_verifiers_reject_hidden_blocking_checks() -> None:
     assert _recording_verifiers_ready(record) is False
 
 
+def test_recording_evidence_requires_screenshot_for_visual_runner() -> None:
+    record = {
+        "runner_profile": {
+            "profile_contract": {
+                "name": "oci-visual-browser-x86_64",
+                "browser_stack": {
+                    "shared_provider_profile": (
+                        "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+                    )
+                },
+            }
+        },
+        "evidence": {
+            "counts": {
+                "logs": 1,
+                "screenshots": 0,
+                "visual": 1,
+                "receipts": 1,
+            }
+        },
+    }
+
+    assert _recording_evidence_ready(record) is False
+    record["evidence"]["counts"]["screenshots"] = 1
+    assert _recording_evidence_ready(record) is True
+    record["runner_profile"]["profile_contract"] = {"name": "api-only"}
+    record["evidence"]["counts"]["screenshots"] = 0
+    assert _recording_evidence_ready(record) is True
+
+
 def test_recording_provider_playbook_requires_public_order() -> None:
     record: dict[str, Any] = {
         "provider_playbook": {
@@ -945,6 +976,9 @@ def test_run_record_recording_contract_blocks_missing_provider_playbook(tmp_path
         json.dumps({"runner": "novnc", "status": "ready"}),
         encoding="utf-8",
     )
+    visual_dir = tmp_path / "visual"
+    visual_dir.mkdir()
+    (visual_dir / "provider-gate.png").write_bytes(b"proof")
     _write_runner_readiness(tmp_path)
     (tmp_path / "workspace_detonation.json").write_text(
         json.dumps(
@@ -1063,6 +1097,9 @@ def test_run_record_recording_contract_blocks_thin_runner_profile(tmp_path) -> N
         json.dumps({"runner": "novnc", "status": "ready"}),
         encoding="utf-8",
     )
+    visual_dir = tmp_path / "visual"
+    visual_dir.mkdir()
+    (visual_dir / "provider-gate.png").write_bytes(b"proof")
     _write_runner_readiness(tmp_path, thin=True)
     (tmp_path / "workspace_detonation.json").write_text(
         json.dumps(

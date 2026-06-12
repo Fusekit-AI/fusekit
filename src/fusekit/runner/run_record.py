@@ -1511,11 +1511,31 @@ def _recording_evidence_ready(record: dict[str, Any]) -> bool:
     if not isinstance(evidence, dict):
         return False
     counts = evidence.get("counts", {})
+    screenshot_required = _recording_screenshot_evidence_required(record)
     return (
         isinstance(counts, dict)
         and _safe_int(counts.get("logs"), 0) >= 1
+        and (
+            not screenshot_required
+            or _safe_int(counts.get("screenshots"), 0) >= 1
+        )
         and _safe_int(counts.get("visual"), 0) >= 1
         and _safe_int(counts.get("receipts"), 0) >= 1
+    )
+
+
+def _recording_screenshot_evidence_required(record: dict[str, Any]) -> bool:
+    runner = record.get("runner_profile", {})
+    if not isinstance(runner, dict):
+        return False
+    profile = runner.get("profile_contract", {})
+    if not isinstance(profile, dict):
+        return False
+    browser_stack = profile.get("browser_stack", {})
+    return (
+        str(profile.get("name", "") or "") == "oci-visual-browser-x86_64"
+        or isinstance(browser_stack, dict)
+        and bool(str(browser_stack.get("shared_provider_profile", "") or "").strip())
     )
 
 
