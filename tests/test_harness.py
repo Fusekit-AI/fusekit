@@ -471,6 +471,69 @@ def _verifier_summary() -> dict[str, object]:
     }
 
 
+def _verifier_summary_from_report(fusekit_dir: Path) -> dict[str, object]:
+    report_path = fusekit_dir / "verification_report.json"
+    if not report_path.exists():
+        return _verifier_summary()
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return _verifier_summary()
+    checks = report.get("checks", []) if isinstance(report, dict) else []
+    if not isinstance(checks, list):
+        return _verifier_summary()
+    counts = {
+        "passed": 0,
+        "pending_safe": 0,
+        "pending": 0,
+        "repairing": 0,
+        "failed": 0,
+        "skipped": 0,
+        "needs_human_gate": 0,
+        "unknown": 0,
+    }
+    records = []
+    for check in checks:
+        if not isinstance(check, dict):
+            continue
+        details = check.get("details", {})
+        details = details if isinstance(details, dict) else {}
+        raw_status = str(check.get("status", "") or "").strip()
+        pending_safe = raw_status == "pending_safe" or (
+            raw_status == "pending" and details.get("pending_safe") is True
+        )
+        status = "pending_safe" if pending_safe else raw_status or "unknown"
+        counts[status if status in counts else "unknown"] += 1
+        records.append(
+            {
+                "provider": str(check.get("provider", "") or "").strip(),
+                "check": str(check.get("check", "") or "provider_status").strip(),
+                "status": status,
+                "pending_safe": pending_safe,
+            }
+        )
+    if not records:
+        return _verifier_summary()
+    blocking = (
+        counts["pending"]
+        + counts["repairing"]
+        + counts["failed"]
+        + counts["needs_human_gate"]
+        + counts["unknown"]
+    )
+    return {
+        "schema_version": "fusekit.verifier-summary.v1",
+        "overall": "passed" if blocking == 0 else "blocked",
+        "all_passed_or_pending_safe": blocking == 0,
+        "counts": counts,
+        "checks": records,
+        "statement": (
+            "Live provider verifiers are summarized as green checks or pending-safe "
+            "checks before launch readiness is trusted."
+        ),
+    }
+
+
 def _audit_trail() -> dict[str, object]:
     return {
         "schema_version": "fusekit.audit-trail.v1",
@@ -968,7 +1031,7 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
                 },
                 "human_actions": _human_action_trace(),
                 "automation_boundary": _automation_boundary(),
-                "verifiers": _verifier_summary(),
+                "verifiers": _verifier_summary_from_report(fusekit_dir),
                 "provider_strategies": _run_record_provider_strategies(fusekit_dir),
                 "vault": {"record_count": 0, "records": []},
                 "audit_trail": _audit_trail(),
@@ -4012,6 +4075,40 @@ def test_live_acceptance_requires_run_record_provider_strategies_to_match_artifa
     assert run_record_check.status == "failed"
     assert (
         "provider_strategies in Run Record must match provider_strategies.json"
+        in run_record_check.detail
+    )
+    assert "central run record" in report.missing
+
+
+def test_live_acceptance_requires_run_record_verifiers_to_match_report(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    record_path = remote_fusekit / "run_record.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    record["verifiers"]["checks"][0]["status"] = "skipped"
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    run_record_check = next(check for check in report.checks if check.id == "run_record.complete")
+    assert report.launch_ready is False
+    assert run_record_check.status == "failed"
+    assert (
+        "verifiers in Run Record must match verification_report.json"
         in run_record_check.detail
     )
     assert "central run record" in report.missing

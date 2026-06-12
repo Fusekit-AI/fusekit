@@ -104,7 +104,10 @@ follow-me instructions, with no unguided actions. It must carry the same
 provider-strategy contract as the standalone provider route artifact: schema
 version, provider list, strategy rows, selected route status, and fallback
 candidates must be present and match the artifact's route decisions so the
-ordered route plan survives OCI detonation without drift.
+ordered route plan survives OCI detonation without drift. Its live verifier
+summary must likewise match `verification_report.json` provider checks, including
+pending-safe status, so green control-room checks survive OCI detonation without
+becoming stale display state.
 Public OCI acceptance also
 requires a `fusekit.detonation-scope.v1` proof
 that names the complete no-trace destroy set, including provider-auth scratch,

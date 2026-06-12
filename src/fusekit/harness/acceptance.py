@@ -170,6 +170,7 @@ def run_acceptance(
     _check_run_record(
         evidence_fusekit_dir / "run_record.json",
         evidence_fusekit_dir / "provider_strategies.json",
+        evidence_fusekit_dir / "verification_report.json",
         mode,
         checks,
         missing,
@@ -374,6 +375,7 @@ def _record_remote_artifacts(
 def _check_run_record(
     path: Path,
     provider_strategies_path: Path,
+    verification_report_path: Path,
     mode: str,
     checks: list[AcceptanceCheck],
     missing: list[str],
@@ -425,6 +427,9 @@ def _check_run_record(
     failures = _run_record_shape_failures(raw)
     failures.extend(
         _run_record_provider_strategy_consistency_failures(raw, provider_strategies_path)
+    )
+    failures.extend(
+        _run_record_verifier_consistency_failures(raw, verification_report_path)
     )
     summary = {
         "schema_version": raw.get("schema_version"),
@@ -872,6 +877,81 @@ def _provider_strategy_candidate_signature(candidates: Any) -> tuple[tuple[str, 
             (
                 str(candidate.get("kind", "") or "").strip(),
                 str(candidate.get("status", "") or "").strip(),
+            )
+        )
+    return tuple(sorted(rows))
+
+
+def _run_record_verifier_consistency_failures(
+    run_record: dict[str, Any],
+    verification_report_path: Path,
+) -> list[str]:
+    if not verification_report_path.exists():
+        return []
+    try:
+        artifact = json.loads(verification_report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(artifact, dict):
+        return []
+    artifact_signature = _verification_report_signature(artifact)
+    if not artifact_signature:
+        return []
+    run_signature = _run_record_verifier_signature(run_record.get("verifiers", {}))
+    if run_signature != artifact_signature:
+        return [
+            (
+                "verifiers in Run Record must match verification_report.json "
+                "provider checks"
+            )
+        ]
+    return []
+
+
+def _verification_report_signature(raw: Any) -> tuple[tuple[str, str, str, bool], ...]:
+    if not isinstance(raw, dict):
+        return ()
+    checks = raw.get("checks", [])
+    if not isinstance(checks, list):
+        return ()
+    rows: list[tuple[str, str, str, bool]] = []
+    for check in checks:
+        if not isinstance(check, dict):
+            continue
+        details = check.get("details", {})
+        details = details if isinstance(details, dict) else {}
+        raw_status = str(check.get("status", "") or "").strip()
+        pending_safe = raw_status == "pending_safe" or (
+            raw_status == "pending" and details.get("pending_safe") is True
+        )
+        effective_status = "pending_safe" if pending_safe else raw_status or "unknown"
+        rows.append(
+            (
+                str(check.get("provider", "") or "").strip().lower(),
+                str(check.get("check", "") or "provider_status").strip().lower(),
+                effective_status,
+                pending_safe,
+            )
+        )
+    return tuple(sorted(rows))
+
+
+def _run_record_verifier_signature(raw: Any) -> tuple[tuple[str, str, str, bool], ...]:
+    if not isinstance(raw, dict):
+        return ()
+    checks = raw.get("checks", [])
+    if not isinstance(checks, list):
+        return ()
+    rows: list[tuple[str, str, str, bool]] = []
+    for check in checks:
+        if not isinstance(check, dict):
+            continue
+        rows.append(
+            (
+                str(check.get("provider", "") or "").strip().lower(),
+                str(check.get("check", "") or "provider_status").strip().lower(),
+                str(check.get("status", "") or "unknown").strip(),
+                check.get("pending_safe") is True,
             )
         )
     return tuple(sorted(rows))
