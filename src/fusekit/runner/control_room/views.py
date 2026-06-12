@@ -62,6 +62,7 @@ def render_control_room(
     <div data-visual-session>{_render_visual_session(control_payload.get("visual", {}))}</div>
     {_render_recovery(job)}
     {_render_run_state(control_payload.get("run_state", {}))}
+    {_render_durable_state(control_payload.get("run_record", {}))}
     {_render_acceptance_blockers(control_payload.get("acceptance", {}))}
     {_render_provider_strategies(control_payload.get("provider_strategies", {}))}
     {_render_trust(control_payload.get("verification", {}))}
@@ -1149,6 +1150,79 @@ def _render_run_state_card(field: str, passed: bool) -> str:
             <strong>{html.escape(label)}</strong>
             <p>{html.escape(detail)}</p>
             <em>{html.escape(field.replace('_', ' '))}</em>
+          </div>
+        </article>
+"""
+
+
+def _render_durable_state(run_record: Any) -> str:
+    run_record = run_record if isinstance(run_record, dict) else {}
+    durable = run_record.get("durable_state", {})
+    durable = durable if isinstance(durable, dict) else {}
+    sources = durable.get("sources", [])
+    sources = sources if isinstance(sources, list) else []
+    cards = "\n".join(
+        _render_durable_source_card(source)
+        for source in sources
+        if isinstance(source, dict)
+    )
+    if not cards:
+        cards = """
+        <article class="trust-card pending">
+          <div class="trust-snow state-checking" aria-hidden="true"></div>
+          <div>
+            <span>Pending</span>
+            <strong>Durable run state</strong>
+            <p>Waiting for the Run Record to prove resume state survived.</p>
+            <em>durable_state</em>
+          </div>
+        </article>
+"""
+    summary = (
+        "worker can be replaced"
+        if durable.get("resume_ready") is True
+        else "resume proof is still filling in"
+    )
+    volatile = durable.get("volatile_worker_surfaces", [])
+    volatile_count = len(volatile) if isinstance(volatile, list) else 0
+    return f"""
+    <section class="run-state-panel" aria-label="Durable run-state proof">
+      <div class="section-head compact">
+        <div>
+          <span class="section-kicker">Disposable worker</span>
+          <h2>What survives detonation</h2>
+        </div>
+        <span class="live-pill" data-durable-state-overall>{html.escape(summary)}</span>
+      </div>
+      <p class="muted">
+        FuseKit keeps encrypted/redacted resume state outside the OCI worker and treats
+        {html.escape(str(volatile_count))} VM/browser/auth surfaces as disposable.
+      </p>
+      <div class="run-state-grid" data-durable-state-checks>{cards}</div>
+    </section>
+"""
+
+
+def _render_durable_source_card(source: dict[str, Any]) -> str:
+    exists = source.get("exists") is True
+    status = "passed" if exists else "pending"
+    snow = "passed" if exists else "checking"
+    title = str(source.get("role", "") or source.get("id", "") or "durable source")
+    source_id = str(source.get("id", "") or "")
+    secret_class = str(source.get("secret_class", "") or "non-secret")
+    detail = (
+        f"{secret_class.capitalize()} source is present for resume."
+        if exists
+        else "Waiting for this source before the worker is safely replaceable."
+    )
+    return f"""
+        <article class="trust-card {status}" data-durable-state-source="{html.escape(source_id)}">
+          <div class="trust-snow state-{snow}" aria-hidden="true"></div>
+          <div>
+            <span>{html.escape(status_label(status))}</span>
+            <strong>{html.escape(title)}</strong>
+            <p>{html.escape(detail)}</p>
+            <em>{html.escape(source_id.replace('_', ' '))}</em>
           </div>
         </article>
 """

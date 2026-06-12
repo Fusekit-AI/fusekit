@@ -427,6 +427,49 @@ def test_control_room_payload_includes_run_record(tmp_path) -> None:
     assert payload["run_record"]["id"] == "fk-test"
 
 
+def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    run_record = tmp_path / "run_record.json"
+    run_record.write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.run-record.v1",
+                "id": "fk-test",
+                "durable_state": {
+                    "schema_version": "fusekit.durable-state.v1",
+                    "resume_ready": True,
+                    "sources": [
+                        {
+                            "id": "encrypted_vault",
+                            "path": "fusekit.vault.json",
+                            "role": "encrypted capability vault",
+                            "secret_class": "encrypted",
+                            "exists": True,
+                        }
+                    ],
+                    "volatile_worker_surfaces": ["worker", "visual", "openclaw-state"],
+                    "detonation_preserves": ["encrypted_vault", "run_record"],
+                    "statement": (
+                        "FuseKit can replace or detonate the disposable OCI worker "
+                        "because encrypted/redacted state is the source of truth."
+                    ),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    job.add_artifact("run_record", run_record)
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+    payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
+
+    assert payload["run_record"]["durable_state"]["resume_ready"] is True
+    assert "What survives detonation" in html
+    assert "worker can be replaced" in html
+    assert 'data-durable-state-source="encrypted_vault"' in html
+    assert "encrypted capability vault" in html
+
+
 def test_remote_bootstrap_checkpoint_keeps_recovery_in_launcher(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job.mark("remote.bootstrap", "running", "remote bootstrap is installing dependencies")

@@ -1431,6 +1431,58 @@ function renderRunState(job) {
     .join("");
 }
 
+function renderDurableState(job) {
+  const root = document.querySelector("[data-durable-state-checks]");
+  if (!root) return;
+  const durable = job.run_record?.durable_state || {};
+  const sources = Array.isArray(durable.sources) ? durable.sources : [];
+  const summaryNode = document.querySelector("[data-durable-state-overall]");
+  if (summaryNode) {
+    summaryNode.textContent = durable.resume_ready
+      ? "worker can be replaced"
+      : "resume proof is still filling in";
+  }
+  if (!sources.length) {
+    root.innerHTML = `
+      <article class="trust-card pending">
+        <div class="trust-snow state-checking" aria-hidden="true"></div>
+        <div>
+          <span>Pending</span>
+          <strong>Durable run state</strong>
+          <p>Waiting for the Run Record to prove resume state survived.</p>
+          <em>durable_state</em>
+        </div>
+      </article>
+    `;
+    return;
+  }
+  root.innerHTML = sources
+    .map((source) => {
+      const exists = Boolean(source.exists);
+      const status = exists ? "passed" : "pending";
+      const snow = exists ? "passed" : "checking";
+      const id = String(source.id || "");
+      const secretClass = String(source.secret_class || "non-secret");
+      const title = String(source.role || id || "durable source");
+      const detail = exists
+        ? `${secretClass.charAt(0).toUpperCase()}${secretClass.slice(1)} source ` +
+          "is present for resume."
+        : "Waiting for this source before the worker is safely replaceable.";
+      return `
+        <article class="trust-card ${status}" data-durable-state-source="${escapeAttr(id)}">
+          <div class="trust-snow state-${snow}" aria-hidden="true"></div>
+          <div>
+            <span>${escapeHtml(label(status))}</span>
+            <strong>${escapeHtml(title)}</strong>
+            <p>${escapeHtml(detail)}</p>
+            <em>${escapeHtml(id.replaceAll("_", " "))}</em>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+}
+
 function render(job) {
   const prog = progress(job);
   const counts = statusCounts(job.steps);
@@ -1475,6 +1527,7 @@ function render(job) {
     next?.label || "Artifacts and audit review";
   renderCheckpoints(job);
   renderRunState(job);
+  renderDurableState(job);
   renderAcceptance(job);
   renderTrust(job);
   renderProviderStrategies(job);
