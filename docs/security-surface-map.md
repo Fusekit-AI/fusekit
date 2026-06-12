@@ -8,6 +8,9 @@ injection.
 
 FuseKit does not expose a general web app API. The only runtime HTTP server in the
 Python package is the live control room in `fusekit.runner.control_room.server`.
+The server owns the code-backed route inventory in `CONTROL_ROOM_ROUTE_SURFACE`;
+this document must stay in lockstep with that constant so new browser-reachable
+routes cannot appear without an explicit state-change and protection classification.
 
 | Route | Method | State | Protection |
 | --- | --- | --- | --- |
@@ -20,6 +23,18 @@ Python package is the live control room in `fusekit.runner.control_room.server`.
 
 | Unknown routes | `GET`/`POST` | None. | Unknown GET returns `404` with zero-length body, the same no-store/CSP/frame/security headers as known routes, and no CORS allow headers. Unknown POST first passes the same control-room header, origin/fetch-site, action-token, and optional remote-token checks as state-changing POSTs, then returns the same zero-length `404`; attacker-origin or tokenless unknown POSTs fail before route handling. |
 | Any route | `OPTIONS` | None. | Returns `405` with security headers and no CORS allow headers, so browser preflights for custom-header POSTs fail closed. |
+
+The route inventory uses these protection class labels:
+
+- `local-or-remote-token` for read-only routes that are local-only by default and
+  require the generated remote token when the control room is remotely bound.
+- `control-room-header-origin-fetch-site-action-token` for every state-changing
+  gate POST, meaning the request must carry the explicit control-room header,
+  same-origin/loopback `Origin`, non-cross-site `Sec-Fetch-Site`, and the
+  owner-only per-page action token.
+- `security-headers-no-cors-posts-auth-before-404` for unknown routes, meaning
+  security headers and no CORS allow headers are emitted, and unknown POSTs must
+  satisfy auth/CSRF checks before returning `404`.
 
 The live VM browser iframe is not a general-purpose embed surface. Visual session
 state is sanitized before the browser payload sees it: the noVNC URL must be

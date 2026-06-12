@@ -31,6 +31,7 @@ from fusekit.runner.control_room import (
 )
 from fusekit.runner.control_room import render_control_room
 from fusekit.runner.control_room.server import (
+    CONTROL_ROOM_ROUTE_SURFACE,
     _capture_button_labels,
     _control_room_action_token,
     _control_room_vault_passphrase,
@@ -3365,12 +3366,35 @@ def test_control_room_post_rejects_cross_site_gate_pass(tmp_path) -> None:
 def test_security_surface_map_documents_control_room_state_routes() -> None:
     text = Path("docs/security-surface-map.md").read_text(encoding="utf-8")
 
-    for route in (
+    mapped_routes = {str(item["route"]) for item in CONTROL_ROOM_ROUTE_SURFACE}
+    assert mapped_routes == {
+        "/",
+        "/index.html",
+        "/api/job",
         "/api/gates/<gate_id>/pass",
         "/api/gates/<gate_id>/open",
         "/api/gates/<gate_id>/capture-clipboard",
-    ):
+        "unknown",
+    }
+    state_changing_routes = {
+        str(item["route"])
+        for item in CONTROL_ROOM_ROUTE_SURFACE
+        if item["state_change"] is True
+    }
+    assert state_changing_routes == {
+        "/api/gates/<gate_id>/pass",
+        "/api/gates/<gate_id>/open",
+        "/api/gates/<gate_id>/capture-clipboard",
+    }
+    for route in mapped_routes - {"unknown"}:
         assert route in text
+    assert "`CONTROL_ROOM_ROUTE_SURFACE`" in text
+    assert "control-room-header-origin-fetch-site-action-token" in text
+    assert "security-headers-no-cors-posts-auth-before-404" in text
+    serialized_surface = json.dumps(CONTROL_ROOM_ROUTE_SURFACE).lower()
+    assert "shell" not in serialized_surface
+    assert "admin" not in serialized_surface
+    assert "account" not in serialized_surface
     assert "x-fusekit-control-room: resume" in text
     assert "x-fusekit-action-token" in text
     assert "every state-changing POST must echo the page's per-control-room" in text

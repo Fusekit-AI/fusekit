@@ -30,6 +30,50 @@ from fusekit.vault import Vault
 
 VISUAL_DISPLAY_PATTERN = re.compile(r"^(?:[A-Za-z0-9_.-]+)?:[0-9]+(?:\.[0-9]+)?$")
 CONTROL_ROOM_GATE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,200}$")
+CONTROL_ROOM_ROUTE_SURFACE: tuple[dict[str, object], ...] = (
+    {
+        "route": "/",
+        "methods": ("GET",),
+        "state_change": False,
+        "protection": "local-or-remote-token",
+    },
+    {
+        "route": "/index.html",
+        "methods": ("GET",),
+        "state_change": False,
+        "protection": "local-or-remote-token",
+    },
+    {
+        "route": "/api/job",
+        "methods": ("GET",),
+        "state_change": False,
+        "protection": "local-or-remote-token",
+    },
+    {
+        "route": "/api/gates/<gate_id>/pass",
+        "methods": ("POST",),
+        "state_change": True,
+        "protection": "control-room-header-origin-fetch-site-action-token",
+    },
+    {
+        "route": "/api/gates/<gate_id>/open",
+        "methods": ("POST",),
+        "state_change": True,
+        "protection": "control-room-header-origin-fetch-site-action-token",
+    },
+    {
+        "route": "/api/gates/<gate_id>/capture-clipboard",
+        "methods": ("POST",),
+        "state_change": True,
+        "protection": "control-room-header-origin-fetch-site-action-token",
+    },
+    {
+        "route": "unknown",
+        "methods": ("GET", "POST", "OPTIONS"),
+        "state_change": False,
+        "protection": "security-headers-no-cors-posts-auth-before-404",
+    },
+)
 TOKEN_PROVIDER_BY_ENV = {
     "CLOUDFLARE_API_TOKEN": "cloudflare",
     "GITHUB_TOKEN": "github",
