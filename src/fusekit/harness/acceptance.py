@@ -861,6 +861,7 @@ def _recording_contract_shape_failures(contract: dict[str, Any]) -> list[str]:
     required_checks = {
         "durable_state",
         "runner_profile",
+        "provider_playbook",
         "human_actions",
         "automation_boundary",
         "verifiers",
@@ -888,7 +889,7 @@ def _recording_contract_shape_failures(contract: dict[str, Any]) -> list[str]:
             + ", ".join(str(item) for item in blockers)
         )
     statement = str(contract.get("statement", "") or "").lower()
-    for required in ("public demo", "guided human actions", "detonation"):
+    for required in ("public demo", "provider playbooks", "guided human actions", "detonation"):
         if required not in statement:
             failures.append("recording_contract.statement is missing " + required + " guidance")
             break

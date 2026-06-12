@@ -514,6 +514,7 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     )
     assert record["recording_contract"]["recording_ready"] is True
     assert record["recording_contract"]["blockers"] == []
+    assert record["recording_contract"]["checks"]["provider_playbook"] is True
     assert record["recording_contract"]["checks"]["detonation"] is True
     assert record["recording_contract"]["checks"]["errors_empty"] is True
     assert record["detonation"]["workspace_receipt"]["status"] == "complete"
@@ -531,6 +532,84 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     assert "raw secrets are not embedded" in record["evidence"]["statement"]
     assert "not-a-real-png" not in json.dumps(record["evidence"])
     assert any(item["name"] == "audit_log" for item in record["artifacts"])
+
+
+def test_run_record_recording_contract_blocks_missing_provider_playbook(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci")
+    job.mark("setup.execute", "done", "provider setup finished")
+    (tmp_path / "audit.jsonl").write_text('{"event":"ok"}\n', encoding="utf-8")
+    job.add_artifact("audit_log", tmp_path / "audit.jsonl")
+    (tmp_path / "fusekit.vault.json").write_text("encrypted", encoding="utf-8")
+    (tmp_path / "provider_strategies.json").write_text(
+        json.dumps({"providers": []}),
+        encoding="utf-8",
+    )
+    (tmp_path / "gates.json").write_text(json.dumps({"gates": []}), encoding="utf-8")
+    (tmp_path / "setup_receipt.json").write_text(
+        json.dumps({"actions": [{"action": "resend.domain", "status": "passed"}]}),
+        encoding="utf-8",
+    )
+    (tmp_path / "verification_report.json").write_text(
+        json.dumps({"checks": [{"provider": "resend", "status": "passed"}]}),
+        encoding="utf-8",
+    )
+    (tmp_path / "visual.json").write_text(
+        json.dumps({"runner": "novnc", "status": "ready"}),
+        encoding="utf-8",
+    )
+    (tmp_path / "runner_readiness.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.runner-readiness.v1",
+                "status": "ready",
+                "architecture": "x86_64",
+                "profile_contract": {
+                    "schema_version": "fusekit.runner-profile.v1",
+                    "name": "oci-visual-browser-x86_64",
+                },
+                "observed": {"memory_mib": 24576},
+                "checks": {"x86_64_architecture": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "workspace_detonation.json").write_text(
+        json.dumps(
+            {
+                "status": "complete",
+                "deleted": ["instance", "remote_worker", "vcn"],
+                "failures": {},
+                "resource_summary": {
+                    "schema_version": "fusekit.workspace-detonation-resources.v1",
+                    "remote_worker": True,
+                    "compute_instance": True,
+                    "network_resources": ["vcn"],
+                    "network_resources_deleted": True,
+                    "compartment_scope": "preserved",
+                    "missing": [],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    update_run_state(
+        tmp_path / "run_state.json",
+        app_repo_known=True,
+        runner_selected=True,
+        vault_created=True,
+        detonation_safe=True,
+        workspace_detonated=True,
+    )
+    job.save(tmp_path / "job.json")
+
+    record_path = write_run_record(job, path=tmp_path / "run_record.json")
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+
+    assert record["durable_state"]["resume_ready"] is True
+    assert record["provider_playbook"]["step_count"] == 0
+    assert record["recording_contract"]["checks"]["provider_playbook"] is False
+    assert record["recording_contract"]["recording_ready"] is False
+    assert record["recording_contract"]["blockers"] == ["provider_playbook"]
 
 
 def test_run_record_retains_all_redacted_wake_events(tmp_path) -> None:
@@ -739,6 +818,7 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
                     "checks": {
                         "durable_state": True,
                         "runner_profile": True,
+                        "provider_playbook": True,
                         "human_actions": True,
                         "automation_boundary": True,
                         "verifiers": True,
@@ -750,8 +830,8 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
                     "blockers": [],
                     "statement": (
                         "A public demo is recordable only when durable OCI state, "
-                        "guided human actions, live provider verifiers, and no-trace "
-                        "detonation all agree."
+                        "ordered provider playbooks, guided human actions, live "
+                        "provider verifiers, and no-trace detonation all agree."
                     ),
                 },
                 "detonation": {

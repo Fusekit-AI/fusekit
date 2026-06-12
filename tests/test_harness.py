@@ -449,6 +449,7 @@ def _recording_contract() -> dict[str, object]:
         "checks": {
             "durable_state": True,
             "runner_profile": True,
+            "provider_playbook": True,
             "human_actions": True,
             "automation_boundary": True,
             "verifiers": True,
@@ -459,8 +460,9 @@ def _recording_contract() -> dict[str, object]:
         },
         "blockers": [],
         "statement": (
-            "A public demo is recordable only when durable OCI state, guided human "
-            "actions, live provider verifiers, and no-trace detonation all agree."
+            "A public demo is recordable only when durable OCI state, ordered "
+            "provider playbooks, guided human actions, live provider verifiers, "
+            "and no-trace detonation all agree."
         ),
     }
 
@@ -4062,6 +4064,7 @@ def test_acceptance_run_record_requires_recording_contract(tmp_path) -> None:
         "checks": {
             "durable_state": True,
             "runner_profile": True,
+            "provider_playbook": True,
             "human_actions": False,
             "automation_boundary": True,
             "verifiers": True,

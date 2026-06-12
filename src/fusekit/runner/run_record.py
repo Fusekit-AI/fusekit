@@ -1165,6 +1165,7 @@ def _recording_contract_summary(record: dict[str, Any]) -> dict[str, Any]:
     checks = {
         "durable_state": _recording_durable_state_ready(record),
         "runner_profile": _recording_runner_profile_ready(record),
+        "provider_playbook": _recording_provider_playbook_ready(record),
         "human_actions": _recording_human_actions_ready(record),
         "automation_boundary": _recording_automation_boundary_ready(record),
         "verifiers": _recording_verifiers_ready(record),
@@ -1181,9 +1182,9 @@ def _recording_contract_summary(record: dict[str, Any]) -> dict[str, Any]:
         "blockers": blockers,
         "statement": (
             "A public demo is recordable only when the Run Record proves durable "
-            "OCI state, the x86 visual runner, guided human actions, post-gate "
-            "automation, live provider verifiers, audit evidence, and no-trace "
-            "detonation all agree."
+            "OCI state, the x86 visual runner, ordered provider playbooks, guided "
+            "human actions, post-gate automation, live provider verifiers, audit "
+            "evidence, and no-trace detonation all agree."
         ),
     }
 
@@ -1216,6 +1217,33 @@ def _recording_runner_profile_ready(record: dict[str, Any]) -> bool:
         and isinstance(profile, dict)
         and str(profile.get("schema_version", "") or "") == "fusekit.runner-profile.v1"
         and str(profile.get("name", "") or "") == "oci-visual-browser-x86_64"
+    )
+
+
+def _recording_provider_playbook_ready(record: dict[str, Any]) -> bool:
+    playbook = record.get("provider_playbook", {})
+    if not isinstance(playbook, dict):
+        return False
+    steps = playbook.get("steps", [])
+    safety_notes = playbook.get("safety_notes", [])
+    if (
+        str(playbook.get("schema_version", "") or "") != "fusekit.provider-playbook.v1"
+        or not isinstance(steps, list)
+        or not steps
+        or not isinstance(safety_notes, list)
+        or not safety_notes
+    ):
+        return False
+    if not all(
+        isinstance(step, dict) and str(step.get("instruction", "") or "").strip()
+        for step in steps
+    ):
+        return False
+    joined = " ".join(str(note) for note in safety_notes)
+    return (
+        "VM browser" in joined
+        and "Do not create Resend domains or audiences manually" in joined
+        and "Do not paste provider secrets into the host computer" in joined
     )
 
 
