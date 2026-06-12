@@ -709,10 +709,7 @@ def _capture_gate_clipboard_secret(
     if allowed_targets.issubset(captured_targets):
         resume_wake_event_id = service.request_resume(gate_id)
         status = "resume_requested"
-        message = (
-            "All required values were captured into the encrypted vault. "
-            "FuseKit will retry provider verification."
-        )
+        message = _final_capture_resume_message(gate, allowed_targets)
     _append_capture_audit(
         job_state,
         gate_id,
@@ -731,6 +728,21 @@ def _capture_gate_clipboard_secret(
         "resume_wake_event_id": resume_wake_event_id,
         "message": message,
     }
+
+
+def _final_capture_resume_message(gate: Any, captured_targets: set[str]) -> str:
+    provider = str(getattr(gate, "provider", "") or "").strip().lower()
+    normalized_targets = {target.strip().upper() for target in captured_targets}
+    if provider == "resend" and normalized_targets == {"RESEND_API_KEY"}:
+        return (
+            "RESEND_API_KEY was captured into the encrypted vault. FuseKit will "
+            "create or reuse the Resend sending domain by API, collect the returned "
+            "DNS records, and keep Cloudflare DNS waiting until those records are ready."
+        )
+    return (
+        "All required values were captured into the encrypted vault. "
+        "FuseKit will retry provider verification."
+    )
 
 
 def _gate_resume_message(gate: Any) -> str:

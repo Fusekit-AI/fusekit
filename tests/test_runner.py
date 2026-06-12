@@ -3707,8 +3707,9 @@ def test_control_room_post_captures_vm_clipboard_into_vault(tmp_path, monkeypatc
         "captured_targets": ["RESEND_API_KEY"],
         "gate_id": "provider.resend.api-key-domain-access",
         "message": (
-            "All required values were captured into the encrypted vault. "
-            "FuseKit will retry provider verification."
+            "RESEND_API_KEY was captured into the encrypted vault. FuseKit will "
+            "create or reuse the Resend sending domain by API, collect the returned "
+            "DNS records, and keep Cloudflare DNS waiting until those records are ready."
         ),
         "ok": True,
         "record_id": "provider.resend.resend_api_key",
