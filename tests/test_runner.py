@@ -436,6 +436,11 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     assert "Capture CLOUDFLARE_API_TOKEN" in record["provider_playbook"]["steps"][0][
         "instruction"
     ]
+    assert record["verifiers"]["schema_version"] == "fusekit.verifier-summary.v1"
+    assert record["verifiers"]["all_passed_or_pending_safe"] is True
+    assert record["verifiers"]["counts"]["pending_safe"] == 1
+    assert record["verifiers"]["checks"][0]["provider"] == "cloudflare"
+    assert record["verifiers"]["checks"][0]["status"] == "pending_safe"
     assert record["wake_events"]["total"] == 1
     assert record["wake_events"]["event_counts"] == {
         "clipboard_captured": 1,
@@ -551,6 +556,80 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
                         "the trace contains no raw provider URLs."
                     ),
                 },
+                "automation_boundary": {
+                    "schema_version": "fusekit.automation-boundary.v1",
+                    "status": "ready",
+                    "resume_after_worker_replace": True,
+                    "detonation_scope": "worker-and-oci-workspace",
+                    "no_user_machine_state": True,
+                    "vnc_allowed_for": [
+                        "login",
+                        "mfa",
+                        "captcha",
+                        "consent",
+                        "payment",
+                        "copy_once_secret",
+                    ],
+                    "routes": [
+                        {
+                            "provider": "resend",
+                            "recipe": "resend-domain",
+                            "route": "api",
+                            "owner": "fusekit",
+                            "deterministic": True,
+                            "implemented": True,
+                            "status": "ok",
+                        }
+                    ],
+                    "counts": {
+                        "fusekit_owned": 1,
+                        "human_gate": 0,
+                        "blocked": 0,
+                        "guided_human_actions": 1,
+                    },
+                    "post_gate_automation": {
+                        "api_or_cli_routes": ["resend:resend-domain"],
+                        "human_gate_routes": [],
+                    },
+                    "statement": (
+                        "Humans use VNC only for provider gates. After capture, "
+                        "FuseKit owns provider mutations by API and can detonate "
+                        "the OCI worker."
+                    ),
+                },
+                "verifiers": {
+                    "schema_version": "fusekit.verifier-summary.v1",
+                    "overall": "passed",
+                    "all_passed_or_pending_safe": True,
+                    "counts": {
+                        "passed": 1,
+                        "pending_safe": 1,
+                        "pending": 0,
+                        "repairing": 0,
+                        "failed": 0,
+                        "skipped": 0,
+                        "needs_human_gate": 0,
+                        "unknown": 0,
+                    },
+                    "checks": [
+                        {
+                            "provider": "resend",
+                            "check": "domain_verified",
+                            "status": "passed",
+                            "pending_safe": False,
+                        },
+                        {
+                            "provider": "cloudflare",
+                            "check": "dns_propagated",
+                            "status": "pending_safe",
+                            "pending_safe": True,
+                        },
+                    ],
+                    "statement": (
+                        "Live provider verifiers are summarized as green checks or "
+                        "pending-safe checks before launch readiness is trusted."
+                    ),
+                },
             }
         ),
         encoding="utf-8",
@@ -569,6 +648,12 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
     assert "Human actions matched to gates" in html
     assert "Capture RESEND_API_KEY from VM clipboard" in html
     assert "all actions guided" in html
+    assert payload["run_record"]["verifiers"]["all_passed_or_pending_safe"] is True
+    assert "Provider checks are real" in html
+    assert "all verifiers green or pending-safe" in html
+    assert 'data-verifier-provider="resend"' in html
+    assert "cloudflare · dns_propagated" in html
+    assert "What FuseKit owns after gates" in html
 
 
 def test_remote_bootstrap_checkpoint_keeps_recovery_in_launcher(tmp_path) -> None:

@@ -17,6 +17,7 @@ DETONATION_SCOPE_SCHEMA_VERSION = "fusekit.detonation-scope.v1"
 EVIDENCE_INVENTORY_SCHEMA_VERSION = "fusekit.evidence-inventory.v1"
 HUMAN_ACTION_TRACE_SCHEMA_VERSION = "fusekit.human-action-trace.v1"
 AUTOMATION_BOUNDARY_SCHEMA_VERSION = "fusekit.automation-boundary.v1"
+VERIFIER_SUMMARY_SCHEMA_VERSION = "fusekit.verifier-summary.v1"
 DURABLE_STATE_SOURCES = (
     ("encrypted_vault", "fusekit.vault.json", "encrypted capability vault", "encrypted"),
     ("job_state", "job.json", "runner job state", "non-secret"),
@@ -115,6 +116,7 @@ def build_run_record(
         "durable_state": durable_state,
         "runner_profile": _runner_profile_summary(runner_readiness),
         "provider_playbook": _provider_playbook_summary(provider_strategies),
+        "verifiers": _verifier_summary(verification),
         "wake_events": _wake_event_summary(wake_events),
         "human_actions": human_actions,
         "automation_boundary": _automation_boundary_summary(
@@ -819,6 +821,63 @@ def _automation_route_owner(route: str, deterministic: bool, implemented: bool) 
     if route in {"api", "official_cli", "local_vault"} and deterministic and implemented:
         return "fusekit"
     return "blocked"
+
+
+def _verifier_summary(verification: dict[str, Any]) -> dict[str, Any]:
+    checks = verification.get("checks", [])
+    checks = checks if isinstance(checks, list) else []
+    records: list[dict[str, Any]] = []
+    counts = {
+        "passed": 0,
+        "pending_safe": 0,
+        "pending": 0,
+        "repairing": 0,
+        "failed": 0,
+        "skipped": 0,
+        "needs_human_gate": 0,
+        "unknown": 0,
+    }
+    for check in checks:
+        if not isinstance(check, dict):
+            continue
+        details = check.get("details", {})
+        details = details if isinstance(details, dict) else {}
+        raw_status = str(check.get("status", "") or "").strip()
+        pending_safe = raw_status == "pending_safe" or (
+            raw_status == "pending" and details.get("pending_safe") is True
+        )
+        effective_status = "pending_safe" if pending_safe else raw_status or "unknown"
+        if effective_status in counts:
+            counts[effective_status] += 1
+        else:
+            counts["unknown"] += 1
+        records.append(
+            {
+                "provider": str(check.get("provider", "") or "").strip(),
+                "check": str(check.get("check", "") or "provider_status").strip(),
+                "status": effective_status,
+                "pending_safe": pending_safe,
+            }
+        )
+    blocking = (
+        counts["failed"]
+        + counts["repairing"]
+        + counts["needs_human_gate"]
+        + counts["pending"]
+        + counts["unknown"]
+    )
+    overall = "passed" if records and not blocking else "pending" if not records else "blocked"
+    return {
+        "schema_version": VERIFIER_SUMMARY_SCHEMA_VERSION,
+        "overall": overall,
+        "all_passed_or_pending_safe": bool(records) and blocking == 0,
+        "counts": counts,
+        "checks": records,
+        "statement": (
+            "Live provider verifiers are summarized as green checks or pending-safe "
+            "checks before launch readiness and detonation proof are trusted."
+        ),
+    }
 
 
 def _acceptance_summary(acceptance: dict[str, Any]) -> dict[str, Any]:

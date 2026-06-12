@@ -65,6 +65,7 @@ def render_control_room(
     {_render_durable_state(control_payload.get("run_record", {}))}
     {_render_human_actions(control_payload.get("run_record", {}))}
     {_render_automation_boundary(control_payload.get("run_record", {}))}
+    {_render_run_record_verifiers(control_payload.get("run_record", {}))}
     {_render_acceptance_blockers(control_payload.get("acceptance", {}))}
     {_render_provider_strategies(control_payload.get("provider_strategies", {}))}
     {_render_trust(control_payload.get("verification", {}))}
@@ -1438,6 +1439,81 @@ def _render_automation_route_card(route: dict[str, Any]) -> str:
             <strong>{html.escape(provider)} · {html.escape(recipe)}</strong>
             <p>{html.escape(detail)}</p>
             <em>{html.escape(route_kind)}</em>
+          </div>
+        </article>
+"""
+
+
+def _render_run_record_verifiers(run_record: Any) -> str:
+    run_record = run_record if isinstance(run_record, dict) else {}
+    verifiers = run_record.get("verifiers", {})
+    verifiers = verifiers if isinstance(verifiers, dict) else {}
+    checks = verifiers.get("checks", [])
+    checks = checks if isinstance(checks, list) else []
+    cards = "\n".join(
+        _render_run_record_verifier_card(check)
+        for check in checks[:6]
+        if isinstance(check, dict)
+    )
+    if not cards:
+        cards = """
+        <article class="trust-card pending">
+          <div class="trust-snow state-checking" aria-hidden="true"></div>
+          <div>
+            <span>Pending</span>
+            <strong>Live verifier ledger</strong>
+            <p>Waiting for provider verification checks to be recorded.</p>
+            <em>verifiers</em>
+          </div>
+        </article>
+"""
+    summary = (
+        "all verifiers green or pending-safe"
+        if verifiers.get("all_passed_or_pending_safe") is True
+        else "verifiers still running"
+    )
+    return f"""
+    <section class="run-state-panel" aria-label="Live provider verifiers">
+      <div class="section-head compact">
+        <div>
+          <span class="section-kicker">Live verifiers</span>
+          <h2>Provider checks are real</h2>
+        </div>
+        <span class="live-pill" data-verifier-overall>{html.escape(summary)}</span>
+      </div>
+      <p class="muted">
+        FuseKit records provider and live-app verifier status in the Run Record before
+        trusting launch readiness or detonation proof.
+      </p>
+      <div class="run-state-grid" data-verifier-checks>{cards}</div>
+    </section>
+"""
+
+
+def _render_run_record_verifier_card(check: dict[str, Any]) -> str:
+    status = str(check.get("status", "") or "pending")
+    passed = status in {"passed", "pending_safe", "skipped"}
+    card_status = "passed" if passed else "pending"
+    snow = "passed" if passed else "checking"
+    provider = str(check.get("provider", "") or "provider")
+    check_name = str(check.get("check", "") or "provider_status")
+    detail = (
+        "Verifier passed against the live provider state."
+        if status == "passed"
+        else "Verifier is pending-safe; FuseKit can keep retrying without user work."
+        if status == "pending_safe"
+        else "Optional verifier was skipped."
+        if status == "skipped"
+        else "Verifier is still waiting for live evidence."
+    )
+    return f"""
+        <article class="trust-card {card_status}" data-verifier-provider="{html.escape(provider)}">
+          <div class="trust-snow state-{snow}" aria-hidden="true"></div>
+          <div>
+            <span>{html.escape(status_label(card_status))}</span>
+            <strong>{html.escape(provider)} · {html.escape(check_name)}</strong>
+            <p>{html.escape(detail)}</p>
+            <em>{html.escape(status.replace('_', ' '))}</em>
           </div>
         </article>
 """

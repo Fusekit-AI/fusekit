@@ -31,6 +31,7 @@ from fusekit.runner.control_room.state import (
 from fusekit.runner.run_record import (
     AUTOMATION_BOUNDARY_SCHEMA_VERSION,
     RUN_RECORD_SCHEMA_VERSION,
+    VERIFIER_SUMMARY_SCHEMA_VERSION,
 )
 from fusekit.scanner import scan_repo
 from fusekit.security import redact_public_path, redact_public_text, scan_for_secret_leaks
@@ -515,6 +516,9 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
     provider_playbook = _require_dict_field(raw, "provider_playbook", failures)
     if provider_playbook is not None:
         failures.extend(_provider_playbook_shape_failures(provider_playbook))
+    verifiers = _require_dict_field(raw, "verifiers", failures)
+    if verifiers is not None:
+        failures.extend(_verifier_summary_shape_failures(verifiers))
     vault = _require_dict_field(raw, "vault", failures)
     if vault is not None:
         if not isinstance(vault.get("record_count"), int):
@@ -728,6 +732,56 @@ def _automation_boundary_shape_failures(boundary: dict[str, Any]) -> list[str]:
         if term not in lowered:
             failures.append("automation_boundary.statement is missing " + term + " guidance")
             break
+    return failures
+
+
+def _verifier_summary_shape_failures(verifiers: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    if str(verifiers.get("schema_version", "")).strip() != VERIFIER_SUMMARY_SCHEMA_VERSION:
+        failures.append("verifiers.schema_version is unsupported")
+    if verifiers.get("all_passed_or_pending_safe") is not True:
+        failures.append("verifiers.all_passed_or_pending_safe must be true")
+    if str(verifiers.get("overall", "")).strip() not in {"passed"}:
+        failures.append("verifiers.overall must be passed")
+    checks = verifiers.get("checks", [])
+    if not isinstance(checks, list) or not checks:
+        failures.append("verifiers.checks is missing")
+        checks = []
+    for index, check in enumerate(checks):
+        label = f"verifiers.checks[{index}]"
+        if not isinstance(check, dict):
+            failures.append(f"{label} is not an object")
+            continue
+        for key in ("provider", "check", "status"):
+            if not str(check.get(key, "") or "").strip():
+                failures.append(f"{label}.{key} is missing")
+        status = str(check.get("status", "") or "").strip()
+        if status not in {"passed", "pending_safe", "skipped"}:
+            failures.append(f"{label}.status must be passed, pending_safe, or skipped")
+        if status == "pending_safe" and check.get("pending_safe") is not True:
+            failures.append(f"{label}.pending_safe must be true")
+    counts = verifiers.get("counts", {})
+    if not isinstance(counts, dict):
+        failures.append("verifiers.counts is missing")
+    else:
+        for key in (
+            "passed",
+            "pending_safe",
+            "pending",
+            "repairing",
+            "failed",
+            "skipped",
+            "needs_human_gate",
+            "unknown",
+        ):
+            if not isinstance(counts.get(key), int):
+                failures.append(f"verifiers.counts.{key} is missing")
+        for key in ("pending", "repairing", "failed", "needs_human_gate", "unknown"):
+            if _safe_int(counts.get(key)) != 0:
+                failures.append(f"verifiers.counts.{key} must be 0")
+    statement = str(verifiers.get("statement", "") or "").lower()
+    if "live provider verifiers" not in statement or "green checks" not in statement:
+        failures.append("verifiers.statement is missing live-verifier guidance")
     return failures
 
 

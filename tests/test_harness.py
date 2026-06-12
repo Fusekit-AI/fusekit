@@ -315,6 +315,42 @@ def _automation_boundary() -> dict[str, object]:
     }
 
 
+def _verifier_summary() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.verifier-summary.v1",
+        "overall": "passed",
+        "all_passed_or_pending_safe": True,
+        "counts": {
+            "passed": 1,
+            "pending_safe": 1,
+            "pending": 0,
+            "repairing": 0,
+            "failed": 0,
+            "skipped": 0,
+            "needs_human_gate": 0,
+            "unknown": 0,
+        },
+        "checks": [
+            {
+                "provider": "live_app",
+                "check": "live_url_healthy",
+                "status": "passed",
+                "pending_safe": False,
+            },
+            {
+                "provider": "cloudflare",
+                "check": "dns_propagated",
+                "status": "pending_safe",
+                "pending_safe": True,
+            },
+        ],
+        "statement": (
+            "Live provider verifiers are summarized as green checks or pending-safe "
+            "checks before launch readiness is trusted."
+        ),
+    }
+
+
 def _resend_domain_receipt_details(
     *,
     dns_records: list[dict[str, str]] | None = None,
@@ -669,11 +705,21 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
                 "wake_events": {"total": 0, "event_counts": {}, "events": []},
                 "human_actions": _human_action_trace(),
                 "automation_boundary": _automation_boundary(),
+                "verifiers": _verifier_summary(),
                 "provider_strategies": {"providers": []},
                 "vault": {"record_count": 0, "records": []},
                 "artifacts": [],
                 "evidence": _evidence_inventory(),
-                "verification": {"checks": []},
+                "verification": {
+                    "checks": [
+                        {"provider": "live_app", "status": "passed"},
+                        {
+                            "provider": "cloudflare",
+                            "status": "pending",
+                            "details": {"pending_safe": True},
+                        },
+                    ]
+                },
                 "acceptance": {},
                 "detonation": {
                     "preflight_safe": True,
@@ -3765,6 +3811,64 @@ def test_acceptance_run_record_requires_automation_boundary(tmp_path) -> None:
         in failures
     )
     assert "automation_boundary.statement is missing vnc guidance" in failures
+
+
+def test_acceptance_run_record_requires_live_verifier_summary(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+
+    record["verifiers"] = {
+        "schema_version": "fusekit.verifier-summary.v1",
+        "overall": "blocked",
+        "all_passed_or_pending_safe": False,
+        "counts": {
+            "passed": 0,
+            "pending_safe": 0,
+            "pending": 1,
+            "repairing": 0,
+            "failed": 1,
+            "skipped": 0,
+            "needs_human_gate": 1,
+            "unknown": 1,
+        },
+        "checks": [
+            {
+                "provider": "cloudflare",
+                "check": "dns_propagated",
+                "status": "pending",
+                "pending_safe": False,
+            },
+            {
+                "provider": "resend",
+                "check": "domain_verified",
+                "status": "pending_safe",
+                "pending_safe": False,
+            },
+            {
+                "provider": "",
+                "check": "",
+                "status": "failed",
+                "pending_safe": False,
+            },
+        ],
+        "statement": "provider checks happened",
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert "verifiers.all_passed_or_pending_safe must be true" in failures
+    assert "verifiers.overall must be passed" in failures
+    assert "verifiers.checks[0].status must be passed, pending_safe, or skipped" in failures
+    assert "verifiers.checks[1].pending_safe must be true" in failures
+    assert "verifiers.checks[2].provider is missing" in failures
+    assert "verifiers.checks[2].check is missing" in failures
+    assert "verifiers.counts.pending must be 0" in failures
+    assert "verifiers.counts.failed must be 0" in failures
+    assert "verifiers.counts.needs_human_gate must be 0" in failures
+    assert "verifiers.counts.unknown must be 0" in failures
+    assert "verifiers.statement is missing live-verifier guidance" in failures
 
 
 def test_acceptance_run_record_requires_evented_gate_wake_proof(tmp_path) -> None:
