@@ -587,6 +587,10 @@ function renderVisual(job) {
     if (statusNode) {
       statusNode.textContent = `Visual session: ${status}`;
     }
+    const gateHint = root.querySelector("[data-visual-gate-hint]");
+    if (gateHint) {
+      gateHint.outerHTML = visualGateHint(job);
+    }
     return;
   }
   root.dataset.novncUrl = novncUrl;
@@ -632,6 +636,7 @@ function renderVisual(job) {
             This is the disposable VM display. Use it to click, type, and pass
             provider gates while FuseKit keeps observing the same session.
           </p>
+          ${visualGateHint(job)}
           <div class="visual-secret">
             <span>noVNC password</span>
             ${passwordRow}
@@ -652,6 +657,41 @@ function renderVisual(job) {
         </aside>
       </div>
     </section>
+  `;
+}
+
+function visualGateHint(job) {
+  const gate = activeGate(job);
+  if (!gate) {
+    return `
+      <div class="visual-gate-hint idle" data-visual-gate-hint>
+        <span>Current gate</span>
+        <strong>No human gate is waiting</strong>
+        <p>Keep this window open; FuseKit will bring provider gates here when needed.</p>
+      </div>
+    `;
+  }
+  const step = gateStep(gate);
+  const targets = captureTargets(step.target);
+  let action = "";
+  let labelText = "";
+  if (step.status === "running") {
+    action = step.next_action || step.detail || "";
+    labelText = "Rechecking";
+  } else if (targets.length) {
+    action = captureInstructionForTargets(targets);
+    labelText = "Copy inside VM, then capture";
+  } else {
+    action = step.next_action || step.detail || "";
+    labelText = gateDoneLabel(step);
+  }
+  return `
+    <div class="visual-gate-hint active" data-visual-gate-hint>
+      <span>Current gate</span>
+      <strong>${escapeHtml(step.label || "Provider gate")}</strong>
+      <p>${escapeHtml(publicCopy(action, targets))}</p>
+      <em>${escapeHtml(labelText)}</em>
+    </div>
   `;
 }
 

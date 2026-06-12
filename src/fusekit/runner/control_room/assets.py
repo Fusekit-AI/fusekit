@@ -1273,6 +1273,45 @@ button {
   line-height: 1.5;
 }
 
+.visual-gate-hint {
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(0, 21, 42, 0.16);
+  border-radius: 8px;
+  padding: 11px 12px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.visual-gate-hint.active {
+  border-color: rgba(27, 126, 190, 0.28);
+  background: rgba(228, 245, 255, 0.88);
+}
+
+.visual-gate-hint span {
+  color: var(--snow-muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.visual-gate-hint strong {
+  color: var(--snow-navy);
+  font-size: 14px;
+}
+
+.visual-gate-hint p {
+  margin: 0;
+  color: #31465c;
+  font-size: 13px;
+}
+
+.visual-gate-hint em {
+  color: #1b5f82;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 850;
+}
+
 .visual-help a {
   display: inline-flex;
   align-items: center;

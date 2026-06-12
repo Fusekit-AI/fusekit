@@ -43,6 +43,10 @@ def render_control_room(
     if action_token:
         control_payload["control_room_action_token"] = action_token
     payload = _safe_json(_public_payload(control_payload))
+    visual_session_html = _render_visual_session(
+        control_payload.get("visual", {}),
+        control_payload,
+    )
     nonce_attr = f' nonce="{html.escape(csp_nonce)}"' if csp_nonce else ""
     return f"""<!doctype html>
 <html lang="en">
@@ -59,7 +63,7 @@ def render_control_room(
       {_render_progress(job, control_payload)}
       {_render_focus(job, control_payload)}
     </section>
-    <div data-visual-session>{_render_visual_session(control_payload.get("visual", {}))}</div>
+    <div data-visual-session>{visual_session_html}</div>
     {_render_recovery(job)}
     {_render_run_state(control_payload.get("run_state", {}))}
     {_render_durable_state(control_payload.get("run_record", {}))}
@@ -322,7 +326,7 @@ def _render_recovery(job: JobState) -> str:
 """
 
 
-def _render_visual_session(visual: Any) -> str:
+def _render_visual_session(visual: Any, payload: dict[str, Any] | None = None) -> str:
     if not isinstance(visual, dict) or not visual.get("novnc_url"):
         return ""
     novnc_url = str(visual.get("novnc_url", ""))
@@ -383,6 +387,7 @@ def _render_visual_session(visual: Any) -> str:
             This is the disposable VM display. Use it to click, type, and pass
             provider gates while FuseKit keeps observing the same session.
           </p>
+          {_render_visual_gate_hint(payload or {})}
           <div class="visual-secret">
             <span>noVNC password</span>
             {password_row}
@@ -404,6 +409,37 @@ def _render_visual_session(visual: Any) -> str:
       </div>
     </section>
 """
+
+
+def _render_visual_gate_hint(payload: dict[str, Any]) -> str:
+    gate = _active_gate(payload)
+    if gate is None:
+        return """
+          <div class="visual-gate-hint idle" data-visual-gate-hint>
+            <span>Current gate</span>
+            <strong>No human gate is waiting</strong>
+            <p>Keep this window open; FuseKit will bring provider gates here when needed.</p>
+          </div>
+        """
+    step = _gate_step(gate)
+    capture_targets = _capture_targets(str(getattr(step, "target", "") or ""))
+    if str(getattr(step, "status", "") or "") == "running":
+        action = str(getattr(step, "next_action", "") or getattr(step, "detail", "") or "")
+        label = "Rechecking"
+    elif capture_targets:
+        action = _capture_instruction(capture_targets)
+        label = "Copy inside VM, then capture"
+    else:
+        action = str(getattr(step, "next_action", "") or getattr(step, "detail", "") or "")
+        label = _gate_done_label(step)
+    return f"""
+          <div class="visual-gate-hint active" data-visual-gate-hint>
+            <span>Current gate</span>
+            <strong>{html.escape(str(getattr(step, "label", "") or "Provider gate"))}</strong>
+            <p>{html.escape(_public_copy(action, capture_targets))}</p>
+            <em>{html.escape(label)}</em>
+          </div>
+        """
 
 
 def _render_acceptance_blockers(report: Any) -> str:
@@ -2235,6 +2271,8 @@ def _gate_step(gate: dict[str, Any]) -> Any:
         resume_hint=str(gate.get("resume_hint", "") or ""),
         attempts=int(gate.get("attempts", 0) or 0),
         captured_targets=gate.get("captured_targets", []),
+        success_criteria=gate.get("success_criteria", []),
+        avoid_steps=gate.get("avoid_steps", []),
     )
 
 

@@ -1255,6 +1255,7 @@ def test_live_control_room_refreshes_all_run_record_proof_panels() -> None:
         ("renderAuditTrail(job)", "data-audit-trail-checks"),
         ("renderRecordingContract(job)", "data-recording-contract-checks"),
         ("renderDetonationReceipt(job)", "data-detonation-receipt-checks"),
+        ("visualGateHint(job)", "data-visual-gate-hint"),
         ("remoteWorkerCleanupReady(workerCleanup)", "remote_worker_cleanup"),
     ):
         assert renderer in SCRIPT
@@ -2231,6 +2232,8 @@ def test_control_room_payload_includes_active_gate_records(tmp_path) -> None:
         classification="mfa",
         target="Continue",
         follow_steps=("Click Continue", "Finish the MFA prompt"),
+        success_criteria=("Exact custom success marker",),
+        avoid_steps=("Exact custom avoid marker",),
     )
 
     html = render_control_room(job, gate_path=tmp_path / "gates.json")
@@ -2245,6 +2248,8 @@ def test_control_room_payload_includes_active_gate_records(tmp_path) -> None:
     assert "vercel needs your approval" in html
     assert "Click Continue" in html
     assert "Snowman highlighted" in html
+    assert "Exact custom success marker" in html
+    assert "Exact custom avoid marker" in html
     assert "Next" in html
     assert "Finish the vercel login" in html
     assert "retry verification after you click" in html
@@ -4835,6 +4840,14 @@ def test_control_room_payload_and_html_include_visual_session(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job_path = tmp_path / "job.json"
     job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "authorization",
+        provider="resend",
+        reason="provider authorization required",
+        resume_url="https://resend.com/api-keys",
+        classification="provider-authorization",
+        target="RESEND_API_KEY",
+    )
     (tmp_path / "visual.json").write_text(
         json.dumps(
             {
@@ -4865,6 +4878,10 @@ def test_control_room_payload_and_html_include_visual_session(tmp_path) -> None:
     assert "Live VM browser" in html
     assert "viewer-password" in html
     assert 'class="visual-frame"' in html
+    assert "Current gate" in html
+    assert "resend needs your approval" in html
+    assert "Copy inside VM, then capture" in html
+    assert "Copy the provider value in the VM browser" in html
     assert (
         'sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock allow-modals"'
         in html
