@@ -436,9 +436,16 @@ COMMON_PROVIDER_CATALOG: dict[str, ProviderCatalogEntry] = {
             "Choose test mode or live mode based on the app launch target.",
         ),
         secret_steps=(
-            "Open Developers > API keys and capture the approved secret key.",
+            (
+                "Open Developers > API keys and copy the approved secret key inside "
+                "the VM browser."
+            ),
             "Create the webhook endpoint when the app has a Stripe webhook route.",
-            "Capture STRIPE_WEBHOOK_SECRET after Stripe reveals the endpoint signing secret.",
+            (
+                "After Stripe reveals the endpoint signing secret, copy it inside the "
+                "VM browser and click Capture STRIPE_WEBHOOK_SECRET from VM clipboard "
+                "if FuseKit shows that env-named Capture button."
+            ),
         ),
         service_gates=(
             "email verification",
@@ -1650,8 +1657,8 @@ def _inferred_pack(provider: str, evidence: ProviderEvidence) -> ProviderCapabil
             secret_steps=(
                 "Navigate to the provider developer/API key settings.",
                 (
-                    "Create or reveal the approved token/API key and capture it into "
-                    "the encrypted vault."
+                    "Create or reveal the approved token/API key, then copy it inside "
+                    "the VM browser and use the env-named Capture button FuseKit shows."
                 ),
             )
             + _launcher_capture_step(required[0]),

@@ -414,6 +414,9 @@ def test_common_provider_handoffs_use_launcher_capture_path(tmp_path) -> None:
         assert f"Capture {pack.handoff.token_env} from VM clipboard" in text
         assert "No paste into your computer is needed" in text
         assert "Capture reads the VM clipboard directly" in text
+        assert "capture the approved" not in text.lower()
+        assert "capture it into" not in text.lower()
+        assert "visible FuseKit Capture" not in text
 
 
 def test_inferred_provider_handoff_uses_launcher_capture_path(tmp_path) -> None:
@@ -426,6 +429,17 @@ def test_inferred_provider_handoff_uses_launcher_capture_path(tmp_path) -> None:
     assert "Capture NEWPAY_API_KEY from VM clipboard" in text
     assert "No paste into your computer is needed" in text
     assert "Capture reads the VM clipboard directly" in text
+    assert "capture it into" not in text.lower()
+
+
+def test_stripe_handoff_names_webhook_capture_control(tmp_path) -> None:
+    pack = synthesize_provider_pack("stripe", tmp_path)
+    text = " ".join(pack.handoff.secret_steps)
+
+    assert "copy the approved secret key inside the VM browser" in text
+    assert "Capture STRIPE_SECRET_KEY from VM clipboard" in text
+    assert "Capture STRIPE_WEBHOOK_SECRET from VM clipboard" in text
+    assert "capture the approved secret key" not in text.lower()
 
 
 def test_provider_pack_rejects_vague_secret_capture_handoff(tmp_path) -> None:
