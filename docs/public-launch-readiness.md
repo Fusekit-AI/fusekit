@@ -138,8 +138,8 @@ surfaces that detonation deletes, and agree with the detonation preserve list so
 the public demo cannot rely on hidden local browser profiles, host clipboard
 history, or VM scratch state. The Run Record's workspace
 detonation receipt must match the standalone `workspace_detonation.json` artifact,
-so the public demo cannot claim that the OCI VM, worker process, or network
-resources were destroyed from stale central state alone. The final recording
+so the public demo cannot claim that the OCI VM, boot volume, worker process, or
+network resources were destroyed from stale central state alone. The final recording
 contract must expose `worker_replacement` as its own green check, separate from
 general durable-state readiness, so the demo cannot hide an unproven kill/recreate
 drill inside a broader status summary. It must also agree with the Run Record

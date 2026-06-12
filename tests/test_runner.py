@@ -395,6 +395,7 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
                 "status": "complete",
                 "reason": "remote worker and OCI workspace detonated",
                 "deleted": [
+                    "boot_volume",
                     "ephemeral_public_ip",
                     "instance",
                     "internet_gateway",
@@ -411,6 +412,7 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
                     "remote_worker": True,
                     "remote_worker_cleanup": remote_worker_cleanup_proof(),
                     "compute_instance": True,
+                    "boot_volume_deleted": True,
                     "ephemeral_public_ip_released": True,
                     "network_resources": [
                         "internet_gateway",
@@ -427,7 +429,8 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
                     "missing": [],
                     "statement": (
                         "FuseKit detonation must remove the remote worker process state, "
-                        "terminate the OCI VM, release the ephemeral public IP, and delete "
+                        "terminate the OCI VM, delete the boot volume, release the "
+                        "ephemeral public IP, and delete "
                         "FuseKit-created network resources."
                     ),
                 },
@@ -751,6 +754,7 @@ def test_run_record_recording_contract_blocks_missing_provider_playbook(tmp_path
             {
                 "status": "complete",
                 "deleted": [
+                    "boot_volume",
                     "ephemeral_public_ip",
                     "instance",
                     "internet_gateway",
@@ -767,6 +771,7 @@ def test_run_record_recording_contract_blocks_missing_provider_playbook(tmp_path
                     "remote_worker": True,
                     "remote_worker_cleanup": remote_worker_cleanup_proof(),
                     "compute_instance": True,
+                    "boot_volume_deleted": True,
                     "ephemeral_public_ip_released": True,
                     "network_resources": [
                         "internet_gateway",
@@ -867,6 +872,7 @@ def test_run_record_recording_contract_blocks_thin_runner_profile(tmp_path) -> N
             {
                 "status": "complete",
                 "deleted": [
+                    "boot_volume",
                     "ephemeral_public_ip",
                     "instance",
                     "internet_gateway",
@@ -883,6 +889,7 @@ def test_run_record_recording_contract_blocks_thin_runner_profile(tmp_path) -> N
                     "remote_worker": True,
                     "remote_worker_cleanup": remote_worker_cleanup_proof(),
                     "compute_instance": True,
+                    "boot_volume_deleted": True,
                     "ephemeral_public_ip_released": True,
                     "network_resources": [
                         "internet_gateway",
@@ -1236,6 +1243,7 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
                         "status": "complete",
                         "reason": "remote worker and OCI workspace detonated",
                         "deleted": [
+                            "boot_volume",
                             "ephemeral_public_ip",
                             "instance",
                             "internet_gateway",
@@ -1252,6 +1260,7 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
                             "remote_worker": True,
                             "remote_worker_cleanup": remote_worker_cleanup_proof(),
                             "compute_instance": True,
+                            "boot_volume_deleted": True,
                             "ephemeral_public_ip_released": True,
                             "network_resources": [
                                 "internet_gateway",
@@ -1268,8 +1277,8 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
                             "missing": [],
                             "statement": (
                                 "FuseKit detonation must remove the remote worker "
-                                "process state, terminate the OCI VM, and delete "
-                                "FuseKit-created network resources."
+                                "process state, terminate the OCI VM, delete the boot "
+                                "volume, and delete FuseKit-created network resources."
                             ),
                         },
                         "updated_at": 2.0,
@@ -1316,6 +1325,7 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
     assert "disposable VM paths" in html
     assert "host-machine state was not required" in html
     assert 'data-detonation-resource="compute_instance"' in html
+    assert 'data-detonation-resource="boot_volume"' in html
     assert "Root tenancy or root compartment scope was preserved by design." in html
 
 
@@ -6178,6 +6188,7 @@ def test_oci_detonation_reports_provider_delete_failures(
     deleted = provisioner.detonate(workspace)
 
     assert deleted["instance"] == "ocid1.instance.oc1..example"
+    assert deleted["boot_volume"] == "delete-on-terminate"
     assert deleted["ephemeral_public_ip"] == "203.0.113.10"
     assert deleted["failed.subnet"] == "409 Conflict"
     assert deleted["failed.compartment"] == "409 Conflict"

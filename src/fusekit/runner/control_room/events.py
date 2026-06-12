@@ -1808,6 +1808,12 @@ function renderDetonationReceipt(job) {
       summary.compute_instance === true,
     ),
     detonationResourceCard(
+      "boot_volume",
+      "OCI boot volume",
+      summary.boot_volume_deleted === true,
+      "Boot disk requested for deletion with the disposable VM.",
+    ),
+    detonationResourceCard(
       "ephemeral_public_ip",
       "Ephemeral public IP",
       summary.ephemeral_public_ip_released === true,

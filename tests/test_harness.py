@@ -170,6 +170,7 @@ def _workspace_detonation_receipt() -> dict[str, object]:
         "status": "complete",
         "reason": "remote worker and OCI workspace detonated",
         "deleted": [
+            "boot_volume",
             "ephemeral_public_ip",
             "instance",
             "internet_gateway",
@@ -186,6 +187,7 @@ def _workspace_detonation_receipt() -> dict[str, object]:
             "remote_worker": True,
             "remote_worker_cleanup": remote_worker_cleanup_proof(),
             "compute_instance": True,
+            "boot_volume_deleted": True,
             "ephemeral_public_ip_released": True,
             "network_resources": [
                 "internet_gateway",
@@ -202,7 +204,8 @@ def _workspace_detonation_receipt() -> dict[str, object]:
             "missing": [],
             "statement": (
                 "FuseKit detonation must remove the remote worker process state, "
-                "terminate the OCI VM, and delete FuseKit-created network resources."
+                "terminate the OCI VM, delete the boot volume, and delete "
+                "FuseKit-created network resources."
             ),
         },
         "updated_at": 2.0,
@@ -4548,6 +4551,7 @@ def test_acceptance_run_record_requires_complete_workspace_detonation_receipt(
     assert "detonation.workspace_detonated must be true" in failures
     assert "detonation.workspace_receipt.status must be complete" in failures
     assert "detonation.workspace_receipt.deleted must include instance" in failures
+    assert "detonation.workspace_receipt.deleted must include boot volume" in failures
     assert "detonation.workspace_receipt.deleted must include ephemeral public IP" in failures
     assert "detonation.workspace_receipt.failures must be empty" in failures
     assert "detonation.workspace_receipt.reason is missing" in failures

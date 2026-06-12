@@ -1691,6 +1691,12 @@ def _render_detonation_receipt(run_record: Any) -> str:
                 summary.get("compute_instance") is True,
             ),
             _render_detonation_resource_card(
+                "boot_volume",
+                "OCI boot volume",
+                summary.get("boot_volume_deleted") is True,
+                detail="Boot disk requested for deletion with the disposable VM.",
+            ),
+            _render_detonation_resource_card(
                 "ephemeral_public_ip",
                 "Ephemeral public IP",
                 summary.get("ephemeral_public_ip_released") is True,
@@ -1732,8 +1738,8 @@ def _render_detonation_receipt(run_record: Any) -> str:
       </div>
       <p class="muted">
         FuseKit records resource classes, not secret values: worker state, VM instance,
-        disposable browser/auth/passphrase/log cleanup proof, ephemeral public IP,
-        network resources, compartment scope, and any provider delete failures.
+        boot volume, disposable browser/auth/passphrase/log cleanup proof, ephemeral
+        public IP, network resources, compartment scope, and any provider delete failures.
       </p>
       <div class="run-state-grid" data-detonation-receipt-checks>{cards}</div>
     </section>

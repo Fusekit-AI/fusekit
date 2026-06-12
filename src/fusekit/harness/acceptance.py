@@ -1664,6 +1664,8 @@ def _workspace_detonation_receipt_failures(receipt: dict[str, Any]) -> list[str]
     else:
         if "instance" not in deleted_set:
             failures.append("detonation.workspace_receipt.deleted must include instance")
+        if "boot_volume" not in deleted_set:
+            failures.append("detonation.workspace_receipt.deleted must include boot volume")
         if "ephemeral_public_ip" not in deleted_set:
             failures.append("detonation.workspace_receipt.deleted must include ephemeral public IP")
         if required_network_resources - deleted_set:
@@ -1697,6 +1699,8 @@ def _workspace_detonation_receipt_failures(receipt: dict[str, Any]) -> list[str]
         )
         if resource_summary.get("compute_instance") is not True:
             failures.append("detonation.workspace_receipt.compute_instance must be true")
+        if resource_summary.get("boot_volume_deleted") is not True:
+            failures.append("detonation.workspace_receipt.boot_volume must be deleted")
         if resource_summary.get("ephemeral_public_ip_released") is not True:
             failures.append("detonation.workspace_receipt.ephemeral_public_ip must be released")
         if resource_summary.get("network_resources_deleted") is not True:
@@ -1726,7 +1730,7 @@ def _workspace_detonation_receipt_failures(receipt: dict[str, Any]) -> list[str]
         elif missing:
             failures.append("detonation.workspace_receipt.resource_summary.missing must be empty")
         statement = str(resource_summary.get("statement", "") or "").lower()
-        for required in ("remote worker", "oci vm", "network resources"):
+        for required in ("remote worker", "oci vm", "boot volume", "network resources"):
             if required not in statement:
                 failures.append(
                     "detonation.workspace_receipt.resource_summary.statement is incomplete"

@@ -242,6 +242,7 @@ class OciProvisioner:
             try:
                 self.compute.terminate_instance(instance_id, preserve_boot_volume=False)
                 deleted["instance"] = instance_id
+                deleted["boot_volume"] = "delete-on-terminate"
                 self._wait_for_instance_network_release(workspace.compartment_id, instance_id)
                 if workspace.public_ip:
                     deleted["ephemeral_public_ip"] = workspace.public_ip

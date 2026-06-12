@@ -219,6 +219,7 @@ def test_workspace_detonation_receipt_fails_closed_and_redacts(tmp_path) -> None
     assert receipt["deleted"] == ["instance"]
     assert receipt["resource_summary"]["remote_worker"] is False
     assert receipt["resource_summary"]["compute_instance"] is True
+    assert receipt["resource_summary"]["boot_volume_deleted"] is False
     assert receipt["resource_summary"]["ephemeral_public_ip_released"] is False
     assert receipt["resource_summary"]["network_resources_deleted"] is False
     assert receipt["resource_summary"]["network_resources_missing"] == [
@@ -231,6 +232,7 @@ def test_workspace_detonation_receipt_fails_closed_and_redacts(tmp_path) -> None
     ]
     assert receipt["resource_summary"]["missing"] == [
         "remote_worker",
+        "boot_volume",
         "ephemeral_public_ip",
         "network_resources",
     ]
@@ -263,6 +265,7 @@ def test_workspace_detonation_requires_reported_cleanup_scope(tmp_path) -> None:
     assert receipt["deleted"] == []
     assert receipt["resource_summary"]["remote_worker"] is False
     assert receipt["resource_summary"]["compute_instance"] is False
+    assert receipt["resource_summary"]["boot_volume_deleted"] is False
     assert receipt["resource_summary"]["ephemeral_public_ip_released"] is False
     assert receipt["resource_summary"]["network_resources_deleted"] is False
     assert receipt["resource_summary"]["network_resources_missing"] == [
@@ -276,6 +279,7 @@ def test_workspace_detonation_requires_reported_cleanup_scope(tmp_path) -> None:
     assert receipt["resource_summary"]["missing"] == [
         "remote_worker",
         "compute_instance",
+        "boot_volume",
         "ephemeral_public_ip",
         "network_resources",
     ]
@@ -290,6 +294,7 @@ def test_workspace_detonation_requires_every_network_resource(tmp_path) -> None:
     partial_cleanup = {
         "remote_worker": remote_worker_cleanup_proof(),
         "instance": "ocid1.instance.oc1..example",
+        "boot_volume": "delete-on-terminate",
         "ephemeral_public_ip": "203.0.113.10",
         "vcn": "ocid1.vcn.oc1..example",
     }
@@ -310,6 +315,7 @@ def test_workspace_detonation_requires_every_network_resource(tmp_path) -> None:
     assert _workspace_detonation_complete(partial_cleanup) is False
     assert receipt["status"] == "incomplete"
     assert receipt["deleted"] == [
+        "boot_volume",
         "ephemeral_public_ip",
         "instance",
         "remote_worker",
@@ -337,6 +343,7 @@ def test_workspace_detonation_rejects_legacy_remote_worker_string(tmp_path) -> N
     job = JobState.create("fk-test", app, "oci")
     cleanup = {
         "remote_worker": "detonated",
+        "boot_volume": "delete-on-terminate",
         "ephemeral_public_ip": "203.0.113.10",
         "instance": "ocid1.instance.oc1..example",
         "internet_gateway": "ocid1.internetgateway.oc1..example",
@@ -3507,6 +3514,7 @@ def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch)
 
         def detonate(self, workspace) -> dict[str, str]:
             return {
+                "boot_volume": "deleted",
                 "ephemeral_public_ip": "203.0.113.10",
                 "instance": "deleted",
                 "subnet": "deleted",
@@ -3552,6 +3560,7 @@ def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch)
     )
     assert detonation["status"] == "complete"
     assert detonation["deleted"] == [
+        "boot_volume",
         "ephemeral_public_ip",
         "instance",
         "internet_gateway",
@@ -3565,6 +3574,7 @@ def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch)
     assert detonation["failures"] == {}
     assert detonation["resource_summary"]["remote_worker"] is True
     assert detonation["resource_summary"]["compute_instance"] is True
+    assert detonation["resource_summary"]["boot_volume_deleted"] is True
     assert detonation["resource_summary"]["ephemeral_public_ip_released"] is True
     assert detonation["resource_summary"]["network_resources_deleted"] is True
     assert detonation["resource_summary"]["compartment_scope"] == "preserved"
@@ -4035,6 +4045,7 @@ def test_launch_detonates_oci_workspace_after_remote_failure(tmp_path, monkeypat
         def detonate(self, workspace) -> dict[str, str]:
             detonated.append("workspace")
             return {
+                "boot_volume": "deleted",
                 "ephemeral_public_ip": "203.0.113.10",
                 "instance": "deleted",
                 "subnet": "deleted",

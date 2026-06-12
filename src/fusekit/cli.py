@@ -2362,6 +2362,8 @@ def _workspace_detonation_missing_resources(remote_deleted: dict[str, Any]) -> l
         missing.append("remote_worker")
     if "instance" not in deleted:
         missing.append("compute_instance")
+    if "boot_volume" not in deleted:
+        missing.append("boot_volume")
     if "ephemeral_public_ip" not in deleted:
         missing.append("ephemeral_public_ip")
     if WORKSPACE_NETWORK_RESOURCE_KEYS - deleted:
@@ -2407,6 +2409,7 @@ def _workspace_detonation_resource_summary(remote_deleted: dict[str, Any]) -> di
         "remote_worker": _remote_worker_cleanup_complete(remote_deleted.get("remote_worker")),
         "remote_worker_cleanup": worker_cleanup,
         "compute_instance": "instance" in deleted,
+        "boot_volume_deleted": "boot_volume" in deleted,
         "ephemeral_public_ip_released": "ephemeral_public_ip" in deleted,
         "network_resources": network_resources,
         "network_resources_missing": network_resources_missing,
@@ -2416,9 +2419,9 @@ def _workspace_detonation_resource_summary(remote_deleted: dict[str, Any]) -> di
         "missing": _workspace_detonation_missing_resources(remote_deleted),
         "statement": (
             "FuseKit detonation must remove the remote worker process state, terminate "
-            "the OCI VM, release the ephemeral public IP, and delete FuseKit-created "
-            "network resources. Root tenancy or root compartment scope may be preserved "
-            "when no throwaway compartment was created."
+            "the OCI VM, delete the boot volume, release the ephemeral public IP, and "
+            "delete FuseKit-created network resources. Root tenancy or root compartment "
+            "scope may be preserved when no throwaway compartment was created."
         ),
     }
 
