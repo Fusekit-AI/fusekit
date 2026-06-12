@@ -499,7 +499,9 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
         failures.extend(_automation_boundary_shape_failures(automation_boundary))
     if provider_gates is not None and wake_events is not None:
         failures.extend(_run_record_wake_event_failures(provider_gates, wake_events))
-    _require_dict_field(raw, "provider_strategies", failures)
+    provider_strategies = _require_dict_field(raw, "provider_strategies", failures)
+    if provider_strategies is not None:
+        failures.extend(_provider_strategy_summary_shape_failures(provider_strategies))
     runner_profile = _require_dict_field(raw, "runner_profile", failures)
     if runner_profile is not None:
         profile_contract = _require_dict_field(
@@ -745,6 +747,51 @@ def _automation_boundary_shape_failures(boundary: dict[str, Any]) -> list[str]:
         if term not in lowered:
             failures.append("automation_boundary.statement is missing " + term + " guidance")
             break
+    return failures
+
+
+def _provider_strategy_summary_shape_failures(strategies: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    if str(strategies.get("schema_version", "")).strip() != "fusekit.provider-strategies.v1":
+        failures.append("provider_strategies.schema_version is unsupported")
+    providers = strategies.get("providers", [])
+    if not isinstance(providers, list) or not providers:
+        failures.append("provider_strategies.providers is missing")
+        return failures
+    for provider_index, provider_record in enumerate(providers):
+        label = f"provider_strategies.providers[{provider_index}]"
+        if not isinstance(provider_record, dict):
+            failures.append(f"{label} is not an object")
+            continue
+        provider = str(provider_record.get("provider", "") or "").strip()
+        if not provider:
+            failures.append(f"{label}.provider is missing")
+        strategy_records = provider_record.get("strategies", [])
+        if not isinstance(strategy_records, list) or not strategy_records:
+            failures.append(f"{label}.strategies is missing")
+            continue
+        for strategy_index, strategy in enumerate(strategy_records):
+            strategy_label = f"{label}.strategies[{strategy_index}]"
+            if not isinstance(strategy, dict):
+                failures.append(f"{strategy_label} is not an object")
+                continue
+            for key in ("recipe", "strategy", "status"):
+                if not str(strategy.get(key, "") or "").strip():
+                    failures.append(f"{strategy_label}.{key} is missing")
+            decision = strategy.get("decision", {})
+            if not isinstance(decision, dict):
+                failures.append(f"{strategy_label}.decision is missing")
+                continue
+            selected = decision.get("selected", {})
+            if not isinstance(selected, dict):
+                failures.append(f"{strategy_label}.decision.selected is missing")
+                selected = {}
+            for key in ("kind", "status"):
+                if not str(selected.get(key, "") or "").strip():
+                    failures.append(f"{strategy_label}.decision.selected.{key} is missing")
+            candidates = decision.get("candidates", [])
+            if not isinstance(candidates, list) or not candidates:
+                failures.append(f"{strategy_label}.decision.candidates is missing")
     return failures
 
 

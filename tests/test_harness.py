@@ -109,6 +109,52 @@ def _provider_playbook() -> dict[str, object]:
     }
 
 
+def _run_record_provider_strategies() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.provider-strategies.v1",
+        "providers": [
+            {
+                "provider": "resend",
+                "strategies": [
+                    {
+                        "recipe": "resend-domain",
+                        "strategy": "api",
+                        "status": "ok",
+                        "decision": _resend_domain_strategy_decision(),
+                    },
+                    {
+                        "recipe": "resend-api-key",
+                        "strategy": "browser_guided",
+                        "status": "needs_human_gate",
+                        "decision": {
+                            "selected": {
+                                "kind": "browser_guided",
+                                "status": "available",
+                                "deterministic": False,
+                                "implemented": False,
+                                "reason": (
+                                    "Provider token is captured through the VM browser gate."
+                                ),
+                            },
+                            "candidates": [
+                                {
+                                    "kind": "browser_guided",
+                                    "status": "available",
+                                    "deterministic": False,
+                                    "implemented": False,
+                                    "reason": (
+                                        "Provider token is captured through the VM browser gate."
+                                    ),
+                                }
+                            ],
+                        },
+                    },
+                ],
+            },
+        ],
+    }
+
+
 def _workspace_detonation_receipt() -> dict[str, object]:
     return {
         "status": "complete",
@@ -915,7 +961,7 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
                 "human_actions": _human_action_trace(),
                 "automation_boundary": _automation_boundary(),
                 "verifiers": _verifier_summary(),
-                "provider_strategies": {"providers": []},
+                "provider_strategies": _run_record_provider_strategies(),
                 "vault": {"record_count": 0, "records": []},
                 "audit_trail": _audit_trail(),
                 "recording_contract": _recording_contract(),
@@ -4241,6 +4287,48 @@ def test_acceptance_run_record_requires_automation_boundary(tmp_path) -> None:
         in failures
     )
     assert "automation_boundary.statement is missing vnc guidance" in failures
+
+
+def test_acceptance_run_record_requires_provider_strategy_summary(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["provider_strategies"] = {
+        "schema_version": "fusekit.provider-strategies.v1",
+        "providers": [
+            {
+                "provider": "resend",
+                "strategies": [
+                    {
+                        "recipe": "resend-domain",
+                        "strategy": "api",
+                        "status": "ok",
+                        "decision": {"selected": {"kind": "api"}},
+                    }
+                ],
+            }
+        ],
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert "provider_strategies.providers is missing" not in failures
+    assert (
+        "provider_strategies.providers[0].strategies[0].decision.selected.status is missing"
+        in failures
+    )
+    assert (
+        "provider_strategies.providers[0].strategies[0].decision.candidates is missing"
+        in failures
+    )
+
+    record["provider_strategies"] = {"providers": []}
+
+    failures = _run_record_shape_failures(record)
+
+    assert "provider_strategies.schema_version is unsupported" in failures
+    assert "provider_strategies.providers is missing" in failures
 
 
 def test_acceptance_run_record_requires_live_verifier_summary(tmp_path) -> None:

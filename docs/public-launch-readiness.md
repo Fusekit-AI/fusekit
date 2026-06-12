@@ -100,7 +100,11 @@ demo can prove what happened without embedding screenshots, provider URLs,
 clipboard values, or raw secret text. The Run Record must also include a
 `fusekit.human-action-trace.v1` summary that maps every recorded provider open,
 VM-clipboard Capture, and approval click to a visible control-room gate and its
-follow-me instructions, with no unguided actions. Public OCI acceptance also
+follow-me instructions, with no unguided actions. It must carry the same
+provider-strategy contract as the standalone provider route artifact: schema
+version, provider list, strategy rows, selected route status, and fallback
+candidates must be present so the ordered route plan survives OCI detonation.
+Public OCI acceptance also
 requires a `fusekit.detonation-scope.v1` proof
 that names the complete no-trace destroy set, including provider-auth scratch,
 browser profiles, passphrase files, uploaded app archives, control-room logs,
