@@ -1250,7 +1250,8 @@ def _render_durable_state(run_record: Any) -> str:
       </div>
       <p class="muted">
         FuseKit keeps encrypted/redacted resume state outside the OCI worker and treats
-        {html.escape(str(volatile_count))} VM/browser/auth surfaces as disposable.
+        {html.escape(str(volatile_count))} VM/browser/auth surfaces as disposable; no
+        host-machine browser profile or clipboard history is required to resume.
       </p>
       <div class="run-state-grid" data-durable-state-checks>{cards}</div>
     </section>

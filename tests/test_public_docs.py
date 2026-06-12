@@ -96,13 +96,26 @@ def test_oci_runner_lane_defines_prepared_environment_contract() -> None:
     assert "before the first provider account gate" in text
 
 
-def test_northstar_next_slices_include_verified_runner_profile() -> None:
+def test_northstar_background_contract_includes_verified_runner_profile() -> None:
     text = Path("docs/northstar-provider-strategy.md").read_text(encoding="utf-8")
 
-    assert "verified prepared-environment profile" in text
-    assert "OpenClaw/browser spine" in text
+    assert "Prepared runner profile first" in text
+    assert "OpenClaw or the approved browser spine" in text
     assert "noVNC" in text
-    assert "before provider gates are shown" in text
+    assert "must be verified" in text
+    assert "before provider gates appear" in text
+
+
+def test_northstar_defines_detonation_pressure_test() -> None:
+    text = Path("docs/northstar-provider-strategy.md").read_text(encoding="utf-8")
+
+    assert "Detonation Pressure Test" in text
+    assert "The product object" in text
+    assert "Run Record, not the VM" in text
+    assert "Plaintext runtime state dies" in text
+    assert "Public recording" in text
+    assert "readiness must stay false" in text
+    assert "Evented resume beats click-and-hope" in text
 
 
 def test_northstar_defines_background_agent_contract() -> None:

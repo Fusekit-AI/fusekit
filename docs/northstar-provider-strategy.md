@@ -69,6 +69,39 @@ The contract is:
   provider order of operations, choose scopes from memory, paste host-side
   commands, compare DNS records, or debug runner setup during the public path.
 
+## Detonation Pressure Test
+
+The OCI lane must optimize for "nothing on the user's computer" without
+pretending the run can survive if all evidence is destroyed. The product object
+is the Run Record, not the VM. The VM is an execution surface that can be
+replaced while the run is active and detonated when the run is complete.
+
+The pressure-test rules are:
+
+- Durable state survives until completion: encrypted vault, job state,
+  checkpoints, gates, gate events, provider strategies, verification,
+  rollback metadata, detonation receipt, and the Run Record.
+- Plaintext runtime state dies: app archive, passphrase files, SSH scratch,
+  browser profiles, provider-auth profiles, OpenClaw state, visual gateway
+  logs, control-room logs, temporary files, and the OCI compute/network
+  resources FuseKit created.
+- Resume proves before detonation: the Run Record must say whether the worker
+  can be recreated from encrypted/redacted state, which sources are present,
+  and whether any host-machine state would be required. Public recording
+  readiness must stay false if the worker-replacement contract is missing.
+- Detonation is a receipt, not a hope: the control room must show live verifier
+  status and the workspace detonation resource receipt, including any failed
+  deletion keys. A run is not green if the OCI VM or FuseKit-created network
+  resources remain.
+- Evented resume beats click-and-hope: token capture, DNS approval, provider
+  verification, and retryable service gates write wake events so the worker can
+  continue after a user action or after being recreated.
+
+This means "leave no trace" means no plaintext FuseKit worker state remains on
+the user's machine or in the disposable OCI workspace. It does not mean deleting
+the encrypted vault or redacted audit proof before the run has completed,
+verified, and produced the detonation receipt.
+
 ## Strategy Graph
 
 Every provider-pack setup recipe gets a strategy decision:
@@ -169,11 +202,11 @@ next action instead of falling back to generic setup-worker guidance.
 
 Next slices:
 
-1. Promote the OCI runner into a verified prepared-environment profile: x86_64,
-   supported Ubuntu image, FuseKit runner helpers, OpenClaw/browser spine,
-   Playwright Chromium smoke test, noVNC, and shared Chrome provider profile
-   must pass before provider gates are shown.
-2. Add official CLI executors for providers where CLI is more reliable.
+1. Run a clean OCI provider acceptance using GitHub, Vercel, Cloudflare, Resend,
+   and a disposable domain, then compare every human action to the Run Record's
+   guided action trace.
+2. Add official CLI executors for providers where CLI is more reliable than API
+   or browser routes.
 3. Add signed remote provider-pack registry support.
-4. Run a real OCI provider acceptance using GitHub, Vercel, Cloudflare, and a
-   disposable domain.
+4. Turn every remaining rehearsal intervention into either deterministic
+   provider automation, a live verifier, or a precise control-room human gate.

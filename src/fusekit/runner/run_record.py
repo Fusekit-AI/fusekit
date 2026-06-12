@@ -689,6 +689,19 @@ def _durable_state_summary(
                 "OCI workspace."
             ),
         },
+        "worker_replacement_contract": {
+            "worker_is_disposable": not missing,
+            "can_recreate_worker": not missing,
+            "host_machine_state_required": False,
+            "state_owner": "encrypted-vault-and-run-record",
+            "resume_sources": [source["id"] for source in sources],
+            "volatile_surfaces": list(VOLATILE_WORKER_SURFACES),
+            "statement": (
+                "If the OCI VM is killed mid-run, FuseKit must recreate the runner "
+                "from encrypted/redacted run state instead of relying on local "
+                "browser profiles, host clipboard history, or plaintext VM scratch."
+            ),
+        },
         "workspace_detonated": run_state.get("workspace_detonated") is True,
         "statement": (
             "FuseKit can replace or detonate the disposable OCI worker without losing "
@@ -1180,11 +1193,15 @@ def _recording_durable_state_ready(record: dict[str, Any]) -> bool:
     if not isinstance(durable, dict):
         return False
     scope = durable.get("detonation_scope", {})
+    replacement = durable.get("worker_replacement_contract", {})
     return (
         durable.get("resume_ready") is True
         and isinstance(scope, dict)
         and scope.get("resume_until_complete") is True
         and str(scope.get("mode", "") or "") == "worker-and-oci-workspace"
+        and isinstance(replacement, dict)
+        and replacement.get("can_recreate_worker") is True
+        and replacement.get("host_machine_state_required") is False
     )
 
 

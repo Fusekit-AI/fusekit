@@ -462,6 +462,18 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     assert "no FuseKit worker state remains" in record["durable_state"][
         "detonation_scope"
     ]["no_trace_statement"]
+    assert record["durable_state"]["worker_replacement_contract"][
+        "can_recreate_worker"
+    ] is True
+    assert record["durable_state"]["worker_replacement_contract"][
+        "host_machine_state_required"
+    ] is False
+    assert "provider-auth" in record["durable_state"]["worker_replacement_contract"][
+        "volatile_surfaces"
+    ]
+    assert "host clipboard history" in record["durable_state"][
+        "worker_replacement_contract"
+    ]["statement"]
     assert record["provider_playbook"]["schema_version"] == "fusekit.provider-playbook.v1"
     assert record["provider_playbook"]["step_count"] == 1
     assert "Capture CLOUDFLARE_API_TOKEN" in record["provider_playbook"]["steps"][0][
@@ -798,6 +810,8 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
     assert payload["run_record"]["durable_state"]["resume_ready"] is True
     assert "What survives detonation" in html
     assert "worker can be replaced" in html
+    assert "host-machine browser profile or clipboard history" in html
+    assert "is required to resume" in html
     assert 'data-durable-state-source="encrypted_vault"' in html
     assert "encrypted capability vault" in html
     assert payload["run_record"]["human_actions"]["total"] == 1
@@ -836,6 +850,23 @@ def test_live_control_room_refreshes_all_run_record_proof_panels() -> None:
     ):
         assert renderer in SCRIPT
         assert selector in SCRIPT
+
+
+def test_control_room_event_script_is_valid_javascript(tmp_path) -> None:
+    script_path = tmp_path / "control-room-events.js"
+    script_path.write_text(SCRIPT, encoding="utf-8")
+
+    try:
+        result = subprocess.run(
+            ["node", "--check", str(script_path)],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+    except FileNotFoundError:
+        pytest.skip("node is not installed")
+
+    assert result.returncode == 0, result.stderr or result.stdout
 
 
 def test_remote_bootstrap_checkpoint_keeps_recovery_in_launcher(tmp_path) -> None:
