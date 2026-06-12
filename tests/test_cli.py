@@ -2403,6 +2403,11 @@ def test_source_fetch_waiting_token_writes_guided_control_room(
     job_payload = json.loads(job_state.read_text(encoding="utf-8"))
     assert job_payload["artifacts"]["vault"] == str(vault_path)
     assert job_payload["artifacts"]["passphrase_file"] == str(passphrase)
+    assert (
+        job_payload["checkpoints"][0]["next_action"]
+        == "Click Open provider gate in VM, copy the approved source token inside the "
+        "VM browser, then click Capture GITHUB_TOKEN from VM clipboard."
+    )
     assert gates["provider.github.authorization"].target == "GITHUB_TOKEN"
     assert "Fetch app source" in html
     assert "GitHub authorization is required before FuseKit can fetch" in html

@@ -2914,6 +2914,7 @@ def _await_provider_token(
             args,
             provider=provider,
             gate_id=gate_id,
+            target=token_env,
         )
         guidance = provider_gate_guidance(provider)
         print(
@@ -2943,6 +2944,7 @@ def _write_source_fetch_control_room(
     *,
     provider: str,
     gate_id: str,
+    target: str = "",
 ) -> Path | None:
     """Write a guided control room when source fetch pauses before launch exists."""
 
@@ -2954,6 +2956,11 @@ def _write_source_fetch_control_room(
     source = str(getattr(args, "source", "") or "the app source")
     dest = Path(args.dest)
     provider_label = {"github": "GitHub"}.get(provider.lower(), provider.title())
+    capture_label = (
+        f"Capture {target.strip().upper()} from VM clipboard"
+        if target.strip()
+        else "the exact env-named Capture button"
+    )
     detail = (
         f"{provider_label} authorization is required before FuseKit can fetch {source}. "
         "Use the control-room gate below so this prelaunch step stays guided."
@@ -2994,7 +3001,10 @@ def _write_source_fetch_control_room(
                 "Fetch app source",
                 "waiting",
                 detail,
-                next_action="Click Open provider gate in VM and capture the approved source token.",
+                next_action=(
+                    "Click Open provider gate in VM, copy the approved source token "
+                    f"inside the VM browser, then click {capture_label}."
+                ),
                 resume_hint=(
                     "FuseKit will retry the source fetch after the "
                     f"{gate_id} gate is captured or resumed."
