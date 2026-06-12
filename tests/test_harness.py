@@ -96,8 +96,7 @@ def _provider_playbook() -> dict[str, object]:
                 "route": "api",
                 "control": "FuseKit API worker",
                 "instruction": (
-                    "FuseKit creates or reuses the Resend sending domain through the "
-                    "Resend API."
+                    "FuseKit creates or reuses the Resend sending domain through the Resend API."
                 ),
             },
         ],
@@ -171,6 +170,7 @@ def _workspace_detonation_receipt() -> dict[str, object]:
         "status": "complete",
         "reason": "remote worker and OCI workspace detonated",
         "deleted": [
+            "ephemeral_public_ip",
             "instance",
             "internet_gateway",
             "network_security_group",
@@ -186,6 +186,7 @@ def _workspace_detonation_receipt() -> dict[str, object]:
             "remote_worker": True,
             "remote_worker_cleanup": remote_worker_cleanup_proof(),
             "compute_instance": True,
+            "ephemeral_public_ip_released": True,
             "network_resources": [
                 "internet_gateway",
                 "network_security_group",
@@ -1115,9 +1116,7 @@ def _runner_profile_from_readiness_fixture(fusekit_dir: Path) -> dict[str, objec
                 "observed": raw.get("observed", {})
                 if isinstance(raw.get("observed"), dict)
                 else {},
-                "checks": raw.get("checks", {})
-                if isinstance(raw.get("checks"), dict)
-                else {},
+                "checks": raw.get("checks", {}) if isinstance(raw.get("checks"), dict) else {},
                 "provider_browser_profile": str(raw.get("provider_browser_profile", "") or ""),
                 "playwright_browsers_path": str(raw.get("playwright_browsers_path", "") or ""),
             }
@@ -1475,9 +1474,7 @@ def test_harness_ledger_snapshot_redacts_public_token_shapes(tmp_path) -> None:
 def test_acceptance_detonation_blocks_browser_visual_scratch(tmp_path) -> None:
     fusekit_dir = tmp_path / "app" / ".fusekit"
     (fusekit_dir / "browser" / "Default").mkdir(parents=True)
-    (fusekit_dir / "browser" / "Default" / "Cookies").write_text(
-        "session cookie", encoding="utf-8"
-    )
+    (fusekit_dir / "browser" / "Default" / "Cookies").write_text("session cookie", encoding="utf-8")
     (fusekit_dir / "visual").mkdir()
     (fusekit_dir / "visual" / "x11vnc.log").write_text("visual log", encoding="utf-8")
     checks: list[AcceptanceCheck] = []
@@ -1557,9 +1554,7 @@ def test_acceptance_requires_runner_readiness_in_live_mode(tmp_path) -> None:
     missing: list[str] = []
     ledger = HarnessLedger.create(fusekit_dir / "acceptance")
 
-    _check_runner_readiness(
-        fusekit_dir / "runner_readiness.json", "live", checks, missing, ledger
-    )
+    _check_runner_readiness(fusekit_dir / "runner_readiness.json", "live", checks, missing, ledger)
 
     assert checks[-1].id == "runner_readiness.prepared"
     assert checks[-1].status == "missing"
@@ -1637,9 +1632,7 @@ def test_acceptance_allows_complete_runner_readiness(tmp_path) -> None:
     missing: list[str] = []
     ledger = HarnessLedger.create(fusekit_dir / "acceptance")
 
-    _check_runner_readiness(
-        fusekit_dir / "runner_readiness.json", "live", checks, missing, ledger
-    )
+    _check_runner_readiness(fusekit_dir / "runner_readiness.json", "live", checks, missing, ledger)
 
     assert checks[-1].id == "runner_readiness.prepared"
     assert checks[-1].status == "ok"
@@ -1719,8 +1712,7 @@ def test_acceptance_rejects_unsafe_visual_state_survivor(tmp_path) -> None:
                 "runner": "novnc",
                 "status": "ready",
                 "novnc_url": (
-                    "http://93.184.216.34:6080/vnc.html"
-                    "?autoconnect=1&password=leaked#frag"
+                    "http://93.184.216.34:6080/vnc.html?autoconnect=1&password=leaked#frag"
                 ),
                 "control_room_url": "http://evil.example:8765/?token=stolen",
                 "novnc_password": "bad\npassword",
@@ -1757,8 +1749,7 @@ def test_acceptance_rejects_unexpected_visual_query_values(tmp_path) -> None:
                 "status": "ready",
                 "interactive": True,
                 "novnc_url": (
-                    "http://93.184.216.34:6080/vnc.html"
-                    "?autoconnect=javascript&resize=evil"
+                    "http://93.184.216.34:6080/vnc.html?autoconnect=javascript&resize=evil"
                 ),
                 "control_room_url": (
                     "http://93.184.216.34:8765/"
@@ -1856,13 +1847,10 @@ def test_acceptance_live_visual_state_requires_ready_interactive_novnc_session(
             "interactive": True,
             "novnc_url": "http://93.184.216.34:6080/vnc.html?autoconnect=1",
             "control_room_url": (
-                "http://93.184.216.34:8765/"
-                "?token=viewer_token_abcdefghijklmnopqrstuvwxyz0123456789"
+                "http://93.184.216.34:8765/?token=viewer_token_abcdefghijklmnopqrstuvwxyz0123456789"
             ),
             "novnc_password": "viewer-password",
-            "provider_browser_profile": (
-                "/var/lib/fusekit-runner/visual/chrome-provider-profile"
-            ),
+            "provider_browser_profile": ("/var/lib/fusekit-runner/visual/chrome-provider-profile"),
         }
         visual.update(patch)
         visual_path.write_text(json.dumps(visual), encoding="utf-8")
@@ -2042,9 +2030,7 @@ def test_acceptance_gate_guidance_rejects_hidden_prompt_or_wrong_button() -> Non
                 "status": "passed",
                 "resume_url": "https://provider.example/token",
                 "target": "CUSTOM_API_KEY",
-                "follow_steps": [
-                    "Open the provider page and paste into FuseKit's hidden prompt."
-                ],
+                "follow_steps": ["Open the provider page and paste into FuseKit's hidden prompt."],
                 "next_action": "Click I finished this step after copying CUSTOM_API_KEY.",
                 "resume_hint": "FuseKit will retry verification.",
             }
@@ -2225,10 +2211,7 @@ def test_acceptance_gate_guidance_allows_local_browser_warning() -> None:
                 "follow_steps": [
                     "Click Open provider gate in VM so GitHub opens in the VM browser.",
                     "Do not use a local browser tab for this gate.",
-                    (
-                        "Copy the token inside the VM browser and click "
-                        "Capture from VM clipboard."
-                    ),
+                    ("Copy the token inside the VM browser and click Capture from VM clipboard."),
                 ],
                 "next_action": "Capture GITHUB_TOKEN from VM clipboard.",
                 "resume_hint": "FuseKit will retry provider setup.",
@@ -2254,10 +2237,7 @@ def test_acceptance_gate_guidance_allows_host_browser_warning() -> None:
                 "follow_steps": [
                     "Click Open provider gate in VM so GitHub opens in the VM browser.",
                     "Do not use the host browser tab for this gate.",
-                    (
-                        "Copy the token inside the VM browser and click "
-                        "Capture from VM clipboard."
-                    ),
+                    ("Copy the token inside the VM browser and click Capture from VM clipboard."),
                 ],
                 "next_action": "Capture GITHUB_TOKEN from VM clipboard.",
                 "resume_hint": "FuseKit will retry provider setup.",
@@ -2282,10 +2262,7 @@ def test_acceptance_gate_guidance_requires_open_gate_control() -> None:
                 "target": "CLOUDFLARE_API_TOKEN",
                 "follow_steps": [
                     "Use the VM browser to create the exact Cloudflare token.",
-                    (
-                        "Copy the token inside the VM browser and click "
-                        "Capture from VM clipboard."
-                    ),
+                    ("Copy the token inside the VM browser and click Capture from VM clipboard."),
                 ],
                 "next_action": "Capture CLOUDFLARE_API_TOKEN from VM clipboard.",
                 "resume_hint": "FuseKit will retry Cloudflare setup.",
@@ -2396,10 +2373,7 @@ def test_acceptance_provider_gates_require_openable_resume_url() -> None:
                 "target": "GITHUB_TOKEN",
                 "follow_steps": [
                     "Click Open provider gate in VM so GitHub opens in the VM browser.",
-                    (
-                        "Copy the token inside the VM browser and click "
-                        "Capture from VM clipboard."
-                    ),
+                    ("Copy the token inside the VM browser and click Capture from VM clipboard."),
                 ],
                 "next_action": "No action needed.",
                 "resume_hint": "FuseKit verified this gate as passed.",
@@ -2408,8 +2382,7 @@ def test_acceptance_provider_gates_require_openable_resume_url() -> None:
     )
 
     assert any(
-        item.startswith("provider.github.authorization missing resume_url")
-        for item in failures
+        item.startswith("provider.github.authorization missing resume_url") for item in failures
     )
 
 
@@ -2669,10 +2642,7 @@ def test_acceptance_human_strategy_accepts_success_and_avoid_panels() -> None:
                         "status": "needs_human_gate",
                         "target": "GITHUB_TOKEN",
                         "follow_steps": [
-                            (
-                                "Click Open provider gate in VM so GitHub opens in "
-                                "the VM browser."
-                            ),
+                            ("Click Open provider gate in VM so GitHub opens in the VM browser."),
                             "Copy the token inside the shared VM browser.",
                             "Click Capture GITHUB_TOKEN from VM clipboard.",
                         ],
@@ -2713,10 +2683,7 @@ def test_acceptance_human_strategy_rejects_local_browser_side_channel() -> None:
                         "status": "needs_human_gate",
                         "target": "GITHUB_TOKEN",
                         "follow_steps": [
-                            (
-                                "Click Open provider gate in VM so GitHub opens in "
-                                "the VM browser."
-                            ),
+                            ("Click Open provider gate in VM so GitHub opens in the VM browser."),
                             "Use a local browser tab to create the token.",
                             "Click Capture GITHUB_TOKEN from VM clipboard after copying it.",
                         ],
@@ -2752,10 +2719,7 @@ def test_acceptance_human_strategy_rejects_host_browser_side_channel() -> None:
                         "status": "needs_human_gate",
                         "target": "GITHUB_TOKEN",
                         "follow_steps": [
-                            (
-                                "Click Open provider gate in VM so GitHub opens in "
-                                "the VM browser."
-                            ),
+                            ("Click Open provider gate in VM so GitHub opens in the VM browser."),
                             "Use the host browser tab to finish token setup.",
                             "Click Capture GITHUB_TOKEN from VM clipboard after copying it.",
                         ],
@@ -2791,10 +2755,7 @@ def test_acceptance_human_strategy_requires_exact_capture_control_label() -> Non
                         "status": "needs_human_gate",
                         "target": "GITHUB_TOKEN",
                         "follow_steps": [
-                            (
-                                "Click Open provider gate in VM so GitHub opens "
-                                "in the VM browser."
-                            ),
+                            ("Click Open provider gate in VM so GitHub opens in the VM browser."),
                             "Copy the token inside the VM browser.",
                             "Click Capture from VM clipboard after copying GITHUB_TOKEN.",
                         ],
@@ -2831,10 +2792,7 @@ def test_acceptance_human_strategy_rejects_placeholder_capture_label() -> None:
                         "status": "needs_human_gate",
                         "target": "GITHUB_TOKEN",
                         "follow_steps": [
-                            (
-                                "Click Open provider gate in VM so GitHub opens in "
-                                "the VM browser."
-                            ),
+                            ("Click Open provider gate in VM so GitHub opens in the VM browser."),
                             "Copy the token inside the VM browser.",
                             (
                                 "Click Capture GITHUB_TOKEN from VM clipboard; ignore "
@@ -2873,10 +2831,7 @@ def test_acceptance_human_strategy_rejects_bad_success_or_avoid_panels() -> None
                         "status": "needs_human_gate",
                         "target": "GITHUB_TOKEN",
                         "follow_steps": [
-                            (
-                                "Click Open provider gate in VM so GitHub opens in "
-                                "the VM browser."
-                            ),
+                            ("Click Open provider gate in VM so GitHub opens in the VM browser."),
                             "Copy the token inside the VM browser.",
                             "Click Capture GITHUB_TOKEN from VM clipboard after copying it.",
                         ],
@@ -2965,9 +2920,7 @@ def test_acceptance_checkpoint_guidance_requires_capture_for_copy_once_target() 
                 "id": "provider.github.routes",
                 "status": "waiting",
                 "detail": "github-repo-secrets uses browser_guided (needs_human_gate)",
-                "next_action": (
-                    "Click Open provider gate in VM and copy the GITHUB_TOKEN value."
-                ),
+                "next_action": ("Click Open provider gate in VM and copy the GITHUB_TOKEN value."),
                 "resume_hint": "FuseKit will retry provider setup after the value is copied.",
             }
         ],
@@ -3052,9 +3005,9 @@ def test_acceptance_live_requires_real_provider_evidence(tmp_path) -> None:
     assert ".fusekit/fusekit.vault.json" not in blockers["encrypted vault"]["next_action"]
     assert blockers["redacted setup receipt"]["category"] == "Receipt"
     assert "live launcher/control room" in blockers["redacted setup receipt"]["next_action"]
-    assert "redacted receipt with no raw secrets" in blockers[
-        "redacted setup receipt"
-    ]["next_action"]
+    assert (
+        "redacted receipt with no raw secrets" in blockers["redacted setup receipt"]["next_action"]
+    )
     assert "Rerun setup" not in blockers["redacted setup receipt"]["next_action"]
     assert blockers["safe verification report"]["category"] == "Verification"
     assert "live launcher/control room" in blockers["safe verification report"]["next_action"]
@@ -3063,9 +3016,7 @@ def test_acceptance_live_requires_real_provider_evidence(tmp_path) -> None:
     assert "Run provider verification" not in blockers["safe verification report"]["next_action"]
     assert blockers["rollback metadata"]["category"] == "Rollback"
     assert "live launcher/control room" in blockers["rollback metadata"]["next_action"]
-    assert "provider rollback actions before launch" in blockers[
-        "rollback metadata"
-    ]["next_action"]
+    assert "provider rollback actions before launch" in blockers["rollback metadata"]["next_action"]
     assert "Generate rollback metadata" not in blockers["rollback metadata"]["next_action"]
     assert blockers["provider strategy decisions"]["category"] == "Provider routes"
     assert "live launcher/control room" in blockers["provider strategy decisions"]["next_action"]
@@ -3194,21 +3145,24 @@ def test_acceptance_blockers_use_launcher_actionable_check_guidance() -> None:
     assert "Open provider gate in VM URL" in blockers["gates.guided"]["next_action"]
     assert "I finished this step" in blockers["gates.audited"]["next_action"]
     assert "approve the DNS apply gate" in blockers["receipt.resend_dns_flow"]["next_action"]
-    assert "read-only provider health check before mutation" in blockers[
-        "receipt.provider_contract_health"
-    ]["next_action"]
+    assert (
+        "read-only provider health check before mutation"
+        in blockers["receipt.provider_contract_health"]["next_action"]
+    )
     assert (
         "Keep the launcher/control room open while FuseKit detonates plaintext "
         "worker, browser, visual, provider-auth, control-room, and gateway scratch state"
         in blockers["detonation.worker_state"]["next_action"]
     )
-    assert "after encrypted artifacts are preserved" in blockers[
-        "detonation.worker_state"
-    ]["next_action"]
+    assert (
+        "after encrypted artifacts are preserved"
+        in blockers["detonation.worker_state"]["next_action"]
+    )
     assert "Run detonation" not in blockers["detonation.worker_state"]["next_action"]
-    assert "plaintext worker, browser, visual, and auth scratch state" not in blockers[
-        "detonation.worker_state"
-    ]["next_action"]
+    assert (
+        "plaintext worker, browser, visual, and auth scratch state"
+        not in blockers["detonation.worker_state"]["next_action"]
+    )
     assert "I finished this step button" in blockers["gates.resolved"]["next_action"]
     assert "resume button" not in blockers["gates.resolved"]["next_action"]
 
@@ -3441,10 +3395,7 @@ def test_acceptance_blockers_explain_manual_resend_setup_recovery() -> None:
             AcceptanceCheck(
                 "gates.guided",
                 "failed",
-                (
-                    "provider.resend.domain.guidance asks for manual Resend "
-                    "domain/audience setup"
-                ),
+                ("provider.resend.domain.guidance asks for manual Resend domain/audience setup"),
             )
         ],
         [],
@@ -3500,8 +3451,7 @@ def test_resend_audience_strategy_requires_conditional_api_evidence() -> None:
 
     assert "resend.strategies[0].selected.evidence.api_owns must be audience" in failures
     assert (
-        "resend.strategies[0].selected.evidence.conditional must be "
-        "only_when_app_requires_audience"
+        "resend.strategies[0].selected.evidence.conditional must be only_when_app_requires_audience"
     ) in failures
 
 
@@ -3571,13 +3521,11 @@ def test_acceptance_rejects_manual_resend_domain_or_audience_gate_guidance() -> 
         for failure in failures
     )
     assert any(
-        "provider.resend.audience.guidance asks for manual Resend domain/audience setup"
-        in failure
+        "provider.resend.audience.guidance asks for manual Resend domain/audience setup" in failure
         for failure in failures
     )
     assert any(
-        "provider.resend.account.guidance asks for manual Resend domain/audience setup"
-        in failure
+        "provider.resend.account.guidance asks for manual Resend domain/audience setup" in failure
         for failure in failures
     )
 
@@ -3596,9 +3544,7 @@ def test_acceptance_rejects_manual_resend_setup_in_success_or_avoid_panels() -> 
                     "Open provider gate in VM and stay on Resend API Keys.",
                     "Click I finished this step so FuseKit retries Resend API setup.",
                 ],
-                "next_action": (
-                    "Click I finished this step so FuseKit retries Resend API setup."
-                ),
+                "next_action": ("Click I finished this step so FuseKit retries Resend API setup."),
                 "resume_hint": "FuseKit will create or reuse the sending domain by API.",
                 "success_criteria": ["Create a Resend domain for moonlite.rsvp."],
                 "avoid_steps": ["If blocked, click Add domain in Resend."],
@@ -3628,16 +3574,12 @@ def test_acceptance_allows_resend_api_owned_domain_retry_guidance() -> None:
                     "Do not click Add domain; FuseKit creates or reuses the domain.",
                     "Click I finished this step so FuseKit retries Resend API setup.",
                 ],
-                "next_action": (
-                    "Click I finished this step so FuseKit retries Resend API setup."
-                ),
+                "next_action": ("Click I finished this step so FuseKit retries Resend API setup."),
                 "resume_hint": (
                     "FuseKit will create or reuse the sending domain through Resend API, "
                     "then hand returned DNS records to Cloudflare."
                 ),
-                "success_criteria": [
-                    "Resend API key has been captured through the launcher."
-                ],
+                "success_criteria": ["Resend API key has been captured through the launcher."],
                 "avoid_steps": ["Do not click Add domain in Resend."],
             }
         ]
@@ -3662,8 +3604,7 @@ def test_acceptance_allows_gate_service_default_provider_guidance(tmp_path) -> N
     assert _unguided_gates(gates) == []
     assert any("Open provider gate in VM" in step for step in gates[0]["follow_steps"])
     assert any(
-        "Capture GITHUB_TOKEN from VM clipboard" in step
-        for step in gates[0]["follow_steps"]
+        "Capture GITHUB_TOKEN from VM clipboard" in step for step in gates[0]["follow_steps"]
     )
 
 
@@ -3870,7 +3811,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                                 },
                             }
                         ],
-                    }
+                    },
                 ],
             }
         ),
@@ -3918,15 +3859,12 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                         "target": "OPENAI_API_KEY",
                         "attempts": 1,
                         "follow_steps": [
-                            (
-                                "Click Open provider gate in VM so OpenAI opens in "
-                                "the VM browser."
-                            ),
+                            ("Click Open provider gate in VM so OpenAI opens in the VM browser."),
                             "Complete login in the VM browser.",
-                        (
-                            "Copy the OpenAI key inside the VM browser and click "
-                            "Capture OPENAI_API_KEY from VM clipboard."
-                        ),
+                            (
+                                "Copy the OpenAI key inside the VM browser and click "
+                                "Capture OPENAI_API_KEY from VM clipboard."
+                            ),
                         ],
                         "next_action": "No action needed.",
                         "resume_hint": "FuseKit verified this gate as passed.",
@@ -3934,30 +3872,30 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                         "resume_url": "http://localhost:1455/auth/callback?code=secret-code",
                         "last_opened_url": "https://provider.example/?token=secret-token",
                         **_gate_guidance_fields("openai"),
-                        },
-                        {
-                            "id": "provider.callback.review",
-                            "provider": "provider",
-                            "reason": "Provider callback reviewed",
+                    },
+                    {
+                        "id": "provider.callback.review",
+                        "provider": "provider",
+                        "reason": "Provider callback reviewed",
                         "status": "passed",
                         "classification": "provider-verification",
                         "target": (
                             "https://provider.example/callback?"
                             "code=abcdefghijklmnopqrstuvwxyz1234567890abcdef&state=ok"
+                        ),
+                        "attempts": 1,
+                        "follow_steps": [
+                            (
+                                "Click Open provider gate in VM so the provider callback "
+                                "opens in the VM browser."
                             ),
-                            "attempts": 1,
-                            "follow_steps": [
-                                (
-                                    "Click Open provider gate in VM so the provider callback "
-                                    "opens in the VM browser."
-                                ),
-                                "Review the highlighted callback.",
-                            ],
-                            "next_action": "No action needed.",
-                            "resume_hint": "FuseKit verified this gate as passed.",
-                            "resume_url": "https://provider.example/review",
-                            **_gate_guidance_fields("provider"),
-                        }
+                            "Review the highlighted callback.",
+                        ],
+                        "next_action": "No action needed.",
+                        "resume_hint": "FuseKit verified this gate as passed.",
+                        "resume_url": "https://provider.example/review",
+                        **_gate_guidance_fields("provider"),
+                    },
                 ]
             }
         ),
@@ -4238,14 +4176,8 @@ def test_acceptance_run_record_requires_provider_playbook_public_order(
 
     failures = _run_record_shape_failures(record)
 
-    assert (
-        "provider_playbook.steps must place resend.domain_api before dns.approval"
-        in failures
-    )
-    assert (
-        "provider_playbook.steps must place vercel.env_api before dns.approval"
-        in failures
-    )
+    assert "provider_playbook.steps must place resend.domain_api before dns.approval" in failures
+    assert "provider_playbook.steps must place vercel.env_api before dns.approval" in failures
 
 
 def test_acceptance_run_record_requires_provider_playbook_route_controls(
@@ -4282,23 +4214,15 @@ def test_acceptance_run_record_requires_provider_playbook_route_controls(
     failures = _run_record_shape_failures(record)
 
     assert "provider_playbook.steps[0].provider is missing" in failures
-    assert (
-        "provider_playbook.steps[0].control must be an env-named Capture control"
-        in failures
-    )
+    assert "provider_playbook.steps[0].control must be an env-named Capture control" in failures
     assert (
         "provider_playbook.steps[0].control must capture RESEND_API_KEY before "
-        "Resend API setup"
-        in failures
+        "Resend API setup" in failures
     )
     assert (
-        "provider_playbook.steps[1].control must be FuseKit API worker for api routes"
-        in failures
+        "provider_playbook.steps[1].control must be FuseKit API worker for api routes" in failures
     )
-    assert (
-        "provider_playbook.steps[2].control must be a known follow-me control"
-        in failures
-    )
+    assert "provider_playbook.steps[2].control must be a known follow-me control" in failures
 
 
 def test_live_acceptance_requires_central_run_record(tmp_path) -> None:
@@ -4459,10 +4383,7 @@ def test_live_acceptance_requires_run_record_verifiers_to_match_report(
     run_record_check = next(check for check in report.checks if check.id == "run_record.complete")
     assert report.launch_ready is False
     assert run_record_check.status == "failed"
-    assert (
-        "verifiers in Run Record must match verification_report.json"
-        in run_record_check.detail
-    )
+    assert "verifiers in Run Record must match verification_report.json" in run_record_check.detail
     assert "central run record" in report.missing
 
 
@@ -4594,8 +4515,7 @@ def test_live_acceptance_requires_run_record_runner_profile_to_match_readiness(
     assert report.launch_ready is False
     assert run_record_check.status == "failed"
     assert (
-        "runner_profile in Run Record must match runner_readiness.json"
-        in run_record_check.detail
+        "runner_profile in Run Record must match runner_readiness.json" in run_record_check.detail
     )
     assert "central run record" in report.missing
 
@@ -4628,6 +4548,7 @@ def test_acceptance_run_record_requires_complete_workspace_detonation_receipt(
     assert "detonation.workspace_detonated must be true" in failures
     assert "detonation.workspace_receipt.status must be complete" in failures
     assert "detonation.workspace_receipt.deleted must include instance" in failures
+    assert "detonation.workspace_receipt.deleted must include ephemeral public IP" in failures
     assert "detonation.workspace_receipt.failures must be empty" in failures
     assert "detonation.workspace_receipt.reason is missing" in failures
     assert "detonation.workspace_receipt.updated_at is missing" in failures
@@ -4654,9 +4575,7 @@ def test_acceptance_run_record_requires_no_trace_detonation_scope(tmp_path) -> N
     assert "durable_state.detonation_scope.mode is unsupported" in failures
     assert "durable_state.detonation_scope.must_delete is incomplete" in failures
     assert "durable_state.detonation_scope.must_preserve is incomplete" in failures
-    assert (
-        "durable_state.detonation_scope.resume_until_complete must be true" in failures
-    )
+    assert "durable_state.detonation_scope.resume_until_complete must be true" in failures
     assert "durable_state.detonation_scope.no_trace_statement is incomplete" in failures
 
 
@@ -4693,10 +4612,7 @@ def test_acceptance_run_record_requires_runner_profile_for_worker_replacement(
         failure.startswith("durable_state.runner_profile_failures must be empty")
         for failure in failures
     )
-    assert (
-        "durable_state.worker_replacement_contract.runner_profile_ready must be true"
-        in failures
-    )
+    assert "durable_state.worker_replacement_contract.runner_profile_ready must be true" in failures
     assert (
         "durable_state.worker_replacement_contract.required_runner_profile is unsupported"
         in failures
@@ -4705,23 +4621,13 @@ def test_acceptance_run_record_requires_runner_profile_for_worker_replacement(
         "durable_state.worker_replacement_contract.host_machine_state_required must be false"
         in failures
     )
-    assert (
-        "durable_state.worker_replacement_contract.state_owner is unsupported"
-        in failures
-    )
-    assert (
-        "durable_state.worker_replacement_contract.resume_sources is incomplete"
-        in failures
-    )
+    assert "durable_state.worker_replacement_contract.state_owner is unsupported" in failures
+    assert "durable_state.worker_replacement_contract.resume_sources is incomplete" in failures
     assert (
         "durable_state.worker_replacement_contract.volatile_surfaces must cover "
-        "volatile_worker_surfaces"
-        in failures
+        "volatile_worker_surfaces" in failures
     )
-    assert (
-        "durable_state.worker_replacement_contract.statement is incomplete"
-        in failures
-    )
+    assert "durable_state.worker_replacement_contract.statement is incomplete" in failures
 
 
 def test_acceptance_run_record_requires_coherent_worker_replacement_contract(
@@ -4743,9 +4649,7 @@ def test_acceptance_run_record_requires_coherent_worker_replacement_contract(
         "runner_readiness",
         "external_checkpoint",
     ]
-    record["durable_state"]["worker_replacement_contract"]["volatile_surfaces"] = [
-        "worker"
-    ]
+    record["durable_state"]["worker_replacement_contract"]["volatile_surfaces"] = ["worker"]
     record["durable_state"]["detonation_scope"]["must_preserve"] = [
         "encrypted_vault",
         "run_record",
@@ -4755,17 +4659,14 @@ def test_acceptance_run_record_requires_coherent_worker_replacement_contract(
 
     assert (
         "durable_state.worker_replacement_contract.resume_sources must reference "
-        "durable_state.sources"
-        in failures
+        "durable_state.sources" in failures
     )
     assert (
         "durable_state.worker_replacement_contract.volatile_surfaces must cover "
-        "volatile_worker_surfaces"
-        in failures
+        "volatile_worker_surfaces" in failures
     )
     assert (
-        "durable_state.detonation_scope.must_preserve must match detonation_preserves"
-        in failures
+        "durable_state.detonation_scope.must_preserve must match detonation_preserves" in failures
     )
 
 
@@ -4786,36 +4687,26 @@ def test_acceptance_run_record_rejects_volatile_durable_state_survivors(
         }
     )
     record["durable_state"]["detonation_preserves"].append("browser-profile")
-    record["durable_state"]["detonation_scope"]["must_preserve"].append(
-        "browser-profile"
-    )
+    record["durable_state"]["detonation_scope"]["must_preserve"].append("browser-profile")
     record["durable_state"]["worker_replacement_contract"]["resume_sources"].append(
         "local_browser_profile"
     )
-    record["durable_state"]["worker_replacement_contract"]["resume_sources"].append(
-        "passphrase"
-    )
+    record["durable_state"]["worker_replacement_contract"]["resume_sources"].append("passphrase")
 
     failures = _run_record_shape_failures(record)
 
-    assert (
-        "durable_state.sources[9] preserves volatile worker state: browser-profile"
-        in failures
-    )
+    assert "durable_state.sources[9] preserves volatile worker state: browser-profile" in failures
     assert (
         "durable_state.detonation_preserves must not include volatile worker state: "
-        "browser-profile"
-        in failures
+        "browser-profile" in failures
     )
     assert (
         "durable_state.detonation_scope.must_preserve must not include volatile "
-        "worker state: browser-profile"
-        in failures
+        "worker state: browser-profile" in failures
     )
     assert (
         "durable_state.worker_replacement_contract.resume_sources must not include "
-        "volatile worker state: local_browser_profile, passphrase"
-        in failures
+        "volatile worker state: local_browser_profile, passphrase" in failures
     )
 
 
@@ -5001,17 +4892,13 @@ def test_acceptance_run_record_requires_exact_human_action_controls(tmp_path) ->
         ],
         "unguided": [],
         "statement": (
-            "Every action maps to a visible control-room gate with no raw provider "
-            "secret details."
+            "Every action maps to a visible control-room gate with no raw provider secret details."
         ),
     }
 
     failures = _run_record_shape_failures(record)
 
-    assert (
-        "human_actions.actions[0].visible_control must be Open provider gate in VM"
-        in failures
-    )
+    assert "human_actions.actions[0].visible_control must be Open provider gate in VM" in failures
     assert "human_actions.actions[1].visible_control must match the captured target" in failures
     assert (
         "human_actions.actions[2].visible_control must be a known finish/approval control"
@@ -5071,18 +4958,14 @@ def test_acceptance_run_record_requires_human_actions_to_match_provider_gates(
         ],
         "unguided": [],
         "statement": (
-            "Every action maps to a visible control-room gate with no raw provider "
-            "secret details."
+            "Every action maps to a visible control-room gate with no raw provider secret details."
         ),
     }
 
     failures = _run_record_shape_failures(record)
 
     assert "human_actions.actions[0].gate_id must match provider_gates.records" in failures
-    assert (
-        "human_actions.actions[1].target must match provider_gates.records target"
-        in failures
-    )
+    assert "human_actions.actions[1].target must match provider_gates.records target" in failures
 
 
 def test_acceptance_run_record_requires_automation_boundary(tmp_path) -> None:
@@ -5133,10 +5016,7 @@ def test_acceptance_run_record_requires_automation_boundary(tmp_path) -> None:
     assert "automation_boundary.routes[1].owner is unsupported" in failures
     assert "automation_boundary.counts.blocked must be 0" in failures
     assert "automation_boundary.counts.fusekit_owned must match routes" in failures
-    assert (
-        "automation_boundary.post_gate_automation.api_or_cli_routes is missing"
-        in failures
-    )
+    assert "automation_boundary.post_gate_automation.api_or_cli_routes is missing" in failures
     assert "automation_boundary.statement is missing vnc guidance" in failures
 
 
@@ -5170,8 +5050,7 @@ def test_acceptance_run_record_requires_provider_strategy_summary(tmp_path) -> N
         in failures
     )
     assert (
-        "provider_strategies.providers[0].strategies[0].decision.candidates is missing"
-        in failures
+        "provider_strategies.providers[0].strategies[0].decision.candidates is missing" in failures
     )
 
     record["provider_strategies"] = {"providers": []}
@@ -5356,10 +5235,7 @@ def test_acceptance_run_record_requires_recording_contract(tmp_path) -> None:
     assert "recording_contract.schema_version is unsupported" in failures
     assert "recording_contract.recording_ready must be true" in failures
     assert "recording_contract.checks.human_actions must be true" in failures
-    assert (
-        "recording_contract.blockers must be empty: human_actions"
-        in failures
-    )
+    assert "recording_contract.blockers must be empty: human_actions" in failures
     assert "recording_contract.statement is missing public demo guidance" in failures
 
 
@@ -5377,10 +5253,7 @@ def test_acceptance_run_record_requires_recording_worker_replacement_check(
     failures = _run_record_shape_failures(record)
 
     assert "recording_contract.checks.worker_replacement must be true" in failures
-    assert (
-        "recording_contract.blockers must be empty: worker_replacement"
-        in failures
-    )
+    assert "recording_contract.blockers must be empty: worker_replacement" in failures
 
 
 def test_acceptance_run_record_recording_contract_errors_empty_matches_errors(
@@ -5459,9 +5332,9 @@ def test_acceptance_run_record_rejects_nested_unredacted_survivor_values(
     fusekit_dir.mkdir()
     _write_minimum_run_record(fusekit_dir)
     record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
-    record["provider_strategies"]["providers"][0]["strategies"][0]["decision"][
-        "selected"
-    ]["evidence"]["debug_token"] = "token=leaked-provider-token"
+    record["provider_strategies"]["providers"][0]["strategies"][0]["decision"]["selected"][
+        "evidence"
+    ]["debug_token"] = "token=leaked-provider-token"
     record["verification"]["checks"][0]["details"] = {
         "callback": "https://provider.example/callback?code=secret-code"
     }
@@ -5476,12 +5349,10 @@ def test_acceptance_run_record_rejects_nested_unredacted_survivor_values(
         "selected.evidence.debug_token contains credential-looking text"
     ) in failures
     assert (
-        "run_record.verification.checks[0].details.callback contains "
-        "credential-looking text"
+        "run_record.verification.checks[0].details.callback contains credential-looking text"
     ) in failures
     assert (
-        "run_record.detonation.workspace_receipt.failures.cleanup contains "
-        "credential-looking text"
+        "run_record.detonation.workspace_receipt.failures.cleanup contains credential-looking text"
     ) in failures
 
 
@@ -5526,8 +5397,7 @@ def test_acceptance_run_record_requires_evented_gate_wake_proof(tmp_path) -> Non
         "provider.cloudflare.authorization:CLOUDFLARE_API_TOKEN"
     ) in failures
     assert (
-        "provider_gates.records[provider.cloudflare.authorization].last_wake_event_id "
-        "is missing"
+        "provider_gates.records[provider.cloudflare.authorization].last_wake_event_id is missing"
     ) in failures
     assert (
         "provider_gates.records[provider.cloudflare.authorization].last_wake_event "
@@ -6277,27 +6147,34 @@ def test_live_acceptance_requires_receipt_resend_runtime_env_in_vercel(tmp_path)
     assert "Resend runtime env in Vercel receipt" in report.missing
     blockers = {blocker["item"]: blocker for blocker in report.blockers}
     assert blockers["Resend runtime env in Vercel receipt"]["category"] == "Deployment env"
-    assert "Capture RESEND_API_KEY in the launcher" in blockers[
-        "Resend runtime env in Vercel receipt"
-    ]["next_action"]
-    assert "Resend domain/audience values by API" in blockers[
-        "Resend runtime env in Vercel receipt"
-    ]["next_action"]
-    assert "captures or generates those values" not in blockers[
-        "Resend runtime env in Vercel receipt"
-    ]["next_action"]
-    assert "Capture or generate the required RESEND_* values" not in blockers[
-        "Resend runtime env in Vercel receipt"
-    ]["next_action"]
-    assert "Capture RESEND_API_KEY in the launcher" in blockers[
-        "receipt.resend_vercel_env"
-    ]["next_action"]
-    assert "Resend domain/audience values by API" in blockers[
-        "receipt.resend_vercel_env"
-    ]["next_action"]
-    assert "Capture or generate the required RESEND_* values" not in blockers[
-        "receipt.resend_vercel_env"
-    ]["next_action"]
+    assert (
+        "Capture RESEND_API_KEY in the launcher"
+        in blockers["Resend runtime env in Vercel receipt"]["next_action"]
+    )
+    assert (
+        "Resend domain/audience values by API"
+        in blockers["Resend runtime env in Vercel receipt"]["next_action"]
+    )
+    assert (
+        "captures or generates those values"
+        not in blockers["Resend runtime env in Vercel receipt"]["next_action"]
+    )
+    assert (
+        "Capture or generate the required RESEND_* values"
+        not in blockers["Resend runtime env in Vercel receipt"]["next_action"]
+    )
+    assert (
+        "Capture RESEND_API_KEY in the launcher"
+        in blockers["receipt.resend_vercel_env"]["next_action"]
+    )
+    assert (
+        "Resend domain/audience values by API"
+        in blockers["receipt.resend_vercel_env"]["next_action"]
+    )
+    assert (
+        "Capture or generate the required RESEND_* values"
+        not in blockers["receipt.resend_vercel_env"]["next_action"]
+    )
 
 
 def test_live_acceptance_requires_receipt_resend_generated_env_proof_before_vercel(
@@ -6678,12 +6555,14 @@ def test_live_acceptance_requires_provider_contract_health_before_api_setup(
     assert "provider contract-health receipt proof" in report.missing
     blockers = {blocker["item"]: blocker for blocker in report.blockers}
     assert blockers["provider contract-health receipt proof"]["category"] == "Provider routes"
-    assert "read-only provider health check before mutation" in blockers[
-        "provider contract-health receipt proof"
-    ]["next_action"]
-    assert "exact env-named Capture button" in blockers[
-        "provider contract-health receipt proof"
-    ]["next_action"]
+    assert (
+        "read-only provider health check before mutation"
+        in blockers["provider contract-health receipt proof"]["next_action"]
+    )
+    assert (
+        "exact env-named Capture button"
+        in blockers["provider contract-health receipt proof"]["next_action"]
+    )
 
 
 def test_live_acceptance_accepts_provider_contract_health_before_api_setup(
@@ -7328,8 +7207,7 @@ def test_live_acceptance_requires_guided_control_room_gates(tmp_path) -> None:
     assert guided_check.status == "failed"
     assert (
         "provider.github.authorization missing next_action, resume_hint, follow_steps, "
-        "resume_url, success_criteria, avoid_steps"
-        in guided_check.detail
+        "resume_url, success_criteria, avoid_steps" in guided_check.detail
     )
     assert "guided human gates" in report.missing
     blockers = {blocker["item"]: blocker for blocker in report.blockers}
@@ -7424,15 +7302,18 @@ def test_live_acceptance_requires_audited_control_room_gates(tmp_path) -> None:
     assert "audited human gate interventions" in report.missing
     blockers = {blocker["item"]: blocker for blocker in report.blockers}
     assert blockers["audited human gate interventions"]["category"] == "Human gates"
-    assert "click the visible I finished this step" in blockers[
-        "audited human gate interventions"
-    ]["next_action"]
-    assert "Open provider gate in VM" not in blockers[
-        "audited human gate interventions"
-    ]["next_action"]
-    assert "exact env-named Capture buttons" not in blockers[
-        "audited human gate interventions"
-    ]["next_action"]
+    assert (
+        "click the visible I finished this step"
+        in blockers["audited human gate interventions"]["next_action"]
+    )
+    assert (
+        "Open provider gate in VM"
+        not in blockers["audited human gate interventions"]["next_action"]
+    )
+    assert (
+        "exact env-named Capture buttons"
+        not in blockers["audited human gate interventions"]["next_action"]
+    )
 
 
 def test_live_acceptance_requires_clipboard_capture_for_secret_gates(tmp_path) -> None:

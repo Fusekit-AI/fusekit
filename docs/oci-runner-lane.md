@@ -192,15 +192,15 @@ successful launch is not allowed to finish green if any OCI or remote-worker
 cleanup step reports a `failed.*` deletion key; the detonation checkpoint turns
 red so the user knows the clean-room VM was not fully destroyed.
 The receipt also includes `fusekit.workspace-detonation-resources.v1`, which
-classifies whether the remote worker state, OCI compute instance, and
-FuseKit-created network resources were covered. Root tenancy/root compartment
-scope is recorded as preserved by design when FuseKit did not create a
+classifies whether the remote worker state, OCI compute instance, ephemeral
+public IP, and FuseKit-created network resources were covered. Root tenancy/root
+compartment scope is recorded as preserved by design when FuseKit did not create a
 throwaway compartment; deleting the user's tenancy or root compartment is never
 part of default detonation.
 An empty cleanup report is treated as incomplete rather than successful: the
-receipt must positively name remote-worker cleanup, OCI VM termination, and every
-standard FuseKit-created network resource class before the workspace can be
-considered detonated.
+receipt must positively name remote-worker cleanup, OCI VM termination,
+ephemeral public IP release, and every standard FuseKit-created network resource
+class before the workspace can be considered detonated.
 
 Every live Run Record also carries `fusekit.durable-state.v1` evidence. That
 evidence names the encrypted/redacted sources required to resume after replacing

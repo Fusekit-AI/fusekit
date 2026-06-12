@@ -576,11 +576,7 @@ def _acceptance_blockers(report: dict[str, Any]) -> list[dict[str, Any]]:
     missing = report.get("missing", [])
     if not isinstance(missing, list):
         return []
-    return [
-        _missing_acceptance_blocker(str(item))
-        for item in missing
-        if str(item).strip()
-    ]
+    return [_missing_acceptance_blocker(str(item)) for item in missing if str(item).strip()]
 
 
 def _missing_acceptance_blocker(item: str) -> dict[str, str]:
@@ -761,15 +757,9 @@ def _unknown_acceptance_blocker_action(item: str) -> str:
 def _render_acceptance_blocker_card(blocker: dict[str, Any]) -> str:
     category = str(blocker.get("category", "Launch blocker") or "Launch blocker")
     item = str(blocker.get("item", "Acceptance item") or "Acceptance item")
-    next_action = str(
-        blocker.get("next_action", "") or _unknown_acceptance_blocker_action(item)
-    )
+    next_action = str(blocker.get("next_action", "") or _unknown_acceptance_blocker_action(item))
     detail = str(blocker.get("detail", "") or "").strip()
-    detail_block = (
-        f"<code>{html.escape(_public_copy(detail))}</code>"
-        if detail
-        else ""
-    )
+    detail_block = f"<code>{html.escape(_public_copy(detail))}</code>" if detail else ""
     return f"""
         <article class="trust-card failed">
           <div class="trust-snow state-failed" aria-hidden="true"></div>
@@ -825,13 +815,16 @@ def _render_provider_strategies(strategies: Any) -> str:
     providers = payload.get("providers", [])
     playbook = _render_provider_playbook(payload.get("playbook", {}))
     if not isinstance(providers, list) or not providers:
-        cards = playbook or """
+        cards = (
+            playbook
+            or """
         <article class="strategy-card pending">
           <span>Waiting</span>
           <strong>Provider routes appear after setup starts</strong>
           <p>FuseKit will show whether it chose API, CLI, browser guidance, or follow-me.</p>
         </article>
 """
+        )
     else:
         plan = _render_strategy_plan(providers)
         cards = playbook + plan + "\n".join(_render_strategy_card(item) for item in providers)
@@ -865,13 +858,9 @@ def _render_provider_playbook(playbook: Any) -> str:
     note_rows = ""
     if isinstance(notes, list):
         note_rows = "".join(
-            f"<li>{html.escape(_public_copy(note))}</li>"
-            for note in notes
-            if str(note).strip()
+            f"<li>{html.escape(_public_copy(note))}</li>" for note in notes if str(note).strip()
         )
-    note_block = (
-        f"<small><b>Safety:</b></small><ol>{note_rows}</ol>" if note_rows else ""
-    )
+    note_block = f"<small><b>Safety:</b></small><ol>{note_rows}</ol>" if note_rows else ""
     return f"""
         <article class="strategy-card strategy-plan provider-playbook">
           <span>Provider playbook</span>
@@ -900,11 +889,7 @@ def _render_strategy_plan(providers: list[Any]) -> str:
     items = _strategy_plan_items(providers)
     if not items:
         return ""
-    rows = "".join(
-        f"<li>{html.escape(_public_copy(item))}</li>"
-        for item in items
-        if item.strip()
-    )
+    rows = "".join(f"<li>{html.escape(_public_copy(item))}</li>" for item in items if item.strip())
     return f"""
         <article class="strategy-card strategy-plan">
           <span>Route plan</span>
@@ -927,8 +912,7 @@ def _strategy_plan_items(providers: list[Any]) -> list[str]:
         for record in records
     )
     has_dns = any(
-        _strategy_provider(record) in {"cloudflare", "dns"}
-        or "dns" in _strategy_recipe(record)
+        _strategy_provider(record) in {"cloudflare", "dns"} or "dns" in _strategy_recipe(record)
         for record in records
     )
     has_vercel_resend_env = any(
@@ -946,8 +930,7 @@ def _strategy_plan_items(providers: list[Any]) -> list[str]:
         }
     )
     has_human_gate = any(
-        _strategy_route(record) in {"browser_guided", "human_follow_me"}
-        for record in records
+        _strategy_route(record) in {"browser_guided", "human_follow_me"} for record in records
     )
     has_api = any(_strategy_route(record) == "api" for record in records)
     if token_targets:
@@ -1041,14 +1024,12 @@ def _render_strategy_card(provider_record: Any) -> str:
         </article>
 """
     rows = "\n".join(
-        _render_strategy_row(provider, item)
-        for item in strategies
-        if isinstance(item, dict)
+        _render_strategy_row(provider, item) for item in strategies if isinstance(item, dict)
     )
     return f"""
         <article class="strategy-card">
           <span>{html.escape(provider)}</span>
-          <strong>{len(strategies)} setup route{'s' if len(strategies) != 1 else ''}</strong>
+          <strong>{len(strategies)} setup route{"s" if len(strategies) != 1 else ""}</strong>
           <div>{rows}</div>
         </article>
 """
@@ -1076,8 +1057,7 @@ def _render_strategy_row(provider: str, strategy: dict[str, Any]) -> str:
         else ""
     )
     guide = (
-        "<small><b>Next:</b> "
-        f"{html.escape(_public_copy(next_action, capture_targets))}</small>"
+        f"<small><b>Next:</b> {html.escape(_public_copy(next_action, capture_targets))}</small>"
         if next_action
         else ""
     )
@@ -1090,7 +1070,7 @@ def _render_strategy_row(provider: str, strategy: dict[str, Any]) -> str:
     return f"""
             <div class="strategy-row">
               <b>{html.escape(recipe)}</b>
-              <em>{html.escape(route.replace('_', ' '))} · {html.escape(status)}</em>
+              <em>{html.escape(route.replace("_", " "))} · {html.escape(status)}</em>
               <small>{html.escape(route_summary)}</small>
               <small>{html.escape(reason)}</small>
               {guide}
@@ -1203,8 +1183,7 @@ _RUN_STATE_DETAILS = {
 def _render_run_state(state: Any) -> str:
     state = state if isinstance(state, dict) else {}
     cards = "\n".join(
-        _render_run_state_card(field, bool(state.get(field, False)))
-        for field in _RUN_STATE_LABELS
+        _render_run_state_card(field, bool(state.get(field, False))) for field in _RUN_STATE_LABELS
     )
     ready = bool(state.get("ready_to_detonate", False))
     missing = state.get("missing_for_detonation", [])
@@ -1241,7 +1220,7 @@ def _render_run_state_card(field: str, passed: bool) -> str:
             <span>{html.escape(status_label(status))}</span>
             <strong>{html.escape(label)}</strong>
             <p>{html.escape(detail)}</p>
-            <em>{html.escape(field.replace('_', ' '))}</em>
+            <em>{html.escape(field.replace("_", " "))}</em>
           </div>
         </article>
 """
@@ -1254,9 +1233,7 @@ def _render_durable_state(run_record: Any) -> str:
     sources = durable.get("sources", [])
     sources = sources if isinstance(sources, list) else []
     cards = "\n".join(
-        _render_durable_source_card(source)
-        for source in sources
-        if isinstance(source, dict)
+        _render_durable_source_card(source) for source in sources if isinstance(source, dict)
     )
     if not cards:
         cards = """
@@ -1315,7 +1292,7 @@ def _render_durable_source_card(source: dict[str, Any]) -> str:
             <span>{html.escape(status_label(status))}</span>
             <strong>{html.escape(title)}</strong>
             <p>{html.escape(detail)}</p>
-            <em>{html.escape(source_id.replace('_', ' '))}</em>
+            <em>{html.escape(source_id.replace("_", " "))}</em>
           </div>
         </article>
 """
@@ -1328,9 +1305,7 @@ def _render_human_actions(run_record: Any) -> str:
     actions = human_actions.get("actions", [])
     actions = actions if isinstance(actions, list) else []
     cards = "\n".join(
-        _render_human_action_card(action)
-        for action in actions[:6]
-        if isinstance(action, dict)
+        _render_human_action_card(action) for action in actions[:6] if isinstance(action, dict)
     )
     if not cards:
         cards = """
@@ -1348,9 +1323,7 @@ def _render_human_actions(run_record: Any) -> str:
     unguided = human_actions.get("unguided", [])
     unguided_count = len(unguided) if isinstance(unguided, list) else 0
     summary = (
-        "all actions guided"
-        if actions and unguided_count == 0
-        else "waiting for guided actions"
+        "all actions guided" if actions and unguided_count == 0 else "waiting for guided actions"
     )
     return f"""
     <section class="run-state-panel" aria-label="Human action trace">
@@ -1403,9 +1376,7 @@ def _render_automation_boundary(run_record: Any) -> str:
     routes = boundary.get("routes", [])
     routes = routes if isinstance(routes, list) else []
     cards = "\n".join(
-        _render_automation_route_card(route)
-        for route in routes[:6]
-        if isinstance(route, dict)
+        _render_automation_route_card(route) for route in routes[:6] if isinstance(route, dict)
     )
     if not cards:
         cards = """
@@ -1467,8 +1438,7 @@ def _render_automation_route_card(route: dict[str, Any]) -> str:
         detail = "FuseKit runs this through deterministic provider automation after authorization."
     elif gate:
         detail = (
-            "Human interaction is limited to provider-owned login, consent, "
-            "or copy-once prompts."
+            "Human interaction is limited to provider-owned login, consent, or copy-once prompts."
         )
     else:
         detail = "Waiting for a deterministic route or guided human-gate fallback."
@@ -1493,9 +1463,7 @@ def _render_run_record_verifiers(run_record: Any) -> str:
     checks = verifiers.get("checks", [])
     checks = checks if isinstance(checks, list) else []
     cards = "\n".join(
-        _render_run_record_verifier_card(check)
-        for check in checks[:6]
-        if isinstance(check, dict)
+        _render_run_record_verifier_card(check) for check in checks[:6] if isinstance(check, dict)
     )
     if not cards:
         cards = """
@@ -1555,7 +1523,7 @@ def _render_run_record_verifier_card(check: dict[str, Any]) -> str:
             <span>{html.escape(status_label(card_status))}</span>
             <strong>{html.escape(provider)} · {html.escape(check_name)}</strong>
             <p>{html.escape(detail)}</p>
-            <em>{html.escape(status.replace('_', ' '))}</em>
+            <em>{html.escape(status.replace("_", " "))}</em>
           </div>
         </article>
 """
@@ -1568,9 +1536,7 @@ def _render_audit_trail(run_record: Any) -> str:
     entries = audit_trail.get("entries", [])
     entries = entries if isinstance(entries, list) else []
     cards = "\n".join(
-        _render_audit_trail_card(entry)
-        for entry in entries[:6]
-        if isinstance(entry, dict)
+        _render_audit_trail_card(entry) for entry in entries[:6] if isinstance(entry, dict)
     )
     if not cards:
         cards = """
@@ -1617,7 +1583,7 @@ def _render_audit_trail_card(entry: dict[str, Any]) -> str:
           <div class="trust-snow state-passed" aria-hidden="true"></div>
           <div>
             <span>{html.escape(status_label("passed"))}</span>
-            <strong>{html.escape(category.replace('_', ' '))}</strong>
+            <strong>{html.escape(category.replace("_", " "))}</strong>
             <p>{html.escape(_public_copy(summary))}</p>
             <em>{html.escape(provider)} · {html.escape(action)} · {html.escape(status)}</em>
           </div>
@@ -1725,6 +1691,12 @@ def _render_detonation_receipt(run_record: Any) -> str:
                 summary.get("compute_instance") is True,
             ),
             _render_detonation_resource_card(
+                "ephemeral_public_ip",
+                "Ephemeral public IP",
+                summary.get("ephemeral_public_ip_released") is True,
+                detail="Public noVNC/control-room address released with the VM VNIC.",
+            ),
+            _render_detonation_resource_card(
                 "network_resources",
                 "FuseKit network resources",
                 summary.get("network_resources_deleted") is True,
@@ -1744,8 +1716,10 @@ def _render_detonation_receipt(run_record: Any) -> str:
     missing = summary.get("missing", [])
     missing_count = len(missing) if isinstance(missing, list) else 0
     status = str(receipt.get("status", "") or "pending")
-    overall = "OCI VM detonated" if status == "complete" and missing_count == 0 else (
-        f"{missing_count} cleanup classes pending"
+    overall = (
+        "OCI VM detonated"
+        if status == "complete" and missing_count == 0
+        else (f"{missing_count} cleanup classes pending")
     )
     return f"""
     <section class="run-state-panel" aria-label="OCI detonation receipt">
@@ -1758,8 +1732,8 @@ def _render_detonation_receipt(run_record: Any) -> str:
       </div>
       <p class="muted">
         FuseKit records resource classes, not secret values: worker state, VM instance,
-        disposable browser/auth/passphrase/log cleanup proof, network resources,
-        compartment scope, and any provider delete failures.
+        disposable browser/auth/passphrase/log cleanup proof, ephemeral public IP,
+        network resources, compartment scope, and any provider delete failures.
       </p>
       <div class="run-state-grid" data-detonation-receipt-checks>{cards}</div>
     </section>
@@ -1778,10 +1752,7 @@ def _remote_worker_cleanup_ready(cleanup: dict[str, Any]) -> bool:
 
 def _remote_worker_cleanup_detail(cleanup: dict[str, Any]) -> str:
     if not _remote_worker_cleanup_ready(cleanup):
-        return (
-            "Waiting for explicit VM worker cleanup proof before no-trace "
-            "detonation is trusted."
-        )
+        return "Waiting for explicit VM worker cleanup proof before no-trace detonation is trusted."
     paths = cleanup.get("paths", [])
     processes = cleanup.get("process_patterns", [])
     path_count = len(paths) if isinstance(paths, list) else 0
@@ -1829,7 +1800,7 @@ def _render_trust_card(check: dict[str, Any]) -> str:
           <div class="trust-snow state-{html.escape(snow)}" aria-hidden="true"></div>
           <div>
             <span>{html.escape(status_label(status))}</span>
-            <strong>{html.escape(title.replace('_', ' '))}</strong>
+            <strong>{html.escape(title.replace("_", " "))}</strong>
             <p>{html.escape(summary)}</p>
             <em>{html.escape(repair)}</em>
           </div>
@@ -1982,7 +1953,7 @@ def _render_gate_help(step: Any) -> str:
         next_action = str(getattr(step, "next_action", "") or "").strip()
         resume_hint = str(getattr(step, "resume_hint", "") or "").strip()
         next_block = (
-            "<div class=\"gate-next\">"
+            '<div class="gate-next">'
             f"<strong>Next</strong><p>{html.escape(_public_copy(next_action, capture_targets))}</p>"
             f"<em>{html.escape(_public_copy(resume_hint, capture_targets))}</em>"
             "</div>"
@@ -2013,9 +1984,7 @@ def _render_gate_help(step: Any) -> str:
 """
     follow_steps = getattr(step, "follow_steps", None)
     actions_source = (
-        follow_steps
-        if isinstance(follow_steps, list) and follow_steps
-        else guidance.actions
+        follow_steps if isinstance(follow_steps, list) and follow_steps else guidance.actions
     )
     target = str(getattr(step, "target", "") or "")
     capture_targets = _capture_targets(target)
@@ -2034,7 +2003,7 @@ def _render_gate_help(step: Any) -> str:
     attempts = int(getattr(step, "attempts", 0) or 0)
     attempts_label = (
         f'<span class="gate-attempts">Resurfaced {attempts} '
-        f'time{"" if attempts == 1 else "s"}</span>'
+        f"time{'' if attempts == 1 else 's'}</span>"
         if attempts
         else ""
     )
@@ -2071,7 +2040,7 @@ def _render_gate_help(step: Any) -> str:
     next_action = str(getattr(step, "next_action", "") or "").strip()
     resume_hint = str(getattr(step, "resume_hint", "") or "").strip()
     next_block = (
-        "<div class=\"gate-next\">"
+        '<div class="gate-next">'
         f"<strong>Next</strong><p>{html.escape(_public_copy(next_action, capture_targets))}</p>"
         f"<em>{html.escape(_public_copy(resume_hint, capture_targets))}</em>"
         "</div>"
@@ -2132,8 +2101,7 @@ def _render_gate_criteria(
         )
         if rows:
             blocks.append(
-                '<div class="gate-criteria avoid"><strong>Avoid</strong>'
-                f"<ul>{rows}</ul></div>"
+                f'<div class="gate-criteria avoid"><strong>Avoid</strong><ul>{rows}</ul></div>'
             )
     if not blocks:
         return ""
@@ -2179,11 +2147,7 @@ def _render_capture_buttons(
     captured = set(captured_targets)
     buttons = "".join(_render_capture_button(gate_id, item, item in captured) for item in targets)
     captured_count = len([item for item in targets if item in captured])
-    progress = (
-        f"<span>{captured_count}/{len(targets)} captured</span>"
-        if len(targets) > 1
-        else ""
-    )
+    progress = f"<span>{captured_count}/{len(targets)} captured</span>" if len(targets) > 1 else ""
     plural = "value" if len(targets) == 1 else "values"
     capture_instruction = _capture_instruction(targets)
     return f"""
@@ -2204,9 +2168,7 @@ def _render_capture_buttons(
 
 def _capture_instruction(targets: tuple[str, ...]) -> str:
     labels = [
-        f"Capture {html.escape(target)} from VM clipboard"
-        for target in targets
-        if target.strip()
+        f"Capture {html.escape(target)} from VM clipboard" for target in targets if target.strip()
     ]
     if len(labels) == 1:
         return f"{labels[0]} below"
@@ -2259,9 +2221,7 @@ def _gate_step(gate: dict[str, Any]) -> Any:
     return SimpleNamespace(
         id=str(gate.get("id", "") or "provider.gate"),
         label=(
-            f"{provider} gate is being rechecked"
-            if retrying
-            else f"{provider} needs your approval"
+            f"{provider} gate is being rechecked" if retrying else f"{provider} needs your approval"
         ),
         status="running" if retrying else "waiting",
         detail=(

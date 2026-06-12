@@ -864,9 +864,13 @@ def _cmd_provider_list(args: argparse.Namespace) -> int:
     providers = []
     for service in manifest.services:
         pack_path = _provider_pack_path(args.app, service.provider.lower(), service)
-        pack = load_provider_pack(pack_path) if pack_path.exists() else synthesize_provider_pack(
-            service.provider.lower(),
-            args.app,
+        pack = (
+            load_provider_pack(pack_path)
+            if pack_path.exists()
+            else synthesize_provider_pack(
+                service.provider.lower(),
+                args.app,
+            )
         )
         providers.append(
             {
@@ -989,10 +993,7 @@ def _github_source_handoff(args: argparse.Namespace) -> ProviderHandoff:
                 "Actions secrets and deploy keys when setup will configure GitHub",
             ),
             account_steps=(
-                (
-                    "Click Open provider gate in VM so GitHub opens in the VM browser, "
-                    "then sign in."
-                ),
+                ("Click Open provider gate in VM so GitHub opens in the VM browser, then sign in."),
                 "Install or authorize the FuseKit GitHub App for only the selected repository.",
                 (
                     "Complete the highlighted GitHub passkey, MFA, CAPTCHA, organization, "
@@ -1073,8 +1074,8 @@ def _cmd_install(args: argparse.Namespace) -> int:
     setup_script.write_text(
         "#!/bin/sh\n"
         "set -eu\n"
-        "cd \"$(dirname \"$0\")/..\"\n"
-        "exec fusekit launch . --manifest fusekit.yaml \"$@\"\n",
+        'cd "$(dirname "$0")/.."\n'
+        'exec fusekit launch . --manifest fusekit.yaml "$@"\n',
         encoding="utf-8",
     )
     setup_script.chmod(0o700)
@@ -1414,9 +1415,7 @@ def _apply_loaded_manifest(args: argparse.Namespace, manifest: SetupManifest) ->
                 provider_checks_passed_or_pending_safe=provider_checks_ready,
             )
         if not provider_checks_ready and not args.allow_incomplete:
-            raise FuseKitError(
-                "Verification did not reach a passed or pending-safe state."
-            )
+            raise FuseKitError("Verification did not reach a passed or pending-safe state.")
     except FuseKitError:
         _write_apply_artifacts(args, passphrase, vault, audit, receipt, verification_report)
         raise
@@ -1563,9 +1562,7 @@ def _run_local_detonation_preflight(args: argparse.Namespace, app_path: Path) ->
         rollback_metadata=args.rollback_json,
     )
     if not result.ok:
-        raise FuseKitError(
-            "Detonation preflight failed: " + "; ".join(result.failures)
-        )
+        raise FuseKitError("Detonation preflight failed: " + "; ".join(result.failures))
     if hasattr(args, "job_state"):
         _mark_run_state(args, detonation_safe=True)
 
@@ -2194,9 +2191,7 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
     job.mark("app.upload", "done", "app uploaded without excluded secret paths")
     job.mark("setup.execute", "done", "remote FuseKit launch completed")
     job.mark("artifacts.retrieve", "done", artifacts["output_dir"])
-    verification_report = (
-        Path(artifacts["output_dir"]) / ".fusekit" / "verification_report.json"
-    )
+    verification_report = Path(artifacts["output_dir"]) / ".fusekit" / "verification_report.json"
     provider_checks_safe = False
     provider_checks_ready = False
     if verification_report.exists():
@@ -2208,9 +2203,7 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
     rollback_plan = Path(artifacts["output_dir"]) / ".fusekit" / "rollback_plan.json"
     if rollback_plan.exists():
         job.add_artifact("rollback_plan", rollback_plan)
-    provider_strategies = (
-        Path(artifacts["output_dir"]) / ".fusekit" / "provider_strategies.json"
-    )
+    provider_strategies = Path(artifacts["output_dir"]) / ".fusekit" / "provider_strategies.json"
     if provider_strategies.exists():
         job.add_artifact("provider_strategies", provider_strategies)
     receipt_path = Path(artifacts["output_dir"]) / ".fusekit" / "setup_receipt.json"
@@ -2239,9 +2232,7 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
         else:
             job.mark("detonate.workspace", "skipped", "workspace retained by --no-detonate")
         _save_launch_job(args, job, vault_index=vault.public_index())
-        raise FuseKitError(
-            "Remote verification did not reach a passed or pending-safe state."
-        )
+        raise FuseKitError("Remote verification did not reach a passed or pending-safe state.")
     if provider_checks_safe:
         job.mark("verify.live", "done", "remote verification is passed or pending-safe")
     else:
@@ -2371,6 +2362,8 @@ def _workspace_detonation_missing_resources(remote_deleted: dict[str, Any]) -> l
         missing.append("remote_worker")
     if "instance" not in deleted:
         missing.append("compute_instance")
+    if "ephemeral_public_ip" not in deleted:
+        missing.append("ephemeral_public_ip")
     if WORKSPACE_NETWORK_RESOURCE_KEYS - deleted:
         missing.append("network_resources")
     return missing
@@ -2414,6 +2407,7 @@ def _workspace_detonation_resource_summary(remote_deleted: dict[str, Any]) -> di
         "remote_worker": _remote_worker_cleanup_complete(remote_deleted.get("remote_worker")),
         "remote_worker_cleanup": worker_cleanup,
         "compute_instance": "instance" in deleted,
+        "ephemeral_public_ip_released": "ephemeral_public_ip" in deleted,
         "network_resources": network_resources,
         "network_resources_missing": network_resources_missing,
         "network_resources_deleted": not network_resources_missing,
@@ -2422,8 +2416,9 @@ def _workspace_detonation_resource_summary(remote_deleted: dict[str, Any]) -> di
         "missing": _workspace_detonation_missing_resources(remote_deleted),
         "statement": (
             "FuseKit detonation must remove the remote worker process state, terminate "
-            "the OCI VM, and delete FuseKit-created network resources. Root tenancy or "
-            "root compartment scope may be preserved when no throwaway compartment was created."
+            "the OCI VM, release the ephemeral public IP, and delete FuseKit-created "
+            "network resources. Root tenancy or root compartment scope may be preserved "
+            "when no throwaway compartment was created."
         ),
     }
 
@@ -2478,9 +2473,7 @@ def _run_remote_detonation_preflight(args: argparse.Namespace, output_dir: Path)
             json.dumps(result.to_dict(), indent=2, sort_keys=True) + "\n",
             "utf-8",
         )
-        raise FuseKitError(
-            "Detonation preflight failed: " + "; ".join(result.failures)
-        )
+        raise FuseKitError("Detonation preflight failed: " + "; ".join(result.failures))
 
 
 def _cmd_cloud_shell_runner_launch(
@@ -2988,7 +2981,9 @@ def _gate_record_exists(args: argparse.Namespace, gate_id: str) -> bool:
     return gate_id in GateService.load(_gate_state_path(args)).records
 
 
-def _gate_recorder(args: argparse.Namespace) -> Callable[
+def _gate_recorder(
+    args: argparse.Namespace,
+) -> Callable[
     [str, str, str, str, str, tuple[str, ...], str],
     str,
 ]:
@@ -3111,8 +3106,7 @@ def _await_provider_token(
         if prelaunch_control_room is not None:
             prelaunch_job_state = prelaunch_control_room.parent / "source-fetch-job.json"
             serve_command = (
-                "fusekit control-room --serve --job-state "
-                f"{shlex_quote(str(prelaunch_job_state))}"
+                f"fusekit control-room --serve --job-state {shlex_quote(str(prelaunch_job_state))}"
             )
             print(
                 "Guided source-fetch control room: "
@@ -3567,9 +3561,7 @@ def _run_manifest_provider_pack_setup(
         if required_input:
             if not args.allow_incomplete:
                 raise FuseKitError(required_input)
-            context.receipt.add_action(
-                f"{provider}.setup", "skipped", {"reason": required_input}
-            )
+            context.receipt.add_action(f"{provider}.setup", "skipped", {"reason": required_input})
             continue
         result = run_provider_pack_setup(pack, context)
         strategy_runs.append(_provider_strategy_record(result))
@@ -3585,8 +3577,7 @@ def _run_manifest_provider_pack_setup(
                 {
                     "provider": provider,
                     "reason": (
-                        "Downstream providers are waiting until this provider gate "
-                        "is completed."
+                        "Downstream providers are waiting until this provider gate is completed."
                     ),
                 },
             )
@@ -3676,9 +3667,7 @@ def _provider_strategy_record(result: dict[str, Any]) -> dict[str, object]:
                 strategy["follow_steps"] = steps
         success_criteria = item.get("success_criteria")
         if isinstance(success_criteria, (list, tuple)):
-            criteria = [
-                str(step).strip() for step in success_criteria if str(step).strip()
-            ]
+            criteria = [str(step).strip() for step in success_criteria if str(step).strip()]
             if criteria:
                 strategy["success_criteria"] = criteria
         avoid_steps = item.get("avoid_steps")
@@ -3800,9 +3789,7 @@ def _provider_strategy_checkpoint_status(
 ) -> tuple[str, str]:
     statuses = {str(item.get("status", "") or "").strip() for item in strategies}
     if "needs_human_gate" in statuses:
-        has_secret_target = any(
-            str(item.get("target", "") or "").strip() for item in strategies
-        )
+        has_secret_target = any(str(item.get("target", "") or "").strip() for item in strategies)
         mascot = "privacy" if has_secret_target else "gate"
         return "waiting", mascot
     if statuses and statuses <= {"ok"}:
@@ -3850,8 +3837,7 @@ def _provider_strategy_checkpoint_next_action(
         )
     if status == "failed":
         return (
-            "Open the provider route details in the control room and retry the failed "
-            "setup path."
+            "Open the provider route details in the control room and retry the failed setup path."
         )
     return "Nothing to do manually unless FuseKit surfaces a provider-owned gate."
 
@@ -3904,9 +3890,7 @@ def _first_strategy_with_status(
 
 def _provider_strategy_follow_steps(pack: ProviderCapabilityPack) -> tuple[str, ...]:
     steps = tuple(
-        step
-        for step in (*pack.handoff.account_steps, *pack.handoff.secret_steps)
-        if step.strip()
+        step for step in (*pack.handoff.account_steps, *pack.handoff.secret_steps) if step.strip()
     )
     if steps:
         return steps
@@ -3937,8 +3921,7 @@ def _provider_strategy_next_action(
     capture_targets = _provider_strategy_capture_targets(pack, target)
     if capture_targets:
         capture_labels = [
-            f"Capture {capture_target} from VM clipboard"
-            for capture_target in capture_targets
+            f"Capture {capture_target} from VM clipboard" for capture_target in capture_targets
         ]
         capture_copy = (
             f"click {capture_labels[0]}"
@@ -4405,9 +4388,7 @@ def _verify_provider_packs(
                 )
             ]
         elif (
-            active_gate is not None
-            and active_gate_index is not None
-            and index > active_gate_index
+            active_gate is not None and active_gate_index is not None and index > active_gate_index
         ):
             results = [_provider_waiting_on_upstream_gate_result(pack.provider, active_gate)]
         else:
@@ -4502,9 +4483,7 @@ def _provider_waiting_on_upstream_gate_result(
             "service_gate": True,
             "blocked_by_gate": gate.id,
             "blocked_by_provider": gate_provider,
-            "reason": (
-                f"Waiting for the {gate_provider} gate before verifying {provider}."
-            ),
+            "reason": (f"Waiting for the {gate_provider} gate before verifying {provider}."),
         },
     )
 
@@ -4814,9 +4793,10 @@ def _resend_runtime_follow_steps(
     steps = [
         "Use the live VM browser, not a local browser tab.",
     ]
-    capture_controls = ", ".join(
-        f"Capture {env_name} from VM clipboard" for env_name in env_names
-    ) or "the visible env-named Capture buttons"
+    capture_controls = (
+        ", ".join(f"Capture {env_name} from VM clipboard" for env_name in env_names)
+        or "the visible env-named Capture buttons"
+    )
     if "RESEND_API_KEY" in env_names:
         steps.extend(
             [
@@ -4941,9 +4921,7 @@ def _verification_inputs(args: argparse.Namespace, manifest: SetupManifest) -> d
     generated = json.loads(str(getattr(args, "generated_dns_records_json", "[]") or "[]"))
     generated_records = generated if isinstance(generated, list) else []
     records = [
-        _dns_record_to_input(record)
-        for domain in manifest.domains
-        for record in domain.records
+        _dns_record_to_input(record) for domain in manifest.domains for record in domain.records
     ] + [item for item in generated_records if isinstance(item, dict)]
     inputs.update(
         {
@@ -5240,11 +5218,7 @@ def _has_pack_provider_token(pack: ProviderCapabilityPack, vault: Vault) -> bool
                 return True
             except FuseKitError:
                 pass
-    env_names = {
-        name
-        for name in (pack.handoff.token_env, *pack.required_secrets)
-        if name
-    }
+    env_names = {name for name in (pack.handoff.token_env, *pack.required_secrets) if name}
     return any(bool(os.environ.get(name)) for name in env_names)
 
 
@@ -5306,8 +5280,7 @@ def _repair_navigation_completed(events: list[BrowserPlaybookEvent]) -> bool:
     if any(event.status in {"blocked", "max-attempts", "failed"} for event in events):
         return False
     if any(
-        event.action in {"gate", "human.takeover"} and event.status == "waiting"
-        for event in events
+        event.action in {"gate", "human.takeover"} and event.status == "waiting" for event in events
     ):
         return False
     return any(event.action == "stop" and event.status == "done" for event in events)
@@ -5557,9 +5530,13 @@ def _capture_llm(args: argparse.Namespace, vault: Vault, require: bool) -> None:
     if captured:
         return
     mode = getattr(args, "llm_auth_mode", "auto")
-    if mode in {"auto", "openclaw"} and require and _openclaw_llm_profile_available(
-        vault,
-        config,
+    if (
+        mode in {"auto", "openclaw"}
+        and require
+        and _openclaw_llm_profile_available(
+            vault,
+            config,
+        )
     ):
         return
     if mode in {"auto", "openclaw"} and require:
@@ -5841,8 +5818,12 @@ def _visual_chrome_binary() -> Path | None:
     if browser_root:
         candidates.extend(browser_root.glob("chromium-*/chrome-linux*/chrome"))
         candidates.extend(browser_root.glob("chromium-*/chrome-linux64/chrome"))
-    candidates.extend(Path("/opt/fusekit-playwright-browsers").glob("chromium-*/chrome-linux*/chrome"))
-    candidates.extend(Path("/opt/fusekit-playwright-browsers").glob("chromium-*/chrome-linux64/chrome"))
+    candidates.extend(
+        Path("/opt/fusekit-playwright-browsers").glob("chromium-*/chrome-linux*/chrome")
+    )
+    candidates.extend(
+        Path("/opt/fusekit-playwright-browsers").glob("chromium-*/chrome-linux64/chrome")
+    )
     for candidate in candidates:
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return candidate
@@ -5905,7 +5886,7 @@ def _start_openclaw_auth_xterm(
         f"{login_command}; "
         "status=$?; "
         "echo; "
-        "echo \"Auth command exited with status $status\"; "
+        'echo "Auth command exited with status $status"; '
         "echo 'FuseKit will retry automatically. You can close this terminal after "
         "the gate passes.'; "
         "read -r -p 'Press Enter to close this terminal...' _; "

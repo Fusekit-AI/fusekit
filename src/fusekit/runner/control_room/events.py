@@ -1808,6 +1808,12 @@ function renderDetonationReceipt(job) {
       summary.compute_instance === true,
     ),
     detonationResourceCard(
+      "ephemeral_public_ip",
+      "Ephemeral public IP",
+      summary.ephemeral_public_ip_released === true,
+      "Public noVNC/control-room address released with the VM VNIC.",
+    ),
+    detonationResourceCard(
       "network_resources",
       "FuseKit network resources",
       summary.network_resources_deleted === true,

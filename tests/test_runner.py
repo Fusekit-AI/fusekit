@@ -137,9 +137,7 @@ def _write_runner_readiness(root: Path, *, thin: bool = False) -> None:
             "playwright_chromium": True,
             "shared_provider_browser_profile": True,
         },
-        "provider_browser_profile": (
-            "/var/lib/fusekit-runner/visual/chrome-provider-profile"
-        ),
+        "provider_browser_profile": ("/var/lib/fusekit-runner/visual/chrome-provider-profile"),
         "playwright_browsers_path": "/opt/fusekit-playwright-browsers",
     }
     if thin:
@@ -397,6 +395,7 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
                 "status": "complete",
                 "reason": "remote worker and OCI workspace detonated",
                 "deleted": [
+                    "ephemeral_public_ip",
                     "instance",
                     "internet_gateway",
                     "network_security_group",
@@ -412,6 +411,7 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
                     "remote_worker": True,
                     "remote_worker_cleanup": remote_worker_cleanup_proof(),
                     "compute_instance": True,
+                    "ephemeral_public_ip_released": True,
                     "network_resources": [
                         "internet_gateway",
                         "network_security_group",
@@ -427,7 +427,8 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
                     "missing": [],
                     "statement": (
                         "FuseKit detonation must remove the remote worker process state, "
-                        "terminate the OCI VM, and delete FuseKit-created network resources."
+                        "terminate the OCI VM, release the ephemeral public IP, and delete "
+                        "FuseKit-created network resources."
                     ),
                 },
                 "updated_at": 2.0,
@@ -459,18 +460,14 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     assert record["provider_gates"]["total"] == 1
     assert record["provider_gates"]["providers"] == ["cloudflare"]
     assert record["runner_profile"]["status"] == "ready"
-    assert record["runner_profile"]["profile_contract"]["name"] == (
-        "oci-visual-browser-x86_64"
-    )
+    assert record["runner_profile"]["profile_contract"]["name"] == ("oci-visual-browser-x86_64")
     assert record["runner_profile"]["observed"]["memory_mib"] == 24576
     assert record["durable_state"]["schema_version"] == "fusekit.durable-state.v1"
     assert record["durable_state"]["resume_ready"] is True
     assert record["durable_state"]["missing"] == []
     assert record["durable_state"]["runner_profile_ready"] is True
     assert record["durable_state"]["runner_profile_failures"] == []
-    assert {
-        item["id"] for item in record["durable_state"]["sources"] if item["exists"]
-    } >= {
+    assert {item["id"] for item in record["durable_state"]["sources"] if item["exists"]} >= {
         "encrypted_vault",
         "job_state",
         "run_state",
@@ -484,47 +481,36 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     assert record["durable_state"]["detonation_scope"]["schema_version"] == (
         "fusekit.detonation-scope.v1"
     )
-    assert record["durable_state"]["detonation_scope"]["mode"] == (
-        "worker-and-oci-workspace"
-    )
+    assert record["durable_state"]["detonation_scope"]["mode"] == ("worker-and-oci-workspace")
     assert "provider-auth" in record["durable_state"]["detonation_scope"]["must_delete"]
     assert "run_record" in record["durable_state"]["detonation_scope"]["must_preserve"]
     assert record["durable_state"]["detonation_scope"]["resume_until_complete"] is True
-    assert "no FuseKit worker state remains" in record["durable_state"][
-        "detonation_scope"
-    ]["no_trace_statement"]
-    assert record["durable_state"]["worker_replacement_contract"][
-        "can_recreate_worker"
-    ] is True
-    assert record["durable_state"]["worker_replacement_contract"][
-        "runner_profile_ready"
-    ] is True
     assert (
-        record["durable_state"]["worker_replacement_contract"][
-            "required_runner_profile"
-        ]
+        "no FuseKit worker state remains"
+        in record["durable_state"]["detonation_scope"]["no_trace_statement"]
+    )
+    assert record["durable_state"]["worker_replacement_contract"]["can_recreate_worker"] is True
+    assert record["durable_state"]["worker_replacement_contract"]["runner_profile_ready"] is True
+    assert (
+        record["durable_state"]["worker_replacement_contract"]["required_runner_profile"]
         == "oci-visual-browser-x86_64"
     )
-    assert record["durable_state"]["worker_replacement_contract"][
-        "host_machine_state_required"
-    ] is False
     assert (
-        record["durable_state"]["worker_replacement_contract"][
-            "runner_profile_failures"
-        ]
-        == []
+        record["durable_state"]["worker_replacement_contract"]["host_machine_state_required"]
+        is False
     )
-    assert "provider-auth" in record["durable_state"]["worker_replacement_contract"][
-        "volatile_surfaces"
-    ]
-    assert "host clipboard history" in record["durable_state"][
-        "worker_replacement_contract"
-    ]["statement"]
+    assert record["durable_state"]["worker_replacement_contract"]["runner_profile_failures"] == []
+    assert (
+        "provider-auth"
+        in record["durable_state"]["worker_replacement_contract"]["volatile_surfaces"]
+    )
+    assert (
+        "host clipboard history"
+        in record["durable_state"]["worker_replacement_contract"]["statement"]
+    )
     assert record["provider_playbook"]["schema_version"] == "fusekit.provider-playbook.v1"
     assert record["provider_playbook"]["step_count"] == 1
-    assert "Capture CLOUDFLARE_API_TOKEN" in record["provider_playbook"]["steps"][0][
-        "instruction"
-    ]
+    assert "Capture CLOUDFLARE_API_TOKEN" in record["provider_playbook"]["steps"][0]["instruction"]
     assert record["verifiers"]["schema_version"] == "fusekit.verifier-summary.v1"
     assert record["verifiers"]["all_passed_or_pending_safe"] is True
     assert record["verifiers"]["counts"]["pending_safe"] == 1
@@ -561,9 +547,7 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     )
     assert capture_audit["wake_event_id"] == record["wake_events"]["events"][0]["id"]
     assert "https://dash.cloudflare.com" not in json.dumps(record["audit_trail"])
-    assert record["recording_contract"]["schema_version"] == (
-        "fusekit.recording-contract.v1"
-    )
+    assert record["recording_contract"]["schema_version"] == ("fusekit.recording-contract.v1")
     assert record["recording_contract"]["recording_ready"] is True
     assert record["recording_contract"]["blockers"] == []
     assert record["recording_contract"]["checks"]["provider_playbook"] is True
@@ -577,8 +561,7 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     assert record["evidence"]["counts"]["receipts"] >= 2
     assert any(item["path"] == "audit.jsonl" for item in record["evidence"]["logs"])
     assert any(
-        item["path"] == "visual/provider-gate.png"
-        for item in record["evidence"]["screenshots"]
+        item["path"] == "visual/provider-gate.png" for item in record["evidence"]["screenshots"]
     )
     assert any(item["path"] == "visual.json" for item in record["evidence"]["visual"])
     assert "raw secrets are not embedded" in record["evidence"]["statement"]
@@ -768,6 +751,7 @@ def test_run_record_recording_contract_blocks_missing_provider_playbook(tmp_path
             {
                 "status": "complete",
                 "deleted": [
+                    "ephemeral_public_ip",
                     "instance",
                     "internet_gateway",
                     "network_security_group",
@@ -783,6 +767,7 @@ def test_run_record_recording_contract_blocks_missing_provider_playbook(tmp_path
                     "remote_worker": True,
                     "remote_worker_cleanup": remote_worker_cleanup_proof(),
                     "compute_instance": True,
+                    "ephemeral_public_ip_released": True,
                     "network_resources": [
                         "internet_gateway",
                         "network_security_group",
@@ -882,6 +867,7 @@ def test_run_record_recording_contract_blocks_thin_runner_profile(tmp_path) -> N
             {
                 "status": "complete",
                 "deleted": [
+                    "ephemeral_public_ip",
                     "instance",
                     "internet_gateway",
                     "network_security_group",
@@ -897,6 +883,7 @@ def test_run_record_recording_contract_blocks_thin_runner_profile(tmp_path) -> N
                     "remote_worker": True,
                     "remote_worker_cleanup": remote_worker_cleanup_proof(),
                     "compute_instance": True,
+                    "ephemeral_public_ip_released": True,
                     "network_resources": [
                         "internet_gateway",
                         "network_security_group",
@@ -929,9 +916,7 @@ def test_run_record_recording_contract_blocks_thin_runner_profile(tmp_path) -> N
 
     assert record["durable_state"]["resume_ready"] is False
     assert record["durable_state"]["runner_profile_ready"] is False
-    assert record["durable_state"]["worker_replacement_contract"][
-        "can_recreate_worker"
-    ] is False
+    assert record["durable_state"]["worker_replacement_contract"]["can_recreate_worker"] is False
     assert record["recording_contract"]["checks"]["runner_profile"] is False
     assert record["recording_contract"]["checks"]["durable_state"] is False
     assert record["recording_contract"]["checks"]["worker_replacement"] is False
@@ -964,11 +949,13 @@ def test_run_record_retains_all_redacted_wake_events(tmp_path) -> None:
     assert record["audit_trail"]["entry_count"] == 55
     assert len(record["audit_trail"]["entries"]) == 55
     assert record["audit_trail"]["counts"]["human_approval"] == 55
-    assert record["audit_trail"]["entries"][0]["wake_event_id"] == (
-        record["wake_events"]["events"][0]["id"]
+    assert (
+        record["audit_trail"]["entries"][0]["wake_event_id"]
+        == (record["wake_events"]["events"][0]["id"])
     )
-    assert record["audit_trail"]["entries"][-1]["wake_event_id"] == (
-        record["wake_events"]["events"][-1]["id"]
+    assert (
+        record["audit_trail"]["entries"][-1]["wake_event_id"]
+        == (record["wake_events"]["events"][-1]["id"])
     )
     assert "secret-token" not in json.dumps(record["audit_trail"]).lower()
     assert "bearer " not in json.dumps(record["audit_trail"]).lower()
@@ -1191,9 +1178,7 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
                             "target": "RESEND_API_KEY",
                             "status": "captured",
                             "source": "gate_events.jsonl",
-                            "summary": (
-                                "RESEND_API_KEY was captured from the VM clipboard."
-                            ),
+                            "summary": ("RESEND_API_KEY was captured from the VM clipboard."),
                         },
                         {
                             "category": "provider_action",
@@ -1210,8 +1195,7 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
                             "status": "complete",
                             "source": "workspace_detonation.json",
                             "summary": (
-                                "FuseKit recorded disposable OCI worker and "
-                                "workspace cleanup."
+                                "FuseKit recorded disposable OCI worker and workspace cleanup."
                             ),
                         },
                     ],
@@ -1252,6 +1236,7 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
                         "status": "complete",
                         "reason": "remote worker and OCI workspace detonated",
                         "deleted": [
+                            "ephemeral_public_ip",
                             "instance",
                             "internet_gateway",
                             "network_security_group",
@@ -1263,12 +1248,11 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
                         ],
                         "failures": {},
                         "resource_summary": {
-                            "schema_version": (
-                                "fusekit.workspace-detonation-resources.v1"
-                            ),
+                            "schema_version": ("fusekit.workspace-detonation-resources.v1"),
                             "remote_worker": True,
                             "remote_worker_cleanup": remote_worker_cleanup_proof(),
                             "compute_instance": True,
+                            "ephemeral_public_ip_released": True,
                             "network_resources": [
                                 "internet_gateway",
                                 "network_security_group",
@@ -1374,9 +1358,7 @@ def test_remote_bootstrap_checkpoint_keeps_recovery_in_launcher(tmp_path) -> Non
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job.mark("remote.bootstrap", "running", "remote bootstrap is installing dependencies")
 
-    bootstrap = next(
-        item for item in job.checkpoints if item.id == "remote.bootstrap"
-    )
+    bootstrap = next(item for item in job.checkpoints if item.id == "remote.bootstrap")
     html = render_control_room(job)
 
     assert bootstrap.status == "running"
@@ -1487,18 +1469,18 @@ def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
     assert "sys.version_info >= (3, 10)" in plan.bootstrap_command
     assert "curl -LsSf https://astral.sh/uv/install.sh | sh" in plan.bootstrap_command
     assert "pip install --user --upgrade uv" not in plan.bootstrap_command
-    assert "\"$HOME/.local/bin/uv\" python install 3.12" in plan.bootstrap_command
-    assert "\"$HOME/.local/bin/uv\" venv --python 3.12" in plan.bootstrap_command
+    assert '"$HOME/.local/bin/uv" python install 3.12' in plan.bootstrap_command
+    assert '"$HOME/.local/bin/uv" venv --python 3.12' in plan.bootstrap_command
     assert "pip_target_flag=--user" in plan.bootstrap_command
     assert "pip_target_flag=" in plan.bootstrap_command
-    assert "export PATH=\"$work/python/bin:$PATH\"" in plan.bootstrap_command
+    assert 'export PATH="$work/python/bin:$PATH"' in plan.bootstrap_command
     assert "export FUSEKIT_OPENCLAW_HOME_MODE=default" in plan.bootstrap_command
-    assert "fusekit_install_flags=\"--upgrade --force-reinstall --no-cache-dir\"" in (
+    assert 'fusekit_install_flags="--upgrade --force-reinstall --no-cache-dir"' in (
         plan.bootstrap_command
     )
-    assert "$fusekit_install_flags \"$fusekit_package\"" in plan.bootstrap_command
+    assert '$fusekit_install_flags "$fusekit_package"' in plan.bootstrap_command
     assert "fusekit --version" in plan.bootstrap_command
-    assert "rm -rf \"$HOME/.fusekit-runtime/openclaw\"" in plan.bootstrap_command
+    assert 'rm -rf "$HOME/.fusekit-runtime/openclaw"' in plan.bootstrap_command
     assert "Git is required in OCI Cloud Shell for git+ FuseKit packages" in plan.bootstrap_command
     assert "FuseKit will print the exact launch command below" in plan.bootstrap_command
     assert "run it in this same Cloud Shell after the app files are present" in (
@@ -1515,7 +1497,7 @@ def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
     assert "--infer-ui" not in source_fetch_line
     assert "--no-bootstrap" in plan.bootstrap_command
     assert "--infer-ui" in plan.bootstrap_command
-    assert "--vault \"$vaultfile\"" in plan.bootstrap_command
+    assert '--vault "$vaultfile"' in plan.bootstrap_command
     assert "https://github.com/example/app.git" in plan.bootstrap_command
     assert "git+https://github.com/example/fusekit.git" in plan.bootstrap_command
     assert "--github-repo example/app" in plan.bootstrap_command
@@ -1526,8 +1508,7 @@ def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
     assert "Privacy mode" in html
     assert (
         "exact env-named Capture buttons, for example Capture RESEND_API_KEY "
-        "from VM clipboard, save directly to the encrypted vault"
-        in html
+        "from VM clipboard, save directly to the encrypted vault" in html
     )
     assert "hidden Cloud Shell prompts" not in html
     assert "Copy Bootstrap Command" in html
@@ -1643,15 +1624,14 @@ def test_control_room_renders_job_without_secrets(tmp_path) -> None:
     assert "checkpoint-card" in html
     assert "waiting politely with a tiny access badge" in html
     assert (
-        "Live refresh paused. Keep this control room open; "
-        "FuseKit will keep trying to reconnect."
+        "Live refresh paused. Keep this control room open; FuseKit will keep trying to reconnect."
     ) in html
     assert "Reopen or restart the control-room server" not in html
     assert "Snapshot view. Serve the control room for live updates." in html
     assert "setRefreshStatus" in html
     assert "function copyText(text)" in html
-    assert "document.createElement(\"textarea\")" in html
-    assert "document.execCommand(\"copy\")" in html
+    assert 'document.createElement("textarea")' in html
+    assert 'document.execCommand("copy")' in html
     assert "function renderVisual(job)" in html
     assert "data-visual-session" in html
     assert "fk-test" in html
@@ -1710,8 +1690,7 @@ def test_control_room_payload_and_html_include_acceptance_blockers(tmp_path) -> 
                             "reuse the Resend domain by API before you approve DNS apply."
                         ),
                         "detail": (
-                            "missing control_room.gate_open: "
-                            "provider.cloudflare.authorization"
+                            "missing control_room.gate_open: provider.cloudflare.authorization"
                         ),
                     }
                 ],
@@ -2367,10 +2346,7 @@ def test_control_room_uses_gate_provider_for_guidance_when_id_is_generic(tmp_pat
     assert "Resend needs an email API key" in visible_html
     assert "before Cloudflare DNS" in visible_html
     assert "Success looks like" in visible_html
-    assert (
-        "A raw Resend API key value is copied from a new one-time reveal screen."
-        in visible_html
-    )
+    assert "A raw Resend API key value is copied from a new one-time reveal screen." in visible_html
     assert "Avoid" in visible_html
     assert "Do not click Add domain when Resend says No domains yet." in visible_html
     assert "Open provider gate in VM" in visible_html
@@ -2630,9 +2606,10 @@ def test_control_room_post_requests_human_gate_resume(tmp_path) -> None:
     assert payload["message"] == "FuseKit is retrying provider verification now."
     assert payload["wake_event"] == "resume_requested"
     assert payload["wake_event_id"]
-    assert GateService.load(tmp_path / "gates.json").records[
-        "provider.github.mfa.123"
-    ].status == "resume_requested"
+    assert (
+        GateService.load(tmp_path / "gates.json").records["provider.github.mfa.123"].status
+        == "resume_requested"
+    )
     events = [
         json.loads(line)
         for line in audit_path.read_text(encoding="utf-8").splitlines()
@@ -2680,16 +2657,14 @@ def test_control_room_post_pass_is_idempotent_for_already_resuming_gate(
 
     assert payload["ok"] is True
     assert payload["status"] == "resume_requested"
-    assert (
-        payload["message"]
-        == (
-            "Keep this control room open; the next guided blocker or success state "
-            "will appear after the provider check finishes."
-        )
+    assert payload["message"] == (
+        "Keep this control room open; the next guided blocker or success state "
+        "will appear after the provider check finishes."
     )
-    assert GateService.load(tmp_path / "gates.json").records[
-        "provider.github.mfa.123"
-    ].status == "resume_requested"
+    assert (
+        GateService.load(tmp_path / "gates.json").records["provider.github.mfa.123"].status
+        == "resume_requested"
+    )
     assert gate_events_path.read_text(encoding="utf-8") == original_gate_events
     assert not audit_path.exists()
 
@@ -2728,9 +2703,10 @@ def test_control_room_post_pass_does_not_regress_passed_gate(tmp_path) -> None:
     assert payload["ok"] is True
     assert payload["status"] == "passed"
     assert payload["message"] == "FuseKit verified this gate as passed."
-    assert GateService.load(tmp_path / "gates.json").records[
-        "provider.cloudflare.login"
-    ].status == "passed"
+    assert (
+        GateService.load(tmp_path / "gates.json").records["provider.cloudflare.login"].status
+        == "passed"
+    )
     assert (tmp_path / "gates.json").read_text(encoding="utf-8") == gates_before
     assert not gate_events_path.exists()
     assert not audit_path.exists()
@@ -2837,10 +2813,7 @@ def test_control_room_post_rejects_multi_capture_gate_with_exact_copy(
 
     assert exc.value.code == 400
     assert payload["missing_targets"] == ["CUSTOM_API_KEY", "CUSTOM_WEBHOOK_SECRET"]
-    assert (
-        "Click these exact Capture buttons"
-        in payload["next_action"]
-    )
+    assert "Click these exact Capture buttons" in payload["next_action"]
     assert "Capture CUSTOM_API_KEY from VM clipboard" in payload["next_action"]
     assert "Capture CUSTOM_WEBHOOK_SECRET from VM clipboard" in payload["next_action"]
     assert "Capture button from the VM clipboard" not in payload["next_action"]
@@ -2922,9 +2895,10 @@ def test_local_control_room_requires_action_token_for_gate_post(tmp_path) -> Non
 
     assert exc.value.code == 403
     assert payload == {"error": "invalid action token", "ok": False}
-    assert GateService.load(tmp_path / "gates.json").records[
-        "provider.github.mfa.123"
-    ].status == "waiting"
+    assert (
+        GateService.load(tmp_path / "gates.json").records["provider.github.mfa.123"].status
+        == "waiting"
+    )
 
 
 def test_control_room_rejects_encoded_slash_gate_route(tmp_path) -> None:
@@ -2942,10 +2916,7 @@ def test_control_room_rejects_encoded_slash_gate_route(tmp_path) -> None:
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        url = (
-            f"http://127.0.0.1:{server.server_port}"
-            "/api/gates/provider.github%2Fmfa.123/pass"
-        )
+        url = f"http://127.0.0.1:{server.server_port}/api/gates/provider.github%2Fmfa.123/pass"
         request = Request(url, method="POST", headers=_control_room_post_headers(tmp_path))
         with pytest.raises(HTTPError) as exc:
             urlopen(request, timeout=5)
@@ -3170,9 +3141,7 @@ def test_control_room_gate_post_rejection_branches_keep_hardened_headers(
     thread.start()
     try:
         base = f"http://127.0.0.1:{server.server_port}"
-        action_token = (tmp_path / "control-room-action-token").read_text(
-            encoding="utf-8"
-        ).strip()
+        action_token = (tmp_path / "control-room-action-token").read_text(encoding="utf-8").strip()
         headers = {
             "x-fusekit-control-room": "resume",
             "x-fusekit-action-token": action_token,
@@ -3198,9 +3167,10 @@ def test_control_room_gate_post_rejection_branches_keep_hardened_headers(
     assert exc.value.code == 403
     assert payload == {"error": expected_error, "ok": False}
     _assert_hardened_control_room_error_headers(exc.value)
-    assert GateService.load(tmp_path / "gates.json").records[
-        "provider.github.mfa.123"
-    ].status == "waiting"
+    assert (
+        GateService.load(tmp_path / "gates.json").records["provider.github.mfa.123"].status
+        == "waiting"
+    )
 
 
 def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -> None:
@@ -3278,9 +3248,7 @@ def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -
     assert "FUSEKIT_VAULT_PASSPHRASE" not in calls[0]["env"]
     assert "FUSEKIT_PROVIDER_SESSION_COOKIE" not in calls[0]["env"]
     assert calls[0]["command"][0] == str(fake_chrome)
-    gate = GateService.load(tmp_path / "gates.json").records[
-        "provider.cloudflare.authorization"
-    ]
+    gate = GateService.load(tmp_path / "gates.json").records["provider.cloudflare.authorization"]
     assert gate.last_opened_url == "https://dash.cloudflare.com/profile/api-tokens"
     assert gate.last_opened_at > 0
     events = [
@@ -3568,9 +3536,7 @@ def test_control_room_open_rejects_unsafe_gate_url_before_browser_launch(
 
     assert exc.value.code == 400
     assert payload == {"error": "Provider gate URL must include a host.", "ok": False}
-    gate = GateService.load(tmp_path / "gates.json").records[
-        "provider.cloudflare.authorization"
-    ]
+    gate = GateService.load(tmp_path / "gates.json").records["provider.cloudflare.authorization"]
     assert gate.last_opened_url == ""
     assert gate.status == "waiting"
 
@@ -3598,10 +3564,7 @@ def test_control_room_open_rejects_local_network_gate_url_before_browser_launch(
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        url = (
-            f"http://127.0.0.1:{server.server_port}"
-            "/api/gates/provider.custom.authorization/open"
-        )
+        url = f"http://127.0.0.1:{server.server_port}/api/gates/provider.custom.authorization/open"
         request = Request(url, method="POST", headers=_control_room_post_headers(tmp_path))
         with pytest.raises(HTTPError) as exc:
             urlopen(request, timeout=5)
@@ -4201,9 +4164,12 @@ def test_control_room_rejects_stale_capture_after_gate_resumes(
         ),
         "ok": False,
     }
-    assert GateService.load(tmp_path / "gates.json").records[
-        "provider.resend.api-key-domain-access"
-    ].status == "resume_requested"
+    assert (
+        GateService.load(tmp_path / "gates.json")
+        .records["provider.resend.api-key-domain-access"]
+        .status
+        == "resume_requested"
+    )
     vault = Vault.open(vault_path, "passphrase")
     assert vault.require("provider.resend.resend_api_key").value == (
         "re_first_secret_from_vm_clipboard"
@@ -4360,9 +4326,7 @@ def test_control_room_clipboard_capture_waits_for_multi_value_gate(
     assert "Capture CUSTOM_API_KEY from VM clipboard" in html
     assert "Capture CUSTOM_TOKEN from VM clipboard" in html
     assert 'data-gate-capture-target="CUSTOM_API_KEY" disabled' in html
-    gate = GateService.load(tmp_path / "gates.json").records[
-        "provider.custom.runtime-values"
-    ]
+    gate = GateService.load(tmp_path / "gates.json").records["provider.custom.runtime-values"]
     assert gate.status == "resume_requested"
     assert gate.captured_targets == ("CUSTOM_API_KEY", "CUSTOM_TOKEN")
     assert second_payload["status"] == "resume_requested"
@@ -4436,9 +4400,7 @@ def test_control_room_clipboard_capture_rejects_stale_resend_generated_value_gat
     assert "Capture only RESEND_API_KEY from VM clipboard" in payload["error"]
     assert "from the VM clipboard" not in payload["error"]
     assert "Do not create Resend domains or audiences by hand" in payload["error"]
-    gate = GateService.load(tmp_path / "gates.json").records[
-        "provider.resend.runtime-values"
-    ]
+    gate = GateService.load(tmp_path / "gates.json").records["provider.resend.runtime-values"]
     assert gate.status == "waiting"
     vault = Vault.open(vault_path, "passphrase")
     with pytest.raises(FuseKitError):
@@ -4513,9 +4475,7 @@ def test_control_room_clipboard_capture_rejects_large_json_body(tmp_path) -> Non
         )
         request = Request(
             url,
-            data=json.dumps({"target": "RESEND_API_KEY", "padding": "x" * 5000}).encode(
-                "utf-8"
-            ),
+            data=json.dumps({"target": "RESEND_API_KEY", "padding": "x" * 5000}).encode("utf-8"),
             method="POST",
             headers=_control_room_post_headers(tmp_path, **{"content-type": "application/json"}),
         )
@@ -4559,9 +4519,10 @@ def test_control_room_post_rejects_cross_site_gate_pass(tmp_path) -> None:
         server.shutdown()
         thread.join(timeout=5)
 
-    assert GateService.load(tmp_path / "gates.json").records[
-        "provider.github.mfa.123"
-    ].status == "waiting"
+    assert (
+        GateService.load(tmp_path / "gates.json").records["provider.github.mfa.123"].status
+        == "waiting"
+    )
 
 
 def test_security_surface_map_documents_control_room_state_routes() -> None:
@@ -4578,9 +4539,7 @@ def test_security_surface_map_documents_control_room_state_routes() -> None:
         "unknown",
     }
     state_changing_routes = {
-        str(item["route"])
-        for item in CONTROL_ROOM_ROUTE_SURFACE
-        if item["state_change"] is True
+        str(item["route"]) for item in CONTROL_ROOM_ROUTE_SURFACE if item["state_change"] is True
     }
     assert state_changing_routes == {
         "/api/gates/<gate_id>/pass",
@@ -4661,9 +4620,7 @@ def test_control_room_preflight_and_rejected_posts_emit_no_cors_allow_headers(
             headers={
                 "Origin": "https://attacker.example",
                 "Access-Control-Request-Method": "POST",
-                "Access-Control-Request-Headers": (
-                    "x-fusekit-control-room,x-fusekit-action-token"
-                ),
+                "Access-Control-Request-Headers": ("x-fusekit-control-room,x-fusekit-action-token"),
             },
         )
         with pytest.raises(HTTPError) as options_exc:
@@ -4675,9 +4632,9 @@ def test_control_room_preflight_and_rejected_posts_emit_no_cors_allow_headers(
                 "Origin": "https://attacker.example",
                 "Sec-Fetch-Site": "cross-site",
                 "x-fusekit-control-room": "resume",
-                "x-fusekit-action-token": (
-                    tmp_path / "control-room-action-token"
-                ).read_text(encoding="utf-8").strip(),
+                "x-fusekit-action-token": (tmp_path / "control-room-action-token")
+                .read_text(encoding="utf-8")
+                .strip(),
             },
         )
         with pytest.raises(HTTPError) as post_exc:
@@ -4693,9 +4650,10 @@ def test_control_room_preflight_and_rejected_posts_emit_no_cors_allow_headers(
         assert "access-control-allow-origin" not in headers
         assert "access-control-allow-methods" not in headers
         assert "access-control-allow-headers" not in headers
-    assert GateService.load(tmp_path / "gates.json").records[
-        "provider.github.mfa.123"
-    ].status == "waiting"
+    assert (
+        GateService.load(tmp_path / "gates.json").records["provider.github.mfa.123"].status
+        == "waiting"
+    )
 
 
 def test_threat_model_documents_control_room_state_route_defenses() -> None:
@@ -4755,9 +4713,10 @@ def test_control_room_post_rejects_untrusted_origin(tmp_path) -> None:
         server.shutdown()
         thread.join(timeout=5)
 
-    assert GateService.load(tmp_path / "gates.json").records[
-        "provider.github.mfa.123"
-    ].status == "waiting"
+    assert (
+        GateService.load(tmp_path / "gates.json").records["provider.github.mfa.123"].status
+        == "waiting"
+    )
 
 
 def test_control_room_post_rejects_cross_site_fetch_metadata(tmp_path) -> None:
@@ -4789,9 +4748,10 @@ def test_control_room_post_rejects_cross_site_fetch_metadata(tmp_path) -> None:
         server.shutdown()
         thread.join(timeout=5)
 
-    assert GateService.load(tmp_path / "gates.json").records[
-        "provider.github.mfa.123"
-    ].status == "waiting"
+    assert (
+        GateService.load(tmp_path / "gates.json").records["provider.github.mfa.123"].status
+        == "waiting"
+    )
 
 
 def test_control_room_rejects_cors_preflight_without_cors_headers(tmp_path) -> None:
@@ -4925,8 +4885,7 @@ def test_control_room_uses_privacy_mascot_for_secret_gates(tmp_path) -> None:
     assert "isPrivacyStep" in html
     assert (
         "copy it inside the VM browser, then click the exact env-named "
-        "Capture button shown on the active launcher gate"
-        in visible_html
+        "Capture button shown on the active launcher gate" in visible_html
     )
     assert "visible env-named Capture from VM clipboard button" not in visible_html
     assert "target-specific Capture" not in visible_html
@@ -5013,7 +4972,7 @@ def test_control_room_payload_and_html_include_visual_session(tmp_path) -> None:
         'data-copy="http://93.184.216.34:6080/vnc.html?autoconnect=1&amp;password=viewer-password"'
         in html
     )
-    assert "withQueryParam(novncUrl, \"password\", password)" in html
+    assert 'withQueryParam(novncUrl, "password", password)' in html
     assert '<a href="${escapeAttr(iframeUrl)}" target="_blank" rel="noreferrer">' in html
     assert 'data-copy="${escapeAttr(iframeUrl)}"' in html
     assert 'data-copy-label="live VM browser link"' in html
@@ -5133,8 +5092,7 @@ def test_control_room_sanitizes_visual_session_urls_and_password(tmp_path) -> No
                     "&resize=scale&password=leaked#frag"
                 ),
                 "control_room_url": (
-                    "http://10.0.0.5:8765/"
-                    "?token=viewer_token_abcdefghijklmnopqrstuvwxyz0123456789"
+                    "http://10.0.0.5:8765/?token=viewer_token_abcdefghijklmnopqrstuvwxyz0123456789"
                 ),
                 "novnc_password": "bad\npassword",
                 "provider_browser_profile": "/tmp/disconnected-profile",
@@ -5168,8 +5126,7 @@ def test_control_room_rejects_unexpected_visual_session_query_values(tmp_path) -
                 "runner": "novnc",
                 "status": "ready",
                 "novnc_url": (
-                    "http://93.184.216.34:6080/vnc.html"
-                    "?autoconnect=javascript&resize=evil"
+                    "http://93.184.216.34:6080/vnc.html?autoconnect=javascript&resize=evil"
                 ),
                 "control_room_url": (
                     "http://93.184.216.34:8765/"
@@ -5257,16 +5214,11 @@ def test_control_room_payload_and_html_include_provider_strategy_routes(tmp_path
     assert "providerStrategyRouteSummary" in html
     assert "Provider token is missing." in html
     strategy_start = html.index("github-deploy-key")
-    strategy_html = html[
-        strategy_start : html.index("</article>", strategy_start)
-    ]
+    strategy_html = html[strategy_start : html.index("</article>", strategy_start)]
     assert "Click Open provider gate in VM, create the setup token" in strategy_html
     assert "then click Capture GITHUB_TOKEN from VM clipboard" in strategy_html
     assert "Create the fine-grained FuseKit setup token." in strategy_html
-    assert (
-        "After copying the token, click Capture GITHUB_TOKEN from VM clipboard."
-        in strategy_html
-    )
+    assert "After copying the token, click Capture GITHUB_TOKEN from VM clipboard." in strategy_html
     assert "the matching Capture from VM clipboard button" not in strategy_html
     assert "then click Capture from VM clipboard." not in strategy_html
     assert "Route plan" in html
@@ -5538,10 +5490,9 @@ def test_control_room_route_plan_explains_resend_dns_and_vercel_order(tmp_path) 
     )
     assert "Then FuseKit writes the required RESEND_* runtime variables into Vercel" in SCRIPT
     assert "Then FuseKit carries the Resend DNS records and app records" in SCRIPT
-    assert (
-        SCRIPT.index("Then FuseKit writes the required RESEND_* runtime variables into Vercel")
-        < SCRIPT.index("Then FuseKit carries the Resend DNS records and app records")
-    )
+    assert SCRIPT.index(
+        "Then FuseKit writes the required RESEND_* runtime variables into Vercel"
+    ) < SCRIPT.index("Then FuseKit carries the Resend DNS records and app records")
     assert "Capture or generate the required RESEND_* values" not in html
 
 
@@ -5760,9 +5711,9 @@ def test_tokenized_control_room_rejects_cross_site_gate_post(
             headers={
                 "Authorization": f"Bearer {REMOTE_CONTROL_ROOM_TOKEN}",
                 "x-fusekit-control-room": "resume",
-                "x-fusekit-action-token": (
-                    tmp_path / "control-room-action-token"
-                ).read_text(encoding="utf-8").strip(),
+                "x-fusekit-action-token": (tmp_path / "control-room-action-token")
+                .read_text(encoding="utf-8")
+                .strip(),
                 "Origin": "https://evil.example",
                 "Sec-Fetch-Site": "cross-site",
             },
@@ -5774,9 +5725,10 @@ def test_tokenized_control_room_rejects_cross_site_gate_post(
         server.server_close()
         thread.join(timeout=5)
 
-    assert GateService.load(tmp_path / "gates.json").records[
-        "provider.github.mfa.123"
-    ].status == "waiting"
+    assert (
+        GateService.load(tmp_path / "gates.json").records["provider.github.mfa.123"].status
+        == "waiting"
+    )
 
 
 def test_tokenized_control_room_rejects_query_token_gate_post(
@@ -5821,9 +5773,10 @@ def test_tokenized_control_room_rejects_query_token_gate_post(
         "ok": False,
     }
     assert "set-cookie" not in headers
-    assert GateService.load(tmp_path / "gates.json").records[
-        "provider.github.mfa.123"
-    ].status == "waiting"
+    assert (
+        GateService.load(tmp_path / "gates.json").records["provider.github.mfa.123"].status
+        == "waiting"
+    )
 
 
 def test_tokenized_control_room_requires_action_token_for_gate_post(
@@ -5873,12 +5826,13 @@ def test_tokenized_control_room_requires_action_token_for_gate_post(
     assert redirect_location == "/"
     assert "controlRoomActionToken" in html
     assert "x-fusekit-action-token" in html
-    assert "URLSearchParams(window.location.search).get(\"token\")" not in html
+    assert 'URLSearchParams(window.location.search).get("token")' not in html
     assert exc.value.code == 403
     assert payload == {"error": "invalid action token", "ok": False}
-    assert GateService.load(tmp_path / "gates.json").records[
-        "provider.github.mfa.123"
-    ].status == "waiting"
+    assert (
+        GateService.load(tmp_path / "gates.json").records["provider.github.mfa.123"].status
+        == "waiting"
+    )
 
 
 def test_control_room_client_does_not_use_remote_token_as_action_token(
@@ -5908,7 +5862,7 @@ def test_control_room_client_does_not_use_remote_token_as_action_token(
     assert redirect_location == "/"
     assert REMOTE_CONTROL_ROOM_TOKEN not in html
     assert "control_room_action_token" in html
-    assert "URLSearchParams(window.location.search).get(\"token\")" not in html
+    assert 'URLSearchParams(window.location.search).get("token")' not in html
 
 
 def test_tokenized_control_room_accepts_action_token_for_gate_post(
@@ -5940,9 +5894,9 @@ def test_tokenized_control_room_accepts_action_token_for_gate_post(
             headers={
                 "Cookie": cookie,
                 "x-fusekit-control-room": "resume",
-                "x-fusekit-action-token": (
-                    tmp_path / "control-room-action-token"
-                ).read_text(encoding="utf-8").strip(),
+                "x-fusekit-action-token": (tmp_path / "control-room-action-token")
+                .read_text(encoding="utf-8")
+                .strip(),
                 "Origin": base,
                 "Sec-Fetch-Site": "same-origin",
             },
@@ -5958,9 +5912,10 @@ def test_tokenized_control_room_accepts_action_token_for_gate_post(
     assert redirect_location == "/"
     assert payload["ok"] is True
     assert payload["status"] == "resume_requested"
-    assert GateService.load(tmp_path / "gates.json").records[
-        "provider.github.mfa.123"
-    ].status == "resume_requested"
+    assert (
+        GateService.load(tmp_path / "gates.json").records["provider.github.mfa.123"].status
+        == "resume_requested"
+    )
 
 
 def test_control_room_remote_bind_requires_allow_flag_and_token(
@@ -5999,14 +5954,8 @@ def test_remote_bootstrap_artifacts_are_self_contained() -> None:
     assert "http://security.ubuntu.com/ubuntu" in cloud_init
     assert "package_update:" not in cloud_init
     assert "\npackages:\n" not in cloud_init
-    assert (
-        "/usr/local/sbin/fusekit-retry apt-get -o Acquire::ForceIPv4=true update"
-        in cloud_init
-    )
-    assert (
-        "DEBIAN_FRONTEND=noninteractive /usr/local/sbin/fusekit-retry apt-get"
-        in cloud_init
-    )
+    assert "/usr/local/sbin/fusekit-retry apt-get -o Acquire::ForceIPv4=true update" in cloud_init
+    assert "DEBIAN_FRONTEND=noninteractive /usr/local/sbin/fusekit-retry apt-get" in cloud_init
     assert "-o Acquire::ForceIPv4=true install -y python3 python3-pip python3-venv" in cloud_init
     assert "iptables -I INPUT -p tcp --dport 8765 -j ACCEPT" in cloud_init
     assert "iptables -I INPUT -p tcp --dport 6080 -j ACCEPT" in cloud_init
@@ -6014,8 +5963,7 @@ def test_remote_bootstrap_artifacts_are_self_contained() -> None:
     assert "printf '%s\\n' \"$FUSEKIT_VISUAL_PASSWORD\"" in cloud_init
     assert (
         "/usr/local/sbin/fusekit-retry "
-        "/opt/fusekit-python/bin/python -m pip install --upgrade fusekit"
-        in cloud_init
+        "/opt/fusekit-python/bin/python -m pip install --upgrade fusekit" in cloud_init
     )
     assert (
         "/usr/local/sbin/fusekit-retry "
@@ -6029,9 +5977,7 @@ def test_remote_bootstrap_artifacts_are_self_contained() -> None:
     assert "test -x /usr/local/sbin/fusekit-runner-loop-once" in cloud_init
     assert "test -x /usr/local/sbin/fusekit-visual-start" in cloud_init
     assert "for command in Xvfb x11vnc fluxbox" in cloud_init
-    assert (
-        "FuseKit runner requires websockify or novnc_proxy for noVNC." in cloud_init
-    )
+    assert "FuseKit runner requires websockify or novnc_proxy for noVNC." in cloud_init
     assert "mkdir -p /var/lib/fusekit-runner/visual/chrome-provider-profile" in cloud_init
     assert (
         "/usr/local/sbin/fusekit-retry "
@@ -6051,20 +5997,19 @@ def test_remote_bootstrap_artifacts_are_self_contained() -> None:
     assert "shared_provider_browser_profile" in cloud_init
     assert "xvfb fluxbox x11vnc novnc websockify xterm" in cloud_init
     assert "fusekit-visual-start" in cloud_init
-    assert "websockify --web \"$novnc_web\" 0.0.0.0:6080 localhost:5900" in cloud_init
-    assert "x11vnc -display \"$display\" -localhost" in cloud_init
+    assert 'websockify --web "$novnc_web" 0.0.0.0:6080 localhost:5900' in cloud_init
+    assert 'x11vnc -display "$display" -localhost' in cloud_init
     assert "openclaw browser status --json" not in cloud_init
     assert (
         "/usr/local/sbin/fusekit-retry "
         "env OPENCLAW_HOME=/var/lib/fusekit-runner/openclaw-state "
         "bash /opt/fusekit-openclaw/install-openclaw.sh"
     ) in cloud_init
-    assert "chown -R \"$runner_user:$runner_user\" /var/lib/fusekit-runner" in cloud_init
+    assert 'chown -R "$runner_user:$runner_user" /var/lib/fusekit-runner' in cloud_init
     assert "fusekit-runner-verify" in cloud_init
-    assert (
-        cloud_init.rindex("chown -R \"$runner_user:$runner_user\" /var/lib/fusekit-runner")
-        > cloud_init.rindex("OPENCLAW_HOME=/var/lib/fusekit-runner/openclaw-state")
-    )
+    assert cloud_init.rindex(
+        'chown -R "$runner_user:$runner_user" /var/lib/fusekit-runner'
+    ) > cloud_init.rindex("OPENCLAW_HOME=/var/lib/fusekit-runner/openclaw-state")
     assert "/usr/local/sbin/fusekit-retry" in cloud_init
     assert "export PATH=/opt/fusekit-python/bin:/opt/fusekit-openclaw/bin:$PATH" in cloud_init
     assert "FUSEKIT_OPENCLAW_BIN=/opt/fusekit-openclaw/bin/openclaw" in cloud_init
@@ -6217,14 +6162,15 @@ def test_oci_detonation_reports_provider_delete_failures(
         compartment_id="ocid1.tenancy.oc1..example",
         availability_domain="AD-1",
         shape="VM.Standard3.Flex",
-            resource_ids={
-                "instance": "ocid1.instance.oc1..example",
-                "subnet": "ocid1.subnet.oc1..example",
-                "network_security_group": "ocid1.nsg.oc1..example",
-                "security_list": "ocid1.securitylist.oc1..example",
-                "route_table": "ocid1.routetable.oc1..example",
-                "internet_gateway": "ocid1.ig.oc1..example",
-                "vcn": "ocid1.vcn.oc1..example",
+        public_ip="203.0.113.10",
+        resource_ids={
+            "instance": "ocid1.instance.oc1..example",
+            "subnet": "ocid1.subnet.oc1..example",
+            "network_security_group": "ocid1.nsg.oc1..example",
+            "security_list": "ocid1.securitylist.oc1..example",
+            "route_table": "ocid1.routetable.oc1..example",
+            "internet_gateway": "ocid1.ig.oc1..example",
+            "vcn": "ocid1.vcn.oc1..example",
             "compartment": "ocid1.compartment.oc1..example",
         },
     )
@@ -6232,6 +6178,7 @@ def test_oci_detonation_reports_provider_delete_failures(
     deleted = provisioner.detonate(workspace)
 
     assert deleted["instance"] == "ocid1.instance.oc1..example"
+    assert deleted["ephemeral_public_ip"] == "203.0.113.10"
     assert deleted["failed.subnet"] == "409 Conflict"
     assert deleted["failed.compartment"] == "409 Conflict"
     assert network.deleted == [
@@ -6347,10 +6294,7 @@ def test_oci_provision_cleans_partial_workspace_when_readiness_fails() -> None:
     assert ssh_record.value.startswith("-----BEGIN OPENSSH PRIVATE KEY-----")
     assert ssh_record.metadata["fingerprint"].startswith("rsa:")
     assert provisioner.deleted.resource_ids["instance"] == "ocid1.instance.example"
-    assert (
-        provisioner.deleted.resource_ids["security_list"]
-        == "ocid1.security-list.example"
-    )
+    assert provisioner.deleted.resource_ids["security_list"] == "ocid1.security-list.example"
     assert provisioner.deleted.resource_ids["root_compartment"] == "ocid1.tenancy.example"
     assert provisioner.deleted.ssh_user == "ubuntu"
 
@@ -7219,16 +7163,11 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         for option in command
     )
     assert any(
-        "cloud-init did not finish before FuseKit runner readiness timeout."
-        in command[-1]
+        "cloud-init did not finish before FuseKit runner readiness timeout." in command[-1]
         for command in calls
         if command[0] == "ssh"
     )
-    assert any(
-        "cloud-init-output tail" in command[-1]
-        for command in calls
-        if command[0] == "ssh"
-    )
+    assert any("cloud-init-output tail" in command[-1] for command in calls if command[0] == "ssh")
     assert any(
         "fusekit-runner-verify missing; cloud-init bootstrap did not install runner helpers."
         in command[-1]
@@ -7273,15 +7212,13 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         if command[0] == "ssh"
     )
     assert any(
-        "curl -fsS http://127.0.0.1:6080/vnc.html" in command[-1]
-        and "exit 45" in command[-1]
+        "curl -fsS http://127.0.0.1:6080/vnc.html" in command[-1] and "exit 45" in command[-1]
         for command in calls
     )
     assert any("fusekit control-room --serve" in command[-1] for command in calls)
     assert any("export DISPLAY=:99" in command[-1] for command in calls)
     assert any(
-        "trap 'rm -f /var/lib/fusekit-runner/passphrase' EXIT" in command[-1]
-        for command in calls
+        "trap 'rm -f /var/lib/fusekit-runner/passphrase' EXIT" in command[-1] for command in calls
     )
     assert any(
         "FUSEKIT_OPENCLAW_BIN=/opt/fusekit-openclaw/bin/openclaw" in command[-1]
@@ -7294,8 +7231,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         if command[0] == "ssh"
     )
     assert any(
-        "FUSEKIT_OPENCLAW_HOME_MODE=default" in command[-1]
-        and "unset OPENCLAW_HOME" in command[-1]
+        "FUSEKIT_OPENCLAW_HOME_MODE=default" in command[-1] and "unset OPENCLAW_HOME" in command[-1]
         for command in calls
         if command[0] == "ssh"
     )
@@ -7331,19 +7267,13 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
     assert (tmp_path / "out" / ".fusekit" / "provider_strategies.json").exists()
     assert any(".fusekit/gates.json" in command[-1] for command in calls if command[0] == "ssh")
     assert any(
-        ".fusekit/gate_events.jsonl" in command[-1]
-        for command in calls
-        if command[0] == "ssh"
+        ".fusekit/gate_events.jsonl" in command[-1] for command in calls if command[0] == "ssh"
     )
     assert any(
-        ".fusekit/checkpoints.json" in command[-1]
-        for command in calls
-        if command[0] == "ssh"
+        ".fusekit/checkpoints.json" in command[-1] for command in calls if command[0] == "ssh"
     )
     assert any(
-        ".fusekit/run_record.json" in command[-1]
-        for command in calls
-        if command[0] == "ssh"
+        ".fusekit/run_record.json" in command[-1] for command in calls if command[0] == "ssh"
     )
     assert any(
         ".fusekit/verification_report.json" in command[-1]
@@ -7351,9 +7281,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         if command[0] == "ssh"
     )
     assert any(
-        ".fusekit/rollback_plan.json" in command[-1]
-        for command in calls
-        if command[0] == "ssh"
+        ".fusekit/rollback_plan.json" in command[-1] for command in calls if command[0] == "ssh"
     )
     assert any(
         ".fusekit/provider_strategies.json" in command[-1]
@@ -7365,7 +7293,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         for command in calls
         if command[0] == "ssh" and "tar -czf -" in command[-1]
     )
-    assert any("[ -n \"$existing\" ] || exit 44" in command[-1] for command in calls)
+    assert any('[ -n "$existing" ] || exit 44' in command[-1] for command in calls)
 
 
 def test_remote_detonation_cleans_visual_and_control_processes() -> None:
@@ -7521,9 +7449,7 @@ def test_oci_client_kwargs_omits_absent_signer() -> None:
     signer = object()
 
     assert _oci_client_kwargs(OciAuth({"region": "us-phoenix-1"})) == {}
-    assert _oci_client_kwargs(OciAuth({"region": "us-phoenix-1"}, signer)) == {
-        "signer": signer
-    }
+    assert _oci_client_kwargs(OciAuth({"region": "us-phoenix-1"}, signer)) == {"signer": signer}
 
 
 def test_secret_leak_scanner_reports_locations_without_values(tmp_path) -> None:

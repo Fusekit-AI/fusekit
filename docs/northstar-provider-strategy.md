@@ -116,7 +116,7 @@ without turning the VM into durable product state.
 | Live Verifiers | Required per-provider checks surfaced as green/pending/blocked cards in the control room. | A run is not recording-ready until verifiers are passed or pending-safe and the verifier evidence is preserved in the Run Record. |
 | Evented Resume | Required wake-event model for Capture, DNS approval, provider approval, and retryable service gates. | Repeated or stale clicks must be idempotent. They may acknowledge current state, but they must not regress passed gates or mint duplicate wake proof. |
 | Disposable Workers, Durable State | Required operational model. The VM is replaceable during the run and destroyed at the end. | Resume readiness must prove encrypted/redacted state is enough to recreate the worker. If host-machine or VM-local plaintext state is required, the run is not launch-ready. |
-| Audit-First UX | Required user-facing ledger for credential capture, DNS writes, provider actions, human approvals, errors, and cleanup. | Audit entries must be plain-language and redacted. The detonation receipt must name every worker/OCI cleanup category and every failed deletion key. |
+| Audit-First UX | Required user-facing ledger for credential capture, DNS writes, provider actions, human approvals, errors, and cleanup. | Audit entries must be plain-language and redacted. The detonation receipt must name every worker/OCI cleanup category, including ephemeral public IP release, and every failed deletion key. |
 
 This keeps the "detonate everything" promise honest: durable state is the
 minimum encrypted/redacted evidence needed to resume and prove the run, while

@@ -340,9 +340,7 @@ def _human_action_trace(
         target = str(event.get("target", "") or "")
         if event_name == "clipboard_captured":
             control = (
-                f"Capture {target} from VM clipboard"
-                if target
-                else "Capture from VM clipboard"
+                f"Capture {target} from VM clipboard" if target else "Capture from VM clipboard"
             )
             action = "capture_vm_clipboard"
         elif event_name == "resume_requested":
@@ -584,8 +582,7 @@ def _evidence_candidates(
             continue
         for path in sorted(directory.rglob("*")):
             if path.is_file() and (
-                path.suffix.lower() in SCREENSHOT_SUFFIXES
-                or path.name in LOG_EVIDENCE_FILENAMES
+                path.suffix.lower() in SCREENSHOT_SUFFIXES or path.name in LOG_EVIDENCE_FILENAMES
             ):
                 _add_evidence_candidate(
                     candidates,
@@ -770,9 +767,7 @@ def _automation_boundary_summary(
 ) -> dict[str, Any]:
     routes = _automation_route_records(provider_strategies)
     fusekit_owned = [
-        route
-        for route in routes
-        if route["owner"] == "fusekit" and route["implemented"] is True
+        route for route in routes if route["owner"] == "fusekit" and route["implemented"] is True
     ]
     human_gate_routes = [route for route in routes if route["owner"] == "human_gate"]
     unsupported = [route for route in routes if route["owner"] == "blocked"]
@@ -1009,8 +1004,10 @@ def _audit_entries_from_wake_event(
             }
         ]
     if event_name == "resume_requested":
-        action = "control_room.approve_dns_apply" if classification == "dns-approval" else (
-            "control_room.confirm_gate_finished"
+        action = (
+            "control_room.approve_dns_apply"
+            if classification == "dns-approval"
+            else ("control_room.confirm_gate_finished")
         )
         return [
             {
@@ -1268,8 +1265,7 @@ def _recording_worker_replacement_ready(record: dict[str, Any]) -> bool:
         replacement.get("worker_is_disposable") is True
         and replacement.get("can_recreate_worker") is True
         and replacement.get("runner_profile_ready") is True
-        and str(replacement.get("required_runner_profile", "") or "")
-        == "oci-visual-browser-x86_64"
+        and str(replacement.get("required_runner_profile", "") or "") == "oci-visual-browser-x86_64"
         and replacement.get("host_machine_state_required") is False
         and str(replacement.get("state_owner", "") or "") == "encrypted-vault-and-run-record"
         and required_resume_sources.issubset({str(item) for item in resume_sources})
@@ -1448,9 +1444,7 @@ def _recording_audit_trail_ready(record: dict[str, Any]) -> bool:
     if not isinstance(entries, list) or not entries:
         return False
     categories = {
-        str(entry.get("category", "") or "")
-        for entry in entries
-        if isinstance(entry, dict)
+        str(entry.get("category", "") or "") for entry in entries if isinstance(entry, dict)
     }
     return (
         _safe_int(audit_trail.get("entry_count"), -1) == len(entries)
@@ -1488,9 +1482,7 @@ def _recording_detonation_ready(record: dict[str, Any]) -> bool:
         "vcn",
     }
     network_resources = (
-        resource_summary.get("network_resources", [])
-        if isinstance(resource_summary, dict)
-        else []
+        resource_summary.get("network_resources", []) if isinstance(resource_summary, dict) else []
     )
     network_resources_missing = (
         resource_summary.get("network_resources_missing", [])
@@ -1518,6 +1510,7 @@ def _recording_detonation_ready(record: dict[str, Any]) -> bool:
         and resource_summary.get("remote_worker") is True
         and _recording_remote_worker_cleanup_ready(cleanup)
         and resource_summary.get("compute_instance") is True
+        and resource_summary.get("ephemeral_public_ip_released") is True
         and resource_summary.get("network_resources_deleted") is True
         and isinstance(network_resources, list)
         and not (required_network_resources - {str(item) for item in network_resources})

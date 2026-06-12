@@ -456,17 +456,11 @@ def _check_run_record(
     failures.extend(
         _run_record_provider_playbook_consistency_failures(raw, provider_strategies_path)
     )
-    failures.extend(
-        _run_record_verifier_consistency_failures(raw, verification_report_path)
-    )
-    failures.extend(
-        _run_record_detonation_consistency_failures(raw, workspace_detonation_path)
-    )
+    failures.extend(_run_record_verifier_consistency_failures(raw, verification_report_path))
+    failures.extend(_run_record_detonation_consistency_failures(raw, workspace_detonation_path))
     failures.extend(_run_record_evidence_inventory_consistency_failures(raw, path.parent))
     failures.extend(_run_record_wake_events_consistency_failures(raw, gate_events_path))
-    failures.extend(
-        _run_record_runner_profile_consistency_failures(raw, runner_readiness_path)
-    )
+    failures.extend(_run_record_runner_profile_consistency_failures(raw, runner_readiness_path))
     summary = {
         "schema_version": raw.get("schema_version"),
         "id": raw.get("id"),
@@ -859,8 +853,10 @@ def _human_action_trace_shape_failures(
                 failures.append(f"{label}.visible_control must match the captured target")
             normalized_targets = _env_targets_from_text(target)
             expected_targets = gate_targets_by_id.get(gate_id, set())
-            if normalized_targets and expected_targets and not set(normalized_targets).issubset(
-                expected_targets
+            if (
+                normalized_targets
+                and expected_targets
+                and not set(normalized_targets).issubset(expected_targets)
             ):
                 failures.append(f"{label}.target must match provider_gates.records target")
         if action_name == "confirm_gate_finished" and visible_control not in {
@@ -945,9 +941,7 @@ def _automation_boundary_shape_failures(boundary: dict[str, Any]) -> list[str]:
             1 for route in routes if isinstance(route, dict) and route.get("owner") == "fusekit"
         )
         human_gate_count = sum(
-            1
-            for route in routes
-            if isinstance(route, dict) and route.get("owner") == "human_gate"
+            1 for route in routes if isinstance(route, dict) and route.get("owner") == "human_gate"
         )
         if _safe_int(counts.get("fusekit_owned")) != fusekit_owned_count:
             failures.append("automation_boundary.counts.fusekit_owned must match routes")
@@ -1058,12 +1052,7 @@ def _run_record_provider_playbook_consistency_failures(
         return []
     run_signature = _provider_playbook_signature(run_record.get("provider_playbook", {}))
     if run_signature != artifact_signature:
-        return [
-            (
-                "provider_playbook in Run Record must match "
-                "provider_strategies.json playbook"
-            )
-        ]
+        return [("provider_playbook in Run Record must match provider_strategies.json playbook")]
     return []
 
 
@@ -1162,12 +1151,7 @@ def _run_record_verifier_consistency_failures(
         return []
     run_signature = _run_record_verifier_signature(run_record.get("verifiers", {}))
     if run_signature != artifact_signature:
-        return [
-            (
-                "verifiers in Run Record must match verification_report.json "
-                "provider checks"
-            )
-        ]
+        return [("verifiers in Run Record must match verification_report.json provider checks")]
     return []
 
 
@@ -1233,18 +1217,9 @@ def _run_record_detonation_consistency_failures(
     if not isinstance(artifact, dict):
         return []
     detonation = run_record.get("detonation", {})
-    receipt = (
-        detonation.get("workspace_receipt", {})
-        if isinstance(detonation, dict)
-        else {}
-    )
+    receipt = detonation.get("workspace_receipt", {}) if isinstance(detonation, dict) else {}
     if _detonation_receipt_signature(receipt) != _detonation_receipt_signature(artifact):
-        return [
-            (
-                "detonation.workspace_receipt in Run Record must match "
-                "workspace_detonation.json"
-            )
-        ]
+        return [("detonation.workspace_receipt in Run Record must match workspace_detonation.json")]
     return []
 
 
@@ -1482,10 +1457,7 @@ def _audit_trail_shape_failures(
         source = str(entry.get("source", "") or "").strip()
         if source == "audit.jsonl" and _safe_int(entry.get("audit_log_index")) <= 0:
             failures.append(f"{label}.audit_log_index is missing")
-        if (
-            source == "setup_receipt.json"
-            and _safe_int(entry.get("receipt_action_index")) <= 0
-        ):
+        if source == "setup_receipt.json" and _safe_int(entry.get("receipt_action_index")) <= 0:
             failures.append(f"{label}.receipt_action_index is missing")
         expected_wake_name = _audit_entry_expected_wake_event(entry)
         if expected_wake_name:
@@ -1545,10 +1517,7 @@ def _recording_contract_shape_failures(
     errors: Any = (),
 ) -> list[str]:
     failures: list[str] = []
-    if (
-        str(contract.get("schema_version", "")).strip()
-        != RECORDING_CONTRACT_SCHEMA_VERSION
-    ):
+    if str(contract.get("schema_version", "")).strip() != RECORDING_CONTRACT_SCHEMA_VERSION:
         failures.append("recording_contract.schema_version is unsupported")
     if contract.get("recording_ready") is not True:
         failures.append("recording_contract.recording_ready must be true")
@@ -1695,6 +1664,8 @@ def _workspace_detonation_receipt_failures(receipt: dict[str, Any]) -> list[str]
     else:
         if "instance" not in deleted_set:
             failures.append("detonation.workspace_receipt.deleted must include instance")
+        if "ephemeral_public_ip" not in deleted_set:
+            failures.append("detonation.workspace_receipt.deleted must include ephemeral public IP")
         if required_network_resources - deleted_set:
             failures.append(
                 "detonation.workspace_receipt.deleted must include all network resources"
@@ -1722,12 +1693,12 @@ def _workspace_detonation_receipt_failures(receipt: dict[str, Any]) -> list[str]
         if resource_summary.get("remote_worker") is not True:
             failures.append("detonation.workspace_receipt.remote_worker must be true")
         failures.extend(
-            _remote_worker_cleanup_receipt_failures(
-                resource_summary.get("remote_worker_cleanup")
-            )
+            _remote_worker_cleanup_receipt_failures(resource_summary.get("remote_worker_cleanup"))
         )
         if resource_summary.get("compute_instance") is not True:
             failures.append("detonation.workspace_receipt.compute_instance must be true")
+        if resource_summary.get("ephemeral_public_ip_released") is not True:
+            failures.append("detonation.workspace_receipt.ephemeral_public_ip must be released")
         if resource_summary.get("network_resources_deleted") is not True:
             failures.append("detonation.workspace_receipt.network_resources must be deleted")
         network_resources = resource_summary.get("network_resources", [])
@@ -1753,9 +1724,7 @@ def _workspace_detonation_receipt_failures(receipt: dict[str, Any]) -> list[str]
         if not isinstance(missing, list):
             failures.append("detonation.workspace_receipt.resource_summary.missing is missing")
         elif missing:
-            failures.append(
-                "detonation.workspace_receipt.resource_summary.missing must be empty"
-            )
+            failures.append("detonation.workspace_receipt.resource_summary.missing must be empty")
         statement = str(resource_summary.get("statement", "") or "").lower()
         for required in ("remote worker", "oci vm", "network resources"):
             if required not in statement:
@@ -1850,18 +1819,13 @@ def _run_record_wake_event_failures(
             continue
         for target in _gate_secret_targets(gate):
             if (gate_id, target) not in captured_pairs:
-                failures.append(
-                    "wake_events missing clipboard_captured for "
-                    f"{gate_id}:{target}"
-                )
+                failures.append(f"wake_events missing clipboard_captured for {gate_id}:{target}")
         if str(gate.get("status", "") or "") in {"resume_requested", "resolved"}:
             if gate_id not in resumed_gate_ids:
                 failures.append(f"wake_events missing resume_requested for {gate_id}")
             wake_id = str(gate.get("last_wake_event_id", "") or "").strip()
             if not wake_id:
-                failures.append(
-                    f"provider_gates.records[{gate_id}].last_wake_event_id is missing"
-                )
+                failures.append(f"provider_gates.records[{gate_id}].last_wake_event_id is missing")
             elif wake_id not in event_ids_by_name["resume_requested"]:
                 failures.append(
                     "provider_gates.records"
@@ -1874,9 +1838,7 @@ def _run_record_wake_event_failures(
         elif gate.get("captured_targets"):
             wake_id = str(gate.get("last_wake_event_id", "") or "").strip()
             if not wake_id:
-                failures.append(
-                    f"provider_gates.records[{gate_id}].last_wake_event_id is missing"
-                )
+                failures.append(f"provider_gates.records[{gate_id}].last_wake_event_id is missing")
             elif wake_id not in event_ids_by_name["clipboard_captured"]:
                 failures.append(
                     "provider_gates.records"
@@ -1984,10 +1946,7 @@ def _acceptance_blockers(
 def _redacted_blocker(blocker: dict[str, str]) -> dict[str, str]:
     """Return a public-safe launch blocker."""
 
-    return {
-        str(key): redact_public_text(value)
-        for key, value in blocker.items()
-    }
+    return {str(key): redact_public_text(value) for key, value in blocker.items()}
 
 
 def _blocker_guidance(item: str) -> tuple[str, str]:
@@ -2400,9 +2359,7 @@ def _load_or_scan_manifest(
 ) -> SetupManifest:
     if manifest_path.exists():
         manifest = load_manifest(manifest_path)
-        checks.append(
-            AcceptanceCheck("manifest.loaded", "ok", "Existing setup manifest loaded.")
-        )
+        checks.append(AcceptanceCheck("manifest.loaded", "ok", "Existing setup manifest loaded."))
     else:
         manifest = scan_repo(app_path)
         write_manifest(manifest, manifest_path)
@@ -2642,8 +2599,7 @@ def _check_receipt_dns_apply_approval(
             checks,
             missing,
             "Receipt applied DNS changes without protected per-domain Approve DNS apply "
-            "audit proof for: "
-            + ", ".join(missing_domains),
+            "audit proof for: " + ", ".join(missing_domains),
             artifact,
         )
         return
@@ -2899,19 +2855,14 @@ def _resend_receipt_domain_contract_failure(action: dict[str, Any]) -> str:
     requested_region = str(details.get("requested_region", "") or "").strip().lower()
     if requested_region and requested_region not in RESEND_ALLOWED_REGIONS:
         allowed = ", ".join(sorted(RESEND_ALLOWED_REGIONS))
-        return (
-            "Receipt resend.domain has an unsupported requested Resend region "
-            f"({allowed})."
-        )
+        return f"Receipt resend.domain has an unsupported requested Resend region ({allowed})."
     capabilities = details.get("capabilities", {})
     if not isinstance(capabilities, dict):
         return "Receipt resend.domain is missing sending-only capability details."
     sending = str(capabilities.get("sending", "") or "").strip().lower()
     receiving = str(capabilities.get("receiving", "") or "").strip().lower()
     if sending != "enabled" or receiving != "disabled":
-        return (
-            "Receipt resend.domain must prove sending is enabled and receiving is disabled."
-        )
+        return "Receipt resend.domain must prove sending is enabled and receiving is disabled."
     generated = _receipt_generated_env_names(action)
     if "RESEND_FROM_EMAIL" not in generated:
         return "Receipt resend.domain must prove FuseKit generated RESEND_FROM_EMAIL."
@@ -2997,8 +2948,7 @@ def _check_receipt_resend_vercel_env_flow(
         _fail_resend_vercel_env_receipt(
             checks,
             missing,
-            "Receipt Vercel env setup is missing Resend runtime keys: "
-            + ", ".join(missing_env),
+            "Receipt Vercel env setup is missing Resend runtime keys: " + ", ".join(missing_env),
             artifact,
         )
         return
@@ -3432,8 +3382,7 @@ def _check_provider_strategy_coverage(
             AcceptanceCheck(
                 "provider_strategies.coverage",
                 "failed" if mode == "live" else "skipped",
-                "Provider strategy artifact is missing manifest providers: "
-                + ", ".join(absent),
+                "Provider strategy artifact is missing manifest providers: " + ", ".join(absent),
                 artifact,
             )
         )
@@ -3629,9 +3578,7 @@ def _check_provider_strategy_order(
         return
     resend_index = ordered.index("resend")
     dns_index = min(
-        ordered.index(provider)
-        for provider in ("cloudflare", "dns")
-        if provider in ordered
+        ordered.index(provider) for provider in ("cloudflare", "dns") if provider in ordered
     )
     if resend_index < dns_index:
         checks.append(
@@ -3787,9 +3734,7 @@ def _provider_strategy_checkpoint_failures(
                 for field in ("detail", "next_action", "resume_hint")
             ).lower()
             if "resend" not in text or "dns" not in text:
-                failures.append(
-                    f"{checkpoint_id} is missing Resend-before-DNS recovery guidance"
-                )
+                failures.append(f"{checkpoint_id} is missing Resend-before-DNS recovery guidance")
     return failures
 
 
@@ -3800,31 +3745,21 @@ def _checkpoint_guidance_quality_failure(
     provider: str,
 ) -> str:
     text = " ".join(
-        str(checkpoint.get(field, "") or "")
-        for field in ("detail", "next_action", "resume_hint")
+        str(checkpoint.get(field, "") or "") for field in ("detail", "next_action", "resume_hint")
     ).lower()
     for phrase in _FORBIDDEN_GUIDANCE_PHRASES:
         if phrase in text:
             return f"{checkpoint_id} guidance contains non-launcher wording: {phrase}"
     local_browser_failure = _local_browser_guidance_failure(text)
     if local_browser_failure:
-        return (
-            f"{checkpoint_id} guidance contains non-launcher wording: "
-            f"{local_browser_failure}"
-        )
+        return f"{checkpoint_id} guidance contains non-launcher wording: {local_browser_failure}"
     manual_action_failure = _manual_action_guidance_failure(text)
     if manual_action_failure:
-        return (
-            f"{checkpoint_id} guidance contains non-launcher wording: "
-            f"{manual_action_failure}"
-        )
+        return f"{checkpoint_id} guidance contains non-launcher wording: {manual_action_failure}"
     if provider == "resend":
         for field in ("detail", "next_action", "resume_hint"):
             if _field_asks_for_manual_resend_setup(str(checkpoint.get(field, "") or "")):
-                return (
-                    f"{checkpoint_id} guidance asks for manual Resend "
-                    "domain/audience setup"
-                )
+                return f"{checkpoint_id} guidance asks for manual Resend domain/audience setup"
     waiting_for_human_gate = (
         str(checkpoint.get("status", "") or "").strip().lower() == "waiting"
         or "needs_human_gate" in text
@@ -3835,9 +3770,8 @@ def _checkpoint_guidance_quality_failure(
         return f"{checkpoint_id} guidance does not name Open provider gate in VM"
     secret_targets = _copy_once_targets_mentioned(text)
     if secret_targets and "capture from vm clipboard" not in text:
-        return (
-            f"{checkpoint_id} guidance does not name Capture from VM clipboard for "
-            + ", ".join(secret_targets)
+        return f"{checkpoint_id} guidance does not name Capture from VM clipboard for " + ", ".join(
+            secret_targets
         )
     return ""
 
@@ -3926,9 +3860,7 @@ def _check_gate_state(
         if isinstance(gate, dict) and str(gate.get("status", "")) != "passed"
     ]
     if unresolved:
-        detail = ", ".join(
-            f"{gate['id']}:{gate['status']}" for gate in unresolved if gate["id"]
-        )
+        detail = ", ".join(f"{gate['id']}:{gate['status']}" for gate in unresolved if gate["id"])
         checks.append(
             AcceptanceCheck(
                 "gates.resolved",
@@ -4014,9 +3946,8 @@ def _generated_resend_runtime_capture_failure(gate: dict[str, Any]) -> str:
     if not generated_targets:
         return ""
     gate_id = str(gate.get("id", "") or "resend.runtime-values")
-    return (
-        f"{gate_id}.target asks the user to capture API-generated Resend values: "
-        + ", ".join(sorted(generated_targets))
+    return f"{gate_id}.target asks the user to capture API-generated Resend values: " + ", ".join(
+        sorted(generated_targets)
     )
 
 
@@ -4103,10 +4034,7 @@ def _resend_setup_key_selector_failure(gate: dict[str, Any]) -> str:
     if not missing:
         return ""
     gate_id = str(gate.get("id", "") or "provider.resend")
-    return (
-        f"{gate_id}.guidance must name exact Resend setup-key selectors: "
-        + ", ".join(missing)
-    )
+    return f"{gate_id}.guidance must name exact Resend setup-key selectors: " + ", ".join(missing)
 
 
 def _manual_setup_match_is_negated(text: str, match_start: int) -> bool:
@@ -4202,18 +4130,13 @@ def _guidance_quality_failures(
             break
     local_browser_failure = _local_browser_guidance_failure(lowered)
     if local_browser_failure:
-        failures.append(
-            f"{label}.guidance contains non-launcher wording: {local_browser_failure}"
-        )
+        failures.append(f"{label}.guidance contains non-launcher wording: {local_browser_failure}")
     manual_action_failure = _manual_action_guidance_failure(lowered)
     if manual_action_failure:
-        failures.append(
-            f"{label}.guidance contains non-launcher wording: {manual_action_failure}"
-        )
+        failures.append(f"{label}.guidance contains non-launcher wording: {manual_action_failure}")
     if requires_vm and "open provider gate in vm" not in action_lowered:
         failures.append(
-            f"{label}.guidance does not name Open provider gate in VM for the "
-            "VM browser path"
+            f"{label}.guidance does not name Open provider gate in VM for the VM browser path"
         )
     secret_targets = _env_targets_from_text(target)
     if secret_targets:
@@ -4223,9 +4146,8 @@ def _guidance_quality_failures(
                 "secret targets"
             )
         missing_exact = _missing_exact_capture_controls(secret_targets, action_lowered)
-        if (
-            "capture from vm clipboard" not in action_lowered
-            and len(missing_exact) == len(secret_targets)
+        if "capture from vm clipboard" not in action_lowered and len(missing_exact) == len(
+            secret_targets
         ):
             failures.append(
                 f"{label}.guidance does not name Capture from VM clipboard for "
@@ -4238,9 +4160,7 @@ def _guidance_quality_failures(
             )
         next_lower = next_action.lower()
         if "i finished this step" in next_lower and "capture" not in next_lower:
-            failures.append(
-                f"{label}.next_action points secret targets at I finished this step"
-            )
+            failures.append(f"{label}.next_action points secret targets at I finished this step")
     return failures
 
 
@@ -4412,13 +4332,10 @@ def _check_gate_audit_events(
             "gate_count": len(gate_ids),
             "gates": [{"id": gate_id} for gate_id in gate_ids],
             "capture_requirements": [
-                {"gate_id": gate_id, "target": target}
-                for gate_id, target in capture_requirements
+                {"gate_id": gate_id, "target": target} for gate_id, target in capture_requirements
             ],
             "open_requirements": [{"gate_id": gate_id} for gate_id in open_requirements],
-            "resume_requirements": [
-                {"gate_id": gate_id} for gate_id in resume_requirements
-            ],
+            "resume_requirements": [{"gate_id": gate_id} for gate_id in resume_requirements],
         },
     )
     if not gate_ids:
@@ -4469,9 +4386,9 @@ def _check_gate_audit_events(
             wake_ids_by_name.get("resume_requested", set()),
         )
     }
-    audited_gate_ids = {
-        gate_id for gate_id, _target in captured_targets
-    } | opened_gate_ids | resumed_gate_ids
+    audited_gate_ids = (
+        {gate_id for gate_id, _target in captured_targets} | opened_gate_ids | resumed_gate_ids
+    )
     missing_gate_ids = [gate_id for gate_id in gate_ids if gate_id not in audited_gate_ids]
     missing_captures = [
         (gate_id, target)
@@ -4485,31 +4402,23 @@ def _check_gate_audit_events(
     if missing_gate_ids or missing_captures or missing_opens or missing_resumes:
         details: list[str] = []
         if missing_gate_ids:
-            details.append(
-                "missing gate events: " + ", ".join(missing_gate_ids)
-            )
+            details.append("missing gate events: " + ", ".join(missing_gate_ids))
         if missing_opens:
-            details.append(
-                "missing control_room.gate_open: " + ", ".join(missing_opens)
-            )
+            details.append("missing control_room.gate_open: " + ", ".join(missing_opens))
         if missing_captures:
             details.append(
                 "missing control_room.clipboard_capture: "
-                + ", ".join(
-                    f"{gate_id}:{target}" for gate_id, target in missing_captures
-                )
+                + ", ".join(f"{gate_id}:{target}" for gate_id, target in missing_captures)
             )
         if missing_resumes:
             details.append(
-                "missing control_room.gate_resume_requested: "
-                + ", ".join(missing_resumes)
+                "missing control_room.gate_resume_requested: " + ", ".join(missing_resumes)
             )
         checks.append(
             AcceptanceCheck(
                 "gates.audited",
                 "failed" if mode == "live" else "skipped",
-                "Control-room gates are missing redacted audit events: "
-                + "; ".join(details),
+                "Control-room gates are missing redacted audit events: " + "; ".join(details),
                 str(snapshot),
             )
         )
@@ -4634,10 +4543,7 @@ def _gate_capture_audit_event_proves_vault_capture(
         and data.get("protected_action") is True
         and data.get("source") == "vm-clipboard"
         and data.get("storage") == "encrypted-vault"
-        and (
-            wake_event_ids is None
-            or (bool(wake_event_id) and wake_event_id in wake_event_ids)
-        )
+        and (wake_event_ids is None or (bool(wake_event_id) and wake_event_id in wake_event_ids))
         and bool(str(data.get("gate_id", "")).strip())
         and bool(str(data.get("target", "")).strip())
         and bool(str(data.get("record_id", "")).strip())
@@ -4659,10 +4565,7 @@ def _gate_resume_audit_event_proves_finished_click(
         and isinstance(data, dict)
         and data.get("protected_action") is True
         and data.get("status") == "resume_requested"
-        and (
-            wake_event_ids is None
-            or (bool(wake_event_id) and wake_event_id in wake_event_ids)
-        )
+        and (wake_event_ids is None or (bool(wake_event_id) and wake_event_id in wake_event_ids))
         and bool(str(data.get("gate_id", "")).strip())
     )
 
@@ -5038,8 +4941,7 @@ def _check_runner_readiness(
                 AcceptanceCheck(
                     "runner_readiness.prepared",
                     "missing",
-                    "Live runner readiness proof not found: "
-                    + redact_public_path(readiness_path),
+                    "Live runner readiness proof not found: " + redact_public_path(readiness_path),
                 )
             )
             missing.append("prepared runner readiness proof")
@@ -5131,9 +5033,7 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
                 failures.append(f"{label}.secret_class is unsupported")
             volatile_marker = _volatile_durable_state_marker(source)
             if volatile_marker:
-                failures.append(
-                    f"{label} preserves volatile worker state: {volatile_marker}"
-                )
+                failures.append(f"{label} preserves volatile worker state: {volatile_marker}")
         required = {
             "encrypted_vault",
             "job_state",
@@ -5182,10 +5082,7 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
     if not isinstance(detonation_scope, dict):
         failures.append("durable_state.detonation_scope is missing")
     else:
-        if (
-            str(detonation_scope.get("schema_version", "")).strip()
-            != "fusekit.detonation-scope.v1"
-        ):
+        if str(detonation_scope.get("schema_version", "")).strip() != "fusekit.detonation-scope.v1":
             failures.append("durable_state.detonation_scope.schema_version is unsupported")
         if str(detonation_scope.get("mode", "")).strip() != "worker-and-oci-workspace":
             failures.append("durable_state.detonation_scope.mode is unsupported")
@@ -5217,14 +5114,11 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
             failures.append("durable_state.detonation_scope.must_preserve is incomplete")
         elif any(_volatile_durable_text_marker(value) for value in must_preserve_values):
             volatile_preserves = sorted(
-                value
-                for value in must_preserve_values
-                if _volatile_durable_text_marker(value)
+                value for value in must_preserve_values if _volatile_durable_text_marker(value)
             )
             failures.append(
                 "durable_state.detonation_scope.must_preserve must not include "
-                "volatile worker state: "
-                + ", ".join(volatile_preserves)
+                "volatile worker state: " + ", ".join(volatile_preserves)
             )
         elif preserve_values and preserve_values != must_preserve_values:
             failures.append(
@@ -5247,23 +5141,17 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
     else:
         if replacement.get("worker_is_disposable") is not True:
             failures.append(
-                "durable_state.worker_replacement_contract.worker_is_disposable "
-                "must be true"
+                "durable_state.worker_replacement_contract.worker_is_disposable must be true"
             )
         if replacement.get("can_recreate_worker") is not True:
             failures.append(
-                "durable_state.worker_replacement_contract.can_recreate_worker "
-                "must be true"
+                "durable_state.worker_replacement_contract.can_recreate_worker must be true"
             )
         if replacement.get("runner_profile_ready") is not True:
             failures.append(
-                "durable_state.worker_replacement_contract.runner_profile_ready "
-                "must be true"
+                "durable_state.worker_replacement_contract.runner_profile_ready must be true"
             )
-        if (
-            str(replacement.get("required_runner_profile", "") or "")
-            != "oci-visual-browser-x86_64"
-        ):
+        if str(replacement.get("required_runner_profile", "") or "") != "oci-visual-browser-x86_64":
             failures.append(
                 "durable_state.worker_replacement_contract.required_runner_profile is unsupported"
             )
@@ -5273,9 +5161,7 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
                 "must be false"
             )
         if str(replacement.get("state_owner", "") or "") != "encrypted-vault-and-run-record":
-            failures.append(
-                "durable_state.worker_replacement_contract.state_owner is unsupported"
-            )
+            failures.append("durable_state.worker_replacement_contract.state_owner is unsupported")
         resume_sources = replacement.get("resume_sources", [])
         resume_source_values = (
             {str(item) for item in resume_sources} if isinstance(resume_sources, list) else set()
@@ -5298,14 +5184,11 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
             )
         elif any(_volatile_durable_text_marker(value) for value in resume_source_values):
             volatile_resume_sources = sorted(
-                value
-                for value in resume_source_values
-                if _volatile_durable_text_marker(value)
+                value for value in resume_source_values if _volatile_durable_text_marker(value)
             )
             failures.append(
                 "durable_state.worker_replacement_contract.resume_sources must not include "
-                "volatile worker state: "
-                + ", ".join(volatile_resume_sources)
+                "volatile worker state: " + ", ".join(volatile_resume_sources)
             )
         elif source_ids and not resume_source_values.issubset(source_ids):
             failures.append(
@@ -5330,16 +5213,12 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
             "encrypted/redacted run state" not in replacement_statement
             or "plaintext VM scratch" not in replacement_statement
         ):
-            failures.append(
-                "durable_state.worker_replacement_contract.statement is incomplete"
-            )
+            failures.append("durable_state.worker_replacement_contract.statement is incomplete")
     return failures
 
 
 def _volatile_durable_state_marker(source: dict[str, Any]) -> str:
-    text = " ".join(
-        str(source.get(field, "") or "") for field in ("id", "path", "role")
-    )
+    text = " ".join(str(source.get(field, "") or "") for field in ("id", "path", "role"))
     return _volatile_durable_text_marker(text)
 
 
@@ -5439,12 +5318,12 @@ def _provider_playbook_control_failures(
         "Approve setup plan",
     }:
         failures.append(f"{label}.control must be a known follow-me control")
-    if step_id.startswith("resend.") and route == "browser_guided" and control != (
-        "Capture RESEND_API_KEY from VM clipboard"
+    if (
+        step_id.startswith("resend.")
+        and route == "browser_guided"
+        and control != ("Capture RESEND_API_KEY from VM clipboard")
     ):
-        failures.append(
-            f"{label}.control must capture RESEND_API_KEY before Resend API setup"
-        )
+        failures.append(f"{label}.control must capture RESEND_API_KEY before Resend API setup")
     return failures
 
 
@@ -5504,13 +5383,11 @@ def _unsafe_visual_state_fields(raw: dict[str, Any], sanitized: dict[str, Any]) 
         "control_room_url"
     ):
         unsafe.append("control-room URL")
-    if "novnc_password" in raw and raw.get("novnc_password") != sanitized.get(
-        "novnc_password"
-    ):
+    if "novnc_password" in raw and raw.get("novnc_password") != sanitized.get("novnc_password"):
         unsafe.append("noVNC password metadata")
-    if "provider_browser_profile" in raw and raw.get(
+    if "provider_browser_profile" in raw and raw.get("provider_browser_profile") != sanitized.get(
         "provider_browser_profile"
-    ) != sanitized.get("provider_browser_profile"):
+    ):
         unsafe.append("provider browser profile metadata")
     return unsafe
 

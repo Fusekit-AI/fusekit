@@ -135,9 +135,7 @@ class OciProvisioner:
                     "FuseKit no longer creates OCI compartments for runner workspaces. "
                     "Use --oci-compartment-mode root."
                 )
-            self._emit_progress(
-                f"OCI workspace {run_id}: using tenancy root compartment"
-            )
+            self._emit_progress(f"OCI workspace {run_id}: using tenancy root compartment")
             compartment_id = tenancy_id
             workspace = OciWorkspace(
                 id=run_id,
@@ -245,6 +243,8 @@ class OciProvisioner:
                 self.compute.terminate_instance(instance_id, preserve_boot_volume=False)
                 deleted["instance"] = instance_id
                 self._wait_for_instance_network_release(workspace.compartment_id, instance_id)
+                if workspace.public_ip:
+                    deleted["ephemeral_public_ip"] = workspace.public_ip
             except Exception as exc:  # pragma: no cover - exception type is SDK-defined.
                 deleted["failed.instance"] = _safe_oci_error(exc)
         for key, method_name in (
@@ -1008,8 +1008,7 @@ def _capacity_report_status(report: object) -> str:
     statuses: list[str] = []
     for availability in shape_availabilities:
         shape = str(
-            getattr(availability, "instance_shape", "")
-            or getattr(availability, "shape", "")
+            getattr(availability, "instance_shape", "") or getattr(availability, "shape", "")
         )
         status = str(getattr(availability, "availability_status", "") or "")
         if not status:
