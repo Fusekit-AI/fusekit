@@ -648,6 +648,12 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
             "Keep the live launcher/control room open until every manifest provider "
             "has provider-route proof before acceptance.",
         ),
+        "provider playbook": (
+            "Provider playbook",
+            "Keep the live launcher/control room open until the Provider playbook shows "
+            "the ordered VM-browser actions, exact Capture controls, DNS approval, and "
+            "Resend no-manual-setup safety notes.",
+        ),
         "provider route recovery checkpoints": (
             "Provider routes",
             "Keep the live launcher/control room open until provider-route cards show "
@@ -873,6 +879,13 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
             "Resend domain by API before you approve DNS apply.",
         )
     if check.id.startswith("provider_strategies."):
+        if check.id == "provider_strategies.playbook":
+            return (
+                "Provider playbook",
+                "Keep the live launcher/control room open until the Provider playbook "
+                "shows the ordered VM-browser actions, exact Capture controls, DNS "
+                "approval, and Resend no-manual-setup safety notes.",
+            )
         if check.id == "provider_strategies.checkpoints":
             return (
                 "Provider routes",
@@ -1894,6 +1907,7 @@ def _check_provider_strategies(
             str(snapshot),
         )
     )
+    _check_provider_strategy_playbook(raw, mode, checks, missing, str(snapshot))
     _check_provider_strategy_decision_shape(providers, mode, checks, missing, str(snapshot))
     _check_provider_strategy_coverage(
         providers,
@@ -1947,6 +1961,51 @@ def _check_provider_strategy_decision_shape(
             "provider_strategies.complete",
             "ok",
             "Provider strategy decisions include selected route evidence.",
+            artifact,
+        )
+    )
+
+
+def _check_provider_strategy_playbook(
+    raw: dict[str, Any],
+    mode: str,
+    checks: list[AcceptanceCheck],
+    missing: list[str],
+    artifact: str,
+) -> None:
+    """Require the durable no-thinking provider checklist to be present and safe."""
+
+    playbook = raw.get("playbook")
+    if not isinstance(playbook, dict):
+        checks.append(
+            AcceptanceCheck(
+                "provider_strategies.playbook",
+                "failed" if mode == "live" else "skipped",
+                "Provider strategy artifact is missing the ordered provider playbook.",
+                artifact,
+            )
+        )
+        if mode == "live":
+            missing.append("provider playbook")
+        return
+    failures = _provider_playbook_shape_failures(playbook)
+    if failures:
+        checks.append(
+            AcceptanceCheck(
+                "provider_strategies.playbook",
+                "failed" if mode == "live" else "skipped",
+                "Provider playbook is incomplete: " + "; ".join(failures),
+                artifact,
+            )
+        )
+        if mode == "live":
+            missing.append("provider playbook")
+        return
+    checks.append(
+        AcceptanceCheck(
+            "provider_strategies.playbook",
+            "ok",
+            "Provider playbook gives the ordered launcher actions and safety notes.",
             artifact,
         )
     )

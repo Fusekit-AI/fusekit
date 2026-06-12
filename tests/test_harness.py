@@ -305,6 +305,7 @@ def _write_minimum_live_artifacts(remote_fusekit: Path) -> None:
         json.dumps(
             {
                 "schema_version": "fusekit.provider-strategies.v1",
+                "playbook": _provider_playbook(),
                 "providers": [
                     {
                         "provider": "resend",
@@ -2987,6 +2988,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
         json.dumps(
             {
                 "schema_version": "fusekit.provider-strategies.v1",
+                "playbook": _provider_playbook(),
                 "providers": [
                     {
                         "provider": "github",
@@ -3129,6 +3131,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
     assert "run_record.complete" in check_ids
     assert "verification_report.safe" in check_ids
     assert "provider_strategies.recorded" in check_ids
+    assert "provider_strategies.playbook" in check_ids
     assert "provider_strategies.checkpoints" in check_ids
     assert "gates.resolved" in check_ids
     assert "gates.audited" in check_ids
@@ -3190,6 +3193,7 @@ def test_live_acceptance_requires_provider_route_recovery_checkpoints(tmp_path) 
         json.dumps(
             {
                 "schema_version": "fusekit.provider-strategies.v1",
+                "playbook": _provider_playbook(),
                 "providers": [
                     {
                         "provider": "github",
@@ -3236,6 +3240,108 @@ def test_live_acceptance_requires_provider_route_recovery_checkpoints(tmp_path) 
     assert "keep this live control room open" in next_action
     assert "rerun the same live launcher" not in next_action
     assert "checkpoints.json" not in next_action
+
+
+def test_live_acceptance_requires_provider_playbook(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "package.json").write_text(
+        json.dumps({"name": "moonlite-rsvp", "dependencies": {"next": "latest"}}),
+        encoding="utf-8",
+    )
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    (remote_fusekit / "audit.jsonl").write_text('{"event":"provider.verify"}\n', "utf-8")
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "live_url": "https://moonlite.example",
+                "raw_secrets_exposed": 0,
+                "actions": [],
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "verification_report.json").write_text(
+        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        "utf-8",
+    )
+    (remote_fusekit / "rollback_plan.json").write_text(
+        json.dumps({"rollback": [{"action": "rollback.github.secret", "status": "planned"}]}),
+        "utf-8",
+    )
+    (remote_fusekit / "provider_strategies.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.provider-strategies.v1",
+                "providers": [
+                    {
+                        "provider": "github",
+                        "strategies": [
+                            {
+                                "recipe": "github-repo-secrets",
+                                "strategy": "api",
+                                "status": "ok",
+                                "decision": {
+                                    "provider": "github",
+                                    "recipe_kind": "github-repo-secrets",
+                                    **_strategy_decision(),
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "checkpoints.json").write_text(
+        json.dumps(
+            {
+                "job_id": "fk-test",
+                "status": "running",
+                "checkpoints": [
+                    {
+                        "id": "provider.github.routes",
+                        "label": "Provider route: github",
+                        "status": "done",
+                        "detail": "github-repo-secrets uses api (ok)",
+                        "next_action": "Nothing to do manually unless FuseKit surfaces a gate.",
+                        "resume_hint": "FuseKit recorded the deterministic provider route.",
+                        "mascot_state": "verify",
+                    }
+                ],
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "gates.json").write_text(json.dumps({"gates": []}), "utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    playbook_check = next(
+        check for check in report.checks if check.id == "provider_strategies.playbook"
+    )
+    assert report.launch_ready is False
+    assert playbook_check.status == "failed"
+    assert "missing the ordered provider playbook" in playbook_check.detail
+    assert "provider playbook" in report.missing
+    blockers = {blocker["item"]: blocker for blocker in report.blockers}
+    assert blockers["provider playbook"]["category"] == "Provider playbook"
+    next_action = blockers["provider playbook"]["next_action"]
+    assert "live launcher/control room" in next_action
+    assert "ordered VM-browser actions" in next_action
+    assert "exact Capture controls" in next_action
+    assert "DNS approval" in next_action
+    assert "Resend no-manual-setup" in next_action
 
 
 def test_live_acceptance_requires_central_run_record(tmp_path) -> None:
