@@ -79,6 +79,73 @@ from fusekit.vault import Vault
 REMOTE_CONTROL_ROOM_TOKEN = "remote_control_room_token_abcdefghijklmnopqrstuvwxyz0123456789"
 
 
+def _write_runner_readiness(root: Path, *, thin: bool = False) -> None:
+    payload: dict[str, Any] = {
+        "schema_version": "fusekit.runner-readiness.v1",
+        "status": "ready",
+        "architecture": "x86_64",
+        "profile_contract": {
+            "schema_version": "fusekit.runner-profile.v1",
+            "name": "oci-visual-browser-x86_64",
+            "architecture": "x86_64",
+            "os_family": "linux",
+            "supported_os_ids": ["ubuntu", "ol"],
+            "min_memory_mib": 15360,
+            "ports": {
+                "ssh": 22,
+                "control_room": 8765,
+                "novnc": 6080,
+                "vnc_loopback": 5900,
+                "openclaw_gateway_loopback": 19002,
+            },
+            "browser_stack": {
+                "spine": "openclaw",
+                "automation": "playwright",
+                "browser": "chromium",
+                "shared_provider_profile": (
+                    "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+                ),
+            },
+            "required_health_checks": [
+                "x86_64_architecture",
+                "runner_helpers",
+                "visual_commands",
+                "novnc",
+                "openclaw",
+                "playwright_chromium",
+                "shared_provider_browser_profile",
+            ],
+        },
+        "observed": {
+            "os_id": "ubuntu",
+            "os_version": "24.04",
+            "memory_mib": 24576,
+        },
+        "checks": {
+            "x86_64_architecture": True,
+            "runner_helpers": True,
+            "visual_commands": True,
+            "novnc": True,
+            "openclaw": True,
+            "playwright_chromium": True,
+            "shared_provider_browser_profile": True,
+        },
+        "provider_browser_profile": (
+            "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+        ),
+        "playwright_browsers_path": "/opt/fusekit-playwright-browsers",
+    }
+    if thin:
+        payload["profile_contract"] = {
+            "schema_version": "fusekit.runner-profile.v1",
+            "name": "oci-visual-browser-x86_64",
+        }
+        payload["checks"] = {"x86_64_architecture": True}
+        payload["provider_browser_profile"] = ""
+        payload["playwright_browsers_path"] = ""
+    (root / "runner_readiness.json").write_text(json.dumps(payload), encoding="utf-8")
+
+
 def _control_room_post_headers(root: Path, **extra: str) -> dict[str, str]:
     token = (root / "control-room-action-token").read_text(encoding="utf-8").strip()
     return {
@@ -357,58 +424,7 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
         ),
         encoding="utf-8",
     )
-    (tmp_path / "runner_readiness.json").write_text(
-        json.dumps(
-            {
-                "schema_version": "fusekit.runner-readiness.v1",
-                "status": "ready",
-                "architecture": "x86_64",
-                "profile_contract": {
-                    "schema_version": "fusekit.runner-profile.v1",
-                    "name": "oci-visual-browser-x86_64",
-                    "architecture": "x86_64",
-                    "os_family": "linux",
-                    "supported_os_ids": ["ubuntu", "ol"],
-                    "min_memory_mib": 15360,
-                    "ports": {
-                        "ssh": 22,
-                        "control_room": 8765,
-                        "novnc": 6080,
-                        "vnc_loopback": 5900,
-                        "openclaw_gateway_loopback": 19002,
-                    },
-                    "browser_stack": {
-                        "spine": "openclaw",
-                        "automation": "playwright",
-                        "browser": "chromium",
-                        "shared_provider_profile": (
-                            "/var/lib/fusekit-runner/visual/chrome-provider-profile"
-                        ),
-                    },
-                    "required_health_checks": [
-                        "x86_64_architecture",
-                        "runner_helpers",
-                        "visual_commands",
-                        "novnc",
-                        "openclaw",
-                        "playwright_chromium",
-                        "shared_provider_browser_profile",
-                    ],
-                },
-                "observed": {
-                    "os_id": "ubuntu",
-                    "os_version": "24.04",
-                    "memory_mib": 24576,
-                },
-                "checks": {"x86_64_architecture": True},
-                "provider_browser_profile": (
-                    "/var/lib/fusekit-runner/visual/chrome-provider-profile"
-                ),
-                "playwright_browsers_path": "/opt/fusekit-playwright-browsers",
-            }
-        ),
-        encoding="utf-8",
-    )
+    _write_runner_readiness(tmp_path)
     job.save(tmp_path / "job.json")
 
     record_path = write_run_record(
@@ -557,22 +573,7 @@ def test_run_record_recording_contract_blocks_missing_provider_playbook(tmp_path
         json.dumps({"runner": "novnc", "status": "ready"}),
         encoding="utf-8",
     )
-    (tmp_path / "runner_readiness.json").write_text(
-        json.dumps(
-            {
-                "schema_version": "fusekit.runner-readiness.v1",
-                "status": "ready",
-                "architecture": "x86_64",
-                "profile_contract": {
-                    "schema_version": "fusekit.runner-profile.v1",
-                    "name": "oci-visual-browser-x86_64",
-                },
-                "observed": {"memory_mib": 24576},
-                "checks": {"x86_64_architecture": True},
-            }
-        ),
-        encoding="utf-8",
-    )
+    _write_runner_readiness(tmp_path)
     (tmp_path / "workspace_detonation.json").write_text(
         json.dumps(
             {
@@ -610,6 +611,96 @@ def test_run_record_recording_contract_blocks_missing_provider_playbook(tmp_path
     assert record["recording_contract"]["checks"]["provider_playbook"] is False
     assert record["recording_contract"]["recording_ready"] is False
     assert record["recording_contract"]["blockers"] == ["provider_playbook"]
+
+
+def test_run_record_recording_contract_blocks_thin_runner_profile(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci")
+    job.mark("setup.execute", "done", "provider setup finished")
+    (tmp_path / "audit.jsonl").write_text('{"event":"ok"}\n', encoding="utf-8")
+    job.add_artifact("audit_log", tmp_path / "audit.jsonl")
+    (tmp_path / "fusekit.vault.json").write_text("encrypted", encoding="utf-8")
+    (tmp_path / "provider_strategies.json").write_text(
+        json.dumps(
+            {
+                "playbook": {
+                    "schema_version": "fusekit.provider-playbook.v1",
+                    "steps": [
+                        {
+                            "id": "resend.capture_key",
+                            "control": "Capture RESEND_API_KEY from VM clipboard",
+                            "instruction": (
+                                "Open the provider gate in the VM browser, copy the "
+                                "approved value there, then click Capture "
+                                "RESEND_API_KEY from VM clipboard."
+                            ),
+                        }
+                    ],
+                    "safety_notes": [
+                        "Use the launcher and shared VM browser for provider gates.",
+                        (
+                            "Do not create Resend domains or audiences manually; "
+                            "FuseKit owns those API setup steps."
+                        ),
+                        (
+                            "Do not paste provider secrets into the host computer; "
+                            "Capture reads the VM clipboard."
+                        ),
+                    ],
+                },
+                "providers": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "gates.json").write_text(json.dumps({"gates": []}), encoding="utf-8")
+    (tmp_path / "setup_receipt.json").write_text(
+        json.dumps({"actions": [{"action": "resend.domain", "status": "passed"}]}),
+        encoding="utf-8",
+    )
+    (tmp_path / "verification_report.json").write_text(
+        json.dumps({"checks": [{"provider": "resend", "status": "passed"}]}),
+        encoding="utf-8",
+    )
+    (tmp_path / "visual.json").write_text(
+        json.dumps({"runner": "novnc", "status": "ready"}),
+        encoding="utf-8",
+    )
+    _write_runner_readiness(tmp_path, thin=True)
+    (tmp_path / "workspace_detonation.json").write_text(
+        json.dumps(
+            {
+                "status": "complete",
+                "deleted": ["instance", "remote_worker", "vcn"],
+                "failures": {},
+                "resource_summary": {
+                    "schema_version": "fusekit.workspace-detonation-resources.v1",
+                    "remote_worker": True,
+                    "compute_instance": True,
+                    "network_resources": ["vcn"],
+                    "network_resources_deleted": True,
+                    "compartment_scope": "preserved",
+                    "missing": [],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    update_run_state(
+        tmp_path / "run_state.json",
+        app_repo_known=True,
+        runner_selected=True,
+        vault_created=True,
+        detonation_safe=True,
+        workspace_detonated=True,
+    )
+    job.save(tmp_path / "job.json")
+
+    record_path = write_run_record(job, path=tmp_path / "run_record.json")
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+
+    assert record["recording_contract"]["checks"]["runner_profile"] is False
+    assert record["recording_contract"]["recording_ready"] is False
+    assert record["recording_contract"]["blockers"] == ["runner_profile"]
 
 
 def test_run_record_retains_all_redacted_wake_events(tmp_path) -> None:

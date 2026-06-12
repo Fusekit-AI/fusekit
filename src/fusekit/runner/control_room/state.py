@@ -12,14 +12,12 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from fusekit.runner.control_room.redaction import redact_gate_target
 from fusekit.runner.gates import GateRecord
 from fusekit.runner.job import JobState
+from fusekit.runner.readiness import EXPECTED_PROVIDER_BROWSER_PROFILE
 from fusekit.runner.run_state import LaunchRunState
 
 SAFE_URL_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,256}$")
 EXPECTED_NOVNC_PORT = 6080
 EXPECTED_CONTROL_ROOM_PORT = 8765
-EXPECTED_PROVIDER_BROWSER_PROFILE = (
-    "/var/lib/fusekit-runner/visual/chrome-provider-profile"
-)
 SAFE_NOVNC_QUERY_VALUES = {
     "autoconnect": {"1"},
     "resize": {"scale"},

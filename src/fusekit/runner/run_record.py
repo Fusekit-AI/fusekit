@@ -9,6 +9,7 @@ from typing import Any
 
 from fusekit.runner.gates import GateRecord
 from fusekit.runner.job import JobState
+from fusekit.runner.readiness import runner_readiness_failures
 from fusekit.runner.run_state import LaunchRunState
 
 RUN_RECORD_SCHEMA_VERSION = "fusekit.run-record.v1"
@@ -718,6 +719,7 @@ def _runner_profile_summary(runner_readiness: dict[str, Any]) -> dict[str, Any]:
     observed = runner_readiness.get("observed", {})
     checks = runner_readiness.get("checks", {})
     return {
+        "schema_version": str(runner_readiness.get("schema_version", "")),
         "status": str(runner_readiness.get("status", "")),
         "architecture": str(runner_readiness.get("architecture", "")),
         "profile_contract": profile if isinstance(profile, dict) else {},
@@ -1210,14 +1212,7 @@ def _recording_runner_profile_ready(record: dict[str, Any]) -> bool:
     runner = record.get("runner_profile", {})
     if not isinstance(runner, dict):
         return False
-    profile = runner.get("profile_contract", {})
-    return (
-        str(runner.get("status", "") or "") == "ready"
-        and str(runner.get("architecture", "") or "") == "x86_64"
-        and isinstance(profile, dict)
-        and str(profile.get("schema_version", "") or "") == "fusekit.runner-profile.v1"
-        and str(profile.get("name", "") or "") == "oci-visual-browser-x86_64"
-    )
+    return not runner_readiness_failures(runner)
 
 
 def _recording_provider_playbook_ready(record: dict[str, Any]) -> bool:
