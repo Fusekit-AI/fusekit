@@ -1302,7 +1302,11 @@ def _recording_provider_playbook_ready(record: dict[str, Any]) -> bool:
     ):
         return False
     if not all(
-        isinstance(step, dict) and str(step.get("instruction", "") or "").strip()
+        isinstance(step, dict)
+        and str(step.get("instruction", "") or "").strip()
+        and str(step.get("provider", "") or "").strip()
+        and _provider_playbook_step_route_ready(step)
+        and _provider_playbook_step_control_ready(step)
         for step in steps
     ):
         return False
@@ -1314,6 +1318,36 @@ def _recording_provider_playbook_ready(record: dict[str, Any]) -> bool:
         and "Do not create Resend domains or audiences manually" in joined
         and "Do not paste provider secrets into the host computer" in joined
     )
+
+
+def _provider_playbook_step_route_ready(step: dict[str, Any]) -> bool:
+    return str(step.get("route", "") or "").strip() in {
+        "api",
+        "official_cli",
+        "browser_guided",
+        "human_follow_me",
+        "local_vault",
+    }
+
+
+def _provider_playbook_step_control_ready(step: dict[str, Any]) -> bool:
+    route = str(step.get("route", "") or "").strip()
+    control = str(step.get("control", "") or "").strip()
+    if not control:
+        return False
+    if route == "api":
+        return control == "FuseKit API worker"
+    if route in {"browser_guided", "local_vault"}:
+        return control.startswith("Capture ") and control.endswith(" from VM clipboard")
+    if route == "human_follow_me":
+        return control in {
+            "I finished this step",
+            "Approve DNS apply",
+            "Approve setup plan",
+        }
+    if route == "official_cli":
+        return control in {"FuseKit CLI worker", "FuseKit API worker"}
+    return False
 
 
 def _provider_playbook_order_failures(steps: list[Any]) -> list[str]:

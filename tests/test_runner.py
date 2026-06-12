@@ -356,6 +356,8 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
                     "steps": [
                         {
                             "id": "cloudflare.capture_key",
+                            "provider": "cloudflare",
+                            "route": "browser_guided",
                             "control": "Capture CLOUDFLARE_API_TOKEN from VM clipboard",
                             "instruction": (
                                 "Open the provider gate in the VM browser, copy the "
@@ -706,18 +708,30 @@ def test_recording_provider_playbook_requires_public_order() -> None:
     record["provider_playbook"]["steps"] = [
         {
             "id": "resend.capture_key",
+            "provider": "resend",
+            "route": "browser_guided",
+            "control": "Capture RESEND_API_KEY from VM clipboard",
             "instruction": "Capture RESEND_API_KEY from VM clipboard.",
         },
         {
             "id": "resend.domain_api",
+            "provider": "resend",
+            "route": "api",
+            "control": "FuseKit API worker",
             "instruction": "FuseKit creates or reuses the Resend domain by API.",
         },
         {
             "id": "vercel.env_api",
+            "provider": "vercel",
+            "route": "api",
+            "control": "FuseKit API worker",
             "instruction": "FuseKit writes required runtime variables into Vercel.",
         },
         {
             "id": "dns.approval",
+            "provider": "dns",
+            "route": "human_follow_me",
+            "control": "Approve DNS apply",
             "instruction": "Approve DNS apply.",
         },
     ]
@@ -822,6 +836,8 @@ def test_run_record_recording_contract_blocks_thin_runner_profile(tmp_path) -> N
                     "steps": [
                         {
                             "id": "resend.capture_key",
+                            "provider": "resend",
+                            "route": "browser_guided",
                             "control": "Capture RESEND_API_KEY from VM clipboard",
                             "instruction": (
                                 "Open the provider gate in the VM browser, copy the "
@@ -5266,6 +5282,7 @@ def test_control_room_renders_provider_playbook_checklist(tmp_path) -> None:
                         {
                             "id": "resend.capture_key",
                             "provider": "resend",
+                            "route": "browser_guided",
                             "control": "Capture RESEND_API_KEY from VM clipboard",
                             "instruction": (
                                 "Capture RESEND_API_KEY from VM clipboard if the "
@@ -5276,6 +5293,7 @@ def test_control_room_renders_provider_playbook_checklist(tmp_path) -> None:
                             "id": "resend.domain_api",
                             "provider": "resend",
                             "route": "api",
+                            "control": "FuseKit API worker",
                             "instruction": (
                                 "FuseKit creates or reuses the Resend sending domain "
                                 "through the Resend API."
@@ -5285,6 +5303,7 @@ def test_control_room_renders_provider_playbook_checklist(tmp_path) -> None:
                             "id": "vercel.env_api",
                             "provider": "vercel",
                             "route": "api",
+                            "control": "FuseKit API worker",
                             "instruction": (
                                 "FuseKit writes required runtime variables into Vercel "
                                 "after upstream provider values exist."
@@ -5293,6 +5312,7 @@ def test_control_room_renders_provider_playbook_checklist(tmp_path) -> None:
                         {
                             "id": "dns.approval",
                             "provider": "dns",
+                            "route": "human_follow_me",
                             "control": "Approve DNS apply",
                             "instruction": (
                                 "FuseKit carries app and provider-generated DNS records "

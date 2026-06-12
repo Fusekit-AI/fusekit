@@ -4030,6 +4030,7 @@ def _provider_playbook(strategy_runs: list[dict[str, object]]) -> dict[str, obje
                 ),
                 control="Capture RESEND_API_KEY from VM clipboard",
                 provider="resend",
+                route="browser_guided",
             )
         )
         captured_targets.add("RESEND_API_KEY")
@@ -4044,6 +4045,8 @@ def _provider_playbook(strategy_runs: list[dict[str, object]]) -> dict[str, obje
                     f"there, then click Capture {target} from VM clipboard."
                 ),
                 control=f"Capture {target} from VM clipboard",
+                provider="provider",
+                route="browser_guided",
             )
         )
         captured_targets.add(target)
@@ -4052,6 +4055,7 @@ def _provider_playbook(strategy_runs: list[dict[str, object]]) -> dict[str, obje
             _playbook_step(
                 "resend.domain_api",
                 "FuseKit creates or reuses the Resend sending domain through the Resend API.",
+                control="FuseKit API worker",
                 provider="resend",
                 route="api",
             )
@@ -4064,6 +4068,7 @@ def _provider_playbook(strategy_runs: list[dict[str, object]]) -> dict[str, obje
                     "FuseKit creates or reuses a Resend audience by API only when the "
                     "app requires one."
                 ),
+                control="FuseKit API worker",
                 provider="resend",
                 route="api",
             )
@@ -4076,6 +4081,7 @@ def _provider_playbook(strategy_runs: list[dict[str, object]]) -> dict[str, obje
                     "FuseKit writes required runtime variables into Vercel after "
                     "upstream provider values exist."
                 ),
+                control="FuseKit API worker",
                 provider="vercel",
                 route="api",
             )
@@ -4090,6 +4096,7 @@ def _provider_playbook(strategy_runs: list[dict[str, object]]) -> dict[str, obje
                 ),
                 control="Approve DNS apply",
                 provider="dns",
+                route="human_follow_me",
             )
         )
     if any(_is_non_secret_human_gate(record) for record in records):
@@ -4101,6 +4108,8 @@ def _provider_playbook(strategy_runs: list[dict[str, object]]) -> dict[str, obje
                     "finish the prompt in the VM browser, then click I finished this step."
                 ),
                 control="I finished this step",
+                provider="provider",
+                route="human_follow_me",
             )
         )
     if not steps and records:
@@ -4111,6 +4120,9 @@ def _provider_playbook(strategy_runs: list[dict[str, object]]) -> dict[str, obje
                     "FuseKit recorded deterministic provider routes; no user action "
                     "is needed unless a gate appears."
                 ),
+                control="FuseKit API worker",
+                provider="provider",
+                route="api",
             )
         )
     return {

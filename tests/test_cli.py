@@ -3160,6 +3160,9 @@ def test_save_launch_job_writes_durable_state_after_job_state_exists(tmp_path) -
                     "steps": [
                         {
                             "id": "resend.capture_key",
+                            "provider": "resend",
+                            "route": "browser_guided",
+                            "control": "Capture RESEND_API_KEY from VM clipboard",
                             "instruction": (
                                 "Capture RESEND_API_KEY from VM clipboard."
                             ),

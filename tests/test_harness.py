@@ -83,6 +83,7 @@ def _provider_playbook() -> dict[str, object]:
             {
                 "id": "resend.capture_key",
                 "provider": "resend",
+                "route": "browser_guided",
                 "control": "Capture RESEND_API_KEY from VM clipboard",
                 "instruction": (
                     "Capture RESEND_API_KEY from VM clipboard if the Resend API route "
@@ -93,6 +94,7 @@ def _provider_playbook() -> dict[str, object]:
                 "id": "resend.domain_api",
                 "provider": "resend",
                 "route": "api",
+                "control": "FuseKit API worker",
                 "instruction": (
                     "FuseKit creates or reuses the Resend sending domain through the "
                     "Resend API."
@@ -4185,12 +4187,14 @@ def test_acceptance_run_record_requires_provider_playbook_public_order(
         {
             "id": "resend.capture_key",
             "provider": "resend",
+            "route": "browser_guided",
             "control": "Capture RESEND_API_KEY from VM clipboard",
             "instruction": "Capture RESEND_API_KEY from VM clipboard.",
         },
         {
             "id": "dns.approval",
             "provider": "dns",
+            "route": "human_follow_me",
             "control": "Approve DNS apply",
             "instruction": "FuseKit carries DNS records into the DNS approval gate.",
         },
@@ -4198,12 +4202,14 @@ def test_acceptance_run_record_requires_provider_playbook_public_order(
             "id": "resend.domain_api",
             "provider": "resend",
             "route": "api",
+            "control": "FuseKit API worker",
             "instruction": "FuseKit creates or reuses the Resend sending domain by API.",
         },
         {
             "id": "vercel.env_api",
             "provider": "vercel",
             "route": "api",
+            "control": "FuseKit API worker",
             "instruction": "FuseKit writes runtime variables into Vercel.",
         },
     ]
@@ -4216,6 +4222,59 @@ def test_acceptance_run_record_requires_provider_playbook_public_order(
     )
     assert (
         "provider_playbook.steps must place vercel.env_api before dns.approval"
+        in failures
+    )
+
+
+def test_acceptance_run_record_requires_provider_playbook_route_controls(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["provider_playbook"] = _provider_playbook()
+    record["provider_playbook"]["steps"] = [
+        {
+            "id": "resend.capture_key",
+            "route": "browser_guided",
+            "control": "I finished this step",
+            "instruction": "Capture RESEND_API_KEY from VM clipboard.",
+        },
+        {
+            "id": "resend.domain_api",
+            "provider": "resend",
+            "route": "api",
+            "control": "Approve DNS apply",
+            "instruction": "FuseKit creates or reuses the Resend sending domain by API.",
+        },
+        {
+            "id": "provider.finished_step",
+            "provider": "provider",
+            "route": "human_follow_me",
+            "control": "Continue",
+            "instruction": "Finish the provider prompt in the VM browser.",
+        },
+    ]
+
+    failures = _run_record_shape_failures(record)
+
+    assert "provider_playbook.steps[0].provider is missing" in failures
+    assert (
+        "provider_playbook.steps[0].control must be an env-named Capture control"
+        in failures
+    )
+    assert (
+        "provider_playbook.steps[0].control must capture RESEND_API_KEY before "
+        "Resend API setup"
+        in failures
+    )
+    assert (
+        "provider_playbook.steps[1].control must be FuseKit API worker for api routes"
+        in failures
+    )
+    assert (
+        "provider_playbook.steps[2].control must be a known follow-me control"
         in failures
     )
 

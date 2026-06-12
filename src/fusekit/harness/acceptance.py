@@ -5374,11 +5374,34 @@ def _provider_playbook_shape_failures(playbook: dict[str, Any]) -> list[str]:
                 failures.append(f"{label}.id is missing")
             else:
                 step_ids.append(step_id)
+            provider = str(step.get("provider", "") or "").strip()
+            if not provider:
+                failures.append(f"{label}.provider is missing")
+            route = str(step.get("route", "") or "").strip()
+            if route not in {
+                "api",
+                "official_cli",
+                "browser_guided",
+                "human_follow_me",
+                "local_vault",
+            }:
+                failures.append(f"{label}.route is unsupported")
+            control = str(step.get("control", "") or "").strip()
+            if not control:
+                failures.append(f"{label}.control is missing")
             instruction = str(step.get("instruction", "") or "")
             if not instruction.strip():
                 failures.append(f"{label}.instruction is missing")
             if _provider_playbook_instruction_is_unsafe(instruction):
                 failures.append(f"{label}.instruction asks for unsafe provider work")
+            failures.extend(
+                _provider_playbook_control_failures(
+                    label,
+                    step_id=step_id,
+                    route=route,
+                    control=control,
+                )
+            )
         failures.extend(_provider_playbook_order_failures(step_ids))
     safety_notes = playbook.get("safety_notes", [])
     if not isinstance(safety_notes, list) or not safety_notes:
@@ -5392,6 +5415,37 @@ def _provider_playbook_shape_failures(playbook: dict[str, Any]) -> list[str]:
         ):
             if required not in notes:
                 failures.append(f"provider_playbook.safety_notes must include {required}")
+    return failures
+
+
+def _provider_playbook_control_failures(
+    label: str,
+    *,
+    step_id: str,
+    route: str,
+    control: str,
+) -> list[str]:
+    if not route or not control:
+        return []
+    failures: list[str] = []
+    if route == "api" and control != "FuseKit API worker":
+        failures.append(f"{label}.control must be FuseKit API worker for api routes")
+    if route in {"browser_guided", "local_vault"} and not (
+        control.startswith("Capture ") and control.endswith(" from VM clipboard")
+    ):
+        failures.append(f"{label}.control must be an env-named Capture control")
+    if route == "human_follow_me" and control not in {
+        "I finished this step",
+        "Approve DNS apply",
+        "Approve setup plan",
+    }:
+        failures.append(f"{label}.control must be a known follow-me control")
+    if step_id.startswith("resend.") and route == "browser_guided" and control != (
+        "Capture RESEND_API_KEY from VM clipboard"
+    ):
+        failures.append(
+            f"{label}.control must capture RESEND_API_KEY before Resend API setup"
+        )
     return failures
 
 
