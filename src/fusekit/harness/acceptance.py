@@ -28,7 +28,10 @@ from fusekit.runner.control_room.state import (
     EXPECTED_PROVIDER_BROWSER_PROFILE,
     _sanitized_visual_state,
 )
-from fusekit.runner.run_record import RUN_RECORD_SCHEMA_VERSION
+from fusekit.runner.run_record import (
+    AUTOMATION_BOUNDARY_SCHEMA_VERSION,
+    RUN_RECORD_SCHEMA_VERSION,
+)
 from fusekit.scanner import scan_repo
 from fusekit.security import redact_public_path, redact_public_text, scan_for_secret_leaks
 from fusekit.vault.bundle import Vault
@@ -491,6 +494,9 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
     human_actions = _require_dict_field(raw, "human_actions", failures)
     if human_actions is not None:
         failures.extend(_human_action_trace_shape_failures(human_actions))
+    automation_boundary = _require_dict_field(raw, "automation_boundary", failures)
+    if automation_boundary is not None:
+        failures.extend(_automation_boundary_shape_failures(automation_boundary))
     if provider_gates is not None and wake_events is not None:
         failures.extend(_run_record_wake_event_failures(provider_gates, wake_events))
     _require_dict_field(raw, "provider_strategies", failures)
@@ -632,6 +638,96 @@ def _human_action_trace_shape_failures(human_actions: dict[str, Any]) -> list[st
     statement = str(human_actions.get("statement", "") or "")
     if "visible control-room gate" not in statement or "no raw provider" not in statement:
         failures.append("human_actions.statement is missing guided-action guidance")
+    return failures
+
+
+def _automation_boundary_shape_failures(boundary: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    if str(boundary.get("schema_version", "")).strip() != AUTOMATION_BOUNDARY_SCHEMA_VERSION:
+        failures.append("automation_boundary.schema_version is unsupported")
+    if str(boundary.get("status", "")).strip() != "ready":
+        failures.append("automation_boundary.status must be ready")
+    if boundary.get("resume_after_worker_replace") is not True:
+        failures.append("automation_boundary.resume_after_worker_replace must be true")
+    if boundary.get("no_user_machine_state") is not True:
+        failures.append("automation_boundary.no_user_machine_state must be true")
+    if str(boundary.get("detonation_scope", "")).strip() != "worker-and-oci-workspace":
+        failures.append("automation_boundary.detonation_scope is unsupported")
+    allowed = boundary.get("vnc_allowed_for", [])
+    allowed_values: set[str] = set()
+    if not isinstance(allowed, list):
+        failures.append("automation_boundary.vnc_allowed_for is missing")
+    else:
+        allowed_values = {str(item).strip() for item in allowed if str(item).strip()}
+    required_allowed = {
+        "login",
+        "mfa",
+        "captcha",
+        "consent",
+        "payment",
+        "copy_once_secret",
+    }
+    if not required_allowed.issubset(allowed_values):
+        failures.append("automation_boundary.vnc_allowed_for is incomplete")
+    routes = boundary.get("routes", [])
+    if not isinstance(routes, list):
+        failures.append("automation_boundary.routes is missing")
+        routes = []
+    for index, route in enumerate(routes):
+        label = f"automation_boundary.routes[{index}]"
+        if not isinstance(route, dict):
+            failures.append(f"{label} is not an object")
+            continue
+        for key in ("provider", "recipe", "route", "owner", "status"):
+            if not str(route.get(key, "") or "").strip():
+                failures.append(f"{label}.{key} is missing")
+        owner = str(route.get("owner", "") or "").strip()
+        if owner not in {"fusekit", "human_gate"}:
+            failures.append(f"{label}.owner is unsupported")
+        if owner == "fusekit":
+            if route.get("deterministic") is not True:
+                failures.append(f"{label}.deterministic must be true")
+            if route.get("implemented") is not True:
+                failures.append(f"{label}.implemented must be true")
+            if str(route.get("route", "")).strip() not in {"api", "official_cli", "local_vault"}:
+                failures.append(f"{label}.route must be an automation route")
+        if owner == "human_gate" and str(route.get("route", "")).strip() not in {
+            "browser_guided",
+            "human_follow_me",
+        }:
+            failures.append(f"{label}.route must be a human gate route")
+    counts = boundary.get("counts", {})
+    if not isinstance(counts, dict):
+        failures.append("automation_boundary.counts is missing")
+    else:
+        if _safe_int(counts.get("blocked")) != 0:
+            failures.append("automation_boundary.counts.blocked must be 0")
+        fusekit_owned_count = sum(
+            1 for route in routes if isinstance(route, dict) and route.get("owner") == "fusekit"
+        )
+        human_gate_count = sum(
+            1
+            for route in routes
+            if isinstance(route, dict) and route.get("owner") == "human_gate"
+        )
+        if _safe_int(counts.get("fusekit_owned")) != fusekit_owned_count:
+            failures.append("automation_boundary.counts.fusekit_owned must match routes")
+        if _safe_int(counts.get("human_gate")) != human_gate_count:
+            failures.append("automation_boundary.counts.human_gate must match routes")
+    post_gate = boundary.get("post_gate_automation", {})
+    if not isinstance(post_gate, dict):
+        failures.append("automation_boundary.post_gate_automation is missing")
+    else:
+        if not isinstance(post_gate.get("api_or_cli_routes", []), list):
+            failures.append("automation_boundary.post_gate_automation.api_or_cli_routes is missing")
+        if not isinstance(post_gate.get("human_gate_routes", []), list):
+            failures.append("automation_boundary.post_gate_automation.human_gate_routes is missing")
+    statement = str(boundary.get("statement", "") or "")
+    lowered = statement.lower()
+    for term in ("vnc", "api", "detonate"):
+        if term not in lowered:
+            failures.append("automation_boundary.statement is missing " + term + " guidance")
+            break
     return failures
 
 

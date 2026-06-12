@@ -16,6 +16,7 @@ DURABLE_STATE_SCHEMA_VERSION = "fusekit.durable-state.v1"
 DETONATION_SCOPE_SCHEMA_VERSION = "fusekit.detonation-scope.v1"
 EVIDENCE_INVENTORY_SCHEMA_VERSION = "fusekit.evidence-inventory.v1"
 HUMAN_ACTION_TRACE_SCHEMA_VERSION = "fusekit.human-action-trace.v1"
+AUTOMATION_BOUNDARY_SCHEMA_VERSION = "fusekit.automation-boundary.v1"
 DURABLE_STATE_SOURCES = (
     ("encrypted_vault", "fusekit.vault.json", "encrypted capability vault", "encrypted"),
     ("job_state", "job.json", "runner job state", "non-secret"),
@@ -116,6 +117,11 @@ def build_run_record(
         "provider_playbook": _provider_playbook_summary(provider_strategies),
         "wake_events": _wake_event_summary(wake_events),
         "human_actions": human_actions,
+        "automation_boundary": _automation_boundary_summary(
+            provider_strategies,
+            human_actions,
+            durable_state,
+        ),
         "provider_strategies": provider_strategies or {"providers": []},
         "vault": {
             "records": vault_index or [],
@@ -706,6 +712,113 @@ def _provider_playbook_summary(provider_strategies: dict[str, Any]) -> dict[str,
         "steps": steps if isinstance(steps, list) else [],
         "safety_notes": notes if isinstance(notes, list) else [],
     }
+
+
+def _automation_boundary_summary(
+    provider_strategies: dict[str, Any],
+    human_actions: dict[str, Any],
+    durable_state: dict[str, Any],
+) -> dict[str, Any]:
+    routes = _automation_route_records(provider_strategies)
+    fusekit_owned = [
+        route
+        for route in routes
+        if route["owner"] == "fusekit" and route["implemented"] is True
+    ]
+    human_gate_routes = [route for route in routes if route["owner"] == "human_gate"]
+    unsupported = [route for route in routes if route["owner"] == "blocked"]
+    allowed_human_actions = [
+        "login",
+        "mfa",
+        "captcha",
+        "consent",
+        "payment",
+        "copy_once_secret",
+    ]
+    counts = human_actions.get("counts", {}) if isinstance(human_actions, dict) else {}
+    status = "ready" if not unsupported else "needs_route_repair"
+    return {
+        "schema_version": AUTOMATION_BOUNDARY_SCHEMA_VERSION,
+        "status": status,
+        "resume_after_worker_replace": durable_state.get("resume_ready") is True,
+        "detonation_scope": "worker-and-oci-workspace",
+        "no_user_machine_state": True,
+        "vnc_allowed_for": allowed_human_actions,
+        "routes": routes,
+        "counts": {
+            "fusekit_owned": len(fusekit_owned),
+            "human_gate": len(human_gate_routes),
+            "blocked": len(unsupported),
+            "guided_human_actions": sum(
+                int(value)
+                for value in counts.values()
+                if isinstance(value, int) and not isinstance(value, bool)
+            )
+            if isinstance(counts, dict)
+            else 0,
+        },
+        "post_gate_automation": {
+            "api_or_cli_routes": [
+                f"{route['provider']}:{route['recipe']}"
+                for route in fusekit_owned
+                if route["route"] in {"api", "official_cli", "local_vault"}
+            ],
+            "human_gate_routes": [
+                f"{route['provider']}:{route['recipe']}" for route in human_gate_routes
+            ],
+        },
+        "statement": (
+            "Humans use VNC only for login, MFA, CAPTCHA, consent, payment, or "
+            "copy-once secret gates. After capture or approval, FuseKit owns "
+            "provider mutations through API, official CLI, or local vault routes; "
+            "durable encrypted state survives worker replacement until the OCI "
+            "workspace and VM state detonate."
+        ),
+    }
+
+
+def _automation_route_records(provider_strategies: dict[str, Any]) -> list[dict[str, Any]]:
+    providers = provider_strategies.get("providers", [])
+    if not isinstance(providers, list):
+        return []
+    routes: list[dict[str, Any]] = []
+    for provider_record in providers:
+        if not isinstance(provider_record, dict):
+            continue
+        provider = str(provider_record.get("provider", "") or "provider").strip().lower()
+        strategies = provider_record.get("strategies", [])
+        if not isinstance(strategies, list):
+            continue
+        for strategy in strategies:
+            if not isinstance(strategy, dict):
+                continue
+            decision = strategy.get("decision", {})
+            selected = decision.get("selected", {}) if isinstance(decision, dict) else {}
+            selected = selected if isinstance(selected, dict) else {}
+            route = str(strategy.get("strategy", selected.get("kind", "")) or "").strip()
+            deterministic = selected.get("deterministic") is True
+            implemented = selected.get("implemented") is True
+            owner = _automation_route_owner(route, deterministic, implemented)
+            routes.append(
+                {
+                    "provider": provider,
+                    "recipe": str(strategy.get("recipe", "") or "").strip(),
+                    "route": route,
+                    "owner": owner,
+                    "deterministic": deterministic,
+                    "implemented": implemented,
+                    "status": str(strategy.get("status", selected.get("status", "")) or ""),
+                }
+            )
+    return routes
+
+
+def _automation_route_owner(route: str, deterministic: bool, implemented: bool) -> str:
+    if route in {"browser_guided", "human_follow_me"}:
+        return "human_gate"
+    if route in {"api", "official_cli", "local_vault"} and deterministic and implemented:
+        return "fusekit"
+    return "blocked"
 
 
 def _acceptance_summary(acceptance: dict[str, Any]) -> dict[str, Any]:

@@ -273,14 +273,12 @@ guided, or explicitly verified.
 | A runner could pass individual readiness checks without proving the exact OCI visual-browser profile needed for a public demo and safe detonation. | Runner readiness now carries a `fusekit.runner-profile.v1` contract for the x86_64 OCI visual/browser worker: supported Linux images, 16 GB memory floor, noVNC/control-room/gateway ports, OpenClaw/Playwright/Chromium stack, shared provider profile, and required health checks; live acceptance and the Run Record require that profile proof. |
 | The Run Record centralized state, gates, artifacts, approvals, errors, and detonation proof, but logs and visual evidence were still only implicit artifact paths. | Run Records now include a `fusekit.evidence-inventory.v1` section that classifies audit/event logs, controlled runtime logs, visual state, screenshots, and receipts by path/type only; live acceptance rejects missing or credential-looking evidence inventories without embedding raw logs, screenshot bytes, provider URLs, clipboard values, or secrets. |
 | A new-site rehearsal could still require reconstructing human actions from gate state and audit logs to see whether the user followed the guided launcher path. | Run Records now include a `fusekit.human-action-trace.v1` summary, and the control room renders it as a rehearsal audit: provider opens, VM-clipboard Capture clicks, and approval clicks must map to known guided gates with exact visible controls, while live acceptance rejects unguided actions. |
+| The Run Record proved provider routes and human actions separately, but it did not explicitly state the automation boundary: humans should only use VNC for unavoidable gates, then FuseKit should own provider mutations by API/CLI/vault on disposable OCI state. | Run Records now include a `fusekit.automation-boundary.v1` section, live acceptance requires it, and the control room shows which routes FuseKit owns after authorization versus which routes are human-gate only, with no user-machine state and resume-after-worker-replace proof. |
 
 ## Open Acceptance Items
 
 - Finish a full live Moonlite RSVP run where Cloudflare DNS, Resend domain/API key,
   Resend audience/from email, Vercel env vars, GitHub secrets, deployment, and live
   URL health all pass or are pending-safe without side-channel instructions.
-- Reduce VNC usage by preferring provider APIs after login/consent, using the VNC
-  only for real human gates such as login, MFA, CAPTCHA, consent, payment, and
-  provider-owned copy-once secret screens.
 - Record a clean new-site/new-account rehearsal and compare every human action
   against the control-room instructions before launch readiness is claimed.

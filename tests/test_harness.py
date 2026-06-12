@@ -263,6 +263,58 @@ def _human_action_trace() -> dict[str, object]:
     }
 
 
+def _automation_boundary() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.automation-boundary.v1",
+        "status": "ready",
+        "resume_after_worker_replace": True,
+        "detonation_scope": "worker-and-oci-workspace",
+        "no_user_machine_state": True,
+        "vnc_allowed_for": [
+            "login",
+            "mfa",
+            "captcha",
+            "consent",
+            "payment",
+            "copy_once_secret",
+        ],
+        "routes": [
+            {
+                "provider": "resend",
+                "recipe": "resend-domain",
+                "route": "api",
+                "owner": "fusekit",
+                "deterministic": True,
+                "implemented": True,
+                "status": "ok",
+            },
+            {
+                "provider": "resend",
+                "recipe": "resend-api-key",
+                "route": "browser_guided",
+                "owner": "human_gate",
+                "deterministic": False,
+                "implemented": False,
+                "status": "needs_human_gate",
+            },
+        ],
+        "counts": {
+            "fusekit_owned": 1,
+            "human_gate": 1,
+            "blocked": 0,
+            "guided_human_actions": 0,
+        },
+        "post_gate_automation": {
+            "api_or_cli_routes": ["resend:resend-domain"],
+            "human_gate_routes": ["resend:resend-api-key"],
+        },
+        "statement": (
+            "Humans use VNC only for provider gates. After capture, FuseKit owns "
+            "provider mutations by API and can detonate the OCI worker."
+        ),
+    }
+
+
 def _resend_domain_receipt_details(
     *,
     dns_records: list[dict[str, str]] | None = None,
@@ -616,6 +668,7 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
                 },
                 "wake_events": {"total": 0, "event_counts": {}, "events": []},
                 "human_actions": _human_action_trace(),
+                "automation_boundary": _automation_boundary(),
                 "provider_strategies": {"providers": []},
                 "vault": {"record_count": 0, "records": []},
                 "artifacts": [],
@@ -3657,6 +3710,61 @@ def test_acceptance_run_record_requires_guided_human_action_trace(tmp_path) -> N
     assert "human_actions.counts.open_provider_gate must match actions" in failures
     assert "human_actions.unguided must be empty" in failures
     assert "human_actions.statement is missing guided-action guidance" in failures
+
+
+def test_acceptance_run_record_requires_automation_boundary(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+
+    record["automation_boundary"] = {
+        "schema_version": "fusekit.automation-boundary.v1",
+        "status": "needs_route_repair",
+        "resume_after_worker_replace": False,
+        "detonation_scope": "host-and-worker",
+        "no_user_machine_state": False,
+        "vnc_allowed_for": ["login"],
+        "routes": [
+            {
+                "provider": "resend",
+                "recipe": "resend-domain",
+                "route": "api",
+                "owner": "human_gate",
+                "deterministic": False,
+                "implemented": False,
+                "status": "ok",
+            },
+            {
+                "provider": "cloudflare",
+                "recipe": "cloudflare-dns",
+                "route": "api",
+                "owner": "blocked",
+                "deterministic": False,
+                "implemented": False,
+                "status": "blocked",
+            },
+        ],
+        "counts": {"fusekit_owned": 1, "human_gate": 1, "blocked": 1},
+        "post_gate_automation": {"api_or_cli_routes": "resend:resend-domain"},
+        "statement": "Humans do work manually.",
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert "automation_boundary.status must be ready" in failures
+    assert "automation_boundary.resume_after_worker_replace must be true" in failures
+    assert "automation_boundary.no_user_machine_state must be true" in failures
+    assert "automation_boundary.vnc_allowed_for is incomplete" in failures
+    assert "automation_boundary.routes[0].route must be a human gate route" in failures
+    assert "automation_boundary.routes[1].owner is unsupported" in failures
+    assert "automation_boundary.counts.blocked must be 0" in failures
+    assert "automation_boundary.counts.fusekit_owned must match routes" in failures
+    assert (
+        "automation_boundary.post_gate_automation.api_or_cli_routes is missing"
+        in failures
+    )
+    assert "automation_boundary.statement is missing vnc guidance" in failures
 
 
 def test_acceptance_run_record_requires_evented_gate_wake_proof(tmp_path) -> None:

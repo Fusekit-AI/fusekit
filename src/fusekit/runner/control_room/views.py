@@ -64,6 +64,7 @@ def render_control_room(
     {_render_run_state(control_payload.get("run_state", {}))}
     {_render_durable_state(control_payload.get("run_record", {}))}
     {_render_human_actions(control_payload.get("run_record", {}))}
+    {_render_automation_boundary(control_payload.get("run_record", {}))}
     {_render_acceptance_blockers(control_payload.get("acceptance", {}))}
     {_render_provider_strategies(control_payload.get("provider_strategies", {}))}
     {_render_trust(control_payload.get("verification", {}))}
@@ -1347,6 +1348,96 @@ def _render_human_action_card(action: dict[str, Any]) -> str:
             <strong>{html.escape(title)}</strong>
             <p>{html.escape(detail)}</p>
             <em>{html.escape(provider)}</em>
+          </div>
+        </article>
+"""
+
+
+def _render_automation_boundary(run_record: Any) -> str:
+    run_record = run_record if isinstance(run_record, dict) else {}
+    boundary = run_record.get("automation_boundary", {})
+    boundary = boundary if isinstance(boundary, dict) else {}
+    routes = boundary.get("routes", [])
+    routes = routes if isinstance(routes, list) else []
+    cards = "\n".join(
+        _render_automation_route_card(route)
+        for route in routes[:6]
+        if isinstance(route, dict)
+    )
+    if not cards:
+        cards = """
+        <article class="trust-card pending">
+          <div class="trust-snow state-checking" aria-hidden="true"></div>
+          <div>
+            <span>Pending</span>
+            <strong>Automation boundary</strong>
+            <p>Waiting for provider route proof before FuseKit can show what humans touch.</p>
+            <em>automation boundary</em>
+          </div>
+        </article>
+"""
+    counts = boundary.get("counts", {})
+    counts = counts if isinstance(counts, dict) else {}
+    fusekit_owned = counts.get("fusekit_owned", 0)
+    human_gate = counts.get("human_gate", 0)
+    status = str(boundary.get("status", "") or "pending")
+    summary = (
+        "VNC limited to gates"
+        if status == "ready" and boundary.get("no_user_machine_state") is True
+        else "automation boundary pending"
+    )
+    statement = str(
+        boundary.get(
+            "statement",
+            "FuseKit is collecting route proof before declaring the worker disposable.",
+        )
+    )
+    return f"""
+    <section class="run-state-panel" aria-label="Automation boundary">
+      <div class="section-head compact">
+        <div>
+          <span class="section-kicker">No local state</span>
+          <h2>What FuseKit owns after gates</h2>
+        </div>
+        <span class="live-pill" data-automation-boundary-overall>{html.escape(summary)}</span>
+      </div>
+      <p class="muted">
+        {html.escape(_public_copy(statement))}
+        FuseKit-owned routes: {html.escape(str(fusekit_owned))};
+        human-gate routes: {html.escape(str(human_gate))}.
+      </p>
+      <div class="run-state-grid" data-automation-boundary-checks>{cards}</div>
+    </section>
+"""
+
+
+def _render_automation_route_card(route: dict[str, Any]) -> str:
+    owner = str(route.get("owner", "") or "")
+    passed = owner == "fusekit" and route.get("implemented") is True
+    gate = owner == "human_gate"
+    status = "passed" if passed or gate else "pending"
+    snow = "passed" if passed or gate else "checking"
+    provider = str(route.get("provider", "") or "provider")
+    recipe = str(route.get("recipe", "") or "setup")
+    route_kind = str(route.get("route", "") or "route").replace("_", " ")
+    if passed:
+        detail = "FuseKit runs this through deterministic provider automation after authorization."
+    elif gate:
+        detail = (
+            "Human interaction is limited to provider-owned login, consent, "
+            "or copy-once prompts."
+        )
+    else:
+        detail = "Waiting for a deterministic route or guided human-gate fallback."
+    return f"""
+        <article class="trust-card {status}"
+          data-automation-boundary-route="{html.escape(provider)}">
+          <div class="trust-snow state-{snow}" aria-hidden="true"></div>
+          <div>
+            <span>{html.escape(status_label(status))}</span>
+            <strong>{html.escape(provider)} · {html.escape(recipe)}</strong>
+            <p>{html.escape(detail)}</p>
+            <em>{html.escape(route_kind)}</em>
           </div>
         </article>
 """
