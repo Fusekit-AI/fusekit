@@ -4818,10 +4818,10 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
         detail = ", ".join(str(item) for item in missing) if isinstance(missing, list) else ""
         failures.append(f"durable_state.resume_ready is not true{': ' + detail if detail else ''}")
     sources = durable_state.get("sources", [])
+    source_ids: set[str] = set()
     if not isinstance(sources, list) or not sources:
         failures.append("durable_state.sources is missing")
     else:
-        source_ids: set[str] = set()
         for index, source in enumerate(sources):
             label = f"durable_state.sources[{index}]"
             if not isinstance(source, dict):
@@ -4861,13 +4861,15 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
             + ", ".join(str(item) for item in runner_failures)
         )
     volatile = durable_state.get("volatile_worker_surfaces", [])
+    volatile_values = {str(item) for item in volatile} if isinstance(volatile, list) else set()
     if not isinstance(volatile, list) or not {"worker", "visual", "openclaw-state"}.issubset(
-        {str(item) for item in volatile}
+        volatile_values
     ):
         failures.append("durable_state.volatile_worker_surfaces is incomplete")
     preserves = durable_state.get("detonation_preserves", [])
+    preserve_values = {str(item) for item in preserves} if isinstance(preserves, list) else set()
     if not isinstance(preserves, list) or not {"encrypted_vault", "run_record"}.issubset(
-        {str(item) for item in preserves}
+        preserve_values
     ):
         failures.append("durable_state.detonation_preserves is incomplete")
     detonation_scope = durable_state.get("detonation_scope")
@@ -4895,11 +4897,22 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
             {str(item) for item in must_delete}
         ):
             failures.append("durable_state.detonation_scope.must_delete is incomplete")
+        elif volatile_values and not volatile_values.issubset({str(item) for item in must_delete}):
+            failures.append(
+                "durable_state.detonation_scope.must_delete must cover volatile_worker_surfaces"
+            )
         must_preserve = detonation_scope.get("must_preserve", [])
+        must_preserve_values = (
+            {str(item) for item in must_preserve} if isinstance(must_preserve, list) else set()
+        )
         if not isinstance(must_preserve, list) or not {"encrypted_vault", "run_record"}.issubset(
-            {str(item) for item in must_preserve}
+            must_preserve_values
         ):
             failures.append("durable_state.detonation_scope.must_preserve is incomplete")
+        elif preserve_values and preserve_values != must_preserve_values:
+            failures.append(
+                "durable_state.detonation_scope.must_preserve must match detonation_preserves"
+            )
         if detonation_scope.get("resume_until_complete") is not True:
             failures.append("durable_state.detonation_scope.resume_until_complete must be true")
         no_trace_statement = str(detonation_scope.get("no_trace_statement", "") or "")
@@ -4915,6 +4928,11 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
     if not isinstance(replacement, dict):
         failures.append("durable_state.worker_replacement_contract is missing")
     else:
+        if replacement.get("worker_is_disposable") is not True:
+            failures.append(
+                "durable_state.worker_replacement_contract.worker_is_disposable "
+                "must be true"
+            )
         if replacement.get("can_recreate_worker") is not True:
             failures.append(
                 "durable_state.worker_replacement_contract.can_recreate_worker "
@@ -4936,6 +4954,55 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
             failures.append(
                 "durable_state.worker_replacement_contract.host_machine_state_required "
                 "must be false"
+            )
+        if str(replacement.get("state_owner", "") or "") != "encrypted-vault-and-run-record":
+            failures.append(
+                "durable_state.worker_replacement_contract.state_owner is unsupported"
+            )
+        resume_sources = replacement.get("resume_sources", [])
+        resume_source_values = (
+            {str(item) for item in resume_sources} if isinstance(resume_sources, list) else set()
+        )
+        required_resume_sources = {
+            "encrypted_vault",
+            "job_state",
+            "run_state",
+            "checkpoints",
+            "gates",
+            "provider_strategies",
+            "runner_readiness",
+        }
+        if not isinstance(resume_sources, list) or not required_resume_sources.issubset(
+            resume_source_values
+        ):
+            failures.append(
+                "durable_state.worker_replacement_contract.resume_sources is incomplete"
+            )
+        elif source_ids and not resume_source_values.issubset(source_ids):
+            failures.append(
+                "durable_state.worker_replacement_contract.resume_sources must "
+                "reference durable_state.sources"
+            )
+        replacement_volatile = replacement.get("volatile_surfaces", [])
+        replacement_volatile_values = (
+            {str(item) for item in replacement_volatile}
+            if isinstance(replacement_volatile, list)
+            else set()
+        )
+        if not isinstance(replacement_volatile, list) or not volatile_values.issubset(
+            replacement_volatile_values
+        ):
+            failures.append(
+                "durable_state.worker_replacement_contract.volatile_surfaces must "
+                "cover volatile_worker_surfaces"
+            )
+        replacement_statement = str(replacement.get("statement", "") or "")
+        if (
+            "encrypted/redacted run state" not in replacement_statement
+            or "plaintext VM scratch" not in replacement_statement
+        ):
+            failures.append(
+                "durable_state.worker_replacement_contract.statement is incomplete"
             )
     return failures
 

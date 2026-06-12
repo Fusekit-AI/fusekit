@@ -274,6 +274,8 @@ def _durable_state() -> dict[str, object]:
             "mode": "worker-and-oci-workspace",
             "must_delete": [
                 "worker",
+                "visual",
+                "openclaw-state",
                 "browser-profile",
                 "provider-auth",
                 "passphrase",
@@ -4522,6 +4524,67 @@ def test_acceptance_run_record_requires_runner_profile_for_worker_replacement(
     )
     assert (
         "durable_state.worker_replacement_contract.host_machine_state_required must be false"
+        in failures
+    )
+    assert (
+        "durable_state.worker_replacement_contract.state_owner is unsupported"
+        in failures
+    )
+    assert (
+        "durable_state.worker_replacement_contract.resume_sources is incomplete"
+        in failures
+    )
+    assert (
+        "durable_state.worker_replacement_contract.volatile_surfaces must cover "
+        "volatile_worker_surfaces"
+        in failures
+    )
+    assert (
+        "durable_state.worker_replacement_contract.statement is incomplete"
+        in failures
+    )
+
+
+def test_acceptance_run_record_requires_coherent_worker_replacement_contract(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+
+    record["durable_state"]["worker_replacement_contract"]["resume_sources"] = [
+        "encrypted_vault",
+        "job_state",
+        "run_state",
+        "checkpoints",
+        "gates",
+        "provider_strategies",
+        "runner_readiness",
+        "local_browser_profile",
+    ]
+    record["durable_state"]["worker_replacement_contract"]["volatile_surfaces"] = [
+        "worker"
+    ]
+    record["durable_state"]["detonation_scope"]["must_preserve"] = [
+        "encrypted_vault",
+        "run_record",
+    ]
+
+    failures = _run_record_shape_failures(record)
+
+    assert (
+        "durable_state.worker_replacement_contract.resume_sources must reference "
+        "durable_state.sources"
+        in failures
+    )
+    assert (
+        "durable_state.worker_replacement_contract.volatile_surfaces must cover "
+        "volatile_worker_surfaces"
+        in failures
+    )
+    assert (
+        "durable_state.detonation_scope.must_preserve must match detonation_preserves"
         in failures
     )
 
