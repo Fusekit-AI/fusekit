@@ -1468,11 +1468,24 @@ def _recording_verifiers_ready(record: dict[str, Any]) -> bool:
     if not isinstance(verifiers, dict):
         return False
     checks = verifiers.get("checks", [])
+    counts = verifiers.get("counts", {})
+    if not isinstance(checks, list) or not checks or not isinstance(counts, dict):
+        return False
+    blocking_count_keys = ("pending", "repairing", "failed", "needs_human_gate", "unknown")
+    allowed_statuses = {"passed", "pending_safe", "skipped"}
     return (
         verifiers.get("all_passed_or_pending_safe") is True
         and str(verifiers.get("overall", "") or "") == "passed"
-        and isinstance(checks, list)
-        and bool(checks)
+        and all(_safe_int(counts.get(key), 1) == 0 for key in blocking_count_keys)
+        and all(
+            isinstance(check, dict)
+            and str(check.get("status", "") or "") in allowed_statuses
+            and (
+                str(check.get("status", "") or "") != "pending_safe"
+                or check.get("pending_safe") is True
+            )
+            for check in checks
+        )
     )
 
 

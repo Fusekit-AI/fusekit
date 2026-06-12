@@ -78,6 +78,7 @@ from fusekit.runner.run_record import (
     _recording_detonation_ready,
     _recording_human_actions_ready,
     _recording_provider_playbook_ready,
+    _recording_verifiers_ready,
     write_run_record,
 )
 from fusekit.runner.run_state import LaunchRunState, update_run_state
@@ -745,6 +746,58 @@ def test_recording_automation_boundary_requires_complete_route_proof() -> None:
         "resend:resend-domain"
     )
     assert _recording_automation_boundary_ready(record) is False
+
+
+def test_recording_verifiers_reject_hidden_blocking_checks() -> None:
+    record = {
+        "verifiers": {
+            "schema_version": "fusekit.verifier-summary.v1",
+            "overall": "passed",
+            "all_passed_or_pending_safe": True,
+            "counts": {
+                "passed": 1,
+                "pending_safe": 1,
+                "pending": 0,
+                "repairing": 0,
+                "failed": 0,
+                "skipped": 0,
+                "needs_human_gate": 0,
+                "unknown": 0,
+            },
+            "checks": [
+                {
+                    "provider": "resend",
+                    "check": "domain verified",
+                    "status": "passed",
+                    "pending_safe": False,
+                },
+                {
+                    "provider": "cloudflare",
+                    "check": "dns propagation",
+                    "status": "pending_safe",
+                    "pending_safe": True,
+                },
+            ],
+        }
+    }
+
+    assert _recording_verifiers_ready(record) is True
+
+    record["verifiers"]["checks"][1]["pending_safe"] = False
+    assert _recording_verifiers_ready(record) is False
+    record["verifiers"]["checks"][1]["pending_safe"] = True
+    record["verifiers"]["checks"].append(
+        {
+            "provider": "vercel",
+            "check": "deployment",
+            "status": "failed",
+            "pending_safe": False,
+        }
+    )
+    assert _recording_verifiers_ready(record) is False
+    record["verifiers"]["checks"].pop()
+    record["verifiers"]["counts"]["failed"] = 1
+    assert _recording_verifiers_ready(record) is False
 
 
 def test_recording_provider_playbook_requires_public_order() -> None:
