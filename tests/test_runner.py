@@ -70,7 +70,7 @@ from fusekit.runner.remote import (
     render_cloud_init,
     should_include_app_path,
 )
-from fusekit.runner.run_record import write_run_record
+from fusekit.runner.run_record import _recording_human_actions_ready, write_run_record
 from fusekit.runner.run_state import LaunchRunState, update_run_state
 from fusekit.runner.server import _handler, _is_loopback, control_room_payload, serve_control_room
 from fusekit.security import scan_for_secret_leaks
@@ -573,6 +573,68 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     assert "raw secrets are not embedded" in record["evidence"]["statement"]
     assert "not-a-real-png" not in json.dumps(record["evidence"])
     assert any(item["name"] == "audit_log" for item in record["artifacts"])
+
+
+def test_recording_human_actions_require_exact_visible_controls() -> None:
+    record = {
+        "human_actions": {
+            "schema_version": "fusekit.human-action-trace.v1",
+            "total": 3,
+            "counts": {
+                "open_provider_gate": 1,
+                "capture_vm_clipboard": 1,
+                "confirm_gate_finished": 1,
+            },
+            "actions": [
+                {
+                    "gate_id": "provider.github.authorization",
+                    "action": "open_provider_gate",
+                    "visible_control": "Open provider page",
+                    "guided": True,
+                },
+                {
+                    "gate_id": "provider.github.authorization",
+                    "action": "capture_vm_clipboard",
+                    "visible_control": "Capture token",
+                    "target": "GITHUB_TOKEN",
+                    "guided": True,
+                },
+                {
+                    "gate_id": "provider.github.callback",
+                    "action": "confirm_gate_finished",
+                    "visible_control": "Continue",
+                    "guided": True,
+                },
+            ],
+            "unguided": [],
+        }
+    }
+
+    assert _recording_human_actions_ready(record) is False
+
+    record["human_actions"]["actions"] = [
+        {
+            "gate_id": "provider.github.authorization",
+            "action": "open_provider_gate",
+            "visible_control": "Open provider gate in VM",
+            "guided": True,
+        },
+        {
+            "gate_id": "provider.github.authorization",
+            "action": "capture_vm_clipboard",
+            "visible_control": "Capture GITHUB_TOKEN from VM clipboard",
+            "target": "GITHUB_TOKEN",
+            "guided": True,
+        },
+        {
+            "gate_id": "provider.github.callback",
+            "action": "confirm_gate_finished",
+            "visible_control": "I finished this step",
+            "guided": True,
+        },
+    ]
+
+    assert _recording_human_actions_ready(record) is True
 
 
 def test_run_record_recording_contract_blocks_missing_provider_playbook(tmp_path) -> None:

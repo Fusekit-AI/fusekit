@@ -1268,8 +1268,30 @@ def _recording_human_actions_ready(record: dict[str, Any]) -> bool:
     return (
         _safe_int(human_actions.get("total"), -1) == len(actions)
         and not unguided
-        and all(isinstance(action, dict) and action.get("guided") is True for action in actions)
+        and all(
+            isinstance(action, dict)
+            and action.get("guided") is True
+            and _recording_human_action_control_ready(action)
+            for action in actions
+        )
     )
+
+
+def _recording_human_action_control_ready(action: dict[str, Any]) -> bool:
+    action_name = str(action.get("action", "") or "")
+    visible_control = str(action.get("visible_control", "") or "")
+    if action_name == "open_provider_gate":
+        return visible_control == "Open provider gate in VM"
+    if action_name == "capture_vm_clipboard":
+        target = str(action.get("target", "") or "")
+        return bool(target) and visible_control == f"Capture {target} from VM clipboard"
+    if action_name == "confirm_gate_finished":
+        return visible_control in {
+            "I finished this step",
+            "Approve DNS apply",
+            "Approve setup plan",
+        }
+    return False
 
 
 def _recording_automation_boundary_ready(record: dict[str, Any]) -> bool:

@@ -623,11 +623,19 @@ def _human_action_trace_shape_failures(human_actions: dict[str, Any]) -> list[st
             failures.append(f"{label}.visible_control is missing")
         if action.get("guided") is not True:
             failures.append(f"{label}.guided must be true")
+        visible_control = str(action.get("visible_control", "") or "")
+        if action_name == "open_provider_gate" and visible_control != "Open provider gate in VM":
+            failures.append(f"{label}.visible_control must be Open provider gate in VM")
         if action_name == "capture_vm_clipboard":
             target = str(action.get("target", "") or "")
-            visible_control = str(action.get("visible_control", "") or "")
             if not target or f"Capture {target} from VM clipboard" != visible_control:
                 failures.append(f"{label}.visible_control must match the captured target")
+        if action_name == "confirm_gate_finished" and visible_control not in {
+            "I finished this step",
+            "Approve DNS apply",
+            "Approve setup plan",
+        }:
+            failures.append(f"{label}.visible_control must be a known finish/approval control")
     for action_name, expected in actual_counts.items():
         if _safe_int(counts.get(action_name)) != expected:
             failures.append(f"human_actions.counts.{action_name} must match actions")
