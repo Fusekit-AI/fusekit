@@ -560,6 +560,7 @@ def _prepare_remote_visual_session(
         "control_room_url": visual["control_room_url"],
         "novnc_url": visual["novnc_url"],
         "novnc_password": visual["novnc_password"],
+        "provider_browser_profile": PROVIDER_BROWSER_PROFILE,
         "notes": [
             "The browser is running on the disposable OCI VM.",
             "Use the noVNC window to complete human gates in the same session FuseKit observes.",

@@ -256,6 +256,9 @@ def _write_safe_visual_state(fusekit_dir: Path) -> None:
                     "?token=viewer_token_abcdefghijklmnopqrstuvwxyz0123456789"
                 ),
                 "novnc_password": "viewer-password",
+                "provider_browser_profile": (
+                    "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+                ),
             }
         ),
         "utf-8",
@@ -718,6 +721,7 @@ def test_acceptance_rejects_unsafe_visual_state_survivor(tmp_path) -> None:
                 ),
                 "control_room_url": "http://evil.example:8765/?token=stolen",
                 "novnc_password": "bad\npassword",
+                "provider_browser_profile": "/tmp/disconnected-profile",
             }
         ),
         encoding="utf-8",
@@ -733,6 +737,7 @@ def test_acceptance_rejects_unsafe_visual_state_survivor(tmp_path) -> None:
     assert "noVNC URL" in checks[-1].detail
     assert "control-room URL" in checks[-1].detail
     assert "noVNC password metadata" in checks[-1].detail
+    assert "provider browser profile metadata" in checks[-1].detail
     assert "leaked" not in checks[-1].detail
     assert "stolen" not in checks[-1].detail
     assert "safe visual session state" in missing
@@ -757,6 +762,9 @@ def test_acceptance_rejects_unexpected_visual_query_values(tmp_path) -> None:
                     "?token=viewer_token_abcdefghijklmnopqrstuvwxyz0123456789"
                 ),
                 "novnc_password": "viewer-password",
+                "provider_browser_profile": (
+                    "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+                ),
             }
         ),
         encoding="utf-8",
@@ -788,6 +796,9 @@ def test_acceptance_allows_sanitized_visual_state_survivor(tmp_path) -> None:
                 "novnc_url": "http://93.184.216.34:6080/vnc.html?autoconnect=1&resize=scale",
                 "control_room_url": f"http://93.184.216.34:8765/?token={control_room_token}",
                 "novnc_password": "viewer-password",
+                "provider_browser_profile": (
+                    "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+                ),
             }
         ),
         encoding="utf-8",
@@ -826,6 +837,11 @@ def test_acceptance_live_visual_state_requires_ready_interactive_novnc_session(
             {"novnc_password": ""},
             "noVNC password metadata is required",
         ),
+        (
+            "missing-provider-profile",
+            {"provider_browser_profile": ""},
+            "shared provider browser profile metadata is required",
+        ),
     ]
     for name, patch, expected in cases:
         fusekit_dir = tmp_path / name / ".fusekit"
@@ -841,6 +857,9 @@ def test_acceptance_live_visual_state_requires_ready_interactive_novnc_session(
                 "?token=viewer_token_abcdefghijklmnopqrstuvwxyz0123456789"
             ),
             "novnc_password": "viewer-password",
+            "provider_browser_profile": (
+                "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+            ),
         }
         visual.update(patch)
         visual_path.write_text(json.dumps(visual), encoding="utf-8")
@@ -917,6 +936,7 @@ def test_live_acceptance_rejects_partial_visual_session_artifact(tmp_path) -> No
     assert "safe noVNC URL is required" in visual_check.detail
     assert "safe control-room URL is required" in visual_check.detail
     assert "interactive must be true" in visual_check.detail
+    assert "shared provider browser profile metadata is required" in visual_check.detail
     assert "safe visual session state" in report.missing
 
 

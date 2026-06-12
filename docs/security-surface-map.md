@@ -30,7 +30,8 @@ the same public IP as noVNC, and
 not a hostname, loopback, or private-network target; tokenized control-room links
 keep a `token` query only when it has the same 32+ URL-safe shape required by the
 remote server, and public snapshots redact the token value; unsafe visual
-passwords are dropped.
+passwords are dropped; provider browser profile metadata is preserved only when it
+matches the FuseKit-owned shared Chrome provider profile used by the VM gate opener.
 
 The control-room gate POST routes append redacted audit events for provider-gate
 open, resume, and clipboard-capture actions. Audit payloads record gate/provider
@@ -88,7 +89,8 @@ SSH session provisioned by FuseKit, or an encrypted vault/passphrase boundary.
   dataset state; the visual credential is used only for the iframe autoconnect URL and
   explicit copy affordance.
 - Visual-session state is normalized before rendering so a corrupted `visual.json`
-  cannot turn the control room into a clipboard-enabled arbitrary iframe.
+  cannot turn the control room into a clipboard-enabled arbitrary iframe or claim a
+  disconnected provider browser profile.
 - Source archive extraction validates paths, single-root layout, and normal-file
   zip metadata before replacing the destination; symlink, device, FIFO/socket,
   absolute, and backslash entries are rejected. Remote artifact extraction

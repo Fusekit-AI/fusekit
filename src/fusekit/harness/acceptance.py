@@ -24,7 +24,10 @@ from fusekit.providers.capability_pack import (
     write_provider_pack,
 )
 from fusekit.providers.resend import RESEND_ALLOWED_REGIONS
-from fusekit.runner.control_room.state import _sanitized_visual_state
+from fusekit.runner.control_room.state import (
+    EXPECTED_PROVIDER_BROWSER_PROFILE,
+    _sanitized_visual_state,
+)
 from fusekit.scanner import scan_repo
 from fusekit.security import redact_public_path, redact_public_text, scan_for_secret_leaks
 from fusekit.vault.bundle import Vault
@@ -3383,9 +3386,8 @@ def _runner_readiness_failures(readiness: dict[str, Any]) -> list[str]:
         for name in REQUIRED_RUNNER_READINESS_CHECKS:
             if checks.get(name) is not True:
                 failures.append(f"{name} must be true")
-    if (
-        str(readiness.get("provider_browser_profile", "")).strip()
-        != "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+    if str(readiness.get("provider_browser_profile", "")).strip() != (
+        EXPECTED_PROVIDER_BROWSER_PROFILE
     ):
         failures.append("shared provider browser profile path is required")
     if not str(readiness.get("playwright_browsers_path", "")).strip():
@@ -3405,6 +3407,10 @@ def _unsafe_visual_state_fields(raw: dict[str, Any], sanitized: dict[str, Any]) 
         "novnc_password"
     ):
         unsafe.append("noVNC password metadata")
+    if "provider_browser_profile" in raw and raw.get(
+        "provider_browser_profile"
+    ) != sanitized.get("provider_browser_profile"):
+        unsafe.append("provider browser profile metadata")
     return unsafe
 
 
@@ -3424,6 +3430,10 @@ def _live_visual_state_failures(visual: dict[str, Any]) -> list[str]:
         failures.append("safe control-room URL is required")
     if not str(visual.get("novnc_password", "") or "").strip():
         failures.append("noVNC password metadata is required")
+    if str(visual.get("provider_browser_profile", "")).strip() != (
+        EXPECTED_PROVIDER_BROWSER_PROFILE
+    ):
+        failures.append("shared provider browser profile metadata is required")
     return failures
 
 

@@ -3477,6 +3477,9 @@ def test_control_room_payload_and_html_include_visual_session(tmp_path) -> None:
                     "?token=viewer_token_abcdefghijklmnopqrstuvwxyz0123456789"
                 ),
                 "novnc_password": "viewer-password",
+                "provider_browser_profile": (
+                    "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+                ),
             }
         ),
         encoding="utf-8",
@@ -3486,6 +3489,9 @@ def test_control_room_payload_and_html_include_visual_session(tmp_path) -> None:
     html = render_control_room(job, gate_path=tmp_path / "gates.json")
 
     assert payload["visual"]["runner"] == "novnc"
+    assert payload["visual"]["provider_browser_profile"] == (
+        "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+    )
     assert "Live VM browser" in html
     assert "viewer-password" in html
     assert 'class="visual-frame"' in html
@@ -3633,6 +3639,7 @@ def test_control_room_sanitizes_visual_session_urls_and_password(tmp_path) -> No
                     "?token=viewer_token_abcdefghijklmnopqrstuvwxyz0123456789"
                 ),
                 "novnc_password": "bad\npassword",
+                "provider_browser_profile": "/tmp/disconnected-profile",
             }
         ),
         encoding="utf-8",
@@ -3646,8 +3653,10 @@ def test_control_room_sanitizes_visual_session_urls_and_password(tmp_path) -> No
     )
     assert "control_room_url" not in payload["visual"]
     assert "novnc_password" not in payload["visual"]
+    assert "provider_browser_profile" not in payload["visual"]
     assert "password=leaked" not in html
     assert "bad\npassword" not in html
+    assert "disconnected-profile" not in html
     assert "10.0.0.5" not in html
 
 
@@ -5579,6 +5588,8 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
     )
     assert any(
         '"status": "ready"' in command[-1]
+        and '"provider_browser_profile": "/var/lib/fusekit-runner/visual/chrome-provider-profile"'
+        in command[-1]
         and "/var/lib/fusekit-runner/app/.fusekit/visual.json" in command[-1]
         for command in calls
         if command[0] == "ssh"

@@ -17,6 +17,9 @@ from fusekit.runner.run_state import LaunchRunState
 SAFE_URL_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,256}$")
 EXPECTED_NOVNC_PORT = 6080
 EXPECTED_CONTROL_ROOM_PORT = 8765
+EXPECTED_PROVIDER_BROWSER_PROFILE = (
+    "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+)
 SAFE_NOVNC_QUERY_VALUES = {
     "autoconnect": {"1"},
     "resize": {"scale"},
@@ -171,6 +174,9 @@ def _sanitized_visual_state(raw: dict[str, Any]) -> dict[str, Any]:
     password = str(visual.get("novnc_password", "") or "")
     if not _safe_visual_password(password):
         visual.pop("novnc_password", None)
+    profile = str(visual.get("provider_browser_profile", "") or "").strip()
+    if profile and profile != EXPECTED_PROVIDER_BROWSER_PROFILE:
+        visual.pop("provider_browser_profile", None)
     return visual
 
 
