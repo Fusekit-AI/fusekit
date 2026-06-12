@@ -64,6 +64,16 @@ REQUIRED_RUNNER_READINESS_CHECKS = (
     "shared_provider_browser_profile",
 )
 
+EXPECTED_RUNNER_PROFILE = "oci-visual-browser-x86_64"
+MIN_RUNNER_MEMORY_MIB = 15360
+EXPECTED_RUNNER_PORTS = {
+    "ssh": 22,
+    "control_room": 8765,
+    "novnc": 6080,
+    "vnc_loopback": 5900,
+    "openclaw_gateway_loopback": 19002,
+}
+
 
 @dataclass(frozen=True)
 class AcceptanceCheck:
@@ -470,6 +480,18 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
         _require_dict_field(wake_events, "event_counts", failures, prefix="wake_events")
         _require_list_field(wake_events, "events", failures, prefix="wake_events")
     _require_dict_field(raw, "provider_strategies", failures)
+    runner_profile = _require_dict_field(raw, "runner_profile", failures)
+    if runner_profile is not None:
+        profile_contract = _require_dict_field(
+            runner_profile,
+            "profile_contract",
+            failures,
+            prefix="runner_profile",
+        )
+        if profile_contract is not None:
+            failures.extend(_runner_profile_contract_failures(profile_contract))
+        _require_dict_field(runner_profile, "checks", failures, prefix="runner_profile")
+        _require_dict_field(runner_profile, "observed", failures, prefix="runner_profile")
     vault = _require_dict_field(raw, "vault", failures)
     if vault is not None:
         if not isinstance(vault.get("record_count"), int):
@@ -3578,6 +3600,20 @@ def _runner_readiness_failures(readiness: dict[str, Any]) -> list[str]:
         for name in REQUIRED_RUNNER_READINESS_CHECKS:
             if checks.get(name) is not True:
                 failures.append(f"{name} must be true")
+    profile = readiness.get("profile_contract")
+    if not isinstance(profile, dict):
+        failures.append("profile_contract must be a JSON object")
+    else:
+        failures.extend(_runner_profile_contract_failures(profile))
+    observed = readiness.get("observed")
+    if not isinstance(observed, dict):
+        failures.append("observed runner facts must be a JSON object")
+    else:
+        memory_mib = _int_field(observed.get("memory_mib"), 0)
+        if memory_mib < MIN_RUNNER_MEMORY_MIB:
+            failures.append("observed memory must be at least 16 GB")
+        if str(observed.get("os_id", "")).strip().lower() not in {"ubuntu", "ol"}:
+            failures.append("observed OS must be Ubuntu or Oracle Linux")
     if str(readiness.get("provider_browser_profile", "")).strip() != (
         EXPECTED_PROVIDER_BROWSER_PROFILE
     ):
@@ -3585,6 +3621,76 @@ def _runner_readiness_failures(readiness: dict[str, Any]) -> list[str]:
     if not str(readiness.get("playwright_browsers_path", "")).strip():
         failures.append("Playwright browser cache path is required")
     return failures
+
+
+def _runner_profile_contract_failures(profile: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    if str(profile.get("schema_version", "")).strip() != "fusekit.runner-profile.v1":
+        failures.append("runner profile schema_version must be fusekit.runner-profile.v1")
+    if str(profile.get("name", "")).strip() != EXPECTED_RUNNER_PROFILE:
+        failures.append(f"runner profile name must be {EXPECTED_RUNNER_PROFILE}")
+    if str(profile.get("architecture", "")).strip().lower() not in {"x86_64", "amd64"}:
+        failures.append("runner profile architecture must be x86_64")
+    if str(profile.get("os_family", "")).strip().lower() != "linux":
+        failures.append("runner profile OS family must be linux")
+    supported_os = profile.get("supported_os_ids")
+    if not isinstance(supported_os, list) or not {"ubuntu", "ol"}.issubset(
+        {str(item).lower() for item in supported_os}
+    ):
+        failures.append("runner profile must support Ubuntu and Oracle Linux image ids")
+    if _int_field(profile.get("min_memory_mib"), 0) < MIN_RUNNER_MEMORY_MIB:
+        failures.append("runner profile min_memory_mib must be at least 16 GB")
+    ports = profile.get("ports")
+    if not isinstance(ports, dict):
+        failures.append("runner profile ports must be a JSON object")
+    else:
+        for key, value in EXPECTED_RUNNER_PORTS.items():
+            if _int_field(ports.get(key), -1) != value:
+                failures.append(f"runner profile port {key} must be {value}")
+    browser_stack = profile.get("browser_stack")
+    if not isinstance(browser_stack, dict):
+        failures.append("runner profile browser_stack must be a JSON object")
+    else:
+        expected_browser = {
+            "spine": "openclaw",
+            "automation": "playwright",
+            "browser": "chromium",
+            "shared_provider_profile": EXPECTED_PROVIDER_BROWSER_PROFILE,
+        }
+        for key, expected_value in expected_browser.items():
+            if str(browser_stack.get(key, "")).strip() != expected_value:
+                failures.append(
+                    f"runner profile browser_stack.{key} must be {expected_value}"
+                )
+    health_checks = profile.get("required_health_checks")
+    if not isinstance(health_checks, list):
+        failures.append("runner profile required_health_checks must be a list")
+    else:
+        missing = [
+            item
+            for item in REQUIRED_RUNNER_READINESS_CHECKS
+            if item not in {str(check) for check in health_checks}
+        ]
+        if missing:
+            failures.append(
+                "runner profile required_health_checks missing " + ", ".join(missing)
+            )
+    return failures
+
+
+def _int_field(value: object, default: int) -> int:
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return default
+    return default
 
 
 def _unsafe_visual_state_fields(raw: dict[str, Any], sanitized: dict[str, Any]) -> list[str]:

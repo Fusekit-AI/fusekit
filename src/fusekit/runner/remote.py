@@ -191,12 +191,70 @@ write_files:
       PY
       /opt/fusekit-python/bin/python - <<'PY'
       import json
+      import os
       import platform
       from pathlib import Path
+      min_memory_mib = 15360
+      mem_total_mib = 0
+      try:
+          for line in Path("/proc/meminfo").read_text(encoding="utf-8").splitlines():
+              if line.startswith("MemTotal:"):
+                  mem_total_mib = int(line.split()[1]) // 1024
+                  break
+      except OSError:
+          pass
+      if mem_total_mib < min_memory_mib:
+          raise SystemExit(
+              f"FuseKit runner requires at least 16 GB RAM; got {{mem_total_mib}} MiB."
+          )
+      os_release = {{}}
+      try:
+          for line in Path("/etc/os-release").read_text(encoding="utf-8").splitlines():
+              if "=" in line:
+                  key, value = line.split("=", 1)
+                  os_release[key] = value.strip().strip('"')
+      except OSError:
+          pass
       readiness = dict(
           schema_version="fusekit.runner-readiness.v1",
           status="ready",
           architecture=platform.machine(),
+          profile_contract=dict(
+              schema_version="fusekit.runner-profile.v1",
+              name="oci-visual-browser-x86_64",
+              architecture="x86_64",
+              os_family="linux",
+              supported_os_ids=["ubuntu", "ol"],
+              min_memory_mib=min_memory_mib,
+              ports=dict(
+                  ssh=22,
+                  control_room={CONTROL_ROOM_PORT},
+                  novnc={NOVNC_PORT},
+                  vnc_loopback=5900,
+                  openclaw_gateway_loopback=19002,
+              ),
+              browser_stack=dict(
+                  spine="openclaw",
+                  automation="playwright",
+                  browser="chromium",
+                  shared_provider_profile="/var/lib/fusekit-runner/visual/chrome-provider-profile",
+              ),
+              required_health_checks=[
+                  "x86_64_architecture",
+                  "runner_helpers",
+                  "visual_commands",
+                  "novnc",
+                  "openclaw",
+                  "playwright_chromium",
+                  "shared_provider_browser_profile",
+              ],
+          ),
+          observed=dict(
+              os_id=os_release.get("ID", ""),
+              os_version=os_release.get("VERSION_ID", ""),
+              memory_mib=mem_total_mib,
+              python=platform.python_version(),
+          ),
           checks=dict(
               x86_64_architecture=True,
               runner_helpers=True,

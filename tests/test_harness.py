@@ -287,6 +287,44 @@ def _write_runner_readiness(fusekit_dir: Path) -> None:
                 "schema_version": "fusekit.runner-readiness.v1",
                 "status": "ready",
                 "architecture": "x86_64",
+                "profile_contract": {
+                    "schema_version": "fusekit.runner-profile.v1",
+                    "name": "oci-visual-browser-x86_64",
+                    "architecture": "x86_64",
+                    "os_family": "linux",
+                    "supported_os_ids": ["ubuntu", "ol"],
+                    "min_memory_mib": 15360,
+                    "ports": {
+                        "ssh": 22,
+                        "control_room": 8765,
+                        "novnc": 6080,
+                        "vnc_loopback": 5900,
+                        "openclaw_gateway_loopback": 19002,
+                    },
+                    "browser_stack": {
+                        "spine": "openclaw",
+                        "automation": "playwright",
+                        "browser": "chromium",
+                        "shared_provider_profile": (
+                            "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+                        ),
+                    },
+                    "required_health_checks": [
+                        "x86_64_architecture",
+                        "runner_helpers",
+                        "visual_commands",
+                        "novnc",
+                        "openclaw",
+                        "playwright_chromium",
+                        "shared_provider_browser_profile",
+                    ],
+                },
+                "observed": {
+                    "os_id": "ubuntu",
+                    "os_version": "24.04",
+                    "memory_mib": 24576,
+                    "python": "3.12.0",
+                },
                 "checks": {
                     "x86_64_architecture": True,
                     "runner_helpers": True,
@@ -331,6 +369,52 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
                     "statuses": {},
                     "providers": [],
                     "records": [],
+                },
+                "runner_profile": {
+                    "status": "ready",
+                    "architecture": "x86_64",
+                    "profile_contract": {
+                        "schema_version": "fusekit.runner-profile.v1",
+                        "name": "oci-visual-browser-x86_64",
+                        "architecture": "x86_64",
+                        "os_family": "linux",
+                        "supported_os_ids": ["ubuntu", "ol"],
+                        "min_memory_mib": 15360,
+                        "ports": {
+                            "ssh": 22,
+                            "control_room": 8765,
+                            "novnc": 6080,
+                            "vnc_loopback": 5900,
+                            "openclaw_gateway_loopback": 19002,
+                        },
+                        "browser_stack": {
+                            "spine": "openclaw",
+                            "automation": "playwright",
+                            "browser": "chromium",
+                            "shared_provider_profile": (
+                                "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+                            ),
+                        },
+                        "required_health_checks": [
+                            "x86_64_architecture",
+                            "runner_helpers",
+                            "visual_commands",
+                            "novnc",
+                            "openclaw",
+                            "playwright_chromium",
+                            "shared_provider_browser_profile",
+                        ],
+                    },
+                    "observed": {
+                        "os_id": "ubuntu",
+                        "os_version": "24.04",
+                        "memory_mib": 24576,
+                    },
+                    "checks": {},
+                    "provider_browser_profile": (
+                        "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+                    ),
+                    "playwright_browsers_path": "/opt/fusekit-playwright-browsers",
                 },
                 "wake_events": {"total": 0, "event_counts": {}, "events": []},
                 "provider_strategies": {"providers": []},
@@ -656,6 +740,22 @@ def test_acceptance_rejects_incomplete_runner_readiness(tmp_path) -> None:
                 "schema_version": "fusekit.runner-readiness.v1",
                 "status": "ready",
                 "architecture": "aarch64",
+                "profile_contract": {
+                    "schema_version": "fusekit.runner-profile.v1",
+                    "name": "tiny-arm",
+                    "architecture": "aarch64",
+                    "os_family": "linux",
+                    "supported_os_ids": ["ubuntu"],
+                    "min_memory_mib": 1024,
+                    "ports": {"novnc": 6080},
+                    "browser_stack": {"spine": "openclaw"},
+                    "required_health_checks": ["x86_64_architecture"],
+                },
+                "observed": {
+                    "os_id": "ubuntu",
+                    "os_version": "24.04",
+                    "memory_mib": 1024,
+                },
                 "checks": {
                     "x86_64_architecture": False,
                     "runner_helpers": True,
@@ -680,6 +780,10 @@ def test_acceptance_rejects_incomplete_runner_readiness(tmp_path) -> None:
     assert checks[-1].id == "runner_readiness.prepared"
     assert checks[-1].status == "failed"
     assert "architecture must be x86_64" in checks[-1].detail
+    assert "runner profile name must be oci-visual-browser_x86_64" not in checks[-1].detail
+    assert "runner profile name must be oci-visual-browser-x86_64" in checks[-1].detail
+    assert "runner profile min_memory_mib must be at least 16 GB" in checks[-1].detail
+    assert "observed memory must be at least 16 GB" in checks[-1].detail
     assert "x86_64_architecture must be true" in checks[-1].detail
     assert "playwright_chromium must be true" in checks[-1].detail
     assert "shared provider browser profile path is required" in checks[-1].detail

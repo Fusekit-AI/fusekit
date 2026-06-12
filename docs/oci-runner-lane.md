@@ -123,6 +123,12 @@ Chromium smoke-test readiness, noVNC, and the shared Chrome provider profile
 before the first provider account gate is shown. If any of those checks fail,
 FuseKit should stop on a runner repair gate or select a verified prepared image
 instead of continuing into provider setup with a brittle partial toolchain.
+The proof is stored as `.fusekit/runner_readiness.json` with a
+`fusekit.runner-profile.v1` contract naming the required OCI visual-browser
+profile, 16 GB memory floor, supported Linux image ids, public noVNC/control-room
+ports, loopback VNC/OpenClaw gateway ports, OpenClaw plus Playwright Chromium
+browser stack, shared provider profile path, observed OS/memory facts, and the
+health checks that passed before setup continued.
 
 The app repo should be uploaded as a tarball over SSH, excluding `.git`, `.env`, existing `.fusekit`, caches, dependency folders, and known secret artifacts. Provider credentials must come from the encrypted vault or supervised handoff, not app files.
 

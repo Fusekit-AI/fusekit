@@ -276,6 +276,58 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
         '{"status":"complete","deleted":["instance"],"failures":{}}',
         encoding="utf-8",
     )
+    (tmp_path / "runner_readiness.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.runner-readiness.v1",
+                "status": "ready",
+                "architecture": "x86_64",
+                "profile_contract": {
+                    "schema_version": "fusekit.runner-profile.v1",
+                    "name": "oci-visual-browser-x86_64",
+                    "architecture": "x86_64",
+                    "os_family": "linux",
+                    "supported_os_ids": ["ubuntu", "ol"],
+                    "min_memory_mib": 15360,
+                    "ports": {
+                        "ssh": 22,
+                        "control_room": 8765,
+                        "novnc": 6080,
+                        "vnc_loopback": 5900,
+                        "openclaw_gateway_loopback": 19002,
+                    },
+                    "browser_stack": {
+                        "spine": "openclaw",
+                        "automation": "playwright",
+                        "browser": "chromium",
+                        "shared_provider_profile": (
+                            "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+                        ),
+                    },
+                    "required_health_checks": [
+                        "x86_64_architecture",
+                        "runner_helpers",
+                        "visual_commands",
+                        "novnc",
+                        "openclaw",
+                        "playwright_chromium",
+                        "shared_provider_browser_profile",
+                    ],
+                },
+                "observed": {
+                    "os_id": "ubuntu",
+                    "os_version": "24.04",
+                    "memory_mib": 24576,
+                },
+                "checks": {"x86_64_architecture": True},
+                "provider_browser_profile": (
+                    "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+                ),
+                "playwright_browsers_path": "/opt/fusekit-playwright-browsers",
+            }
+        ),
+        encoding="utf-8",
+    )
 
     record_path = write_run_record(
         job,
@@ -297,6 +349,11 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     assert record["state"]["workspace_detonated"] is True
     assert record["provider_gates"]["total"] == 1
     assert record["provider_gates"]["providers"] == ["cloudflare"]
+    assert record["runner_profile"]["status"] == "ready"
+    assert record["runner_profile"]["profile_contract"]["name"] == (
+        "oci-visual-browser-x86_64"
+    )
+    assert record["runner_profile"]["observed"]["memory_mib"] == 24576
     assert record["wake_events"]["total"] == 2
     assert record["wake_events"]["event_counts"] == {
         "clipboard_captured": 1,
@@ -4478,6 +4535,11 @@ def test_remote_bootstrap_artifacts_are_self_contained() -> None:
     assert "chromium-browser" not in cloud_init
     assert "sync_playwright" in cloud_init
     assert "fusekit.runner-readiness.v1" in cloud_init
+    assert "fusekit.runner-profile.v1" in cloud_init
+    assert "oci-visual-browser-x86_64" in cloud_init
+    assert "min_memory_mib = 15360" in cloud_init
+    assert "FuseKit runner requires at least 16 GB RAM" in cloud_init
+    assert "openclaw_gateway_loopback=19002" in cloud_init
     assert "/var/lib/fusekit-runner/runner-readiness.json" in cloud_init
     assert "playwright_chromium" in cloud_init
     assert "shared_provider_browser_profile" in cloud_init
@@ -5550,7 +5612,63 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
             )
             strategies.write_text('{"providers":[]}', encoding="utf-8")
             runner_readiness.write_text(
-                '{"schema_version":"fusekit.runner-readiness.v1","status":"ready"}',
+                json.dumps(
+                    {
+                        "schema_version": "fusekit.runner-readiness.v1",
+                        "status": "ready",
+                        "architecture": "x86_64",
+                        "profile_contract": {
+                            "schema_version": "fusekit.runner-profile.v1",
+                            "name": "oci-visual-browser-x86_64",
+                            "architecture": "x86_64",
+                            "os_family": "linux",
+                            "supported_os_ids": ["ubuntu", "ol"],
+                            "min_memory_mib": 15360,
+                            "ports": {
+                                "ssh": 22,
+                                "control_room": 8765,
+                                "novnc": 6080,
+                                "vnc_loopback": 5900,
+                                "openclaw_gateway_loopback": 19002,
+                            },
+                            "browser_stack": {
+                                "spine": "openclaw",
+                                "automation": "playwright",
+                                "browser": "chromium",
+                                "shared_provider_profile": (
+                                    "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+                                ),
+                            },
+                            "required_health_checks": [
+                                "x86_64_architecture",
+                                "runner_helpers",
+                                "visual_commands",
+                                "novnc",
+                                "openclaw",
+                                "playwright_chromium",
+                                "shared_provider_browser_profile",
+                            ],
+                        },
+                        "observed": {
+                            "os_id": "ubuntu",
+                            "os_version": "24.04",
+                            "memory_mib": 24576,
+                        },
+                        "checks": {
+                            "x86_64_architecture": True,
+                            "runner_helpers": True,
+                            "visual_commands": True,
+                            "novnc": True,
+                            "openclaw": True,
+                            "playwright_chromium": True,
+                            "shared_provider_browser_profile": True,
+                        },
+                        "provider_browser_profile": (
+                            "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+                        ),
+                        "playwright_browsers_path": "/opt/fusekit-playwright-browsers",
+                    }
+                ),
                 encoding="utf-8",
             )
             archive.add(payload, arcname=".fusekit/job.json")

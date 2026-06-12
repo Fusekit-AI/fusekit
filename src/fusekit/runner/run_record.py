@@ -27,6 +27,7 @@ def build_run_record(
     acceptance = _read_json_object(root / "acceptance" / "report.json")
     workspace_detonation = _read_json_object(root / "workspace_detonation.json")
     provider_strategies = _read_json_object(root / "provider_strategies.json")
+    runner_readiness = _read_json_object(root / "runner_readiness.json")
     wake_events = _read_gate_wake_events(root / "gate_events.jsonl")
     run_state = _read_run_state(root / "run_state.json")
     artifacts = _artifact_records(job, root)
@@ -42,6 +43,7 @@ def build_run_record(
         "steps": [step.to_dict() for step in job.steps],
         "checkpoints": [checkpoint.to_dict() for checkpoint in job.checkpoints],
         "provider_gates": _gate_summary(gates),
+        "runner_profile": _runner_profile_summary(runner_readiness),
         "wake_events": _wake_event_summary(wake_events),
         "provider_strategies": provider_strategies or {"providers": []},
         "vault": {
@@ -213,6 +215,7 @@ def _artifact_records(job: JobState, root: Path) -> list[dict[str, Any]]:
         "run_state",
         "gates",
         "gate_events",
+        "runner_readiness",
         "workspace_detonation",
         "run_record",
     ):
@@ -223,6 +226,23 @@ def _artifact_records(job: JobState, root: Path) -> list[dict[str, Any]]:
         if path.exists():
             records.append({"name": name, "path": str(path), "exists": True})
     return records
+
+
+def _runner_profile_summary(runner_readiness: dict[str, Any]) -> dict[str, Any]:
+    if not runner_readiness:
+        return {}
+    profile = runner_readiness.get("profile_contract", {})
+    observed = runner_readiness.get("observed", {})
+    checks = runner_readiness.get("checks", {})
+    return {
+        "status": str(runner_readiness.get("status", "")),
+        "architecture": str(runner_readiness.get("architecture", "")),
+        "profile_contract": profile if isinstance(profile, dict) else {},
+        "observed": observed if isinstance(observed, dict) else {},
+        "checks": checks if isinstance(checks, dict) else {},
+        "provider_browser_profile": str(runner_readiness.get("provider_browser_profile", "")),
+        "playwright_browsers_path": str(runner_readiness.get("playwright_browsers_path", "")),
+    }
 
 
 def _acceptance_summary(acceptance: dict[str, Any]) -> dict[str, Any]:
