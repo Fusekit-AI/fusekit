@@ -1081,16 +1081,51 @@ function renderProviderStrategies(job) {
   const payload = job.provider_strategies || {};
   const providers = Array.isArray(payload.providers) ? payload.providers : [];
   if (!providers.length) {
-    root.innerHTML =
+    root.innerHTML = renderProviderPlaybook(payload.playbook) ||
       "<article class='strategy-card pending'>" +
-      "<span>Waiting</span><strong>Provider routes appear after setup starts</strong>" +
-      "<p>FuseKit will show whether it chose API, CLI, browser guidance, or follow-me.</p>" +
+        "<span>Waiting</span><strong>Provider routes appear after setup starts</strong>" +
+        "<p>FuseKit will show whether it chose API, CLI, browser guidance, or follow-me.</p>" +
       "</article>";
     return;
   }
   root.innerHTML =
+    renderProviderPlaybook(payload.playbook) +
     renderProviderStrategyPlan(providers) +
     providers.map(renderProviderStrategyCard).join("");
+}
+
+function renderProviderPlaybook(playbook) {
+  const steps = Array.isArray(playbook?.steps) ? playbook.steps : [];
+  if (!steps.length) return "";
+  const rows = steps
+    .filter((step) => step && typeof step === "object")
+    .map((step, index) => renderProviderPlaybookStep(step, index + 1))
+    .join("");
+  if (!rows) return "";
+  const notes = Array.isArray(playbook?.safety_notes) ? playbook.safety_notes : [];
+  const noteRows = notes
+    .filter((note) => String(note || "").trim())
+    .map((note) => `<li>${escapeHtml(publicCopy(note))}</li>`)
+    .join("");
+  const noteBlock = noteRows ? `<small><b>Safety:</b></small><ol>${noteRows}</ol>` : "";
+  return `
+    <article class="strategy-card strategy-plan provider-playbook">
+      <span>Provider playbook</span>
+      <strong>Follow this in the shared VM browser</strong>
+      <ol>${rows}</ol>
+      ${noteBlock}
+    </article>
+  `;
+}
+
+function renderProviderPlaybookStep(step, index) {
+  const instruction = publicCopy(step.instruction || "");
+  const meta = [step.provider, step.route, step.control]
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .join(" · ");
+  const suffix = meta ? ` <em>${escapeHtml(publicCopy(meta))}</em>` : "";
+  return `<li><b>${escapeHtml(index)}.</b> ${escapeHtml(instruction)}${suffix}</li>`;
 }
 
 function renderProviderStrategyPlan(providers) {

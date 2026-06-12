@@ -781,8 +781,9 @@ def _render_trust(report: Any) -> str:
 def _render_provider_strategies(strategies: Any) -> str:
     payload = strategies if isinstance(strategies, dict) else {}
     providers = payload.get("providers", [])
+    playbook = _render_provider_playbook(payload.get("playbook", {}))
     if not isinstance(providers, list) or not providers:
-        cards = """
+        cards = playbook or """
         <article class="strategy-card pending">
           <span>Waiting</span>
           <strong>Provider routes appear after setup starts</strong>
@@ -791,7 +792,7 @@ def _render_provider_strategies(strategies: Any) -> str:
 """
     else:
         plan = _render_strategy_plan(providers)
-        cards = plan + "\n".join(_render_strategy_card(item) for item in providers)
+        cards = playbook + plan + "\n".join(_render_strategy_card(item) for item in providers)
     return f"""
     <section class="strategy-panel" aria-label="Provider route decisions">
       <div class="section-head compact">
@@ -804,6 +805,53 @@ def _render_provider_strategies(strategies: Any) -> str:
       <div class="strategy-grid" data-provider-strategies>{cards}</div>
     </section>
 """
+
+
+def _render_provider_playbook(playbook: Any) -> str:
+    playbook = playbook if isinstance(playbook, dict) else {}
+    steps = playbook.get("steps", [])
+    notes = playbook.get("safety_notes", [])
+    if not isinstance(steps, list) or not steps:
+        return ""
+    rows = "".join(
+        _render_provider_playbook_step(index, step)
+        for index, step in enumerate(steps, start=1)
+        if isinstance(step, dict)
+    )
+    if not rows:
+        return ""
+    note_rows = ""
+    if isinstance(notes, list):
+        note_rows = "".join(
+            f"<li>{html.escape(_public_copy(note))}</li>"
+            for note in notes
+            if str(note).strip()
+        )
+    note_block = (
+        f"<small><b>Safety:</b></small><ol>{note_rows}</ol>" if note_rows else ""
+    )
+    return f"""
+        <article class="strategy-card strategy-plan provider-playbook">
+          <span>Provider playbook</span>
+          <strong>Follow this in the shared VM browser</strong>
+          <ol>{rows}</ol>
+          {note_block}
+        </article>
+"""
+
+
+def _render_provider_playbook_step(index: int, step: dict[str, Any]) -> str:
+    instruction = _public_copy(step.get("instruction", ""))
+    control = str(step.get("control", "") or "").strip()
+    provider = str(step.get("provider", "") or "").strip()
+    route = str(step.get("route", "") or "").strip()
+    meta = " · ".join(item for item in (provider, route, control) if item)
+    if meta:
+        return (
+            f"<li><b>{html.escape(str(index))}.</b> {html.escape(instruction)} "
+            f"<em>{html.escape(_public_copy(meta))}</em></li>"
+        )
+    return f"<li><b>{html.escape(str(index))}.</b> {html.escape(instruction)}</li>"
 
 
 def _render_strategy_plan(providers: list[Any]) -> str:

@@ -4010,6 +4010,88 @@ def test_control_room_payload_and_html_include_provider_strategy_routes(tmp_path
     assert "Capture GITHUB_TOKEN from VM clipboard" in html
 
 
+def test_control_room_renders_provider_playbook_checklist(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job.save(tmp_path / "job.json")
+    (tmp_path / "provider_strategies.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.provider-strategies.v1",
+                "playbook": {
+                    "schema_version": "fusekit.provider-playbook.v1",
+                    "steps": [
+                        {
+                            "id": "resend.capture_key",
+                            "provider": "resend",
+                            "control": "Capture RESEND_API_KEY from VM clipboard",
+                            "instruction": (
+                                "Capture RESEND_API_KEY from VM clipboard if the "
+                                "Resend API route is not already authorized."
+                            ),
+                        },
+                        {
+                            "id": "resend.domain_api",
+                            "provider": "resend",
+                            "route": "api",
+                            "instruction": (
+                                "FuseKit creates or reuses the Resend sending domain "
+                                "through the Resend API."
+                            ),
+                        },
+                        {
+                            "id": "dns.approval",
+                            "provider": "dns",
+                            "control": "Approve DNS apply",
+                            "instruction": (
+                                "FuseKit carries app and provider-generated DNS records "
+                                "into the DNS approval gate before apply."
+                            ),
+                        },
+                        {
+                            "id": "vercel.env_api",
+                            "provider": "vercel",
+                            "route": "api",
+                            "instruction": (
+                                "FuseKit writes required runtime variables into Vercel "
+                                "after upstream provider values exist."
+                            ),
+                        },
+                    ],
+                    "safety_notes": [
+                        "Use the launcher and shared VM browser for provider gates.",
+                        (
+                            "Do not create Resend domains or audiences manually; "
+                            "FuseKit owns those API setup steps."
+                        ),
+                        (
+                            "Do not paste provider secrets into the host computer; "
+                            "Capture reads the VM clipboard."
+                        ),
+                    ],
+                },
+                "providers": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+    payload = static_control_room_payload(job, gate_path=tmp_path / "gates.json")
+
+    assert payload["provider_strategies"]["playbook"]["schema_version"] == (
+        "fusekit.provider-playbook.v1"
+    )
+    assert "Provider playbook" in html
+    assert "Follow this in the shared VM browser" in html
+    assert "Capture RESEND_API_KEY from VM clipboard" in html
+    assert "FuseKit creates or reuses the Resend sending domain" in html
+    assert "Approve DNS apply" in html
+    assert "FuseKit writes required runtime variables into Vercel" in html
+    assert "Do not create Resend domains or audiences manually" in html
+    assert "Do not paste provider secrets into the host computer" in html
+    assert "Click Add domain" not in html
+
+
 def test_control_room_route_plan_names_human_gate_controls(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job.save(tmp_path / "job.json")
