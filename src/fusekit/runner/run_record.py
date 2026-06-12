@@ -28,6 +28,7 @@ DURABLE_STATE_SOURCES = (
     ("checkpoints", "checkpoints.json", "resume checkpoints", "non-secret"),
     ("gates", "gates.json", "provider gate state", "non-secret"),
     ("provider_strategies", "provider_strategies.json", "provider route decisions", "non-secret"),
+    ("runner_readiness", "runner_readiness.json", "runner profile readiness proof", "non-secret"),
 )
 VOLATILE_WORKER_SURFACES = (
     "worker",
@@ -102,7 +103,7 @@ def build_run_record(
     wake_events = _read_gate_wake_events(root / "gate_events.jsonl")
     run_state = _read_run_state(root / "run_state.json")
     artifacts = _artifact_records(job, root)
-    durable_state = _durable_state_summary(root, run_state, artifacts)
+    durable_state = _durable_state_summary(root, run_state, artifacts, runner_readiness)
     evidence = _evidence_inventory(root, artifacts)
     human_actions = _human_action_trace(gates, wake_events)
     record = {
@@ -648,6 +649,7 @@ def _durable_state_summary(
     root: Path,
     run_state: dict[str, Any],
     artifacts: list[dict[str, Any]],
+    runner_readiness: dict[str, Any],
 ) -> dict[str, Any]:
     """Summarize whether a run can survive replacing the disposable worker."""
 
@@ -670,10 +672,14 @@ def _durable_state_summary(
             }
         )
     missing = [source["id"] for source in sources if not source["exists"]]
+    runner_failures = runner_readiness_failures(runner_readiness)
+    resume_ready = not missing and not runner_failures
     return {
         "schema_version": DURABLE_STATE_SCHEMA_VERSION,
-        "resume_ready": not missing,
+        "resume_ready": resume_ready,
         "missing": missing,
+        "runner_profile_ready": not runner_failures,
+        "runner_profile_failures": runner_failures,
         "sources": sources,
         "volatile_worker_surfaces": list(VOLATILE_WORKER_SURFACES),
         "detonation_preserves": list(DETONATION_PRESERVES),
@@ -691,11 +697,14 @@ def _durable_state_summary(
             ),
         },
         "worker_replacement_contract": {
-            "worker_is_disposable": not missing,
-            "can_recreate_worker": not missing,
+            "worker_is_disposable": resume_ready,
+            "can_recreate_worker": resume_ready,
+            "runner_profile_ready": not runner_failures,
+            "required_runner_profile": "oci-visual-browser-x86_64",
             "host_machine_state_required": False,
             "state_owner": "encrypted-vault-and-run-record",
             "resume_sources": [source["id"] for source in sources],
+            "runner_profile_failures": runner_failures,
             "volatile_surfaces": list(VOLATILE_WORKER_SURFACES),
             "statement": (
                 "If the OCI VM is killed mid-run, FuseKit must recreate the runner "

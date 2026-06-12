@@ -198,6 +198,13 @@ def _durable_state() -> dict[str, object]:
                 "exists": True,
             },
             {
+                "id": "runner_readiness",
+                "path": "runner_readiness.json",
+                "role": "runner profile readiness proof",
+                "secret_class": "non-secret",
+                "exists": True,
+            },
+            {
                 "id": "workspace_detonation",
                 "path": "workspace_detonation.json",
                 "role": "OCI detonation receipt",
@@ -229,6 +236,32 @@ def _durable_state() -> dict[str, object]:
                 "Public OCI runs preserve encrypted state until completion, then "
                 "detonate the disposable VM so no FuseKit worker state remains in "
                 "the OCI workspace."
+            ),
+        },
+        "runner_profile_ready": True,
+        "runner_profile_failures": [],
+        "worker_replacement_contract": {
+            "worker_is_disposable": True,
+            "can_recreate_worker": True,
+            "runner_profile_ready": True,
+            "required_runner_profile": "oci-visual-browser-x86_64",
+            "host_machine_state_required": False,
+            "state_owner": "encrypted-vault-and-run-record",
+            "resume_sources": [
+                "encrypted_vault",
+                "job_state",
+                "run_state",
+                "checkpoints",
+                "gates",
+                "provider_strategies",
+                "runner_readiness",
+            ],
+            "runner_profile_failures": [],
+            "volatile_surfaces": ["worker", "visual", "openclaw-state"],
+            "statement": (
+                "If the OCI VM is killed mid-run, FuseKit recreates the runner "
+                "from encrypted/redacted run state instead of relying on local "
+                "browser profiles, host clipboard history, or plaintext VM scratch."
             ),
         },
         "workspace_detonated": True,
@@ -3935,6 +3968,53 @@ def test_acceptance_run_record_requires_no_trace_detonation_scope(tmp_path) -> N
         "durable_state.detonation_scope.resume_until_complete must be true" in failures
     )
     assert "durable_state.detonation_scope.no_trace_statement is incomplete" in failures
+
+
+def test_acceptance_run_record_requires_runner_profile_for_worker_replacement(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+
+    record["durable_state"]["runner_profile_ready"] = False
+    record["durable_state"]["runner_profile_failures"] = [
+        "runner profile browser_stack.browser must be chromium"
+    ]
+    record["durable_state"]["worker_replacement_contract"] = {
+        "worker_is_disposable": True,
+        "can_recreate_worker": True,
+        "runner_profile_ready": False,
+        "required_runner_profile": "ad-hoc-runner",
+        "host_machine_state_required": True,
+    }
+    record["durable_state"]["sources"] = [
+        source
+        for source in record["durable_state"]["sources"]
+        if source.get("id") != "runner_readiness"
+    ]
+
+    failures = _run_record_shape_failures(record)
+
+    assert "durable_state.sources missing runner_readiness" in failures
+    assert "durable_state.runner_profile_ready must be true" in failures
+    assert any(
+        failure.startswith("durable_state.runner_profile_failures must be empty")
+        for failure in failures
+    )
+    assert (
+        "durable_state.worker_replacement_contract.runner_profile_ready must be true"
+        in failures
+    )
+    assert (
+        "durable_state.worker_replacement_contract.required_runner_profile is unsupported"
+        in failures
+    )
+    assert (
+        "durable_state.worker_replacement_contract.host_machine_state_required must be false"
+        in failures
+    )
 
 
 def test_acceptance_run_record_requires_non_secret_evidence_inventory(tmp_path) -> None:

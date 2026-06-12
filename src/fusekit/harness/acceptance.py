@@ -4351,10 +4351,21 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
             "checkpoints",
             "gates",
             "provider_strategies",
+            "runner_readiness",
         }
         missing_ids = sorted(required - source_ids)
         if missing_ids:
             failures.append("durable_state.sources missing " + ", ".join(missing_ids))
+    runner_failures = durable_state.get("runner_profile_failures", [])
+    if durable_state.get("runner_profile_ready") is not True:
+        failures.append("durable_state.runner_profile_ready must be true")
+    if not isinstance(runner_failures, list):
+        failures.append("durable_state.runner_profile_failures must be a list")
+    elif runner_failures:
+        failures.append(
+            "durable_state.runner_profile_failures must be empty: "
+            + ", ".join(str(item) for item in runner_failures)
+        )
     volatile = durable_state.get("volatile_worker_surfaces", [])
     if not isinstance(volatile, list) or not {"worker", "visual", "openclaw-state"}.issubset(
         {str(item) for item in volatile}
@@ -4406,6 +4417,32 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
     statement = str(durable_state.get("statement", "") or "")
     if "disposable OCI worker" not in statement or "encrypted/redacted state" not in statement:
         failures.append("durable_state.statement is missing durable-worker guidance")
+    replacement = durable_state.get("worker_replacement_contract")
+    if not isinstance(replacement, dict):
+        failures.append("durable_state.worker_replacement_contract is missing")
+    else:
+        if replacement.get("can_recreate_worker") is not True:
+            failures.append(
+                "durable_state.worker_replacement_contract.can_recreate_worker "
+                "must be true"
+            )
+        if replacement.get("runner_profile_ready") is not True:
+            failures.append(
+                "durable_state.worker_replacement_contract.runner_profile_ready "
+                "must be true"
+            )
+        if (
+            str(replacement.get("required_runner_profile", "") or "")
+            != "oci-visual-browser-x86_64"
+        ):
+            failures.append(
+                "durable_state.worker_replacement_contract.required_runner_profile is unsupported"
+            )
+        if replacement.get("host_machine_state_required") is not False:
+            failures.append(
+                "durable_state.worker_replacement_contract.host_machine_state_required "
+                "must be false"
+            )
     return failures
 
 

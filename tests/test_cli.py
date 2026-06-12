@@ -2954,6 +2954,66 @@ def test_save_launch_job_writes_durable_state_after_job_state_exists(tmp_path) -
         encoding="utf-8",
     )
     (fusekit_dir / "gates.json").write_text(json.dumps({"gates": []}), encoding="utf-8")
+    (fusekit_dir / "runner_readiness.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.runner-readiness.v1",
+                "status": "ready",
+                "architecture": "x86_64",
+                "profile_contract": {
+                    "schema_version": "fusekit.runner-profile.v1",
+                    "name": "oci-visual-browser-x86_64",
+                    "architecture": "x86_64",
+                    "os_family": "linux",
+                    "supported_os_ids": ["ubuntu", "ol"],
+                    "min_memory_mib": 15360,
+                    "ports": {
+                        "ssh": 22,
+                        "control_room": 8765,
+                        "novnc": 6080,
+                        "vnc_loopback": 5900,
+                        "openclaw_gateway_loopback": 19002,
+                    },
+                    "browser_stack": {
+                        "spine": "openclaw",
+                        "automation": "playwright",
+                        "browser": "chromium",
+                        "shared_provider_profile": (
+                            "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+                        ),
+                    },
+                    "required_health_checks": [
+                        "x86_64_architecture",
+                        "runner_helpers",
+                        "visual_commands",
+                        "novnc",
+                        "openclaw",
+                        "playwright_chromium",
+                        "shared_provider_browser_profile",
+                    ],
+                },
+                "observed": {
+                    "os_id": "ubuntu",
+                    "os_version": "24.04",
+                    "memory_mib": 24576,
+                },
+                "checks": {
+                    "x86_64_architecture": True,
+                    "runner_helpers": True,
+                    "visual_commands": True,
+                    "novnc": True,
+                    "openclaw": True,
+                    "playwright_chromium": True,
+                    "shared_provider_browser_profile": True,
+                },
+                "provider_browser_profile": (
+                    "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+                ),
+                "playwright_browsers_path": "/opt/fusekit-playwright-browsers",
+            }
+        ),
+        encoding="utf-8",
+    )
     (fusekit_dir / "provider_strategies.json").write_text(
         json.dumps(
             {
@@ -2993,6 +3053,7 @@ def test_save_launch_job_writes_durable_state_after_job_state_exists(tmp_path) -
     assert (fusekit_dir / "checkpoints.json").exists()
     assert record["durable_state"]["resume_ready"] is True
     assert record["durable_state"]["missing"] == []
+    assert record["durable_state"]["runner_profile_ready"] is True
 
 
 def test_local_launch_control_room_has_truth_artifacts(tmp_path) -> None:

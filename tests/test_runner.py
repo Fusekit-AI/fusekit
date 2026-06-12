@@ -455,6 +455,8 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     assert record["durable_state"]["schema_version"] == "fusekit.durable-state.v1"
     assert record["durable_state"]["resume_ready"] is True
     assert record["durable_state"]["missing"] == []
+    assert record["durable_state"]["runner_profile_ready"] is True
+    assert record["durable_state"]["runner_profile_failures"] == []
     assert {
         item["id"] for item in record["durable_state"]["sources"] if item["exists"]
     } >= {
@@ -464,6 +466,7 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
         "checkpoints",
         "gates",
         "provider_strategies",
+        "runner_readiness",
     }
     assert "visual" in record["durable_state"]["volatile_worker_surfaces"]
     assert record["durable_state"]["detonation_scope"]["schema_version"] == (
@@ -482,8 +485,23 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
         "can_recreate_worker"
     ] is True
     assert record["durable_state"]["worker_replacement_contract"][
+        "runner_profile_ready"
+    ] is True
+    assert (
+        record["durable_state"]["worker_replacement_contract"][
+            "required_runner_profile"
+        ]
+        == "oci-visual-browser-x86_64"
+    )
+    assert record["durable_state"]["worker_replacement_contract"][
         "host_machine_state_required"
     ] is False
+    assert (
+        record["durable_state"]["worker_replacement_contract"][
+            "runner_profile_failures"
+        ]
+        == []
+    )
     assert "provider-auth" in record["durable_state"]["worker_replacement_contract"][
         "volatile_surfaces"
     ]
@@ -704,9 +722,20 @@ def test_run_record_recording_contract_blocks_thin_runner_profile(tmp_path) -> N
     record_path = write_run_record(job, path=tmp_path / "run_record.json")
     record = json.loads(record_path.read_text(encoding="utf-8"))
 
+    assert record["durable_state"]["resume_ready"] is False
+    assert record["durable_state"]["runner_profile_ready"] is False
+    assert record["durable_state"]["worker_replacement_contract"][
+        "can_recreate_worker"
+    ] is False
     assert record["recording_contract"]["checks"]["runner_profile"] is False
+    assert record["recording_contract"]["checks"]["durable_state"] is False
+    assert record["recording_contract"]["checks"]["automation_boundary"] is False
     assert record["recording_contract"]["recording_ready"] is False
-    assert record["recording_contract"]["blockers"] == ["runner_profile"]
+    assert record["recording_contract"]["blockers"] == [
+        "durable_state",
+        "runner_profile",
+        "automation_boundary",
+    ]
 
 
 def test_run_record_retains_all_redacted_wake_events(tmp_path) -> None:
