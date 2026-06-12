@@ -696,15 +696,21 @@ def _validate_clipboard_capture_value(target: str, value: str) -> None:
                 f"{normalized_target} looks like copied page or response text, not a token. "
                 f"{_capture_retry_action(normalized_target, 'copy-once token value')}"
             )
-        if re.search(r"\s", value):
-            raise FuseKitError(
-                f"{normalized_target} must be one copied token with no spaces or line breaks. "
-                f"{_capture_retry_action(normalized_target, 'copy-once token')}"
-            )
         if value.lower().startswith(("http://", "https://")):
             raise FuseKitError(
                 f"{normalized_target} looks like a URL. "
                 f"{_capture_retry_action(normalized_target, 'provider key value')}"
+            )
+        if _looks_like_key_value_secret_blob(value):
+            raise FuseKitError(
+                f"{normalized_target} looks like a copied assignment or header, not one "
+                "raw token value. "
+                f"{_capture_retry_action(normalized_target, 'single provider token')}"
+            )
+        if re.search(r"\s", value):
+            raise FuseKitError(
+                f"{normalized_target} must be one copied token with no spaces or line breaks. "
+                f"{_capture_retry_action(normalized_target, 'copy-once token')}"
             )
         if "," in value or ";" in value:
             raise FuseKitError(
@@ -759,6 +765,10 @@ def _looks_like_placeholder_token(value: str) -> bool:
         lowered in PLACEHOLDER_TOKEN_VALUES
         or MASKED_TOKEN_PATTERN.fullmatch(candidate) is not None
     )
+
+
+def _looks_like_key_value_secret_blob(value: str) -> bool:
+    return re.match(r"^[A-Za-z][A-Za-z0-9_.-]{2,}\s*(?:=|:)", value.strip()) is not None
 
 
 def _uncaptured_gate_targets(

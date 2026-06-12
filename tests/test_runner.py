@@ -3457,6 +3457,27 @@ def test_control_room_clipboard_capture_rejects_urls_and_multi_token_blobs(value
     assert "looks like a URL" in message or "looks like multiple copied values" in message
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        "RESEND_API_KEY=re_1234567890abcdef",
+        "api_key=re_1234567890abcdef",
+        "Authorization:Bearer re_1234567890abcdef",
+    ],
+)
+def test_control_room_clipboard_capture_rejects_assignment_or_header_blobs(
+    value: str,
+) -> None:
+    with pytest.raises(FuseKitError) as exc:
+        _validate_clipboard_capture_value("RESEND_API_KEY", value)
+
+    assert str(exc.value) == (
+        "RESEND_API_KEY looks like a copied assignment or header, not one raw token value. "
+        "Copy only the single provider token inside the VM browser, then click "
+        "Capture RESEND_API_KEY from VM clipboard again."
+    )
+
+
 def test_control_room_passphrase_uses_job_artifact(tmp_path, monkeypatch) -> None:
     job = JobState.create("fk-test", tmp_path, "source-fetch")
     job_path = tmp_path / "source-fetch-job.json"
