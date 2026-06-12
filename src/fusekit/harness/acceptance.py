@@ -101,6 +101,12 @@ class AcceptanceReport:
 
         return self.mode == "live" and self.launch_ready
 
+    @property
+    def recording_ready(self) -> bool:
+        """True only when live evidence proves the run is safe to demo-record."""
+
+        return self.public_launch_ready
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize the report."""
 
@@ -109,7 +115,7 @@ class AcceptanceReport:
             "app_path": redact_public_path(self.app_path),
             "launch_ready": self.launch_ready,
             "public_launch_ready": self.public_launch_ready,
-            "recording_ready": self.public_launch_ready,
+            "recording_ready": self.recording_ready,
             "checks": [check.to_dict() for check in self.checks],
             "missing": list(self.missing),
             "blockers": [_redacted_blocker(blocker) for blocker in self.blockers],
@@ -270,6 +276,7 @@ def run_acceptance(
         {
             "launch_ready": launch_ready,
             "public_launch_ready": report.public_launch_ready,
+            "recording_ready": report.recording_ready,
             "missing": missing,
         },
     )
