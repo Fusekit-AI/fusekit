@@ -1256,6 +1256,8 @@ def test_live_control_room_refreshes_all_run_record_proof_panels() -> None:
         ("renderRecordingContract(job)", "data-recording-contract-checks"),
         ("renderDetonationReceipt(job)", "data-detonation-receipt-checks"),
         ("visualGateHint(job)", "data-visual-gate-hint"),
+        ("controlRoomSuccessStatus(payload", "wakeEventId"),
+        ("actionWakeProofLines(status)", "Resume wake proof"),
         ("remoteWorkerCleanupReady(workerCleanup)", "remote_worker_cleanup"),
     ):
         assert renderer in SCRIPT
@@ -2531,6 +2533,8 @@ def test_control_room_post_requests_human_gate_resume(tmp_path) -> None:
     assert payload["ok"] is True
     assert payload["status"] == "resume_requested"
     assert payload["message"] == "FuseKit is retrying provider verification now."
+    assert payload["wake_event"] == "resume_requested"
+    assert payload["wake_event_id"]
     assert GateService.load(tmp_path / "gates.json").records[
         "provider.github.mfa.123"
     ].status == "resume_requested"
@@ -2544,6 +2548,7 @@ def test_control_room_post_requests_human_gate_resume(tmp_path) -> None:
     assert events[-1]["data"]["provider"] == "github"
     assert events[-1]["data"]["protected_action"] is True
     assert events[-1]["data"]["status"] == "resume_requested"
+    assert events[-1]["data"]["wake_event_id"] == payload["wake_event_id"]
 
 
 def test_control_room_post_pass_is_idempotent_for_already_resuming_gate(
@@ -3675,9 +3680,14 @@ def test_control_room_post_captures_vm_clipboard_into_vault(tmp_path, monkeypatc
         ),
         "ok": True,
         "record_id": "provider.resend.resend_api_key",
+        "capture_wake_event_id": payload["capture_wake_event_id"],
+        "resume_wake_event_id": payload["resume_wake_event_id"],
         "status": "resume_requested",
         "target": "RESEND_API_KEY",
     }
+    assert payload["capture_wake_event_id"]
+    assert payload["resume_wake_event_id"]
+    assert payload["capture_wake_event_id"] != payload["resume_wake_event_id"]
     vault = Vault.open(vault_path, "passphrase")
     record = vault.require("provider.resend.resend_api_key")
     assert record.value == "re_live_secret_from_vm_clipboard"
@@ -3702,6 +3712,8 @@ def test_control_room_post_captures_vm_clipboard_into_vault(tmp_path, monkeypatc
     assert events[-1]["data"]["protected_action"] is True
     assert events[-1]["data"]["source"] == "vm-clipboard"
     assert events[-1]["data"]["storage"] == "encrypted-vault"
+    assert events[-1]["data"]["capture_wake_event_id"] == payload["capture_wake_event_id"]
+    assert events[-1]["data"]["resume_wake_event_id"] == payload["resume_wake_event_id"]
     assert "re_live_secret" not in json.dumps(payload)
     assert "re_live_secret" not in audit_path.read_text(encoding="utf-8")
 
@@ -4082,6 +4094,9 @@ def test_control_room_rejects_stale_capture_after_gate_resumes(
         thread.join(timeout=5)
 
     assert payload["status"] == "resume_requested"
+    assert payload["capture_wake_event_id"]
+    assert payload["resume_wake_event_id"]
+    assert payload["capture_wake_event_id"] != payload["resume_wake_event_id"]
     assert exc.value.code == 400
     assert stale_payload == {
         "error": (

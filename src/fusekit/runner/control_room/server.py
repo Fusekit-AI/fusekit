@@ -276,6 +276,8 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                         "gate_id": gate_id,
                         "status": "resume_requested",
                         "message": _gate_resume_message(gate),
+                        "wake_event_id": wake_event_id,
+                        "wake_event": "resume_requested",
                     }
                 )
                 return
@@ -725,6 +727,8 @@ def _capture_gate_clipboard_secret(
         "record_id": record_id,
         "status": status,
         "captured_targets": sorted(captured_targets),
+        "capture_wake_event_id": capture_wake_event_id,
+        "resume_wake_event_id": resume_wake_event_id,
         "message": message,
     }
 

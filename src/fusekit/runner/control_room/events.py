@@ -2015,6 +2015,18 @@ function controlRoomFailureError(payload, fallback) {
   return error;
 }
 
+function controlRoomSuccessStatus(payload, fallback) {
+  return {
+    message: String(payload?.message || fallback || ""),
+    missingTargets: [],
+    nextAction: "",
+    summary: String(payload?.message || fallback || ""),
+    wakeEventId: String(payload?.wake_event_id || payload?.resume_wake_event_id || ""),
+    captureWakeEventId: String(payload?.capture_wake_event_id || ""),
+    resumeWakeEventId: String(payload?.resume_wake_event_id || ""),
+  };
+}
+
 function gateActionStatusNode(gateId) {
   const wanted = String(gateId || "");
   return Array.from(document.querySelectorAll("[data-gate-action-status-for]"))
@@ -2029,12 +2041,18 @@ function setGateActionStatus(gateId, message, tone = "ok") {
     missingTargets: Array.isArray(message.missingTargets) ? message.missingTargets : [],
     nextAction: String(message.nextAction || ""),
     summary: String(message.summary || message.message || ""),
+    wakeEventId: String(message.wakeEventId || ""),
+    captureWakeEventId: String(message.captureWakeEventId || ""),
+    resumeWakeEventId: String(message.resumeWakeEventId || ""),
     tone: String(tone || message.tone || "ok"),
   } : {
     message: String(message || ""),
     missingTargets: [],
     nextAction: "",
     summary: String(message || ""),
+    wakeEventId: "",
+    captureWakeEventId: "",
+    resumeWakeEventId: "",
     tone: String(tone || "ok"),
   };
   gateActionStatus.set(normalized, status);
@@ -2055,8 +2073,28 @@ function renderGateActionStatusBody(status) {
   }
   const nextAction = String(status?.nextAction || "").trim();
   if (nextAction) rows.push(`<p>${escapeHtml(nextAction)}</p>`);
+  const wakeLines = actionWakeProofLines(status);
+  if (wakeLines.length) {
+    rows.push(`<span>${escapeHtml(wakeLines.join(" · "))}</span>`);
+  }
   if (!rows.length) rows.push(`<strong>${escapeHtml(String(status?.message || ""))}</strong>`);
   return rows.join("");
+}
+
+function actionWakeProofLines(status) {
+  const lines = [];
+  const captureWakeEventId = String(status?.captureWakeEventId || "").trim();
+  const resumeWakeEventId = String(status?.resumeWakeEventId || "").trim();
+  const wakeEventId = String(status?.wakeEventId || "").trim();
+  if (captureWakeEventId) {
+    lines.push(`Capture wake proof ${captureWakeEventId}`);
+  }
+  if (resumeWakeEventId) {
+    lines.push(`Resume wake proof ${resumeWakeEventId}`);
+  } else if (wakeEventId) {
+    lines.push(`Wake proof ${wakeEventId}`);
+  }
+  return lines;
 }
 
 document.addEventListener("click", async (event) => {
@@ -2142,7 +2180,10 @@ document.addEventListener("click", async (event) => {
       setRefreshStatus(payload.message || `${target} captured into the encrypted vault.`);
       setGateActionStatus(
         gateId,
-        payload.message || `${target} captured into the encrypted vault.`,
+        controlRoomSuccessStatus(
+          payload,
+          `${target} captured into the encrypted vault.`,
+        ),
         "ok",
       );
       await refreshJob({ preserveStatus: true });
@@ -2190,9 +2231,11 @@ document.addEventListener("click", async (event) => {
       );
       setGateActionStatus(
         gateId,
-        payload.message ||
+        controlRoomSuccessStatus(
+          payload,
           "FuseKit accepted this step and is rechecking the provider now. " +
-          "Keep this control room open; the next step will appear here.",
+            "Keep this control room open; the next step will appear here.",
+        ),
         "ok",
       );
       await refreshJob({ preserveStatus: true });
