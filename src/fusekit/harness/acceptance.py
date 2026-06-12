@@ -5093,18 +5093,23 @@ def _provider_playbook_shape_failures(playbook: dict[str, Any]) -> list[str]:
     if not isinstance(steps, list) or not steps:
         failures.append("provider_playbook.steps is missing")
     else:
+        step_ids: list[str] = []
         for index, step in enumerate(steps):
             label = f"provider_playbook.steps[{index}]"
             if not isinstance(step, dict):
                 failures.append(f"{label} is not an object")
                 continue
-            if not str(step.get("id", "")).strip():
+            step_id = str(step.get("id", "") or "").strip()
+            if not step_id:
                 failures.append(f"{label}.id is missing")
+            else:
+                step_ids.append(step_id)
             instruction = str(step.get("instruction", "") or "")
             if not instruction.strip():
                 failures.append(f"{label}.instruction is missing")
             if _provider_playbook_instruction_is_unsafe(instruction):
                 failures.append(f"{label}.instruction asks for unsafe provider work")
+        failures.extend(_provider_playbook_order_failures(step_ids))
     safety_notes = playbook.get("safety_notes", [])
     if not isinstance(safety_notes, list) or not safety_notes:
         failures.append("provider_playbook.safety_notes is missing")
@@ -5117,6 +5122,27 @@ def _provider_playbook_shape_failures(playbook: dict[str, Any]) -> list[str]:
         ):
             if required not in notes:
                 failures.append(f"provider_playbook.safety_notes must include {required}")
+    return failures
+
+
+def _provider_playbook_order_failures(step_ids: list[str]) -> list[str]:
+    positions = {step_id: index for index, step_id in enumerate(step_ids)}
+    required_pairs = (
+        ("resend.capture_key", "resend.domain_api"),
+        ("resend.domain_api", "resend.audience_api"),
+        ("resend.domain_api", "vercel.env_api"),
+        ("resend.audience_api", "vercel.env_api"),
+        ("resend.domain_api", "dns.approval"),
+        ("vercel.env_api", "dns.approval"),
+    )
+    failures: list[str] = []
+    for before, after in required_pairs:
+        before_position = positions.get(before)
+        after_position = positions.get(after)
+        if before_position is None or after_position is None:
+            continue
+        if before_position > after_position:
+            failures.append(f"provider_playbook.steps must place {before} before {after}")
     return failures
 
 

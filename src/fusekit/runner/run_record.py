@@ -1253,12 +1253,40 @@ def _recording_provider_playbook_ready(record: dict[str, Any]) -> bool:
         for step in steps
     ):
         return False
+    if _provider_playbook_order_failures(steps):
+        return False
     joined = " ".join(str(note) for note in safety_notes)
     return (
         "VM browser" in joined
         and "Do not create Resend domains or audiences manually" in joined
         and "Do not paste provider secrets into the host computer" in joined
     )
+
+
+def _provider_playbook_order_failures(steps: list[Any]) -> list[str]:
+    step_ids = [
+        str(step.get("id", "") or "").strip()
+        for step in steps
+        if isinstance(step, dict) and str(step.get("id", "") or "").strip()
+    ]
+    positions = {step_id: index for index, step_id in enumerate(step_ids)}
+    required_pairs = (
+        ("resend.capture_key", "resend.domain_api"),
+        ("resend.domain_api", "resend.audience_api"),
+        ("resend.domain_api", "vercel.env_api"),
+        ("resend.audience_api", "vercel.env_api"),
+        ("resend.domain_api", "dns.approval"),
+        ("vercel.env_api", "dns.approval"),
+    )
+    failures: list[str] = []
+    for before, after in required_pairs:
+        before_position = positions.get(before)
+        after_position = positions.get(after)
+        if before_position is None or after_position is None:
+            continue
+        if before_position > after_position:
+            failures.append(f"{before} must precede {after}")
+    return failures
 
 
 def _recording_human_actions_ready(record: dict[str, Any]) -> bool:

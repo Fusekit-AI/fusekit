@@ -3973,6 +3973,7 @@ def _provider_playbook(strategy_runs: list[dict[str, object]]) -> dict[str, obje
 
     records = list(_iter_provider_strategy_items(strategy_runs))
     steps: list[dict[str, object]] = []
+    captured_targets: set[str] = set()
     if any(_is_resend_domain_api_record(record) for record in records):
         steps.append(
             _playbook_step(
@@ -3985,6 +3986,22 @@ def _provider_playbook(strategy_runs: list[dict[str, object]]) -> dict[str, obje
                 provider="resend",
             )
         )
+        captured_targets.add("RESEND_API_KEY")
+    for target in _human_gate_targets(records):
+        if target in captured_targets:
+            continue
+        steps.append(
+            _playbook_step(
+                f"capture.{target.lower()}",
+                (
+                    "Open the provider gate in the VM browser, copy the approved value "
+                    f"there, then click Capture {target} from VM clipboard."
+                ),
+                control=f"Capture {target} from VM clipboard",
+            )
+        )
+        captured_targets.add(target)
+    if any(_is_resend_domain_api_record(record) for record in records):
         steps.append(
             _playbook_step(
                 "resend.domain_api",
@@ -4005,18 +4022,6 @@ def _provider_playbook(strategy_runs: list[dict[str, object]]) -> dict[str, obje
                 route="api",
             )
         )
-    if any(_is_dns_record(record) for record in records):
-        steps.append(
-            _playbook_step(
-                "dns.approval",
-                (
-                    "FuseKit carries app and provider-generated DNS records into the "
-                    "DNS approval gate before apply."
-                ),
-                control="Approve DNS apply",
-                provider="dns",
-            )
-        )
     if any(_is_vercel_env_record(record) for record in records):
         steps.append(
             _playbook_step(
@@ -4029,15 +4034,16 @@ def _provider_playbook(strategy_runs: list[dict[str, object]]) -> dict[str, obje
                 route="api",
             )
         )
-    for target in _human_gate_targets(records):
+    if any(_is_dns_record(record) for record in records):
         steps.append(
             _playbook_step(
-                f"capture.{target.lower()}",
+                "dns.approval",
                 (
-                    "Open the provider gate in the VM browser, copy the approved value "
-                    f"there, then click Capture {target} from VM clipboard."
+                    "FuseKit carries app and provider-generated DNS records into the "
+                    "DNS approval gate before apply."
                 ),
-                control=f"Capture {target} from VM clipboard",
+                control="Approve DNS apply",
+                provider="dns",
             )
         )
     if any(_is_non_secret_human_gate(record) for record in records):

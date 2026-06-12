@@ -115,7 +115,11 @@ must carry the same
 provider-strategy contract as the standalone provider route artifact: schema
 version, provider list, strategy rows, selected route status, and fallback
 candidates must be present and match the artifact's route decisions so the
-ordered route plan survives OCI detonation without drift. Its live verifier
+ordered route plan survives OCI detonation without drift. The Run Record's
+provider playbook must preserve the same public order: Capture needed provider
+tokens, create/reuse Resend resources by API, write Vercel runtime env/deploy
+state, then surface DNS approval with the complete app and provider-generated
+record set. Its live verifier
 summary must likewise match `verification_report.json` provider checks, including
 pending-safe status, so green control-room checks survive OCI detonation without
 becoming stale display state.

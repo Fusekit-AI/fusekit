@@ -177,8 +177,8 @@ def test_provider_playbook_records_resend_domain_first_path() -> None:
     instructions = [str(step["instruction"]) for step in steps if isinstance(step, dict)]
     assert instructions[0].startswith("Capture RESEND_API_KEY")
     assert "Resend sending domain through the Resend API" in instructions[1]
-    assert "DNS approval gate before apply" in instructions[2]
-    assert "runtime variables into Vercel" in instructions[3]
+    assert "runtime variables into Vercel" in instructions[2]
+    assert "DNS approval gate before apply" in instructions[3]
     assert "Do not create Resend domains or audiences manually" in " ".join(
         str(note) for note in playbook["safety_notes"]  # type: ignore[index]
     )

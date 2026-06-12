@@ -4158,6 +4158,54 @@ def test_live_acceptance_requires_provider_playbook(tmp_path) -> None:
     assert "Resend no-manual-setup" in next_action
 
 
+def test_acceptance_run_record_requires_provider_playbook_public_order(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+
+    record["provider_playbook"] = _provider_playbook()
+    record["provider_playbook"]["steps"] = [
+        {
+            "id": "resend.capture_key",
+            "provider": "resend",
+            "control": "Capture RESEND_API_KEY from VM clipboard",
+            "instruction": "Capture RESEND_API_KEY from VM clipboard.",
+        },
+        {
+            "id": "dns.approval",
+            "provider": "dns",
+            "control": "Approve DNS apply",
+            "instruction": "FuseKit carries DNS records into the DNS approval gate.",
+        },
+        {
+            "id": "resend.domain_api",
+            "provider": "resend",
+            "route": "api",
+            "instruction": "FuseKit creates or reuses the Resend sending domain by API.",
+        },
+        {
+            "id": "vercel.env_api",
+            "provider": "vercel",
+            "route": "api",
+            "instruction": "FuseKit writes runtime variables into Vercel.",
+        },
+    ]
+
+    failures = _run_record_shape_failures(record)
+
+    assert (
+        "provider_playbook.steps must place resend.domain_api before dns.approval"
+        in failures
+    )
+    assert (
+        "provider_playbook.steps must place vercel.env_api before dns.approval"
+        in failures
+    )
+
+
 def test_live_acceptance_requires_central_run_record(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()
