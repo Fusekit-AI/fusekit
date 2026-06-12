@@ -2499,6 +2499,8 @@ def test_control_room_renders_resume_requested_gate_as_rechecking(tmp_path) -> N
         provider="cloudflare",
         reason="Cloudflare token creation",
         resume_url="https://dash.cloudflare.com/profile/api-tokens",
+        success_criteria=("Exact recheck success marker",),
+        avoid_steps=("Exact recheck avoid marker",),
     )
     service.request_resume("provider.cloudflare.authorization")
 
@@ -2509,6 +2511,10 @@ def test_control_room_renders_resume_requested_gate_as_rechecking(tmp_path) -> N
     assert "cloudflare gate is being rechecked" in html.lower()
     assert "gate-rechecking" in html
     assert "FuseKit is rechecking now" in html
+    assert "Success looks like" in html
+    assert "Exact recheck success marker" in html
+    assert "Avoid" in html
+    assert "Exact recheck avoid marker" in html
     assert "retrying provider verification now" in html
     assert "next guided blocker or success state" in html
     assert 'data-gate-pass="provider.cloudflare.authorization"' not in html

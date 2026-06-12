@@ -294,11 +294,18 @@ function renderGateHelp(step) {
           `</div>`,
         ].join("")
       : "";
+    const criteriaBlock = renderGateCriteria(
+      guidance,
+      step.success_criteria,
+      step.avoid_steps,
+      captureTargetList,
+    );
     return `
       <div class="gate-help gate-rechecking">
         <span>FuseKit is rechecking now</span>${classification}
         <strong>${escapeHtml(step.label || guidance.title)}</strong>
         <p>${escapeHtml(stepDetail(step))}</p>
+        ${criteriaBlock}
         <em>${escapeHtml(publicCopy(guidance.reassurance, captureTargetList))}</em>
         ${nextBlock}
       </div>

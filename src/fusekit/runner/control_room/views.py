@@ -1995,11 +1995,18 @@ def _render_gate_help(step: Any) -> str:
             if classification
             else ""
         )
+        criteria_block = _render_gate_criteria(
+            guidance,
+            success_criteria=getattr(step, "success_criteria", None),
+            avoid_steps=getattr(step, "avoid_steps", None),
+            capture_targets=capture_targets,
+        )
         return f"""
         <div class="gate-help gate-rechecking">
           <span>FuseKit is rechecking now</span>{classification_label}
           <strong>{html.escape(str(getattr(step, "label", "") or guidance.title))}</strong>
           <p>{html.escape(_step_detail(step))}</p>
+          {criteria_block}
           <em>{html.escape(_public_copy(guidance.reassurance, capture_targets))}</em>
           {next_block}
         </div>
