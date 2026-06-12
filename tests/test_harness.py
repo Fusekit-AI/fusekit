@@ -4741,6 +4741,71 @@ def test_acceptance_run_record_requires_exact_human_action_controls(tmp_path) ->
     assert "human_actions.counts.open_provider_gate must match actions" not in failures
 
 
+def test_acceptance_run_record_requires_human_actions_to_match_provider_gates(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+
+    record["provider_gates"] = {
+        "total": 1,
+        "statuses": {"waiting": 1},
+        "providers": ["resend"],
+        "records": [
+            {
+                "id": "provider.resend.authorization",
+                "provider": "resend",
+                "status": "waiting",
+                "target": "RESEND_API_KEY",
+            }
+        ],
+    }
+    record["human_actions"] = {
+        "schema_version": "fusekit.human-action-trace.v1",
+        "total": 2,
+        "counts": {
+            "open_provider_gate": 1,
+            "capture_vm_clipboard": 1,
+        },
+        "actions": [
+            {
+                "gate_id": "provider.github.authorization",
+                "provider": "github",
+                "classification": "authorization",
+                "action": "open_provider_gate",
+                "visible_control": "Open provider gate in VM",
+                "guided": True,
+                "created_at": 1.0,
+            },
+            {
+                "gate_id": "provider.resend.authorization",
+                "provider": "resend",
+                "classification": "authorization",
+                "action": "capture_vm_clipboard",
+                "visible_control": "Capture GITHUB_TOKEN from VM clipboard",
+                "target": "GITHUB_TOKEN",
+                "guided": True,
+                "created_at": 2.0,
+            },
+        ],
+        "unguided": [],
+        "statement": (
+            "Every action maps to a visible control-room gate with no raw provider "
+            "secret details."
+        ),
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert "human_actions.actions[0].gate_id must match provider_gates.records" in failures
+    assert (
+        "human_actions.actions[1].target must match provider_gates.records target"
+        in failures
+    )
+
+
 def test_acceptance_run_record_requires_automation_boundary(tmp_path) -> None:
     fusekit_dir = tmp_path / ".fusekit"
     fusekit_dir.mkdir()

@@ -521,7 +521,7 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
         _require_list_field(wake_events, "events", failures, prefix="wake_events")
     human_actions = _require_dict_field(raw, "human_actions", failures)
     if human_actions is not None:
-        failures.extend(_human_action_trace_shape_failures(human_actions))
+        failures.extend(_human_action_trace_shape_failures(human_actions, provider_gates))
     automation_boundary = _require_dict_field(raw, "automation_boundary", failures)
     if automation_boundary is not None:
         failures.extend(_automation_boundary_shape_failures(automation_boundary))
@@ -684,7 +684,10 @@ def _run_record_evidence_inventory_consistency_failures(
     return failures
 
 
-def _human_action_trace_shape_failures(human_actions: dict[str, Any]) -> list[str]:
+def _human_action_trace_shape_failures(
+    human_actions: dict[str, Any],
+    provider_gates: dict[str, Any] | None = None,
+) -> list[str]:
     failures: list[str] = []
     if str(human_actions.get("schema_version", "")).strip() != "fusekit.human-action-trace.v1":
         failures.append("human_actions.schema_version is unsupported")
@@ -703,6 +706,23 @@ def _human_action_trace_shape_failures(human_actions: dict[str, Any]) -> list[st
     if _safe_int(human_actions.get("total")) != len(actions):
         failures.append("human_actions.total must match human_actions.actions")
     actual_counts: dict[str, int] = {}
+    gate_targets_by_id: dict[str, set[str]] = {}
+    if provider_gates is not None:
+        gate_records = provider_gates.get("records", [])
+        if isinstance(gate_records, list):
+            for gate in gate_records:
+                if not isinstance(gate, dict):
+                    continue
+                gate_id = str(gate.get("id", "") or "").strip()
+                if not gate_id:
+                    continue
+                targets: set[str] = set()
+                targets.update(_env_targets_from_text(str(gate.get("target", "") or "")))
+                captured_targets = gate.get("captured_targets", [])
+                if isinstance(captured_targets, list):
+                    for target in captured_targets:
+                        targets.update(_env_targets_from_text(str(target or "")))
+                gate_targets_by_id[gate_id] = targets
     for index, action in enumerate(actions):
         label = f"human_actions.actions[{index}]"
         if not isinstance(action, dict):
@@ -717,8 +737,11 @@ def _human_action_trace_shape_failures(human_actions: dict[str, Any]) -> list[st
             failures.append(f"{label}.action is unsupported")
         else:
             actual_counts[action_name] = actual_counts.get(action_name, 0) + 1
-        if not str(action.get("gate_id", "") or "").strip():
+        gate_id = str(action.get("gate_id", "") or "").strip()
+        if not gate_id:
             failures.append(f"{label}.gate_id is missing")
+        elif gate_targets_by_id and gate_id not in gate_targets_by_id:
+            failures.append(f"{label}.gate_id must match provider_gates.records")
         if not str(action.get("visible_control", "") or "").strip():
             failures.append(f"{label}.visible_control is missing")
         if action.get("guided") is not True:
@@ -730,6 +753,12 @@ def _human_action_trace_shape_failures(human_actions: dict[str, Any]) -> list[st
             target = str(action.get("target", "") or "")
             if not target or f"Capture {target} from VM clipboard" != visible_control:
                 failures.append(f"{label}.visible_control must match the captured target")
+            normalized_targets = _env_targets_from_text(target)
+            expected_targets = gate_targets_by_id.get(gate_id, set())
+            if normalized_targets and expected_targets and not set(normalized_targets).issubset(
+                expected_targets
+            ):
+                failures.append(f"{label}.target must match provider_gates.records target")
         if action_name == "confirm_gate_finished" and visible_control not in {
             "I finished this step",
             "Approve DNS apply",

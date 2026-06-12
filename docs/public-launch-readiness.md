@@ -107,7 +107,11 @@ and that inventory counts match the listed records, so stale or invented survivo
 paths cannot make a demo look ready. The Run Record must also include a
 `fusekit.human-action-trace.v1` summary that maps every recorded provider open,
 VM-clipboard Capture, and approval click to a visible control-room gate and its
-follow-me instructions, with no unguided actions. It must carry the same
+follow-me instructions, with no unguided actions. Each action `gate_id` must
+exist in the durable provider gate records, and each copy-once Capture target
+must match the secret/env target declared by that gate, so stale tabs or
+wrong-token captures cannot satisfy launch readiness after OCI detonation. It
+must carry the same
 provider-strategy contract as the standalone provider route artifact: schema
 version, provider list, strategy rows, selected route status, and fallback
 candidates must be present and match the artifact's route decisions so the
