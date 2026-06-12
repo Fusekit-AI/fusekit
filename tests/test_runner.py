@@ -659,6 +659,14 @@ def test_recording_human_actions_require_exact_visible_controls() -> None:
     ]
 
     assert _recording_human_actions_ready(record) is True
+    record["human_actions"]["counts"]["capture_vm_clipboard"] = 2
+    assert _recording_human_actions_ready(record) is False
+    record["human_actions"]["counts"]["capture_vm_clipboard"] = 1
+    record["human_actions"]["schema_version"] = "legacy"
+    assert _recording_human_actions_ready(record) is False
+    record["human_actions"]["schema_version"] = "fusekit.human-action-trace.v1"
+    record["human_actions"]["actions"][0]["gate_id"] = ""
+    assert _recording_human_actions_ready(record) is False
 
 
 def test_human_action_trace_requires_exact_approval_control_guidance() -> None:

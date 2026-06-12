@@ -1462,16 +1462,39 @@ def _recording_human_actions_ready(record: dict[str, Any]) -> bool:
     if not isinstance(human_actions, dict):
         return False
     actions = human_actions.get("actions", [])
+    counts = human_actions.get("counts", {})
     unguided = human_actions.get("unguided", [])
-    if not isinstance(actions, list) or not isinstance(unguided, list):
+    if (
+        not isinstance(actions, list)
+        or not isinstance(counts, dict)
+        or not isinstance(unguided, list)
+    ):
         return False
     if _recording_human_actions_required(record) and not actions:
         return False
+    actual_counts: dict[str, int] = {}
+    for action in actions:
+        if not isinstance(action, dict):
+            return False
+        action_name = str(action.get("action", "") or "")
+        actual_counts[action_name] = actual_counts.get(action_name, 0) + 1
     return (
-        _safe_int(human_actions.get("total"), -1) == len(actions)
+        str(human_actions.get("schema_version", "") or "") == HUMAN_ACTION_TRACE_SCHEMA_VERSION
+        and _safe_int(human_actions.get("total"), -1) == len(actions)
+        and all(_safe_int(counts.get(name), -1) == count for name, count in actual_counts.items())
+        and all(
+            _safe_int(counts.get(name), 0) == 0
+            for name in {
+                "open_provider_gate",
+                "capture_vm_clipboard",
+                "confirm_gate_finished",
+            }
+            - set(actual_counts)
+        )
         and not unguided
         and all(
             isinstance(action, dict)
+            and str(action.get("gate_id", "") or "").strip()
             and action.get("guided") is True
             and _recording_human_action_control_ready(action)
             for action in actions
