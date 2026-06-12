@@ -249,6 +249,12 @@ class GateService:
         """Mark a gate as ready for FuseKit to retry verification."""
 
         record = self.records[gate_id]
+        if (
+            record.status == "resume_requested"
+            and record.last_wake_event == "resume_requested"
+            and record.last_wake_event_id
+        ):
+            return record.last_wake_event_id
         event_id = uuid.uuid4().hex
         event_at = time.time()
         record.status = "resume_requested"

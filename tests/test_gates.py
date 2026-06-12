@@ -140,6 +140,26 @@ def test_gate_service_resume_request_can_resurface_after_failed_recheck(tmp_path
     assert resurfaced.last_wake_event_id == events[1]["id"]
 
 
+def test_gate_service_resume_request_is_idempotent_once_requested(tmp_path) -> None:
+    path = tmp_path / "gates.json"
+    service = GateService.load(path)
+    service.wait("github-auth", provider="github", reason="MFA", resume_url="https://x")
+    first_event_id = service.request_resume("github-auth")
+    gate_events_path = tmp_path / "gate_events.jsonl"
+    original_gate_events = gate_events_path.read_text(encoding="utf-8")
+    original_record = GateService.load(path).records["github-auth"]
+
+    second_event_id = GateService.load(path).request_resume("github-auth")
+
+    assert second_event_id == first_event_id
+    assert gate_events_path.read_text(encoding="utf-8") == original_gate_events
+    reloaded = GateService.load(path).records["github-auth"]
+    assert reloaded.status == "resume_requested"
+    assert reloaded.last_wake_event_id == first_event_id
+    assert reloaded.last_wake_event == "resume_requested"
+    assert reloaded.last_wake_event_at == original_record.last_wake_event_at
+
+
 def test_gate_service_partial_capture_names_vm_clipboard_button(tmp_path) -> None:
     path = tmp_path / "gates.json"
     service = GateService.load(path)
