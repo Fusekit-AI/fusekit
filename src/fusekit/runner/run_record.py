@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ from fusekit.runner.gates import GateRecord
 from fusekit.runner.job import JobState
 from fusekit.runner.readiness import runner_readiness_failures
 from fusekit.runner.run_state import LaunchRunState
+from fusekit.security import redact_public_text
 
 RUN_RECORD_SCHEMA_VERSION = "fusekit.run-record.v1"
 DURABLE_STATE_SCHEMA_VERSION = "fusekit.durable-state.v1"
@@ -115,8 +117,10 @@ def build_run_record(
         "created_at": job.created_at,
         "updated_at": time.time(),
         "state": run_state,
-        "steps": [step.to_dict() for step in job.steps],
-        "checkpoints": [checkpoint.to_dict() for checkpoint in job.checkpoints],
+        "steps": [_redacted_record_entry(step.to_dict()) for step in job.steps],
+        "checkpoints": [
+            _redacted_record_entry(checkpoint.to_dict()) for checkpoint in job.checkpoints
+        ],
         "provider_gates": _gate_summary(gates),
         "durable_state": durable_state,
         "runner_profile": _runner_profile_summary(runner_readiness),
@@ -1431,14 +1435,20 @@ def _error_summary(
     errors: list[dict[str, Any]] = []
     for step in job.steps:
         if step.status == "failed":
-            errors.append({"source": "step", "id": step.id, "detail": step.detail})
+            errors.append(
+                {
+                    "source": "step",
+                    "id": _redacted_error_text(step.id),
+                    "detail": _redacted_error_text(step.detail),
+                }
+            )
     for gate in gates:
         if str(gate.get("status", "")) in {"failed", "invalid"}:
             errors.append(
                 {
                     "source": "gate",
-                    "id": str(gate.get("id", "unknown")),
-                    "detail": str(gate.get("reason", "")),
+                    "id": _redacted_error_text(gate.get("id", "unknown")),
+                    "detail": _redacted_error_text(gate.get("reason", "")),
                 }
             )
     for source, payload in (
@@ -1448,18 +1458,30 @@ def _error_summary(
     ):
         error = str(payload.get("error", "") or "")
         if error:
-            errors.append({"source": source, "id": source, "detail": error})
+            errors.append({"source": source, "id": source, "detail": _redacted_error_text(error)})
     failures = workspace_detonation.get("failures", {})
     if isinstance(failures, dict):
         for key, value in sorted(failures.items()):
             errors.append(
                 {
                     "source": "workspace_detonation",
-                    "id": str(key),
-                    "detail": str(value),
+                    "id": _redacted_error_text(key),
+                    "detail": _redacted_error_text(value),
                 }
             )
     return errors
+
+
+def _redacted_error_text(value: object) -> str:
+    redacted = redact_public_text(value)
+    return re.sub(r"https?://[^\s\"'<>]+", "[redacted-url]", redacted)
+
+
+def _redacted_record_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    return {
+        str(key): _redacted_error_text(value) if isinstance(value, str) else value
+        for key, value in entry.items()
+    }
 
 
 def _safe_string_list(value: object) -> list[str]:

@@ -130,7 +130,12 @@ so the public demo cannot claim that the OCI VM, worker process, or network
 resources were destroyed from stale central state alone. The final recording
 contract must also agree with the Run Record error list: public demo readiness
 is false if any unresolved error remains, even when all other proof sections
-look shaped correctly.
+look shaped correctly. Error entries themselves must be redacted and shaped as
+source/id/detail records; provider callback URLs, bearer strings, raw tokens,
+passwords, and long secret-like values are not allowed in the durable Run Record.
+The same redaction rule applies to Run Record step and checkpoint timeline text,
+because those recovery surfaces survive OCI detonation and may be shown in the
+control room.
 
 ## Acceptance Path
 

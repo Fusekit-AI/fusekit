@@ -497,8 +497,12 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
             failures.append("state.detonation_safe must be true")
         if state.get("workspace_detonated") is not True:
             failures.append("state.workspace_detonated must be true")
-    _require_list_field(raw, "steps", failures)
-    _require_list_field(raw, "checkpoints", failures)
+    steps = _require_list_field(raw, "steps", failures)
+    if steps is not None:
+        failures.extend(_run_record_timeline_shape_failures("steps", steps))
+    checkpoints = _require_list_field(raw, "checkpoints", failures)
+    if checkpoints is not None:
+        failures.extend(_run_record_timeline_shape_failures("checkpoints", checkpoints))
     provider_gates = _require_dict_field(raw, "provider_gates", failures)
     if provider_gates is not None:
         if not isinstance(provider_gates.get("total"), int):
@@ -581,7 +585,9 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
         if workspace_receipt is not None:
             failures.extend(_workspace_detonation_receipt_failures(workspace_receipt))
     _require_list_field(raw, "approvals", failures)
-    _require_list_field(raw, "errors", failures)
+    errors = _require_list_field(raw, "errors", failures)
+    if errors is not None:
+        failures.extend(_run_record_error_shape_failures(errors))
     return failures
 
 
@@ -1390,6 +1396,39 @@ def _recording_contract_shape_failures(
         if required not in statement:
             failures.append("recording_contract.statement is missing " + required + " guidance")
             break
+    return failures
+
+
+def _run_record_error_shape_failures(errors: list[Any]) -> list[str]:
+    failures: list[str] = []
+    for index, error in enumerate(errors):
+        label = f"errors[{index}]"
+        if not isinstance(error, dict):
+            failures.append(f"{label} is not an object")
+            continue
+        for key in ("source", "id", "detail"):
+            value = str(error.get(key, "") or "")
+            if not value.strip():
+                failures.append(f"{label}.{key} is missing")
+            elif _contains_secretish_audit_text(value):
+                failures.append(f"{label}.{key} contains credential-looking text")
+    return failures
+
+
+def _run_record_timeline_shape_failures(label: str, entries: list[Any]) -> list[str]:
+    failures: list[str] = []
+    for index, entry in enumerate(entries):
+        entry_label = f"{label}[{index}]"
+        if not isinstance(entry, dict):
+            failures.append(f"{entry_label} is not an object")
+            continue
+        for key in ("id", "label", "status"):
+            if not str(entry.get(key, "") or "").strip():
+                failures.append(f"{entry_label}.{key} is missing")
+        for key in ("detail", "next_action", "resume_hint"):
+            value = str(entry.get(key, "") or "")
+            if value and _contains_secretish_audit_text(value):
+                failures.append(f"{entry_label}.{key} contains credential-looking text")
     return failures
 
 

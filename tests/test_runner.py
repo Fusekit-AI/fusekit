@@ -576,6 +576,25 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     assert any(item["name"] == "audit_log" for item in record["artifacts"])
 
 
+def test_run_record_redacts_error_details(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci")
+    secret_url = (
+        "https://provider.example/callback?"
+        "code=secret-code-abcdefghijklmnopqrstuvwxyz&token=ghp_abcdefghijklmnopqrstuvwxyz"
+    )
+    job.mark("setup.execute", "failed", f"Provider callback failed: {secret_url}")
+    job.save(tmp_path / "job.json")
+
+    record_path = write_run_record(job, path=tmp_path / "run_record.json")
+    record_text = record_path.read_text(encoding="utf-8")
+    record = json.loads(record_text)
+
+    assert record["errors"][0]["detail"] == "Provider callback failed: [redacted-url]"
+    assert "secret-code" not in record_text
+    assert "ghp_" not in record_text
+    assert "https://provider.example" not in record_text
+
+
 def test_recording_human_actions_require_exact_visible_controls() -> None:
     record = {
         "human_actions": {

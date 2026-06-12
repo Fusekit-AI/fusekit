@@ -5016,6 +5016,55 @@ def test_acceptance_run_record_recording_contract_errors_empty_matches_errors(
     assert "recording_contract.checks.errors_empty must match errors" in failures
 
 
+def test_acceptance_run_record_rejects_unredacted_errors(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["errors"] = [
+        {
+            "source": "verification",
+            "id": "https://provider.example/callback?code=secret-code",
+            "detail": "token=abcdefghijklmnopqrstuvwxyz1234567890",
+        },
+        "not-an-object",
+    ]
+
+    failures = _run_record_shape_failures(record)
+
+    assert "errors[0].id contains credential-looking text" in failures
+    assert "errors[0].detail contains credential-looking text" in failures
+    assert "errors[1] is not an object" in failures
+
+
+def test_acceptance_run_record_rejects_unredacted_timeline_entries(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["steps"] = [
+        {
+            "id": "setup.execute",
+            "label": "Run setup worker",
+            "status": "failed",
+            "detail": "Callback failed at https://provider.example/callback?code=secret",
+        }
+    ]
+    record["checkpoints"] = [
+        {
+            "id": "setup.execute",
+            "label": "Run setup worker",
+            "status": "failed",
+            "detail": "Bearer abcdefghijklmnopqrstuvwxyz1234567890",
+        }
+    ]
+
+    failures = _run_record_shape_failures(record)
+
+    assert "steps[0].detail contains credential-looking text" in failures
+    assert "checkpoints[0].detail contains credential-looking text" in failures
+
+
 def test_acceptance_run_record_requires_evented_gate_wake_proof(tmp_path) -> None:
     fusekit_dir = tmp_path / ".fusekit"
     fusekit_dir.mkdir()
