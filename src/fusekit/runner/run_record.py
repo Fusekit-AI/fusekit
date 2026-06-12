@@ -957,7 +957,7 @@ def _audit_trail_summary(
         "schema_version": AUDIT_TRAIL_SCHEMA_VERSION,
         "entry_count": len(entries),
         "counts": counts,
-        "entries": entries[:40],
+        "entries": entries,
         "statement": (
             "Credential captures, provider actions, DNS writes, human approvals, "
             "and detonation events are summarized from redacted runtime evidence "

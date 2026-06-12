@@ -725,6 +725,17 @@ def test_run_record_retains_all_redacted_wake_events(tmp_path) -> None:
     assert record["wake_events"]["events"][0]["gate_id"] == "provider.demo.0"
     assert record["wake_events"]["events"][-1]["gate_id"] == "provider.demo.54"
     assert "secret" not in json.dumps(record["wake_events"]).lower()
+    assert record["audit_trail"]["entry_count"] == 55
+    assert len(record["audit_trail"]["entries"]) == 55
+    assert record["audit_trail"]["counts"]["human_approval"] == 55
+    assert record["audit_trail"]["entries"][0]["wake_event_id"] == (
+        record["wake_events"]["events"][0]["id"]
+    )
+    assert record["audit_trail"]["entries"][-1]["wake_event_id"] == (
+        record["wake_events"]["events"][-1]["id"]
+    )
+    assert "secret-token" not in json.dumps(record["audit_trail"]).lower()
+    assert "bearer " not in json.dumps(record["audit_trail"]).lower()
 
 
 def test_control_room_payload_includes_run_record(tmp_path) -> None:

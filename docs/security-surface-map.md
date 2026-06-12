@@ -69,6 +69,9 @@ The central Run Record carries those same non-secret wake event ids on audit
 trail entries derived from gate events, so post-detonation review does not need
 plaintext browser state or raw log reconstruction to prove which protected
 action woke the worker.
+The Run Record retains the full redacted audit trail instead of truncating it,
+so repeated retries, provider gates, captures, and approvals remain auditable
+after the disposable OCI worker is gone.
 
 Gate target text is also display-redacted before it reaches the browser payload.
 FuseKit preserves useful target shape such as domains, env names, and redacted query
