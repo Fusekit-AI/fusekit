@@ -459,6 +459,13 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     assert "https://dash.cloudflare.com" not in json.dumps(record["human_actions"])
     assert record["vault"]["record_count"] == 1
     assert record["vault"]["records"][0]["id"] == "provider.cloudflare.token"
+    assert record["audit_trail"]["schema_version"] == "fusekit.audit-trail.v1"
+    assert record["audit_trail"]["counts"]["credential_capture"] >= 1
+    assert record["audit_trail"]["counts"]["provider_action"] >= 1
+    assert record["audit_trail"]["counts"]["detonation"] == 1
+    audit_categories = {entry["category"] for entry in record["audit_trail"]["entries"]}
+    assert {"credential_capture", "provider_action", "detonation"} <= audit_categories
+    assert "https://dash.cloudflare.com" not in json.dumps(record["audit_trail"])
     assert record["detonation"]["workspace_receipt"]["status"] == "complete"
     assert record["evidence"]["schema_version"] == "fusekit.evidence-inventory.v1"
     assert record["evidence"]["counts"]["logs"] >= 2
@@ -630,6 +637,52 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
                         "pending-safe checks before launch readiness is trusted."
                     ),
                 },
+                "audit_trail": {
+                    "schema_version": "fusekit.audit-trail.v1",
+                    "entry_count": 3,
+                    "counts": {
+                        "credential_capture": 1,
+                        "provider_action": 1,
+                        "detonation": 1,
+                    },
+                    "entries": [
+                        {
+                            "category": "credential_capture",
+                            "action": "control_room.capture_vm_clipboard",
+                            "provider": "resend",
+                            "target": "RESEND_API_KEY",
+                            "status": "captured",
+                            "source": "gate_events.jsonl",
+                            "summary": (
+                                "RESEND_API_KEY was captured from the VM clipboard."
+                            ),
+                        },
+                        {
+                            "category": "provider_action",
+                            "action": "resend.domain",
+                            "provider": "resend",
+                            "status": "passed",
+                            "source": "setup_receipt.json",
+                            "summary": "FuseKit recorded provider action resend.domain.",
+                        },
+                        {
+                            "category": "detonation",
+                            "action": "oci.workspace.detonate",
+                            "provider": "oci",
+                            "status": "complete",
+                            "source": "workspace_detonation.json",
+                            "summary": (
+                                "FuseKit recorded disposable OCI worker and "
+                                "workspace cleanup."
+                            ),
+                        },
+                    ],
+                    "statement": (
+                        "Credential captures, provider actions, DNS writes, "
+                        "human approvals, and detonation events are summarized "
+                        "without storing raw secrets."
+                    ),
+                },
             }
         ),
         encoding="utf-8",
@@ -654,6 +707,10 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
     assert 'data-verifier-provider="resend"' in html
     assert "cloudflare · dns_propagated" in html
     assert "What FuseKit owns after gates" in html
+    assert payload["run_record"]["audit_trail"]["entry_count"] == 3
+    assert "Every important action is recorded" in html
+    assert 'data-audit-category="credential_capture"' in html
+    assert "RESEND_API_KEY was captured from the VM clipboard" in html
 
 
 def test_remote_bootstrap_checkpoint_keeps_recovery_in_launcher(tmp_path) -> None:

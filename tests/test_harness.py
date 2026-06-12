@@ -351,6 +351,67 @@ def _verifier_summary() -> dict[str, object]:
     }
 
 
+def _audit_trail() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.audit-trail.v1",
+        "entry_count": 5,
+        "counts": {
+            "credential_capture": 1,
+            "provider_action": 1,
+            "dns_write": 1,
+            "human_approval": 1,
+            "detonation": 1,
+        },
+        "entries": [
+            {
+                "category": "credential_capture",
+                "action": "control_room.capture_vm_clipboard",
+                "provider": "resend",
+                "target": "RESEND_API_KEY",
+                "status": "captured",
+                "source": "gate_events.jsonl",
+                "summary": "RESEND_API_KEY was captured from the VM clipboard.",
+            },
+            {
+                "category": "provider_action",
+                "action": "resend.domain",
+                "provider": "resend",
+                "status": "passed",
+                "source": "setup_receipt.json",
+                "summary": "FuseKit recorded provider action resend.domain.",
+            },
+            {
+                "category": "dns_write",
+                "action": "dns.apply",
+                "provider": "dns",
+                "status": "passed",
+                "source": "setup_receipt.json",
+                "summary": "FuseKit recorded a DNS write or DNS-record apply action.",
+            },
+            {
+                "category": "human_approval",
+                "action": "control_room.approve_dns_apply",
+                "provider": "dns",
+                "status": "approved",
+                "source": "gate_events.jsonl",
+                "summary": "A visible control-room approval woke the setup worker.",
+            },
+            {
+                "category": "detonation",
+                "action": "oci.workspace.detonate",
+                "provider": "oci",
+                "status": "complete",
+                "source": "workspace_detonation.json",
+                "summary": "FuseKit recorded disposable OCI worker and workspace cleanup.",
+            },
+        ],
+        "statement": (
+            "Credential captures, provider actions, DNS writes, human approvals, "
+            "and detonation events are summarized without storing raw secrets."
+        ),
+    }
+
+
 def _resend_domain_receipt_details(
     *,
     dns_records: list[dict[str, str]] | None = None,
@@ -708,6 +769,7 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
                 "verifiers": _verifier_summary(),
                 "provider_strategies": {"providers": []},
                 "vault": {"record_count": 0, "records": []},
+                "audit_trail": _audit_trail(),
                 "artifacts": [],
                 "evidence": _evidence_inventory(),
                 "verification": {
@@ -3869,6 +3931,68 @@ def test_acceptance_run_record_requires_live_verifier_summary(tmp_path) -> None:
     assert "verifiers.counts.needs_human_gate must be 0" in failures
     assert "verifiers.counts.unknown must be 0" in failures
     assert "verifiers.statement is missing live-verifier guidance" in failures
+
+
+def test_acceptance_run_record_requires_redacted_audit_trail(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["wake_events"] = {
+        "total": 2,
+        "event_counts": {"clipboard_captured": 1, "resume_requested": 1},
+        "events": [
+            {
+                "event": "clipboard_captured",
+                "gate_id": "provider.resend.authorization",
+                "provider": "resend",
+                "target": "RESEND_API_KEY",
+            },
+            {
+                "event": "resume_requested",
+                "gate_id": "dns.moonlite.rsvp.approval",
+                "provider": "dns",
+                "classification": "dns-approval",
+            },
+        ],
+    }
+    record["approvals"] = [{"id": "dns.moonlite.rsvp.approval", "provider": "dns"}]
+    record["vault"] = {"record_count": 1, "records": []}
+    record["detonation"]["workspace_detonated"] = True
+    record["verification"] = {"checks": [{"provider": "resend", "status": "passed"}]}
+    record["audit_trail"] = {
+        "schema_version": "fusekit.audit-trail.v1",
+        "entry_count": 2,
+        "counts": {"credential_capture": 1, "provider_action": 1},
+        "entries": [
+            {
+                "category": "credential_capture",
+                "action": "control_room.capture_vm_clipboard",
+                "provider": "resend",
+                "target": "RESEND_API_KEY",
+                "status": "captured",
+                "source": "gate_events.jsonl",
+                "summary": "token=leaked-value",
+            },
+            {
+                "category": "provider_action",
+                "action": "resend.domain",
+                "provider": "resend",
+                "status": "passed",
+                "source": "setup_receipt.json",
+                "summary": "FuseKit recorded provider action resend.domain.",
+            },
+        ],
+        "statement": "Audit happened.",
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert "audit_trail.entries[0].summary contains credential-looking text" in failures
+    assert "audit_trail must include dns_write" in failures
+    assert "audit_trail must include human_approval" in failures
+    assert "audit_trail must include detonation" in failures
+    assert "audit_trail.statement is missing audit-first guidance" in failures
 
 
 def test_acceptance_run_record_requires_evented_gate_wake_proof(tmp_path) -> None:

@@ -66,6 +66,7 @@ def render_control_room(
     {_render_human_actions(control_payload.get("run_record", {}))}
     {_render_automation_boundary(control_payload.get("run_record", {}))}
     {_render_run_record_verifiers(control_payload.get("run_record", {}))}
+    {_render_audit_trail(control_payload.get("run_record", {}))}
     {_render_acceptance_blockers(control_payload.get("acceptance", {}))}
     {_render_provider_strategies(control_payload.get("provider_strategies", {}))}
     {_render_trust(control_payload.get("verification", {}))}
@@ -1514,6 +1515,70 @@ def _render_run_record_verifier_card(check: dict[str, Any]) -> str:
             <strong>{html.escape(provider)} · {html.escape(check_name)}</strong>
             <p>{html.escape(detail)}</p>
             <em>{html.escape(status.replace('_', ' '))}</em>
+          </div>
+        </article>
+"""
+
+
+def _render_audit_trail(run_record: Any) -> str:
+    run_record = run_record if isinstance(run_record, dict) else {}
+    audit_trail = run_record.get("audit_trail", {})
+    audit_trail = audit_trail if isinstance(audit_trail, dict) else {}
+    entries = audit_trail.get("entries", [])
+    entries = entries if isinstance(entries, list) else []
+    cards = "\n".join(
+        _render_audit_trail_card(entry)
+        for entry in entries[:6]
+        if isinstance(entry, dict)
+    )
+    if not cards:
+        cards = """
+        <article class="trust-card pending">
+          <div class="trust-snow state-checking" aria-hidden="true"></div>
+          <div>
+            <span>Pending</span>
+            <strong>Audit trail</strong>
+            <p>Waiting for credential, provider, approval, or detonation evidence.</p>
+            <em>audit trail</em>
+          </div>
+        </article>
+"""
+    entry_count = audit_trail.get("entry_count", 0)
+    return f"""
+    <section class="run-state-panel" aria-label="Plain-language audit trail">
+      <div class="section-head compact">
+        <div>
+          <span class="section-kicker">Audit trail</span>
+          <h2>Every important action is recorded</h2>
+        </div>
+        <span class="live-pill" data-audit-trail-overall>
+          {html.escape(str(entry_count))} redacted entries
+        </span>
+      </div>
+      <p class="muted">
+        FuseKit summarizes credential captures, provider actions, DNS writes,
+        human approvals, and detonation without storing provider URLs, clipboard values,
+        raw tokens, or secrets.
+      </p>
+      <div class="run-state-grid" data-audit-trail-checks>{cards}</div>
+    </section>
+"""
+
+
+def _render_audit_trail_card(entry: dict[str, Any]) -> str:
+    category = str(entry.get("category", "") or "audit")
+    provider = str(entry.get("provider", "") or "fusekit")
+    action = str(entry.get("action", "") or "action")
+    status = str(entry.get("status", "") or "recorded")
+    summary = str(entry.get("summary", "") or "FuseKit recorded a redacted action.")
+    return f"""
+        <article class="trust-card passed" data-audit-category="{html.escape(category)}">
+          <div class="trust-snow state-passed" aria-hidden="true"></div>
+          <div>
+            <span>{html.escape(status_label("passed"))}</span>
+            <strong>{html.escape(category.replace('_', ' '))}</strong>
+            <p>{html.escape(_public_copy(summary))}</p>
+            <em>{html.escape(provider)} · {html.escape(action)} · {html.escape(status)}</em>
           </div>
         </article>
 """

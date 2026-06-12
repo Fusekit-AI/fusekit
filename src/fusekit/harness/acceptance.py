@@ -29,6 +29,7 @@ from fusekit.runner.control_room.state import (
     _sanitized_visual_state,
 )
 from fusekit.runner.run_record import (
+    AUDIT_TRAIL_SCHEMA_VERSION,
     AUTOMATION_BOUNDARY_SCHEMA_VERSION,
     RUN_RECORD_SCHEMA_VERSION,
     VERIFIER_SUMMARY_SCHEMA_VERSION,
@@ -528,6 +529,9 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
             for index, record in enumerate(records):
                 if isinstance(record, dict) and "value" in record:
                     failures.append(f"vault.records[{index}] exposes a raw value")
+    audit_trail = _require_dict_field(raw, "audit_trail", failures)
+    if audit_trail is not None:
+        failures.extend(_audit_trail_shape_failures(audit_trail, raw))
     _require_list_field(raw, "artifacts", failures)
     evidence = _require_dict_field(raw, "evidence", failures)
     if evidence is not None:
@@ -783,6 +787,104 @@ def _verifier_summary_shape_failures(verifiers: dict[str, Any]) -> list[str]:
     if "live provider verifiers" not in statement or "green checks" not in statement:
         failures.append("verifiers.statement is missing live-verifier guidance")
     return failures
+
+
+def _audit_trail_shape_failures(
+    audit_trail: dict[str, Any],
+    run_record: dict[str, Any],
+) -> list[str]:
+    failures: list[str] = []
+    if str(audit_trail.get("schema_version", "")).strip() != AUDIT_TRAIL_SCHEMA_VERSION:
+        failures.append("audit_trail.schema_version is unsupported")
+    entries = audit_trail.get("entries", [])
+    if not isinstance(entries, list) or not entries:
+        failures.append("audit_trail.entries is missing")
+        entries = []
+    counts = audit_trail.get("counts", {})
+    if not isinstance(counts, dict):
+        failures.append("audit_trail.counts is missing")
+        counts = {}
+    if _safe_int(audit_trail.get("entry_count")) != len(entries):
+        failures.append("audit_trail.entry_count must match entries")
+    actual_counts: dict[str, int] = {}
+    for index, entry in enumerate(entries):
+        label = f"audit_trail.entries[{index}]"
+        if not isinstance(entry, dict):
+            failures.append(f"{label} is not an object")
+            continue
+        for key in ("category", "action", "status", "source", "summary"):
+            if not str(entry.get(key, "") or "").strip():
+                failures.append(f"{label}.{key} is missing")
+        category = str(entry.get("category", "") or "")
+        if category not in {
+            "credential_capture",
+            "provider_action",
+            "dns_write",
+            "human_approval",
+            "detonation",
+        }:
+            failures.append(f"{label}.category is unsupported")
+        else:
+            actual_counts[category] = actual_counts.get(category, 0) + 1
+        for text_field in ("summary", "action", "provider", "target"):
+            value = str(entry.get(text_field, "") or "")
+            if _contains_secretish_audit_text(value):
+                failures.append(f"{label}.{text_field} contains credential-looking text")
+    for category, expected in actual_counts.items():
+        if _safe_int(counts.get(category)) != expected:
+            failures.append(f"audit_trail.counts.{category} must match entries")
+    for category in _required_audit_categories(run_record):
+        if actual_counts.get(category, 0) < 1:
+            failures.append(f"audit_trail must include {category}")
+    statement = str(audit_trail.get("statement", "") or "").lower()
+    for required in ("credential captures", "dns writes", "human approvals", "without storing"):
+        if required not in statement:
+            failures.append("audit_trail.statement is missing audit-first guidance")
+            break
+    return failures
+
+
+def _required_audit_categories(run_record: dict[str, Any]) -> set[str]:
+    required: set[str] = set()
+    wake_events = run_record.get("wake_events", {})
+    events = wake_events.get("events", []) if isinstance(wake_events, dict) else []
+    if isinstance(events, list):
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            event_name = str(event.get("event", "") or "")
+            classification = str(event.get("classification", "") or "")
+            if event_name == "clipboard_captured":
+                required.add("credential_capture")
+            if event_name == "resume_requested":
+                required.add("human_approval")
+            if event_name == "resume_requested" and classification == "dns-approval":
+                required.add("dns_write")
+    approvals = run_record.get("approvals", [])
+    if isinstance(approvals, list) and approvals:
+        required.add("human_approval")
+    vault = run_record.get("vault", {})
+    if isinstance(vault, dict) and _safe_int(vault.get("record_count")) > 0:
+        required.add("credential_capture")
+    detonation = run_record.get("detonation", {})
+    if isinstance(detonation, dict) and detonation.get("workspace_detonated") is True:
+        required.add("detonation")
+    verification = run_record.get("verification", {})
+    checks = verification.get("checks", []) if isinstance(verification, dict) else []
+    if isinstance(checks, list) and checks:
+        required.add("provider_action")
+    return required
+
+
+def _contains_secretish_audit_text(value: str) -> bool:
+    lowered = value.lower()
+    if any(marker in lowered for marker in ("http://", "https://", "bearer ")):
+        return True
+    if re.search(r"\b(?:token|secret|password|private[-_ ]?key)\s*[:=]", lowered):
+        return True
+    if re.search(r"\b[A-Za-z0-9_-]{32,}\b", value):
+        return True
+    return False
 
 
 def _workspace_detonation_receipt_failures(receipt: dict[str, Any]) -> list[str]:

@@ -18,6 +18,7 @@ EVIDENCE_INVENTORY_SCHEMA_VERSION = "fusekit.evidence-inventory.v1"
 HUMAN_ACTION_TRACE_SCHEMA_VERSION = "fusekit.human-action-trace.v1"
 AUTOMATION_BOUNDARY_SCHEMA_VERSION = "fusekit.automation-boundary.v1"
 VERIFIER_SUMMARY_SCHEMA_VERSION = "fusekit.verifier-summary.v1"
+AUDIT_TRAIL_SCHEMA_VERSION = "fusekit.audit-trail.v1"
 DURABLE_STATE_SOURCES = (
     ("encrypted_vault", "fusekit.vault.json", "encrypted capability vault", "encrypted"),
     ("job_state", "job.json", "runner job state", "non-secret"),
@@ -92,6 +93,7 @@ def build_run_record(
     gates = _read_gates(root / "gates.json")
     verification = _read_json_object(root / "verification_report.json")
     acceptance = _read_json_object(root / "acceptance" / "report.json")
+    receipt = _read_json_object(root / "setup_receipt.json")
     workspace_detonation = _read_json_object(root / "workspace_detonation.json")
     provider_strategies = _read_json_object(root / "provider_strategies.json")
     runner_readiness = _read_json_object(root / "runner_readiness.json")
@@ -129,6 +131,14 @@ def build_run_record(
             "records": vault_index or [],
             "record_count": len(vault_index or []),
         },
+        "audit_trail": _audit_trail_summary(
+            root,
+            gates,
+            wake_events,
+            receipt,
+            workspace_detonation,
+            vault_index or [],
+        ),
         "artifacts": artifacts,
         "evidence": evidence,
         "verification": verification,
@@ -878,6 +888,234 @@ def _verifier_summary(verification: dict[str, Any]) -> dict[str, Any]:
             "checks before launch readiness and detonation proof are trusted."
         ),
     }
+
+
+def _audit_trail_summary(
+    root: Path,
+    gates: list[dict[str, Any]],
+    wake_events: list[dict[str, Any]],
+    receipt: dict[str, Any],
+    workspace_detonation: dict[str, Any],
+    vault_index: list[dict[str, Any]],
+) -> dict[str, Any]:
+    entries: list[dict[str, Any]] = []
+    known_gates = {str(gate.get("id", "") or ""): gate for gate in gates}
+    for event in wake_events:
+        if not isinstance(event, dict):
+            continue
+        entries.extend(_audit_entries_from_wake_event(event, known_gates))
+    entries.extend(_audit_entries_from_receipt(receipt))
+    entries.extend(_audit_entries_from_audit_log(root / "audit.jsonl"))
+    if workspace_detonation.get("status"):
+        entries.append(
+            {
+                "category": "detonation",
+                "action": "oci.workspace.detonate",
+                "provider": "oci",
+                "status": str(workspace_detonation.get("status", "unknown") or "unknown"),
+                "source": "workspace_detonation.json",
+                "summary": "FuseKit recorded disposable OCI worker and workspace cleanup.",
+            }
+        )
+    for record in vault_index:
+        if not isinstance(record, dict):
+            continue
+        entries.append(
+            {
+                "category": "credential_capture",
+                "action": "vault.record",
+                "provider": str(record.get("provider", "") or ""),
+                "status": "stored",
+                "source": "vault_index",
+                "summary": "Encrypted vault metadata records an approved credential capture.",
+            }
+        )
+    entries = _dedupe_audit_entries(entries)
+    counts: dict[str, int] = {}
+    for entry in entries:
+        category = str(entry.get("category", "unknown") or "unknown")
+        counts[category] = counts.get(category, 0) + 1
+    return {
+        "schema_version": AUDIT_TRAIL_SCHEMA_VERSION,
+        "entry_count": len(entries),
+        "counts": counts,
+        "entries": entries[:40],
+        "statement": (
+            "Credential captures, provider actions, DNS writes, human approvals, "
+            "and detonation events are summarized from redacted runtime evidence "
+            "without storing provider URLs, clipboard values, raw tokens, or secrets."
+        ),
+    }
+
+
+def _audit_entries_from_wake_event(
+    event: dict[str, Any],
+    known_gates: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    event_name = str(event.get("event", "") or "")
+    gate_id = str(event.get("gate_id", "") or "")
+    gate = known_gates.get(gate_id, {})
+    provider = str(event.get("provider", gate.get("provider", "")) or "")
+    classification = str(event.get("classification", gate.get("classification", "")) or "")
+    if event_name == "clipboard_captured":
+        target = str(event.get("target", "") or "")
+        return [
+            {
+                "category": "credential_capture",
+                "action": "control_room.capture_vm_clipboard",
+                "provider": provider,
+                "target": target,
+                "status": "captured",
+                "source": "gate_events.jsonl",
+                "summary": f"{target or 'Provider value'} was captured from the VM clipboard.",
+            }
+        ]
+    if event_name == "resume_requested":
+        action = "control_room.approve_dns_apply" if classification == "dns-approval" else (
+            "control_room.confirm_gate_finished"
+        )
+        return [
+            {
+                "category": "human_approval",
+                "action": action,
+                "provider": provider,
+                "status": "approved",
+                "source": "gate_events.jsonl",
+                "summary": "A visible control-room approval woke the setup worker.",
+            }
+        ]
+    return []
+
+
+def _audit_entries_from_receipt(receipt: dict[str, Any]) -> list[dict[str, Any]]:
+    actions = receipt.get("actions", [])
+    if not isinstance(actions, list):
+        return []
+    entries: list[dict[str, Any]] = []
+    for action in actions:
+        if not isinstance(action, dict):
+            continue
+        action_name = str(action.get("action", "") or "").strip()
+        if not action_name:
+            continue
+        category = _receipt_action_category(action_name)
+        entries.append(
+            {
+                "category": category,
+                "action": action_name,
+                "provider": _provider_from_action(action_name),
+                "status": str(action.get("status", "") or "recorded"),
+                "source": "setup_receipt.json",
+                "summary": _receipt_action_summary(category, action_name),
+            }
+        )
+    return entries
+
+
+def _audit_entries_from_audit_log(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    entries: list[dict[str, Any]] = []
+    for line in lines[-20:]:
+        if not line.strip():
+            continue
+        try:
+            raw = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(raw, dict):
+            continue
+        event_name = str(raw.get("event", "") or "").strip()
+        if not event_name:
+            continue
+        entries.append(
+            {
+                "category": _audit_event_category(event_name),
+                "action": event_name,
+                "provider": _provider_from_action(event_name),
+                "status": "recorded",
+                "source": "audit.jsonl",
+                "summary": _audit_event_summary(event_name),
+            }
+        )
+    return entries
+
+
+def _receipt_action_category(action_name: str) -> str:
+    lowered = action_name.lower()
+    if "dns" in lowered and ("apply" in lowered or "record" in lowered):
+        return "dns_write"
+    if "vault" in lowered or "secret" in lowered or "token" in lowered:
+        return "credential_capture"
+    if "approval" in lowered or "approve" in lowered:
+        return "human_approval"
+    return "provider_action"
+
+
+def _audit_event_category(event_name: str) -> str:
+    lowered = event_name.lower()
+    if "capture" in lowered or "vault" in lowered:
+        return "credential_capture"
+    if "approval" in lowered or "resume" in lowered:
+        return "human_approval"
+    if "dns" in lowered and ("apply" in lowered or "record" in lowered):
+        return "dns_write"
+    if "detonation" in lowered or "detonate" in lowered:
+        return "detonation"
+    return "provider_action"
+
+
+def _provider_from_action(action_name: str) -> str:
+    prefix = action_name.split(".", 1)[0].strip().lower()
+    if prefix in {"dns", "cloudflare", "github", "resend", "vercel", "oci", "openai"}:
+        return prefix
+    return ""
+
+
+def _receipt_action_summary(category: str, action_name: str) -> str:
+    if category == "dns_write":
+        return "FuseKit recorded a DNS write or DNS-record apply action."
+    if category == "credential_capture":
+        return "FuseKit recorded credential material only through encrypted/redacted handling."
+    if category == "human_approval":
+        return "FuseKit recorded an explicit human approval."
+    return f"FuseKit recorded provider action {action_name}."
+
+
+def _audit_event_summary(event_name: str) -> str:
+    return f"FuseKit recorded audit event {event_name} with secret values redacted."
+
+
+def _dedupe_audit_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple[str, str, str, str]] = set()
+    unique: list[dict[str, Any]] = []
+    for entry in entries:
+        normalized = {
+            "category": str(entry.get("category", "") or ""),
+            "action": str(entry.get("action", "") or ""),
+            "provider": str(entry.get("provider", "") or ""),
+            "status": str(entry.get("status", "") or ""),
+            "source": str(entry.get("source", "") or ""),
+            "summary": str(entry.get("summary", "") or ""),
+        }
+        target = str(entry.get("target", "") or "")
+        if target:
+            normalized["target"] = target
+        key = (
+            normalized["category"],
+            normalized["action"],
+            normalized["provider"],
+            normalized.get("target", ""),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(normalized)
+    return unique
 
 
 def _acceptance_summary(acceptance: dict[str, Any]) -> dict[str, Any]:
