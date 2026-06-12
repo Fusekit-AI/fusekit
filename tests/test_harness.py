@@ -2190,6 +2190,28 @@ def test_acceptance_gate_guidance_rejects_return_to_fusekit_wording() -> None:
     assert any("return to fusekit" in item for item in failures)
 
 
+def test_acceptance_gate_guidance_requires_success_and_avoid_for_all_gates() -> None:
+    failures = _unguided_gates(
+        [
+            {
+                "id": "dns.approval",
+                "provider": "dns",
+                "status": "waiting",
+                "classification": "dns-approval",
+                "target": "",
+                "follow_steps": [
+                    "Review the DNS changes in the control room.",
+                    "Click Approve DNS apply only if the records match the plan.",
+                ],
+                "next_action": "Click Approve DNS apply.",
+                "resume_hint": "FuseKit will apply DNS after approval.",
+            }
+        ]
+    )
+
+    assert "dns.approval missing success_criteria, avoid_steps" in failures
+
+
 def test_acceptance_gate_guidance_allows_local_browser_warning() -> None:
     failures = _unguided_gates(
         [
