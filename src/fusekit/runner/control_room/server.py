@@ -626,6 +626,28 @@ def _capture_gate_clipboard_secret(
             "This gate is not allowed to capture that value. Use the matching "
             f"visible button: {allowed}."
         )
+    captured_targets = {captured.strip().upper() for captured in gate.captured_targets}
+    if target in captured_targets:
+        missing_targets = allowed_targets - captured_targets
+        record_id, _kind, _provider = _capture_record_for_target(gate.provider, target)
+        if missing_targets:
+            message = (
+                f"{target} is already captured in the encrypted vault. "
+                f"Click {_capture_button_labels(missing_targets)} for the remaining value."
+            )
+        else:
+            message = (
+                f"{target} is already captured in the encrypted vault. "
+                "FuseKit will continue from the existing gate state."
+            )
+        return {
+            "gate_id": gate_id,
+            "target": target,
+            "record_id": record_id,
+            "status": "captured",
+            "captured_targets": sorted(captured_targets),
+            "message": message,
+        }
     _validate_gate_capture_target(gate, target)
     value = _vm_clipboard_text(job_state).strip()
     if not value:
@@ -662,7 +684,7 @@ def _capture_gate_clipboard_secret(
     vault.save(vault_path, passphrase)
     capture_wake_event_id = service.mark_captured(gate_id, target)
     gate = service.records[gate_id]
-    captured_targets = set(gate.captured_targets)
+    captured_targets = {captured.strip().upper() for captured in gate.captured_targets}
     status = "captured"
     resume_wake_event_id = ""
     message = (

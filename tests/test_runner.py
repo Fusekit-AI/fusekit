@@ -3894,6 +3894,87 @@ def test_control_room_rejects_stale_capture_after_gate_resumes(
     assert vault.require("provider.resend.token").value == "re_first_secret_from_vm_clipboard"
 
 
+def test_control_room_capture_is_idempotent_for_already_captured_target(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    vault_path = tmp_path / "fusekit.vault.json"
+    audit_path = tmp_path / "audit.jsonl"
+    passphrase_path = tmp_path / "passphrase"
+    passphrase_path.write_text("passphrase\n", encoding="utf-8")
+    Vault.empty().save(vault_path, "passphrase")
+    job.add_artifact("vault", vault_path)
+    job.add_artifact("audit_log", audit_path)
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.custom.tokens",
+        provider="custom",
+        reason="Custom provider tokens",
+        classification="provider-authorization",
+        target="CUSTOM_API_KEY,CUSTOM_WEBHOOK_SECRET",
+    )
+    monkeypatch.setenv("FUSEKIT_PASSPHRASE_FILE", str(passphrase_path))
+    monkeypatch.setattr(
+        "fusekit.runner.control_room.server._vm_clipboard_text",
+        lambda job_state: "custom_first_secret\n",
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/api/gates/provider.custom.tokens/capture-clipboard"
+        request = Request(
+            url,
+            data=json.dumps({"target": "CUSTOM_API_KEY"}).encode("utf-8"),
+            method="POST",
+            headers=_control_room_post_headers(tmp_path, **{"content-type": "application/json"}),
+        )
+        with urlopen(request, timeout=5) as response:
+            first_payload = json.loads(response.read().decode("utf-8"))
+        original_gate_events = (tmp_path / "gate_events.jsonl").read_text(encoding="utf-8")
+        original_audit = audit_path.read_text(encoding="utf-8")
+        monkeypatch.setattr(
+            "fusekit.runner.control_room.server._vm_clipboard_text",
+            lambda job_state: pytest.fail("duplicate capture reread the VM clipboard"),
+        )
+        duplicate_request = Request(
+            url,
+            data=json.dumps({"target": "CUSTOM_API_KEY"}).encode("utf-8"),
+            method="POST",
+            headers=_control_room_post_headers(tmp_path, **{"content-type": "application/json"}),
+        )
+        with urlopen(duplicate_request, timeout=5) as response:
+            duplicate_payload = json.loads(response.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert first_payload["status"] == "captured"
+    assert first_payload["captured_targets"] == ["CUSTOM_API_KEY"]
+    assert duplicate_payload == {
+        "captured_targets": ["CUSTOM_API_KEY"],
+        "gate_id": "provider.custom.tokens",
+        "message": (
+            "CUSTOM_API_KEY is already captured in the encrypted vault. "
+            "Click Capture CUSTOM_WEBHOOK_SECRET from VM clipboard for the remaining value."
+        ),
+        "ok": True,
+        "record_id": "provider.custom.custom_api_key",
+        "status": "captured",
+        "target": "CUSTOM_API_KEY",
+    }
+    gate = GateService.load(tmp_path / "gates.json").records["provider.custom.tokens"]
+    assert gate.status == "waiting"
+    assert gate.captured_targets == ("CUSTOM_API_KEY",)
+    assert (tmp_path / "gate_events.jsonl").read_text(encoding="utf-8") == original_gate_events
+    assert audit_path.read_text(encoding="utf-8") == original_audit
+    vault = Vault.open(vault_path, "passphrase")
+    assert vault.require("provider.custom.custom_api_key").value == "custom_first_secret"
+    assert vault.require("provider.custom.token").value == "custom_first_secret"
+
+
 def test_control_room_clipboard_capture_waits_for_multi_value_gate(
     tmp_path,
     monkeypatch,
