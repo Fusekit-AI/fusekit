@@ -118,6 +118,20 @@ def test_northstar_defines_detonation_pressure_test() -> None:
     assert "Evented resume beats click-and-hope" in text
 
 
+def test_northstar_pressure_tests_background_agent_objects() -> None:
+    text = Path("docs/northstar-provider-strategy.md").read_text(encoding="utf-8")
+
+    assert "Ona Audit Pressure Test" in text
+    assert "Run Record" in text
+    assert "Runner Profile Contract" in text
+    assert "Provider Playbooks" in text
+    assert "Live Verifiers" in text
+    assert "Evented Resume" in text
+    assert "Disposable Workers, Durable State" in text
+    assert "Audit-First UX" in text
+    assert "Repeated or stale clicks must be idempotent" in text
+
+
 def test_northstar_defines_background_agent_contract() -> None:
     text = Path("docs/northstar-provider-strategy.md").read_text(encoding="utf-8")
 

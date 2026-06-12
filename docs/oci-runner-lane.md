@@ -212,6 +212,15 @@ encrypted vault and redacted proof artifacts such as job state, checkpoints,
 gate events, provider strategies, verification, rollback, detonation receipt,
 and the Run Record itself.
 
+The worker-replacement drill is part of the public OCI contract, not an
+operator-only exercise. At any supervised gate, FuseKit must be able to stop or
+lose the disposable VM, provision a new runner with the same
+`fusekit.runner-profile.v1` contract, restore only encrypted/redacted survivor
+artifacts, reopen the live control room, and continue from the latest gate or
+verifier without using host-machine browser state, shell history, plaintext
+provider auth, or VM-local scratch files. If that drill cannot be proven, the
+run remains in progress and must not show the "ready for recording" state.
+
 Full OCI tenancy/account deletion is not a default detonation target. It should be a separate destructive workflow with explicit user approval.
 
 ## CLI Surface

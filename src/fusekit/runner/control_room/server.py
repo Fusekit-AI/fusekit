@@ -216,6 +216,26 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                     self._write_json({"ok": False, "error": "gate not found"}, status=404)
                     return
                 gate = service.records[gate_id]
+                if gate.status == "passed":
+                    self._write_json(
+                        {
+                            "ok": True,
+                            "gate_id": gate_id,
+                            "status": "passed",
+                            "message": _gate_already_passed_message(gate),
+                        }
+                    )
+                    return
+                if gate.status == "resume_requested":
+                    self._write_json(
+                        {
+                            "ok": True,
+                            "gate_id": gate_id,
+                            "status": "resume_requested",
+                            "message": _gate_already_resuming_message(gate),
+                        }
+                    )
+                    return
                 blocked = _uncaptured_gate_targets(gate.target, gate.captured_targets)
                 if blocked:
                     self._write_json(
@@ -661,6 +681,16 @@ def _gate_resume_message(gate: Any) -> str:
     if classification == "setup-approval" or provider == "fusekit":
         return "FuseKit is continuing with the approved setup plan now."
     return "Resume requested. FuseKit will retry provider verification."
+
+
+def _gate_already_passed_message(gate: Any) -> str:
+    hint = str(getattr(gate, "resume_hint", "") or "").strip()
+    return hint or "FuseKit already verified this gate as passed."
+
+
+def _gate_already_resuming_message(gate: Any) -> str:
+    hint = str(getattr(gate, "resume_hint", "") or "").strip()
+    return hint or "FuseKit is already rechecking this gate."
 
 
 def _gate_capture_targets(raw_target: str) -> set[str]:

@@ -2320,6 +2320,96 @@ def test_control_room_post_requests_human_gate_resume(tmp_path) -> None:
     assert events[-1]["data"]["status"] == "resume_requested"
 
 
+def test_control_room_post_pass_is_idempotent_for_already_resuming_gate(
+    tmp_path,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    audit_path = tmp_path / "audit.jsonl"
+    job.add_artifact("audit_log", audit_path)
+    job.save(job_path)
+    service = GateService.load(tmp_path / "gates.json")
+    service.wait(
+        "provider.github.mfa.123",
+        provider="github",
+        reason="MFA required",
+        classification="mfa",
+        follow_steps=("Pass the provider MFA challenge.",),
+    )
+    service.request_resume("provider.github.mfa.123")
+    gate_events_path = tmp_path / "gate_events.jsonl"
+    original_gate_events = gate_events_path.read_text(encoding="utf-8")
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/api/gates/provider.github.mfa.123/pass"
+        request = Request(url, method="POST", headers=_control_room_post_headers(tmp_path))
+        with urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert payload["ok"] is True
+    assert payload["status"] == "resume_requested"
+    assert (
+        payload["message"]
+        == (
+            "Keep this control room open; the next guided blocker or success state "
+            "will appear after the provider check finishes."
+        )
+    )
+    assert GateService.load(tmp_path / "gates.json").records[
+        "provider.github.mfa.123"
+    ].status == "resume_requested"
+    assert gate_events_path.read_text(encoding="utf-8") == original_gate_events
+    assert not audit_path.exists()
+
+
+def test_control_room_post_pass_does_not_regress_passed_gate(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    audit_path = tmp_path / "audit.jsonl"
+    job.add_artifact("audit_log", audit_path)
+    job.save(job_path)
+    service = GateService.load(tmp_path / "gates.json")
+    service.wait(
+        "provider.cloudflare.login",
+        provider="cloudflare",
+        reason="Login complete",
+        classification="provider-verification",
+        follow_steps=("Pass the Cloudflare login gate.",),
+    )
+    service.pass_gate("provider.cloudflare.login")
+    gates_before = (tmp_path / "gates.json").read_text(encoding="utf-8")
+    gate_events_path = tmp_path / "gate_events.jsonl"
+    assert not gate_events_path.exists()
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/api/gates/provider.cloudflare.login/pass"
+        request = Request(url, method="POST", headers=_control_room_post_headers(tmp_path))
+        with urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert payload["ok"] is True
+    assert payload["status"] == "passed"
+    assert payload["message"] == "FuseKit verified this gate as passed."
+    assert GateService.load(tmp_path / "gates.json").records[
+        "provider.cloudflare.login"
+    ].status == "passed"
+    assert (tmp_path / "gates.json").read_text(encoding="utf-8") == gates_before
+    assert not gate_events_path.exists()
+    assert not audit_path.exists()
+
+
 def test_control_room_post_dns_approval_reports_dns_apply(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     job_path = tmp_path / "job.json"

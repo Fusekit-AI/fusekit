@@ -102,6 +102,27 @@ the user's machine or in the disposable OCI workspace. It does not mean deleting
 the encrypted vault or redacted audit proof before the run has completed,
 verified, and produced the detonation receipt.
 
+## Ona Audit Pressure Test
+
+The background-agent pattern is useful only when it makes the disposable OCI
+lane more deterministic. FuseKit should borrow the strong parts of that model
+without turning the VM into durable product state.
+
+| Object | FuseKit stance | Detonation requirement |
+| --- | --- | --- |
+| Run Record | Required central product object for state, checkpoints, gates, captured-secret labels, artifacts, logs, screenshots, errors, approvals, verifiers, and detonation proof. | Must be redacted and durable outside the worker before workspace detonation starts. Raw provider tokens, callback URLs, passwords, cookies, browser profiles, screenshots with secrets, and shell transcripts are not allowed in the record. |
+| Runner Profile Contract | Required contract for architecture, OS family/image policy, browser stack, memory floor, ports, health checks, and installed helper binaries. | Public runs cannot show provider gates until the runner profile is verified. A recreated worker must prove the same contract before it can resume. |
+| Provider Playbooks | Required route graph per provider: API first when scoped auth is proven, official CLI when healthier, VM browser follow-me for provider-owned gates, and explicit stop states for billing/MFA/CAPTCHA/card gates. | Playbooks are non-secret durable strategy state. They may guide browser actions, but provider auth profiles and browser storage remain volatile detonation targets. |
+| Live Verifiers | Required per-provider checks surfaced as green/pending/blocked cards in the control room. | A run is not recording-ready until verifiers are passed or pending-safe and the verifier evidence is preserved in the Run Record. |
+| Evented Resume | Required wake-event model for Capture, DNS approval, provider approval, and retryable service gates. | Repeated or stale clicks must be idempotent. They may acknowledge current state, but they must not regress passed gates or mint duplicate wake proof. |
+| Disposable Workers, Durable State | Required operational model. The VM is replaceable during the run and destroyed at the end. | Resume readiness must prove encrypted/redacted state is enough to recreate the worker. If host-machine or VM-local plaintext state is required, the run is not launch-ready. |
+| Audit-First UX | Required user-facing ledger for credential capture, DNS writes, provider actions, human approvals, errors, and cleanup. | Audit entries must be plain-language and redacted. The detonation receipt must name every worker/OCI cleanup category and every failed deletion key. |
+
+This keeps the "detonate everything" promise honest: durable state is the
+minimum encrypted/redacted evidence needed to resume and prove the run, while
+the OCI VM, browser sessions, auth scratch, helper logs, SSH material, app
+archive, and provider-local runtime state are disposable.
+
 ## Strategy Graph
 
 Every provider-pack setup recipe gets a strategy decision:
