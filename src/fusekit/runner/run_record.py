@@ -19,6 +19,7 @@ HUMAN_ACTION_TRACE_SCHEMA_VERSION = "fusekit.human-action-trace.v1"
 AUTOMATION_BOUNDARY_SCHEMA_VERSION = "fusekit.automation-boundary.v1"
 VERIFIER_SUMMARY_SCHEMA_VERSION = "fusekit.verifier-summary.v1"
 AUDIT_TRAIL_SCHEMA_VERSION = "fusekit.audit-trail.v1"
+RECORDING_CONTRACT_SCHEMA_VERSION = "fusekit.recording-contract.v1"
 DURABLE_STATE_SOURCES = (
     ("encrypted_vault", "fusekit.vault.json", "encrypted capability vault", "encrypted"),
     ("job_state", "job.json", "runner job state", "non-secret"),
@@ -103,7 +104,7 @@ def build_run_record(
     durable_state = _durable_state_summary(root, run_state, artifacts)
     evidence = _evidence_inventory(root, artifacts)
     human_actions = _human_action_trace(gates, wake_events)
-    return {
+    record = {
         "schema_version": RUN_RECORD_SCHEMA_VERSION,
         "id": job.id,
         "status": job.status,
@@ -147,6 +148,8 @@ def build_run_record(
         "approvals": _approval_summary(gates),
         "errors": _error_summary(job, gates, verification, acceptance, workspace_detonation),
     }
+    record["recording_contract"] = _recording_contract_summary(record)
+    return record
 
 
 def write_run_record(
@@ -1141,6 +1144,152 @@ def _detonation_summary(
         "workspace_detonated": run_state.get("workspace_detonated") is True,
         "workspace_receipt": workspace_detonation,
     }
+
+
+def _recording_contract_summary(record: dict[str, Any]) -> dict[str, Any]:
+    """Summarize whether the OCI lane is safe to demo-record and publish."""
+
+    checks = {
+        "durable_state": _recording_durable_state_ready(record),
+        "runner_profile": _recording_runner_profile_ready(record),
+        "human_actions": _recording_human_actions_ready(record),
+        "automation_boundary": _recording_automation_boundary_ready(record),
+        "verifiers": _recording_verifiers_ready(record),
+        "audit_trail": _recording_audit_trail_ready(record),
+        "evidence": _recording_evidence_ready(record),
+        "detonation": _recording_detonation_ready(record),
+        "errors_empty": not record.get("errors"),
+    }
+    blockers = [name for name, ready in checks.items() if ready is not True]
+    return {
+        "schema_version": RECORDING_CONTRACT_SCHEMA_VERSION,
+        "recording_ready": not blockers,
+        "checks": checks,
+        "blockers": blockers,
+        "statement": (
+            "A public demo is recordable only when the Run Record proves durable "
+            "OCI state, the x86 visual runner, guided human actions, post-gate "
+            "automation, live provider verifiers, audit evidence, and no-trace "
+            "detonation all agree."
+        ),
+    }
+
+
+def _recording_durable_state_ready(record: dict[str, Any]) -> bool:
+    durable = record.get("durable_state", {})
+    if not isinstance(durable, dict):
+        return False
+    scope = durable.get("detonation_scope", {})
+    return (
+        durable.get("resume_ready") is True
+        and isinstance(scope, dict)
+        and scope.get("resume_until_complete") is True
+        and str(scope.get("mode", "") or "") == "worker-and-oci-workspace"
+    )
+
+
+def _recording_runner_profile_ready(record: dict[str, Any]) -> bool:
+    runner = record.get("runner_profile", {})
+    if not isinstance(runner, dict):
+        return False
+    profile = runner.get("profile_contract", {})
+    return (
+        str(runner.get("status", "") or "") == "ready"
+        and str(runner.get("architecture", "") or "") == "x86_64"
+        and isinstance(profile, dict)
+        and str(profile.get("schema_version", "") or "") == "fusekit.runner-profile.v1"
+        and str(profile.get("name", "") or "") == "oci-visual-browser-x86_64"
+    )
+
+
+def _recording_human_actions_ready(record: dict[str, Any]) -> bool:
+    human_actions = record.get("human_actions", {})
+    if not isinstance(human_actions, dict):
+        return False
+    actions = human_actions.get("actions", [])
+    unguided = human_actions.get("unguided", [])
+    if not isinstance(actions, list) or not isinstance(unguided, list):
+        return False
+    return (
+        _safe_int(human_actions.get("total"), -1) == len(actions)
+        and not unguided
+        and all(isinstance(action, dict) and action.get("guided") is True for action in actions)
+    )
+
+
+def _recording_automation_boundary_ready(record: dict[str, Any]) -> bool:
+    boundary = record.get("automation_boundary", {})
+    if not isinstance(boundary, dict):
+        return False
+    counts = boundary.get("counts", {})
+    return (
+        str(boundary.get("status", "") or "") == "ready"
+        and boundary.get("resume_after_worker_replace") is True
+        and boundary.get("no_user_machine_state") is True
+        and isinstance(counts, dict)
+        and _safe_int(counts.get("blocked"), 1) == 0
+    )
+
+
+def _recording_verifiers_ready(record: dict[str, Any]) -> bool:
+    verifiers = record.get("verifiers", {})
+    if not isinstance(verifiers, dict):
+        return False
+    checks = verifiers.get("checks", [])
+    return (
+        verifiers.get("all_passed_or_pending_safe") is True
+        and str(verifiers.get("overall", "") or "") == "passed"
+        and isinstance(checks, list)
+        and bool(checks)
+    )
+
+
+def _recording_audit_trail_ready(record: dict[str, Any]) -> bool:
+    audit_trail = record.get("audit_trail", {})
+    if not isinstance(audit_trail, dict):
+        return False
+    entries = audit_trail.get("entries", [])
+    if not isinstance(entries, list) or not entries:
+        return False
+    categories = {
+        str(entry.get("category", "") or "")
+        for entry in entries
+        if isinstance(entry, dict)
+    }
+    return (
+        _safe_int(audit_trail.get("entry_count"), -1) == len(entries)
+        and "detonation" in categories
+        and ("provider_action" in categories or "credential_capture" in categories)
+    )
+
+
+def _recording_evidence_ready(record: dict[str, Any]) -> bool:
+    evidence = record.get("evidence", {})
+    if not isinstance(evidence, dict):
+        return False
+    counts = evidence.get("counts", {})
+    return (
+        isinstance(counts, dict)
+        and _safe_int(counts.get("logs"), 0) >= 1
+        and _safe_int(counts.get("visual"), 0) >= 1
+        and _safe_int(counts.get("receipts"), 0) >= 1
+    )
+
+
+def _recording_detonation_ready(record: dict[str, Any]) -> bool:
+    detonation = record.get("detonation", {})
+    if not isinstance(detonation, dict):
+        return False
+    receipt = detonation.get("workspace_receipt", {})
+    failures = receipt.get("failures", {}) if isinstance(receipt, dict) else {}
+    return (
+        detonation.get("preflight_safe") is True
+        and detonation.get("workspace_detonated") is True
+        and isinstance(receipt, dict)
+        and str(receipt.get("status", "") or "") == "complete"
+        and isinstance(failures, dict)
+        and not failures
+    )
 
 
 def _approval_summary(gates: list[dict[str, Any]]) -> list[dict[str, Any]]:

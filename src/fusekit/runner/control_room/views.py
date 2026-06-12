@@ -67,6 +67,7 @@ def render_control_room(
     {_render_automation_boundary(control_payload.get("run_record", {}))}
     {_render_run_record_verifiers(control_payload.get("run_record", {}))}
     {_render_audit_trail(control_payload.get("run_record", {}))}
+    {_render_recording_contract(control_payload.get("run_record", {}))}
     {_render_acceptance_blockers(control_payload.get("acceptance", {}))}
     {_render_provider_strategies(control_payload.get("provider_strategies", {}))}
     {_render_trust(control_payload.get("verification", {}))}
@@ -1579,6 +1580,77 @@ def _render_audit_trail_card(entry: dict[str, Any]) -> str:
             <strong>{html.escape(category.replace('_', ' '))}</strong>
             <p>{html.escape(_public_copy(summary))}</p>
             <em>{html.escape(provider)} · {html.escape(action)} · {html.escape(status)}</em>
+          </div>
+        </article>
+"""
+
+
+def _render_recording_contract(run_record: Any) -> str:
+    run_record = run_record if isinstance(run_record, dict) else {}
+    contract = run_record.get("recording_contract", {})
+    contract = contract if isinstance(contract, dict) else {}
+    checks = contract.get("checks", {})
+    checks = checks if isinstance(checks, dict) else {}
+    cards = "\n".join(
+        _render_recording_contract_card(name, ready)
+        for name, ready in checks.items()
+        if isinstance(name, str)
+    )
+    if not cards:
+        cards = """
+        <article class="trust-card pending">
+          <div class="trust-snow state-checking" aria-hidden="true"></div>
+          <div>
+            <span>Pending</span>
+            <strong>Recording contract</strong>
+            <p>Waiting for the central Run Record to prove demo readiness.</p>
+            <em>recording contract</em>
+          </div>
+        </article>
+"""
+    ready = contract.get("recording_ready") is True
+    blockers = contract.get("blockers", [])
+    blocker_count = len(blockers) if isinstance(blockers, list) else 0
+    summary = "recordable with no trace" if ready else f"{blocker_count} proof items pending"
+    statement = str(
+        contract.get(
+            "statement",
+            "FuseKit is collecting proof before marking this run safe to record.",
+        )
+    )
+    return f"""
+    <section class="run-state-panel" aria-label="Public demo recording proof">
+      <div class="section-head compact">
+        <div>
+          <span class="section-kicker">Recording proof</span>
+          <h2>Ready to show the magic path</h2>
+        </div>
+        <span class="live-pill" data-recording-contract-overall>{html.escape(summary)}</span>
+      </div>
+      <p class="muted">{html.escape(_public_copy(statement))}</p>
+      <div class="run-state-grid" data-recording-contract-checks>{cards}</div>
+    </section>
+"""
+
+
+def _render_recording_contract_card(name: str, ready: Any) -> str:
+    passed = ready is True
+    status = "passed" if passed else "pending"
+    snow = "passed" if passed else "checking"
+    title = name.replace("_", " ")
+    detail = (
+        "This proof input is present and agrees with the Run Record."
+        if passed
+        else "Waiting for this proof before the public demo can be recorded."
+    )
+    return f"""
+        <article class="trust-card {status}" data-recording-contract-check="{html.escape(name)}">
+          <div class="trust-snow state-{snow}" aria-hidden="true"></div>
+          <div>
+            <span>{html.escape(status_label(status))}</span>
+            <strong>{html.escape(title)}</strong>
+            <p>{html.escape(detail)}</p>
+            <em>recording readiness</em>
           </div>
         </article>
 """

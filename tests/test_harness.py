@@ -412,6 +412,29 @@ def _audit_trail() -> dict[str, object]:
     }
 
 
+def _recording_contract() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.recording-contract.v1",
+        "recording_ready": True,
+        "checks": {
+            "durable_state": True,
+            "runner_profile": True,
+            "human_actions": True,
+            "automation_boundary": True,
+            "verifiers": True,
+            "audit_trail": True,
+            "evidence": True,
+            "detonation": True,
+            "errors_empty": True,
+        },
+        "blockers": [],
+        "statement": (
+            "A public demo is recordable only when durable OCI state, guided human "
+            "actions, live provider verifiers, and no-trace detonation all agree."
+        ),
+    }
+
+
 def _resend_domain_receipt_details(
     *,
     dns_records: list[dict[str, str]] | None = None,
@@ -770,6 +793,7 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
                 "provider_strategies": {"providers": []},
                 "vault": {"record_count": 0, "records": []},
                 "audit_trail": _audit_trail(),
+                "recording_contract": _recording_contract(),
                 "artifacts": [],
                 "evidence": _evidence_inventory(),
                 "verification": {
@@ -3993,6 +4017,42 @@ def test_acceptance_run_record_requires_redacted_audit_trail(tmp_path) -> None:
     assert "audit_trail must include human_approval" in failures
     assert "audit_trail must include detonation" in failures
     assert "audit_trail.statement is missing audit-first guidance" in failures
+
+
+def test_acceptance_run_record_requires_recording_contract(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+
+    record["recording_contract"] = {
+        "schema_version": "fusekit.recording-contract.v0",
+        "recording_ready": False,
+        "checks": {
+            "durable_state": True,
+            "runner_profile": True,
+            "human_actions": False,
+            "automation_boundary": True,
+            "verifiers": True,
+            "audit_trail": True,
+            "evidence": True,
+            "detonation": True,
+            "errors_empty": True,
+        },
+        "blockers": ["human_actions"],
+        "statement": "ready",
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert "recording_contract.schema_version is unsupported" in failures
+    assert "recording_contract.recording_ready must be true" in failures
+    assert "recording_contract.checks.human_actions must be true" in failures
+    assert (
+        "recording_contract.blockers must be empty: human_actions"
+        in failures
+    )
+    assert "recording_contract.statement is missing public demo guidance" in failures
 
 
 def test_acceptance_run_record_requires_evented_gate_wake_proof(tmp_path) -> None:

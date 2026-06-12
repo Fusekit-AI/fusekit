@@ -31,6 +31,7 @@ from fusekit.runner.control_room.state import (
 from fusekit.runner.run_record import (
     AUDIT_TRAIL_SCHEMA_VERSION,
     AUTOMATION_BOUNDARY_SCHEMA_VERSION,
+    RECORDING_CONTRACT_SCHEMA_VERSION,
     RUN_RECORD_SCHEMA_VERSION,
     VERIFIER_SUMMARY_SCHEMA_VERSION,
 )
@@ -532,6 +533,9 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
     audit_trail = _require_dict_field(raw, "audit_trail", failures)
     if audit_trail is not None:
         failures.extend(_audit_trail_shape_failures(audit_trail, raw))
+    recording_contract = _require_dict_field(raw, "recording_contract", failures)
+    if recording_contract is not None:
+        failures.extend(_recording_contract_shape_failures(recording_contract))
     _require_list_field(raw, "artifacts", failures)
     evidence = _require_dict_field(raw, "evidence", failures)
     if evidence is not None:
@@ -840,6 +844,53 @@ def _audit_trail_shape_failures(
     for required in ("credential captures", "dns writes", "human approvals", "without storing"):
         if required not in statement:
             failures.append("audit_trail.statement is missing audit-first guidance")
+            break
+    return failures
+
+
+def _recording_contract_shape_failures(contract: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    if (
+        str(contract.get("schema_version", "")).strip()
+        != RECORDING_CONTRACT_SCHEMA_VERSION
+    ):
+        failures.append("recording_contract.schema_version is unsupported")
+    if contract.get("recording_ready") is not True:
+        failures.append("recording_contract.recording_ready must be true")
+    checks = contract.get("checks", {})
+    required_checks = {
+        "durable_state",
+        "runner_profile",
+        "human_actions",
+        "automation_boundary",
+        "verifiers",
+        "audit_trail",
+        "evidence",
+        "detonation",
+        "errors_empty",
+    }
+    if not isinstance(checks, dict):
+        failures.append("recording_contract.checks is missing")
+        checks = {}
+    else:
+        missing = sorted(required_checks - set(checks))
+        if missing:
+            failures.append("recording_contract.checks missing " + ", ".join(missing))
+        for key in sorted(required_checks & set(checks)):
+            if checks.get(key) is not True:
+                failures.append(f"recording_contract.checks.{key} must be true")
+    blockers = contract.get("blockers", [])
+    if not isinstance(blockers, list):
+        failures.append("recording_contract.blockers is missing")
+    elif blockers:
+        failures.append(
+            "recording_contract.blockers must be empty: "
+            + ", ".join(str(item) for item in blockers)
+        )
+    statement = str(contract.get("statement", "") or "").lower()
+    for required in ("public demo", "guided human actions", "detonation"):
+        if required not in statement:
+            failures.append("recording_contract.statement is missing " + required + " guidance")
             break
     return failures
 

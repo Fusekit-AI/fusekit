@@ -466,6 +466,13 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     audit_categories = {entry["category"] for entry in record["audit_trail"]["entries"]}
     assert {"credential_capture", "provider_action", "detonation"} <= audit_categories
     assert "https://dash.cloudflare.com" not in json.dumps(record["audit_trail"])
+    assert record["recording_contract"]["schema_version"] == (
+        "fusekit.recording-contract.v1"
+    )
+    assert record["recording_contract"]["recording_ready"] is True
+    assert record["recording_contract"]["blockers"] == []
+    assert record["recording_contract"]["checks"]["detonation"] is True
+    assert record["recording_contract"]["checks"]["errors_empty"] is True
     assert record["detonation"]["workspace_receipt"]["status"] == "complete"
     assert record["evidence"]["schema_version"] == "fusekit.evidence-inventory.v1"
     assert record["evidence"]["counts"]["logs"] >= 2
@@ -683,6 +690,27 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
                         "without storing raw secrets."
                     ),
                 },
+                "recording_contract": {
+                    "schema_version": "fusekit.recording-contract.v1",
+                    "recording_ready": True,
+                    "checks": {
+                        "durable_state": True,
+                        "runner_profile": True,
+                        "human_actions": True,
+                        "automation_boundary": True,
+                        "verifiers": True,
+                        "audit_trail": True,
+                        "evidence": True,
+                        "detonation": True,
+                        "errors_empty": True,
+                    },
+                    "blockers": [],
+                    "statement": (
+                        "A public demo is recordable only when durable OCI state, "
+                        "guided human actions, live provider verifiers, and no-trace "
+                        "detonation all agree."
+                    ),
+                },
             }
         ),
         encoding="utf-8",
@@ -711,6 +739,10 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
     assert "Every important action is recorded" in html
     assert 'data-audit-category="credential_capture"' in html
     assert "RESEND_API_KEY was captured from the VM clipboard" in html
+    assert payload["run_record"]["recording_contract"]["recording_ready"] is True
+    assert "Ready to show the magic path" in html
+    assert "recordable with no trace" in html
+    assert 'data-recording-contract-check="detonation"' in html
 
 
 def test_remote_bootstrap_checkpoint_keeps_recovery_in_launcher(tmp_path) -> None:
