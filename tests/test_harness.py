@@ -4660,7 +4660,7 @@ def test_acceptance_run_record_requires_coherent_worker_replacement_contract(
         "gate_events",
         "provider_strategies",
         "runner_readiness",
-        "local_browser_profile",
+        "external_checkpoint",
     ]
     record["durable_state"]["worker_replacement_contract"]["volatile_surfaces"] = [
         "worker"
@@ -4684,6 +4684,56 @@ def test_acceptance_run_record_requires_coherent_worker_replacement_contract(
     )
     assert (
         "durable_state.detonation_scope.must_preserve must match detonation_preserves"
+        in failures
+    )
+
+
+def test_acceptance_run_record_rejects_volatile_durable_state_survivors(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["durable_state"]["sources"].append(
+        {
+            "id": "local_browser_profile",
+            "path": "browser-profile/Default",
+            "role": "local browser profile",
+            "secret_class": "non-secret",
+            "exists": True,
+        }
+    )
+    record["durable_state"]["detonation_preserves"].append("browser-profile")
+    record["durable_state"]["detonation_scope"]["must_preserve"].append(
+        "browser-profile"
+    )
+    record["durable_state"]["worker_replacement_contract"]["resume_sources"].append(
+        "local_browser_profile"
+    )
+    record["durable_state"]["worker_replacement_contract"]["resume_sources"].append(
+        "passphrase"
+    )
+
+    failures = _run_record_shape_failures(record)
+
+    assert (
+        "durable_state.sources[9] preserves volatile worker state: browser-profile"
+        in failures
+    )
+    assert (
+        "durable_state.detonation_preserves must not include volatile worker state: "
+        "browser-profile"
+        in failures
+    )
+    assert (
+        "durable_state.detonation_scope.must_preserve must not include volatile "
+        "worker state: browser-profile"
+        in failures
+    )
+    assert (
+        "durable_state.worker_replacement_contract.resume_sources must not include "
+        "volatile worker state: local_browser_profile, passphrase"
         in failures
     )
 

@@ -72,6 +72,20 @@ DETONATION_PLAINTEXT_PATHS = (
     "chrome.log",
 )
 
+VOLATILE_DURABLE_STATE_MARKERS = tuple(
+    sorted(
+        {
+            *DETONATION_PLAINTEXT_PATHS,
+            ".log",
+            "clipboard-history",
+            "local-browser",
+            "vm-scratch",
+        },
+        key=len,
+        reverse=True,
+    )
+)
+
 
 @dataclass(frozen=True)
 class AcceptanceCheck:
@@ -5116,6 +5130,11 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
                 failures.append(f"{label}.path must be relative")
             if str(source.get("secret_class", "") or "") not in {"encrypted", "non-secret"}:
                 failures.append(f"{label}.secret_class is unsupported")
+            volatile_marker = _volatile_durable_state_marker(source)
+            if volatile_marker:
+                failures.append(
+                    f"{label} preserves volatile worker state: {volatile_marker}"
+                )
         required = {
             "encrypted_vault",
             "job_state",
@@ -5151,6 +5170,15 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
         preserve_values
     ):
         failures.append("durable_state.detonation_preserves is incomplete")
+    else:
+        volatile_preserves = sorted(
+            value for value in preserve_values if _volatile_durable_text_marker(value)
+        )
+        if volatile_preserves:
+            failures.append(
+                "durable_state.detonation_preserves must not include volatile worker state: "
+                + ", ".join(volatile_preserves)
+            )
     detonation_scope = durable_state.get("detonation_scope")
     if not isinstance(detonation_scope, dict):
         failures.append("durable_state.detonation_scope is missing")
@@ -5188,6 +5216,17 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
             must_preserve_values
         ):
             failures.append("durable_state.detonation_scope.must_preserve is incomplete")
+        elif any(_volatile_durable_text_marker(value) for value in must_preserve_values):
+            volatile_preserves = sorted(
+                value
+                for value in must_preserve_values
+                if _volatile_durable_text_marker(value)
+            )
+            failures.append(
+                "durable_state.detonation_scope.must_preserve must not include "
+                "volatile worker state: "
+                + ", ".join(volatile_preserves)
+            )
         elif preserve_values and preserve_values != must_preserve_values:
             failures.append(
                 "durable_state.detonation_scope.must_preserve must match detonation_preserves"
@@ -5258,6 +5297,17 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
             failures.append(
                 "durable_state.worker_replacement_contract.resume_sources is incomplete"
             )
+        elif any(_volatile_durable_text_marker(value) for value in resume_source_values):
+            volatile_resume_sources = sorted(
+                value
+                for value in resume_source_values
+                if _volatile_durable_text_marker(value)
+            )
+            failures.append(
+                "durable_state.worker_replacement_contract.resume_sources must not include "
+                "volatile worker state: "
+                + ", ".join(volatile_resume_sources)
+            )
         elif source_ids and not resume_source_values.issubset(source_ids):
             failures.append(
                 "durable_state.worker_replacement_contract.resume_sources must "
@@ -5285,6 +5335,24 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
                 "durable_state.worker_replacement_contract.statement is incomplete"
             )
     return failures
+
+
+def _volatile_durable_state_marker(source: dict[str, Any]) -> str:
+    text = " ".join(
+        str(source.get(field, "") or "") for field in ("id", "path", "role")
+    )
+    return _volatile_durable_text_marker(text)
+
+
+def _volatile_durable_text_marker(value: str) -> str:
+    text = str(value or "").strip().lower().replace("_", "-")
+    if not text:
+        return ""
+    for marker in VOLATILE_DURABLE_STATE_MARKERS:
+        normalized = marker.lower().replace("_", "-")
+        if normalized in text:
+            return marker
+    return ""
 
 
 def _provider_playbook_shape_failures(playbook: dict[str, Any]) -> list[str]:
