@@ -111,8 +111,38 @@ def _workspace_detonation_receipt() -> dict[str, object]:
     return {
         "status": "complete",
         "reason": "remote worker and OCI workspace detonated",
-        "deleted": ["instance"],
+        "deleted": [
+            "instance",
+            "internet_gateway",
+            "network_security_group",
+            "remote_worker",
+            "route_table",
+            "security_list",
+            "subnet",
+            "vcn",
+        ],
         "failures": {},
+        "resource_summary": {
+            "schema_version": "fusekit.workspace-detonation-resources.v1",
+            "remote_worker": True,
+            "compute_instance": True,
+            "network_resources": [
+                "internet_gateway",
+                "network_security_group",
+                "route_table",
+                "security_list",
+                "subnet",
+                "vcn",
+            ],
+            "network_resources_deleted": True,
+            "compartment_deleted": False,
+            "compartment_scope": "preserved",
+            "missing": [],
+            "statement": (
+                "FuseKit detonation must remove the remote worker process state, "
+                "terminate the OCI VM, and delete FuseKit-created network resources."
+            ),
+        },
         "updated_at": 2.0,
     }
 
@@ -3729,6 +3759,7 @@ def test_acceptance_run_record_requires_complete_workspace_detonation_receipt(
     assert "detonation.workspace_receipt.failures must be empty" in failures
     assert "detonation.workspace_receipt.reason is missing" in failures
     assert "detonation.workspace_receipt.updated_at is missing" in failures
+    assert "detonation.workspace_receipt.resource_summary is missing" in failures
 
 
 def test_acceptance_run_record_requires_no_trace_detonation_scope(tmp_path) -> None:

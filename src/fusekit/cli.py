@@ -1818,8 +1818,9 @@ def _cmd_runner_detonate(args: argparse.Namespace) -> int:
         try:
             workspace = latest_workspace_from_vault(vault)
             detonate_remote_worker(workspace=workspace, vault=vault)
+            remote_deleted["remote_worker"] = "detonated"
             auth = load_oci_auth_from_vault_or_config(vault, config_file=None)
-            remote_deleted = OciProvisioner(auth).detonate(workspace)
+            remote_deleted.update(OciProvisioner(auth).detonate(workspace))
         except FuseKitError as exc:
             remote_deleted = {"failed.workspace": str(exc)}
     removed = detonate_paths(
@@ -2303,6 +2304,7 @@ def _detonate_oci_workspace(
     remote_deleted: dict[str, str] = {}
     try:
         detonate_remote_worker(workspace=workspace, vault=vault)
+        remote_deleted["remote_worker"] = "detonated"
     except FuseKitError as exc:
         remote_deleted["failed.remote_worker"] = str(exc)
     try:
@@ -2336,7 +2338,31 @@ def _record_workspace_detonation(
 
 
 def _workspace_detonation_complete(remote_deleted: dict[str, str]) -> bool:
-    return not any(key.startswith("failed.") for key in remote_deleted)
+    return not any(key.startswith("failed.") for key in remote_deleted) and not (
+        _workspace_detonation_missing_resources(remote_deleted)
+    )
+
+
+def _workspace_detonation_missing_resources(remote_deleted: dict[str, str]) -> list[str]:
+    if not remote_deleted:
+        return []
+    deleted = {key for key in remote_deleted if not key.startswith("failed.")}
+    network_keys = {
+        "subnet",
+        "route_table",
+        "internet_gateway",
+        "network_security_group",
+        "security_list",
+        "vcn",
+    }
+    missing: list[str] = []
+    if "remote_worker" not in deleted:
+        missing.append("remote_worker")
+    if "instance" not in deleted:
+        missing.append("compute_instance")
+    if not deleted.intersection(network_keys):
+        missing.append("network_resources")
+    return missing
 
 
 def _write_workspace_detonation_receipt(
@@ -2352,17 +2378,46 @@ def _write_workspace_detonation_receipt(
         for key, value in sorted(remote_deleted.items())
         if key.startswith("failed.")
     }
+    resource_summary = _workspace_detonation_resource_summary(remote_deleted)
     payload: dict[str, Any] = {
-        "status": "incomplete" if failures else "complete",
+        "status": "incomplete" if failures or resource_summary["missing"] else "complete",
         "reason": reason,
         "deleted": sorted(key for key in remote_deleted if not key.startswith("failed.")),
         "failures": failures,
+        "resource_summary": resource_summary,
         "updated_at": time.time(),
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", "utf-8")
     job.add_artifact("workspace_detonation", path)
     return path
+
+
+def _workspace_detonation_resource_summary(remote_deleted: dict[str, str]) -> dict[str, Any]:
+    deleted = {key for key in remote_deleted if not key.startswith("failed.")}
+    network_keys = {
+        "subnet",
+        "route_table",
+        "internet_gateway",
+        "network_security_group",
+        "security_list",
+        "vcn",
+    }
+    return {
+        "schema_version": "fusekit.workspace-detonation-resources.v1",
+        "remote_worker": "remote_worker" in deleted,
+        "compute_instance": "instance" in deleted,
+        "network_resources": sorted(deleted.intersection(network_keys)),
+        "network_resources_deleted": bool(deleted.intersection(network_keys)),
+        "compartment_deleted": "compartment" in deleted,
+        "compartment_scope": "detonated" if "compartment" in deleted else "preserved",
+        "missing": _workspace_detonation_missing_resources(remote_deleted),
+        "statement": (
+            "FuseKit detonation must remove the remote worker process state, terminate "
+            "the OCI VM, and delete FuseKit-created network resources. Root tenancy or "
+            "root compartment scope may be preserved when no throwaway compartment was created."
+        ),
+    }
 
 
 def _run_remote_detonation_preflight(args: argparse.Namespace, output_dir: Path) -> None:

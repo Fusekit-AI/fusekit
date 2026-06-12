@@ -956,6 +956,37 @@ def _workspace_detonation_receipt_failures(receipt: dict[str, Any]) -> list[str]
         failures.append("detonation.workspace_receipt.reason is missing")
     if not isinstance(receipt.get("updated_at"), int | float):
         failures.append("detonation.workspace_receipt.updated_at is missing")
+    resource_summary = receipt.get("resource_summary")
+    if not isinstance(resource_summary, dict) or not resource_summary:
+        failures.append("detonation.workspace_receipt.resource_summary is missing")
+    else:
+        if (
+            str(resource_summary.get("schema_version", "")).strip()
+            != "fusekit.workspace-detonation-resources.v1"
+        ):
+            failures.append(
+                "detonation.workspace_receipt.resource_summary.schema_version is unsupported"
+            )
+        if resource_summary.get("remote_worker") is not True:
+            failures.append("detonation.workspace_receipt.remote_worker must be true")
+        if resource_summary.get("compute_instance") is not True:
+            failures.append("detonation.workspace_receipt.compute_instance must be true")
+        if resource_summary.get("network_resources_deleted") is not True:
+            failures.append("detonation.workspace_receipt.network_resources must be deleted")
+        missing = resource_summary.get("missing", [])
+        if not isinstance(missing, list):
+            failures.append("detonation.workspace_receipt.resource_summary.missing is missing")
+        elif missing:
+            failures.append(
+                "detonation.workspace_receipt.resource_summary.missing must be empty"
+            )
+        statement = str(resource_summary.get("statement", "") or "").lower()
+        for required in ("remote worker", "oci vm", "network resources"):
+            if required not in statement:
+                failures.append(
+                    "detonation.workspace_receipt.resource_summary.statement is incomplete"
+                )
+                break
     return failures
 
 

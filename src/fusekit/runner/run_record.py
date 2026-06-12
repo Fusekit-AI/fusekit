@@ -1282,6 +1282,12 @@ def _recording_detonation_ready(record: dict[str, Any]) -> bool:
         return False
     receipt = detonation.get("workspace_receipt", {})
     failures = receipt.get("failures", {}) if isinstance(receipt, dict) else {}
+    resource_summary = receipt.get("resource_summary", {}) if isinstance(receipt, dict) else {}
+    missing = (
+        resource_summary.get("missing", [])
+        if isinstance(resource_summary, dict)
+        else ["resource_summary"]
+    )
     return (
         detonation.get("preflight_safe") is True
         and detonation.get("workspace_detonated") is True
@@ -1289,6 +1295,12 @@ def _recording_detonation_ready(record: dict[str, Any]) -> bool:
         and str(receipt.get("status", "") or "") == "complete"
         and isinstance(failures, dict)
         and not failures
+        and isinstance(resource_summary, dict)
+        and resource_summary.get("remote_worker") is True
+        and resource_summary.get("compute_instance") is True
+        and resource_summary.get("network_resources_deleted") is True
+        and isinstance(missing, list)
+        and not missing
     )
 
 

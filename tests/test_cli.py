@@ -217,6 +217,13 @@ def test_workspace_detonation_receipt_fails_closed_and_redacts(tmp_path) -> None
     )
     assert receipt["status"] == "incomplete"
     assert receipt["deleted"] == ["instance"]
+    assert receipt["resource_summary"]["remote_worker"] is False
+    assert receipt["resource_summary"]["compute_instance"] is True
+    assert receipt["resource_summary"]["network_resources_deleted"] is False
+    assert receipt["resource_summary"]["missing"] == [
+        "remote_worker",
+        "network_resources",
+    ]
     assert "secret-token" not in json.dumps(receipt)
     assert "secret-password" not in json.dumps(receipt)
 
@@ -3303,7 +3310,15 @@ def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch)
             self.auth = auth
 
         def detonate(self, workspace) -> dict[str, str]:
-            return {"instance": "deleted"}
+            return {
+                "instance": "deleted",
+                "subnet": "deleted",
+                "route_table": "deleted",
+                "internet_gateway": "deleted",
+                "network_security_group": "deleted",
+                "security_list": "deleted",
+                "vcn": "deleted",
+            }
 
     monkeypatch.setattr("fusekit.cli.OciProvisioner", FakeProvisioner)
 
@@ -3339,8 +3354,22 @@ def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch)
         (app / ".fusekit" / "workspace_detonation.json").read_text(encoding="utf-8")
     )
     assert detonation["status"] == "complete"
-    assert detonation["deleted"] == ["instance"]
+    assert detonation["deleted"] == [
+        "instance",
+        "internet_gateway",
+        "network_security_group",
+        "remote_worker",
+        "route_table",
+        "security_list",
+        "subnet",
+        "vcn",
+    ]
     assert detonation["failures"] == {}
+    assert detonation["resource_summary"]["remote_worker"] is True
+    assert detonation["resource_summary"]["compute_instance"] is True
+    assert detonation["resource_summary"]["network_resources_deleted"] is True
+    assert detonation["resource_summary"]["compartment_scope"] == "preserved"
+    assert detonation["resource_summary"]["missing"] == []
     checkpoints = json.loads((app / ".fusekit" / "checkpoints.json").read_text(encoding="utf-8"))
     assert checkpoints["job_id"] == job["id"]
     assert any(item["id"] == "detonate.workspace" for item in checkpoints["checkpoints"])
@@ -3806,7 +3835,15 @@ def test_launch_detonates_oci_workspace_after_remote_failure(tmp_path, monkeypat
 
         def detonate(self, workspace) -> dict[str, str]:
             detonated.append("workspace")
-            return {"instance": "deleted"}
+            return {
+                "instance": "deleted",
+                "subnet": "deleted",
+                "route_table": "deleted",
+                "internet_gateway": "deleted",
+                "network_security_group": "deleted",
+                "security_list": "deleted",
+                "vcn": "deleted",
+            }
 
     monkeypatch.setattr("fusekit.cli.OciProvisioner", LocalProvisioner)
 

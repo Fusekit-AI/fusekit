@@ -68,6 +68,7 @@ def render_control_room(
     {_render_run_record_verifiers(control_payload.get("run_record", {}))}
     {_render_audit_trail(control_payload.get("run_record", {}))}
     {_render_recording_contract(control_payload.get("run_record", {}))}
+    {_render_detonation_receipt(control_payload.get("run_record", {}))}
     {_render_acceptance_blockers(control_payload.get("acceptance", {}))}
     {_render_provider_strategies(control_payload.get("provider_strategies", {}))}
     {_render_trust(control_payload.get("verification", {}))}
@@ -1651,6 +1652,94 @@ def _render_recording_contract_card(name: str, ready: Any) -> str:
             <strong>{html.escape(title)}</strong>
             <p>{html.escape(detail)}</p>
             <em>recording readiness</em>
+          </div>
+        </article>
+"""
+
+
+def _render_detonation_receipt(run_record: Any) -> str:
+    run_record = run_record if isinstance(run_record, dict) else {}
+    detonation = run_record.get("detonation", {})
+    detonation = detonation if isinstance(detonation, dict) else {}
+    receipt = detonation.get("workspace_receipt", {})
+    receipt = receipt if isinstance(receipt, dict) else {}
+    summary = receipt.get("resource_summary", {})
+    summary = summary if isinstance(summary, dict) else {}
+    cards = "\n".join(
+        (
+            _render_detonation_resource_card(
+                "remote_worker",
+                "Remote worker state",
+                summary.get("remote_worker") is True,
+            ),
+            _render_detonation_resource_card(
+                "compute_instance",
+                "OCI VM instance",
+                summary.get("compute_instance") is True,
+            ),
+            _render_detonation_resource_card(
+                "network_resources",
+                "FuseKit network resources",
+                summary.get("network_resources_deleted") is True,
+            ),
+            _render_detonation_resource_card(
+                "compartment_scope",
+                "Compartment scope",
+                str(summary.get("compartment_scope", "") or "") in {"detonated", "preserved"},
+                detail=(
+                    "Throwaway compartment deleted."
+                    if summary.get("compartment_deleted") is True
+                    else "Root tenancy or root compartment scope was preserved by design."
+                ),
+            ),
+        )
+    )
+    missing = summary.get("missing", [])
+    missing_count = len(missing) if isinstance(missing, list) else 0
+    status = str(receipt.get("status", "") or "pending")
+    overall = "OCI VM detonated" if status == "complete" and missing_count == 0 else (
+        f"{missing_count} cleanup classes pending"
+    )
+    return f"""
+    <section class="run-state-panel" aria-label="OCI detonation receipt">
+      <div class="section-head compact">
+        <div>
+          <span class="section-kicker">Detonation receipt</span>
+          <h2>OCI cleanup left no worker trace</h2>
+        </div>
+        <span class="live-pill" data-detonation-receipt-overall>{html.escape(overall)}</span>
+      </div>
+      <p class="muted">
+        FuseKit records resource classes, not secret values: worker state, VM instance,
+        network resources, compartment scope, and any provider delete failures.
+      </p>
+      <div class="run-state-grid" data-detonation-receipt-checks>{cards}</div>
+    </section>
+"""
+
+
+def _render_detonation_resource_card(
+    name: str,
+    title: str,
+    ready: bool,
+    *,
+    detail: str | None = None,
+) -> str:
+    status = "passed" if ready else "pending"
+    snow = "passed" if ready else "checking"
+    card_detail = detail or (
+        "This cleanup class is represented in the detonation receipt."
+        if ready
+        else "Waiting for this cleanup class before no-trace proof is complete."
+    )
+    return f"""
+        <article class="trust-card {status}" data-detonation-resource="{html.escape(name)}">
+          <div class="trust-snow state-{snow}" aria-hidden="true"></div>
+          <div>
+            <span>{html.escape(status_label(status))}</span>
+            <strong>{html.escape(title)}</strong>
+            <p>{html.escape(card_detail)}</p>
+            <em>no-trace cleanup</em>
           </div>
         </article>
 """

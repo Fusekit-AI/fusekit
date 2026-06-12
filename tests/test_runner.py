@@ -319,8 +319,38 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
             {
                 "status": "complete",
                 "reason": "remote worker and OCI workspace detonated",
-                "deleted": ["instance"],
+                "deleted": [
+                    "instance",
+                    "internet_gateway",
+                    "network_security_group",
+                    "remote_worker",
+                    "route_table",
+                    "security_list",
+                    "subnet",
+                    "vcn",
+                ],
                 "failures": {},
+                "resource_summary": {
+                    "schema_version": "fusekit.workspace-detonation-resources.v1",
+                    "remote_worker": True,
+                    "compute_instance": True,
+                    "network_resources": [
+                        "internet_gateway",
+                        "network_security_group",
+                        "route_table",
+                        "security_list",
+                        "subnet",
+                        "vcn",
+                    ],
+                    "network_resources_deleted": True,
+                    "compartment_deleted": False,
+                    "compartment_scope": "preserved",
+                    "missing": [],
+                    "statement": (
+                        "FuseKit detonation must remove the remote worker process state, "
+                        "terminate the OCI VM, and delete FuseKit-created network resources."
+                    ),
+                },
                 "updated_at": 2.0,
             }
         ),
@@ -711,6 +741,50 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
                         "detonation all agree."
                     ),
                 },
+                "detonation": {
+                    "preflight_safe": True,
+                    "workspace_detonated": True,
+                    "workspace_receipt": {
+                        "status": "complete",
+                        "reason": "remote worker and OCI workspace detonated",
+                        "deleted": [
+                            "instance",
+                            "internet_gateway",
+                            "network_security_group",
+                            "remote_worker",
+                            "route_table",
+                            "security_list",
+                            "subnet",
+                            "vcn",
+                        ],
+                        "failures": {},
+                        "resource_summary": {
+                            "schema_version": (
+                                "fusekit.workspace-detonation-resources.v1"
+                            ),
+                            "remote_worker": True,
+                            "compute_instance": True,
+                            "network_resources": [
+                                "internet_gateway",
+                                "network_security_group",
+                                "route_table",
+                                "security_list",
+                                "subnet",
+                                "vcn",
+                            ],
+                            "network_resources_deleted": True,
+                            "compartment_deleted": False,
+                            "compartment_scope": "preserved",
+                            "missing": [],
+                            "statement": (
+                                "FuseKit detonation must remove the remote worker "
+                                "process state, terminate the OCI VM, and delete "
+                                "FuseKit-created network resources."
+                            ),
+                        },
+                        "updated_at": 2.0,
+                    },
+                },
             }
         ),
         encoding="utf-8",
@@ -743,6 +817,10 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
     assert "Ready to show the magic path" in html
     assert "recordable with no trace" in html
     assert 'data-recording-contract-check="detonation"' in html
+    assert "OCI cleanup left no worker trace" in html
+    assert "OCI VM detonated" in html
+    assert 'data-detonation-resource="compute_instance"' in html
+    assert "Root tenancy or root compartment scope was preserved by design." in html
 
 
 def test_remote_bootstrap_checkpoint_keeps_recovery_in_launcher(tmp_path) -> None:
