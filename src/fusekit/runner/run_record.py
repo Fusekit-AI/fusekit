@@ -104,6 +104,7 @@ DETONATION_PRESERVES = (
     "gates",
     "gate_events",
     "provider_strategies",
+    "runner_readiness",
     "setup_receipt",
     "workspace_detonation",
     "verification_report",

@@ -79,8 +79,9 @@ replaced while the run is active and detonated when the run is complete.
 The pressure-test rules are:
 
 - Durable state survives until completion: encrypted vault, job state,
-  checkpoints, gates, gate events, provider strategies, verification,
-  rollback metadata, detonation receipt, and the Run Record.
+  checkpoints, gates, gate events, provider strategies, runner profile
+  readiness proof, verification, rollback metadata, detonation receipt, and
+  the Run Record.
 - Plaintext runtime state dies: app archive, passphrase files, SSH scratch,
   browser profiles, provider-auth profiles, OpenClaw state, visual gateway
   logs, control-room logs, temporary files, and the OCI compute/network

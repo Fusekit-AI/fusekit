@@ -525,6 +525,7 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     assert record["durable_state"]["detonation_scope"]["mode"] == ("worker-and-oci-workspace")
     assert "provider-auth" in record["durable_state"]["detonation_scope"]["must_delete"]
     assert "run_record" in record["durable_state"]["detonation_scope"]["must_preserve"]
+    assert "runner_readiness" in record["durable_state"]["detonation_scope"]["must_preserve"]
     assert record["durable_state"]["detonation_scope"]["resume_until_complete"] is True
     assert record["durable_state"]["detonation_scope"]["host_machine_state_required"] is False
     assert (
@@ -5299,6 +5300,15 @@ def test_control_room_post_rejects_cross_site_gate_pass(tmp_path) -> None:
 
 def test_security_surface_map_documents_control_room_state_routes() -> None:
     text = Path("docs/security-surface-map.md").read_text(encoding="utf-8")
+    route_rows: dict[str, list[str]] = {}
+    for line in text.splitlines():
+        if not line.startswith("| "):
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) != 4 or cells[0] in {"Route", "---"}:
+            continue
+        route_label = cells[0].strip("`")
+        route_rows[route_label] = cells
 
     mapped_routes = {str(item["route"]) for item in CONTROL_ROOM_ROUTE_SURFACE}
     assert mapped_routes == {
@@ -5318,8 +5328,20 @@ def test_security_surface_map_documents_control_room_state_routes() -> None:
         "/api/gates/<gate_id>/open",
         "/api/gates/<gate_id>/capture-clipboard",
     }
-    for route in mapped_routes - {"unknown"}:
-        assert route in text
+    for surface in CONTROL_ROOM_ROUTE_SURFACE:
+        route = str(surface["route"])
+        route_label = "Unknown routes" if route == "unknown" else route
+        assert route_label in route_rows
+        methods_cell = route_rows[route_label][1]
+        for method in cast(tuple[str, ...], surface["methods"]):
+            assert f"`{method}`" in methods_cell
+        protection = str(surface["protection"])
+        assert protection in text
+        if surface["state_change"] is True:
+            assert "State-changing:" in route_rows[route_label][2]
+            assert protection == "control-room-header-origin-fetch-site-action-token"
+        else:
+            assert "State-changing:" not in route_rows[route_label][2]
     assert "State-changing POSTs reject `?token=` authentication in the URL" in text
     assert "cleaned control-room cookie or bearer token plus the per-page" in text
     assert "`CONTROL_ROOM_ROUTE_SURFACE`" in text
