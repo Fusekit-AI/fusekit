@@ -1783,6 +1783,10 @@ def _workspace_detonation_receipt_failures(receipt: dict[str, Any]) -> list[str]
             failures.append("detonation.workspace_receipt.ephemeral_public_ip must be released")
         if resource_summary.get("network_resources_deleted") is not True:
             failures.append("detonation.workspace_receipt.network_resources must be deleted")
+        if resource_summary.get("compartment_deleted") is not False:
+            failures.append("detonation.workspace_receipt.compartment_deleted must be false")
+        if str(resource_summary.get("compartment_scope", "") or "") != "preserved":
+            failures.append("detonation.workspace_receipt.compartment_scope must be preserved")
         network_resources = resource_summary.get("network_resources", [])
         if not isinstance(network_resources, list):
             failures.append(

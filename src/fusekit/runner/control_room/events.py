@@ -1848,7 +1848,8 @@ function renderDetonationReceipt(job) {
       : `${missing.length} cleanup classes pending`;
   }
   const compartmentScope = String(summary.compartment_scope || "");
-  const compartmentReady = ["detonated", "preserved"].includes(compartmentScope);
+  const compartmentReady =
+    summary.compartment_deleted === false && compartmentScope === "preserved";
   const workerCleanup = summary.remote_worker_cleanup &&
     typeof summary.remote_worker_cleanup === "object"
     ? summary.remote_worker_cleanup
@@ -1887,9 +1888,9 @@ function renderDetonationReceipt(job) {
       "compartment_scope",
       "Compartment scope",
       compartmentReady,
-      summary.compartment_deleted === true
-        ? "Throwaway compartment deleted."
-        : "Root tenancy or root compartment scope was preserved by design.",
+      summary.compartment_deleted === false
+        ? "Root tenancy or root compartment scope was preserved by design."
+        : "Unexpected compartment deletion is not part of the public OCI lane.",
     ),
   ].join("");
 }

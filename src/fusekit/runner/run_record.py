@@ -1948,6 +1948,8 @@ def _recording_detonation_ready(record: dict[str, Any]) -> bool:
         and resource_summary.get("boot_volume_deleted") is True
         and resource_summary.get("ephemeral_public_ip_released") is True
         and resource_summary.get("network_resources_deleted") is True
+        and resource_summary.get("compartment_deleted") is False
+        and str(resource_summary.get("compartment_scope", "") or "") == "preserved"
         and isinstance(network_resources, list)
         and not (required_network_resources - {str(item) for item in network_resources})
         and isinstance(network_resources_missing, list)

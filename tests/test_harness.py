@@ -1523,6 +1523,8 @@ def test_acceptance_rejects_incomplete_workspace_detonation_receipt(tmp_path) ->
     assert "remote_worker_cleanup is missing" in checks[-1].detail
     assert "boot_volume must be deleted" in checks[-1].detail
     assert "network_resources must be deleted" in checks[-1].detail
+    assert "compartment_deleted must be false" in checks[-1].detail
+    assert "compartment_scope must be preserved" in checks[-1].detail
     assert "OCI workspace detonation receipt" in missing
 
 
@@ -4637,6 +4639,25 @@ def test_acceptance_run_record_requires_complete_workspace_detonation_receipt(
     assert "detonation.workspace_receipt.reason is missing" in failures
     assert "detonation.workspace_receipt.updated_at is missing" in failures
     assert "detonation.workspace_receipt.resource_summary is missing" in failures
+
+
+def test_acceptance_run_record_requires_preserved_compartment_scope(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["detonation"]["workspace_receipt"]["deleted"].append("compartment")
+    record["detonation"]["workspace_receipt"]["resource_summary"][
+        "compartment_deleted"
+    ] = True
+    record["detonation"]["workspace_receipt"]["resource_summary"][
+        "compartment_scope"
+    ] = "detonated"
+
+    failures = _run_record_shape_failures(record)
+
+    assert "detonation.workspace_receipt.compartment_deleted must be false" in failures
+    assert "detonation.workspace_receipt.compartment_scope must be preserved" in failures
 
 
 def test_acceptance_run_record_requires_no_trace_detonation_scope(tmp_path) -> None:

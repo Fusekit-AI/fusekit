@@ -1777,11 +1777,12 @@ def _render_detonation_receipt(run_record: Any) -> str:
             _render_detonation_resource_card(
                 "compartment_scope",
                 "Compartment scope",
-                str(summary.get("compartment_scope", "") or "") in {"detonated", "preserved"},
+                summary.get("compartment_deleted") is False
+                and str(summary.get("compartment_scope", "") or "") == "preserved",
                 detail=(
-                    "Throwaway compartment deleted."
-                    if summary.get("compartment_deleted") is True
-                    else "Root tenancy or root compartment scope was preserved by design."
+                    "Root tenancy or root compartment scope was preserved by design."
+                    if summary.get("compartment_deleted") is False
+                    else "Unexpected compartment deletion is not part of the public OCI lane."
                 ),
             ),
         )
