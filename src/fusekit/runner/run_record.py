@@ -37,6 +37,31 @@ DURABLE_STATE_SOURCES = (
     ("gate_events", "gate_events.jsonl", "evented resume wake proof", "non-secret"),
     ("provider_strategies", "provider_strategies.json", "provider route decisions", "non-secret"),
     ("runner_readiness", "runner_readiness.json", "runner profile readiness proof", "non-secret"),
+    ("setup_receipt", "setup_receipt.json", "redacted provider setup receipt", "non-secret"),
+    (
+        "verification_report",
+        "verification_report.json",
+        "live provider verifier proof",
+        "non-secret",
+    ),
+    ("rollback_plan", "rollback_plan.json", "provider rollback metadata", "non-secret"),
+    (
+        "workspace_detonation",
+        "workspace_detonation.json",
+        "OCI workspace detonation receipt",
+        "non-secret",
+    ),
+    ("run_record", "run_record.json", "central run record", "non-secret"),
+)
+WORKER_REPLACEMENT_SOURCE_IDS = (
+    "encrypted_vault",
+    "job_state",
+    "run_state",
+    "checkpoints",
+    "gates",
+    "gate_events",
+    "provider_strategies",
+    "runner_readiness",
 )
 VOLATILE_WORKER_SURFACES = (
     "worker",
@@ -79,6 +104,7 @@ DETONATION_PRESERVES = (
     "gates",
     "gate_events",
     "provider_strategies",
+    "setup_receipt",
     "workspace_detonation",
     "verification_report",
     "rollback_plan",
@@ -498,6 +524,9 @@ def _artifact_records(job: JobState, root: Path) -> list[dict[str, Any]]:
         "gates",
         "gate_events",
         "runner_readiness",
+        "setup_receipt",
+        "verification_report",
+        "rollback_plan",
         "workspace_detonation",
         "run_record",
     ):
@@ -570,6 +599,9 @@ def _evidence_candidates(
         "acceptance/report.json",
         "rollback.json",
         "rollback_metadata.json",
+        "rollback_plan.json",
+        "workspace_detonation.json",
+        "run_record.json",
         "visual.json",
         "runner_readiness.json",
         "visual/control-room.log",
@@ -649,6 +681,9 @@ def _evidence_kind(path: Path) -> str:
         "report.json",
         "rollback.json",
         "rollback_metadata.json",
+        "rollback_plan.json",
+        "workspace_detonation.json",
+        "run_record.json",
     }:
         return "receipt"
     return "artifact"
@@ -678,7 +713,11 @@ def _durable_state_summary(
     sources: list[dict[str, Any]] = []
     for source_id, filename, role, secret_class in DURABLE_STATE_SOURCES:
         path = root / filename
-        exists = path.exists() or artifact_names.get(source_id, False)
+        exists = (
+            source_id == "run_record"
+            or path.exists()
+            or artifact_names.get(source_id, False)
+        )
         sources.append(
             {
                 "id": source_id,
@@ -688,13 +727,24 @@ def _durable_state_summary(
                 "exists": exists,
             }
         )
-    missing = [source["id"] for source in sources if not source["exists"]]
+    replacement_source_ids = set(WORKER_REPLACEMENT_SOURCE_IDS)
+    missing = [
+        source["id"]
+        for source in sources
+        if source["id"] in replacement_source_ids and not source["exists"]
+    ]
+    final_proof_missing = [
+        source["id"]
+        for source in sources
+        if source["id"] not in replacement_source_ids and not source["exists"]
+    ]
     runner_failures = runner_readiness_failures(runner_readiness)
     resume_ready = not missing and not runner_failures
     return {
         "schema_version": DURABLE_STATE_SCHEMA_VERSION,
         "resume_ready": resume_ready,
         "missing": missing,
+        "final_proof_missing": final_proof_missing,
         "runner_profile_ready": not runner_failures,
         "runner_profile_failures": runner_failures,
         "sources": sources,
@@ -721,7 +771,7 @@ def _durable_state_summary(
             "required_runner_profile": "oci-visual-browser-x86_64",
             "host_machine_state_required": False,
             "state_owner": "encrypted-vault-and-run-record",
-            "resume_sources": [source["id"] for source in sources],
+            "resume_sources": list(WORKER_REPLACEMENT_SOURCE_IDS),
             "runner_profile_failures": runner_failures,
             "volatile_surfaces": list(VOLATILE_WORKER_SURFACES),
             "statement": (
@@ -1331,7 +1381,7 @@ def _recording_worker_replacement_ready(record: dict[str, Any]) -> bool:
     volatile_surfaces = replacement.get("volatile_surfaces", [])
     if not isinstance(resume_sources, list) or not isinstance(volatile_surfaces, list):
         return False
-    required_resume_sources = {source[0] for source in DURABLE_STATE_SOURCES}
+    required_resume_sources = set(WORKER_REPLACEMENT_SOURCE_IDS)
     required_volatile = set(VOLATILE_WORKER_SURFACES)
     resume_source_values = {str(item) for item in resume_sources}
     volatile_surface_values = {str(item) for item in volatile_surfaces}

@@ -26,6 +26,11 @@ from fusekit.harness.ledger import HarnessLedger
 from fusekit.runner.gate_guidance import provider_gate_guidance
 from fusekit.runner.gates import GateService
 from fusekit.runner.remote import remote_worker_cleanup_proof
+from fusekit.runner.run_record import (
+    DETONATION_PRESERVES,
+    DURABLE_STATE_SOURCES,
+    WORKER_REPLACEMENT_SOURCE_IDS,
+)
 from fusekit.vault import Vault
 
 
@@ -219,71 +224,16 @@ def _durable_state() -> dict[str, object]:
         "missing": [],
         "sources": [
             {
-                "id": "encrypted_vault",
-                "path": "fusekit.vault.json",
-                "role": "encrypted capability vault",
-                "secret_class": "encrypted",
+                "id": source_id,
+                "path": path,
+                "role": role,
+                "secret_class": secret_class,
                 "exists": True,
-            },
-            {
-                "id": "job_state",
-                "path": "job.json",
-                "role": "runner job state",
-                "secret_class": "non-secret",
-                "exists": True,
-            },
-            {
-                "id": "run_state",
-                "path": "run_state.json",
-                "role": "launch state contract",
-                "secret_class": "non-secret",
-                "exists": True,
-            },
-            {
-                "id": "checkpoints",
-                "path": "checkpoints.json",
-                "role": "resume checkpoints",
-                "secret_class": "non-secret",
-                "exists": True,
-            },
-            {
-                "id": "gates",
-                "path": "gates.json",
-                "role": "provider gate state",
-                "secret_class": "non-secret",
-                "exists": True,
-            },
-            {
-                "id": "gate_events",
-                "path": "gate_events.jsonl",
-                "role": "evented resume wake proof",
-                "secret_class": "non-secret",
-                "exists": True,
-            },
-            {
-                "id": "provider_strategies",
-                "path": "provider_strategies.json",
-                "role": "provider route decisions",
-                "secret_class": "non-secret",
-                "exists": True,
-            },
-            {
-                "id": "runner_readiness",
-                "path": "runner_readiness.json",
-                "role": "runner profile readiness proof",
-                "secret_class": "non-secret",
-                "exists": True,
-            },
-            {
-                "id": "workspace_detonation",
-                "path": "workspace_detonation.json",
-                "role": "OCI detonation receipt",
-                "secret_class": "non-secret",
-                "exists": True,
-            },
+            }
+            for source_id, path, role, secret_class in DURABLE_STATE_SOURCES
         ],
         "volatile_worker_surfaces": ["worker", "visual", "openclaw-state"],
-        "detonation_preserves": ["encrypted_vault", "workspace_detonation", "run_record"],
+        "detonation_preserves": list(DETONATION_PRESERVES),
         "detonation_scope": {
             "schema_version": "fusekit.detonation-scope.v1",
             "mode": "worker-and-oci-workspace",
@@ -298,11 +248,7 @@ def _durable_state() -> dict[str, object]:
                 "control-room.log",
                 "openclaw-gateway.log",
             ],
-            "must_preserve": [
-                "encrypted_vault",
-                "workspace_detonation",
-                "run_record",
-            ],
+            "must_preserve": list(DETONATION_PRESERVES),
             "resume_until_complete": True,
             "host_machine_state_required": False,
             "no_trace_statement": (
@@ -320,16 +266,7 @@ def _durable_state() -> dict[str, object]:
             "required_runner_profile": "oci-visual-browser-x86_64",
             "host_machine_state_required": False,
             "state_owner": "encrypted-vault-and-run-record",
-            "resume_sources": [
-                "encrypted_vault",
-                "job_state",
-                "run_state",
-                "checkpoints",
-                "gates",
-                "gate_events",
-                "provider_strategies",
-                "runner_readiness",
-            ],
+            "resume_sources": list(WORKER_REPLACEMENT_SOURCE_IDS),
             "runner_profile_failures": [],
             "volatile_surfaces": ["worker", "visual", "openclaw-state"],
             "statement": (
@@ -4728,14 +4665,7 @@ def test_acceptance_run_record_requires_coherent_worker_replacement_contract(
     record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
 
     record["durable_state"]["worker_replacement_contract"]["resume_sources"] = [
-        "encrypted_vault",
-        "job_state",
-        "run_state",
-        "checkpoints",
-        "gates",
-        "gate_events",
-        "provider_strategies",
-        "runner_readiness",
+        *WORKER_REPLACEMENT_SOURCE_IDS,
         "external_checkpoint",
     ]
     record["durable_state"]["worker_replacement_contract"]["volatile_surfaces"] = ["worker"]
@@ -4784,11 +4714,11 @@ def test_acceptance_run_record_rejects_volatile_durable_state_survivors(
 
     failures = _run_record_shape_failures(record)
 
-    assert "durable_state.sources[9] preserves volatile worker state: browser-profile" in failures
-    assert (
-        "durable_state.detonation_preserves must not include volatile worker state: "
-        "browser-profile" in failures
+    assert any(
+        failure.endswith("preserves volatile worker state: browser-profile")
+        for failure in failures
     )
+    assert "durable_state.detonation_preserves is incomplete" in failures
     assert (
         "durable_state.detonation_scope.must_preserve must not include volatile "
         "worker state: browser-profile" in failures

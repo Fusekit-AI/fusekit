@@ -3209,7 +3209,16 @@ def test_save_launch_job_writes_durable_state_after_job_state_exists(tmp_path) -
     assert (fusekit_dir / "checkpoints.json").exists()
     assert record["durable_state"]["resume_ready"] is True
     assert record["durable_state"]["missing"] == []
+    assert set(record["durable_state"]["final_proof_missing"]) >= {
+        "rollback_plan",
+        "setup_receipt",
+        "verification_report",
+        "workspace_detonation",
+    }
     assert record["durable_state"]["runner_profile_ready"] is True
+    assert record["durable_state"]["worker_replacement_contract"]["can_recreate_worker"] is True
+    assert record["recording_contract"]["checks"]["durable_state"] is False
+    assert "durable_state" in record["recording_contract"]["blockers"]
 
 
 def test_local_launch_control_room_has_truth_artifacts(tmp_path) -> None:

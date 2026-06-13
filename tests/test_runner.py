@@ -407,6 +407,20 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
         '{"checks":[{"provider":"cloudflare","status":"pending_safe"}]}',
         encoding="utf-8",
     )
+    (tmp_path / "rollback_plan.json").write_text(
+        json.dumps(
+            {
+                "actions": [
+                    {
+                        "provider": "cloudflare",
+                        "action": "cloudflare.dns.rollback",
+                        "status": "planned",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
     (tmp_path / "visual.json").write_text(
         json.dumps({"runner": "novnc", "status": "ready"}),
         encoding="utf-8",
@@ -1110,6 +1124,20 @@ def test_run_record_recording_contract_blocks_missing_provider_playbook(tmp_path
         json.dumps({"checks": [{"provider": "resend", "status": "passed"}]}),
         encoding="utf-8",
     )
+    (tmp_path / "rollback_plan.json").write_text(
+        json.dumps(
+            {
+                "actions": [
+                    {
+                        "provider": "resend",
+                        "action": "resend.domain.rollback",
+                        "status": "planned",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
     (tmp_path / "visual.json").write_text(
         json.dumps({"runner": "novnc", "status": "ready"}),
         encoding="utf-8",
@@ -1200,6 +1228,20 @@ def test_recording_contract_rejects_volatile_durable_state_survivors(tmp_path) -
     )
     (tmp_path / "verification_report.json").write_text(
         json.dumps({"checks": [{"provider": "resend", "status": "passed"}]}),
+        encoding="utf-8",
+    )
+    (tmp_path / "rollback_plan.json").write_text(
+        json.dumps(
+            {
+                "actions": [
+                    {
+                        "provider": "resend",
+                        "action": "resend.domain.rollback",
+                        "status": "planned",
+                    }
+                ]
+            }
+        ),
         encoding="utf-8",
     )
     (tmp_path / "visual.json").write_text(

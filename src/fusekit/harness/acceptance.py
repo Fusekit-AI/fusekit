@@ -43,9 +43,12 @@ from fusekit.runner.remote import (
 from fusekit.runner.run_record import (
     AUDIT_TRAIL_SCHEMA_VERSION,
     AUTOMATION_BOUNDARY_SCHEMA_VERSION,
+    DETONATION_PRESERVES,
+    DURABLE_STATE_SOURCES,
     RECORDING_CONTRACT_SCHEMA_VERSION,
     RUN_RECORD_SCHEMA_VERSION,
     VERIFIER_SUMMARY_SCHEMA_VERSION,
+    WORKER_REPLACEMENT_SOURCE_IDS,
 )
 from fusekit.scanner import scan_repo
 from fusekit.security import redact_public_path, redact_public_text, scan_for_secret_leaks
@@ -5229,16 +5232,7 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
             volatile_marker = _volatile_durable_state_marker(source)
             if volatile_marker:
                 failures.append(f"{label} preserves volatile worker state: {volatile_marker}")
-        required = {
-            "encrypted_vault",
-            "job_state",
-            "run_state",
-            "checkpoints",
-            "gates",
-            "gate_events",
-            "provider_strategies",
-            "runner_readiness",
-        }
+        required = {source_id for source_id, _path, _role, _secret in DURABLE_STATE_SOURCES}
         missing_ids = sorted(required - source_ids)
         if missing_ids:
             failures.append("durable_state.sources missing " + ", ".join(missing_ids))
@@ -5260,9 +5254,7 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
         failures.append("durable_state.volatile_worker_surfaces is incomplete")
     preserves = durable_state.get("detonation_preserves", [])
     preserve_values = {str(item) for item in preserves} if isinstance(preserves, list) else set()
-    if not isinstance(preserves, list) or not {"encrypted_vault", "run_record"}.issubset(
-        preserve_values
-    ):
+    if not isinstance(preserves, list) or preserve_values != set(DETONATION_PRESERVES):
         failures.append("durable_state.detonation_preserves is incomplete")
     else:
         volatile_preserves = sorted(
@@ -5365,16 +5357,7 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
         resume_source_values = (
             {str(item) for item in resume_sources} if isinstance(resume_sources, list) else set()
         )
-        required_resume_sources = {
-            "encrypted_vault",
-            "job_state",
-            "run_state",
-            "checkpoints",
-            "gates",
-            "gate_events",
-            "provider_strategies",
-            "runner_readiness",
-        }
+        required_resume_sources = set(WORKER_REPLACEMENT_SOURCE_IDS)
         if not isinstance(resume_sources, list) or not required_resume_sources.issubset(
             resume_source_values
         ):
