@@ -3914,10 +3914,23 @@ def _checkpoint_guidance_quality_failure(
     if waiting_for_human_gate and "open provider gate in vm" not in text:
         return f"{checkpoint_id} guidance does not name Open provider gate in VM"
     secret_targets = _copy_once_targets_mentioned(text)
-    if secret_targets and "capture from vm clipboard" not in text:
-        return f"{checkpoint_id} guidance does not name Capture from VM clipboard for " + ", ".join(
-            secret_targets
-        )
+    if secret_targets:
+        if "capture <target> from vm clipboard" in text:
+            return (
+                f"{checkpoint_id} guidance uses placeholder Capture <TARGET> despite "
+                "concrete secret targets"
+            )
+        missing_exact = _missing_exact_capture_controls(secret_targets, text)
+        if "capture from vm clipboard" not in text and len(missing_exact) == len(secret_targets):
+            return (
+                f"{checkpoint_id} guidance does not name Capture from VM clipboard for "
+                + ", ".join(secret_targets)
+            )
+        if missing_exact:
+            return (
+                f"{checkpoint_id} guidance does not name exact Capture controls: "
+                + ", ".join(missing_exact)
+            )
     return ""
 
 

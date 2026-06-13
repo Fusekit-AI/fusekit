@@ -2949,7 +2949,7 @@ def test_acceptance_checkpoint_guidance_accepts_exact_launcher_controls() -> Non
                 "detail": "github-repo-secrets uses browser_guided (needs_human_gate)",
                 "next_action": (
                     "Click Open provider gate in VM, copy GITHUB_TOKEN inside the shared "
-                    "VM browser, then click Capture from VM clipboard."
+                    "VM browser, then click Capture GITHUB_TOKEN from VM clipboard."
                 ),
                 "resume_hint": "FuseKit will retry provider setup after capture.",
             }
@@ -4054,6 +4054,30 @@ def test_live_acceptance_requires_provider_route_recovery_checkpoints(tmp_path) 
     assert "keep this live control room open" in next_action
     assert "rerun the same live launcher" not in next_action
     assert "checkpoints.json" not in next_action
+
+
+def test_provider_route_checkpoints_require_exact_capture_control_labels() -> None:
+    failures = _provider_strategy_checkpoint_failures(
+        {"github": {"github-repo-secrets"}},
+        [
+            {
+                "id": "provider.github.routes",
+                "label": "Provider route: github",
+                "status": "waiting",
+                "detail": (
+                    "github-repo-secrets needs_human_gate for GITHUB_TOKEN in the VM browser."
+                ),
+                "next_action": (
+                    "Click Open provider gate in VM, copy GITHUB_TOKEN, then click "
+                    "Capture from VM clipboard."
+                ),
+                "resume_hint": "FuseKit will retry setup after capture.",
+            }
+        ],
+    )
+
+    assert any("exact Capture controls" in failure for failure in failures)
+    assert any("Capture GITHUB_TOKEN from VM clipboard" in failure for failure in failures)
 
 
 def test_live_acceptance_requires_provider_playbook(tmp_path) -> None:
