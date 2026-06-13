@@ -374,14 +374,16 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
                 "playbook": {
                     "schema_version": "fusekit.provider-playbook.v1",
                     "steps": [
-                        {
-                            "id": "cloudflare.capture_key",
-                            "provider": "cloudflare",
-                            "route": "browser_guided",
-                            "control": "Capture CLOUDFLARE_API_TOKEN from VM clipboard",
-                            "instruction": (
-                                "Open the provider gate in the VM browser, copy the "
-                                "approved value there, then click Capture "
+                            {
+                                "id": "cloudflare.capture_key",
+                                "provider": "cloudflare",
+                                "route": "browser_guided",
+                                "control": "Capture CLOUDFLARE_API_TOKEN from VM clipboard",
+                                "proof_source": "gate_events.jsonl",
+                                "resume_event": "clipboard_captured -> resume_requested",
+                                "instruction": (
+                                    "Open the provider gate in the VM browser, copy the "
+                                    "approved value there, then click Capture "
                                 "CLOUDFLARE_API_TOKEN from VM clipboard."
                             ),
                         }
@@ -551,6 +553,10 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     assert record["provider_playbook"]["schema_version"] == "fusekit.provider-playbook.v1"
     assert record["provider_playbook"]["step_count"] == 1
     assert "Capture CLOUDFLARE_API_TOKEN" in record["provider_playbook"]["steps"][0]["instruction"]
+    assert record["provider_playbook"]["steps"][0]["proof_source"] == "gate_events.jsonl"
+    assert record["provider_playbook"]["steps"][0]["resume_event"] == (
+        "clipboard_captured -> resume_requested"
+    )
     assert record["verifiers"]["schema_version"] == "fusekit.verifier-summary.v1"
     assert record["verifiers"]["all_passed_or_pending_safe"] is True
     assert record["verifiers"]["counts"]["pending_safe"] == 1
@@ -1010,6 +1016,8 @@ def test_recording_provider_playbook_requires_public_order() -> None:
             "provider": "resend",
             "route": "browser_guided",
             "control": "Capture RESEND_API_KEY from VM clipboard",
+            "proof_source": "gate_events.jsonl",
+            "resume_event": "clipboard_captured -> resume_requested",
             "instruction": "Capture RESEND_API_KEY from VM clipboard.",
         },
         {
@@ -1017,6 +1025,8 @@ def test_recording_provider_playbook_requires_public_order() -> None:
             "provider": "resend",
             "route": "api",
             "control": "FuseKit API worker",
+            "proof_source": "setup_receipt.json",
+            "resume_event": "provider_action_recorded",
             "instruction": "FuseKit creates or reuses the Resend domain by API.",
         },
         {
@@ -1024,6 +1034,8 @@ def test_recording_provider_playbook_requires_public_order() -> None:
             "provider": "vercel",
             "route": "api",
             "control": "FuseKit API worker",
+            "proof_source": "setup_receipt.json",
+            "resume_event": "provider_action_recorded",
             "instruction": "FuseKit writes required runtime variables into Vercel.",
         },
         {
@@ -1031,6 +1043,8 @@ def test_recording_provider_playbook_requires_public_order() -> None:
             "provider": "dns",
             "route": "human_follow_me",
             "control": "Approve DNS apply",
+            "proof_source": "gate_events.jsonl",
+            "resume_event": "dns_apply_approved -> resume_requested",
             "instruction": "Approve DNS apply.",
         },
     ]
@@ -1342,14 +1356,16 @@ def test_run_record_recording_contract_blocks_thin_runner_profile(tmp_path) -> N
                 "playbook": {
                     "schema_version": "fusekit.provider-playbook.v1",
                     "steps": [
-                        {
-                            "id": "resend.capture_key",
-                            "provider": "resend",
-                            "route": "browser_guided",
-                            "control": "Capture RESEND_API_KEY from VM clipboard",
-                            "instruction": (
-                                "Open the provider gate in the VM browser, copy the "
-                                "approved value there, then click Capture "
+                            {
+                                "id": "resend.capture_key",
+                                "provider": "resend",
+                                "route": "browser_guided",
+                                "control": "Capture RESEND_API_KEY from VM clipboard",
+                                "proof_source": "gate_events.jsonl",
+                                "resume_event": "clipboard_captured -> resume_requested",
+                                "instruction": (
+                                    "Open the provider gate in the VM browser, copy the "
+                                    "approved value there, then click Capture "
                                 "RESEND_API_KEY from VM clipboard."
                             ),
                         }
@@ -5982,6 +5998,8 @@ def test_control_room_renders_provider_playbook_checklist(tmp_path) -> None:
                             "provider": "resend",
                             "route": "browser_guided",
                             "control": "Capture RESEND_API_KEY from VM clipboard",
+                            "proof_source": "gate_events.jsonl",
+                            "resume_event": "clipboard_captured -> resume_requested",
                             "instruction": (
                                 "Capture RESEND_API_KEY from VM clipboard if the "
                                 "Resend API route is not already authorized."
@@ -5992,6 +6010,8 @@ def test_control_room_renders_provider_playbook_checklist(tmp_path) -> None:
                             "provider": "resend",
                             "route": "api",
                             "control": "FuseKit API worker",
+                            "proof_source": "setup_receipt.json",
+                            "resume_event": "provider_action_recorded",
                             "instruction": (
                                 "FuseKit creates or reuses the Resend sending domain "
                                 "through the Resend API."
@@ -6002,6 +6022,8 @@ def test_control_room_renders_provider_playbook_checklist(tmp_path) -> None:
                             "provider": "vercel",
                             "route": "api",
                             "control": "FuseKit API worker",
+                            "proof_source": "setup_receipt.json",
+                            "resume_event": "provider_action_recorded",
                             "instruction": (
                                 "FuseKit writes required runtime variables into Vercel "
                                 "after upstream provider values exist."
@@ -6012,6 +6034,8 @@ def test_control_room_renders_provider_playbook_checklist(tmp_path) -> None:
                             "provider": "dns",
                             "route": "human_follow_me",
                             "control": "Approve DNS apply",
+                            "proof_source": "gate_events.jsonl",
+                            "resume_event": "dns_apply_approved -> resume_requested",
                             "instruction": (
                                 "FuseKit carries app and provider-generated DNS records "
                                 "into the DNS approval gate before apply."
@@ -6046,6 +6070,8 @@ def test_control_room_renders_provider_playbook_checklist(tmp_path) -> None:
     assert "Follow this in the shared VM browser" in html
     assert "Capture RESEND_API_KEY from VM clipboard" in html
     assert "FuseKit creates or reuses the Resend sending domain" in html
+    assert "proof: gate_events.jsonl / clipboard_captured -&gt; resume_requested" in html
+    assert "proof: setup_receipt.json / provider_action_recorded" in html
     assert "Approve DNS apply" in html
     assert "FuseKit writes required runtime variables into Vercel" in html
     assert "Do not create Resend domains or audiences manually" in html

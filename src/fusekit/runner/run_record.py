@@ -1444,6 +1444,7 @@ def _recording_provider_playbook_ready(record: dict[str, Any]) -> bool:
         and str(step.get("provider", "") or "").strip()
         and _provider_playbook_step_route_ready(step)
         and _provider_playbook_step_control_ready(step)
+        and _provider_playbook_step_proof_ready(step)
         for step in steps
     ):
         return False
@@ -1491,6 +1492,29 @@ def _provider_playbook_step_control_ready(step: dict[str, Any]) -> bool:
         }
     if route == "official_cli":
         return control in {"FuseKit CLI worker", "FuseKit API worker"}
+    return False
+
+
+def _provider_playbook_step_proof_ready(step: dict[str, Any]) -> bool:
+    route = str(step.get("route", "") or "").strip()
+    proof_source = str(step.get("proof_source", "") or "").strip()
+    resume_event = str(step.get("resume_event", "") or "").strip()
+    if not proof_source or not resume_event:
+        return False
+    if route in {"api", "official_cli"}:
+        return proof_source == "setup_receipt.json" and resume_event == (
+            "provider_action_recorded"
+        )
+    if route in {"browser_guided", "local_vault"}:
+        return proof_source == "gate_events.jsonl" and resume_event == (
+            "clipboard_captured -> resume_requested"
+        )
+    if route == "human_follow_me":
+        return proof_source == "gate_events.jsonl" and resume_event in {
+            "resume_requested",
+            "dns_apply_approved -> resume_requested",
+            "setup_plan_approved -> resume_requested",
+        }
     return False
 
 

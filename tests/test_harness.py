@@ -90,6 +90,8 @@ def _provider_playbook() -> dict[str, object]:
                 "provider": "resend",
                 "route": "browser_guided",
                 "control": "Capture RESEND_API_KEY from VM clipboard",
+                "proof_source": "gate_events.jsonl",
+                "resume_event": "clipboard_captured -> resume_requested",
                 "instruction": (
                     "Capture RESEND_API_KEY from VM clipboard if the Resend API route "
                     "is not already authorized."
@@ -100,6 +102,8 @@ def _provider_playbook() -> dict[str, object]:
                 "provider": "resend",
                 "route": "api",
                 "control": "FuseKit API worker",
+                "proof_source": "setup_receipt.json",
+                "resume_event": "provider_action_recorded",
                 "instruction": (
                     "FuseKit creates or reuses the Resend sending domain through the Resend API."
                 ),

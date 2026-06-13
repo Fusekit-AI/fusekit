@@ -1066,7 +1066,7 @@ def _provider_playbook_signature(raw: Any) -> tuple[Any, ...]:
     notes = raw.get("safety_notes", [])
     if not isinstance(steps, list) or not isinstance(notes, list):
         return ()
-    step_rows: list[tuple[str, str, str, str, str]] = []
+    step_rows: list[tuple[str, str, str, str, str, str, str]] = []
     for step in steps:
         if not isinstance(step, dict):
             continue
@@ -1077,6 +1077,8 @@ def _provider_playbook_signature(raw: Any) -> tuple[Any, ...]:
                 str(step.get("route", "") or "").strip(),
                 str(step.get("control", "") or "").strip(),
                 str(step.get("instruction", "") or "").strip(),
+                str(step.get("proof_source", "") or "").strip(),
+                str(step.get("resume_event", "") or "").strip(),
             )
         )
     return (
@@ -5462,6 +5464,14 @@ def _provider_playbook_shape_failures(playbook: dict[str, Any]) -> list[str]:
                     control=control,
                 )
             )
+            failures.extend(
+                _provider_playbook_proof_failures(
+                    label,
+                    route=route,
+                    proof_source=str(step.get("proof_source", "") or "").strip(),
+                    resume_event=str(step.get("resume_event", "") or "").strip(),
+                )
+            )
         failures.extend(_provider_playbook_order_failures(step_ids))
     safety_notes = playbook.get("safety_notes", [])
     if not isinstance(safety_notes, list) or not safety_notes:
@@ -5506,6 +5516,55 @@ def _provider_playbook_control_failures(
         and control != ("Capture RESEND_API_KEY from VM clipboard")
     ):
         failures.append(f"{label}.control must capture RESEND_API_KEY before Resend API setup")
+    return failures
+
+
+def _provider_playbook_proof_failures(
+    label: str,
+    *,
+    route: str,
+    proof_source: str,
+    resume_event: str,
+) -> list[str]:
+    if not route:
+        return []
+    failures: list[str] = []
+    if not proof_source:
+        failures.append(f"{label}.proof_source is missing")
+    if not resume_event:
+        failures.append(f"{label}.resume_event is missing")
+    if not proof_source or not resume_event:
+        return failures
+    if route in {"api", "official_cli"}:
+        if proof_source != "setup_receipt.json":
+            failures.append(
+                f"{label}.proof_source must be setup_receipt.json for deterministic routes"
+            )
+        if resume_event != "provider_action_recorded":
+            failures.append(
+                f"{label}.resume_event must be provider_action_recorded for deterministic routes"
+            )
+    elif route in {"browser_guided", "local_vault"}:
+        if proof_source != "gate_events.jsonl":
+            failures.append(f"{label}.proof_source must be gate_events.jsonl for capture routes")
+        if resume_event != "clipboard_captured -> resume_requested":
+            failures.append(
+                f"{label}.resume_event must be clipboard_captured -> resume_requested "
+                "for capture routes"
+            )
+    elif route == "human_follow_me":
+        if proof_source != "gate_events.jsonl":
+            failures.append(
+                f"{label}.proof_source must be gate_events.jsonl for follow-me routes"
+            )
+        if resume_event not in {
+            "resume_requested",
+            "dns_apply_approved -> resume_requested",
+            "setup_plan_approved -> resume_requested",
+        }:
+            failures.append(
+                f"{label}.resume_event must be a known follow-me wake event"
+            )
     return failures
 
 

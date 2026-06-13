@@ -1198,7 +1198,11 @@ function renderProviderPlaybook(playbook) {
 
 function renderProviderPlaybookStep(step, index) {
   const instruction = publicCopy(step.instruction || "");
-  const meta = [step.provider, step.route, step.control]
+  const proofParts = [step.proof_source, step.resume_event]
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+  const proof = proofParts.length ? `proof: ${proofParts.join(" / ")}` : "";
+  const meta = [step.provider, step.route, step.control, proof]
     .map((item) => String(item || "").trim())
     .filter(Boolean)
     .join(" · ");

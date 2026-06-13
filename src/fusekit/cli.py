@@ -4144,6 +4144,8 @@ def _playbook_step(
     control: str = "",
     provider: str = "",
     route: str = "",
+    proof_source: str = "",
+    resume_event: str = "",
 ) -> dict[str, object]:
     payload: dict[str, object] = {"id": step_id, "instruction": instruction}
     if control:
@@ -4152,7 +4154,38 @@ def _playbook_step(
         payload["provider"] = provider
     if route:
         payload["route"] = route
+    proof = proof_source or _playbook_proof_source(route)
+    if proof:
+        payload["proof_source"] = proof
+    event = resume_event or _playbook_resume_event(route, control)
+    if event:
+        payload["resume_event"] = event
     return payload
+
+
+def _playbook_proof_source(route: str) -> str:
+    route = route.strip()
+    if route in {"api", "official_cli"}:
+        return "setup_receipt.json"
+    if route in {"browser_guided", "human_follow_me", "local_vault"}:
+        return "gate_events.jsonl"
+    return ""
+
+
+def _playbook_resume_event(route: str, control: str) -> str:
+    route = route.strip()
+    control = control.strip()
+    if route in {"api", "official_cli"}:
+        return "provider_action_recorded"
+    if route in {"browser_guided", "local_vault"}:
+        return "clipboard_captured -> resume_requested"
+    if route == "human_follow_me":
+        if control == "Approve DNS apply":
+            return "dns_apply_approved -> resume_requested"
+        if control == "Approve setup plan":
+            return "setup_plan_approved -> resume_requested"
+        return "resume_requested"
+    return ""
 
 
 def _iter_provider_strategy_items(
