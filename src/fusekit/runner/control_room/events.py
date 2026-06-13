@@ -1552,11 +1552,33 @@ function renderDurableState(job) {
   if (!root) return;
   const durable = job.run_record?.durable_state || {};
   const sources = Array.isArray(durable.sources) ? durable.sources : [];
+  const finalMissing = Array.isArray(durable.final_proof_missing)
+    ? durable.final_proof_missing.map((item) => String(item))
+    : [];
+  const finalMissingSet = new Set(finalMissing);
   const summaryNode = document.querySelector("[data-durable-state-overall]");
   if (summaryNode) {
     summaryNode.textContent = durable.resume_ready
-      ? "worker can be replaced"
+      ? finalMissing.length
+        ? `worker replaceable; ${finalMissing.length} final proofs pending`
+        : "worker can be replaced"
       : "resume proof is still filling in";
+  }
+  const paragraph = root.closest(".run-state-panel")?.querySelector("p.muted");
+  if (paragraph) {
+    const volatile = Array.isArray(durable.volatile_worker_surfaces)
+      ? durable.volatile_worker_surfaces
+      : [];
+    const finalNote = finalMissing.length
+      ? ` Final public-recording proof is still waiting on: ${
+          finalMissing.map((item) => item.replaceAll("_", " ")).sort().join(", ")
+        }.`
+      : "";
+    paragraph.textContent = (
+      "FuseKit keeps encrypted/redacted resume state outside the OCI worker and treats " +
+      `${volatile.length} VM/browser/auth surfaces as disposable; no host-machine ` +
+      `browser profile or clipboard history is required to resume.${finalNote}`
+    );
   }
   if (!sources.length) {
     root.innerHTML = `
@@ -1583,6 +1605,8 @@ function renderDurableState(job) {
       const detail = exists
         ? `${secretClass.charAt(0).toUpperCase()}${secretClass.slice(1)} source ` +
           "is present for resume."
+        : finalMissingSet.has(id)
+          ? "Waiting for this final proof artifact before public recording is ready."
         : "Waiting for this source before the worker is safely replaceable.";
       return `
         <article class="trust-card ${status}" data-durable-state-source="${escapeAttr(id)}">

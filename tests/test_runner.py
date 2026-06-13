@@ -1850,6 +1850,67 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
     assert "Root tenancy or root compartment scope was preserved by design." in html
 
 
+def test_control_room_names_durable_final_proof_blockers(tmp_path) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    run_record = tmp_path / "run_record.json"
+    run_record.write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.run-record.v1",
+                "id": "fk-test",
+                "durable_state": {
+                    "schema_version": "fusekit.durable-state.v1",
+                    "resume_ready": True,
+                    "missing": [],
+                    "final_proof_missing": [
+                        "rollback_plan",
+                        "setup_receipt",
+                        "verification_report",
+                        "workspace_detonation",
+                    ],
+                    "sources": [
+                        {
+                            "id": "encrypted_vault",
+                            "path": "fusekit.vault.json",
+                            "role": "encrypted capability vault",
+                            "secret_class": "encrypted",
+                            "exists": True,
+                        },
+                        {
+                            "id": "workspace_detonation",
+                            "path": "workspace_detonation.json",
+                            "role": "OCI workspace detonation receipt",
+                            "secret_class": "non-secret",
+                            "exists": False,
+                        },
+                    ],
+                    "volatile_worker_surfaces": ["worker", "visual", "provider-auth"],
+                },
+                "recording_contract": {
+                    "schema_version": "fusekit.recording-contract.v1",
+                    "recording_ready": False,
+                    "checks": {"durable_state": False, "worker_replacement": True},
+                    "blockers": ["durable_state"],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    job.add_artifact("run_record", run_record)
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+
+    assert "worker replaceable; 4 final proofs pending" in html
+    assert "Final public-recording proof is still waiting on" in html
+    assert "rollback plan" in html
+    assert "setup receipt" in html
+    assert "verification report" in html
+    assert "workspace detonation" in html
+    assert "Waiting for this final proof artifact before public recording is ready" in html
+    assert "worker can be replaced" in html.split("<script", 1)[1]
+    assert "final_proof_missing" in html
+
+
 def test_live_control_room_refreshes_all_run_record_proof_panels() -> None:
     for renderer, selector in (
         ("renderDurableState(job)", "data-durable-state-checks"),

@@ -1273,8 +1273,14 @@ def _render_durable_state(run_record: Any) -> str:
     durable = durable if isinstance(durable, dict) else {}
     sources = durable.get("sources", [])
     sources = sources if isinstance(sources, list) else []
+    final_missing = durable.get("final_proof_missing", [])
+    final_missing_set = (
+        {str(item) for item in final_missing} if isinstance(final_missing, list) else set()
+    )
     cards = "\n".join(
-        _render_durable_source_card(source) for source in sources if isinstance(source, dict)
+        _render_durable_source_card(source, final_missing_set)
+        for source in sources
+        if isinstance(source, dict)
     )
     if not cards:
         cards = """
@@ -1288,13 +1294,21 @@ def _render_durable_state(run_record: Any) -> str:
           </div>
         </article>
 """
-    summary = (
-        "worker can be replaced"
-        if durable.get("resume_ready") is True
-        else "resume proof is still filling in"
-    )
+    if durable.get("resume_ready") is True and final_missing_set:
+        summary = f"worker replaceable; {len(final_missing_set)} final proofs pending"
+    elif durable.get("resume_ready") is True:
+        summary = "worker can be replaced"
+    else:
+        summary = "resume proof is still filling in"
     volatile = durable.get("volatile_worker_surfaces", [])
     volatile_count = len(volatile) if isinstance(volatile, list) else 0
+    final_note = (
+        " Final public-recording proof is still waiting on: "
+        + ", ".join(sorted(final_missing_set)).replace("_", " ")
+        + "."
+        if final_missing_set
+        else ""
+    )
     return f"""
     <section class="run-state-panel" aria-label="Durable run-state proof">
       <div class="section-head compact">
@@ -1308,13 +1322,18 @@ def _render_durable_state(run_record: Any) -> str:
         FuseKit keeps encrypted/redacted resume state outside the OCI worker and treats
         {html.escape(str(volatile_count))} VM/browser/auth surfaces as disposable; no
         host-machine browser profile or clipboard history is required to resume.
+        {html.escape(final_note)}
       </p>
       <div class="run-state-grid" data-durable-state-checks>{cards}</div>
     </section>
 """
 
 
-def _render_durable_source_card(source: dict[str, Any]) -> str:
+def _render_durable_source_card(
+    source: dict[str, Any],
+    final_missing: set[str] | None = None,
+) -> str:
+    final_missing = final_missing or set()
     exists = source.get("exists") is True
     status = "passed" if exists else "pending"
     snow = "passed" if exists else "checking"
@@ -1324,6 +1343,8 @@ def _render_durable_source_card(source: dict[str, Any]) -> str:
     detail = (
         f"{secret_class.capitalize()} source is present for resume."
         if exists
+        else "Waiting for this final proof artifact before public recording is ready."
+        if source_id in final_missing
         else "Waiting for this source before the worker is safely replaceable."
     )
     return f"""
