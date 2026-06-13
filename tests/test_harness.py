@@ -5850,6 +5850,62 @@ def test_live_acceptance_accepts_receipt_resend_records_before_dns(tmp_path) -> 
     assert "deterministic sending-domain contract" in receipt_check.detail
 
 
+def test_live_acceptance_rejects_incomplete_resend_receipt_dns_records(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_cloudflare_manifest(app)
+    remote = tmp_path / "remote"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_live_artifacts(remote_fusekit)
+    incomplete_record = {
+        "type": "MX",
+        "name": "send.moonlite.rsvp",
+        "value": "",
+    }
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "actions": [
+                    {
+                        "action": "resend.domain",
+                        "status": "ok",
+                        "details": _resend_domain_receipt_details(
+                            dns_records=[incomplete_record],
+                        ),
+                    },
+                    {
+                        "action": "dns.propose",
+                        "status": "ok",
+                        "details": {
+                            "domain": "moonlite.rsvp",
+                            "changes": [{"record": incomplete_record}],
+                        },
+                    },
+                ],
+                "raw_secrets_exposed": 0,
+                "live_url": "https://moonlite.rsvp",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    receipt_check = next(check for check in report.checks if check.id == "receipt.resend_dns_flow")
+    assert report.launch_ready is False
+    assert receipt_check.status == "failed"
+    assert "Receipt does not include Resend-generated DNS records" in receipt_check.detail
+    assert "Resend DNS records in receipt DNS proposal" in report.missing
+
+
 def test_live_acceptance_requires_resend_dns_proposal_for_same_domain(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()

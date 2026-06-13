@@ -93,3 +93,19 @@ def test_resend_dns_record_accepts_auto_ttl() -> None:
     assert record.value == "feedback-smtp.us-east-1.amazonses.com"
     assert record.ttl == 300
     assert record.priority == 10
+
+
+@pytest.mark.parametrize(
+    ("raw", "message"),
+    (
+        ({"name": "send", "value": "mx.example"}, "did not include a type"),
+        ({"type": "MX", "value": "mx.example"}, "did not include a host/name"),
+        ({"type": "MX", "name": "send"}, "did not include a value"),
+    ),
+)
+def test_resend_dns_record_rejects_incomplete_provider_records(
+    raw: dict[str, str],
+    message: str,
+) -> None:
+    with pytest.raises(ProviderError, match=message):
+        _record_from_resend(raw, "moonlite.rsvp")

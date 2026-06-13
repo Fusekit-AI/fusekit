@@ -170,9 +170,16 @@ def _verification_records(data: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _record_from_resend(raw: dict[str, Any], domain: str) -> DnsRecord:
-    record_type = str(raw.get("type", "TXT")).upper()
-    name = _fqdn(str(raw.get("name", "") or raw.get("host", "")), domain)
+    record_type = str(raw.get("type", "") or "").strip().upper()
+    if not record_type:
+        raise ProviderError("Resend DNS record response did not include a type.")
+    raw_name = str(raw.get("name", "") or raw.get("host", "")).strip()
+    if not raw_name:
+        raise ProviderError("Resend DNS record response did not include a host/name.")
+    name = _fqdn(raw_name, domain)
     value = str(raw.get("value", "") or raw.get("content", "")).strip().strip('"')
+    if not value:
+        raise ProviderError("Resend DNS record response did not include a value.")
     ttl = _ttl_from_resend(raw.get("ttl"))
     priority = raw.get("priority")
     return DnsRecord(

@@ -2946,7 +2946,7 @@ def _resend_receipt_dns_records(action: dict[str, Any]) -> set[tuple[str, str, s
     return {
         _receipt_dns_record_key(record)
         for record in raw_records
-        if isinstance(record, dict) and _receipt_dns_record_key(record)[0]
+        if isinstance(record, dict) and all(_receipt_dns_record_key(record))
     }
 
 
@@ -2961,7 +2961,7 @@ def _dns_proposal_receipt_records(action: dict[str, Any]) -> set[tuple[str, str,
         if not isinstance(record, dict):
             continue
         key = _receipt_dns_record_key(record)
-        if key[0]:
+        if all(key):
             records.add(key)
     return records
 
