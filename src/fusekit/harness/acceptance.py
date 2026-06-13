@@ -4303,6 +4303,8 @@ def _manual_action_guidance_failure(text: str) -> str:
 def _manual_action_match_is_negated(text: str, match_start: int) -> bool:
     prefix = text[max(0, match_start - 64) : match_start]
     clause = re.split(r"[.;:!?]\s*", prefix)[-1]
+    if re.search(r"\b(?:do not|don't|never)\b", clause):
+        return True
     return (
         re.search(
             r"\b(?:do not|don't|never|no|nothing to)\s+"
@@ -5478,6 +5480,7 @@ def _provider_playbook_shape_failures(playbook: dict[str, Any]) -> list[str]:
         failures.append("provider_playbook.safety_notes is missing")
     else:
         notes = " ".join(str(note) for note in safety_notes)
+        failures.extend(_provider_playbook_safety_note_failures(safety_notes))
         for required in (
             "VM browser",
             "Do not create Resend domains or audiences manually",
@@ -5485,6 +5488,23 @@ def _provider_playbook_shape_failures(playbook: dict[str, Any]) -> list[str]:
         ):
             if required not in notes:
                 failures.append(f"provider_playbook.safety_notes must include {required}")
+    return failures
+
+
+def _provider_playbook_safety_note_failures(safety_notes: list[Any]) -> list[str]:
+    failures: list[str] = []
+    for index, note in enumerate(safety_notes):
+        label = f"provider_playbook.safety_notes[{index}]"
+        text = str(note or "")
+        lowered = text.lower()
+        if "capture <target>" in lowered or "capture <env>" in lowered:
+            failures.append(f"{label} uses placeholder Capture guidance")
+        local_browser_failure = _local_browser_guidance_failure(lowered)
+        if local_browser_failure:
+            failures.append(f"{label} contains non-launcher wording: {local_browser_failure}")
+        manual_action_failure = _manual_action_guidance_failure(lowered)
+        if manual_action_failure:
+            failures.append(f"{label} contains non-launcher wording: {manual_action_failure}")
     return failures
 
 

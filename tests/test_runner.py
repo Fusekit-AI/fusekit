@@ -1051,6 +1051,22 @@ def test_recording_provider_playbook_requires_public_order() -> None:
 
     assert _recording_provider_playbook_ready(record) is True
 
+    record["provider_playbook"]["safety_notes"].append(
+        "If the VM browser is slow, use a local browser tab to finish provider setup."
+    )
+    assert _recording_provider_playbook_ready(record) is False
+
+    record["provider_playbook"]["safety_notes"][-1] = (
+        "Do not use a local browser tab for provider gates."
+    )
+    assert _recording_provider_playbook_ready(record) is True
+
+    record["provider_playbook"]["safety_notes"][-1] = (
+        "Use the visible Capture <TARGET> from VM clipboard button."
+    )
+    assert _recording_provider_playbook_ready(record) is False
+    record["provider_playbook"]["safety_notes"].pop()
+
     record["provider_playbook"]["steps"][0]["control"] = (
         "Capture CLOUDFLARE_API_TOKEN from VM clipboard"
     )

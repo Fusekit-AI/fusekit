@@ -4249,6 +4249,41 @@ def test_acceptance_run_record_requires_provider_playbook_route_controls(
     assert "provider_playbook.steps[2].control must be a known follow-me control" in failures
 
 
+def test_acceptance_run_record_rejects_unsafe_provider_playbook_safety_notes(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["provider_playbook"] = _provider_playbook()
+    record["provider_playbook"]["safety_notes"].append(
+        "If the VM browser is slow, use a local browser tab to manually finish provider setup."
+    )
+
+    failures = _run_record_shape_failures(record)
+
+    assert (
+        "provider_playbook.safety_notes[3] contains non-launcher wording: "
+        "local browser/host browser"
+    ) in failures
+    assert any("manual action" in failure for failure in failures)
+
+    record["provider_playbook"]["safety_notes"][-1] = (
+        "Use the visible Capture <TARGET> from VM clipboard button."
+    )
+    failures = _run_record_shape_failures(record)
+
+    assert "provider_playbook.safety_notes[3] uses placeholder Capture guidance" in failures
+
+    record["provider_playbook"]["safety_notes"][-1] = (
+        "Do not use a local browser tab for provider gates."
+    )
+    failures = _run_record_shape_failures(record)
+
+    assert not any("provider_playbook.safety_notes[3]" in failure for failure in failures)
+
+
 def test_live_acceptance_requires_central_run_record(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()

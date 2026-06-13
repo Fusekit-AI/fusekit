@@ -1455,6 +1455,7 @@ def _recording_provider_playbook_ready(record: dict[str, Any]) -> bool:
         "VM browser" in joined
         and "Do not create Resend domains or audiences manually" in joined
         and "Do not paste provider secrets into the host computer" in joined
+        and _provider_playbook_safety_notes_ready(safety_notes)
     )
 
 
@@ -1516,6 +1517,53 @@ def _provider_playbook_step_proof_ready(step: dict[str, Any]) -> bool:
             "setup_plan_approved -> resume_requested",
         }
     return False
+
+
+def _provider_playbook_safety_notes_ready(safety_notes: list[Any]) -> bool:
+    for note in safety_notes:
+        text = str(note or "").strip().lower()
+        if not text:
+            return False
+        if "capture <target>" in text or "capture <env>" in text:
+            return False
+        if _provider_playbook_local_browser_unsafe(text):
+            return False
+        if _provider_playbook_manual_action_unsafe(text):
+            return False
+    return True
+
+
+def _provider_playbook_local_browser_unsafe(text: str) -> bool:
+    markers = ("local browser", "local tab", "host browser", "host tab")
+    for marker in markers:
+        index = text.find(marker)
+        if index >= 0 and not _provider_playbook_negated(text, index):
+            return True
+    return False
+
+
+def _provider_playbook_manual_action_unsafe(text: str) -> bool:
+    for marker in ("manual", "manually"):
+        index = text.find(marker)
+        if index >= 0 and not _provider_playbook_negated(text, index):
+            return True
+    return False
+
+
+def _provider_playbook_negated(text: str, match_start: int) -> bool:
+    prefix = text[max(0, match_start - 64) : match_start]
+    clause = re.split(r"[.;:!?]\s*", prefix)[-1]
+    if re.search(r"\b(?:do not|don't|never)\b", clause):
+        return True
+    return (
+        re.search(
+            r"\b(?:do not|don't|never|no|nothing to)\s+"
+            r"(?:(?:do|perform|complete|use|create|copy|paste|enter|apply|add)\s+)?"
+            r"(?:(?:a|the|your)\s+)?$",
+            clause,
+        )
+        is not None
+    )
 
 
 def _provider_playbook_instruction_unsafe(instruction: str) -> bool:
