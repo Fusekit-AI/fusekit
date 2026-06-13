@@ -1729,10 +1729,20 @@ def _recording_verifiers_ready(record: dict[str, Any]) -> bool:
         return False
     blocking_count_keys = ("pending", "repairing", "failed", "needs_human_gate", "unknown")
     allowed_statuses = {"passed", "pending_safe", "skipped"}
+    actual_counts = {key: 0 for key in (*allowed_statuses, *blocking_count_keys)}
+    for check in checks:
+        if not isinstance(check, dict):
+            return False
+        status = str(check.get("status", "") or "")
+        if status not in actual_counts:
+            actual_counts["unknown"] += 1
+        else:
+            actual_counts[status] += 1
     return (
         verifiers.get("all_passed_or_pending_safe") is True
         and str(verifiers.get("overall", "") or "") == "passed"
         and all(_safe_int(counts.get(key), 1) == 0 for key in blocking_count_keys)
+        and all(_safe_int(counts.get(key), -1) == actual_counts[key] for key in actual_counts)
         and all(
             isinstance(check, dict)
             and str(check.get("status", "") or "") in allowed_statuses

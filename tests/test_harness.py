@@ -5177,6 +5177,20 @@ def test_acceptance_run_record_requires_live_verifier_summary(tmp_path) -> None:
     assert "verifiers.statement is missing live-verifier guidance" in failures
 
 
+def test_acceptance_run_record_requires_verifier_counts_to_match_checks(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["verifiers"]["counts"]["passed"] = 2
+    record["verifiers"]["counts"]["pending_safe"] = 0
+
+    failures = _run_record_shape_failures(record)
+
+    assert "verifiers.counts.passed must match verifiers.checks: 1" in failures
+    assert "verifiers.counts.pending_safe must match verifiers.checks: 1" in failures
+
+
 def test_acceptance_run_record_requires_redacted_audit_trail(tmp_path) -> None:
     fusekit_dir = tmp_path / ".fusekit"
     fusekit_dir.mkdir()

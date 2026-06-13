@@ -888,6 +888,9 @@ def test_recording_verifiers_reject_hidden_blocking_checks() -> None:
     record["verifiers"]["checks"].pop()
     record["verifiers"]["counts"]["failed"] = 1
     assert _recording_verifiers_ready(record) is False
+    record["verifiers"]["counts"]["failed"] = 0
+    record["verifiers"]["counts"]["passed"] = 2
+    assert _recording_verifiers_ready(record) is False
 
 
 def test_recording_evidence_requires_screenshot_for_visual_runner() -> None:

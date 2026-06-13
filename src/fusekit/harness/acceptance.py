@@ -1376,6 +1376,16 @@ def _verifier_summary_shape_failures(verifiers: dict[str, Any]) -> list[str]:
     if str(verifiers.get("overall", "")).strip() not in {"passed"}:
         failures.append("verifiers.overall must be passed")
     checks = verifiers.get("checks", [])
+    actual_counts = {
+        "passed": 0,
+        "pending_safe": 0,
+        "pending": 0,
+        "repairing": 0,
+        "failed": 0,
+        "skipped": 0,
+        "needs_human_gate": 0,
+        "unknown": 0,
+    }
     if not isinstance(checks, list) or not checks:
         failures.append("verifiers.checks is missing")
         checks = []
@@ -1390,6 +1400,10 @@ def _verifier_summary_shape_failures(verifiers: dict[str, Any]) -> list[str]:
         status = str(check.get("status", "") or "").strip()
         if status not in {"passed", "pending_safe", "skipped"}:
             failures.append(f"{label}.status must be passed, pending_safe, or skipped")
+        if status in actual_counts:
+            actual_counts[status] += 1
+        else:
+            actual_counts["unknown"] += 1
         if status == "pending_safe" and check.get("pending_safe") is not True:
             failures.append(f"{label}.pending_safe must be true")
     counts = verifiers.get("counts", {})
@@ -1411,6 +1425,17 @@ def _verifier_summary_shape_failures(verifiers: dict[str, Any]) -> list[str]:
         for key in ("pending", "repairing", "failed", "needs_human_gate", "unknown"):
             if _safe_int(counts.get(key)) != 0:
                 failures.append(f"verifiers.counts.{key} must be 0")
+        for key, expected in actual_counts.items():
+            raw_count = counts.get(key)
+            count = (
+                raw_count
+                if isinstance(raw_count, int) and not isinstance(raw_count, bool)
+                else -1
+            )
+            if count != expected:
+                failures.append(
+                    f"verifiers.counts.{key} must match verifiers.checks: {expected}"
+                )
     statement = str(verifiers.get("statement", "") or "").lower()
     if "live provider verifiers" not in statement or "green checks" not in statement:
         failures.append("verifiers.statement is missing live-verifier guidance")
