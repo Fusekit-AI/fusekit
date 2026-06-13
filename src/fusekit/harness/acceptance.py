@@ -1472,6 +1472,11 @@ def _audit_trail_shape_failures(
     for category in _required_audit_categories(run_record):
         if actual_counts.get(category, 0) < 1:
             failures.append(f"audit_trail must include {category}")
+    required_sources = _required_audit_category_sources(run_record)
+    for category, sources in sorted(required_sources.items()):
+        if not _audit_category_has_source(entries, category, sources):
+            source_list = ", ".join(sorted(sources))
+            failures.append(f"audit_trail.{category} must include source {source_list}")
     statement = str(audit_trail.get("statement", "") or "").lower()
     for required in ("credential captures", "dns writes", "human approvals", "without storing"):
         if required not in statement:
@@ -1632,6 +1637,49 @@ def _required_audit_categories(run_record: dict[str, Any]) -> set[str]:
     if isinstance(checks, list) and checks:
         required.add("provider_action")
     return required
+
+
+def _required_audit_category_sources(run_record: dict[str, Any]) -> dict[str, set[str]]:
+    """Return source artifacts required for audit categories with stronger proof."""
+
+    required: dict[str, set[str]] = {}
+    wake_events = run_record.get("wake_events", {})
+    events = wake_events.get("events", []) if isinstance(wake_events, dict) else []
+    if isinstance(events, list):
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            event_name = str(event.get("event", "") or "")
+            classification = str(event.get("classification", "") or "")
+            if event_name == "clipboard_captured":
+                required.setdefault("credential_capture", set()).add("gate_events.jsonl")
+            if event_name == "resume_requested":
+                required.setdefault("human_approval", set()).add("gate_events.jsonl")
+            if event_name == "resume_requested" and classification == "dns-approval":
+                required.setdefault("dns_write", set()).add("setup_receipt.json")
+    approvals = run_record.get("approvals", [])
+    if isinstance(approvals, list) and approvals:
+        required.setdefault("human_approval", set()).add("gate_events.jsonl")
+    verification = run_record.get("verification", {})
+    checks = verification.get("checks", []) if isinstance(verification, dict) else []
+    if isinstance(checks, list) and checks:
+        required.setdefault("provider_action", set()).add("setup_receipt.json")
+    return required
+
+
+def _audit_category_has_source(
+    entries: list[Any],
+    category: str,
+    sources: set[str],
+) -> bool:
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("category", "") or "") != category:
+            continue
+        if str(entry.get("source", "") or "") in sources:
+            return True
+    return False
 
 
 def _contains_secretish_audit_text(value: str) -> bool:

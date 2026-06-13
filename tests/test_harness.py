@@ -5289,8 +5289,27 @@ def test_acceptance_run_record_requires_redacted_audit_trail(tmp_path) -> None:
     assert "audit_trail.entries[2].audit_log_index is missing" in failures
     assert "audit_trail must include dns_write" in failures
     assert "audit_trail must include human_approval" in failures
+    assert "audit_trail.dns_write must include source setup_receipt.json" in failures
+    assert "audit_trail.human_approval must include source gate_events.jsonl" in failures
     assert "audit_trail must include detonation" in failures
     assert "audit_trail.statement is missing audit-first guidance" in failures
+
+
+def test_acceptance_run_record_requires_receipt_indexed_provider_actions(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+
+    for entry in record["audit_trail"]["entries"]:
+        if entry.get("category") == "provider_action":
+            entry["source"] = "audit.jsonl"
+            entry["audit_log_index"] = 1
+            entry.pop("receipt_action_index", None)
+
+    failures = _run_record_shape_failures(record)
+
+    assert "audit_trail.provider_action must include source setup_receipt.json" in failures
 
 
 def test_acceptance_run_record_requires_recording_contract(tmp_path) -> None:

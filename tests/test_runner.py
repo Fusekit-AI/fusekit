@@ -325,7 +325,21 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     job.mark("setup.execute", "waiting", "Cloudflare token gate is visible")
     (tmp_path / "audit.jsonl").write_text('{"event":"ok"}\n', encoding="utf-8")
     job.add_artifact("audit_log", tmp_path / "audit.jsonl")
-    (tmp_path / "setup_receipt.json").write_text('{"actions":[]}\n', encoding="utf-8")
+    (tmp_path / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "actions": [
+                    {
+                        "action": "cloudflare.verify",
+                        "status": "ok",
+                        "details": {"provider": "cloudflare"},
+                    }
+                ]
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     (tmp_path / "visual").mkdir()
     (tmp_path / "visual" / "provider-gate.png").write_bytes(b"not-a-real-png")
     (tmp_path / "visual" / "control-room.log").write_text("ready\n", encoding="utf-8")
@@ -913,9 +927,9 @@ def test_recording_audit_trail_requires_categories_for_observed_proof() -> None:
                 "detonation": 1,
             },
             "entries": [
-                {"category": "credential_capture"},
-                {"category": "provider_action"},
-                {"category": "detonation"},
+                {"category": "credential_capture", "source": "gate_events.jsonl"},
+                {"category": "provider_action", "source": "setup_receipt.json"},
+                {"category": "detonation", "source": "workspace_detonation.json"},
             ],
         },
     }
@@ -926,12 +940,15 @@ def test_recording_audit_trail_requires_categories_for_observed_proof() -> None:
     record["audit_trail"]["counts"]["dns_write"] = 1
     record["audit_trail"]["entries"].extend(
         [
-            {"category": "human_approval"},
-            {"category": "dns_write"},
+            {"category": "human_approval", "source": "gate_events.jsonl"},
+            {"category": "dns_write", "source": "setup_receipt.json"},
         ]
     )
     assert _recording_audit_trail_ready(record) is True
     record["audit_trail"]["counts"]["dns_write"] = 0
+    assert _recording_audit_trail_ready(record) is False
+    record["audit_trail"]["counts"]["dns_write"] = 1
+    record["audit_trail"]["entries"][-1]["source"] = "audit.jsonl"
     assert _recording_audit_trail_ready(record) is False
 
 

@@ -1648,6 +1648,7 @@ def _recording_audit_trail_ready(record: dict[str, Any]) -> bool:
             for category, count in actual_counts.items()
         )
         and all(actual_counts.get(category, 0) >= 1 for category in required_categories)
+        and _recording_required_audit_sources_present(record, entries)
     )
 
 
@@ -1680,6 +1681,48 @@ def _recording_required_audit_categories(record: dict[str, Any]) -> set[str]:
     checks = verification.get("checks", []) if isinstance(verification, dict) else []
     if isinstance(checks, list) and checks:
         required.add("provider_action")
+    return required
+
+
+def _recording_required_audit_sources_present(
+    record: dict[str, Any],
+    entries: list[Any],
+) -> bool:
+    required_sources = _recording_required_audit_sources(record)
+    for category, sources in required_sources.items():
+        if not any(
+            isinstance(entry, dict)
+            and str(entry.get("category", "") or "") == category
+            and str(entry.get("source", "") or "") in sources
+            for entry in entries
+        ):
+            return False
+    return True
+
+
+def _recording_required_audit_sources(record: dict[str, Any]) -> dict[str, set[str]]:
+    required: dict[str, set[str]] = {}
+    wake_events = record.get("wake_events", {})
+    events = wake_events.get("events", []) if isinstance(wake_events, dict) else []
+    if isinstance(events, list):
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            event_name = str(event.get("event", "") or "")
+            classification = str(event.get("classification", "") or "")
+            if event_name == "clipboard_captured":
+                required.setdefault("credential_capture", set()).add("gate_events.jsonl")
+            if event_name == "resume_requested":
+                required.setdefault("human_approval", set()).add("gate_events.jsonl")
+            if event_name == "resume_requested" and classification == "dns-approval":
+                required.setdefault("dns_write", set()).add("setup_receipt.json")
+    approvals = record.get("approvals", [])
+    if isinstance(approvals, list) and approvals:
+        required.setdefault("human_approval", set()).add("gate_events.jsonl")
+    verification = record.get("verification", {})
+    checks = verification.get("checks", []) if isinstance(verification, dict) else []
+    if isinstance(checks, list) and checks:
+        required.setdefault("provider_action", set()).add("setup_receipt.json")
     return required
 
 
