@@ -933,6 +933,12 @@ function missingAcceptanceBlocker(item) {
       "Keep the live launcher/control room open and let the setup worker finish " +
         "provider setup so FuseKit can save a redacted receipt with no raw secrets.",
     ],
+    "central run record": [
+      "Run record",
+      "Keep the current control room open while FuseKit writes the central Run " +
+        "Record that ties together state, gates, provider routes, verifier checks, " +
+        "approvals, artifacts, errors, vault metadata, and detonation proof.",
+    ],
     "safe verification report": [
       "Verification",
       "Keep the live launcher/control room open while FuseKit verifies every " +
@@ -978,6 +984,19 @@ function missingAcceptanceBlocker(item) {
       "Keep the live launcher/control room open until every manifest provider " +
         "has provider-route proof before acceptance.",
     ],
+    "provider playbook": [
+      "Provider playbook",
+      "Keep the live launcher/control room open until the Provider playbook shows " +
+        "the ordered VM-browser actions, exact Capture controls, DNS approval, and " +
+        "Resend no-manual-setup safety notes.",
+    ],
+    "provider route recovery checkpoints": [
+      "Provider routes",
+      "Keep the live launcher/control room open until provider-route cards show " +
+        "the next action and resume hint. If this report came from an older " +
+        "artifact set, keep this live control room open while FuseKit rebuilds " +
+        "the provider-route proof.",
+    ],
     "complete provider verification coverage": [
       "Verification",
       "Let FuseKit verify every provider declared by the manifest before acceptance.",
@@ -1017,6 +1036,12 @@ function missingAcceptanceBlocker(item) {
       "Keep the live launcher/control room open while FuseKit loads and " +
         "validates provider capability packs for this app's providers before setup runs.",
     ],
+    "safe visual session state": [
+      "Visual session",
+      "Keep the live launcher/control room open while FuseKit refreshes visual " +
+        "session metadata with only safe noVNC/control-room URLs and safe noVNC " +
+        "password metadata.",
+    ],
     "verified live URL": [
       "Deployment",
       "Let FuseKit verify the deployed live URL and write it into the setup receipt.",
@@ -1032,6 +1057,12 @@ function missingAcceptanceBlocker(item) {
       "Keep the launcher/control room open while FuseKit detonates plaintext " +
         "worker, browser, visual, provider-auth, control-room, and gateway " +
         "scratch state after encrypted proof is preserved.",
+    ],
+    "OCI workspace detonation receipt": [
+      "Detonation",
+      "Keep the launcher/control room open until FuseKit writes the OCI " +
+        "workspace detonation receipt proving the VM, boot volume, ephemeral " +
+        "public IP, network resources, and remote worker cleanup were destroyed.",
     ],
   };
   const fallback = [

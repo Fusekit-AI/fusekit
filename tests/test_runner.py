@@ -2373,6 +2373,51 @@ def test_control_room_detonation_missing_is_launcher_actionable(tmp_path) -> Non
     assert "Run detonation" not in html
 
 
+def test_control_room_northstar_missing_items_are_launcher_actionable(
+    tmp_path,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    acceptance_dir = tmp_path / "acceptance"
+    acceptance_dir.mkdir()
+    (acceptance_dir / "report.json").write_text(
+        json.dumps(
+            {
+                "launch_ready": False,
+                "missing": [
+                    "central run record",
+                    "provider playbook",
+                    "provider route recovery checkpoints",
+                    "safe visual session state",
+                    "OCI workspace detonation receipt",
+                ],
+                "blockers": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+
+    assert "Run record" in html
+    assert "central run record" in html
+    assert "state, gates, provider routes, verifier checks" in html
+    assert "Provider playbook" in html
+    assert "ordered VM-browser actions" in html
+    assert "exact Capture controls" in html
+    assert "provider route recovery checkpoints" in html
+    assert "next action and resume hint" in html
+    assert "Visual session" in html
+    assert "safe noVNC/control-room URLs" in html
+    assert "OCI workspace detonation receipt" in html
+    assert "VM, boot volume, ephemeral public IP" in html
+    assert "remote worker cleanup were destroyed" in html
+    assert "missingAcceptanceBlocker" in html
+    dynamic_guidance = html.split("function missingAcceptanceBlocker", 1)[1]
+    assert "OCI workspace detonation receipt" in dynamic_guidance
+    assert "workspace detonation receipt proving the VM" in html
+    assert "Repair this acceptance item" not in html
+
+
 def test_control_room_missing_provider_route_blockers_are_launcher_actionable(
     tmp_path,
 ) -> None:
