@@ -1509,15 +1509,80 @@ def test_acceptance_detonation_allows_redacted_survivor_artifacts(tmp_path) -> N
         "gates.json",
     ):
         (fusekit_dir / name).write_text("{}", encoding="utf-8")
+    (fusekit_dir / "workspace_detonation.json").write_text(
+        json.dumps(_workspace_detonation_receipt()),
+        encoding="utf-8",
+    )
     checks: list[AcceptanceCheck] = []
     missing: list[str] = []
 
     _check_detonation(fusekit_dir, "live", checks, missing)
 
-    assert checks[-1].id == "detonation.worker_state"
+    assert [check.id for check in checks[-2:]] == [
+        "detonation.worker_state",
+        "detonation.workspace_receipt",
+    ]
+    assert checks[-2].status == "ok"
     assert checks[-1].status == "ok"
-    assert "browser, visual, and auth scratch" in checks[-1].detail
+    assert "browser, visual, and auth scratch" in checks[-2].detail
+    assert "VM, boot volume, public IP" in checks[-1].detail
     assert missing == []
+
+
+def test_acceptance_requires_workspace_detonation_receipt_in_live_mode(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    checks: list[AcceptanceCheck] = []
+    missing: list[str] = []
+
+    _check_detonation(fusekit_dir, "live", checks, missing)
+
+    assert checks[-2].id == "detonation.worker_state"
+    assert checks[-2].status == "ok"
+    assert checks[-1].id == "detonation.workspace_receipt"
+    assert checks[-1].status == "missing"
+    assert "workspace_detonation.json" in checks[-1].detail
+    assert "OCI workspace detonation receipt" in missing
+
+
+def test_acceptance_rejects_incomplete_workspace_detonation_receipt(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    (fusekit_dir / "workspace_detonation.json").write_text(
+        json.dumps(
+            {
+                "status": "complete",
+                "deleted": ["instance"],
+                "failures": {},
+                "reason": "claimed cleanup",
+                "updated_at": 1.0,
+                "resource_summary": {
+                    "schema_version": "fusekit.workspace-detonation-resources.v1",
+                    "remote_worker": True,
+                    "compute_instance": True,
+                    "boot_volume_deleted": False,
+                    "ephemeral_public_ip_released": False,
+                    "network_resources_deleted": False,
+                    "network_resources": ["subnet"],
+                    "network_resources_missing": ["vcn"],
+                    "missing": ["boot_volume"],
+                    "statement": "instance deleted",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    checks: list[AcceptanceCheck] = []
+    missing: list[str] = []
+
+    _check_detonation(fusekit_dir, "live", checks, missing)
+
+    assert checks[-1].id == "detonation.workspace_receipt"
+    assert checks[-1].status == "failed"
+    assert "remote_worker_cleanup is missing" in checks[-1].detail
+    assert "boot_volume must be deleted" in checks[-1].detail
+    assert "network_resources must be deleted" in checks[-1].detail
+    assert "OCI workspace detonation receipt" in missing
 
 
 def test_acceptance_requires_visual_state_in_live_mode(tmp_path) -> None:
@@ -3137,6 +3202,11 @@ def test_acceptance_blockers_use_launcher_actionable_check_guidance() -> None:
             "Plaintext worker/browser/visual state still exists: .fusekit/browser",
         ),
         AcceptanceCheck(
+            "detonation.workspace_receipt",
+            "missing",
+            "Live OCI workspace detonation receipt not found: .fusekit/workspace_detonation.json",
+        ),
+        AcceptanceCheck(
             "gates.resolved",
             "failed",
             "Waiting provider gate still exists: provider.cloudflare.authorization",
@@ -3166,6 +3236,11 @@ def test_acceptance_blockers_use_launcher_actionable_check_guidance() -> None:
     assert (
         "plaintext worker, browser, visual, and auth scratch state"
         not in blockers["detonation.worker_state"]["next_action"]
+    )
+    assert (
+        "proving the VM, boot volume, ephemeral public IP, network resources, and "
+        "remote worker cleanup were destroyed"
+        in blockers["detonation.workspace_receipt"]["next_action"]
     )
     assert "I finished this step button" in blockers["gates.resolved"]["next_action"]
     assert "resume button" not in blockers["gates.resolved"]["next_action"]
@@ -3907,6 +3982,10 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
     )
     _write_runner_readiness(remote_fusekit)
     _write_safe_visual_state(remote_fusekit)
+    (remote_fusekit / "workspace_detonation.json").write_text(
+        json.dumps(_workspace_detonation_receipt()),
+        encoding="utf-8",
+    )
     _write_minimum_run_record(remote_fusekit)
 
     report = run_acceptance(

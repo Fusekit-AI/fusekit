@@ -2092,6 +2092,12 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
             "worker, browser, visual, provider-auth, control-room, and gateway "
             "scratch state after encrypted artifacts are preserved.",
         ),
+        "OCI workspace detonation receipt": (
+            "Detonation",
+            "Keep the launcher/control room open until FuseKit writes the OCI "
+            "workspace detonation receipt proving the VM, boot volume, ephemeral "
+            "public IP, network resources, and remote worker cleanup were destroyed.",
+        ),
     }
     return guidance.get(
         item,
@@ -2324,6 +2330,13 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
             "Keep the launcher/control room open while FuseKit detonates plaintext "
             "worker, browser, visual, provider-auth, control-room, and gateway "
             "scratch state after encrypted artifacts are preserved.",
+        )
+    if check.id == "detonation.workspace_receipt":
+        return (
+            "Detonation",
+            "Keep the launcher/control room open until FuseKit writes the OCI "
+            "workspace detonation receipt proving the VM, boot volume, ephemeral "
+            "public IP, network resources, and remote worker cleanup were destroyed.",
         )
     if check.id == "leak_scan.clean":
         return (
@@ -4882,6 +4895,86 @@ def _check_detonation(
     )
     if mode == "live" and not fusekit_dir.exists():
         missing.append("FuseKit artifact directory")
+    _check_workspace_detonation_receipt(fusekit_dir, mode, checks, missing)
+
+
+def _check_workspace_detonation_receipt(
+    fusekit_dir: Path,
+    mode: str,
+    checks: list[AcceptanceCheck],
+    missing: list[str],
+) -> None:
+    """Require proof that the disposable OCI workspace was actually destroyed."""
+
+    receipt_path = fusekit_dir / "workspace_detonation.json"
+    if not receipt_path.exists():
+        if mode == "live":
+            checks.append(
+                AcceptanceCheck(
+                    "detonation.workspace_receipt",
+                    "missing",
+                    "Live OCI workspace detonation receipt not found: "
+                    + redact_public_path(receipt_path),
+                )
+            )
+            missing.append("OCI workspace detonation receipt")
+            return
+        checks.append(
+            AcceptanceCheck(
+                "detonation.workspace_receipt",
+                "ok",
+                "Workspace detonation receipt not present; rehearsal does not require OCI.",
+            )
+        )
+        return
+    try:
+        raw = json.loads(receipt_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        checks.append(
+            AcceptanceCheck(
+                "detonation.workspace_receipt",
+                "failed",
+                "Workspace detonation receipt could not be read as a JSON object.",
+                str(receipt_path),
+            )
+        )
+        if mode == "live":
+            missing.append("OCI workspace detonation receipt")
+        return
+    if not isinstance(raw, dict):
+        checks.append(
+            AcceptanceCheck(
+                "detonation.workspace_receipt",
+                "failed",
+                "Workspace detonation receipt was not a JSON object.",
+                str(receipt_path),
+            )
+        )
+        if mode == "live":
+            missing.append("OCI workspace detonation receipt")
+        return
+    failures = _workspace_detonation_receipt_failures(raw)
+    if failures:
+        checks.append(
+            AcceptanceCheck(
+                "detonation.workspace_receipt",
+                "failed" if mode == "live" else "skipped",
+                "Workspace detonation receipt is incomplete: " + "; ".join(failures),
+                str(receipt_path),
+            )
+        )
+        if mode == "live":
+            missing.append("OCI workspace detonation receipt")
+        return
+    checks.append(
+        AcceptanceCheck(
+            "detonation.workspace_receipt",
+            "ok",
+            "OCI workspace detonation receipt proves VM, boot volume, public IP, "
+            "network resources, and remote worker cleanup.",
+            str(receipt_path),
+        )
+    )
 
 
 def _detonation_survivor(path: Path) -> bool:
