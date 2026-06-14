@@ -47,6 +47,7 @@ from fusekit.runner.run_record import (
     DURABLE_STATE_SOURCES,
     OCI_WORKSPACE_DETONATION_SURFACES,
     RECORDING_CONTRACT_SCHEMA_VERSION,
+    RECORDING_PROVIDER_PLAYBOOK_FAMILIES,
     RUN_RECORD_SCHEMA_VERSION,
     VERIFIER_SUMMARY_SCHEMA_VERSION,
     VOLATILE_WORKER_SURFACES,
@@ -575,6 +576,8 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
     verifiers = _require_dict_field(raw, "verifiers", failures)
     if verifiers is not None:
         failures.extend(_verifier_summary_shape_failures(verifiers))
+        if provider_playbook is not None:
+            failures.extend(_verifier_provider_coverage_failures(verifiers, provider_playbook))
     vault = _require_dict_field(raw, "vault", failures)
     if vault is not None:
         record_count = vault.get("record_count")
@@ -1446,6 +1449,45 @@ def _verifier_summary_shape_failures(verifiers: dict[str, Any]) -> list[str]:
     if "live provider verifiers" not in statement or "green checks" not in statement:
         failures.append("verifiers.statement is missing live-verifier guidance")
     return failures
+
+
+def _verifier_provider_coverage_failures(
+    verifiers: dict[str, Any],
+    provider_playbook: dict[str, Any],
+) -> list[str]:
+    checks = verifiers.get("checks", [])
+    steps = provider_playbook.get("steps", [])
+    if not isinstance(checks, list) or not isinstance(steps, list) or not steps:
+        return []
+    verifier_providers = {
+        str(check.get("provider", "") or "").strip().lower()
+        for check in checks
+        if isinstance(check, dict)
+    }
+    playbook_providers = {
+        str(step.get("provider", "") or "").strip().lower()
+        for step in steps
+        if isinstance(step, dict)
+    }
+    required = {
+        "GitHub": RECORDING_PROVIDER_PLAYBOOK_FAMILIES["github"],
+        "Resend": RECORDING_PROVIDER_PLAYBOOK_FAMILIES["resend"],
+        "Vercel": RECORDING_PROVIDER_PLAYBOOK_FAMILIES["vercel"],
+        "DNS/Cloudflare": RECORDING_PROVIDER_PLAYBOOK_FAMILIES["dns"],
+    }
+    missing = [
+        label
+        for label, accepted in required.items()
+        if accepted & playbook_providers and not accepted & verifier_providers
+    ]
+    if "live_app" not in verifier_providers:
+        missing.append("Live app")
+    if not missing:
+        return []
+    return [
+        "verifiers.checks missing public demo provider coverage: "
+        + ", ".join(sorted(missing))
+    ]
 
 
 def _audit_trail_shape_failures(

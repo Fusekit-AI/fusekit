@@ -432,12 +432,44 @@ def _automation_boundary() -> dict[str, object]:
 
 
 def _verifier_summary() -> dict[str, object]:
+    checks = [
+        {
+            "provider": "github",
+            "check": "repo_access",
+            "status": "passed",
+            "pending_safe": False,
+        },
+        {
+            "provider": "resend",
+            "check": "domain_verified",
+            "status": "passed",
+            "pending_safe": False,
+        },
+        {
+            "provider": "vercel",
+            "check": "deployment",
+            "status": "passed",
+            "pending_safe": False,
+        },
+        {
+            "provider": "cloudflare",
+            "check": "dns_propagated",
+            "status": "pending_safe",
+            "pending_safe": True,
+        },
+        {
+            "provider": "live_app",
+            "check": "live_url_healthy",
+            "status": "passed",
+            "pending_safe": False,
+        },
+    ]
     return {
         "schema_version": "fusekit.verifier-summary.v1",
         "overall": "passed",
         "all_passed_or_pending_safe": True,
         "counts": {
-            "passed": 1,
+            "passed": 4,
             "pending_safe": 1,
             "pending": 0,
             "repairing": 0,
@@ -446,25 +478,27 @@ def _verifier_summary() -> dict[str, object]:
             "needs_human_gate": 0,
             "unknown": 0,
         },
-        "checks": [
-            {
-                "provider": "live_app",
-                "check": "live_url_healthy",
-                "status": "passed",
-                "pending_safe": False,
-            },
-            {
-                "provider": "cloudflare",
-                "check": "dns_propagated",
-                "status": "pending_safe",
-                "pending_safe": True,
-            },
-        ],
+        "checks": checks,
         "statement": (
             "Live provider verifiers are summarized as green checks or pending-safe "
             "checks before launch readiness is trusted."
         ),
     }
+
+
+def _verification_report_checks() -> list[dict[str, object]]:
+    return [
+        {"provider": "github", "check": "repo_access", "status": "passed"},
+        {"provider": "resend", "check": "domain_verified", "status": "passed"},
+        {"provider": "vercel", "check": "deployment", "status": "passed"},
+        {
+            "provider": "cloudflare",
+            "check": "dns_propagated",
+            "status": "pending",
+            "details": {"pending_safe": True},
+        },
+        {"provider": "live_app", "check": "live_url_healthy", "status": "passed"},
+    ]
 
 
 def _verifier_summary_from_report(fusekit_dir: Path) -> dict[str, object]:
@@ -903,7 +937,7 @@ def _write_minimum_live_artifacts(remote_fusekit: Path) -> None:
         "utf-8",
     )
     (remote_fusekit / "verification_report.json").write_text(
-        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        json.dumps({"checks": _verification_report_checks()}),
         "utf-8",
     )
     (remote_fusekit / "rollback_plan.json").write_text(
@@ -1233,14 +1267,7 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
                 "artifacts": [],
                 "evidence": _evidence_inventory(),
                 "verification": {
-                    "checks": [
-                        {"provider": "live_app", "status": "passed"},
-                        {
-                            "provider": "cloudflare",
-                            "status": "pending",
-                            "details": {"pending_safe": True},
-                        },
-                    ]
+                    "checks": _verification_report_checks()
                 },
                 "acceptance": {},
                 "detonation": {
@@ -1274,15 +1301,7 @@ def _write_minimum_resend_vercel_live_artifacts(remote_fusekit: Path) -> None:
         "utf-8",
     )
     (remote_fusekit / "verification_report.json").write_text(
-        json.dumps(
-            {
-                "checks": [
-                    {"provider": "resend", "status": "passed"},
-                    {"provider": "vercel", "status": "passed"},
-                    {"provider": "live_app", "status": "passed"},
-                ]
-            }
-        ),
+        json.dumps({"checks": _verification_report_checks()}),
         "utf-8",
     )
     (remote_fusekit / "rollback_plan.json").write_text(
@@ -3951,27 +3970,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
         "utf-8",
     )
     (remote_fusekit / "verification_report.json").write_text(
-        json.dumps(
-            {
-                "checks": [
-                    {
-                        "provider": "github",
-                        "check": "repo_secret_exists",
-                        "status": "passed",
-                    },
-                    {
-                        "provider": "vercel",
-                        "check": "deployment_ready",
-                        "status": "passed",
-                    },
-                    {
-                        "provider": "live_app",
-                        "check": "live_url_healthy",
-                        "status": "passed",
-                    },
-                ]
-            }
-        ),
+        json.dumps({"checks": _verification_report_checks()}),
         "utf-8",
     )
     (remote_fusekit / "rollback_plan.json").write_text(
@@ -5484,8 +5483,63 @@ def test_acceptance_run_record_requires_verifier_counts_to_match_checks(tmp_path
 
     failures = _run_record_shape_failures(record)
 
-    assert "verifiers.counts.passed must match verifiers.checks: 1" in failures
+    assert "verifiers.counts.passed must match verifiers.checks: 4" in failures
     assert "verifiers.counts.pending_safe must match verifiers.checks: 1" in failures
+
+
+def test_acceptance_run_record_requires_verifiers_to_cover_playbook_providers(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["verifiers"] = {
+        "schema_version": "fusekit.verifier-summary.v1",
+        "overall": "passed",
+        "all_passed_or_pending_safe": True,
+        "counts": {
+            "passed": 2,
+            "pending_safe": 1,
+            "pending": 0,
+            "repairing": 0,
+            "failed": 0,
+            "skipped": 0,
+            "needs_human_gate": 0,
+            "unknown": 0,
+        },
+        "checks": [
+            {
+                "provider": "resend",
+                "check": "domain_verified",
+                "status": "passed",
+                "pending_safe": False,
+            },
+            {
+                "provider": "cloudflare",
+                "check": "dns_propagated",
+                "status": "pending_safe",
+                "pending_safe": True,
+            },
+            {
+                "provider": "live_app",
+                "check": "live_url_healthy",
+                "status": "passed",
+                "pending_safe": False,
+            },
+        ],
+        "statement": (
+            "Live provider verifiers are summarized as green checks or pending-safe "
+            "checks before launch readiness is trusted."
+        ),
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert (
+        "verifiers.checks missing public demo provider coverage: GitHub, Vercel"
+        in failures
+    )
 
 
 def test_acceptance_run_record_requires_redacted_audit_trail(tmp_path) -> None:
