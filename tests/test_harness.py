@@ -3487,6 +3487,31 @@ def test_acceptance_blockers_explain_manual_resend_setup_recovery() -> None:
     assert "Regenerate the Resend gate" not in blockers[0]["next_action"]
 
 
+def test_acceptance_blockers_explain_resend_setup_key_guidance_recovery() -> None:
+    blockers = _acceptance_blockers(
+        [
+            AcceptanceCheck(
+                "gates.guided",
+                "failed",
+                (
+                    "provider.resend.authorization.guidance must explain existing "
+                    "Resend key rows are not enough without the raw key value"
+                ),
+            )
+        ],
+        [],
+    )
+
+    assert blockers[0]["item"] == "gates.guided"
+    next_action = blockers[0]["next_action"]
+    assert "Resend API-key gate" in next_action
+    assert "Permission: Full access" in next_action
+    assert "Domain: All domains" in next_action
+    assert "raw key value" in next_action
+    assert "Capture RESEND_API_KEY from VM clipboard" in next_action
+    assert "I finished this step" not in next_action
+
+
 def test_resend_api_strategy_requires_domain_ownership_evidence() -> None:
     failures = _provider_strategy_shape_failures(
         [

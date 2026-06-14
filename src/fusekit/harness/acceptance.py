@@ -2263,6 +2263,18 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
                     "Resend gate so the user captures only the setup key; FuseKit must "
                     "create or reuse domains and audiences through Resend API.",
                 )
+            if (
+                "resend setup-key selectors" in detail
+                or "existing resend key rows are not enough" in detail
+            ):
+                return (
+                    "Human gates",
+                    "Keep the live launcher/control room open while FuseKit rebuilds the "
+                    "Resend API-key gate so it opens API Keys, names Permission: Full "
+                    "access and Domain: All domains, explains existing key rows are not "
+                    "enough without the raw key value, and shows Capture RESEND_API_KEY "
+                    "from VM clipboard.",
+                )
             if "missing resume_url" in detail:
                 return (
                     "Human gates",
