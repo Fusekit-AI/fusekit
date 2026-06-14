@@ -223,3 +223,5 @@ def test_friction_log_tracks_detonation_survivor_preflight_guards() -> None:
     assert (
         "fails closed on credential-looking text while allowing explicitly redacted values" in text
     )
+    assert "own durable-secret regex" in text
+    assert "one shared `contains_durable_secret_text` helper" in text

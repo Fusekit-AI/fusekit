@@ -47,3 +47,45 @@ def redact_public_path(value: object) -> str:
         index = parts.index(".fusekit")
         return str(Path(*parts[index:]))
     return path.name
+
+
+def contains_durable_secret_text(value: str) -> bool:
+    """Return true when durable public proof still contains credential-looking text."""
+
+    lowered = value.lower()
+    token_patterns = (
+        r"\bsk-[A-Za-z0-9_-]{12,}",
+        r"\bsk_(?:live|test|prod)_[A-Za-z0-9_-]{12,}",
+        r"\bpk_(?:live|test|prod)_[A-Za-z0-9_-]{12,}",
+        r"\bgh[pousr]_[A-Za-z0-9_]{12,}",
+        r"\bgithub_pat_[A-Za-z0-9_]{12,}",
+        r"\bwhsec_[A-Za-z0-9_]{12,}",
+        r"\brk_[A-Za-z0-9_-]{12,}",
+        r"\bre_[A-Za-z0-9_-]{12,}",
+        r"\bplaid-[A-Za-z0-9_-]{12,}",
+        r"\beyJ[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{8,}",
+    )
+    if any(re.search(pattern, value, flags=re.IGNORECASE) for pattern in token_patterns):
+        return True
+    if re.search(
+        (
+            r"([?&](?:access_token|auth_token|token|api_key|key|secret|code|password|"
+            r"passphrase|signature)=)(?!\[redacted\](?:[&#\s]|$))[^&#\s]+"
+        ),
+        value,
+        flags=re.IGNORECASE,
+    ):
+        return True
+    if re.search(r"\bbearer\s+(?!\[redacted\](?:$|[\s,;]))[^\s,;]+", lowered):
+        return True
+    return bool(
+        re.search(
+            (
+                r"\b(?:access[_-]?token|auth[_-]?token|api[_-]?key|token|secret|"
+                r"password|private[-_ ]?key|passphrase|signature)\s*[:=]\s*"
+                r"(?!\[redacted\](?:$|[\s,;])|redacted\b|none\b|null\b|false\b|true\b|$)"
+                r"[^\s,;]+"
+            ),
+            lowered,
+        )
+    )
