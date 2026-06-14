@@ -5559,6 +5559,7 @@ def _provider_playbook_shape_failures(playbook: dict[str, Any]) -> list[str]:
                 )
             )
         failures.extend(_provider_playbook_order_failures(step_ids))
+        failures.extend(_provider_playbook_provider_coverage_failures(steps))
     safety_notes = playbook.get("safety_notes", [])
     if not isinstance(safety_notes, list) or not safety_notes:
         failures.append("provider_playbook.safety_notes is missing")
@@ -5573,6 +5574,27 @@ def _provider_playbook_shape_failures(playbook: dict[str, Any]) -> list[str]:
             if required not in notes:
                 failures.append(f"provider_playbook.safety_notes must include {required}")
     return failures
+
+
+def _provider_playbook_provider_coverage_failures(steps: list[Any]) -> list[str]:
+    providers = {
+        str(step.get("provider", "") or "").strip().lower()
+        for step in steps
+        if isinstance(step, dict)
+    }
+    required = {
+        "GitHub": {"github"},
+        "Resend": {"resend"},
+        "Vercel": {"vercel"},
+        "DNS/Cloudflare": {"dns", "cloudflare"},
+    }
+    missing = sorted(label for label, accepted in required.items() if not accepted & providers)
+    if not missing:
+        return []
+    return [
+        "provider_playbook.steps missing public demo provider coverage: "
+        + ", ".join(missing)
+    ]
 
 
 def _provider_playbook_safety_note_failures(safety_notes: list[Any]) -> list[str]:

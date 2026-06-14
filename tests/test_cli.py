@@ -205,6 +205,31 @@ def test_provider_playbook_records_resend_domain_first_path() -> None:
     assert "Click Add domain" not in json.dumps(playbook)
 
 
+def test_provider_playbook_labels_known_capture_target_provider() -> None:
+    playbook = _provider_playbook(
+        [
+            {
+                "provider": "github",
+                "strategies": [
+                    {
+                        "recipe": "github-repo-secrets",
+                        "strategy": "browser_guided",
+                        "status": "needs_human_gate",
+                        "target": "GITHUB_TOKEN",
+                        "decision": {"selected": {"kind": "browser_guided"}},
+                    }
+                ],
+            }
+        ]
+    )
+
+    steps = playbook["steps"]
+    assert isinstance(steps, list)
+    assert steps[0]["id"] == "github.capture_token"
+    assert steps[0]["provider"] == "github"
+    assert steps[0]["control"] == "Capture GITHUB_TOKEN from VM clipboard"
+
+
 def test_workspace_detonation_receipt_fails_closed_and_redacts(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()
@@ -3239,29 +3264,59 @@ def test_save_launch_job_writes_durable_state_after_job_state_exists(tmp_path) -
         json.dumps(
             {
                 "schema_version": "fusekit.provider-strategies.v1",
-                "playbook": {
-                    "schema_version": "fusekit.provider-playbook.v1",
-                    "steps": [
+                "playbook": _provider_playbook(
+                    [
                         {
-                            "id": "resend.capture_key",
+                            "provider": "github",
+                            "strategies": [
+                                {
+                                    "recipe": "github-repo-secrets",
+                                    "strategy": "browser_guided",
+                                    "target": "GITHUB_TOKEN",
+                                    "decision": {"selected": {"kind": "browser_guided"}},
+                                }
+                            ],
+                        },
+                        {
                             "provider": "resend",
-                            "route": "browser_guided",
-                            "control": "Capture RESEND_API_KEY from VM clipboard",
-                            "instruction": ("Capture RESEND_API_KEY from VM clipboard."),
-                        }
-                    ],
-                    "safety_notes": [
-                        "Use the launcher and shared VM browser for provider gates.",
-                        (
-                            "Do not create Resend domains or audiences manually; "
-                            "FuseKit owns those API setup steps."
-                        ),
-                        (
-                            "Do not paste provider secrets into the host computer; "
-                            "Capture reads the VM clipboard."
-                        ),
-                    ],
-                },
+                            "strategies": [
+                                {
+                                    "recipe": "resend-domain",
+                                    "strategy": "api",
+                                    "decision": {
+                                        "selected": {
+                                            "kind": "api",
+                                            "evidence": {
+                                                "api_owns": "domain",
+                                                "downstream_order": "before_dns_apply",
+                                            },
+                                        }
+                                    },
+                                }
+                            ],
+                        },
+                        {
+                            "provider": "vercel",
+                            "strategies": [
+                                {
+                                    "recipe": "vercel-env",
+                                    "strategy": "api",
+                                    "decision": {"selected": {"kind": "api"}},
+                                }
+                            ],
+                        },
+                        {
+                            "provider": "cloudflare",
+                            "strategies": [
+                                {
+                                    "recipe": "cloudflare-dns",
+                                    "strategy": "api",
+                                    "decision": {"selected": {"kind": "api"}},
+                                }
+                            ],
+                        },
+                    ]
+                ),
                 "providers": [],
             }
         ),

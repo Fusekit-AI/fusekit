@@ -89,6 +89,15 @@ def _provider_playbook() -> dict[str, object]:
         "schema_version": "fusekit.provider-playbook.v1",
         "steps": [
             {
+                "id": "github.capture_token",
+                "provider": "github",
+                "route": "browser_guided",
+                "control": "Capture GITHUB_TOKEN from VM clipboard",
+                "proof_source": "gate_events.jsonl",
+                "resume_event": "clipboard_captured -> resume_requested",
+                "instruction": "Capture GITHUB_TOKEN from VM clipboard.",
+            },
+            {
                 "id": "resend.capture_key",
                 "provider": "resend",
                 "route": "browser_guided",
@@ -110,6 +119,24 @@ def _provider_playbook() -> dict[str, object]:
                 "instruction": (
                     "FuseKit creates or reuses the Resend sending domain through the Resend API."
                 ),
+            },
+            {
+                "id": "vercel.env_api",
+                "provider": "vercel",
+                "route": "api",
+                "control": "FuseKit API worker",
+                "proof_source": "setup_receipt.json",
+                "resume_event": "provider_action_recorded",
+                "instruction": "FuseKit writes required runtime variables into Vercel.",
+            },
+            {
+                "id": "dns.approval",
+                "provider": "dns",
+                "route": "human_follow_me",
+                "control": "Approve DNS apply",
+                "proof_source": "gate_events.jsonl",
+                "resume_event": "dns_apply_approved -> resume_requested",
+                "instruction": "Approve DNS apply.",
             },
         ],
         "safety_notes": [

@@ -108,6 +108,12 @@ RECORDING_DETONATION_AUDIT_RESOURCES = frozenset(
         "vcn",
     }
 )
+RECORDING_PROVIDER_PLAYBOOK_FAMILIES = {
+    "github": frozenset({"github"}),
+    "resend": frozenset({"resend"}),
+    "vercel": frozenset({"vercel"}),
+    "dns": frozenset({"cloudflare", "dns"}),
+}
 VOLATILE_DURABLE_STATE_MARKERS = tuple(
     sorted(
         {
@@ -1561,6 +1567,8 @@ def _recording_provider_playbook_ready(record: dict[str, Any]) -> bool:
         for step in steps
     ):
         return False
+    if not _provider_playbook_provider_coverage_ready(steps):
+        return False
     if _provider_playbook_order_failures(steps):
         return False
     joined = " ".join(str(note) for note in safety_notes)
@@ -1580,6 +1588,18 @@ def _provider_playbook_step_route_ready(step: dict[str, Any]) -> bool:
         "human_follow_me",
         "local_vault",
     }
+
+
+def _provider_playbook_provider_coverage_ready(steps: list[Any]) -> bool:
+    providers = {
+        str(step.get("provider", "") or "").strip().lower()
+        for step in steps
+        if isinstance(step, dict)
+    }
+    return all(
+        bool(accepted & providers)
+        for accepted in RECORDING_PROVIDER_PLAYBOOK_FAMILIES.values()
+    )
 
 
 def _provider_playbook_step_control_ready(step: dict[str, Any]) -> bool:

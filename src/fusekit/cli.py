@@ -4041,15 +4041,21 @@ def _provider_playbook(strategy_runs: list[dict[str, object]]) -> dict[str, obje
     for target in _human_gate_targets(records):
         if target in captured_targets:
             continue
+        provider = _human_gate_target_provider(target, records)
+        step_id = (
+            f"{provider}.capture_token"
+            if provider in {"cloudflare", "github", "vercel"}
+            else f"capture.{target.lower()}"
+        )
         steps.append(
             _playbook_step(
-                f"capture.{target.lower()}",
+                step_id,
                 (
                     "Open the provider gate in the VM browser, copy the approved value "
                     f"there, then click Capture {target} from VM clipboard."
                 ),
                 control=f"Capture {target} from VM clipboard",
-                provider="provider",
+                provider=provider,
                 route="browser_guided",
             )
         )
@@ -4270,6 +4276,20 @@ def _human_gate_targets(records: list[dict[str, object]]) -> list[str]:
         and str(item.get("target", "") or "").strip()
     }
     return sorted(target for target in targets if target)
+
+
+def _human_gate_target_provider(target: str, records: list[dict[str, object]]) -> str:
+    normalized = target.strip().upper()
+    for item in records:
+        item_target = str(item.get("target", "") or "").strip().upper()
+        provider = str(item.get("provider", "") or "").strip().lower()
+        if item_target == normalized and provider and provider != "provider":
+            return provider
+    return {
+        "CLOUDFLARE_API_TOKEN": "cloudflare",
+        "GITHUB_TOKEN": "github",
+        "VERCEL_TOKEN": "vercel",
+    }.get(normalized, "provider")
 
 
 def _is_non_secret_human_gate(item: dict[str, object]) -> bool:
