@@ -830,6 +830,10 @@ def test_recording_automation_boundary_requires_complete_route_proof() -> None:
                 "api_or_cli_routes": ["resend:resend-domain"],
                 "human_gate_routes": ["resend:resend-api-key"],
             },
+            "statement": (
+                "Humans use VNC only for provider gates; FuseKit owns API work "
+                "after capture and can detonate the OCI worker."
+            ),
         }
     }
 
@@ -860,6 +864,11 @@ def test_recording_automation_boundary_requires_complete_route_proof() -> None:
         "resend:resend-domain"
     ]
     record["automation_boundary"]["post_gate_automation"]["human_gate_routes"] = []
+    assert _recording_automation_boundary_ready(record) is False
+    record["automation_boundary"]["post_gate_automation"]["human_gate_routes"] = [
+        "resend:resend-api-key"
+    ]
+    record["automation_boundary"]["statement"] = "Humans do setup work."
     assert _recording_automation_boundary_ready(record) is False
 
 

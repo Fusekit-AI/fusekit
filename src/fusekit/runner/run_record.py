@@ -1687,6 +1687,8 @@ def _recording_automation_boundary_ready(record: dict[str, Any]) -> bool:
     routes = boundary.get("routes", [])
     post_gate = boundary.get("post_gate_automation", {})
     allowed = boundary.get("vnc_allowed_for", [])
+    statement = str(boundary.get("statement", "") or "")
+    lowered_statement = statement.lower()
     required_allowed = {
         "login",
         "mfa",
@@ -1721,6 +1723,7 @@ def _recording_automation_boundary_ready(record: dict[str, Any]) -> bool:
         and boundary.get("resume_after_worker_replace") is True
         and boundary.get("no_user_machine_state") is True
         and str(boundary.get("detonation_scope", "") or "") == "worker-and-oci-workspace"
+        and all(term in lowered_statement for term in ("vnc", "api", "detonate"))
         and isinstance(allowed, list)
         and required_allowed.issubset({str(item) for item in allowed})
         and _safe_int(counts.get("blocked"), 1) == 0
