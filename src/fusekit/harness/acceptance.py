@@ -43,6 +43,7 @@ from fusekit.runner.remote import (
 from fusekit.runner.run_record import (
     AUDIT_TRAIL_SCHEMA_VERSION,
     AUTOMATION_BOUNDARY_SCHEMA_VERSION,
+    CONTROL_ROOM_SECURITY_SCHEMA_VERSION,
     DETONATION_PRESERVES,
     DURABLE_STATE_SOURCES,
     OCI_WORKSPACE_DETONATION_SURFACES,
@@ -554,6 +555,9 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
     automation_boundary = _require_dict_field(raw, "automation_boundary", failures)
     if automation_boundary is not None:
         failures.extend(_automation_boundary_shape_failures(automation_boundary))
+    control_room_security = _require_dict_field(raw, "control_room_security", failures)
+    if control_room_security is not None:
+        failures.extend(_control_room_security_shape_failures(control_room_security))
     if provider_gates is not None and wake_events is not None:
         failures.extend(_run_record_wake_event_failures(provider_gates, wake_events))
     provider_playbook = _require_dict_field(raw, "provider_playbook", failures)
@@ -979,6 +983,84 @@ def _automation_boundary_route_signature(route: dict[str, Any]) -> str:
     provider = str(route.get("provider", "") or "").strip()
     recipe = str(route.get("recipe", "") or "").strip()
     return f"{provider}:{recipe}"
+
+
+def _control_room_security_shape_failures(surface: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    if str(surface.get("schema_version", "") or "") != CONTROL_ROOM_SECURITY_SCHEMA_VERSION:
+        failures.append("control_room_security.schema_version is unsupported")
+    routes = surface.get("routes", [])
+    state_routes = surface.get("state_changing_routes", [])
+    if not isinstance(routes, list) or not routes:
+        failures.append("control_room_security.routes is missing")
+        routes = []
+    if not isinstance(state_routes, list) or not state_routes:
+        failures.append("control_room_security.state_changing_routes is missing")
+        state_routes = []
+    expected_state_routes = {
+        "/api/gates/<gate_id>/pass",
+        "/api/gates/<gate_id>/open",
+        "/api/gates/<gate_id>/capture-clipboard",
+    }
+    route_values: set[str] = set()
+    state_route_values: set[str] = set()
+    state_change_count = 0
+    for index, route in enumerate(routes):
+        label = f"control_room_security.routes[{index}]"
+        if not isinstance(route, dict):
+            failures.append(f"{label} is not an object")
+            continue
+        route_value = str(route.get("route", "") or "").strip()
+        route_values.add(route_value)
+        methods = route.get("methods", [])
+        if not route_value:
+            failures.append(f"{label}.route is missing")
+        if not isinstance(methods, list) or not methods:
+            failures.append(f"{label}.methods is missing")
+        if not str(route.get("protection", "") or "").strip():
+            failures.append(f"{label}.protection is missing")
+        if route.get("state_change") is True:
+            state_change_count += 1
+    for index, route in enumerate(state_routes):
+        label = f"control_room_security.state_changing_routes[{index}]"
+        route_value = str(route or "").strip()
+        if not route_value:
+            failures.append(f"{label} is missing")
+        state_route_values.add(route_value)
+    route_count = surface.get("route_count")
+    if not isinstance(route_count, int) or isinstance(route_count, bool):
+        route_count = -1
+    if route_count != len(routes):
+        failures.append("control_room_security.route_count must match routes")
+    state_changing_route_count = surface.get("state_changing_route_count")
+    if not isinstance(state_changing_route_count, int) or isinstance(
+        state_changing_route_count, bool
+    ):
+        state_changing_route_count = -1
+    if state_changing_route_count != state_change_count:
+        failures.append("control_room_security.state_changing_route_count must match routes")
+    if not expected_state_routes.issubset(route_values):
+        failures.append("control_room_security.routes missing protected gate mutation routes")
+    if not expected_state_routes.issubset(state_route_values):
+        failures.append(
+            "control_room_security.state_changing_routes missing protected gate mutation routes"
+        )
+    required_protection = str(surface.get("required_post_protection", "") or "")
+    for term in ("action-token", "origin", "fetch-site"):
+        if term not in required_protection:
+            failures.append("control_room_security.required_post_protection is incomplete")
+            break
+    if (
+        surface.get("unknown_route_protection")
+        != "security-headers-no-cors-posts-auth-before-404"
+    ):
+        failures.append("control_room_security.unknown_route_protection is unsupported")
+    statement = str(surface.get("statement", "") or "").lower()
+    for term in ("owner-only action token", "no cors"):
+        if term not in statement:
+            failures.append("control_room_security.statement is incomplete")
+            break
+    return failures
 
 
 def _provider_strategy_summary_shape_failures(strategies: dict[str, Any]) -> list[str]:
@@ -1660,6 +1742,7 @@ def _recording_contract_shape_failures(
         "provider_playbook",
         "human_actions",
         "automation_boundary",
+        "control_room_security",
         "verifiers",
         "audit_trail",
         "evidence",
@@ -1692,6 +1775,7 @@ def _recording_contract_shape_failures(
         "worker replacement",
         "provider playbooks",
         "guided human actions",
+        "control-room",
         "detonation",
     ):
         if required not in statement:

@@ -80,6 +80,7 @@ from fusekit.runner.run_record import (
     _human_action_trace,
     _recording_audit_trail_ready,
     _recording_automation_boundary_ready,
+    _recording_control_room_security_ready,
     _recording_detonation_ready,
     _recording_durable_state_ready,
     _recording_evidence_ready,
@@ -697,6 +698,16 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     assert "Open provider gate in VM" in controls
     assert "Capture CLOUDFLARE_API_TOKEN from VM clipboard" in controls
     assert "https://dash.cloudflare.com" not in json.dumps(record["human_actions"])
+    assert record["control_room_security"]["schema_version"] == (
+        "fusekit.control-room-security-surface.v1"
+    )
+    assert record["control_room_security"]["state_changing_route_count"] == 3
+    assert set(record["control_room_security"]["state_changing_routes"]) == {
+        "/api/gates/<gate_id>/pass",
+        "/api/gates/<gate_id>/open",
+        "/api/gates/<gate_id>/capture-clipboard",
+    }
+    assert _recording_control_room_security_ready(record) is True
     assert record["vault"]["record_count"] == 1
     assert record["vault"]["records"][0]["id"] == "provider.cloudflare.token"
     assert record["audit_trail"]["schema_version"] == "fusekit.audit-trail.v1"
@@ -724,6 +735,7 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     assert record["recording_contract"]["recording_ready"] is True
     assert record["recording_contract"]["blockers"] == []
     assert record["recording_contract"]["checks"]["provider_playbook"] is True
+    assert record["recording_contract"]["checks"]["control_room_security"] is True
     assert record["recording_contract"]["checks"]["detonation"] is True
     assert record["recording_contract"]["checks"]["errors_empty"] is True
     assert record["detonation"]["workspace_receipt"]["status"] == "complete"
@@ -829,6 +841,56 @@ def test_recording_human_actions_require_exact_visible_controls() -> None:
     record["human_actions"]["schema_version"] = "fusekit.human-action-trace.v1"
     record["human_actions"]["actions"][0]["gate_id"] = ""
     assert _recording_human_actions_ready(record) is False
+
+
+def test_recording_control_room_security_requires_state_changing_routes() -> None:
+    record = {
+        "control_room_security": {
+            "schema_version": "fusekit.control-room-security-surface.v1",
+            "route_count": 2,
+            "state_changing_route_count": 2,
+            "required_post_protection": (
+                "control-room-header-origin-fetch-site-action-token"
+            ),
+            "unknown_route_protection": "security-headers-no-cors-posts-auth-before-404",
+            "statement": (
+                "State-changing control-room routes require the owner-only action token "
+                "and emit no CORS allow headers."
+            ),
+            "routes": [
+                {
+                    "route": "/api/gates/<gate_id>/pass",
+                    "methods": ["POST"],
+                    "state_change": True,
+                    "protection": "protected",
+                },
+                {
+                    "route": "/api/gates/<gate_id>/open",
+                    "methods": ["POST"],
+                    "state_change": True,
+                    "protection": "protected",
+                },
+            ],
+            "state_changing_routes": [
+                "/api/gates/<gate_id>/pass",
+                "/api/gates/<gate_id>/open",
+            ],
+        }
+    }
+
+    assert _recording_control_room_security_ready(record) is False
+    capture_route = {
+        "route": "/api/gates/<gate_id>/capture-clipboard",
+        "methods": ["POST"],
+        "state_change": True,
+        "protection": "protected",
+    }
+    record["control_room_security"]["routes"].append(capture_route)
+    record["control_room_security"]["state_changing_routes"].append(capture_route["route"])
+    record["control_room_security"]["route_count"] = 3
+    record["control_room_security"]["state_changing_route_count"] = 3
+
+    assert _recording_control_room_security_ready(record) is True
 
 
 def test_human_action_trace_requires_exact_approval_control_guidance() -> None:

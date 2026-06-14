@@ -31,13 +31,21 @@ def control_room_payload(job: JobState, *, gate_path: Path | None = None) -> dic
     payload = job.to_dict()
     payload["verification"] = _read_verification_report(_verification_report_path(job, gate_path))
     payload["run_state"] = _read_run_state(_run_state_path(job, gate_path))
-    payload["run_record"] = _read_run_record(_run_record_path(job, gate_path))
+    run_record = _read_run_record(_run_record_path(job, gate_path))
+    payload["run_record"] = run_record
     payload["visual"] = _read_visual_state(_visual_state_path(job, gate_path))
     payload["provider_strategies"] = _read_provider_strategies(
         _provider_strategies_path(job, gate_path)
     )
     payload["acceptance"] = _read_acceptance_report(_acceptance_report_path(job, gate_path))
-    payload["security_surface"] = public_control_room_security_surface()
+    run_record_security = (
+        run_record.get("control_room_security", {}) if isinstance(run_record, dict) else {}
+    )
+    payload["security_surface"] = (
+        run_record_security
+        if isinstance(run_record_security, dict) and run_record_security
+        else public_control_room_security_surface()
+    )
     if gate_path is None:
         payload.setdefault("gates", [])
         return payload

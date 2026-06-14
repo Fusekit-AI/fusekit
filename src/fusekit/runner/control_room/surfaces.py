@@ -81,6 +81,7 @@ def public_control_room_security_surface() -> dict[str, Any]:
         "statement": (
             "The control room has three browser-reachable state-changing routes. "
             "Each one requires the explicit control-room header, trusted browser "
-            "origin/fetch-site metadata when present, and the owner-only action token."
+            "origin/fetch-site metadata when present, and the owner-only action token; "
+            "responses emit no CORS allow headers."
         ),
     }

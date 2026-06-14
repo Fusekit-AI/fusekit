@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from fusekit.runner import worker_replacement as worker_replacement_contract
+from fusekit.runner.control_room.surfaces import public_control_room_security_surface
 from fusekit.runner.gates import GateRecord
 from fusekit.runner.job import JobState
 from fusekit.runner.readiness import runner_readiness_failures
@@ -29,6 +30,7 @@ AUTOMATION_BOUNDARY_SCHEMA_VERSION = "fusekit.automation-boundary.v1"
 VERIFIER_SUMMARY_SCHEMA_VERSION = "fusekit.verifier-summary.v1"
 AUDIT_TRAIL_SCHEMA_VERSION = "fusekit.audit-trail.v1"
 RECORDING_CONTRACT_SCHEMA_VERSION = "fusekit.recording-contract.v1"
+CONTROL_ROOM_SECURITY_SCHEMA_VERSION = "fusekit.control-room-security-surface.v1"
 WORKER_REPLACEMENT_DRILL_SCHEMA_VERSION = (
     worker_replacement_contract.WORKER_REPLACEMENT_DRILL_SCHEMA_VERSION
 )
@@ -216,6 +218,7 @@ def build_run_record(
             human_actions,
             durable_state,
         ),
+        "control_room_security": public_control_room_security_surface(),
         "provider_strategies": provider_strategies or {"providers": []},
         "vault": {
             "records": vault_index or [],
@@ -1413,6 +1416,7 @@ def _recording_contract_summary(record: dict[str, Any]) -> dict[str, Any]:
         "provider_playbook": _recording_provider_playbook_ready(record),
         "human_actions": _recording_human_actions_ready(record),
         "automation_boundary": _recording_automation_boundary_ready(record),
+        "control_room_security": _recording_control_room_security_ready(record),
         "verifiers": _recording_verifiers_ready(record),
         "audit_trail": _recording_audit_trail_ready(record),
         "evidence": _recording_evidence_ready(record),
@@ -1429,8 +1433,8 @@ def _recording_contract_summary(record: dict[str, Any]) -> dict[str, Any]:
             "A public demo is recordable only when the Run Record proves durable "
             "OCI state, worker replacement from encrypted/redacted sources, the "
             "x86 visual runner, ordered provider playbooks, guided human actions, "
-            "post-gate automation, live provider verifiers, audit evidence, and "
-            "no-trace detonation all agree."
+            "post-gate automation, a protected control-room mutation surface, "
+            "live provider verifiers, audit evidence, and no-trace detonation all agree."
         ),
     }
 
@@ -1958,6 +1962,52 @@ def _automation_route_signature(route: dict[str, Any]) -> str:
     provider = str(route.get("provider", "") or "").strip()
     recipe = str(route.get("recipe", "") or "").strip()
     return f"{provider}:{recipe}"
+
+
+def _recording_control_room_security_ready(record: dict[str, Any]) -> bool:
+    surface = record.get("control_room_security", {})
+    if not isinstance(surface, dict):
+        return False
+    routes = surface.get("routes", [])
+    state_routes = surface.get("state_changing_routes", [])
+    if not isinstance(routes, list) or not isinstance(state_routes, list):
+        return False
+    if not routes or not all(isinstance(route, dict) for route in routes):
+        return False
+    expected_state_routes = {
+        "/api/gates/<gate_id>/pass",
+        "/api/gates/<gate_id>/open",
+        "/api/gates/<gate_id>/capture-clipboard",
+    }
+    route_values = {str(route.get("route", "") or "") for route in routes}
+    state_route_values = {str(route) for route in state_routes}
+    state_route_count = sum(1 for route in routes if route.get("state_change") is True)
+    required_protection = str(surface.get("required_post_protection", "") or "")
+    statement = str(surface.get("statement", "") or "").lower()
+    for route in routes:
+        methods = route.get("methods", [])
+        if (
+            not str(route.get("route", "") or "").strip()
+            or not isinstance(methods, list)
+            or not methods
+            or not str(route.get("protection", "") or "").strip()
+        ):
+            return False
+    return (
+        str(surface.get("schema_version", "") or "") == CONTROL_ROOM_SECURITY_SCHEMA_VERSION
+        and _safe_int(surface.get("route_count"), -1) == len(routes)
+        and _safe_int(surface.get("state_changing_route_count"), -1) == state_route_count
+        and expected_state_routes.issubset(route_values)
+        and expected_state_routes.issubset(state_route_values)
+        and len(state_route_values) == state_route_count
+        and surface.get("unknown_route_protection")
+        == "security-headers-no-cors-posts-auth-before-404"
+        and "action-token" in required_protection
+        and "origin" in required_protection
+        and "fetch-site" in required_protection
+        and "owner-only action token" in statement
+        and "no cors" in statement
+    )
 
 
 def _recording_verifiers_ready(record: dict[str, Any]) -> bool:

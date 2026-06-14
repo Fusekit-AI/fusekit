@@ -23,6 +23,7 @@ from fusekit.harness.acceptance import (
     _unguided_gates,
 )
 from fusekit.harness.ledger import HarnessLedger
+from fusekit.runner.control_room.surfaces import public_control_room_security_surface
 from fusekit.runner.gate_guidance import provider_gate_guidance
 from fusekit.runner.gates import GateService
 from fusekit.runner.readiness import REQUIRED_RUNNER_BINARIES
@@ -861,6 +862,7 @@ def _recording_contract() -> dict[str, object]:
             "provider_playbook": True,
             "human_actions": True,
             "automation_boundary": True,
+            "control_room_security": True,
             "verifiers": True,
             "audit_trail": True,
             "evidence": True,
@@ -871,8 +873,8 @@ def _recording_contract() -> dict[str, object]:
         "statement": (
             "A public demo is recordable only when durable OCI state, worker "
             "replacement from encrypted/redacted sources, ordered provider "
-            "playbooks, guided human actions, live provider verifiers, and "
-            "no-trace detonation all agree."
+            "playbooks, guided human actions, protected control-room state "
+            "changes, live provider verifiers, and no-trace detonation all agree."
         ),
     }
 
@@ -1344,6 +1346,7 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
                 "wake_events": _wake_event_summary_fixture(fusekit_dir),
                 "human_actions": _human_action_trace(),
                 "automation_boundary": _automation_boundary(),
+                "control_room_security": public_control_room_security_surface(),
                 "verifiers": _verifier_summary_from_report(fusekit_dir),
                 "provider_strategies": _run_record_provider_strategies(fusekit_dir),
                 "vault": {"record_count": 0, "records": []},
@@ -6036,6 +6039,44 @@ def test_acceptance_run_record_requires_recording_worker_replacement_check(
 
     assert "recording_contract.checks.worker_replacement must be true" in failures
     assert "recording_contract.blockers must be empty: worker_replacement" in failures
+
+
+def test_acceptance_run_record_requires_control_room_security_proof(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["control_room_security"]["routes"] = [
+        route
+        for route in record["control_room_security"]["routes"]
+        if route["route"] != "/api/gates/<gate_id>/capture-clipboard"
+    ]
+    record["control_room_security"]["route_count"] = len(
+        record["control_room_security"]["routes"]
+    )
+    record["control_room_security"]["state_changing_routes"] = [
+        route
+        for route in record["control_room_security"]["state_changing_routes"]
+        if route != "/api/gates/<gate_id>/capture-clipboard"
+    ]
+    record["control_room_security"]["state_changing_route_count"] = len(
+        record["control_room_security"]["state_changing_routes"]
+    )
+    record["recording_contract"]["recording_ready"] = False
+    record["recording_contract"]["checks"]["control_room_security"] = False
+    record["recording_contract"]["blockers"] = ["control_room_security"]
+
+    failures = _run_record_shape_failures(record)
+
+    assert "control_room_security.routes missing protected gate mutation routes" in failures
+    assert (
+        "control_room_security.state_changing_routes missing protected gate mutation routes"
+        in failures
+    )
+    assert "recording_contract.checks.control_room_security must be true" in failures
+    assert (
+        "recording_contract.blockers must be empty: control_room_security" in failures
+    )
 
 
 def test_acceptance_run_record_recording_contract_errors_empty_matches_errors(
