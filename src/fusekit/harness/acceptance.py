@@ -4236,10 +4236,22 @@ def _resend_setup_key_selector_failure(gate: dict[str, Any]) -> str:
         for selector in ("Permission: Full access", "Domain: All domains")
         if selector not in text
     ]
-    if not missing:
-        return ""
     gate_id = str(gate.get("id", "") or "provider.resend")
-    return f"{gate_id}.guidance must name exact Resend setup-key selectors: " + ", ".join(missing)
+    if missing:
+        return (
+            f"{gate_id}.guidance must name exact Resend setup-key selectors: "
+            + ", ".join(missing)
+        )
+    lowered = text.lower()
+    raw_key_warning_ready = "raw key value" in lowered and (
+        "not enough" in lowered or "does not reveal old key" in lowered
+    )
+    if not raw_key_warning_ready:
+        return (
+            f"{gate_id}.guidance must explain existing Resend key rows are not "
+            "enough without the raw key value"
+        )
+    return ""
 
 
 def _manual_setup_match_is_negated(text: str, match_start: int) -> bool:

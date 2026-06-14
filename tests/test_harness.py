@@ -2459,6 +2459,56 @@ def test_acceptance_rejects_vague_resend_setup_key_selector_guidance() -> None:
     ) in failures
 
 
+def test_acceptance_rejects_resend_setup_key_without_raw_value_warning() -> None:
+    failures = _unguided_gates(
+        [
+            {
+                "id": "provider.resend.authorization",
+                "provider": "resend",
+                "status": "waiting",
+                "classification": "provider-authorization",
+                "resume_url": "https://resend.com/api-keys",
+                "target": "RESEND_API_KEY",
+                "reason": (
+                    "Create a Resend setup key with Permission: Full access and "
+                    "Domain: All domains."
+                ),
+                "follow_steps": [
+                    "Click Open provider gate in VM so Resend opens in the VM browser.",
+                    (
+                        "Create or open a Resend API key with Permission: Full access "
+                        "and Domain: All domains."
+                    ),
+                    "Copy the key inside the VM browser and click "
+                    "Capture RESEND_API_KEY from VM clipboard.",
+                    "Do not click Add domain or Add audience; FuseKit owns those steps.",
+                ],
+                "next_action": (
+                    "Click Open provider gate in VM, then click "
+                    "Capture RESEND_API_KEY from VM clipboard after the key is copied."
+                ),
+                "resume_hint": (
+                    "FuseKit will create or reuse Resend domains and audiences by API "
+                    "after RESEND_API_KEY capture."
+                ),
+                "success_criteria": [
+                    "A Resend setup API key with Permission: Full access and "
+                    "Domain: All domains was captured."
+                ],
+                "avoid_steps": [
+                    "Do not click Add domain in Resend.",
+                    "Do not click Add audience in Resend.",
+                ],
+            }
+        ]
+    )
+
+    assert (
+        "provider.resend.authorization.guidance must explain existing Resend key "
+        "rows are not enough without the raw key value"
+    ) in failures
+
+
 def test_acceptance_allows_exact_resend_setup_key_selector_guidance() -> None:
     failures = _unguided_gates(
         [
@@ -2478,6 +2528,11 @@ def test_acceptance_allows_exact_resend_setup_key_selector_guidance() -> None:
                     (
                         "Create or open a Resend API key with Permission: Full access "
                         "and Domain: All domains."
+                    ),
+                    (
+                        "An existing key row with Permission: Full access and Domain: "
+                        "All domains is not enough by itself; FuseKit needs the raw "
+                        "key value captured into the encrypted vault."
                     ),
                     "Copy the key inside the VM browser and click "
                     "Capture RESEND_API_KEY from VM clipboard.",
