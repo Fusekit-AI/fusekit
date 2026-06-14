@@ -36,6 +36,7 @@ def run_detonation_preflight(
     receipt: Path,
     verification_report: Path,
     rollback_metadata: Path,
+    run_record: Path,
 ) -> DetonationPreflightResult:
     """Verify survivor artifacts before plaintext worker state is destroyed."""
 
@@ -46,6 +47,7 @@ def run_detonation_preflight(
         ("redacted receipt", receipt),
         ("verification report", verification_report),
         ("rollback metadata", rollback_metadata),
+        ("central run record", run_record),
     ):
         if not path.is_file():
             failures.append(f"missing {label}: {path}")
@@ -54,6 +56,8 @@ def run_detonation_preflight(
         failures.extend(_verification_failures(_read_json(verification_report)))
     if rollback_metadata.is_file():
         failures.extend(_rollback_failures(_read_json(rollback_metadata)))
+    if run_record.is_file():
+        failures.extend(_run_record_failures(_read_json(run_record)))
 
     leaks = scan_for_secret_leaks(root)
     if leaks:
@@ -129,6 +133,37 @@ def _rollback_failures(payload: dict[str, Any]) -> list[str]:
         and str(item.get("status", "")) not in {"missing", "failed"}
     ]
     return [] if actionable else ["rollback metadata has no provider rollback actions"]
+
+
+def _run_record_failures(payload: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    if not payload:
+        return ["central run record could not be read"]
+    if str(payload.get("schema_version", "") or "") != "fusekit.run-record.v1":
+        failures.append("central run record has unsupported schema")
+    for key in (
+        "id",
+        "durable_state",
+        "provider_gates",
+        "audit_trail",
+        "detonation",
+        "recording_contract",
+    ):
+        value = payload.get(key)
+        if key == "id":
+            if not str(value or "").strip():
+                failures.append("central run record is missing id")
+            continue
+        if not isinstance(value, dict) or not value:
+            failures.append(f"central run record is missing {key}")
+    durable = payload.get("durable_state", {})
+    if isinstance(durable, dict):
+        scope = durable.get("detonation_scope", {})
+        if not isinstance(scope, dict):
+            failures.append("central run record is missing detonation scope")
+        elif scope.get("host_machine_state_required") is not False:
+            failures.append("central run record requires host-machine state")
+    return failures
 
 
 def _read_json(path: Path) -> dict[str, Any]:

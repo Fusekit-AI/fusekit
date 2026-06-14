@@ -1328,6 +1328,7 @@ def _cmd_setup(args: argparse.Namespace) -> int:
             args.verification_report
         )
         if not args.no_detonate and verification_detonation_safe:
+            _save_launch_job(args, job, vault_index=vault.public_index())
             _run_local_detonation_preflight(args, app_path)
             detonation_targets = [app_path / ".fusekit" / "worker", app_path / ".fusekit" / "tmp"]
             removed = detonate_paths(
@@ -1567,6 +1568,7 @@ def _run_local_detonation_preflight(args: argparse.Namespace, app_path: Path) ->
         receipt=args.receipt_json,
         verification_report=args.verification_report,
         rollback_metadata=args.rollback_json,
+        run_record=args.job_state.with_name("run_record.json"),
     )
     if not result.ok:
         raise FuseKitError("Detonation preflight failed: " + "; ".join(result.failures))
@@ -2483,6 +2485,7 @@ def _run_remote_detonation_preflight(args: argparse.Namespace, output_dir: Path)
         receipt=fusekit_dir / "setup_receipt.json",
         verification_report=fusekit_dir / "verification_report.json",
         rollback_metadata=fusekit_dir / "rollback_plan.json",
+        run_record=fusekit_dir / "run_record.json",
     )
     if not result.ok:
         args.job_state.parent.mkdir(parents=True, exist_ok=True)

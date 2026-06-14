@@ -8,6 +8,27 @@ from fusekit.detonation.preflight import (
 )
 
 
+def _write_run_record(path, *, host_machine_state_required: bool = False) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.run-record.v1",
+                "id": "fk-test",
+                "durable_state": {
+                    "detonation_scope": {
+                        "host_machine_state_required": host_machine_state_required,
+                    }
+                },
+                "provider_gates": {"records": []},
+                "audit_trail": {"entries": []},
+                "detonation": {"workspace_detonated": False},
+                "recording_contract": {"recording_ready": False},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_detonation_preflight_allows_passed_and_pending_safe_checks(tmp_path) -> None:
     fusekit = tmp_path / ".fusekit"
     fusekit.mkdir()
@@ -16,6 +37,7 @@ def test_detonation_preflight_allows_passed_and_pending_safe_checks(tmp_path) ->
     receipt = fusekit / "setup_receipt.json"
     report = fusekit / "verification_report.json"
     rollback = fusekit / "rollback_plan.json"
+    run_record = fusekit / "run_record.json"
     vault.write_text("encrypted", encoding="utf-8")
     audit.write_text('{"event":"ok"}\n', encoding="utf-8")
     receipt.write_text('{"actions":[]}', encoding="utf-8")
@@ -39,6 +61,7 @@ def test_detonation_preflight_allows_passed_and_pending_safe_checks(tmp_path) ->
         '{"rollback":[{"action":"rollback.github.secret","status":"planned"}]}',
         encoding="utf-8",
     )
+    _write_run_record(run_record)
 
     result = run_detonation_preflight(
         root=tmp_path,
@@ -47,9 +70,81 @@ def test_detonation_preflight_allows_passed_and_pending_safe_checks(tmp_path) ->
         receipt=receipt,
         verification_report=report,
         rollback_metadata=rollback,
+        run_record=run_record,
     )
 
     assert result.ok
+
+
+def test_detonation_preflight_requires_central_run_record(tmp_path) -> None:
+    fusekit = tmp_path / ".fusekit"
+    fusekit.mkdir()
+    vault = fusekit / "fusekit.vault.json"
+    audit = fusekit / "audit.jsonl"
+    receipt = fusekit / "setup_receipt.json"
+    report = fusekit / "verification_report.json"
+    rollback = fusekit / "rollback_plan.json"
+    run_record = fusekit / "run_record.json"
+    vault.write_text("encrypted", encoding="utf-8")
+    audit.write_text('{"event":"ok"}\n', encoding="utf-8")
+    receipt.write_text('{"actions":[]}', encoding="utf-8")
+    report.write_text(
+        '{"checks":[{"provider":"github","check":"repo_secret_exists","status":"passed"}]}',
+        encoding="utf-8",
+    )
+    rollback.write_text(
+        '{"rollback":[{"action":"rollback.github.secret","status":"planned"}]}',
+        encoding="utf-8",
+    )
+
+    result = run_detonation_preflight(
+        root=tmp_path,
+        vault=vault,
+        audit=audit,
+        receipt=receipt,
+        verification_report=report,
+        rollback_metadata=rollback,
+        run_record=run_record,
+    )
+
+    assert not result.ok
+    assert any("missing central run record" in failure for failure in result.failures)
+
+
+def test_detonation_preflight_rejects_host_machine_state_dependency(tmp_path) -> None:
+    fusekit = tmp_path / ".fusekit"
+    fusekit.mkdir()
+    vault = fusekit / "fusekit.vault.json"
+    audit = fusekit / "audit.jsonl"
+    receipt = fusekit / "setup_receipt.json"
+    report = fusekit / "verification_report.json"
+    rollback = fusekit / "rollback_plan.json"
+    run_record = fusekit / "run_record.json"
+    vault.write_text("encrypted", encoding="utf-8")
+    audit.write_text('{"event":"ok"}\n', encoding="utf-8")
+    receipt.write_text('{"actions":[]}', encoding="utf-8")
+    report.write_text(
+        '{"checks":[{"provider":"github","check":"repo_secret_exists","status":"passed"}]}',
+        encoding="utf-8",
+    )
+    rollback.write_text(
+        '{"rollback":[{"action":"rollback.github.secret","status":"planned"}]}',
+        encoding="utf-8",
+    )
+    _write_run_record(run_record, host_machine_state_required=True)
+
+    result = run_detonation_preflight(
+        root=tmp_path,
+        vault=vault,
+        audit=audit,
+        receipt=receipt,
+        verification_report=report,
+        rollback_metadata=rollback,
+        run_record=run_record,
+    )
+
+    assert not result.ok
+    assert any("requires host-machine state" in failure for failure in result.failures)
 
 
 def test_launch_progress_allows_nested_pending_safe_checks() -> None:
@@ -81,6 +176,7 @@ def test_detonation_preflight_blocks_human_gate_checks(tmp_path) -> None:
     receipt = fusekit / "setup_receipt.json"
     report = fusekit / "verification_report.json"
     rollback = fusekit / "rollback_plan.json"
+    run_record = fusekit / "run_record.json"
     vault.write_text("encrypted", encoding="utf-8")
     audit.write_text('{"event":"ok"}\n', encoding="utf-8")
     receipt.write_text('{"actions":[]}', encoding="utf-8")
@@ -102,6 +198,7 @@ def test_detonation_preflight_blocks_human_gate_checks(tmp_path) -> None:
         '{"rollback":[{"action":"rollback.vercel.project","status":"planned"}]}',
         encoding="utf-8",
     )
+    _write_run_record(run_record)
 
     result = run_detonation_preflight(
         root=tmp_path,
@@ -110,6 +207,7 @@ def test_detonation_preflight_blocks_human_gate_checks(tmp_path) -> None:
         receipt=receipt,
         verification_report=report,
         rollback_metadata=rollback,
+        run_record=run_record,
     )
 
     assert not result.ok
@@ -123,6 +221,7 @@ def test_detonation_preflight_blocks_failed_checks_and_missing_rollback(tmp_path
     receipt = fusekit / "setup_receipt.json"
     report = fusekit / "verification_report.json"
     rollback = fusekit / "rollback_plan.json"
+    run_record = fusekit / "run_record.json"
     vault.write_text("encrypted", encoding="utf-8")
     audit.write_text('{"event":"ok"}\n', encoding="utf-8")
     receipt.write_text('{"actions":[]}', encoding="utf-8")
@@ -130,6 +229,7 @@ def test_detonation_preflight_blocks_failed_checks_and_missing_rollback(tmp_path
         '{"checks":[{"provider":"vercel","check":"env_vars_configured","status":"failed"}]}',
         encoding="utf-8",
     )
+    _write_run_record(run_record)
 
     result = run_detonation_preflight(
         root=tmp_path,
@@ -138,6 +238,7 @@ def test_detonation_preflight_blocks_failed_checks_and_missing_rollback(tmp_path
         receipt=receipt,
         verification_report=report,
         rollback_metadata=rollback,
+        run_record=run_record,
     )
 
     assert not result.ok
