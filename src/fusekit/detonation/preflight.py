@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from fusekit.runner.run_record import CONTROL_ROOM_SECURITY_SCHEMA_VERSION
 from fusekit.runner.worker_replacement import worker_replacement_drill_failures
 from fusekit.security import contains_durable_secret_text, scan_for_secret_leaks
 
@@ -157,6 +158,7 @@ def _run_record_failures(payload: dict[str, Any]) -> list[str]:
         "durable_state",
         "provider_gates",
         "audit_trail",
+        "control_room_security",
         "detonation",
         "recording_contract",
     ):
@@ -174,12 +176,52 @@ def _run_record_failures(payload: dict[str, Any]) -> list[str]:
             failures.append("central run record is missing detonation scope")
         elif scope.get("host_machine_state_required") is not False:
             failures.append("central run record requires host-machine state")
+    security = payload.get("control_room_security", {})
+    if isinstance(security, dict) and security:
+        failures.extend(_control_room_security_failures(security))
     for path, value in _walk_json_strings(payload, path="central run record"):
         if contains_durable_secret_text(value):
             failures.append(f"{path} contains credential-looking text")
             if len(failures) >= 20:
                 failures.append("central run record contains additional credential-looking text")
                 break
+    return failures
+
+
+def _control_room_security_failures(surface: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    if str(surface.get("schema_version", "") or "") != CONTROL_ROOM_SECURITY_SCHEMA_VERSION:
+        failures.append("central run record control-room security schema is unsupported")
+    routes = surface.get("routes", [])
+    state_routes = surface.get("state_changing_routes", [])
+    if not isinstance(routes, list):
+        routes = []
+    if not isinstance(state_routes, list):
+        state_routes = []
+    expected = {
+        "/api/gates/<gate_id>/pass",
+        "/api/gates/<gate_id>/open",
+        "/api/gates/<gate_id>/capture-clipboard",
+    }
+    route_values = {
+        str(route.get("route", "") or "")
+        for route in routes
+        if isinstance(route, dict)
+    }
+    state_route_values = {str(route) for route in state_routes}
+    state_route_count = sum(
+        1 for route in routes if isinstance(route, dict) and route.get("state_change") is True
+    )
+    if not expected.issubset(route_values) or not expected.issubset(state_route_values):
+        failures.append("central run record is missing protected control-room mutation routes")
+    if surface.get("state_changing_route_count") != state_route_count:
+        failures.append("central run record control-room route counts drifted")
+    protection = str(surface.get("required_post_protection", "") or "")
+    statement = str(surface.get("statement", "") or "").lower()
+    if not all(term in protection for term in ("action-token", "origin", "fetch-site")):
+        failures.append("central run record control-room POST protection is incomplete")
+    if "owner-only action token" not in statement or "no cors" not in statement:
+        failures.append("central run record control-room no-CORS/action-token proof is incomplete")
     return failures
 
 

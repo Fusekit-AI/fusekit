@@ -64,6 +64,7 @@ from fusekit.providers.capability_pack import (
 )
 from fusekit.providers.handoff import handoff_for
 from fusekit.providers.verification import VerificationResult
+from fusekit.runner.control_room.surfaces import public_control_room_security_surface
 from fusekit.runner.gates import GateService
 from fusekit.runner.job import JobState
 from fusekit.runner.oci_live import OciWorkspace
@@ -3791,6 +3792,7 @@ def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch)
                 },
                 "provider_gates": {"records": []},
                 "audit_trail": {"entries": []},
+                "control_room_security": public_control_room_security_surface(),
                 "detonation": {"workspace_detonated": False},
                 "recording_contract": {"recording_ready": False},
             }

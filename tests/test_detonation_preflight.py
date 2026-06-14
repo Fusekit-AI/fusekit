@@ -7,6 +7,7 @@ from fusekit.detonation.preflight import (
     run_detonation_preflight,
     verification_report_allows_launch_progress,
 )
+from fusekit.runner.control_room.surfaces import public_control_room_security_surface
 from fusekit.runner.worker_replacement import build_passed_worker_replacement_drill
 
 
@@ -24,6 +25,7 @@ def _run_record_payload(
         },
         "provider_gates": {"records": []},
         "audit_trail": {"entries": []},
+        "control_room_security": public_control_room_security_surface(),
         "detonation": {"workspace_detonated": False},
         "recording_contract": {"recording_ready": False},
     }
@@ -206,6 +208,38 @@ def test_detonation_preflight_rejects_host_machine_state_dependency(tmp_path) ->
 
     assert not result.ok
     assert any("requires host-machine state" in failure for failure in result.failures)
+
+
+def test_detonation_preflight_requires_control_room_security_proof(tmp_path) -> None:
+    fusekit = tmp_path / ".fusekit"
+    fusekit.mkdir()
+    survivors = _write_preflight_survivors(fusekit)
+    payload = _run_record_payload()
+    payload["control_room_security"] = {
+        "schema_version": "fusekit.control-room-security-surface.v1",
+        "routes": [],
+        "state_changing_routes": [],
+        "state_changing_route_count": 0,
+        "required_post_protection": "action-token",
+        "statement": "protected",
+    }
+    survivors["run_record"].write_text(json.dumps(payload), encoding="utf-8")
+
+    result = run_detonation_preflight(root=tmp_path, **survivors)
+
+    assert not result.ok
+    assert any(
+        "missing protected control-room mutation routes" in failure
+        for failure in result.failures
+    )
+    assert any(
+        "control-room POST protection is incomplete" in failure
+        for failure in result.failures
+    )
+    assert any(
+        "control-room no-CORS/action-token proof is incomplete" in failure
+        for failure in result.failures
+    )
 
 
 def test_detonation_preflight_rejects_secret_text_in_run_record(tmp_path) -> None:
