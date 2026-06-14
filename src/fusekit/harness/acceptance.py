@@ -555,9 +555,19 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
         failures.extend(_automation_boundary_shape_failures(automation_boundary))
     if provider_gates is not None and wake_events is not None:
         failures.extend(_run_record_wake_event_failures(provider_gates, wake_events))
+    provider_playbook = _require_dict_field(raw, "provider_playbook", failures)
+    if provider_playbook is not None:
+        failures.extend(_provider_playbook_shape_failures(provider_playbook))
     provider_strategies = _require_dict_field(raw, "provider_strategies", failures)
     if provider_strategies is not None:
         failures.extend(_provider_strategy_summary_shape_failures(provider_strategies))
+        if provider_playbook is not None:
+            failures.extend(
+                _provider_strategy_provider_coverage_failures(
+                    provider_strategies,
+                    provider_playbook,
+                )
+            )
     runner_profile = _require_dict_field(raw, "runner_profile", failures)
     if runner_profile is not None:
         profile_contract = _require_dict_field(
@@ -570,9 +580,6 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
             failures.extend(_runner_profile_contract_failures(profile_contract))
         _require_dict_field(runner_profile, "checks", failures, prefix="runner_profile")
         _require_dict_field(runner_profile, "observed", failures, prefix="runner_profile")
-    provider_playbook = _require_dict_field(raw, "provider_playbook", failures)
-    if provider_playbook is not None:
-        failures.extend(_provider_playbook_shape_failures(provider_playbook))
     verifiers = _require_dict_field(raw, "verifiers", failures)
     if verifiers is not None:
         failures.extend(_verifier_summary_shape_failures(verifiers))
@@ -1013,6 +1020,43 @@ def _provider_strategy_summary_shape_failures(strategies: dict[str, Any]) -> lis
             if not isinstance(candidates, list) or not candidates:
                 failures.append(f"{strategy_label}.decision.candidates is missing")
     return failures
+
+
+def _provider_strategy_provider_coverage_failures(
+    strategies: dict[str, Any],
+    provider_playbook: dict[str, Any],
+) -> list[str]:
+    providers = strategies.get("providers", [])
+    steps = provider_playbook.get("steps", [])
+    if not isinstance(providers, list) or not isinstance(steps, list) or not steps:
+        return []
+    route_providers = {
+        str(provider.get("provider", "") or "").strip().lower()
+        for provider in providers
+        if isinstance(provider, dict)
+    }
+    playbook_providers = {
+        str(step.get("provider", "") or "").strip().lower()
+        for step in steps
+        if isinstance(step, dict)
+    }
+    required = {
+        "GitHub": RECORDING_PROVIDER_PLAYBOOK_FAMILIES["github"],
+        "Resend": RECORDING_PROVIDER_PLAYBOOK_FAMILIES["resend"],
+        "Vercel": RECORDING_PROVIDER_PLAYBOOK_FAMILIES["vercel"],
+        "DNS/Cloudflare": RECORDING_PROVIDER_PLAYBOOK_FAMILIES["dns"],
+    }
+    missing = [
+        label
+        for label, accepted in required.items()
+        if accepted & playbook_providers and not accepted & route_providers
+    ]
+    if not missing:
+        return []
+    return [
+        "provider_strategies.providers missing public demo provider coverage: "
+        + ", ".join(sorted(missing))
+    ]
 
 
 def _run_record_provider_strategy_consistency_failures(

@@ -174,6 +174,38 @@ def _run_record_provider_strategies(fusekit_dir: Path | None = None) -> dict[str
         "schema_version": "fusekit.provider-strategies.v1",
         "providers": [
             {
+                "provider": "github",
+                "strategies": [
+                    {
+                        "recipe": "github-repo-secrets",
+                        "strategy": "browser_guided",
+                        "status": "needs_human_gate",
+                        "decision": {
+                            "selected": {
+                                "kind": "browser_guided",
+                                "status": "available",
+                                "deterministic": False,
+                                "implemented": False,
+                                "reason": (
+                                    "GitHub token is captured through the VM browser gate."
+                                ),
+                            },
+                            "candidates": [
+                                {
+                                    "kind": "browser_guided",
+                                    "status": "available",
+                                    "deterministic": False,
+                                    "implemented": False,
+                                    "reason": (
+                                        "GitHub token is captured through the VM browser gate."
+                                    ),
+                                }
+                            ],
+                        },
+                    }
+                ],
+            },
+            {
                 "provider": "resend",
                 "strategies": [
                     {
@@ -209,6 +241,28 @@ def _run_record_provider_strategies(fusekit_dir: Path | None = None) -> dict[str
                             ],
                         },
                     },
+                ],
+            },
+            {
+                "provider": "vercel",
+                "strategies": [
+                    {
+                        "recipe": "vercel-env",
+                        "strategy": "api",
+                        "status": "ok",
+                        "decision": _strategy_decision(),
+                    }
+                ],
+            },
+            {
+                "provider": "cloudflare",
+                "strategies": [
+                    {
+                        "recipe": "cloudflare-dns",
+                        "strategy": "api",
+                        "status": "ok",
+                        "decision": _strategy_decision(),
+                    }
                 ],
             },
         ],
@@ -4020,6 +4074,32 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                             }
                         ],
                     },
+                    {
+                        "provider": "resend",
+                        "strategies": [
+                            {
+                                "recipe": "resend-domain",
+                                "strategy": "api",
+                                "status": "ok",
+                                "decision": _resend_domain_strategy_decision(),
+                            }
+                        ],
+                    },
+                    {
+                        "provider": "cloudflare",
+                        "strategies": [
+                            {
+                                "recipe": "cloudflare-dns",
+                                "strategy": "api",
+                                "status": "ok",
+                                "decision": {
+                                    "provider": "cloudflare",
+                                    "recipe_kind": "cloudflare-dns",
+                                    **_strategy_decision(),
+                                },
+                            }
+                        ],
+                    },
                 ],
             }
         ),
@@ -4046,6 +4126,32 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                         "status": "done",
                         "detail": "vercel-deploy uses api (ok)",
                         "next_action": "Nothing to copy manually into Vercel.",
+                        "resume_hint": "FuseKit recorded the deterministic provider route.",
+                        "mascot_state": "verify",
+                    },
+                    {
+                        "id": "provider.resend.routes",
+                        "label": "Provider route: resend",
+                        "status": "done",
+                        "detail": "resend-domain uses api (ok)",
+                        "next_action": (
+                            "Nothing to create manually in Resend; FuseKit creates or "
+                            "reuses the domain by API, carries the DNS records into the "
+                            "DNS approval gate, then applies the Resend values into "
+                            "Vercel env by API."
+                        ),
+                        "resume_hint": (
+                            "FuseKit will retry Resend setup, DNS verification, and "
+                            "Vercel env wiring from the recorded route."
+                        ),
+                        "mascot_state": "verify",
+                    },
+                    {
+                        "id": "provider.cloudflare.routes",
+                        "label": "Provider route: cloudflare",
+                        "status": "done",
+                        "detail": "cloudflare-dns uses api (ok)",
+                        "next_action": "Approve the DNS apply step only if FuseKit asks.",
                         "resume_hint": "FuseKit recorded the deterministic provider route.",
                         "mascot_state": "verify",
                     },
@@ -5415,6 +5521,49 @@ def test_acceptance_run_record_requires_provider_strategy_summary(tmp_path) -> N
     assert "provider_strategies.providers is missing" in failures
 
 
+def test_acceptance_run_record_requires_strategy_routes_to_cover_playbook_providers(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["provider_strategies"] = {
+        "schema_version": "fusekit.provider-strategies.v1",
+        "providers": [
+            {
+                "provider": "resend",
+                "strategies": [
+                    {
+                        "recipe": "resend-domain",
+                        "strategy": "api",
+                        "status": "ok",
+                        "decision": _resend_domain_strategy_decision(),
+                    }
+                ],
+            },
+            {
+                "provider": "cloudflare",
+                "strategies": [
+                    {
+                        "recipe": "cloudflare-dns",
+                        "strategy": "api",
+                        "status": "ok",
+                        "decision": _strategy_decision(),
+                    }
+                ],
+            },
+        ],
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert (
+        "provider_strategies.providers missing public demo provider coverage: GitHub, Vercel"
+        in failures
+    )
+
+
 def test_acceptance_run_record_requires_live_verifier_summary(tmp_path) -> None:
     fusekit_dir = tmp_path / ".fusekit"
     fusekit_dir.mkdir()
@@ -5784,9 +5933,19 @@ def test_acceptance_run_record_rejects_nested_unredacted_survivor_values(
     fusekit_dir.mkdir()
     _write_minimum_run_record(fusekit_dir)
     record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
-    record["provider_strategies"]["providers"][0]["strategies"][0]["decision"]["selected"][
-        "evidence"
-    ]["debug_token"] = "token=leaked-provider-token"
+    resend = next(
+        provider
+        for provider in record["provider_strategies"]["providers"]
+        if provider["provider"] == "resend"
+    )
+    resend_domain = next(
+        strategy
+        for strategy in resend["strategies"]
+        if strategy["recipe"] == "resend-domain"
+    )
+    resend_domain["decision"]["selected"]["evidence"][
+        "debug_token"
+    ] = "token=leaked-provider-token"
     record["verification"]["checks"][0]["details"] = {
         "callback": "https://provider.example/callback?code=secret-code"
     }
@@ -5796,10 +5955,12 @@ def test_acceptance_run_record_rejects_nested_unredacted_survivor_values(
 
     failures = _run_record_shape_failures(record)
 
-    assert (
-        "run_record.provider_strategies.providers[0].strategies[0].decision."
-        "selected.evidence.debug_token contains credential-looking text"
-    ) in failures
+    assert any(
+        failure.endswith(
+            "selected.evidence.debug_token contains credential-looking text"
+        )
+        for failure in failures
+    )
     assert (
         "run_record.verification.checks[0].details.callback contains credential-looking text"
     ) in failures
