@@ -202,7 +202,9 @@ An empty cleanup report is treated as incomplete rather than successful: the
 receipt must positively name remote-worker cleanup, OCI VM termination,
 boot volume deletion, ephemeral public IP release, and every standard
 FuseKit-created network resource class before the workspace can be considered
-detonated.
+detonated. The same receipt must also name the survivor set: encrypted vault,
+Run Record, redacted artifacts, and resume checkpoints outside the disposable
+VM, with no host-machine state required.
 
 Every live Run Record also carries `fusekit.durable-state.v1` evidence. That
 evidence names the encrypted/redacted sources required to resume after replacing

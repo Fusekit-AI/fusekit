@@ -1845,7 +1845,17 @@ def _workspace_detonation_receipt_failures(receipt: dict[str, Any]) -> list[str]
         elif missing:
             failures.append("detonation.workspace_receipt.resource_summary.missing must be empty")
         statement = str(resource_summary.get("statement", "") or "").lower()
-        for required in ("remote worker", "oci vm", "boot volume", "network resources"):
+        for required in (
+            "remote worker",
+            "oci vm",
+            "boot volume",
+            "network resources",
+            "encrypted vault",
+            "run record",
+            "artifacts",
+            "resume",
+            "host-machine state",
+        ):
             if required not in statement:
                 failures.append(
                     "detonation.workspace_receipt.resource_summary.statement is incomplete"

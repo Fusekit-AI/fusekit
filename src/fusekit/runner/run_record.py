@@ -1986,6 +1986,25 @@ def _recording_detonation_ready(record: dict[str, Any]) -> bool:
         and not network_resources_missing
         and isinstance(missing, list)
         and not missing
+        and _recording_detonation_statement_ready(resource_summary.get("statement", ""))
+    )
+
+
+def _recording_detonation_statement_ready(raw: object) -> bool:
+    statement = str(raw or "").lower()
+    return all(
+        required in statement
+        for required in (
+            "remote worker",
+            "oci vm",
+            "boot volume",
+            "network resources",
+            "encrypted vault",
+            "run record",
+            "artifacts",
+            "resume",
+            "host-machine state",
+        )
     )
 
 

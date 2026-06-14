@@ -159,6 +159,16 @@ def _write_runner_readiness(root: Path, *, thin: bool = False) -> None:
     (root / "runner_readiness.json").write_text(json.dumps(payload), encoding="utf-8")
 
 
+def _detonation_survivor_statement() -> str:
+    return (
+        "FuseKit detonation must remove the remote worker process state, terminate "
+        "the OCI VM, delete the boot volume, release the ephemeral public IP, and "
+        "delete FuseKit-created network resources. The encrypted vault, run record, "
+        "redacted artifacts, and resume checkpoints survive outside the disposable "
+        "VM without host-machine state."
+    )
+
+
 def _control_room_post_headers(root: Path, **extra: str) -> dict[str, str]:
     token = (root / "control-room-action-token").read_text(encoding="utf-8").strip()
     return {
@@ -465,12 +475,7 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
                     "compartment_deleted": False,
                     "compartment_scope": "preserved",
                     "missing": [],
-                    "statement": (
-                        "FuseKit detonation must remove the remote worker process state, "
-                        "terminate the OCI VM, delete the boot volume, release the "
-                        "ephemeral public IP, and delete "
-                        "FuseKit-created network resources."
-                    ),
+                    "statement": _detonation_survivor_statement(),
                 },
                 "updated_at": 2.0,
             }
@@ -1172,6 +1177,14 @@ def test_run_record_recording_detonation_requires_deleted_resource_proof() -> No
         "subnet",
         "vcn",
     ]
+    assert _recording_detonation_ready(record) is False
+    receipt["resource_summary"]["statement"] = (
+        "FuseKit detonation removed the remote worker process state, terminated "
+        "the OCI VM, deleted the boot volume, and deleted FuseKit-created "
+        "network resources. The encrypted vault, run record, redacted artifacts, "
+        "and resume checkpoints survive outside the disposable VM without "
+        "host-machine state."
+    )
     assert _recording_detonation_ready(record) is True
 
 
@@ -1253,6 +1266,7 @@ def test_run_record_recording_contract_blocks_missing_provider_playbook(tmp_path
                     "compartment_deleted": False,
                     "compartment_scope": "preserved",
                     "missing": [],
+                    "statement": _detonation_survivor_statement(),
                 },
             }
         ),
@@ -1357,6 +1371,7 @@ def test_recording_contract_rejects_volatile_durable_state_survivors(tmp_path) -
                     "compartment_deleted": False,
                     "compartment_scope": "preserved",
                     "missing": [],
+                    "statement": _detonation_survivor_statement(),
                 },
             }
         ),
@@ -1499,6 +1514,7 @@ def test_run_record_recording_contract_blocks_thin_runner_profile(tmp_path) -> N
                     "compartment_deleted": False,
                     "compartment_scope": "preserved",
                     "missing": [],
+                    "statement": _detonation_survivor_statement(),
                 },
             }
         ),

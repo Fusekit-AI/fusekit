@@ -2433,7 +2433,10 @@ def _workspace_detonation_resource_summary(remote_deleted: dict[str, Any]) -> di
             "FuseKit detonation must remove the remote worker process state, terminate "
             "the OCI VM, delete the boot volume, release the ephemeral public IP, and "
             "delete FuseKit-created network resources. Root tenancy or root compartment "
-            "scope may be preserved when no throwaway compartment was created."
+            "scope may be preserved when no throwaway compartment was created. The "
+            "encrypted vault, run record, redacted artifacts, and resume checkpoints "
+            "survive outside the disposable VM so the run can be audited or resumed "
+            "without host-machine state."
         ),
     }
 

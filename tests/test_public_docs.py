@@ -118,6 +118,17 @@ def test_northstar_defines_detonation_pressure_test() -> None:
     assert "Evented resume beats click-and-hope" in text
 
 
+def test_oci_lane_requires_detonation_survivor_set() -> None:
+    text = Path("docs/oci-runner-lane.md").read_text(encoding="utf-8")
+
+    assert "survivor set" in text
+    assert "encrypted vault" in text
+    assert "Run Record" in text
+    assert "redacted artifacts" in text
+    assert "resume checkpoints" in text
+    assert "no host-machine state required" in text
+
+
 def test_northstar_pressure_tests_background_agent_objects() -> None:
     text = Path("docs/northstar-provider-strategy.md").read_text(encoding="utf-8")
 

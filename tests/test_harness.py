@@ -214,7 +214,9 @@ def _workspace_detonation_receipt() -> dict[str, object]:
             "statement": (
                 "FuseKit detonation must remove the remote worker process state, "
                 "terminate the OCI VM, delete the boot volume, and delete "
-                "FuseKit-created network resources."
+                "FuseKit-created network resources. The encrypted vault, run "
+                "record, redacted artifacts, and resume checkpoints survive "
+                "outside the disposable VM without host-machine state."
             ),
         },
         "updated_at": 2.0,
@@ -4658,6 +4660,21 @@ def test_acceptance_run_record_requires_preserved_compartment_scope(tmp_path) ->
 
     assert "detonation.workspace_receipt.compartment_deleted must be false" in failures
     assert "detonation.workspace_receipt.compartment_scope must be preserved" in failures
+
+
+def test_acceptance_run_record_requires_durable_survivor_statement(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["detonation"]["workspace_receipt"]["resource_summary"]["statement"] = (
+        "FuseKit detonation removed the remote worker process state, OCI VM, "
+        "boot volume, and network resources."
+    )
+
+    failures = _run_record_shape_failures(record)
+
+    assert "detonation.workspace_receipt.resource_summary.statement is incomplete" in failures
 
 
 def test_acceptance_run_record_requires_no_trace_detonation_scope(tmp_path) -> None:
