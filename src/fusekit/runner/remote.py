@@ -578,7 +578,7 @@ def execute_remote_setup(
             "cd /var/lib/fusekit-runner/app && "
             "set -- .fusekit/fusekit.vault.json .fusekit/audit.jsonl "
             ".fusekit/setup_receipt.json .fusekit/setup_receipt.md .fusekit/job.json "
-            ".fusekit/checkpoints.json .fusekit/run_record.json "
+            ".fusekit/checkpoints.json .fusekit/run_state.json .fusekit/run_record.json "
             ".fusekit/verification_report.json "
             ".fusekit/rollback_plan.json .fusekit/provider_strategies.json "
             ".fusekit/gates.json .fusekit/gate_events.jsonl "
@@ -807,6 +807,7 @@ def _validate_artifact_bundle(output_dir: Path) -> str:
         ".fusekit/setup_receipt.json",
         ".fusekit/job.json",
         ".fusekit/checkpoints.json",
+        ".fusekit/run_state.json",
         ".fusekit/run_record.json",
         ".fusekit/verification_report.json",
         ".fusekit/rollback_plan.json",

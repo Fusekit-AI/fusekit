@@ -6944,6 +6944,7 @@ def test_remote_artifact_bundle_requires_survivor_files(tmp_path) -> None:
         "setup_receipt.json",
         "job.json",
         "checkpoints.json",
+        "run_state.json",
         "run_record.json",
         "verification_report.json",
         "rollback_plan.json",
@@ -7915,6 +7916,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
             gates = tmp_path / "gates.json"
             gate_events = tmp_path / "gate_events.jsonl"
             checkpoints = tmp_path / "checkpoints.json"
+            run_state = tmp_path / "run_state.json"
             run_record = tmp_path / "run_record.json"
             vault_file = tmp_path / "fusekit.vault.json"
             audit = tmp_path / "audit.jsonl"
@@ -7930,6 +7932,16 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
                 encoding="utf-8",
             )
             checkpoints.write_text('{"checkpoints":[]}', encoding="utf-8")
+            run_state.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "fusekit.run-state.v1",
+                        "vault_created": True,
+                        "receipt_written": True,
+                    }
+                ),
+                encoding="utf-8",
+            )
             run_record.write_text(
                 '{"schema_version":"fusekit.run-record.v1","id":"fk-test"}',
                 encoding="utf-8",
@@ -8009,6 +8021,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
             archive.add(gates, arcname=".fusekit/gates.json")
             archive.add(gate_events, arcname=".fusekit/gate_events.jsonl")
             archive.add(checkpoints, arcname=".fusekit/checkpoints.json")
+            archive.add(run_state, arcname=".fusekit/run_state.json")
             archive.add(run_record, arcname=".fusekit/run_record.json")
             archive.add(vault_file, arcname=".fusekit/fusekit.vault.json")
             archive.add(audit, arcname=".fusekit/audit.jsonl")
@@ -8258,6 +8271,7 @@ def test_remote_artifact_bundle_requires_detonation_survivors(tmp_path) -> None:
         "fusekit.vault.json",
         "job.json",
         "checkpoints.json",
+        "run_state.json",
         "verification_report.json",
         "rollback_plan.json",
         "provider_strategies.json",

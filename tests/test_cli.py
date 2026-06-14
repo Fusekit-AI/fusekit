@@ -3586,6 +3586,16 @@ def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch)
         '{"providers":[]}',
         encoding="utf-8",
     )
+    (remote_fusekit / "run_state.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.run-state.v1",
+                "vault_created": True,
+                "receipt_written": True,
+            }
+        ),
+        encoding="utf-8",
+    )
     (remote_fusekit / "run_record.json").write_text(
         json.dumps(
             {
