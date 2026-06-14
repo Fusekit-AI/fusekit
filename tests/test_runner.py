@@ -70,6 +70,7 @@ from fusekit.runner.remote import (
     _extract_artifacts,
     detonate_remote_worker,
     execute_remote_setup,
+    execute_worker_replacement_drill,
     remote_worker_cleanup_proof,
     render_cloud_init,
     should_include_app_path,
@@ -8453,6 +8454,160 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         if command[0] == "ssh" and "tar -czf -" in command[-1]
     )
     assert any('[ -n "$existing" ] || exit 44' in command[-1] for command in calls)
+
+
+def _write_replacement_durable_artifacts(fusekit_dir: Path) -> None:
+    fusekit_dir.mkdir(parents=True, exist_ok=True)
+    (fusekit_dir / "fusekit.vault.json").write_text("encrypted", encoding="utf-8")
+    (fusekit_dir / "job.json").write_text(
+        json.dumps(
+            {
+                "id": "fk-replace",
+                "app_path": str(fusekit_dir.parent),
+                "runner": "oci",
+                "status": "running",
+                "steps": [],
+                "checkpoints": [],
+                "artifacts": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (fusekit_dir / "run_state.json").write_text(
+        json.dumps({"schema_version": "fusekit.run-state.v1", "vault_created": True}),
+        encoding="utf-8",
+    )
+    (fusekit_dir / "checkpoints.json").write_text('{"checkpoints":[]}', encoding="utf-8")
+    (fusekit_dir / "gates.json").write_text('{"gates":[]}', encoding="utf-8")
+    (fusekit_dir / "gate_events.jsonl").write_text(
+        '{"event":"resume_requested","gate_id":"provider.test"}\n',
+        encoding="utf-8",
+    )
+    (fusekit_dir / "provider_strategies.json").write_text(
+        '{"schema_version":"fusekit.provider-strategies.v1","providers":[]}',
+        encoding="utf-8",
+    )
+    _write_runner_readiness(fusekit_dir)
+
+
+def test_execute_worker_replacement_drill_restores_and_writes_passed_proof(
+    tmp_path,
+) -> None:
+    output_dir = tmp_path / "out"
+    fusekit_dir = output_dir / ".fusekit"
+    _write_replacement_durable_artifacts(fusekit_dir)
+    vault = Vault.empty()
+    vault.put(
+        "runner.oci.replacement.ssh.private",
+        "ssh_private_key",
+        "oci",
+        "runner key",
+        "PRIVATE KEY",
+    )
+    original = OciWorkspace(
+        id="original",
+        compartment_id="tenancy",
+        availability_domain="AD-1",
+        shape="VM.Standard.E5.Flex",
+        ssh_user="ubuntu",
+        public_ip="203.0.113.10",
+    )
+    replacement = OciWorkspace(
+        id="replacement",
+        compartment_id="tenancy",
+        availability_domain="AD-2",
+        shape="VM.Standard.E5.Flex",
+        ssh_user="ubuntu",
+        public_ip="203.0.113.11",
+    )
+    calls: list[list[str]] = []
+
+    def runner(
+        command: list[str],
+        *,
+        input_text: str | None = None,
+        stdout_path: Path | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        assert input_text is None
+        assert stdout_path is None
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    result = execute_worker_replacement_drill(
+        original_workspace=original,
+        replacement_workspace=replacement,
+        vault=vault,
+        local_output_dir=output_dir,
+        runner=runner,
+    )
+
+    proof = json.loads((fusekit_dir / "worker_replacement_drill.json").read_text("utf-8"))
+    assert result["status"] == "passed"
+    assert result["control_room_url"].startswith("http://203.0.113.11:8765/?token=")
+    assert proof["status"] == "passed"
+    assert proof["worker_destroyed"] is True
+    assert proof["replacement_runner_profile_ready"] is True
+    assert proof["control_room_reopened"] is True
+    assert proof["resume_checkpoint_restored"] is True
+    assert proof["gate_or_verifier_resumed"] is True
+    assert proof["host_machine_state_required"] is False
+    assert proof["volatile_state_reused"] is False
+    assert proof["original_workspace_id"] == "original"
+    assert proof["replacement_workspace_id"] == "replacement"
+    assert "token=" not in json.dumps(proof)
+    assert any(command[0] == "ssh" and command[-1] == "true" for command in calls)
+    assert any(
+        command[0] == "ssh" and "/usr/local/sbin/fusekit-runner-verify" in command[-1]
+        for command in calls
+    )
+    assert any(command[0] == "scp" for command in calls)
+    assert any(
+        "fusekit control-room --serve" in command[-1]
+        and "curl -fsS http://127.0.0.1:8765/?token=$FUSEKIT_CONTROL_ROOM_TOKEN"
+        in command[-1]
+        for command in calls
+        if command[0] == "ssh"
+    )
+
+
+def test_execute_worker_replacement_drill_requires_durable_sources(tmp_path) -> None:
+    output_dir = tmp_path / "out"
+    fusekit_dir = output_dir / ".fusekit"
+    _write_replacement_durable_artifacts(fusekit_dir)
+    (fusekit_dir / "run_state.json").unlink()
+    vault = Vault.empty()
+    vault.put(
+        "runner.oci.replacement.ssh.private",
+        "ssh_private_key",
+        "oci",
+        "runner key",
+        "PRIVATE KEY",
+    )
+    workspace = OciWorkspace(
+        id="original",
+        compartment_id="tenancy",
+        availability_domain="AD-1",
+        shape="VM.Standard.E5.Flex",
+        ssh_user="ubuntu",
+        public_ip="203.0.113.10",
+    )
+    replacement = OciWorkspace(
+        id="replacement",
+        compartment_id="tenancy",
+        availability_domain="AD-2",
+        shape="VM.Standard.E5.Flex",
+        ssh_user="ubuntu",
+        public_ip="203.0.113.11",
+    )
+
+    with pytest.raises(FuseKitError, match="run_state.json"):
+        execute_worker_replacement_drill(
+            original_workspace=workspace,
+            replacement_workspace=replacement,
+            vault=vault,
+            local_output_dir=output_dir,
+            runner=lambda command, **kwargs: subprocess.CompletedProcess(command, 0),
+        )
 
 
 def test_remote_detonation_cleans_visual_and_control_processes() -> None:

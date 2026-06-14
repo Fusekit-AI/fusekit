@@ -15,6 +15,11 @@ from typing import TYPE_CHECKING, Protocol
 from urllib.parse import urlencode
 
 from fusekit.errors import FuseKitError
+from fusekit.runner.worker_replacement import (
+    WORKER_REPLACEMENT_SOURCE_IDS,
+    build_passed_worker_replacement_drill,
+    write_worker_replacement_drill,
+)
 from fusekit.vault import Vault
 
 if TYPE_CHECKING:
@@ -61,6 +66,19 @@ REMOTE_WORKER_PATH_TARGETS = (
     "/var/lib/fusekit-runner/visual",
     "/var/lib/fusekit-runner/control-room.log",
     "/var/lib/fusekit-runner/openclaw-gateway.log",
+)
+WORKER_REPLACEMENT_SOURCE_PATHS = {
+    "encrypted_vault": "fusekit.vault.json",
+    "job_state": "job.json",
+    "run_state": "run_state.json",
+    "checkpoints": "checkpoints.json",
+    "gates": "gates.json",
+    "gate_events": "gate_events.jsonl",
+    "provider_strategies": "provider_strategies.json",
+    "runner_readiness": "runner_readiness.json",
+}
+WORKER_REPLACEMENT_OPTIONAL_PATHS = (
+    "verification_report.json",
 )
 
 
@@ -617,6 +635,121 @@ def remote_worker_cleanup_proof(*, status: str = "detonated") -> dict[str, objec
     }
 
 
+def execute_worker_replacement_drill(
+    *,
+    original_workspace: OciWorkspace,
+    replacement_workspace: OciWorkspace,
+    vault: Vault,
+    local_output_dir: Path,
+    original_detonation: dict[str, object] | None = None,
+    runner: CommandRunner | None = None,
+) -> dict[str, str]:
+    """Restore durable run state onto a replacement OCI runner and write passed proof."""
+
+    if original_workspace.id == replacement_workspace.id:
+        raise FuseKitError("Worker replacement drill requires a distinct replacement workspace.")
+    if not replacement_workspace.public_ip:
+        raise FuseKitError("Worker replacement drill requires replacement public IP.")
+    fusekit_dir = _artifact_fusekit_dir(local_output_dir)
+    proof_path = fusekit_dir / "worker_replacement_drill.json"
+    key = _workspace_ssh_private_key(vault, replacement_workspace.id)
+    run = runner or _default_runner
+    control_token = secrets.token_urlsafe(24)
+    control_room_url = (
+        f"http://{replacement_workspace.public_ip}:{CONTROL_ROOM_PORT}/?token={control_token}"
+    )
+    with tempfile.TemporaryDirectory(prefix="fusekit-replacement-") as temp:
+        temp_path = Path(temp)
+        key_path = temp_path / "replacement.key"
+        key_path.write_text(key, encoding="utf-8")
+        key_path.chmod(0o600)
+        archive = temp_path / "durable-state.tar.gz"
+        _create_worker_replacement_archive(fusekit_dir, archive)
+        remote = _workspace_remote(replacement_workspace)
+        ssh = _ssh_base(key_path)
+        scp = _scp_base(key_path)
+        _wait_for_remote_ready(run, ssh, remote)
+        _run_checked(
+            run,
+            [
+                *ssh,
+                remote,
+                "test -x /usr/local/sbin/fusekit-runner-verify && "
+                "/usr/local/sbin/fusekit-runner-verify",
+            ],
+        )
+        _run_checked(run, [*ssh, remote, "mkdir -p /var/lib/fusekit-runner/app/.fusekit"])
+        _run_checked(
+            run,
+            [
+                *scp,
+                str(archive),
+                f"{remote}:/var/lib/fusekit-runner/durable-state.tar.gz",
+            ],
+        )
+        restore = (
+            "umask 077; "
+            "mkdir -p /var/lib/fusekit-runner/app/.fusekit; "
+            "tar -xzf /var/lib/fusekit-runner/durable-state.tar.gz "
+            "-C /var/lib/fusekit-runner/app/.fusekit; "
+            "cp /var/lib/fusekit-runner/runner-readiness.json "
+            "/var/lib/fusekit-runner/app/.fusekit/runner_readiness.json; "
+            "test -s /var/lib/fusekit-runner/app/.fusekit/job.json; "
+            "test -s /var/lib/fusekit-runner/app/.fusekit/run_state.json; "
+            "test -s /var/lib/fusekit-runner/app/.fusekit/checkpoints.json; "
+            "test -s /var/lib/fusekit-runner/app/.fusekit/gates.json; "
+            "test -s /var/lib/fusekit-runner/app/.fusekit/provider_strategies.json; "
+            "if [ ! -s /var/lib/fusekit-runner/app/.fusekit/gate_events.jsonl ] "
+            "&& [ ! -s /var/lib/fusekit-runner/app/.fusekit/verification_report.json ]; "
+            "then exit 46; fi; "
+            f"export FUSEKIT_CONTROL_ROOM_TOKEN={quote(control_token)}; "
+            "export FUSEKIT_ALLOW_REMOTE_CONTROL_ROOM=1; "
+            "pgrep -f 'fusekit control-room --serve.*8765' >/dev/null 2>&1 || "
+            "nohup fusekit control-room --serve "
+            "--job-state /var/lib/fusekit-runner/app/.fusekit/job.json "
+            f"--host 0.0.0.0 --port {CONTROL_ROOM_PORT} "
+            "> /var/lib/fusekit-runner/control-room.log 2>&1 & "
+            f"for i in $(seq 1 20); do "
+            f"curl -fsS http://127.0.0.1:{CONTROL_ROOM_PORT}/?token=$FUSEKIT_CONTROL_ROOM_TOKEN "
+            ">/dev/null 2>&1 && exit 0; sleep 1; done; "
+            "cat /var/lib/fusekit-runner/control-room.log 2>/dev/null >&2; exit 47"
+        )
+        _run_checked(run, [*ssh, remote, restore])
+    proof = build_passed_worker_replacement_drill()
+    proof.update(
+        {
+            "original_workspace_id": original_workspace.id,
+            "replacement_workspace_id": replacement_workspace.id,
+            "replacement_shape": replacement_workspace.shape,
+            "replacement_availability_domain": replacement_workspace.availability_domain,
+            "control_room_port": CONTROL_ROOM_PORT,
+            "original_workspace_detonation": _replacement_detonation_summary(
+                original_detonation
+            ),
+        }
+    )
+    write_worker_replacement_drill(proof_path, proof)
+    return {
+        "status": "passed",
+        "proof": str(proof_path),
+        "control_room_url": control_room_url,
+    }
+
+
+def _replacement_detonation_summary(
+    deleted: dict[str, object] | None,
+) -> dict[str, object]:
+    if not deleted:
+        return {"deleted": [], "failure_keys": []}
+    deleted_keys = sorted(key for key in deleted if not key.startswith("failed."))
+    failure_keys = sorted(key for key in deleted if key.startswith("failed."))
+    return {
+        "deleted": deleted_keys,
+        "failure_keys": failure_keys,
+        "complete": not failure_keys,
+    }
+
+
 def detonate_remote_worker(
     *,
     workspace: OciWorkspace,
@@ -645,6 +778,33 @@ def detonate_remote_worker(
         )
         _run_checked(run, [*_ssh_base(key_path), remote, command])
     return remote_worker_cleanup_proof()
+
+
+def _artifact_fusekit_dir(output_dir: Path) -> Path:
+    if output_dir.name == ".fusekit":
+        return output_dir
+    return output_dir / ".fusekit"
+
+
+def _create_worker_replacement_archive(fusekit_dir: Path, archive: Path) -> None:
+    missing = [
+        filename
+        for source_id, filename in WORKER_REPLACEMENT_SOURCE_PATHS.items()
+        if source_id in WORKER_REPLACEMENT_SOURCE_IDS and not (fusekit_dir / filename).is_file()
+    ]
+    if missing:
+        raise FuseKitError(
+            "Worker replacement drill cannot restore durable state; missing "
+            + ", ".join(missing)
+        )
+    with tarfile.open(archive, "w:gz") as tar:
+        for source_id in WORKER_REPLACEMENT_SOURCE_IDS:
+            filename = WORKER_REPLACEMENT_SOURCE_PATHS[source_id]
+            tar.add(fusekit_dir / filename, arcname=filename, recursive=False)
+        for filename in WORKER_REPLACEMENT_OPTIONAL_PATHS:
+            path = fusekit_dir / filename
+            if path.is_file():
+                tar.add(path, arcname=filename, recursive=False)
 
 
 def _quote_args(args: tuple[str, ...]) -> str:

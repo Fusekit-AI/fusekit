@@ -34,6 +34,7 @@ from fusekit.cli import (
     _repair_navigation_completed,
     _run_handoff,
     _run_manifest_provider_pack_setup,
+    _run_oci_worker_replacement_drill,
     _runtime_env_secrets,
     _save_launch_job,
     _sleep_for_gate,
@@ -41,6 +42,7 @@ from fusekit.cli import (
     _ui_navigator_from_vault,
     _verify_apply_live_url,
     _verify_provider_packs,
+    _worker_replacement_drill_path_passed,
     _workspace_detonation_complete,
     main,
 )
@@ -3594,6 +3596,110 @@ def test_launch_cloud_shell_derives_provider_inputs_for_zero_knowledge_user(
     assert "--vercel-project moonlite-rsvp-demo" in command
     assert "--dns-zone moonlite.test" in command
     assert "--live-url https://rsvp.moonlite.test" in command
+
+
+def test_oci_worker_replacement_drill_detonates_original_and_refreshes_record(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    remote_artifacts = tmp_path / "remote-artifacts"
+    remote_fusekit = remote_artifacts / ".fusekit"
+    fusekit_dir.mkdir()
+    remote_fusekit.mkdir(parents=True)
+    args = argparse.Namespace(
+        job_state=fusekit_dir / "job.json",
+        vault=fusekit_dir / "fusekit.vault.json",
+        control_room=False,
+    )
+    job = JobState.create("fk-test", tmp_path, "oci")
+    remote_job = JobState.create("fk-remote", tmp_path, "local")
+    remote_job.save(remote_fusekit / "job.json")
+    for name, content in {
+        "fusekit.vault.json": "encrypted",
+        "run_state.json": '{"schema_version":"fusekit.run-state.v1","vault_created":true}',
+        "checkpoints.json": '{"checkpoints":[]}',
+        "gates.json": '{"gates":[]}',
+        "gate_events.jsonl": '{"event":"resume_requested","gate_id":"provider.test"}\n',
+        "provider_strategies.json": '{"providers":[]}',
+        "runner_readiness.json": '{"schema_version":"fusekit.runner-readiness.v1"}',
+        "worker_replacement_drill.json": '{"status":"pending"}',
+    }.items():
+        (remote_fusekit / name).write_text(content, encoding="utf-8")
+    vault = Vault.empty()
+    original = OciWorkspace(
+        id="original",
+        compartment_id="tenancy",
+        availability_domain="AD-1",
+        shape="VM.Standard.E5.Flex",
+        ssh_user="ubuntu",
+        public_ip="203.0.113.10",
+    )
+    replacement = OciWorkspace(
+        id="replacement",
+        compartment_id="tenancy",
+        availability_domain="AD-2",
+        shape="VM.Standard.E5.Flex",
+        ssh_user="ubuntu",
+        public_ip="203.0.113.11",
+    )
+    events: list[str] = []
+    monkeypatch.setattr(
+        "fusekit.cli._provision_oci_workspace",
+        lambda args, vault, plan: events.append("provision") or replacement,
+    )
+
+    def fake_detonate(args, workspace, vault):  # type: ignore[no-untyped-def]
+        events.append(f"detonate:{workspace.id}")
+        return {
+            "remote_worker": remote_worker_cleanup_proof(),
+            "boot_volume": "deleted",
+            "ephemeral_public_ip": workspace.public_ip,
+            "instance": "deleted",
+            "subnet": "deleted",
+            "route_table": "deleted",
+            "internet_gateway": "deleted",
+            "network_security_group": "deleted",
+            "security_list": "deleted",
+            "vcn": "deleted",
+        }
+
+    def fake_drill(**kwargs):  # type: ignore[no-untyped-def]
+        events.append(
+            "drill:"
+            + kwargs["original_workspace"].id
+            + "->"
+            + kwargs["replacement_workspace"].id
+        )
+        proof = remote_fusekit / "worker_replacement_drill.json"
+        proof.write_text(json.dumps(build_passed_worker_replacement_drill()), encoding="utf-8")
+        return {"status": "passed", "proof": str(proof)}
+
+    monkeypatch.setattr("fusekit.cli._detonate_oci_workspace", fake_detonate)
+    monkeypatch.setattr("fusekit.cli.execute_worker_replacement_drill", fake_drill)
+
+    result = _run_oci_worker_replacement_drill(
+        args,
+        job,
+        workspace=original,
+        vault=vault,
+        passphrase="secret-passphrase",
+        plan=argparse.Namespace(),
+        artifacts_dir=remote_artifacts,
+    )
+
+    assert result is replacement
+    assert events == ["provision", "detonate:original", "drill:original->replacement"]
+    refreshed = json.loads((remote_fusekit / "run_record.json").read_text("utf-8"))
+    local_job = json.loads((fusekit_dir / "job.json").read_text("utf-8"))
+    assert refreshed["worker_replacement_drill"]["status"] == "passed"
+    assert any(
+        step["id"] == "worker.replace" and step["status"] == "done"
+        for step in local_job["steps"]
+    )
+    assert _worker_replacement_drill_path_passed(
+        remote_fusekit / "worker_replacement_drill.json"
+    )
 
 
 def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch) -> None:

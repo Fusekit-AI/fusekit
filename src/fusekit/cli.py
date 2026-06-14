@@ -102,11 +102,15 @@ from fusekit.runner.remote import (
     REMOTE_WORKER_PROCESS_PATTERNS,
     detonate_remote_worker,
     execute_remote_setup,
+    execute_worker_replacement_drill,
 )
 from fusekit.runner.run_record import DETONATION_PRESERVES, write_run_record
 from fusekit.runner.run_state import LaunchRunState, update_run_state
 from fusekit.runner.server import serve_control_room
-from fusekit.runner.worker_replacement import ensure_pending_worker_replacement_drill
+from fusekit.runner.worker_replacement import (
+    ensure_pending_worker_replacement_drill,
+    worker_replacement_drill_failures,
+)
 from fusekit.runtime import bootstrap_runtime, doctor
 from fusekit.runtime.bootstrap import openclaw_state_home
 from fusekit.scanner import scan_repo
@@ -2265,6 +2269,22 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
             "workspace retained while provider verification waits",
         )
     else:
+        artifacts_dir = Path(artifacts["output_dir"])
+        drill_path = artifacts_dir / ".fusekit" / "worker_replacement_drill.json"
+        if not _worker_replacement_drill_path_passed(drill_path):
+            workspace = _run_oci_worker_replacement_drill(
+                args,
+                job,
+                workspace=workspace,
+                vault=vault,
+                passphrase=passphrase,
+                plan=plan,
+                artifacts_dir=artifacts_dir,
+            )
+            workspace_path.write_text(
+                json.dumps(workspace.to_dict(), indent=2, sort_keys=True) + "\n",
+                "utf-8",
+            )
         _run_remote_detonation_preflight(args, Path(artifacts["output_dir"]))
         _mark_run_state(args, detonation_safe=True)
         remote_deleted = _detonate_oci_workspace(args, workspace, vault)
@@ -2333,6 +2353,83 @@ def _detonate_oci_workspace(
     except FuseKitError as exc:
         remote_deleted["failed.workspace"] = str(exc)
     return remote_deleted
+
+
+def _run_oci_worker_replacement_drill(
+    args: argparse.Namespace,
+    job: JobState,
+    *,
+    workspace: OciWorkspace,
+    vault: Vault,
+    passphrase: str,
+    plan: OciRunnerPlan,
+    artifacts_dir: Path,
+) -> OciWorkspace:
+    job.mark(
+        "worker.replace",
+        "running",
+        "provisioning replacement OCI runner and proving durable resume",
+    )
+    _save_launch_job(args, job, vault_index=vault.public_index())
+    replacement: OciWorkspace | None = None
+    try:
+        replacement = _provision_oci_workspace(args, vault, plan)
+        vault.save(args.vault, passphrase)
+        job.mark(
+            "worker.replace.provision",
+            "done",
+            f"replacement workspace {replacement.id} at {replacement.public_ip}",
+        )
+        _save_launch_job(args, job, vault_index=vault.public_index())
+        original_deleted = _detonate_oci_workspace(args, workspace, vault)
+        if not _workspace_detonation_complete(original_deleted):
+            raise FuseKitError(
+                "Worker replacement drill could not prove original OCI worker detonation."
+            )
+        drill = execute_worker_replacement_drill(
+            original_workspace=workspace,
+            replacement_workspace=replacement,
+            vault=vault,
+            local_output_dir=artifacts_dir,
+            original_detonation=original_deleted,
+        )
+        remote_fusekit = artifacts_dir / ".fusekit"
+        remote_job_path = remote_fusekit / "job.json"
+        if remote_job_path.exists():
+            remote_job = JobState.load(remote_job_path)
+            remote_job.mark(
+                "worker.replace",
+                "done",
+                "replacement runner restored durable state and reopened the control room",
+            )
+            remote_job.save(remote_job_path)
+            write_run_record(
+                remote_job,
+                path=remote_fusekit / "run_record.json",
+                vault_index=vault.public_index(),
+            )
+        job.add_artifact("worker_replacement_drill", Path(drill["proof"]))
+        job.mark(
+            "worker.replace",
+            "done",
+            "original runner detonated and replacement runner resumed from durable state",
+        )
+        _save_launch_job(args, job, vault_index=vault.public_index())
+        return replacement
+    except Exception:
+        if replacement is not None:
+            _detonate_oci_workspace(args, replacement, vault)
+        job.mark("worker.replace", "failed", "worker replacement drill did not complete")
+        _save_launch_job(args, job, vault_index=vault.public_index())
+        raise
+
+
+def _worker_replacement_drill_path_passed(path: Path) -> bool:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(raw, dict) and not worker_replacement_drill_failures(raw)
 
 
 def _record_workspace_detonation(
