@@ -29,6 +29,8 @@ from fusekit.runner.remote import remote_worker_cleanup_proof
 from fusekit.runner.run_record import (
     DETONATION_PRESERVES,
     DURABLE_STATE_SOURCES,
+    OCI_WORKSPACE_DETONATION_SURFACES,
+    VOLATILE_WORKER_SURFACES,
     WORKER_REPLACEMENT_SOURCE_IDS,
 )
 from fusekit.vault import Vault
@@ -238,21 +240,14 @@ def _durable_state() -> dict[str, object]:
             }
             for source_id, path, role, secret_class in DURABLE_STATE_SOURCES
         ],
-        "volatile_worker_surfaces": ["worker", "visual", "openclaw-state"],
+        "volatile_worker_surfaces": list(VOLATILE_WORKER_SURFACES),
         "detonation_preserves": list(DETONATION_PRESERVES),
         "detonation_scope": {
             "schema_version": "fusekit.detonation-scope.v1",
             "mode": "worker-and-oci-workspace",
             "must_delete": [
-                "worker",
-                "visual",
-                "openclaw-state",
-                "browser-profile",
-                "provider-auth",
-                "passphrase",
-                "app.tar.gz",
-                "control-room.log",
-                "openclaw-gateway.log",
+                *VOLATILE_WORKER_SURFACES,
+                *OCI_WORKSPACE_DETONATION_SURFACES,
             ],
             "must_preserve": list(DETONATION_PRESERVES),
             "resume_until_complete": True,
@@ -274,7 +269,7 @@ def _durable_state() -> dict[str, object]:
             "state_owner": "encrypted-vault-and-run-record",
             "resume_sources": list(WORKER_REPLACEMENT_SOURCE_IDS),
             "runner_profile_failures": [],
-            "volatile_surfaces": ["worker", "visual", "openclaw-state"],
+            "volatile_surfaces": list(VOLATILE_WORKER_SURFACES),
             "statement": (
                 "If the OCI VM is killed mid-run, FuseKit recreates the runner "
                 "from encrypted/redacted run state instead of relying on local "
@@ -4821,6 +4816,24 @@ def test_acceptance_run_record_requires_no_trace_detonation_scope(tmp_path) -> N
         in failures
     )
     assert "durable_state.detonation_scope.no_trace_statement is incomplete" in failures
+
+
+def test_acceptance_run_record_requires_oci_workspace_in_detonation_scope(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["durable_state"]["detonation_scope"]["must_delete"] = [
+        surface
+        for surface in record["durable_state"]["detonation_scope"]["must_delete"]
+        if surface not in OCI_WORKSPACE_DETONATION_SURFACES
+    ]
+
+    failures = _run_record_shape_failures(record)
+
+    assert "durable_state.detonation_scope.must_delete is incomplete" in failures
 
 
 def test_acceptance_run_record_requires_runner_profile_for_worker_replacement(

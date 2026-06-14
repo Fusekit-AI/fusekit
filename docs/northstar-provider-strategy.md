@@ -85,7 +85,10 @@ The pressure-test rules are:
 - Plaintext runtime state dies: app archive, passphrase files, SSH scratch,
   browser profiles, provider-auth profiles, OpenClaw state, visual gateway
   logs, control-room logs, temporary files, and the OCI compute/network
-  resources FuseKit created.
+  resources FuseKit created. The durable detonation scope must explicitly name
+  the OCI instance, boot volume, ephemeral public IP, VCN, subnet, internet
+  gateway, route table, security list, and network security group as destroy
+  targets before the final receipt can be trusted.
 - Resume proves before detonation: the Run Record must say whether the worker
   can be recreated from encrypted/redacted state, which sources are present,
   and whether any host-machine state would be required. Public recording

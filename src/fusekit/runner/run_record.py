@@ -83,6 +83,17 @@ VOLATILE_WORKER_SURFACES = (
     "websockify.log",
     "chrome.log",
 )
+OCI_WORKSPACE_DETONATION_SURFACES = (
+    "instance",
+    "boot_volume",
+    "ephemeral_public_ip",
+    "internet_gateway",
+    "network_security_group",
+    "route_table",
+    "security_list",
+    "subnet",
+    "vcn",
+)
 VOLATILE_DURABLE_STATE_MARKERS = tuple(
     sorted(
         {
@@ -754,7 +765,10 @@ def _durable_state_summary(
         "detonation_scope": {
             "schema_version": DETONATION_SCOPE_SCHEMA_VERSION,
             "mode": "worker-and-oci-workspace",
-            "must_delete": list(VOLATILE_WORKER_SURFACES),
+            "must_delete": [
+                *VOLATILE_WORKER_SURFACES,
+                *OCI_WORKSPACE_DETONATION_SURFACES,
+            ],
             "must_preserve": list(DETONATION_PRESERVES),
             "resume_until_complete": True,
             "host_machine_state_required": False,

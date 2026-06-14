@@ -216,7 +216,9 @@ resuming until completion without leaving FuseKit worker state on the user's
 machine or in the OCI workspace. The scope must carry
 `host_machine_state_required=false` and include browser profiles,
 provider-auth scratch, passphrase files, uploaded app archives, control-room and
-gateway logs, and the disposable compute workspace. The only survivors are the
+gateway logs, and the disposable compute workspace: instance, boot volume,
+ephemeral public IP, VCN, subnet, internet gateway, route table, security list,
+and network security group. The only survivors are the
 encrypted vault and redacted proof artifacts such as job state, checkpoints,
 gate events, provider strategies, verification, rollback, detonation receipt,
 and the Run Record itself.

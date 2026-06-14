@@ -45,9 +45,11 @@ from fusekit.runner.run_record import (
     AUTOMATION_BOUNDARY_SCHEMA_VERSION,
     DETONATION_PRESERVES,
     DURABLE_STATE_SOURCES,
+    OCI_WORKSPACE_DETONATION_SURFACES,
     RECORDING_CONTRACT_SCHEMA_VERSION,
     RUN_RECORD_SCHEMA_VERSION,
     VERIFIER_SUMMARY_SCHEMA_VERSION,
+    VOLATILE_WORKER_SURFACES,
     WORKER_REPLACEMENT_SOURCE_IDS,
 )
 from fusekit.scanner import scan_repo
@@ -5395,13 +5397,8 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
             failures.append("durable_state.detonation_scope.mode is unsupported")
         must_delete = detonation_scope.get("must_delete", [])
         required_delete = {
-            "worker",
-            "browser-profile",
-            "provider-auth",
-            "passphrase",
-            "app.tar.gz",
-            "control-room.log",
-            "openclaw-gateway.log",
+            *VOLATILE_WORKER_SURFACES,
+            *OCI_WORKSPACE_DETONATION_SURFACES,
         }
         if not isinstance(must_delete, list) or not required_delete.issubset(
             {str(item) for item in must_delete}

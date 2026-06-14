@@ -131,8 +131,10 @@ Public OCI acceptance also
 requires a `fusekit.detonation-scope.v1` proof
 that names the complete no-trace destroy set, including provider-auth scratch,
 browser profiles, passphrase files, uploaded app archives, control-room logs,
-gateway logs, and the disposable OCI workspace, while preserving only encrypted
-or redacted run artifacts until completion. The worker replacement contract must
+gateway logs, and the disposable OCI workspace. That workspace scope must name
+the OCI instance, boot volume, ephemeral public IP, VCN, subnet, internet
+gateway, route table, security list, and network security group, while
+preserving only encrypted or redacted run artifacts until completion. The worker replacement contract must
 reference only named durable-state resume sources, cover the same volatile
 surfaces that detonation deletes, and agree with the detonation preserve list so
 the public demo cannot rely on hidden local browser profiles, host clipboard
