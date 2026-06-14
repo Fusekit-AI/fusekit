@@ -5126,30 +5126,6 @@ def test_acceptance_run_record_requires_automation_boundary(tmp_path) -> None:
     assert "automation_boundary.statement is missing vnc guidance" in failures
 
 
-def test_acceptance_run_record_requires_post_gate_routes_to_match_boundary_routes(
-    tmp_path,
-) -> None:
-    fusekit_dir = tmp_path / ".fusekit"
-    fusekit_dir.mkdir()
-    _write_minimum_run_record(fusekit_dir)
-    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
-    record["automation_boundary"]["post_gate_automation"] = {
-        "api_or_cli_routes": ["cloudflare:dns"],
-        "human_gate_routes": ["resend:wrong-gate"],
-    }
-
-    failures = _run_record_shape_failures(record)
-
-    assert (
-        "automation_boundary.post_gate_automation.api_or_cli_routes "
-        "must match fusekit-owned routes"
-    ) in failures
-    assert (
-        "automation_boundary.post_gate_automation.human_gate_routes "
-        "must match human-gate routes"
-    ) in failures
-
-
 def test_acceptance_run_record_requires_post_gate_routes_to_match_boundary(
     tmp_path,
 ) -> None:
