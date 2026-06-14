@@ -176,12 +176,14 @@ def _write_runner_readiness(root: Path, *, thin: bool = False) -> None:
     (root / "runner_readiness.json").write_text(json.dumps(payload), encoding="utf-8")
 
 
-def _recording_provider_playbook_steps() -> list[dict[str, str]]:
+def _recording_provider_playbook_steps() -> list[dict[str, object]]:
     return [
         {
             "id": "github.capture_token",
             "provider": "github",
             "route": "browser_guided",
+            "actor": "You",
+            "human_action_required": True,
             "control": "Capture GITHUB_TOKEN from VM clipboard",
             "proof_source": "gate_events.jsonl",
             "resume_event": "clipboard_captured -> resume_requested",
@@ -191,6 +193,8 @@ def _recording_provider_playbook_steps() -> list[dict[str, str]]:
             "id": "resend.capture_key",
             "provider": "resend",
             "route": "browser_guided",
+            "actor": "You",
+            "human_action_required": True,
             "control": "Capture RESEND_API_KEY from VM clipboard",
             "proof_source": "gate_events.jsonl",
             "resume_event": "clipboard_captured -> resume_requested",
@@ -200,6 +204,8 @@ def _recording_provider_playbook_steps() -> list[dict[str, str]]:
             "id": "resend.domain_api",
             "provider": "resend",
             "route": "api",
+            "actor": "FuseKit",
+            "human_action_required": False,
             "control": "FuseKit API worker",
             "proof_source": "setup_receipt.json",
             "resume_event": "provider_action_recorded",
@@ -209,6 +215,8 @@ def _recording_provider_playbook_steps() -> list[dict[str, str]]:
             "id": "vercel.env_api",
             "provider": "vercel",
             "route": "api",
+            "actor": "FuseKit",
+            "human_action_required": False,
             "control": "FuseKit API worker",
             "proof_source": "setup_receipt.json",
             "resume_event": "provider_action_recorded",
@@ -218,6 +226,8 @@ def _recording_provider_playbook_steps() -> list[dict[str, str]]:
             "id": "dns.approval",
             "provider": "dns",
             "route": "human_follow_me",
+            "actor": "You",
+            "human_action_required": True,
             "control": "Approve DNS apply",
             "proof_source": "gate_events.jsonl",
             "resume_event": "dns_apply_approved -> resume_requested",
@@ -1282,6 +1292,14 @@ def test_recording_provider_playbook_requires_public_order() -> None:
     record["provider_playbook"]["steps"] = _recording_provider_playbook_steps()
 
     assert _recording_provider_playbook_ready(record) is True
+
+    record["provider_playbook"]["steps"][0].pop("actor")
+    assert _recording_provider_playbook_ready(record) is False
+    record["provider_playbook"]["steps"][0]["actor"] = "You"
+
+    record["provider_playbook"]["steps"][2]["human_action_required"] = True
+    assert _recording_provider_playbook_ready(record) is False
+    record["provider_playbook"]["steps"][2]["human_action_required"] = False
 
     record["provider_playbook"]["safety_notes"].append(
         "If the VM browser is slow, use a local browser tab to finish provider setup."

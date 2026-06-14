@@ -1629,6 +1629,7 @@ def _recording_provider_playbook_ready(record: dict[str, Any]) -> bool:
         )
         and str(step.get("provider", "") or "").strip()
         and _provider_playbook_step_route_ready(step)
+        and _provider_playbook_step_actor_ready(step)
         and _provider_playbook_step_control_ready(step)
         and _provider_playbook_step_proof_ready(step)
         for step in steps
@@ -1693,6 +1694,17 @@ def _provider_playbook_step_control_ready(step: dict[str, Any]) -> bool:
         }
     if route == "official_cli":
         return control in {"FuseKit CLI worker", "FuseKit API worker"}
+    return False
+
+
+def _provider_playbook_step_actor_ready(step: dict[str, Any]) -> bool:
+    route = str(step.get("route", "") or "").strip()
+    actor = str(step.get("actor", "") or "").strip()
+    human_action_required = step.get("human_action_required")
+    if route in {"api", "official_cli"}:
+        return actor == "FuseKit" and human_action_required is False
+    if route in {"browser_guided", "human_follow_me", "local_vault"}:
+        return actor == "You" and human_action_required is True
     return False
 
 

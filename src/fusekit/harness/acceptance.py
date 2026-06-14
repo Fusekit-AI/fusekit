@@ -5717,6 +5717,14 @@ def _provider_playbook_shape_failures(playbook: dict[str, Any]) -> list[str]:
             if _provider_playbook_instruction_is_unsafe(instruction):
                 failures.append(f"{label}.instruction asks for unsafe provider work")
             failures.extend(
+                _provider_playbook_actor_failures(
+                    label,
+                    route=route,
+                    actor=str(step.get("actor", "") or "").strip(),
+                    human_action_required=step.get("human_action_required"),
+                )
+            )
+            failures.extend(
                 _provider_playbook_control_failures(
                     label,
                     step_id=step_id,
@@ -5747,6 +5755,34 @@ def _provider_playbook_shape_failures(playbook: dict[str, Any]) -> list[str]:
         ):
             if required not in notes:
                 failures.append(f"provider_playbook.safety_notes must include {required}")
+    return failures
+
+
+def _provider_playbook_actor_failures(
+    label: str,
+    *,
+    route: str,
+    actor: str,
+    human_action_required: object,
+) -> list[str]:
+    if not route:
+        return []
+    expected: tuple[str, bool] | None = None
+    if route in {"api", "official_cli"}:
+        expected = ("FuseKit", False)
+    elif route in {"browser_guided", "human_follow_me", "local_vault"}:
+        expected = ("You", True)
+    if expected is None:
+        return []
+    expected_actor, expected_human_action = expected
+    failures: list[str] = []
+    if actor != expected_actor:
+        failures.append(f"{label}.actor must be {expected_actor} for {route} routes")
+    if human_action_required is not expected_human_action:
+        expected_value = str(expected_human_action).lower()
+        failures.append(
+            f"{label}.human_action_required must be {expected_value} for {route} routes"
+        )
     return failures
 
 

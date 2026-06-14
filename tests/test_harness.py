@@ -92,6 +92,8 @@ def _provider_playbook() -> dict[str, object]:
                 "id": "github.capture_token",
                 "provider": "github",
                 "route": "browser_guided",
+                "actor": "You",
+                "human_action_required": True,
                 "control": "Capture GITHUB_TOKEN from VM clipboard",
                 "proof_source": "gate_events.jsonl",
                 "resume_event": "clipboard_captured -> resume_requested",
@@ -101,6 +103,8 @@ def _provider_playbook() -> dict[str, object]:
                 "id": "resend.capture_key",
                 "provider": "resend",
                 "route": "browser_guided",
+                "actor": "You",
+                "human_action_required": True,
                 "control": "Capture RESEND_API_KEY from VM clipboard",
                 "proof_source": "gate_events.jsonl",
                 "resume_event": "clipboard_captured -> resume_requested",
@@ -113,6 +117,8 @@ def _provider_playbook() -> dict[str, object]:
                 "id": "resend.domain_api",
                 "provider": "resend",
                 "route": "api",
+                "actor": "FuseKit",
+                "human_action_required": False,
                 "control": "FuseKit API worker",
                 "proof_source": "setup_receipt.json",
                 "resume_event": "provider_action_recorded",
@@ -124,6 +130,8 @@ def _provider_playbook() -> dict[str, object]:
                 "id": "vercel.env_api",
                 "provider": "vercel",
                 "route": "api",
+                "actor": "FuseKit",
+                "human_action_required": False,
                 "control": "FuseKit API worker",
                 "proof_source": "setup_receipt.json",
                 "resume_event": "provider_action_recorded",
@@ -133,6 +141,8 @@ def _provider_playbook() -> dict[str, object]:
                 "id": "dns.approval",
                 "provider": "dns",
                 "route": "human_follow_me",
+                "actor": "You",
+                "human_action_required": True,
                 "control": "Approve DNS apply",
                 "proof_source": "gate_events.jsonl",
                 "resume_event": "dns_apply_approved -> resume_requested",
@@ -4578,7 +4588,10 @@ def test_acceptance_run_record_requires_provider_playbook_route_controls(
     record["provider_playbook"]["steps"] = [
         {
             "id": "resend.capture_key",
+            "provider": "resend",
             "route": "browser_guided",
+            "actor": "FuseKit",
+            "human_action_required": False,
             "control": "I finished this step",
             "instruction": "Capture RESEND_API_KEY from VM clipboard.",
         },
@@ -4586,6 +4599,8 @@ def test_acceptance_run_record_requires_provider_playbook_route_controls(
             "id": "resend.domain_api",
             "provider": "resend",
             "route": "api",
+            "actor": "You",
+            "human_action_required": True,
             "control": "Approve DNS apply",
             "instruction": "FuseKit creates or reuses the Resend sending domain by API.",
         },
@@ -4593,6 +4608,8 @@ def test_acceptance_run_record_requires_provider_playbook_route_controls(
             "id": "provider.finished_step",
             "provider": "provider",
             "route": "human_follow_me",
+            "actor": "You",
+            "human_action_required": True,
             "control": "Continue",
             "instruction": "Finish the provider prompt in the VM browser.",
         },
@@ -4600,12 +4617,21 @@ def test_acceptance_run_record_requires_provider_playbook_route_controls(
 
     failures = _run_record_shape_failures(record)
 
-    assert "provider_playbook.steps[0].provider is missing" in failures
+    assert "provider_playbook.steps[0].actor must be You for browser_guided routes" in failures
+    assert (
+        "provider_playbook.steps[0].human_action_required must be true "
+        "for browser_guided routes"
+    ) in failures
     assert "provider_playbook.steps[0].control must be an env-named Capture control" in failures
     assert (
         "provider_playbook.steps[0].control must capture RESEND_API_KEY before "
         "Resend API setup" in failures
     )
+    assert "provider_playbook.steps[1].actor must be FuseKit for api routes" in failures
+    assert (
+        "provider_playbook.steps[1].human_action_required must be false "
+        "for api routes"
+    ) in failures
     assert (
         "provider_playbook.steps[1].control must be FuseKit API worker for api routes" in failures
     )
