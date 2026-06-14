@@ -241,6 +241,37 @@ def _recording_provider_playbook() -> dict[str, object]:
     }
 
 
+def _recording_verification_checks() -> list[dict[str, object]]:
+    return [
+        {
+            "provider": "github",
+            "check": "repo_access",
+            "status": "passed",
+        },
+        {
+            "provider": "resend",
+            "check": "domain_verified",
+            "status": "passed",
+        },
+        {
+            "provider": "vercel",
+            "check": "deployment",
+            "status": "passed",
+        },
+        {
+            "provider": "cloudflare",
+            "check": "dns_propagated",
+            "status": "pending_safe",
+            "details": {"pending_safe": True},
+        },
+        {
+            "provider": "live_app",
+            "check": "live_url_healthy",
+            "status": "passed",
+        },
+    ]
+
+
 def _detonation_survivor_statement() -> str:
     return (
         "FuseKit detonation must remove the remote worker process state, terminate "
@@ -470,7 +501,7 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
         encoding="utf-8",
     )
     (tmp_path / "verification_report.json").write_text(
-        '{"checks":[{"provider":"cloudflare","status":"pending_safe"}]}',
+        json.dumps({"checks": _recording_verification_checks()}),
         encoding="utf-8",
     )
     (tmp_path / "rollback_plan.json").write_text(
@@ -621,8 +652,13 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     assert record["verifiers"]["schema_version"] == "fusekit.verifier-summary.v1"
     assert record["verifiers"]["all_passed_or_pending_safe"] is True
     assert record["verifiers"]["counts"]["pending_safe"] == 1
-    assert record["verifiers"]["checks"][0]["provider"] == "cloudflare"
-    assert record["verifiers"]["checks"][0]["status"] == "pending_safe"
+    verifier_statuses = {
+        item["provider"]: item["status"] for item in record["verifiers"]["checks"]
+    }
+    assert {"github", "resend", "vercel", "cloudflare", "live_app"} <= set(
+        verifier_statuses
+    )
+    assert verifier_statuses["cloudflare"] == "pending_safe"
     assert record["wake_events"]["total"] == 1
     assert record["wake_events"]["event_counts"] == {
         "clipboard_captured": 1,
@@ -975,9 +1011,40 @@ def test_recording_verifiers_reject_hidden_blocking_checks() -> None:
 
     assert _recording_verifiers_ready(record) is True
 
-    record["verifiers"]["checks"][1]["pending_safe"] = False
+    record["provider_playbook"] = _recording_provider_playbook()
     assert _recording_verifiers_ready(record) is False
-    record["verifiers"]["checks"][1]["pending_safe"] = True
+
+    record["verifiers"]["checks"] = [
+        {
+            "provider": str(check["provider"]),
+            "check": str(check.get("check", "provider_status")),
+            "status": "pending_safe"
+            if str(check["provider"]) == "cloudflare"
+            else "passed",
+            "pending_safe": str(check["provider"]) == "cloudflare",
+        }
+        for check in _recording_verification_checks()
+    ]
+    record["verifiers"]["counts"] = {
+        "passed": 4,
+        "pending_safe": 1,
+        "pending": 0,
+        "repairing": 0,
+        "failed": 0,
+        "skipped": 0,
+        "needs_human_gate": 0,
+        "unknown": 0,
+    }
+    assert _recording_verifiers_ready(record) is True
+
+    cloudflare_index = next(
+        index
+        for index, check in enumerate(record["verifiers"]["checks"])
+        if check["provider"] == "cloudflare"
+    )
+    record["verifiers"]["checks"][cloudflare_index]["pending_safe"] = False
+    assert _recording_verifiers_ready(record) is False
+    record["verifiers"]["checks"][cloudflare_index]["pending_safe"] = True
     record["verifiers"]["checks"].append(
         {
             "provider": "vercel",
@@ -1314,7 +1381,7 @@ def test_run_record_recording_contract_blocks_missing_provider_playbook(tmp_path
         encoding="utf-8",
     )
     (tmp_path / "verification_report.json").write_text(
-        json.dumps({"checks": [{"provider": "resend", "status": "passed"}]}),
+        json.dumps({"checks": _recording_verification_checks()}),
         encoding="utf-8",
     )
     (tmp_path / "rollback_plan.json").write_text(
@@ -1422,7 +1489,7 @@ def test_recording_contract_rejects_volatile_durable_state_survivors(tmp_path) -
         encoding="utf-8",
     )
     (tmp_path / "verification_report.json").write_text(
-        json.dumps({"checks": [{"provider": "resend", "status": "passed"}]}),
+        json.dumps({"checks": _recording_verification_checks()}),
         encoding="utf-8",
     )
     (tmp_path / "rollback_plan.json").write_text(
@@ -1548,7 +1615,7 @@ def test_run_record_recording_contract_blocks_thin_runner_profile(tmp_path) -> N
         encoding="utf-8",
     )
     (tmp_path / "verification_report.json").write_text(
-        json.dumps({"checks": [{"provider": "resend", "status": "passed"}]}),
+        json.dumps({"checks": _recording_verification_checks()}),
         encoding="utf-8",
     )
     (tmp_path / "visual.json").write_text(

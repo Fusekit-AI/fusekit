@@ -1914,6 +1914,39 @@ def _recording_verifiers_ready(record: dict[str, Any]) -> bool:
             )
             for check in checks
         )
+        and _recording_verifier_provider_coverage_ready(record, checks)
+    )
+
+
+def _recording_verifier_provider_coverage_ready(
+    record: dict[str, Any],
+    checks: list[Any],
+) -> bool:
+    """Require verifier coverage for the providers the playbook promises to wire."""
+
+    playbook = record.get("provider_playbook", {})
+    if not isinstance(playbook, dict):
+        return True
+    playbook_steps = playbook.get("steps", [])
+    if not isinstance(playbook_steps, list) or not playbook_steps:
+        return True
+    verifier_providers = {
+        str(check.get("provider", "") or "").strip().lower()
+        for check in checks
+        if isinstance(check, dict)
+    }
+    playbook_providers = {
+        str(step.get("provider", "") or "").strip().lower()
+        for step in playbook_steps
+        if isinstance(step, dict)
+    }
+    required = [
+        accepted
+        for accepted in RECORDING_PROVIDER_PLAYBOOK_FAMILIES.values()
+        if accepted & playbook_providers
+    ]
+    return all(bool(accepted & verifier_providers) for accepted in required) and (
+        "live_app" in verifier_providers
     )
 
 
