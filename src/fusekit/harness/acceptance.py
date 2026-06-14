@@ -2142,9 +2142,10 @@ def _blocker_guidance(item: str) -> tuple[str, str]:
         "provider route recovery checkpoints": (
             "Provider routes",
             "Keep the live launcher/control room open until provider-route cards show "
-            "the next action and resume hint. If this report came from an older "
-            "artifact set, keep this live control room open while FuseKit rebuilds "
-            "the provider-route proof.",
+            "the next action and resume hint, including Resend API setup, downstream "
+            "Vercel env wiring, and DNS approval with the complete generated record "
+            "set. If this report came from an older artifact set, keep this live "
+            "control room open while FuseKit rebuilds the provider-route proof.",
         ),
         "Resend-before-DNS provider setup order": (
             "Provider order",
@@ -2393,7 +2394,9 @@ def _check_blocker_guidance(check: AcceptanceCheck) -> tuple[str, str]:
             return (
                 "Provider routes",
                 "Keep the live launcher/control room open until each provider-route card "
-                "shows a selected route, next action, and resume hint.",
+                "shows a selected route, next action, and resume hint, including Resend "
+                "API setup, downstream Vercel env wiring, and DNS approval with the "
+                "complete generated record set.",
             )
         if "resend.strategies" in check.detail.lower() and "evidence" in check.detail.lower():
             return (
@@ -3939,6 +3942,10 @@ def _provider_strategy_checkpoint_failures(
             ).lower()
             if "resend" not in text or "dns" not in text:
                 failures.append(f"{checkpoint_id} is missing Resend-before-DNS recovery guidance")
+            if "vercel" in required and ("vercel" not in text or "env" not in text):
+                failures.append(
+                    f"{checkpoint_id} is missing Resend-to-Vercel-env recovery guidance"
+                )
     return failures
 
 

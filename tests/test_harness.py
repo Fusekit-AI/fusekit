@@ -3052,6 +3052,39 @@ def test_acceptance_checkpoint_guidance_allows_negated_manual_copy_warning() -> 
     assert failures == []
 
 
+def test_resend_route_checkpoint_requires_vercel_env_before_dns_when_vercel_present() -> None:
+    failures = _provider_strategy_checkpoint_failures(
+        {
+            "resend": {"resend-domain"},
+            "vercel": {"vercel-env"},
+        },
+        [
+            {
+                "id": "provider.resend.routes",
+                "status": "done",
+                "detail": "resend-domain uses api (ok)",
+                "next_action": (
+                    "Nothing to do manually in Resend; FuseKit creates or reuses "
+                    "the domain by API, then waits for DNS approval."
+                ),
+                "resume_hint": (
+                    "FuseKit will retry Resend setup and carry the complete record "
+                    "set into the DNS approval gate."
+                ),
+            },
+            {
+                "id": "provider.vercel.routes",
+                "status": "done",
+                "detail": "vercel-env uses api (ok)",
+                "next_action": "Nothing to copy manually into Vercel.",
+                "resume_hint": "FuseKit recorded the deterministic provider route.",
+            },
+        ],
+    )
+
+    assert "provider.resend.routes is missing Resend-to-Vercel-env recovery guidance" in failures
+
+
 def test_acceptance_live_requires_real_provider_evidence(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()
@@ -4135,6 +4168,10 @@ def test_live_acceptance_requires_provider_route_recovery_checkpoints(tmp_path) 
     assert "live launcher/control room" in next_action
     assert "provider-route cards" in next_action
     assert "next action and resume hint" in next_action
+    assert "Resend API setup" in next_action
+    assert "Vercel env wiring" in next_action
+    assert "DNS approval" in next_action
+    assert "complete generated record set" in next_action
     assert "keep this live control room open" in next_action
     assert "rerun the same live launcher" not in next_action
     assert "checkpoints.json" not in next_action
