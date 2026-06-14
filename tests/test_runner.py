@@ -985,6 +985,78 @@ def test_recording_evidence_requires_screenshot_for_visual_runner() -> None:
 
 
 def test_recording_audit_trail_requires_categories_for_observed_proof() -> None:
+    detonation_resource_entries = [
+        {
+            "category": "detonation",
+            "action": "oci.workspace.boot_volume.deleted",
+            "resource": "boot_volume",
+            "status": "deleted",
+            "source": "workspace_detonation.json",
+        },
+        {
+            "category": "detonation",
+            "action": "oci.workspace.ephemeral_public_ip.released",
+            "resource": "ephemeral_public_ip",
+            "status": "released",
+            "source": "workspace_detonation.json",
+        },
+        {
+            "category": "detonation",
+            "action": "oci.workspace.instance.deleted",
+            "resource": "instance",
+            "status": "deleted",
+            "source": "workspace_detonation.json",
+        },
+        {
+            "category": "detonation",
+            "action": "oci.workspace.internet_gateway.deleted",
+            "resource": "internet_gateway",
+            "status": "deleted",
+            "source": "workspace_detonation.json",
+        },
+        {
+            "category": "detonation",
+            "action": "oci.workspace.network_security_group.deleted",
+            "resource": "network_security_group",
+            "status": "deleted",
+            "source": "workspace_detonation.json",
+        },
+        {
+            "category": "detonation",
+            "action": "oci.workspace.remote_worker_state.deleted",
+            "resource": "remote_worker",
+            "status": "deleted",
+            "source": "workspace_detonation.json",
+        },
+        {
+            "category": "detonation",
+            "action": "oci.workspace.route_table.deleted",
+            "resource": "route_table",
+            "status": "deleted",
+            "source": "workspace_detonation.json",
+        },
+        {
+            "category": "detonation",
+            "action": "oci.workspace.security_list.deleted",
+            "resource": "security_list",
+            "status": "deleted",
+            "source": "workspace_detonation.json",
+        },
+        {
+            "category": "detonation",
+            "action": "oci.workspace.subnet.deleted",
+            "resource": "subnet",
+            "status": "deleted",
+            "source": "workspace_detonation.json",
+        },
+        {
+            "category": "detonation",
+            "action": "oci.workspace.vcn.deleted",
+            "resource": "vcn",
+            "status": "deleted",
+            "source": "workspace_detonation.json",
+        },
+    ]
     record = {
         "wake_events": {
             "events": [
@@ -1029,6 +1101,10 @@ def test_recording_audit_trail_requires_categories_for_observed_proof() -> None:
             {"category": "dns_write", "source": "setup_receipt.json"},
         ]
     )
+    assert _recording_audit_trail_ready(record) is False
+    record["audit_trail"]["entries"].extend(detonation_resource_entries)
+    record["audit_trail"]["entry_count"] += len(detonation_resource_entries)
+    record["audit_trail"]["counts"]["detonation"] += len(detonation_resource_entries)
     assert _recording_audit_trail_ready(record) is True
     record["audit_trail"]["counts"]["dns_write"] = 0
     assert _recording_audit_trail_ready(record) is False

@@ -660,6 +660,35 @@ def _audit_trail_from_gate_events(fusekit_dir: Path) -> dict[str, object]:
             "summary": "FuseKit recorded disposable OCI worker and workspace cleanup.",
         }
     )
+    for resource in (
+        "boot_volume",
+        "ephemeral_public_ip",
+        "instance",
+        "internet_gateway",
+        "network_security_group",
+        "remote_worker",
+        "route_table",
+        "security_list",
+        "subnet",
+        "vcn",
+    ):
+        entries.append(
+            {
+                "category": "detonation",
+                "action": "oci.workspace.ephemeral_public_ip.released"
+                if resource == "ephemeral_public_ip"
+                else (
+                    "oci.workspace.remote_worker_state.deleted"
+                    if resource == "remote_worker"
+                    else f"oci.workspace.{resource}.deleted"
+                ),
+                "provider": "oci",
+                "resource": resource,
+                "status": "released" if resource == "ephemeral_public_ip" else "deleted",
+                "source": "workspace_detonation.json",
+                "summary": "FuseKit recorded deletion of a disposable OCI workspace resource.",
+            }
+        )
     counts: dict[str, int] = {}
     for entry in entries:
         category = str(entry.get("category", "") or "")

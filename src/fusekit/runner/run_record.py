@@ -94,6 +94,20 @@ OCI_WORKSPACE_DETONATION_SURFACES = (
     "subnet",
     "vcn",
 )
+RECORDING_DETONATION_AUDIT_RESOURCES = frozenset(
+    {
+        "boot_volume",
+        "ephemeral_public_ip",
+        "instance",
+        "internet_gateway",
+        "network_security_group",
+        "remote_worker",
+        "route_table",
+        "security_list",
+        "subnet",
+        "vcn",
+    }
+)
 VOLATILE_DURABLE_STATE_MARKERS = tuple(
     sorted(
         {
@@ -1910,6 +1924,7 @@ def _recording_audit_trail_ready(record: dict[str, Any]) -> bool:
         )
         and all(actual_counts.get(category, 0) >= 1 for category in required_categories)
         and _recording_required_audit_sources_present(record, entries)
+        and _recording_detonation_audit_resources_present(record, entries)
     )
 
 
@@ -1985,6 +2000,24 @@ def _recording_required_audit_sources(record: dict[str, Any]) -> dict[str, set[s
     if isinstance(checks, list) and checks:
         required.setdefault("provider_action", set()).add("setup_receipt.json")
     return required
+
+
+def _recording_detonation_audit_resources_present(
+    record: dict[str, Any],
+    entries: list[Any],
+) -> bool:
+    detonation = record.get("detonation", {})
+    if not isinstance(detonation, dict) or detonation.get("workspace_detonated") is not True:
+        return True
+    resources = {
+        str(entry.get("resource", "") or "").strip()
+        for entry in entries
+        if isinstance(entry, dict)
+        and str(entry.get("category", "") or "") == "detonation"
+        and str(entry.get("source", "") or "") == "workspace_detonation.json"
+        and str(entry.get("status", "") or "") in {"deleted", "released"}
+    }
+    return RECORDING_DETONATION_AUDIT_RESOURCES.issubset(resources)
 
 
 def _recording_evidence_ready(record: dict[str, Any]) -> bool:
