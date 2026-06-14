@@ -53,15 +53,22 @@ CONTROL_ROOM_ROUTE_SURFACE: tuple[dict[str, object], ...] = (
 def public_control_room_security_surface() -> dict[str, Any]:
     """Return the route inventory in a browser-safe product-proof shape."""
 
-    routes = [
-        {
-            "route": str(surface["route"]),
-            "methods": list(surface["methods"]),
-            "state_change": surface["state_change"] is True,
-            "protection": str(surface["protection"]),
-        }
-        for surface in CONTROL_ROOM_ROUTE_SURFACE
-    ]
+    routes: list[dict[str, Any]] = []
+    for surface in CONTROL_ROOM_ROUTE_SURFACE:
+        raw_methods = surface.get("methods", ())
+        methods = (
+            [str(method) for method in raw_methods]
+            if isinstance(raw_methods, tuple)
+            else []
+        )
+        routes.append(
+            {
+                "route": str(surface["route"]),
+                "methods": methods,
+                "state_change": surface["state_change"] is True,
+                "protection": str(surface["protection"]),
+            }
+        )
     state_changing = [route for route in routes if route["state_change"] is True]
     return {
         "schema_version": "fusekit.control-room-security-surface.v1",
