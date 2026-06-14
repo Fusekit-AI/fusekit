@@ -530,6 +530,44 @@ button {
   font-weight: 750;
 }
 
+.gate-handoff {
+  display: grid;
+  gap: 5px;
+  border: 1px solid rgba(123, 230, 181, 0.28);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(18, 111, 73, 0.18);
+}
+
+.gate-handoff strong {
+  color: #a9f2c8;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.gate-handoff p,
+.gate-handoff em,
+.gate-handoff small {
+  margin: 0;
+}
+
+.gate-handoff p {
+  color: #f7fbff;
+  font-size: 13px;
+}
+
+.gate-handoff em {
+  color: #c2f7d6;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.gate-handoff small {
+  color: #9bdcff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .gate-capture-panel {
   display: grid;
   gap: 8px;

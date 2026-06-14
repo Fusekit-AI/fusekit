@@ -2292,6 +2292,7 @@ def _render_gate_help(step: Any) -> str:
         avoid_steps=avoid_steps,
         capture_targets=capture_targets,
     )
+    handoff_block = _render_gate_handoff(step, capture_targets=capture_targets)
     return f"""
         <div class="gate-help">
           <span>What you need to do</span>{classification_label}
@@ -2304,6 +2305,7 @@ def _render_gate_help(step: Any) -> str:
           {criteria_block}
           <em>{html.escape(guidance.reassurance)}</em>
           {next_block}
+          {handoff_block}
           {capture_buttons}
           {resume_button}
         </div>
@@ -2368,6 +2370,45 @@ def _render_provider_checklist(
         f"<ol>{rows}</ol>"
         "</div>"
     )
+
+
+def _render_gate_handoff(step: Any, *, capture_targets: Iterable[str] = ()) -> str:
+    targets = tuple(capture_targets)
+    classification = str(getattr(step, "classification", "") or "").strip().lower()
+    provider = str(getattr(step, "provider", "") or "").strip().lower()
+    if targets:
+        trigger = "Capture button"
+        outcome = (
+            "FuseKit records a clipboard-captured wake event, writes the value directly "
+            "to the encrypted vault, and resumes provider verification."
+        )
+    elif classification == "dns-approval" or provider == "dns":
+        trigger = "Approve DNS apply"
+        outcome = (
+            "FuseKit records the approval wake event, applies the exact planned DNS records, "
+            "and keeps verifying propagation."
+        )
+    else:
+        trigger = _gate_done_label(step)
+        outcome = (
+            "FuseKit records a resume wake event and rechecks this provider from durable "
+            "run state."
+        )
+    next_action = str(getattr(step, "next_action", "") or "").strip()
+    resume_hint = str(getattr(step, "resume_hint", "") or "").strip()
+    detail = _public_copy(resume_hint or next_action or outcome, targets)
+    return f"""
+      <div class="gate-handoff">
+        <strong>Automation handoff</strong>
+        <p><b>Trigger:</b> {html.escape(trigger)}.</p>
+        <p>{html.escape(outcome)}</p>
+        <em>{html.escape(detail)}</em>
+        <small>
+          If this VM is replaced, the Run Record replays the checkpoint; browser profiles,
+          clipboard state, and worker storage stay disposable.
+        </small>
+      </div>
+    """
 
 
 def _string_list(value: Any) -> list[str]:

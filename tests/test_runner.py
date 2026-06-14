@@ -2204,6 +2204,9 @@ def test_live_control_room_refreshes_all_run_record_proof_panels() -> None:
     assert "return \"FuseKit\"" in SCRIPT
     assert "function renderProviderChecklist" in SCRIPT
     assert "gate-provider-checklist" in SCRIPT
+    assert "function renderGateHandoff" in SCRIPT
+    assert "Automation handoff" in SCRIPT
+    assert "Run Record replays the checkpoint" in SCRIPT
 
 
 def test_control_room_event_script_is_valid_javascript(tmp_path) -> None:
@@ -3273,6 +3276,10 @@ def test_control_room_uses_gate_provider_for_guidance_when_id_is_generic(tmp_pat
     assert "resume automatically after every target is captured" in visible_html
     assert "VM clipboard Capture and vault encryption keep secrets yours." in visible_html
     assert "Hidden prompts and vault encryption keep secrets yours." not in visible_html
+    assert "Automation handoff" in visible_html
+    assert "Trigger:</b> Capture button" in visible_html
+    assert "clipboard-captured wake event" in visible_html
+    assert "Run Record replays the checkpoint" in visible_html
     assert 'data-gate-capture="authorization"' in html
     assert "gate-action-status" in html
     assert "data-gate-action-status-for" in html
@@ -3315,6 +3322,9 @@ def test_control_room_resend_setup_retry_uses_finished_button_not_capture(tmp_pa
     assert 'data-gate-pass="provider.resend.domain-setup-retry"' in html
     assert 'data-gate-capture="provider.resend.domain-setup-retry"' not in html
     assert 'data-gate-capture-target="RESEND_API_KEY"' not in html
+    assert "Automation handoff" in html
+    assert "Trigger:</b> I finished this step" in html
+    assert "resume wake event and rechecks this provider from durable run state" in html
     assert "Sending your approval so FuseKit can recheck" in html
     assert "Recheck requested" in html
     assert "FuseKit accepted this step and is rechecking the provider now" in html
@@ -3374,6 +3384,10 @@ def test_control_room_dns_gate_uses_approval_button(tmp_path) -> None:
     html = render_control_room(JobState.load(job_path), gate_path=tmp_path / "gates.json")
 
     assert 'data-gate-pass="dns.moonlite.rsvp.approval">Approve DNS apply</button>' in html
+    assert "Automation handoff" in html
+    assert "Trigger:</b> Approve DNS apply" in html
+    assert "applies the exact planned DNS records" in html
+    assert "worker storage stay disposable" in html
     assert "gateDoneLabel" in html
     assert "Approve DNS apply" in html
     GateService.load(tmp_path / "gates.json").request_resume("dns.moonlite.rsvp.approval")
@@ -3460,6 +3474,10 @@ def test_control_room_renders_vm_clipboard_capture_for_secret_gate(tmp_path) -> 
     assert "target-specific Capture" not in visible_html
     assert "click Capture here" not in visible_html
     assert "FuseKit will resume automatically after every target is captured." in visible_html
+    assert "Automation handoff" in visible_html
+    assert "clipboard-captured wake event" in visible_html
+    assert "writes the value directly to the encrypted vault" in visible_html
+    assert "Run Record replays the checkpoint" in visible_html
     assert "reads only the VM clipboard" in visible_html
     assert "encrypted vault" in visible_html
     assert "Capture RESEND_API_KEY from VM clipboard" in visible_html

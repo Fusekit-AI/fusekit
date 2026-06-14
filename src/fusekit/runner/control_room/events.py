@@ -371,6 +371,7 @@ function renderGateHelp(step) {
     step.avoid_steps,
     captureTargetList,
   );
+  const handoffBlock = renderGateHandoff(step, captureTargetList);
   return `
     <div class="gate-help">
       <span>What you need to do</span>${classification}
@@ -385,6 +386,7 @@ function renderGateHelp(step) {
       ${criteriaBlock}
       <em>${escapeHtml(publicCopy(guidance.reassurance, captureTargetList))}</em>
       ${nextBlock}
+      ${handoffBlock}
       ${captureButtons}
       ${resumeButton}
       ${actionStatus}
@@ -407,6 +409,41 @@ function renderProviderChecklist(guidance, customSteps, captureTargetList = []) 
     `<div class="gate-provider-checklist"><strong>Provider checklist</strong>` +
     `<ol>${rows}</ol></div>`
   );
+}
+
+function renderGateHandoff(step, captureTargetList = []) {
+  const classification = String(step.classification || "").trim().toLowerCase();
+  const provider = String(step.provider || "").trim().toLowerCase();
+  let trigger = gateDoneLabel(step);
+  let outcome = [
+    "FuseKit records a resume wake event and rechecks this provider from durable run state.",
+  ].join("");
+  if (captureTargetList.length) {
+    trigger = "Capture button";
+    outcome = [
+      "FuseKit records a clipboard-captured wake event, writes the value directly ",
+      "to the encrypted vault, and resumes provider verification.",
+    ].join("");
+  } else if (classification === "dns-approval" || provider === "dns") {
+    trigger = "Approve DNS apply";
+    outcome = [
+      "FuseKit records the approval wake event, applies the exact planned DNS records, ",
+      "and keeps verifying propagation.",
+    ].join("");
+  }
+  const nextAction = publicCopy(step.next_action || "", captureTargetList).trim();
+  const resumeHint = publicCopy(step.resume_hint || "", captureTargetList).trim();
+  const detail = resumeHint || nextAction || outcome;
+  return [
+    `<div class="gate-handoff">`,
+    `<strong>Automation handoff</strong>`,
+    `<p><b>Trigger:</b> ${escapeHtml(trigger)}.</p>`,
+    `<p>${escapeHtml(outcome)}</p>`,
+    `<em>${escapeHtml(detail)}</em>`,
+    `<small>If this VM is replaced, the Run Record replays the checkpoint; browser profiles, `,
+    `clipboard state, and worker storage stay disposable.</small>`,
+    `</div>`,
+  ].join("");
 }
 
 function renderGateCriteria(
