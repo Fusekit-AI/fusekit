@@ -1199,6 +1199,7 @@ function renderProviderPlaybook(playbook) {
 
 function renderProviderPlaybookStep(step, index) {
   const instruction = publicCopy(step.instruction || "");
+  const actor = providerPlaybookActor(step);
   const proofParts = [step.proof_source, step.resume_event]
     .map((item) => String(item || "").trim())
     .filter(Boolean);
@@ -1208,7 +1209,19 @@ function renderProviderPlaybookStep(step, index) {
     .filter(Boolean)
     .join(" · ");
   const suffix = meta ? ` <em>${escapeHtml(publicCopy(meta))}</em>` : "";
-  return `<li><b>${escapeHtml(index)}.</b> ${escapeHtml(instruction)}${suffix}</li>`;
+  const actorPrefix = actor ? `<strong>${escapeHtml(actor)}: </strong>` : "";
+  return `<li><b>${escapeHtml(index)}.</b> ${actorPrefix}${escapeHtml(instruction)}${suffix}</li>`;
+}
+
+function providerPlaybookActor(step) {
+  const explicit = String(step?.actor || "").trim();
+  if (explicit) return explicit;
+  const route = String(step?.route || "").trim();
+  if (route === "api" || route === "official_cli") return "FuseKit";
+  if (["browser_guided", "human_follow_me", "local_vault"].includes(route)) return "You";
+  if (step?.human_action_required === true) return "You";
+  if (step?.human_action_required === false) return "FuseKit";
+  return "";
 }
 
 function renderProviderStrategyPlan(providers) {

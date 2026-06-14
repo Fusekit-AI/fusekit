@@ -4205,8 +4205,8 @@ def _provider_playbook(strategy_runs: list[dict[str, object]]) -> dict[str, obje
             _playbook_step(
                 "dns.approval",
                 (
-                    "FuseKit carries app and provider-generated DNS records into the "
-                    "DNS approval gate before apply."
+                    "Review the DNS approval gate before apply; FuseKit has carried "
+                    "app and provider-generated DNS records into it."
                 ),
                 control="Approve DNS apply",
                 provider="dns",
@@ -4270,6 +4270,10 @@ def _playbook_step(
         payload["provider"] = provider
     if route:
         payload["route"] = route
+    actor = _playbook_actor(route)
+    if actor:
+        payload["actor"] = actor
+        payload["human_action_required"] = actor == "You"
     proof = proof_source or _playbook_proof_source(route)
     if proof:
         payload["proof_source"] = proof
@@ -4277,6 +4281,15 @@ def _playbook_step(
     if event:
         payload["resume_event"] = event
     return payload
+
+
+def _playbook_actor(route: str) -> str:
+    route = route.strip()
+    if route in {"api", "official_cli"}:
+        return "FuseKit"
+    if route in {"browser_guided", "human_follow_me", "local_vault"}:
+        return "You"
+    return ""
 
 
 def _playbook_proof_source(route: str) -> str:

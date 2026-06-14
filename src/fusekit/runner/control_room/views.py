@@ -918,18 +918,41 @@ def _render_provider_playbook_step(index: int, step: dict[str, Any]) -> str:
     control = str(step.get("control", "") or "").strip()
     provider = str(step.get("provider", "") or "").strip()
     route = str(step.get("route", "") or "").strip()
+    actor = _provider_playbook_actor(step)
     proof_source = str(step.get("proof_source", "") or "").strip()
     resume_event = str(step.get("resume_event", "") or "").strip()
     proof = ""
     if proof_source or resume_event:
         proof = "proof: " + " / ".join(item for item in (proof_source, resume_event) if item)
     meta = " · ".join(item for item in (provider, route, control, proof) if item)
+    actor_prefix = f"{actor}: " if actor else ""
     if meta:
         return (
-            f"<li><b>{html.escape(str(index))}.</b> {html.escape(instruction)} "
+            f"<li><b>{html.escape(str(index))}.</b> "
+            f"<strong>{html.escape(actor_prefix)}</strong>{html.escape(instruction)} "
             f"<em>{html.escape(_public_copy(meta))}</em></li>"
         )
-    return f"<li><b>{html.escape(str(index))}.</b> {html.escape(instruction)}</li>"
+    return (
+        f"<li><b>{html.escape(str(index))}.</b> "
+        f"<strong>{html.escape(actor_prefix)}</strong>{html.escape(instruction)}</li>"
+    )
+
+
+def _provider_playbook_actor(step: dict[str, Any]) -> str:
+    actor = str(step.get("actor", "") or "").strip()
+    if actor:
+        return actor
+    route = str(step.get("route", "") or "").strip()
+    if route in {"api", "official_cli"}:
+        return "FuseKit"
+    if route in {"browser_guided", "human_follow_me", "local_vault"}:
+        return "You"
+    human_required = step.get("human_action_required")
+    if human_required is True:
+        return "You"
+    if human_required is False:
+        return "FuseKit"
+    return ""
 
 
 def _render_strategy_plan(providers: list[Any]) -> str:

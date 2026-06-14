@@ -196,6 +196,14 @@ def test_provider_playbook_records_resend_domain_first_path() -> None:
     assert "Resend sending domain through the Resend API" in instructions[1]
     assert "runtime variables into Vercel" in instructions[2]
     assert "DNS approval gate before apply" in instructions[3]
+    assert steps[0]["actor"] == "You"
+    assert steps[0]["human_action_required"] is True
+    assert steps[1]["actor"] == "FuseKit"
+    assert steps[1]["human_action_required"] is False
+    assert steps[2]["actor"] == "FuseKit"
+    assert steps[2]["human_action_required"] is False
+    assert steps[3]["actor"] == "You"
+    assert steps[3]["human_action_required"] is True
     assert steps[0]["proof_source"] == "gate_events.jsonl"
     assert steps[0]["resume_event"] == "clipboard_captured -> resume_requested"
     assert steps[1]["proof_source"] == "setup_receipt.json"

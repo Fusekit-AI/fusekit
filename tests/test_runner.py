@@ -2200,6 +2200,8 @@ def test_live_control_room_refreshes_all_run_record_proof_panels() -> None:
     ):
         assert renderer in SCRIPT
         assert selector in SCRIPT
+    assert "function providerPlaybookActor" in SCRIPT
+    assert "return \"FuseKit\"" in SCRIPT
 
 
 def test_control_room_event_script_is_valid_javascript(tmp_path) -> None:
@@ -6383,8 +6385,8 @@ def test_control_room_renders_provider_playbook_checklist(tmp_path) -> None:
                             "proof_source": "gate_events.jsonl",
                             "resume_event": "dns_apply_approved -> resume_requested",
                             "instruction": (
-                                "FuseKit carries app and provider-generated DNS records "
-                                "into the DNS approval gate before apply."
+                                "Review the DNS approval gate before apply; FuseKit has "
+                                "carried app and provider-generated DNS records into it."
                             ),
                         },
                     ],
@@ -6414,6 +6416,15 @@ def test_control_room_renders_provider_playbook_checklist(tmp_path) -> None:
     )
     assert "Provider playbook" in html
     assert "Follow this in the shared VM browser" in html
+    assert "<strong>You: </strong>Capture RESEND_API_KEY from VM clipboard" in html
+    assert (
+        "<strong>FuseKit: </strong>FuseKit creates or reuses the Resend sending domain"
+        in html
+    )
+    assert (
+        "<strong>You: </strong>Review the DNS approval gate before apply"
+        in html
+    )
     assert "Capture RESEND_API_KEY from VM clipboard" in html
     assert "FuseKit creates or reuses the Resend sending domain" in html
     assert "proof: gate_events.jsonl / clipboard_captured -&gt; resume_requested" in html
