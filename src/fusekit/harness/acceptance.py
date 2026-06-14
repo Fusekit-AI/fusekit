@@ -954,10 +954,37 @@ def _automation_boundary_shape_failures(boundary: dict[str, Any]) -> list[str]:
     if not isinstance(post_gate, dict):
         failures.append("automation_boundary.post_gate_automation is missing")
     else:
-        if not isinstance(post_gate.get("api_or_cli_routes", []), list):
+        api_or_cli_routes = post_gate.get("api_or_cli_routes")
+        human_gate_routes = post_gate.get("human_gate_routes")
+        if not isinstance(api_or_cli_routes, list):
             failures.append("automation_boundary.post_gate_automation.api_or_cli_routes is missing")
-        if not isinstance(post_gate.get("human_gate_routes", []), list):
+        else:
+            expected_api_or_cli = sorted(
+                _automation_boundary_route_signature(route)
+                for route in routes
+                if isinstance(route, dict)
+                and route.get("owner") == "fusekit"
+                and str(route.get("route", "") or "").strip()
+                in {"api", "official_cli", "local_vault"}
+            )
+            if sorted(str(item) for item in api_or_cli_routes) != expected_api_or_cli:
+                failures.append(
+                    "automation_boundary.post_gate_automation.api_or_cli_routes "
+                    "must match fusekit-owned routes"
+                )
+        if not isinstance(human_gate_routes, list):
             failures.append("automation_boundary.post_gate_automation.human_gate_routes is missing")
+        else:
+            expected_human_gate = sorted(
+                _automation_boundary_route_signature(route)
+                for route in routes
+                if isinstance(route, dict) and route.get("owner") == "human_gate"
+            )
+            if sorted(str(item) for item in human_gate_routes) != expected_human_gate:
+                failures.append(
+                    "automation_boundary.post_gate_automation.human_gate_routes "
+                    "must match human-gate routes"
+                )
     statement = str(boundary.get("statement", "") or "")
     lowered = statement.lower()
     for term in ("vnc", "api", "detonate"):
@@ -965,6 +992,12 @@ def _automation_boundary_shape_failures(boundary: dict[str, Any]) -> list[str]:
             failures.append("automation_boundary.statement is missing " + term + " guidance")
             break
     return failures
+
+
+def _automation_boundary_route_signature(route: dict[str, Any]) -> str:
+    provider = str(route.get("provider", "") or "").strip()
+    recipe = str(route.get("recipe", "") or "").strip()
+    return f"{provider}:{recipe}"
 
 
 def _provider_strategy_summary_shape_failures(strategies: dict[str, Any]) -> list[str]:

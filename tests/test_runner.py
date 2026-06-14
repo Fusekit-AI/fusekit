@@ -806,8 +806,20 @@ def test_recording_automation_boundary_requires_complete_route_proof() -> None:
                 "copy_once_secret",
             ],
             "routes": [
-                {"owner": "fusekit", "route": "api"},
-                {"owner": "human_gate", "route": "browser_guided"},
+                {
+                    "provider": "resend",
+                    "recipe": "resend-domain",
+                    "route": "api",
+                    "owner": "fusekit",
+                    "status": "ok",
+                },
+                {
+                    "provider": "resend",
+                    "recipe": "resend-api-key",
+                    "route": "browser_guided",
+                    "owner": "human_gate",
+                    "status": "needs_human_gate",
+                },
             ],
             "counts": {"fusekit_owned": 1, "human_gate": 1, "blocked": 0},
             "post_gate_automation": {
@@ -835,6 +847,15 @@ def test_recording_automation_boundary_requires_complete_route_proof() -> None:
     record["automation_boundary"]["post_gate_automation"]["api_or_cli_routes"] = (
         "resend:resend-domain"
     )
+    assert _recording_automation_boundary_ready(record) is False
+    record["automation_boundary"]["post_gate_automation"]["api_or_cli_routes"] = [
+        "resend:wrong-domain"
+    ]
+    assert _recording_automation_boundary_ready(record) is False
+    record["automation_boundary"]["post_gate_automation"]["api_or_cli_routes"] = [
+        "resend:resend-domain"
+    ]
+    record["automation_boundary"]["post_gate_automation"]["human_gate_routes"] = []
     assert _recording_automation_boundary_ready(record) is False
 
 

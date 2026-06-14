@@ -1697,6 +1697,14 @@ def _recording_automation_boundary_ready(record: dict[str, Any]) -> bool:
     }
     if not isinstance(counts, dict) or not isinstance(routes, list):
         return False
+    if not all(isinstance(route, dict) for route in routes):
+        return False
+    if not all(
+        str(route.get(key, "") or "").strip()
+        for route in routes
+        for key in ("provider", "recipe", "route", "owner", "status")
+    ):
+        return False
     fusekit_owned = [
         route for route in routes if isinstance(route, dict) and route.get("owner") == "fusekit"
     ]
@@ -1716,7 +1724,21 @@ def _recording_automation_boundary_ready(record: dict[str, Any]) -> bool:
         and isinstance(post_gate, dict)
         and isinstance(post_gate.get("api_or_cli_routes"), list)
         and isinstance(post_gate.get("human_gate_routes"), list)
+        and sorted(str(item) for item in post_gate.get("api_or_cli_routes", []))
+        == sorted(
+            _automation_route_signature(route)
+            for route in fusekit_owned
+            if route.get("route") in {"api", "official_cli", "local_vault"}
+        )
+        and sorted(str(item) for item in post_gate.get("human_gate_routes", []))
+        == sorted(_automation_route_signature(route) for route in human_gate)
     )
+
+
+def _automation_route_signature(route: dict[str, Any]) -> str:
+    provider = str(route.get("provider", "") or "").strip()
+    recipe = str(route.get("recipe", "") or "").strip()
+    return f"{provider}:{recipe}"
 
 
 def _recording_verifiers_ready(record: dict[str, Any]) -> bool:
