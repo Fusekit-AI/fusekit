@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from fusekit.detonation.preflight import (
     run_detonation_preflight,
@@ -8,25 +9,59 @@ from fusekit.detonation.preflight import (
 )
 
 
-def _write_run_record(path, *, host_machine_state_required: bool = False) -> None:
-    path.write_text(
-        json.dumps(
-            {
-                "schema_version": "fusekit.run-record.v1",
-                "id": "fk-test",
-                "durable_state": {
-                    "detonation_scope": {
-                        "host_machine_state_required": host_machine_state_required,
-                    }
-                },
-                "provider_gates": {"records": []},
-                "audit_trail": {"entries": []},
-                "detonation": {"workspace_detonated": False},
-                "recording_contract": {"recording_ready": False},
+def _run_record_payload(
+    *,
+    host_machine_state_required: bool = False,
+) -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.run-record.v1",
+        "id": "fk-test",
+        "durable_state": {
+            "detonation_scope": {
+                "host_machine_state_required": host_machine_state_required,
             }
-        ),
+        },
+        "provider_gates": {"records": []},
+        "audit_trail": {"entries": []},
+        "detonation": {"workspace_detonated": False},
+        "recording_contract": {"recording_ready": False},
+    }
+
+
+def _write_run_record(path: Path, *, host_machine_state_required: bool = False) -> None:
+    path.write_text(
+        json.dumps(_run_record_payload(host_machine_state_required=host_machine_state_required)),
         encoding="utf-8",
     )
+
+
+def _write_preflight_survivors(fusekit: Path) -> dict[str, Path]:
+    vault = fusekit / "fusekit.vault.json"
+    audit = fusekit / "audit.jsonl"
+    receipt = fusekit / "setup_receipt.json"
+    report = fusekit / "verification_report.json"
+    rollback = fusekit / "rollback_plan.json"
+    run_record = fusekit / "run_record.json"
+    vault.write_text("encrypted", encoding="utf-8")
+    audit.write_text('{"event":"ok"}\n', encoding="utf-8")
+    receipt.write_text('{"actions":[]}', encoding="utf-8")
+    report.write_text(
+        '{"checks":[{"provider":"github","check":"repo_secret_exists","status":"passed"}]}',
+        encoding="utf-8",
+    )
+    rollback.write_text(
+        '{"rollback":[{"action":"rollback.github.secret","status":"planned"}]}',
+        encoding="utf-8",
+    )
+    _write_run_record(run_record)
+    return {
+        "vault": vault,
+        "audit": audit,
+        "receipt": receipt,
+        "verification_report": report,
+        "rollback_metadata": rollback,
+        "run_record": run_record,
+    }
 
 
 def test_detonation_preflight_allows_passed_and_pending_safe_checks(tmp_path) -> None:
@@ -145,6 +180,43 @@ def test_detonation_preflight_rejects_host_machine_state_dependency(tmp_path) ->
 
     assert not result.ok
     assert any("requires host-machine state" in failure for failure in result.failures)
+
+
+def test_detonation_preflight_rejects_secret_text_in_run_record(tmp_path) -> None:
+    fusekit = tmp_path / ".fusekit"
+    fusekit.mkdir()
+    survivors = _write_preflight_survivors(fusekit)
+    payload = _run_record_payload()
+    payload["errors"] = [
+        {
+            "id": "provider.callback",
+            "detail": "Callback failed at https://provider.example/callback?code=secret-code",
+        }
+    ]
+    survivors["run_record"].write_text(json.dumps(payload), encoding="utf-8")
+
+    result = run_detonation_preflight(root=tmp_path, **survivors)
+
+    assert not result.ok
+    assert any("credential-looking text" in failure for failure in result.failures)
+
+
+def test_detonation_preflight_allows_redacted_run_record_text(tmp_path) -> None:
+    fusekit = tmp_path / ".fusekit"
+    fusekit.mkdir()
+    survivors = _write_preflight_survivors(fusekit)
+    payload = _run_record_payload()
+    payload["errors"] = [
+        {
+            "id": "provider.callback",
+            "detail": "Callback failed at https://provider.example/callback?code=[redacted]",
+        }
+    ]
+    survivors["run_record"].write_text(json.dumps(payload), encoding="utf-8")
+
+    result = run_detonation_preflight(root=tmp_path, **survivors)
+
+    assert result.ok
 
 
 def test_launch_progress_allows_nested_pending_safe_checks() -> None:

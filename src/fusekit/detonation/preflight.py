@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -163,7 +164,70 @@ def _run_record_failures(payload: dict[str, Any]) -> list[str]:
             failures.append("central run record is missing detonation scope")
         elif scope.get("host_machine_state_required") is not False:
             failures.append("central run record requires host-machine state")
+    for path, value in _walk_json_strings(payload, path="central run record"):
+        if _contains_durable_secret_text(value):
+            failures.append(f"{path} contains credential-looking text")
+            if len(failures) >= 20:
+                failures.append("central run record contains additional credential-looking text")
+                break
     return failures
+
+
+def _walk_json_strings(value: Any, *, path: str) -> list[tuple[str, str]]:
+    if isinstance(value, str):
+        return [(path, value)]
+    if isinstance(value, dict):
+        items: list[tuple[str, str]] = []
+        for key, nested in value.items():
+            key_label = str(key).replace(".", "_")
+            items.extend(_walk_json_strings(nested, path=f"{path}.{key_label}"))
+        return items
+    if isinstance(value, list):
+        items = []
+        for index, nested in enumerate(value):
+            items.extend(_walk_json_strings(nested, path=f"{path}[{index}]"))
+        return items
+    return []
+
+
+def _contains_durable_secret_text(value: str) -> bool:
+    lowered = value.lower()
+    token_patterns = (
+        r"\bsk-[A-Za-z0-9_-]{12,}",
+        r"\bsk_(?:live|test|prod)_[A-Za-z0-9_-]{12,}",
+        r"\bpk_(?:live|test|prod)_[A-Za-z0-9_-]{12,}",
+        r"\bgh[pousr]_[A-Za-z0-9_]{12,}",
+        r"\bgithub_pat_[A-Za-z0-9_]{12,}",
+        r"\bwhsec_[A-Za-z0-9_]{12,}",
+        r"\brk_[A-Za-z0-9_-]{12,}",
+        r"\bre_[A-Za-z0-9_-]{12,}",
+        r"\bplaid-[A-Za-z0-9_-]{12,}",
+        r"\beyJ[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{8,}",
+    )
+    if any(re.search(pattern, value, flags=re.IGNORECASE) for pattern in token_patterns):
+        return True
+    if re.search(
+        (
+            r"([?&](?:access_token|auth_token|token|api_key|key|secret|code|password|"
+            r"passphrase|signature)=)(?!\[redacted\](?:[&#\s]|$))[^&#\s]+"
+        ),
+        value,
+        flags=re.IGNORECASE,
+    ):
+        return True
+    if re.search(r"\bbearer\s+(?!\[redacted\]\b)[^\s,;]+", lowered):
+        return True
+    return bool(
+        re.search(
+            (
+                r"\b(?:access[_-]?token|auth[_-]?token|api[_-]?key|token|secret|"
+                r"password|private[-_ ]?key|passphrase|signature)\s*[:=]\s*"
+                r"(?!\[redacted\]\b|redacted\b|none\b|null\b|false\b|true\b|$)"
+                r"[^\s,;]+"
+            ),
+            lowered,
+        )
+    )
 
 
 def _read_json(path: Path) -> dict[str, Any]:

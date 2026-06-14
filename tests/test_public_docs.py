@@ -210,3 +210,16 @@ def test_friction_log_tracks_remote_worker_cleanup_proof() -> None:
     assert "live acceptance fail closed unless that proof is present" in text
     assert "Remote worker cleanup proof" in text
     assert "host-machine state was not required" in text
+
+
+def test_friction_log_tracks_detonation_survivor_preflight_guards() -> None:
+    text = Path("docs/magic-path-friction-log.md").read_text(encoding="utf-8")
+
+    assert "central Run Record had not yet been written" in text
+    assert "local launch writes the current Run Record before cleanup can proceed" in text
+    assert "not the raw durable `run_state.json`" in text
+    assert "require `.fusekit/run_state.json` before OCI detonation" in text
+    assert "raw callback URLs, bearer text, or token-looking strings" in text
+    assert (
+        "fails closed on credential-looking text while allowing explicitly redacted values" in text
+    )
