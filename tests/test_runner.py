@@ -3941,7 +3941,7 @@ def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -
     fake_chrome = tmp_path / "fake-chrome"
     fake_chrome.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     fake_chrome.chmod(0o700)
-    shared_profile = tmp_path / "shared-vm-profile"
+    shared_profile = tmp_path / "visual" / "shared-vm-profile"
     monkeypatch.setenv("FUSEKIT_VISUAL_BROWSER", str(fake_chrome))
     monkeypatch.setenv("FUSEKIT_PROVIDER_BROWSER_PROFILE", str(shared_profile))
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
@@ -4008,6 +4008,58 @@ def test_control_room_post_opens_gate_inside_vm_browser(tmp_path, monkeypatch) -
     assert events[-1]["data"]["reused"] is True
     assert events[-1]["data"]["has_resume_url"] is True
     assert "dash.cloudflare.com" not in audit_path.read_text(encoding="utf-8")
+
+
+def test_control_room_open_rejects_provider_profile_outside_owned_visual_state(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    job = JobState.create("fk-test", tmp_path, "oci-free")
+    job_path = tmp_path / "job.json"
+    job.save(job_path)
+    GateService.load(tmp_path / "gates.json").wait(
+        "provider.cloudflare.authorization",
+        provider="cloudflare",
+        reason="Cloudflare token creation",
+        resume_url="https://dash.cloudflare.com/profile/api-tokens",
+        classification="provider-authorization",
+    )
+    fake_chrome = tmp_path / "fake-chrome"
+    fake_chrome.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_chrome.chmod(0o700)
+    outside_profile = tmp_path.parent / "host-profile-state"
+    monkeypatch.setenv("FUSEKIT_VISUAL_BROWSER", str(fake_chrome))
+    monkeypatch.setenv("FUSEKIT_PROVIDER_BROWSER_PROFILE", str(outside_profile))
+    monkeypatch.setattr(
+        "fusekit.runner.control_room.server.subprocess.Popen",
+        lambda *args, **kwargs: pytest.fail("unsafe profile path must not launch Chrome"),
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(job_path))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = (
+            f"http://127.0.0.1:{server.server_port}"
+            "/api/gates/provider.cloudflare.authorization/open"
+        )
+        request = Request(url, method="POST", headers=_control_room_post_headers(tmp_path))
+        with pytest.raises(HTTPError) as exc:
+            urlopen(request, timeout=5)
+        payload = json.loads(exc.value.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert exc.value.code == 400
+    assert payload["ok"] is False
+    assert "Provider browser profile must stay inside FuseKit-owned visual state" in payload[
+        "error"
+    ]
+    assert str(outside_profile) not in payload["error"]
+    assert str(tmp_path) not in payload["error"]
+    assert "/var/lib/fusekit-runner" not in payload["error"]
+    gate = GateService.load(tmp_path / "gates.json").records["provider.cloudflare.authorization"]
+    assert gate.last_opened_url == ""
 
 
 def test_control_room_post_open_is_idempotent_for_already_resuming_gate(
@@ -5431,6 +5483,8 @@ def test_security_surface_map_documents_control_room_state_routes() -> None:
     assert "Setup-plan and DNS approvals use the same protected `/pass` route" in text
     assert "accepts arbitrary commands" in text
     assert "require_safe_url" in text
+    assert "provider browser profiles must live under FuseKit-owned visual state" in text
+    assert "/var/lib/fusekit-runner/visual" in text
     assert "target must match the gate's env-style allowlist" in text
     assert "never raw secret text" in text
     assert "state is sanitized before the browser payload sees it" in text

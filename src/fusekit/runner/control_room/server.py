@@ -596,13 +596,43 @@ def _open_gate_url_in_visual_browser(job_state: Path, url: str) -> str:
 
 
 def _shared_visual_provider_profile(job_state: Path) -> Path:
+    local_visual_root, remote_visual_root = _provider_profile_roots(job_state)
     configured = os.environ.get("FUSEKIT_PROVIDER_BROWSER_PROFILE", "").strip()
     if configured:
         configured_path = Path(configured)
         if configured_path.is_absolute():
-            return configured_path
-        return job_state.parent.parent / configured_path
-    return job_state.parent.parent / "visual" / "chrome-provider-profile"
+            return _validated_provider_profile_path(
+                configured_path,
+                roots=(local_visual_root, remote_visual_root),
+            )
+        return _validated_provider_profile_path(
+            local_visual_root / configured_path,
+            roots=(local_visual_root, remote_visual_root),
+        )
+    return local_visual_root / "chrome-provider-profile"
+
+
+def _provider_profile_roots(job_state: Path) -> tuple[Path, Path]:
+    return _job_root_for_state(job_state) / "visual", Path("/var/lib/fusekit-runner/visual")
+
+
+def _job_root_for_state(job_state: Path) -> Path:
+    parent = job_state.parent
+    if parent.name == ".fusekit":
+        return parent.parent
+    return parent
+
+
+def _validated_provider_profile_path(path: Path, *, roots: tuple[Path, ...]) -> Path:
+    candidate = path.expanduser().resolve(strict=False)
+    for root in roots:
+        resolved_root = root.expanduser().resolve(strict=False)
+        if candidate == resolved_root or resolved_root in candidate.parents:
+            return candidate
+    raise FuseKitError(
+        "Provider browser profile must stay inside FuseKit-owned visual state "
+        "so detonation can remove it."
+    )
 
 
 def _active_gate_url_is_open(gate: Any, safe_url: str) -> bool:
