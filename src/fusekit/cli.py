@@ -4639,7 +4639,19 @@ def _provider_verification_gate(
             ),
         }
     if resend_env_names:
+        capture_env_names = _capture_owned_resend_runtime_names(resend_env_names)
+        api_owned_env_names = tuple(
+            name for name in resend_env_names if name in _api_owned_resend_runtime_names()
+        )
         missing = ", ".join(resend_env_names)
+        capture_controls = _capture_controls_for_env_names(capture_env_names)
+        generated_note = (
+            " FuseKit will regenerate "
+            + ", ".join(api_owned_env_names)
+            + " through Resend API before applying all values."
+            if api_owned_env_names
+            else ""
+        )
         return {
             "id": "provider.resend.runtime-values",
             "provider": "resend",
@@ -4647,15 +4659,16 @@ def _provider_verification_gate(
                 "Finish Resend email configuration so FuseKit can apply the missing "
                 f"runtime values: {missing}."
             ),
-            "resume_url": _resend_runtime_resume_url(resend_env_names),
+            "resume_url": _resend_runtime_resume_url(capture_env_names or resend_env_names),
             "classification": "provider-runtime-values",
-            "target": ",".join(resend_env_names),
+            "target": ",".join(capture_env_names),
             "follow_steps": _resend_runtime_follow_steps(domain, resend_env_names),
             "next_action": (
                 "Click "
-                + _capture_controls_for_env_names(resend_env_names)
+                + capture_controls
                 + " so FuseKit can update the provider environment without exposing "
                 "the values."
+                + generated_note
             ),
             "resume_hint": (
                 "FuseKit resumes automatically after every requested Resend value is "
@@ -4841,8 +4854,9 @@ def _resend_runtime_follow_steps(
     steps = [
         "Use the live VM browser, not a local browser tab.",
     ]
+    capture_env_names = _capture_owned_resend_runtime_names(env_names)
     capture_controls = (
-        ", ".join(f"Capture {env_name} from VM clipboard" for env_name in env_names)
+        ", ".join(f"Capture {env_name} from VM clipboard" for env_name in capture_env_names)
         or "the visible env-named Capture buttons"
     )
     if "RESEND_API_KEY" in env_names:
@@ -4896,15 +4910,15 @@ def _resend_runtime_follow_steps(
     steps.extend(
         [
             (
-                "Copy each requested value inside the VM browser, then click these "
+                "Copy each requested capture value inside the VM browser, then click these "
                 f"exact controls: {capture_controls}. Do not paste values into your "
                 "computer; Capture reads the VM clipboard directly."
             ),
             (
-                "FuseKit will apply the captured values to Vercel and GitHub after "
-                "the capture gate completes."
+                "FuseKit will apply the captured and API-generated values to Vercel "
+                "and GitHub after the capture gate completes."
             ),
-            "FuseKit resumes automatically once every requested value has been captured.",
+            "FuseKit resumes automatically once the requested capture values are stored.",
         ]
     )
     return tuple(steps)
@@ -4951,6 +4965,11 @@ def _only_api_owned_resend_runtime_values(env_names: tuple[str, ...]) -> bool:
         return False
     names = set(env_names)
     return "RESEND_API_KEY" not in names and names <= _api_owned_resend_runtime_names()
+
+
+def _capture_owned_resend_runtime_names(env_names: tuple[str, ...]) -> tuple[str, ...]:
+    api_owned = _api_owned_resend_runtime_names()
+    return tuple(name for name in env_names if name not in api_owned)
 
 
 def _resend_runtime_resume_url(env_names: tuple[str, ...]) -> str:
