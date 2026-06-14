@@ -7203,6 +7203,10 @@ def test_remote_artifact_bundle_requires_survivor_files(tmp_path) -> None:
     with pytest.raises(FuseKitError, match="runner_readiness.json"):
         _validate_artifact_bundle(tmp_path)
 
+    (tmp_path / ".fusekit" / "runner_readiness.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(FuseKitError, match="worker_replacement_drill.json"):
+        _validate_artifact_bundle(tmp_path)
+
 
 def test_latest_workspace_round_trips_from_vault() -> None:
     vault = Vault.empty()
@@ -8198,6 +8202,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
             rollback = tmp_path / "rollback_plan.json"
             strategies = tmp_path / "provider_strategies.json"
             runner_readiness = tmp_path / "runner_readiness.json"
+            worker_drill = tmp_path / "worker_replacement_drill.json"
             payload.write_text("{}", encoding="utf-8")
             gates.write_text('{"gates":[]}', encoding="utf-8")
             gate_events.write_text(
@@ -8290,6 +8295,37 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
                 ),
                 encoding="utf-8",
             )
+            worker_drill.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "fusekit.worker-replacement-drill.v1",
+                        "status": "passed",
+                        "worker_destroyed": True,
+                        "replacement_runner_profile_ready": True,
+                        "control_room_reopened": True,
+                        "resume_checkpoint_restored": True,
+                        "gate_or_verifier_resumed": True,
+                        "host_machine_state_required": False,
+                        "volatile_state_reused": False,
+                        "restored_from": [
+                            "encrypted_vault",
+                            "job_state",
+                            "run_state",
+                            "checkpoints",
+                            "gates",
+                            "gate_events",
+                            "provider_strategies",
+                            "runner_readiness",
+                        ],
+                        "statement": (
+                            "FuseKit recreated the disposable worker from "
+                            "encrypted/redacted survivor state with no "
+                            "host-machine state and no VM-local plaintext."
+                        ),
+                    }
+                ),
+                encoding="utf-8",
+            )
             archive.add(payload, arcname=".fusekit/job.json")
             archive.add(gates, arcname=".fusekit/gates.json")
             archive.add(gate_events, arcname=".fusekit/gate_events.jsonl")
@@ -8303,6 +8339,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
             archive.add(rollback, arcname=".fusekit/rollback_plan.json")
             archive.add(strategies, arcname=".fusekit/provider_strategies.json")
             archive.add(runner_readiness, arcname=".fusekit/runner_readiness.json")
+            archive.add(worker_drill, arcname=".fusekit/worker_replacement_drill.json")
             archive.close()
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
@@ -8358,6 +8395,10 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
         command[0] == "ssh"
         and "runner-readiness.json" in command[-1]
         and ".fusekit/runner_readiness.json" in command[-1]
+        for command in calls
+    )
+    assert any(
+        command[0] == "ssh" and ".fusekit/worker_replacement_drill.json" in command[-1]
         for command in calls
     )
     assert any("fusekit launch . --runner local --yes" in command[-1] for command in calls)
@@ -8548,6 +8589,7 @@ def test_remote_artifact_bundle_requires_detonation_survivors(tmp_path) -> None:
         "verification_report.json",
         "rollback_plan.json",
         "provider_strategies.json",
+        "runner_readiness.json",
     ):
         (fusekit_dir / name).write_text("{}", encoding="utf-8")
 

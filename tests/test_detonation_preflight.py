@@ -42,6 +42,7 @@ def _write_preflight_survivors(fusekit: Path) -> dict[str, Path]:
     report = fusekit / "verification_report.json"
     rollback = fusekit / "rollback_plan.json"
     run_record = fusekit / "run_record.json"
+    worker_replacement_drill = fusekit / "worker_replacement_drill.json"
     vault.write_text("encrypted", encoding="utf-8")
     audit.write_text('{"event":"ok"}\n', encoding="utf-8")
     receipt.write_text('{"actions":[]}', encoding="utf-8")
@@ -54,6 +55,36 @@ def _write_preflight_survivors(fusekit: Path) -> dict[str, Path]:
         encoding="utf-8",
     )
     _write_run_record(run_record)
+    worker_replacement_drill.write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.worker-replacement-drill.v1",
+                "status": "passed",
+                "worker_destroyed": True,
+                "replacement_runner_profile_ready": True,
+                "control_room_reopened": True,
+                "resume_checkpoint_restored": True,
+                "gate_or_verifier_resumed": True,
+                "host_machine_state_required": False,
+                "volatile_state_reused": False,
+                "restored_from": [
+                    "encrypted_vault",
+                    "job_state",
+                    "run_state",
+                    "checkpoints",
+                    "gates",
+                    "gate_events",
+                    "provider_strategies",
+                    "runner_readiness",
+                ],
+                "statement": (
+                    "FuseKit recreated the disposable worker from encrypted/redacted "
+                    "survivor state with no host-machine state and no VM-local plaintext."
+                ),
+            }
+        ),
+        encoding="utf-8",
+    )
     return {
         "vault": vault,
         "audit": audit,
@@ -61,6 +92,7 @@ def _write_preflight_survivors(fusekit: Path) -> dict[str, Path]:
         "verification_report": report,
         "rollback_metadata": rollback,
         "run_record": run_record,
+        "worker_replacement_drill": worker_replacement_drill,
     }
 
 
@@ -144,6 +176,25 @@ def test_detonation_preflight_requires_central_run_record(tmp_path) -> None:
 
     assert not result.ok
     assert any("missing central run record" in failure for failure in result.failures)
+
+
+def test_detonation_preflight_requires_worker_replacement_drill_when_requested(
+    tmp_path,
+) -> None:
+    fusekit = tmp_path / ".fusekit"
+    fusekit.mkdir()
+    survivors = _write_preflight_survivors(fusekit)
+    drill = survivors.pop("worker_replacement_drill")
+    drill.unlink()
+
+    result = run_detonation_preflight(
+        root=tmp_path,
+        worker_replacement_drill=drill,
+        **survivors,
+    )
+
+    assert not result.ok
+    assert any("worker replacement drill" in failure for failure in result.failures)
 
 
 def test_detonation_preflight_rejects_host_machine_state_dependency(tmp_path) -> None:

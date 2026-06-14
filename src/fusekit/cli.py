@@ -2487,6 +2487,7 @@ def _run_remote_detonation_preflight(args: argparse.Namespace, output_dir: Path)
         verification_report=fusekit_dir / "verification_report.json",
         rollback_metadata=fusekit_dir / "rollback_plan.json",
         run_record=fusekit_dir / "run_record.json",
+        worker_replacement_drill=fusekit_dir / "worker_replacement_drill.json",
     )
     if not result.ok:
         args.job_state.parent.mkdir(parents=True, exist_ok=True)

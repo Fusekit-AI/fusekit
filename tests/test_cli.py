@@ -3671,6 +3671,36 @@ def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch)
         ),
         encoding="utf-8",
     )
+    (remote_fusekit / "worker_replacement_drill.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.worker-replacement-drill.v1",
+                "status": "passed",
+                "worker_destroyed": True,
+                "replacement_runner_profile_ready": True,
+                "control_room_reopened": True,
+                "resume_checkpoint_restored": True,
+                "gate_or_verifier_resumed": True,
+                "host_machine_state_required": False,
+                "volatile_state_reused": False,
+                "restored_from": [
+                    "encrypted_vault",
+                    "job_state",
+                    "run_state",
+                    "checkpoints",
+                    "gates",
+                    "gate_events",
+                    "provider_strategies",
+                    "runner_readiness",
+                ],
+                "statement": (
+                    "FuseKit recreated the disposable worker from encrypted/redacted "
+                    "survivor state with no host-machine state and no VM-local plaintext."
+                ),
+            }
+        ),
+        encoding="utf-8",
+    )
 
     def fake_remote_setup(**kwargs):  # type: ignore[no-untyped-def]
         return {"artifact_archive": "artifacts.tar.gz", "output_dir": str(remote_artifacts)}
