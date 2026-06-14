@@ -1774,6 +1774,50 @@ function runtimeResumeCard(id, title, passed, detail, meta) {
   });
 }
 
+function renderSecuritySurface(job) {
+  const root = document.querySelector("[data-security-surface-checks]");
+  if (!root) return;
+  const surface = job.security_surface || {};
+  const routes = Array.isArray(surface.routes) ? surface.routes : [];
+  const stateRoutes = routes.filter((route) => route?.state_change === true);
+  const summaryNode = document.querySelector("[data-security-surface-overall]");
+  if (summaryNode) {
+    summaryNode.textContent = routes.length
+      ? `${stateRoutes.length} protected state-changing routes`
+      : "route inventory pending";
+  }
+  if (!routes.length) {
+    root.innerHTML = pendingRunRecordCard(
+      "Browser route inventory",
+      "Waiting for control-room route proof.",
+      "security surface",
+    );
+    return;
+  }
+  root.innerHTML = routes.map((route) => securitySurfaceCard(route)).join("");
+}
+
+function securitySurfaceCard(route) {
+  const stateChange = route?.state_change === true;
+  const methods = Array.isArray(route?.methods) ? route.methods.join(", ") : "";
+  const protection = String(route?.protection || "unclassified");
+  const title = String(route?.route || "route");
+  const detail = stateChange
+    ? (
+        "State changes require the control-room header, same-origin/fetch-site " +
+        "checks, and the owner-only action token."
+      )
+    : "Read-only or unknown-route handling emits security headers and no CORS allow headers.";
+  return trustCard(
+    "passed",
+    "passed",
+    title,
+    detail,
+    `${methods} · ${protection}`,
+    {"data-security-route": title},
+  );
+}
+
 function renderHumanActions(job) {
   const root = document.querySelector("[data-human-action-checks]");
   if (!root) return;
@@ -2150,6 +2194,7 @@ function render(job) {
   renderRunState(job);
   renderDurableState(job);
   renderRuntimeResumeContract(job);
+  renderSecuritySurface(job);
   renderHumanActions(job);
   renderAutomationBoundary(job);
   renderRunRecordVerifiers(job);

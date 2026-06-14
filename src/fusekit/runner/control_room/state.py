@@ -10,6 +10,7 @@ from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from fusekit.runner.control_room.redaction import redact_gate_target
+from fusekit.runner.control_room.surfaces import public_control_room_security_surface
 from fusekit.runner.gates import GateRecord
 from fusekit.runner.job import JobState
 from fusekit.runner.readiness import EXPECTED_PROVIDER_BROWSER_PROFILE
@@ -36,6 +37,7 @@ def control_room_payload(job: JobState, *, gate_path: Path | None = None) -> dic
         _provider_strategies_path(job, gate_path)
     )
     payload["acceptance"] = _read_acceptance_report(_acceptance_report_path(job, gate_path))
+    payload["security_surface"] = public_control_room_security_surface()
     if gate_path is None:
         payload.setdefault("gates", [])
         return payload

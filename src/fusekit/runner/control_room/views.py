@@ -68,6 +68,7 @@ def render_control_room(
     {_render_run_state(control_payload.get("run_state", {}))}
     {_render_durable_state(control_payload.get("run_record", {}))}
     {_render_runtime_resume_contract(control_payload.get("run_record", {}))}
+    {_render_security_surface(control_payload.get("security_surface", {}))}
     {_render_human_actions(control_payload.get("run_record", {}))}
     {_render_automation_boundary(control_payload.get("run_record", {}))}
     {_render_run_record_verifiers(control_payload.get("run_record", {}))}
@@ -1508,6 +1509,86 @@ def _render_runtime_resume_card(
             <strong>{html.escape(title)}</strong>
             <p>{html.escape(detail)}</p>
             <em>{html.escape(meta)}</em>
+          </div>
+        </article>
+"""
+
+
+def _render_security_surface(surface: Any) -> str:
+    surface = surface if isinstance(surface, dict) else {}
+    routes = surface.get("routes", [])
+    routes = routes if isinstance(routes, list) else []
+    state_routes = [
+        route
+        for route in routes
+        if isinstance(route, dict) and route.get("state_change") is True
+    ]
+    if routes:
+        cards = "".join(
+            _render_security_surface_card(route)
+            for route in routes
+            if isinstance(route, dict)
+        )
+    else:
+        cards = """
+        <article class="trust-card pending">
+          <div class="trust-snow state-checking" aria-hidden="true"></div>
+          <div>
+            <span>Pending</span>
+            <strong>Browser route inventory</strong>
+            <p>Waiting for control-room route proof.</p>
+            <em>security surface</em>
+          </div>
+        </article>
+"""
+    summary = (
+        f"{len(state_routes)} protected state-changing routes"
+        if routes
+        else "route inventory pending"
+    )
+    statement = str(surface.get("statement", "") or "")
+    return f"""
+    <section class="run-state-panel" aria-label="Control-room security surface">
+      <div class="section-head compact">
+        <div>
+          <span class="section-kicker">Security surface</span>
+          <h2>Browser attack surface is bounded</h2>
+        </div>
+        <span class="live-pill" data-security-surface-overall>{html.escape(summary)}</span>
+      </div>
+      <p class="muted">
+        {html.escape(statement or "FuseKit is waiting for route inventory proof.")}
+      </p>
+      <div class="run-state-grid" data-security-surface-checks>{cards}</div>
+    </section>
+"""
+
+
+def _render_security_surface_card(route: dict[str, Any]) -> str:
+    state_change = route.get("state_change") is True
+    title = str(route.get("route", "") or "route")
+    methods = route.get("methods", [])
+    method_label = (
+        ", ".join(str(method) for method in methods)
+        if isinstance(methods, list)
+        else ""
+    )
+    protection = str(route.get("protection", "") or "unclassified")
+    detail = (
+        "State changes require the control-room header, same-origin/fetch-site checks, "
+        "and the owner-only action token."
+        if state_change
+        else "Read-only or unknown-route handling emits security headers and no CORS allow headers."
+    )
+    label = "State-changing" if state_change else "Read-only/blocked"
+    return f"""
+        <article class="trust-card passed" data-security-route="{html.escape(title)}">
+          <div class="trust-snow state-passed" aria-hidden="true"></div>
+          <div>
+            <span>{html.escape(label)}</span>
+            <strong>{html.escape(title)}</strong>
+            <p>{html.escape(detail)}</p>
+            <em>{html.escape(method_label)} · {html.escape(protection)}</em>
           </div>
         </article>
 """

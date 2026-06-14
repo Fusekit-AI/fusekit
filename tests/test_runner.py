@@ -33,7 +33,6 @@ from fusekit.runner.control_room import (
 from fusekit.runner.control_room import render_control_room
 from fusekit.runner.control_room.events import SCRIPT
 from fusekit.runner.control_room.server import (
-    CONTROL_ROOM_ROUTE_SURFACE,
     _capture_button_labels,
     _control_room_action_token,
     _control_room_vault_passphrase,
@@ -45,6 +44,7 @@ from fusekit.runner.control_room.server import (
     _visual_display,
     _vm_clipboard_text,
 )
+from fusekit.runner.control_room.surfaces import CONTROL_ROOM_ROUTE_SURFACE
 from fusekit.runner.control_room.views import _render_acceptance_blockers
 from fusekit.runner.gates import GateService
 from fusekit.runner.job import JobState
@@ -1841,6 +1841,18 @@ def test_control_room_payload_includes_run_record(tmp_path) -> None:
 
     assert payload["run_record"]["schema_version"] == "fusekit.run-record.v1"
     assert payload["run_record"]["id"] == "fk-test"
+    assert payload["security_surface"]["schema_version"] == (
+        "fusekit.control-room-security-surface.v1"
+    )
+    assert payload["security_surface"]["state_changing_route_count"] == 3
+    assert payload["security_surface"]["state_changing_routes"] == [
+        "/api/gates/<gate_id>/pass",
+        "/api/gates/<gate_id>/open",
+        "/api/gates/<gate_id>/capture-clipboard",
+    ]
+    assert payload["security_surface"]["required_post_protection"] == (
+        "control-room-header-origin-fetch-site-action-token"
+    )
 
 
 def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
@@ -2102,6 +2114,13 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
     assert "encrypted capability vault" in html
     assert "VM can disappear without losing the run" in html
     assert "resume can survive VM replacement" in html
+    assert "Browser attack surface is bounded" in html
+    assert "3 protected state-changing routes" in html
+    assert 'data-security-route="/api/gates/&lt;gate_id&gt;/pass"' in html
+    assert 'data-security-route="/api/gates/&lt;gate_id&gt;/open"' in html
+    assert 'data-security-route="/api/gates/&lt;gate_id&gt;/capture-clipboard"' in html
+    assert "control-room-header-origin-fetch-site-action-token" in html
+    assert "owner-only action token" in html
     assert 'data-runtime-resume="run_record"' in html
     assert "Run Record is source of truth" in html
     assert 'data-runtime-resume="wake_events"' in html
@@ -2205,6 +2224,7 @@ def test_live_control_room_refreshes_all_run_record_proof_panels() -> None:
     for renderer, selector in (
         ("renderDurableState(job)", "data-durable-state-checks"),
         ("renderRuntimeResumeContract(job)", "data-runtime-resume-checks"),
+        ("renderSecuritySurface(job)", "data-security-surface-checks"),
         ("renderHumanActions(job)", "data-human-action-checks"),
         ("renderAutomationBoundary(job)", "data-automation-boundary-checks"),
         ("renderRunRecordVerifiers(job)", "data-verifier-checks"),
@@ -2218,6 +2238,8 @@ def test_live_control_room_refreshes_all_run_record_proof_panels() -> None:
     ):
         assert renderer in SCRIPT
         assert selector in SCRIPT
+    assert "securitySurfaceCard(route)" in SCRIPT
+    assert "owner-only action token" in SCRIPT
     assert "function providerPlaybookActor" in SCRIPT
     assert "return \"FuseKit\"" in SCRIPT
     assert "function renderProviderChecklist" in SCRIPT
