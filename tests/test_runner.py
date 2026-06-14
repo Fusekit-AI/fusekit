@@ -603,9 +603,17 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     assert record["audit_trail"]["schema_version"] == "fusekit.audit-trail.v1"
     assert record["audit_trail"]["counts"]["credential_capture"] >= 1
     assert record["audit_trail"]["counts"]["provider_action"] >= 1
-    assert record["audit_trail"]["counts"]["detonation"] == 1
+    assert record["audit_trail"]["counts"]["detonation"] >= 11
     audit_categories = {entry["category"] for entry in record["audit_trail"]["entries"]}
     assert {"credential_capture", "provider_action", "detonation"} <= audit_categories
+    detonation_actions = {
+        entry["action"]
+        for entry in record["audit_trail"]["entries"]
+        if entry["category"] == "detonation"
+    }
+    assert "oci.workspace.boot_volume.deleted" in detonation_actions
+    assert "oci.workspace.ephemeral_public_ip.released" in detonation_actions
+    assert "oci.workspace.remote_worker_state.deleted" in detonation_actions
     capture_audit = next(
         entry
         for entry in record["audit_trail"]["entries"]
@@ -3015,7 +3023,9 @@ def test_control_room_explains_pending_safe_dns_approval(tmp_path) -> None:
     html = render_control_room(job, gate_path=tmp_path / "gates.json")
 
     assert "DNS changes are waiting for approval or propagation." in html
-    assert "Approve/apply the exact DNS records in the setup plan" in html
+    assert "Click the protected Approve DNS apply control in this control room." in html
+    assert "FuseKit applies the exact setup-plan records" in html
+    assert "Approve/apply the exact DNS records" not in html
     assert "trustCardCopy" in html
 
 

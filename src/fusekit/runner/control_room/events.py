@@ -1144,7 +1144,8 @@ function trustCardCopy(check) {
     return {
       summary: "DNS changes are waiting for approval or propagation.",
       repair:
-        "Approve/apply the exact DNS records in the setup plan; FuseKit will keep verifying.",
+        "Click the protected Approve DNS apply control in this control room. " +
+        "FuseKit applies the exact setup-plan records and keeps verifying propagation.",
     };
   }
   return {

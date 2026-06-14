@@ -1486,7 +1486,7 @@ def _audit_trail_shape_failures(
             failures.append(f"{label}.category is unsupported")
         else:
             actual_counts[category] = actual_counts.get(category, 0) + 1
-        for text_field in ("summary", "action", "provider", "target"):
+        for text_field in ("summary", "action", "provider", "target", "resource"):
             value = str(entry.get(text_field, "") or "")
             if _contains_secretish_audit_text(value):
                 failures.append(f"{label}.{text_field} contains credential-looking text")

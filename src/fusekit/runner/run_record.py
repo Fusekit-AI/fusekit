@@ -1017,17 +1017,7 @@ def _audit_trail_summary(
         entries.extend(_audit_entries_from_wake_event(event, known_gates))
     entries.extend(_audit_entries_from_receipt(receipt))
     entries.extend(_audit_entries_from_audit_log(root / "audit.jsonl"))
-    if workspace_detonation.get("status"):
-        entries.append(
-            {
-                "category": "detonation",
-                "action": "oci.workspace.detonate",
-                "provider": "oci",
-                "status": str(workspace_detonation.get("status", "unknown") or "unknown"),
-                "source": "workspace_detonation.json",
-                "summary": "FuseKit recorded disposable OCI worker and workspace cleanup.",
-            }
-        )
+    entries.extend(_audit_entries_from_workspace_detonation(workspace_detonation))
     for record in vault_index:
         if not isinstance(record, dict):
             continue
@@ -1128,6 +1118,93 @@ def _audit_entries_from_receipt(receipt: dict[str, Any]) -> list[dict[str, Any]]
     return entries
 
 
+def _audit_entries_from_workspace_detonation(
+    workspace_detonation: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Summarize OCI detonation proof without embedding provider/resource secrets."""
+
+    status = str(workspace_detonation.get("status", "") or "").strip()
+    if not status:
+        return []
+    entries: list[dict[str, Any]] = [
+        {
+            "category": "detonation",
+            "action": "oci.workspace.detonate",
+            "provider": "oci",
+            "status": status,
+            "source": "workspace_detonation.json",
+            "summary": "FuseKit recorded disposable OCI worker and workspace cleanup.",
+        }
+    ]
+    deleted = workspace_detonation.get("deleted", [])
+    if isinstance(deleted, list):
+        for resource in sorted({str(item).strip() for item in deleted if str(item).strip()}):
+            entries.append(
+                {
+                    "category": "detonation",
+                    "action": _detonation_resource_action(resource),
+                    "provider": "oci",
+                    "resource": resource,
+                    "status": _detonation_resource_status(resource),
+                    "source": "workspace_detonation.json",
+                    "summary": _detonation_resource_summary(resource),
+                }
+            )
+    failures = workspace_detonation.get("failures", {})
+    if isinstance(failures, dict):
+        for resource in sorted(str(key).strip() for key in failures if str(key).strip()):
+            entries.append(
+                {
+                    "category": "detonation",
+                    "action": "oci.workspace.resource_delete_failed",
+                    "provider": "oci",
+                    "resource": resource,
+                    "status": "failed",
+                    "source": "workspace_detonation.json",
+                    "summary": (
+                        "FuseKit recorded an OCI cleanup failure for this resource class; "
+                        "review workspace_detonation.json for the redacted provider error."
+                    ),
+                }
+            )
+    return entries
+
+
+def _detonation_resource_action(resource: str) -> str:
+    normalized = resource.replace("-", "_")
+    if normalized == "remote_worker":
+        return "oci.workspace.remote_worker_state.deleted"
+    if normalized == "ephemeral_public_ip":
+        return "oci.workspace.ephemeral_public_ip.released"
+    return f"oci.workspace.{normalized}.deleted"
+
+
+def _detonation_resource_status(resource: str) -> str:
+    return "released" if resource.replace("-", "_") == "ephemeral_public_ip" else "deleted"
+
+
+def _detonation_resource_summary(resource: str) -> str:
+    normalized = resource.replace("-", "_")
+    if normalized == "remote_worker":
+        return "FuseKit deleted disposable worker files, browser state, logs, and helpers."
+    if normalized == "instance":
+        return "FuseKit terminated the disposable OCI VM."
+    if normalized == "boot_volume":
+        return "FuseKit verified the disposable OCI boot volume was deleted."
+    if normalized == "ephemeral_public_ip":
+        return "FuseKit verified the ephemeral public IP was released."
+    if normalized in {
+        "internet_gateway",
+        "network_security_group",
+        "route_table",
+        "security_list",
+        "subnet",
+        "vcn",
+    }:
+        return "FuseKit deleted a disposable OCI network resource."
+    return "FuseKit recorded deletion of a disposable OCI workspace resource."
+
+
 def _audit_entries_from_audit_log(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
@@ -1208,7 +1285,7 @@ def _audit_event_summary(event_name: str) -> str:
 
 
 def _dedupe_audit_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    seen: set[tuple[str, str, str, str, str, str, str]] = set()
+    seen: set[tuple[str, str, str, str, str, str, str, str]] = set()
     unique: list[dict[str, Any]] = []
     for entry in entries:
         normalized: dict[str, Any] = {
@@ -1231,12 +1308,16 @@ def _dedupe_audit_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]
         receipt_action_index = entry.get("receipt_action_index")
         if receipt_action_index is not None:
             normalized["receipt_action_index"] = _safe_int(receipt_action_index, 0)
+        resource = str(entry.get("resource", "") or "")
+        if resource:
+            normalized["resource"] = resource
         key = (
             normalized["category"],
             normalized["action"],
             normalized["provider"],
             normalized.get("target", ""),
             normalized.get("wake_event_id", ""),
+            normalized.get("resource", ""),
             str(normalized.get("audit_log_index", "")),
             str(normalized.get("receipt_action_index", "")),
         )

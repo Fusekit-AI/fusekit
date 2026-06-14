@@ -1894,7 +1894,10 @@ def _trust_card_copy(check: dict[str, Any]) -> tuple[str, str]:
     ):
         return (
             "DNS changes are waiting for approval or propagation.",
-            "Approve/apply the exact DNS records in the setup plan; FuseKit will keep verifying.",
+            (
+                "Click the protected Approve DNS apply control in this control room. "
+                "FuseKit applies the exact setup-plan records and keeps verifying propagation."
+            ),
         )
     return (
         str(check.get("summary", "Verification is running.")),

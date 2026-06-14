@@ -5501,6 +5501,15 @@ def test_acceptance_run_record_requires_redacted_audit_trail(tmp_path) -> None:
                     "FuseKit recorded audit event provider.retry with secret values redacted."
                 ),
             },
+            {
+                "category": "detonation",
+                "action": "oci.workspace.resource_delete_failed",
+                "provider": "oci",
+                "resource": "ghp_abcdefghijklmnopqrstuvwxyz1234567890",
+                "status": "failed",
+                "source": "workspace_detonation.json",
+                "summary": "FuseKit recorded a cleanup failure.",
+            },
         ],
         "statement": "Audit happened.",
     }
@@ -5511,11 +5520,12 @@ def test_acceptance_run_record_requires_redacted_audit_trail(tmp_path) -> None:
     assert "audit_trail.entries[0].wake_event_id is missing" in failures
     assert "audit_trail.entries[1].receipt_action_index is missing" in failures
     assert "audit_trail.entries[2].audit_log_index is missing" in failures
+    assert "audit_trail.entries[3].resource contains credential-looking text" in failures
     assert "audit_trail must include dns_write" in failures
     assert "audit_trail must include human_approval" in failures
     assert "audit_trail.dns_write must include source setup_receipt.json" in failures
     assert "audit_trail.human_approval must include source gate_events.jsonl" in failures
-    assert "audit_trail must include detonation" in failures
+    assert "audit_trail.counts.detonation must match entries" in failures
     assert "audit_trail.statement is missing audit-first guidance" in failures
 
 
