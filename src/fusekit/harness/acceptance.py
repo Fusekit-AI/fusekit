@@ -1903,6 +1903,17 @@ def _workspace_detonation_receipt_failures(receipt: dict[str, Any]) -> list[str]
             failures.append("detonation.workspace_receipt.resource_summary.missing is missing")
         elif missing:
             failures.append("detonation.workspace_receipt.resource_summary.missing must be empty")
+        survivors = resource_summary.get("survivors", [])
+        survivor_set = {str(item) for item in survivors} if isinstance(survivors, list) else set()
+        if not isinstance(survivors, list) or survivor_set != set(DETONATION_PRESERVES):
+            failures.append("detonation.workspace_receipt.resource_summary.survivors is incomplete")
+        volatile_survivors = sorted(survivor_set & set(VOLATILE_WORKER_SURFACES))
+        if volatile_survivors:
+            failures.append(
+                "detonation.workspace_receipt.resource_summary.survivors must not include "
+                "volatile worker state: "
+                + ", ".join(volatile_survivors)
+            )
         statement = str(resource_summary.get("statement", "") or "").lower()
         for required in (
             "remote worker",

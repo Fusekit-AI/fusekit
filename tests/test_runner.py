@@ -75,6 +75,7 @@ from fusekit.runner.remote import (
     should_include_app_path,
 )
 from fusekit.runner.run_record import (
+    DETONATION_PRESERVES,
     _human_action_trace,
     _recording_audit_trail_ready,
     _recording_automation_boundary_ready,
@@ -559,6 +560,7 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
                     "network_resources_deleted": True,
                     "compartment_deleted": False,
                     "compartment_scope": "preserved",
+                    "survivors": list(DETONATION_PRESERVES),
                     "missing": [],
                     "statement": _detonation_survivor_statement(),
                 },
@@ -1328,6 +1330,7 @@ def test_run_record_recording_detonation_requires_deleted_resource_proof() -> No
             "network_resources_deleted": True,
             "compartment_deleted": False,
             "compartment_scope": "preserved",
+            "survivors": [],
             "missing": [],
         },
     }
@@ -1362,6 +1365,8 @@ def test_run_record_recording_detonation_requires_deleted_resource_proof() -> No
         "and resume checkpoints survive outside the disposable VM without "
         "host-machine state."
     )
+    assert _recording_detonation_ready(record) is False
+    receipt["resource_summary"]["survivors"] = list(DETONATION_PRESERVES)
     assert _recording_detonation_ready(record) is True
 
 
@@ -1442,6 +1447,7 @@ def test_run_record_recording_contract_blocks_missing_provider_playbook(tmp_path
                     "network_resources_deleted": True,
                     "compartment_deleted": False,
                     "compartment_scope": "preserved",
+                    "survivors": list(DETONATION_PRESERVES),
                     "missing": [],
                     "statement": _detonation_survivor_statement(),
                 },
@@ -1547,6 +1553,7 @@ def test_recording_contract_rejects_volatile_durable_state_survivors(tmp_path) -
                     "network_resources_deleted": True,
                     "compartment_deleted": False,
                     "compartment_scope": "preserved",
+                    "survivors": list(DETONATION_PRESERVES),
                     "missing": [],
                     "statement": _detonation_survivor_statement(),
                 },
@@ -1662,6 +1669,7 @@ def test_run_record_recording_contract_blocks_thin_runner_profile(tmp_path) -> N
                     "network_resources_deleted": True,
                     "compartment_deleted": False,
                     "compartment_scope": "preserved",
+                    "survivors": list(DETONATION_PRESERVES),
                     "missing": [],
                     "statement": _detonation_survivor_statement(),
                 },
@@ -2035,6 +2043,7 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
                             "network_resources_deleted": True,
                             "compartment_deleted": False,
                             "compartment_scope": "preserved",
+                            "survivors": list(DETONATION_PRESERVES),
                             "missing": [],
                             "statement": (
                                 "FuseKit detonation must remove the remote worker "

@@ -103,7 +103,7 @@ from fusekit.runner.remote import (
     detonate_remote_worker,
     execute_remote_setup,
 )
-from fusekit.runner.run_record import write_run_record
+from fusekit.runner.run_record import DETONATION_PRESERVES, write_run_record
 from fusekit.runner.run_state import LaunchRunState, update_run_state
 from fusekit.runner.server import serve_control_room
 from fusekit.runtime import bootstrap_runtime, doctor
@@ -2430,6 +2430,7 @@ def _workspace_detonation_resource_summary(remote_deleted: dict[str, Any]) -> di
         "network_resources_deleted": not network_resources_missing,
         "compartment_deleted": "compartment" in deleted,
         "compartment_scope": "detonated" if "compartment" in deleted else "preserved",
+        "survivors": list(DETONATION_PRESERVES),
         "missing": _workspace_detonation_missing_resources(remote_deleted),
         "statement": (
             "FuseKit detonation must remove the remote worker process state, terminate "

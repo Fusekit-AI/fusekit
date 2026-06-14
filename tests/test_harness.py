@@ -305,6 +305,7 @@ def _workspace_detonation_receipt() -> dict[str, object]:
             "network_resources_deleted": True,
             "compartment_deleted": False,
             "compartment_scope": "preserved",
+            "survivors": list(DETONATION_PRESERVES),
             "missing": [],
             "statement": (
                 "FuseKit detonation must remove the remote worker process state, "
@@ -4969,6 +4970,23 @@ def test_acceptance_run_record_requires_durable_survivor_statement(tmp_path) -> 
     failures = _run_record_shape_failures(record)
 
     assert "detonation.workspace_receipt.resource_summary.statement is incomplete" in failures
+
+
+def test_acceptance_run_record_requires_detonation_survivor_set(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    resource_summary = record["detonation"]["workspace_receipt"]["resource_summary"]
+    resource_summary["survivors"] = ["encrypted_vault", "run_record", "browser-profile"]
+
+    failures = _run_record_shape_failures(record)
+
+    assert "detonation.workspace_receipt.resource_summary.survivors is incomplete" in failures
+    assert (
+        "detonation.workspace_receipt.resource_summary.survivors must not include "
+        "volatile worker state: browser-profile"
+    ) in failures
 
 
 def test_acceptance_run_record_requires_no_trace_detonation_scope(tmp_path) -> None:

@@ -67,6 +67,7 @@ from fusekit.runner.job import JobState
 from fusekit.runner.oci_live import OciWorkspace
 from fusekit.runner.readiness import REQUIRED_RUNNER_BINARIES
 from fusekit.runner.remote import remote_worker_cleanup_proof
+from fusekit.runner.run_record import DETONATION_PRESERVES
 from fusekit.spine.playbooks import BrowserPlaybookEvent
 from fusekit.vault import Vault
 from fusekit.verification_report import VerificationReport
@@ -279,6 +280,7 @@ def test_workspace_detonation_receipt_fails_closed_and_redacts(tmp_path) -> None
         "ephemeral_public_ip",
         "network_resources",
     ]
+    assert receipt["resource_summary"]["survivors"] == list(DETONATION_PRESERVES)
     assert "secret-token" not in json.dumps(receipt)
     assert "secret-password" not in json.dumps(receipt)
 
@@ -3753,6 +3755,7 @@ def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch)
     assert detonation["resource_summary"]["ephemeral_public_ip_released"] is True
     assert detonation["resource_summary"]["network_resources_deleted"] is True
     assert detonation["resource_summary"]["compartment_scope"] == "preserved"
+    assert detonation["resource_summary"]["survivors"] == list(DETONATION_PRESERVES)
     assert detonation["resource_summary"]["missing"] == []
     checkpoints = json.loads((app / ".fusekit" / "checkpoints.json").read_text(encoding="utf-8"))
     assert checkpoints["job_id"] == job["id"]

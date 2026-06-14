@@ -2141,6 +2141,12 @@ def _recording_detonation_ready(record: dict[str, Any]) -> bool:
         if isinstance(resource_summary, dict)
         else ["resource_summary"]
     )
+    survivors = (
+        resource_summary.get("survivors", [])
+        if isinstance(resource_summary, dict)
+        else []
+    )
+    survivor_values = {str(item) for item in survivors} if isinstance(survivors, list) else set()
     cleanup = (
         resource_summary.get("remote_worker_cleanup", {})
         if isinstance(resource_summary, dict)
@@ -2170,6 +2176,8 @@ def _recording_detonation_ready(record: dict[str, Any]) -> bool:
         and not network_resources_missing
         and isinstance(missing, list)
         and not missing
+        and isinstance(survivors, list)
+        and survivor_values == set(DETONATION_PRESERVES)
         and _recording_detonation_statement_ready(resource_summary.get("statement", ""))
     )
 
