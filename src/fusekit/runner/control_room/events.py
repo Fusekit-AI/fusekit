@@ -314,6 +314,11 @@ function renderGateHelp(step) {
   const followSteps = Array.isArray(step.follow_steps) && step.follow_steps.length
     ? step.follow_steps
     : guidance.actions;
+  const providerChecklist = renderProviderChecklist(
+    guidance,
+    Array.isArray(step.follow_steps) && step.follow_steps.length > 0,
+    captureTargetList,
+  );
   const resumeLink = step.resume_url && step.id
     ? [
         `<button class="gate-link" type="button" `,
@@ -376,6 +381,7 @@ function renderGateHelp(step) {
       <ol>${followSteps
         .map((action) => `<li>${escapeHtml(publicCopy(action, captureTargetList))}</li>`)
         .join("")}</ol>
+      ${providerChecklist}
       ${criteriaBlock}
       <em>${escapeHtml(publicCopy(guidance.reassurance, captureTargetList))}</em>
       ${nextBlock}
@@ -389,6 +395,18 @@ function renderGateHelp(step) {
 function stringList(value) {
   if (!Array.isArray(value)) return [];
   return value.map((item) => String(item || "")).filter((item) => item.trim());
+}
+
+function renderProviderChecklist(guidance, customSteps, captureTargetList = []) {
+  if (!customSteps || !captureTargetList.length) return "";
+  const rows = stringList(guidance.actions)
+    .map((item) => `<li>${escapeHtml(publicCopy(item, captureTargetList))}</li>`)
+    .join("");
+  if (!rows) return "";
+  return (
+    `<div class="gate-provider-checklist"><strong>Provider checklist</strong>` +
+    `<ol>${rows}</ol></div>`
+  );
 }
 
 function renderGateCriteria(

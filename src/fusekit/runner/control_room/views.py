@@ -2224,6 +2224,11 @@ def _render_gate_help(step: Any) -> str:
         f"<li>{html.escape(_public_copy(action, capture_targets))}</li>"
         for action in actions_source
     )
+    provider_checklist = _render_provider_checklist(
+        guidance,
+        custom_steps=isinstance(follow_steps, list) and bool(follow_steps),
+        capture_targets=capture_targets,
+    )
     resume_url = str(getattr(step, "resume_url", "") or "")
     gate_id = str(getattr(step, "id", "") or "")
     resume_link = (
@@ -2295,6 +2300,7 @@ def _render_gate_help(step: Any) -> str:
           {target_label}
           {meta}
           <ol>{actions}</ol>
+          {provider_checklist}
           {criteria_block}
           <em>{html.escape(guidance.reassurance)}</em>
           {next_block}
@@ -2338,6 +2344,30 @@ def _render_gate_criteria(
     if not blocks:
         return ""
     return f'<div class="gate-criteria-grid">{"".join(blocks)}</div>'
+
+
+def _render_provider_checklist(
+    guidance: GateGuidance,
+    *,
+    custom_steps: bool,
+    capture_targets: Iterable[str] = (),
+) -> str:
+    targets = tuple(capture_targets)
+    if not custom_steps or not targets:
+        return ""
+    rows = "".join(
+        f"<li>{html.escape(_public_copy(item, targets))}</li>"
+        for item in guidance.actions
+        if str(item).strip()
+    )
+    if not rows:
+        return ""
+    return (
+        '<div class="gate-provider-checklist">'
+        "<strong>Provider checklist</strong>"
+        f"<ol>{rows}</ol>"
+        "</div>"
+    )
 
 
 def _string_list(value: Any) -> list[str]:

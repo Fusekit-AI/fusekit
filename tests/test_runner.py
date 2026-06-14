@@ -2202,6 +2202,8 @@ def test_live_control_room_refreshes_all_run_record_proof_panels() -> None:
         assert selector in SCRIPT
     assert "function providerPlaybookActor" in SCRIPT
     assert "return \"FuseKit\"" in SCRIPT
+    assert "function renderProviderChecklist" in SCRIPT
+    assert "gate-provider-checklist" in SCRIPT
 
 
 def test_control_room_event_script_is_valid_javascript(tmp_path) -> None:
@@ -3231,6 +3233,7 @@ def test_control_room_payload_includes_active_gate_records(tmp_path) -> None:
     assert "resume_hint" in payload["gates"][0]
     assert "vercel needs your approval" in html
     assert "Click Continue" in html
+    assert "Provider checklist" not in html[: html.index("<script")]
     assert "Snowman highlighted" in html
     assert "Exact custom success marker" in html
     assert "Exact custom avoid marker" in html
@@ -3443,6 +3446,11 @@ def test_control_room_renders_vm_clipboard_capture_for_secret_gate(tmp_path) -> 
     visible_html = html[: html.index("<script")]
 
     assert "Safe secret capture" in visible_html
+    assert "Provider checklist" in visible_html
+    assert "Open API Keys" in visible_html
+    assert "Full access" in visible_html
+    assert "Domain: All domains" in visible_html
+    assert "Do not create Resend domains or audiences by hand" in visible_html
     assert "Copy the provider value inside the VM browser" in visible_html
     assert "Copy the provider value in the VM browser" in visible_html
     assert "click the matching" not in visible_html
