@@ -1822,13 +1822,13 @@ function renderHumanActions(job) {
   const root = document.querySelector("[data-human-action-checks]");
   if (!root) return;
   const humanActions = job.run_record?.human_actions || {};
+  const rehearsalReview = job.run_record?.rehearsal_review || {};
   const actions = Array.isArray(humanActions.actions) ? humanActions.actions : [];
-  const unguided = Array.isArray(humanActions.unguided) ? humanActions.unguided : [];
   const summaryNode = document.querySelector("[data-human-action-overall]");
   if (summaryNode) {
-    summaryNode.textContent = actions.length && !unguided.length
-      ? "all actions guided"
-      : "waiting for guided actions";
+    summaryNode.textContent = rehearsalReview.status === "ready"
+      ? "all actions matched to instructions"
+      : "rehearsal review pending";
   }
   if (!actions.length) {
     root.innerHTML = pendingRunRecordCard(

@@ -365,11 +365,13 @@ guided, or explicitly verified.
 | The CSRF/command-injection route map was code-backed and doc-tested, but the live control room did not show the browser-reachable mutation surface as product proof. | The control-room payload and static/live UI now render the shared route inventory, including the only three state-changing routes and their required control-room header, origin/fetch-site, and owner-only action-token protection. |
 | The browser route-security proof could be shown from live code while the central Run Record stayed silent, weakening post-detonation proof that the control room's state-changing surface was bounded. | Run Records now embed `fusekit.control-room-security-surface.v1`, recording readiness requires the protected gate-open, gate-resume, and VM-clipboard Capture routes, and live acceptance rejects stale records whose route counts, no-CORS statement, or owner-only action-token proof drift. |
 | Detonation preflight required a central Run Record but did not independently require that the Run Record carried the protected control-room mutation-surface proof before destroying the worker. | Detonation preflight now blocks cleanup unless the survivor Run Record includes the protected gate-open, gate-resume, and VM-clipboard Capture route inventory with action-token/origin/fetch-site and no-CORS proof, so no-trace cleanup cannot erase the worker before that security evidence survives. |
+| Rehearsal notes could say every human action was compared against control-room instructions, but the central Run Record had no separate proof section for that launch-recording review. | Run Records now include `fusekit.rehearsal-review.v1`, recording readiness and live acceptance require every recorded human action to be compared and matched to exact visible controls, and the control room shows whether the rehearsal stayed inside launcher/VNC instructions without host-browser, terminal, or side-channel steps. |
 
 ## Open Acceptance Items
 
 - Finish a full live Moonlite RSVP run where Cloudflare DNS, Resend domain/API key,
   Resend audience/from email, Vercel env vars, GitHub secrets, deployment, and live
   URL health all pass or are pending-safe without side-channel instructions.
-- Record a clean new-site/new-account rehearsal and compare every human action
-  against the control-room instructions before launch readiness is claimed.
+- Record a clean new-site/new-account rehearsal and require the
+  `rehearsal_review` Run Record proof to show every human action matched the
+  control-room instructions before launch readiness is claimed.

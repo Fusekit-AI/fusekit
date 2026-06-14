@@ -464,6 +464,24 @@ def _human_action_trace() -> dict[str, object]:
     }
 
 
+def _rehearsal_review() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.rehearsal-review.v1",
+        "status": "ready",
+        "action_count": 0,
+        "compared_action_count": 0,
+        "matched_control_count": 0,
+        "unguided_count": 0,
+        "side_channel_count": 0,
+        "requires_user_thinking": False,
+        "statement": (
+            "Every recorded human action is compared against the visible control-room "
+            "instructions before public recording readiness; no host browser, terminal, "
+            "or side-channel action is required."
+        ),
+    }
+
+
 def _automation_boundary() -> dict[str, object]:
     return {
         "schema_version": "fusekit.automation-boundary.v1",
@@ -861,6 +879,7 @@ def _recording_contract() -> dict[str, object]:
             "runner_profile": True,
             "provider_playbook": True,
             "human_actions": True,
+            "rehearsal_review": True,
             "automation_boundary": True,
             "control_room_security": True,
             "verifiers": True,
@@ -873,8 +892,9 @@ def _recording_contract() -> dict[str, object]:
         "statement": (
             "A public demo is recordable only when durable OCI state, worker "
             "replacement from encrypted/redacted sources, ordered provider "
-            "playbooks, guided human actions, protected control-room state "
-            "changes, live provider verifiers, and no-trace detonation all agree."
+            "playbooks, guided human actions, rehearsal review, protected "
+            "control-room state changes, live provider verifiers, and no-trace "
+            "detonation all agree."
         ),
     }
 
@@ -1345,6 +1365,7 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
                 "worker_replacement_drill": _worker_replacement_drill(),
                 "wake_events": _wake_event_summary_fixture(fusekit_dir),
                 "human_actions": _human_action_trace(),
+                "rehearsal_review": _rehearsal_review(),
                 "automation_boundary": _automation_boundary(),
                 "control_room_security": public_control_room_security_surface(),
                 "verifiers": _verifier_summary_from_report(fusekit_dir),
@@ -5532,6 +5553,66 @@ def test_acceptance_run_record_requires_human_actions_to_match_provider_gates(
     assert "human_actions.actions[1].target must match provider_gates.records target" in failures
 
 
+def test_acceptance_run_record_requires_rehearsal_review_to_match_human_actions(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+
+    record["human_actions"] = {
+        "schema_version": "fusekit.human-action-trace.v1",
+        "total": 1,
+        "counts": {"capture_vm_clipboard": 1},
+        "actions": [
+            {
+                "gate_id": "provider.resend.authorization",
+                "provider": "resend",
+                "classification": "authorization",
+                "action": "capture_vm_clipboard",
+                "visible_control": "Capture RESEND_API_KEY from VM clipboard",
+                "target": "RESEND_API_KEY",
+                "guided": True,
+                "created_at": 1.0,
+            }
+        ],
+        "unguided": [],
+        "statement": (
+            "Every recorded human action should map to one visible control-room gate "
+            "and its current follow-me instructions; the trace contains no raw provider "
+            "URLs, clipboard values, passwords, tokens, or screenshots."
+        ),
+    }
+    record["rehearsal_review"] = {
+        "schema_version": "fusekit.rehearsal-review.v1",
+        "status": "needs_review",
+        "action_count": 0,
+        "compared_action_count": 0,
+        "matched_control_count": 0,
+        "unguided_count": 0,
+        "side_channel_count": 1,
+        "requires_user_thinking": True,
+        "statement": "human figured it out",
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert "rehearsal_review.status must be ready" in failures
+    assert "rehearsal_review.action_count must match human_actions.actions" in failures
+    assert (
+        "rehearsal_review.compared_action_count must match human_actions.actions"
+        in failures
+    )
+    assert (
+        "rehearsal_review.matched_control_count must match human_actions.actions"
+        in failures
+    )
+    assert "rehearsal_review.side_channel_count must be zero" in failures
+    assert "rehearsal_review.requires_user_thinking must be false" in failures
+    assert "rehearsal_review.statement is missing rehearsal guidance" in failures
+
+
 def test_acceptance_run_record_requires_automation_boundary(tmp_path) -> None:
     fusekit_dir = tmp_path / ".fusekit"
     fusekit_dir.mkdir()
@@ -6004,7 +6085,9 @@ def test_acceptance_run_record_requires_recording_contract(tmp_path) -> None:
             "runner_profile": True,
             "provider_playbook": True,
             "human_actions": False,
+            "rehearsal_review": False,
             "automation_boundary": True,
+            "control_room_security": True,
             "verifiers": True,
             "audit_trail": True,
             "evidence": True,
@@ -6020,6 +6103,7 @@ def test_acceptance_run_record_requires_recording_contract(tmp_path) -> None:
     assert "recording_contract.schema_version is unsupported" in failures
     assert "recording_contract.recording_ready must be true" in failures
     assert "recording_contract.checks.human_actions must be true" in failures
+    assert "recording_contract.checks.rehearsal_review must be true" in failures
     assert "recording_contract.blockers must be empty: human_actions" in failures
     assert "recording_contract.statement is missing public demo guidance" in failures
 

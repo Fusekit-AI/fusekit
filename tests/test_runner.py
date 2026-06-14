@@ -86,6 +86,7 @@ from fusekit.runner.run_record import (
     _recording_evidence_ready,
     _recording_human_actions_ready,
     _recording_provider_playbook_ready,
+    _recording_rehearsal_review_ready,
     _recording_verifiers_ready,
     _recording_worker_replacement_ready,
     write_run_record,
@@ -698,6 +699,14 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     assert "Open provider gate in VM" in controls
     assert "Capture CLOUDFLARE_API_TOKEN from VM clipboard" in controls
     assert "https://dash.cloudflare.com" not in json.dumps(record["human_actions"])
+    assert record["rehearsal_review"]["schema_version"] == "fusekit.rehearsal-review.v1"
+    assert record["rehearsal_review"]["status"] == "ready"
+    assert record["rehearsal_review"]["compared_action_count"] == record["human_actions"]["total"]
+    assert record["rehearsal_review"]["matched_control_count"] == record["human_actions"]["total"]
+    assert record["rehearsal_review"]["unguided_count"] == 0
+    assert record["rehearsal_review"]["side_channel_count"] == 0
+    assert record["rehearsal_review"]["requires_user_thinking"] is False
+    assert _recording_rehearsal_review_ready(record) is True
     assert record["control_room_security"]["schema_version"] == (
         "fusekit.control-room-security-surface.v1"
     )
@@ -735,6 +744,7 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
     assert record["recording_contract"]["recording_ready"] is True
     assert record["recording_contract"]["blockers"] == []
     assert record["recording_contract"]["checks"]["provider_playbook"] is True
+    assert record["recording_contract"]["checks"]["rehearsal_review"] is True
     assert record["recording_contract"]["checks"]["control_room_security"] is True
     assert record["recording_contract"]["checks"]["detonation"] is True
     assert record["recording_contract"]["checks"]["errors_empty"] is True
@@ -841,6 +851,59 @@ def test_recording_human_actions_require_exact_visible_controls() -> None:
     record["human_actions"]["schema_version"] = "fusekit.human-action-trace.v1"
     record["human_actions"]["actions"][0]["gate_id"] = ""
     assert _recording_human_actions_ready(record) is False
+
+
+def test_recording_rehearsal_review_requires_instruction_match() -> None:
+    record = {
+        "human_actions": {
+            "schema_version": "fusekit.human-action-trace.v1",
+            "total": 2,
+            "counts": {
+                "open_provider_gate": 1,
+                "capture_vm_clipboard": 1,
+            },
+            "actions": [
+                {
+                    "gate_id": "provider.resend.authorization",
+                    "action": "open_provider_gate",
+                    "visible_control": "Open provider gate in VM",
+                    "guided": True,
+                },
+                {
+                    "gate_id": "provider.resend.authorization",
+                    "action": "capture_vm_clipboard",
+                    "visible_control": "Capture RESEND_API_KEY from VM clipboard",
+                    "target": "RESEND_API_KEY",
+                    "guided": True,
+                },
+            ],
+            "unguided": [],
+        },
+        "rehearsal_review": {
+            "schema_version": "fusekit.rehearsal-review.v1",
+            "status": "ready",
+            "action_count": 2,
+            "compared_action_count": 2,
+            "matched_control_count": 2,
+            "unguided_count": 0,
+            "side_channel_count": 0,
+            "requires_user_thinking": False,
+            "statement": (
+                "Every recorded human action is compared against the visible "
+                "control-room instructions before public recording readiness."
+            ),
+        },
+    }
+
+    assert _recording_rehearsal_review_ready(record) is True
+    record["rehearsal_review"]["matched_control_count"] = 1
+    assert _recording_rehearsal_review_ready(record) is False
+    record["rehearsal_review"]["matched_control_count"] = 2
+    record["human_actions"]["actions"][0]["visible_control"] = "Open provider page"
+    assert _recording_rehearsal_review_ready(record) is False
+    record["human_actions"]["actions"][0]["visible_control"] = "Open provider gate in VM"
+    record["rehearsal_review"]["requires_user_thinking"] = True
+    assert _recording_rehearsal_review_ready(record) is False
 
 
 def test_recording_control_room_security_requires_state_changing_routes() -> None:
@@ -1968,6 +2031,20 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
                         "the trace contains no raw provider URLs."
                     ),
                 },
+                "rehearsal_review": {
+                    "schema_version": "fusekit.rehearsal-review.v1",
+                    "status": "ready",
+                    "action_count": 1,
+                    "compared_action_count": 1,
+                    "matched_control_count": 1,
+                    "unguided_count": 0,
+                    "side_channel_count": 0,
+                    "requires_user_thinking": False,
+                    "statement": (
+                        "Every recorded human action is compared against the visible "
+                        "control-room instructions before public recording readiness."
+                    ),
+                },
                 "automation_boundary": {
                     "schema_version": "fusekit.automation-boundary.v1",
                     "status": "ready",
@@ -2094,7 +2171,9 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
                         "runner_profile": True,
                         "provider_playbook": True,
                         "human_actions": True,
+                        "rehearsal_review": True,
                         "automation_boundary": True,
+                        "control_room_security": True,
                         "verifiers": True,
                         "audit_trail": True,
                         "evidence": True,
@@ -2105,8 +2184,9 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
                     "statement": (
                         "A public demo is recordable only when durable OCI state, "
                         "worker replacement from encrypted/redacted sources, "
-                        "ordered provider playbooks, guided human actions, live "
-                        "provider verifiers, and no-trace detonation all agree."
+                        "ordered provider playbooks, guided human actions, rehearsal "
+                        "review, protected control-room state changes, live provider "
+                        "verifiers, and no-trace detonation all agree."
                     ),
                 },
                 "detonation": {
@@ -2195,7 +2275,7 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
     assert payload["run_record"]["human_actions"]["total"] == 1
     assert "Human actions matched to gates" in html
     assert "Capture RESEND_API_KEY from VM clipboard" in html
-    assert "all actions guided" in html
+    assert "all actions matched to instructions" in html
     assert payload["run_record"]["verifiers"]["all_passed_or_pending_safe"] is True
     assert "Provider checks are real" in html
     assert "all verifiers green or pending-safe" in html

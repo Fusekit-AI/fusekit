@@ -49,6 +49,7 @@ from fusekit.runner.run_record import (
     OCI_WORKSPACE_DETONATION_SURFACES,
     RECORDING_CONTRACT_SCHEMA_VERSION,
     RECORDING_PROVIDER_PLAYBOOK_FAMILIES,
+    REHEARSAL_REVIEW_SCHEMA_VERSION,
     RUN_RECORD_SCHEMA_VERSION,
     VERIFIER_SUMMARY_SCHEMA_VERSION,
     VOLATILE_WORKER_SURFACES,
@@ -552,6 +553,9 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
     human_actions = _require_dict_field(raw, "human_actions", failures)
     if human_actions is not None:
         failures.extend(_human_action_trace_shape_failures(human_actions, provider_gates))
+    rehearsal_review = _require_dict_field(raw, "rehearsal_review", failures)
+    if rehearsal_review is not None:
+        failures.extend(_rehearsal_review_shape_failures(rehearsal_review, human_actions))
     automation_boundary = _require_dict_field(raw, "automation_boundary", failures)
     if automation_boundary is not None:
         failures.extend(_automation_boundary_shape_failures(automation_boundary))
@@ -861,6 +865,48 @@ def _human_action_trace_shape_failures(
     statement = str(human_actions.get("statement", "") or "")
     if "visible control-room gate" not in statement or "no raw provider" not in statement:
         failures.append("human_actions.statement is missing guided-action guidance")
+    return failures
+
+
+def _rehearsal_review_shape_failures(
+    review: dict[str, Any],
+    human_actions: dict[str, Any] | None = None,
+) -> list[str]:
+    failures: list[str] = []
+    if str(review.get("schema_version", "")).strip() != REHEARSAL_REVIEW_SCHEMA_VERSION:
+        failures.append("rehearsal_review.schema_version is unsupported")
+    if str(review.get("status", "")).strip() != "ready":
+        failures.append("rehearsal_review.status must be ready")
+    actions: list[Any] = []
+    unguided: list[Any] = []
+    if isinstance(human_actions, dict):
+        raw_actions = human_actions.get("actions", [])
+        raw_unguided = human_actions.get("unguided", [])
+        actions = raw_actions if isinstance(raw_actions, list) else []
+        unguided = raw_unguided if isinstance(raw_unguided, list) else []
+    action_count = len(actions)
+    unguided_count = len(unguided)
+    if _safe_int(review.get("action_count")) != action_count:
+        failures.append("rehearsal_review.action_count must match human_actions.actions")
+    if _safe_int(review.get("compared_action_count")) != action_count:
+        failures.append(
+            "rehearsal_review.compared_action_count must match human_actions.actions"
+        )
+    if _safe_int(review.get("matched_control_count")) != action_count:
+        failures.append(
+            "rehearsal_review.matched_control_count must match human_actions.actions"
+        )
+    if _safe_int(review.get("unguided_count")) != unguided_count:
+        failures.append("rehearsal_review.unguided_count must match human_actions.unguided")
+    if unguided_count:
+        failures.append("rehearsal_review.unguided_count must be zero")
+    if _safe_int(review.get("side_channel_count")) != 0:
+        failures.append("rehearsal_review.side_channel_count must be zero")
+    if review.get("requires_user_thinking") is not False:
+        failures.append("rehearsal_review.requires_user_thinking must be false")
+    statement = str(review.get("statement", "") or "").lower()
+    if "control-room instructions" not in statement or "public recording" not in statement:
+        failures.append("rehearsal_review.statement is missing rehearsal guidance")
     return failures
 
 
@@ -1741,6 +1787,7 @@ def _recording_contract_shape_failures(
         "runner_profile",
         "provider_playbook",
         "human_actions",
+        "rehearsal_review",
         "automation_boundary",
         "control_room_security",
         "verifiers",
@@ -1775,6 +1822,7 @@ def _recording_contract_shape_failures(
         "worker replacement",
         "provider playbooks",
         "guided human actions",
+        "rehearsal review",
         "control-room",
         "detonation",
     ):

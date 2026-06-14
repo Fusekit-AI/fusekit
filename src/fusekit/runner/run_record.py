@@ -26,6 +26,7 @@ DURABLE_STATE_SCHEMA_VERSION = "fusekit.durable-state.v1"
 DETONATION_SCOPE_SCHEMA_VERSION = "fusekit.detonation-scope.v1"
 EVIDENCE_INVENTORY_SCHEMA_VERSION = "fusekit.evidence-inventory.v1"
 HUMAN_ACTION_TRACE_SCHEMA_VERSION = "fusekit.human-action-trace.v1"
+REHEARSAL_REVIEW_SCHEMA_VERSION = "fusekit.rehearsal-review.v1"
 AUTOMATION_BOUNDARY_SCHEMA_VERSION = "fusekit.automation-boundary.v1"
 VERIFIER_SUMMARY_SCHEMA_VERSION = "fusekit.verifier-summary.v1"
 AUDIT_TRAIL_SCHEMA_VERSION = "fusekit.audit-trail.v1"
@@ -190,6 +191,7 @@ def build_run_record(
     durable_state = _durable_state_summary(root, run_state, artifacts, runner_readiness)
     evidence = _evidence_inventory(root, artifacts)
     human_actions = _human_action_trace(gates, wake_events)
+    rehearsal_review = _rehearsal_review_summary(human_actions)
     record = {
         "schema_version": RUN_RECORD_SCHEMA_VERSION,
         "id": job.id,
@@ -213,6 +215,7 @@ def build_run_record(
         "verifiers": _verifier_summary(verification),
         "wake_events": _wake_event_summary(wake_events),
         "human_actions": human_actions,
+        "rehearsal_review": rehearsal_review,
         "automation_boundary": _automation_boundary_summary(
             provider_strategies,
             human_actions,
@@ -467,6 +470,65 @@ def _human_action_trace(
             "URLs, clipboard values, passwords, tokens, or screenshots."
         ),
     }
+
+
+def _rehearsal_review_summary(human_actions: dict[str, Any]) -> dict[str, Any]:
+    """Prove recorded human actions were compared to launcher-visible instructions."""
+
+    actions = human_actions.get("actions", []) if isinstance(human_actions, dict) else []
+    actions = actions if isinstance(actions, list) else []
+    unguided = human_actions.get("unguided", []) if isinstance(human_actions, dict) else []
+    unguided = unguided if isinstance(unguided, list) else []
+    matched_controls = [
+        action
+        for action in actions
+        if isinstance(action, dict)
+        and str(action.get("gate_id", "") or "").strip()
+        and action.get("guided") is True
+        and _recording_human_action_control_ready(action)
+    ]
+    side_channel_count = sum(
+        1 for action in actions if isinstance(action, dict) and _human_action_side_channel(action)
+    )
+    status = (
+        "ready"
+        if len(matched_controls) == len(actions) and not unguided and side_channel_count == 0
+        else "needs_review"
+    )
+    return {
+        "schema_version": REHEARSAL_REVIEW_SCHEMA_VERSION,
+        "status": status,
+        "action_count": len(actions),
+        "compared_action_count": len(actions),
+        "matched_control_count": len(matched_controls),
+        "unguided_count": len(unguided),
+        "side_channel_count": side_channel_count,
+        "requires_user_thinking": status != "ready",
+        "statement": (
+            "Every recorded human action is compared against the visible control-room "
+            "instructions before public recording readiness. The review fails if an "
+            "action needs host-browser, terminal, side-channel, or unsupported manual steps."
+        ),
+    }
+
+
+def _human_action_side_channel(action: dict[str, Any]) -> bool:
+    text = " ".join(
+        str(action.get(key, "") or "")
+        for key in ("action", "visible_control", "target", "guidance_gap")
+    ).lower()
+    return any(
+        marker in text
+        for marker in (
+            "host browser",
+            "local browser",
+            "terminal",
+            "side-channel",
+            "side channel",
+            "manual step",
+            "unsupported",
+        )
+    )
 
 
 def _resume_event_is_capture_auto_wake(event: dict[str, Any]) -> bool:
@@ -1415,6 +1477,7 @@ def _recording_contract_summary(record: dict[str, Any]) -> dict[str, Any]:
         "runner_profile": _recording_runner_profile_ready(record),
         "provider_playbook": _recording_provider_playbook_ready(record),
         "human_actions": _recording_human_actions_ready(record),
+        "rehearsal_review": _recording_rehearsal_review_ready(record),
         "automation_boundary": _recording_automation_boundary_ready(record),
         "control_room_security": _recording_control_room_security_ready(record),
         "verifiers": _recording_verifiers_ready(record),
@@ -1433,8 +1496,9 @@ def _recording_contract_summary(record: dict[str, Any]) -> dict[str, Any]:
             "A public demo is recordable only when the Run Record proves durable "
             "OCI state, worker replacement from encrypted/redacted sources, the "
             "x86 visual runner, ordered provider playbooks, guided human actions, "
-            "post-gate automation, a protected control-room mutation surface, "
-            "live provider verifiers, audit evidence, and no-trace detonation all agree."
+            "rehearsal review against control-room instructions, post-gate automation, "
+            "a protected control-room mutation surface, live provider verifiers, audit "
+            "evidence, and no-trace detonation all agree."
         ),
     }
 
@@ -1880,6 +1944,41 @@ def _recording_human_action_control_ready(action: dict[str, Any]) -> bool:
             "Approve setup plan",
         }
     return False
+
+
+def _recording_rehearsal_review_ready(record: dict[str, Any]) -> bool:
+    review = record.get("rehearsal_review", {})
+    human_actions = record.get("human_actions", {})
+    if not isinstance(review, dict) or not isinstance(human_actions, dict):
+        return False
+    actions = human_actions.get("actions", [])
+    unguided = human_actions.get("unguided", [])
+    if not isinstance(actions, list) or not isinstance(unguided, list):
+        return False
+    if _recording_human_actions_required(record) and not actions:
+        return False
+    statement = str(review.get("statement", "") or "").lower()
+    action_count = len(actions)
+    unguided_count = len(unguided)
+    return (
+        str(review.get("schema_version", "") or "") == REHEARSAL_REVIEW_SCHEMA_VERSION
+        and str(review.get("status", "") or "") == "ready"
+        and _safe_int(review.get("action_count"), -1) == action_count
+        and _safe_int(review.get("compared_action_count"), -1) == action_count
+        and _safe_int(review.get("matched_control_count"), -1) == action_count
+        and _safe_int(review.get("unguided_count"), -1) == unguided_count == 0
+        and _safe_int(review.get("side_channel_count"), -1) == 0
+        and review.get("requires_user_thinking") is False
+        and "control-room instructions" in statement
+        and "public recording" in statement
+        and all(
+            isinstance(action, dict)
+            and action.get("guided") is True
+            and _recording_human_action_control_ready(action)
+            and not _human_action_side_channel(action)
+            for action in actions
+        )
+    )
 
 
 def _recording_human_actions_required(record: dict[str, Any]) -> bool:

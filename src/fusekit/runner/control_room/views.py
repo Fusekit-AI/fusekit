@@ -1605,6 +1605,8 @@ def _render_human_actions(run_record: Any) -> str:
     run_record = run_record if isinstance(run_record, dict) else {}
     human_actions = run_record.get("human_actions", {})
     human_actions = human_actions if isinstance(human_actions, dict) else {}
+    rehearsal_review = run_record.get("rehearsal_review", {})
+    rehearsal_review = rehearsal_review if isinstance(rehearsal_review, dict) else {}
     actions = human_actions.get("actions", [])
     actions = actions if isinstance(actions, list) else []
     cards = "\n".join(
@@ -1625,9 +1627,10 @@ def _render_human_actions(run_record: Any) -> str:
     total = human_actions.get("total", 0)
     unguided = human_actions.get("unguided", [])
     unguided_count = len(unguided) if isinstance(unguided, list) else 0
-    summary = (
-        "all actions guided" if actions and unguided_count == 0 else "waiting for guided actions"
-    )
+    review_ready = rehearsal_review.get("status") == "ready"
+    summary = "all actions matched to instructions" if review_ready else "rehearsal review pending"
+    compared = rehearsal_review.get("compared_action_count", len(actions))
+    matched = rehearsal_review.get("matched_control_count", 0)
     return f"""
     <section class="run-state-panel" aria-label="Human action trace">
       <div class="section-head compact">
@@ -1639,8 +1642,11 @@ def _render_human_actions(run_record: Any) -> str:
       </div>
       <p class="muted">
         FuseKit records visible gate opens, VM-clipboard captures, and approval clicks
-        without storing provider URLs, clipboard values, tokens, or screenshots.
-        Total recorded actions: {html.escape(str(total))}.
+        without storing provider URLs, clipboard values, tokens, or screenshots. Every
+        action is compared with the visible control-room instructions before public
+        recording readiness. Total recorded actions: {html.escape(str(total))};
+        compared: {html.escape(str(compared))}; matched: {html.escape(str(matched))};
+        unguided: {html.escape(str(unguided_count))}.
       </p>
       <div class="run-state-grid" data-human-action-checks>{cards}</div>
     </section>
