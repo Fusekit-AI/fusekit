@@ -3747,6 +3747,7 @@ def _provider_strategy_shape_failures(providers: Any) -> list[str]:
                         success_criteria=strategy.get("success_criteria", []),
                         avoid_steps=strategy.get("avoid_steps", []),
                         requires_vm=True,
+                        require_capture_resume=True,
                     )
                 )
             failures.extend(
@@ -4067,6 +4068,11 @@ def _checkpoint_guidance_quality_failure(
                 f"{checkpoint_id} guidance does not name exact Capture controls: "
                 + ", ".join(missing_exact)
             )
+        if not _capture_resume_guidance_ready(text):
+            return (
+                f"{checkpoint_id} guidance does not explain FuseKit resumes after "
+                "clipboard capture"
+            )
     return ""
 
 
@@ -4220,6 +4226,8 @@ def _unguided_gates(gates: Any) -> list[str]:
             success_criteria=gate.get("success_criteria", []),
             avoid_steps=gate.get("avoid_steps", []),
             requires_vm=bool(str(gate.get("resume_url", "")).strip()),
+            require_capture_resume=str(gate.get("status", "")).strip().lower()
+            not in {"passed", "resume_requested"},
         )
         missing.extend(quality_failures)
     return missing
@@ -4415,6 +4423,7 @@ def _guidance_quality_failures(
     success_criteria: Any = (),
     avoid_steps: Any = (),
     requires_vm: bool,
+    require_capture_resume: bool = True,
 ) -> list[str]:
     """Return launch-readiness failures for non-actionable human-gate guidance."""
 
@@ -4463,6 +4472,10 @@ def _guidance_quality_failures(
             failures.append(
                 f"{label}.guidance does not name exact Capture controls: "
                 + ", ".join(missing_exact)
+            )
+        if require_capture_resume and not _capture_resume_guidance_ready(action_lowered):
+            failures.append(
+                f"{label}.guidance does not explain FuseKit resumes after clipboard capture"
             )
         next_lower = next_action.lower()
         if "i finished this step" in next_lower and "capture" not in next_lower:
@@ -4531,6 +4544,17 @@ def _missing_exact_capture_controls(targets: list[str], text: str) -> list[str]:
         for target in targets
         if f"capture {target.lower()} from vm clipboard" not in text
     ]
+
+
+def _capture_resume_guidance_ready(text: str) -> bool:
+    lowered = str(text or "").lower()
+    if "capture" not in lowered:
+        return False
+    if "resume automatically" in lowered or "continue automatically" in lowered:
+        return True
+    if re.search(r"\bfusekit\b.{0,96}\b(?:resume|continue|retry|verify|recheck)\b", lowered):
+        return True
+    return "requested verification automatically" in lowered
 
 
 def _copy_once_targets_mentioned(value: str) -> list[str]:

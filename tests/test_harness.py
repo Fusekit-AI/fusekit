@@ -2634,8 +2634,8 @@ def test_acceptance_rejects_resend_setup_key_without_raw_value_warning() -> None
                     "Capture RESEND_API_KEY from VM clipboard after the key is copied."
                 ),
                 "resume_hint": (
-                    "FuseKit will create or reuse Resend domains and audiences by API "
-                    "after RESEND_API_KEY capture."
+                    "FuseKit will continue automatically after RESEND_API_KEY capture, "
+                    "then create or reuse Resend domains and audiences by API."
                 ),
                 "success_criteria": [
                     "A Resend setup API key with Permission: Full access and "
@@ -2689,8 +2689,8 @@ def test_acceptance_allows_exact_resend_setup_key_selector_guidance() -> None:
                     "Capture RESEND_API_KEY from VM clipboard after the key is copied."
                 ),
                 "resume_hint": (
-                    "FuseKit will create or reuse Resend domains and audiences by API "
-                    "after RESEND_API_KEY capture."
+                    "FuseKit will continue automatically after RESEND_API_KEY capture, "
+                    "then create or reuse Resend domains and audiences by API."
                 ),
                 "success_criteria": [
                     "A Resend setup API key with Permission: Full access and "
@@ -3142,6 +3142,26 @@ def test_acceptance_checkpoint_guidance_requires_capture_for_copy_once_target() 
     )
 
     assert any("Capture from VM clipboard" in item for item in failures)
+
+
+def test_acceptance_checkpoint_guidance_requires_capture_resume_copy() -> None:
+    failures = _provider_strategy_checkpoint_failures(
+        {"github": {"github-repo-secrets"}},
+        [
+            {
+                "id": "provider.github.routes",
+                "status": "waiting",
+                "detail": "github-repo-secrets uses browser_guided (needs_human_gate)",
+                "next_action": (
+                    "Click Open provider gate in VM, copy GITHUB_TOKEN inside the shared "
+                    "VM browser, then click Capture GITHUB_TOKEN from VM clipboard."
+                ),
+                "resume_hint": "The value is now safely stored.",
+            }
+        ],
+    )
+
+    assert any("resumes after clipboard capture" in item for item in failures)
 
 
 def test_acceptance_checkpoint_guidance_accepts_exact_launcher_controls() -> None:
@@ -5537,6 +5557,58 @@ def test_acceptance_run_record_requires_provider_strategy_summary(tmp_path) -> N
 
     assert "provider_strategies.schema_version is unsupported" in failures
     assert "provider_strategies.providers is missing" in failures
+
+
+def test_acceptance_provider_strategy_requires_capture_resume_guidance() -> None:
+    failures = _provider_strategy_shape_failures(
+        [
+            {
+                "provider": "github",
+                "strategies": [
+                    {
+                        "recipe": "github-repo-secrets",
+                        "strategy": "browser_guided",
+                        "status": "needs_human_gate",
+                        "target": "GITHUB_TOKEN",
+                        "follow_steps": [
+                            "Click Open provider gate in VM.",
+                            (
+                                "Copy the token inside the VM browser, then click "
+                                "Capture GITHUB_TOKEN from VM clipboard."
+                            ),
+                        ],
+                        "next_action": (
+                            "Click Open provider gate in VM, then click "
+                            "Capture GITHUB_TOKEN from VM clipboard."
+                        ),
+                        "resume_hint": "The value is now safely stored.",
+                        "success_criteria": ["GITHUB_TOKEN is copied once."],
+                        "avoid_steps": ["Do not use the local browser."],
+                        "decision": {
+                            "selected": {
+                                "kind": "browser_guided",
+                                "status": "available",
+                                "deterministic": False,
+                                "implemented": False,
+                                "reason": "Provider token is missing.",
+                            },
+                            "candidates": [
+                                {
+                                    "kind": "browser_guided",
+                                    "status": "available",
+                                }
+                            ],
+                        },
+                    }
+                ],
+            }
+        ]
+    )
+
+    assert (
+        "github.strategies[0].guidance does not explain FuseKit resumes after "
+        "clipboard capture"
+    ) in failures
 
 
 def test_acceptance_run_record_requires_strategy_routes_to_cover_playbook_providers(
