@@ -25,6 +25,7 @@ from fusekit.harness.acceptance import (
 from fusekit.harness.ledger import HarnessLedger
 from fusekit.runner.gate_guidance import provider_gate_guidance
 from fusekit.runner.gates import GateService
+from fusekit.runner.readiness import REQUIRED_RUNNER_BINARIES
 from fusekit.runner.remote import remote_worker_cleanup_proof
 from fusekit.runner.run_record import (
     DETONATION_PRESERVES,
@@ -119,6 +120,17 @@ def _provider_playbook() -> dict[str, object]:
             ),
             "Do not paste provider secrets into the host computer; Capture reads the VM clipboard.",
         ],
+    }
+
+
+def _runner_binary_records() -> dict[str, dict[str, object]]:
+    return {
+        name: {
+            "path": f"/usr/local/bin/{name.replace('_', '-')}",
+            "present": True,
+            "version": "",
+        }
+        for name in REQUIRED_RUNNER_BINARIES
     }
 
 
@@ -1017,6 +1029,7 @@ def _write_runner_readiness(fusekit_dir: Path) -> None:
                         "playwright_chromium",
                         "shared_provider_browser_profile",
                     ],
+                    "required_binaries": list(REQUIRED_RUNNER_BINARIES),
                 },
                 "observed": {
                     "os_id": "ubuntu",
@@ -1033,6 +1046,7 @@ def _write_runner_readiness(fusekit_dir: Path) -> None:
                     "playwright_chromium": True,
                     "shared_provider_browser_profile": True,
                 },
+                "installed_binaries": _runner_binary_records(),
                 "provider_browser_profile": (
                     "/var/lib/fusekit-runner/visual/chrome-provider-profile"
                 ),
@@ -1059,6 +1073,9 @@ def _runner_profile_from_readiness_fixture(fusekit_dir: Path) -> dict[str, objec
                 if isinstance(raw.get("observed"), dict)
                 else {},
                 "checks": raw.get("checks", {}) if isinstance(raw.get("checks"), dict) else {},
+                "installed_binaries": raw.get("installed_binaries", {})
+                if isinstance(raw.get("installed_binaries"), dict)
+                else {},
                 "provider_browser_profile": str(raw.get("provider_browser_profile", "") or ""),
                 "playwright_browsers_path": str(raw.get("playwright_browsers_path", "") or ""),
             }
@@ -1097,6 +1114,7 @@ def _runner_profile_from_readiness_fixture(fusekit_dir: Path) -> dict[str, objec
                 "playwright_chromium",
                 "shared_provider_browser_profile",
             ],
+            "required_binaries": list(REQUIRED_RUNNER_BINARIES),
         },
         "observed": {
             "os_id": "ubuntu",
@@ -1113,6 +1131,7 @@ def _runner_profile_from_readiness_fixture(fusekit_dir: Path) -> dict[str, objec
             "playwright_chromium": True,
             "shared_provider_browser_profile": True,
         },
+        "installed_binaries": _runner_binary_records(),
         "provider_browser_profile": "/var/lib/fusekit-runner/visual/chrome-provider-profile",
         "playwright_browsers_path": "/opt/fusekit-playwright-browsers",
     }
@@ -1625,11 +1644,13 @@ def test_acceptance_rejects_incomplete_runner_readiness(tmp_path) -> None:
     assert "runner profile name must be oci-visual-browser_x86_64" not in checks[-1].detail
     assert "runner profile name must be oci-visual-browser-x86_64" in checks[-1].detail
     assert "runner profile min_memory_mib must be at least 16 GB" in checks[-1].detail
+    assert "runner profile required_binaries must be a list" in checks[-1].detail
     assert "observed memory must be at least 16 GB" in checks[-1].detail
     assert "x86_64_architecture must be true" in checks[-1].detail
     assert "playwright_chromium must be true" in checks[-1].detail
     assert "shared provider browser profile path is required" in checks[-1].detail
     assert "Playwright browser cache path is required" in checks[-1].detail
+    assert "installed_binaries must be a JSON object" in checks[-1].detail
     assert "prepared runner readiness proof" in missing
 
 

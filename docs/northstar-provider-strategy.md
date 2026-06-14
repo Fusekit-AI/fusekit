@@ -42,7 +42,10 @@ The contract is:
 - Prepared runner profile first: x86_64, supported browser dependencies,
   OpenClaw or the approved browser spine, Playwright smoke test, noVNC, shared
   provider browser profile, helper binaries, and vault access must be verified
-  before provider gates appear.
+  before provider gates appear. The proof must include a non-secret
+  installed binary inventory for Python, FuseKit runner helpers, OpenClaw, noVNC/VNC
+  helpers, and Playwright Chromium so a thin VM cannot satisfy readiness with
+  booleans alone.
 - Deterministic scripts first, guided browser second: use provider APIs or
   official CLIs when they are proven healthy; use browser automation and
   human follow-me only for provider-owned login, MFA, CAPTCHA, consent,

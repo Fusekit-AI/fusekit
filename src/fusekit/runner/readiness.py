@@ -25,6 +25,19 @@ EXPECTED_RUNNER_PORTS = {
     "vnc_loopback": 5900,
     "openclaw_gateway_loopback": 19002,
 }
+REQUIRED_RUNNER_BINARIES = (
+    "python",
+    "fusekit",
+    "fusekit_runner_verify",
+    "fusekit_runner_loop_once",
+    "fusekit_visual_start",
+    "openclaw",
+    "xvfb",
+    "x11vnc",
+    "fluxbox",
+    "novnc_gateway",
+    "playwright_chromium",
+)
 
 
 def runner_readiness_failures(readiness: dict[str, Any]) -> list[str]:
@@ -64,6 +77,7 @@ def runner_readiness_failures(readiness: dict[str, Any]) -> list[str]:
         failures.append("shared provider browser profile path is required")
     if not str(readiness.get("playwright_browsers_path", "")).strip():
         failures.append("Playwright browser cache path is required")
+    failures.extend(_installed_binaries_failures(readiness.get("installed_binaries")))
     return failures
 
 
@@ -121,6 +135,33 @@ def runner_profile_contract_failures(profile: dict[str, Any]) -> list[str]:
             failures.append(
                 "runner profile required_health_checks missing " + ", ".join(missing)
             )
+    required_binaries = profile.get("required_binaries")
+    if not isinstance(required_binaries, list):
+        failures.append("runner profile required_binaries must be a list")
+    else:
+        missing = [
+            item
+            for item in REQUIRED_RUNNER_BINARIES
+            if item not in {str(binary) for binary in required_binaries}
+        ]
+        if missing:
+            failures.append("runner profile required_binaries missing " + ", ".join(missing))
+    return failures
+
+
+def _installed_binaries_failures(installed: object) -> list[str]:
+    failures: list[str] = []
+    if not isinstance(installed, dict):
+        return ["installed_binaries must be a JSON object"]
+    for name in REQUIRED_RUNNER_BINARIES:
+        raw = installed.get(name)
+        if not isinstance(raw, dict):
+            failures.append(f"installed_binaries.{name} must be a JSON object")
+            continue
+        if raw.get("present") is not True:
+            failures.append(f"installed_binaries.{name}.present must be true")
+        if not str(raw.get("path", "") or "").strip():
+            failures.append(f"installed_binaries.{name}.path is required")
     return failures
 
 

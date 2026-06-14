@@ -1364,6 +1364,9 @@ def _runner_readiness_signature(raw: Any) -> Any:
             else {},
             "observed": raw.get("observed", {}) if isinstance(raw.get("observed"), dict) else {},
             "checks": raw.get("checks", {}) if isinstance(raw.get("checks"), dict) else {},
+            "installed_binaries": raw.get("installed_binaries", {})
+            if isinstance(raw.get("installed_binaries"), dict)
+            else {},
             "provider_browser_profile": str(raw.get("provider_browser_profile", "") or ""),
             "playwright_browsers_path": str(raw.get("playwright_browsers_path", "") or ""),
         }
@@ -1383,6 +1386,9 @@ def _runner_profile_signature(raw: Any) -> Any:
             else {},
             "observed": raw.get("observed", {}) if isinstance(raw.get("observed"), dict) else {},
             "checks": raw.get("checks", {}) if isinstance(raw.get("checks"), dict) else {},
+            "installed_binaries": raw.get("installed_binaries", {})
+            if isinstance(raw.get("installed_binaries"), dict)
+            else {},
             "provider_browser_profile": str(raw.get("provider_browser_profile", "") or ""),
             "playwright_browsers_path": str(raw.get("playwright_browsers_path", "") or ""),
         }

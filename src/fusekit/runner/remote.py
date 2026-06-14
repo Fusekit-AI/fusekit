@@ -213,6 +213,8 @@ write_files:
       import json
       import os
       import platform
+      import shutil
+      import subprocess
       from pathlib import Path
       min_memory_mib = 15360
       mem_total_mib = 0
@@ -235,6 +237,34 @@ write_files:
                   os_release[key] = value.strip().strip('"')
       except OSError:
           pass
+      chromium_path = ""
+      try:
+          from playwright.sync_api import sync_playwright
+          with sync_playwright() as playwright:
+              chromium_path = playwright.chromium.executable_path
+      except Exception:
+          chromium_path = ""
+      def binary_record(path, version_args=("--version",)):
+          path_text = str(path or "")
+          present = bool(path_text) and Path(path_text).exists()
+          version = ""
+          if present and version_args:
+              try:
+                  completed = subprocess.run(
+                      [path_text, *version_args],
+                      check=False,
+                      capture_output=True,
+                      text=True,
+                      timeout=10,
+                  )
+                  version = (completed.stdout or completed.stderr).splitlines()[0:1]
+                  version = version[0].strip() if version else ""
+              except Exception:
+                  version = ""
+          return dict(path=path_text, present=present, version=version)
+      novnc_gateway = shutil.which("websockify")
+      if not novnc_gateway and Path("/usr/share/novnc/utils/novnc_proxy").exists():
+          novnc_gateway = "/usr/share/novnc/utils/novnc_proxy"
       readiness = dict(
           schema_version="fusekit.runner-readiness.v1",
           status="ready",
@@ -268,6 +298,19 @@ write_files:
                   "playwright_chromium",
                   "shared_provider_browser_profile",
               ],
+              required_binaries=[
+                  "python",
+                  "fusekit",
+                  "fusekit_runner_verify",
+                  "fusekit_runner_loop_once",
+                  "fusekit_visual_start",
+                  "openclaw",
+                  "xvfb",
+                  "x11vnc",
+                  "fluxbox",
+                  "novnc_gateway",
+                  "playwright_chromium",
+              ],
           ),
           observed=dict(
               os_id=os_release.get("ID", ""),
@@ -283,6 +326,25 @@ write_files:
               openclaw=True,
               playwright_chromium=True,
               shared_provider_browser_profile=True,
+          ),
+          installed_binaries=dict(
+              python=binary_record("/opt/fusekit-python/bin/python"),
+              fusekit=binary_record(shutil.which("fusekit")),
+              fusekit_runner_verify=binary_record(
+                  "/usr/local/sbin/fusekit-runner-verify", version_args=()
+              ),
+              fusekit_runner_loop_once=binary_record(
+                  "/usr/local/sbin/fusekit-runner-loop-once", version_args=()
+              ),
+              fusekit_visual_start=binary_record(
+                  "/usr/local/sbin/fusekit-visual-start", version_args=()
+              ),
+              openclaw=binary_record(shutil.which("openclaw")),
+              xvfb=binary_record(shutil.which("Xvfb")),
+              x11vnc=binary_record(shutil.which("x11vnc")),
+              fluxbox=binary_record(shutil.which("fluxbox")),
+              novnc_gateway=binary_record(novnc_gateway),
+              playwright_chromium=binary_record(chromium_path, version_args=()),
           ),
           provider_browser_profile="/var/lib/fusekit-runner/visual/chrome-provider-profile",
           playwright_browsers_path="{playwright_browsers_path}",

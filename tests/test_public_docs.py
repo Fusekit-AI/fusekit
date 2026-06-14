@@ -92,6 +92,7 @@ def test_oci_runner_lane_defines_prepared_environment_contract() -> None:
     assert "expected x86_64 architecture" in text
     assert "FuseKit runner helpers" in text
     assert "Chromium smoke-test readiness" in text
+    assert "installed-binary inventory" in text
     assert "shared Chrome provider profile" in text
     assert "before the first provider account gate" in text
 
@@ -101,6 +102,7 @@ def test_northstar_background_contract_includes_verified_runner_profile() -> Non
 
     assert "Prepared runner profile first" in text
     assert "OpenClaw or the approved browser spine" in text
+    assert "installed binary inventory" in text
     assert "noVNC" in text
     assert "must be verified" in text
     assert "before provider gates appear" in text
@@ -163,6 +165,7 @@ def test_public_launch_readiness_requires_background_agent_evidence() -> None:
     assert "x86_64 architecture" in text
     assert "approved browser spine" in text
     assert "Playwright smoke test" in text
+    assert "installed-binary inventory" in text
     assert "shared provider browser profile" in text
     assert "provider opens, Capture clicks" in text
     assert "raw secrets and provider callback tokens redacted" in text
@@ -195,6 +198,7 @@ def test_friction_log_tracks_runner_readiness_artifact() -> None:
     assert "live acceptance fails unless the proof shows x86_64" in text
     assert "Playwright Chromium" in text
     assert "shared provider browser profile" in text
+    assert "installed-binary inventory" in text
 
 
 def test_friction_log_tracks_remote_worker_cleanup_proof() -> None:

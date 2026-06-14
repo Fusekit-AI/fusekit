@@ -58,7 +58,9 @@ FuseKit used API automation, secure vault capture, or VM follow-me. When both
 the prepared runner profile and provider gates are present, the run must prove
 the disposable background workstation was ready before the first provider gate:
 x86_64 architecture, approved browser spine, Playwright smoke test, noVNC,
-shared provider browser profile, helper binaries, and vault access. The Run
+shared provider browser profile, helper binaries, vault access, and an
+installed-binary inventory for Python, FuseKit runner helpers, OpenClaw,
+noVNC/VNC helpers, and Playwright Chromium. The Run
 Record's runner profile summary must match `runner_readiness.json`, so stale
 or thinner runner claims cannot survive OCI detonation as recording proof. The run
 journal must also show the control-room path for provider opens, Capture clicks,

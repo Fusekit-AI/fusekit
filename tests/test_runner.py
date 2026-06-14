@@ -65,6 +65,7 @@ from fusekit.runner.oci_live import (
     latest_workspace_from_vault,
     suppress_oci_http_debug_logging,
 )
+from fusekit.runner.readiness import REQUIRED_RUNNER_BINARIES
 from fusekit.runner.remote import (
     _extract_artifacts,
     detonate_remote_worker,
@@ -92,6 +93,17 @@ from fusekit.security import scan_for_secret_leaks
 from fusekit.vault import Vault
 
 REMOTE_CONTROL_ROOM_TOKEN = "remote_control_room_token_abcdefghijklmnopqrstuvwxyz0123456789"
+
+
+def _runner_binary_records() -> dict[str, dict[str, object]]:
+    return {
+        name: {
+            "path": f"/usr/local/bin/{name.replace('_', '-')}",
+            "present": True,
+            "version": "",
+        }
+        for name in REQUIRED_RUNNER_BINARIES
+    }
 
 
 def _write_runner_readiness(root: Path, *, thin: bool = False) -> None:
@@ -130,6 +142,7 @@ def _write_runner_readiness(root: Path, *, thin: bool = False) -> None:
                 "playwright_chromium",
                 "shared_provider_browser_profile",
             ],
+            "required_binaries": list(REQUIRED_RUNNER_BINARIES),
         },
         "observed": {
             "os_id": "ubuntu",
@@ -147,6 +160,7 @@ def _write_runner_readiness(root: Path, *, thin: bool = False) -> None:
         },
         "provider_browser_profile": ("/var/lib/fusekit-runner/visual/chrome-provider-profile"),
         "playwright_browsers_path": "/opt/fusekit-playwright-browsers",
+        "installed_binaries": _runner_binary_records(),
     }
     if thin:
         payload["profile_contract"] = {
@@ -6851,6 +6865,11 @@ def test_remote_bootstrap_artifacts_are_self_contained() -> None:
     assert "fusekit.runner-readiness.v1" in cloud_init
     assert "fusekit.runner-profile.v1" in cloud_init
     assert "oci-visual-browser-x86_64" in cloud_init
+    assert "required_binaries=[" in cloud_init
+    assert "installed_binaries=dict(" in cloud_init
+    assert "fusekit_runner_verify=binary_record(" in cloud_init
+    assert '"/usr/local/sbin/fusekit-runner-verify", version_args=()' in cloud_init
+    assert "playwright_chromium=binary_record(chromium_path" in cloud_init
     assert "min_memory_mib = 15360" in cloud_init
     assert "FuseKit runner requires at least 16 GB RAM" in cloud_init
     assert "openclaw_gateway_loopback=19002" in cloud_init
@@ -7961,6 +7980,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
                                 "playwright_chromium",
                                 "shared_provider_browser_profile",
                             ],
+                            "required_binaries": list(REQUIRED_RUNNER_BINARIES),
                         },
                         "observed": {
                             "os_id": "ubuntu",
@@ -7976,6 +7996,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
                             "playwright_chromium": True,
                             "shared_provider_browser_profile": True,
                         },
+                        "installed_binaries": _runner_binary_records(),
                         "provider_browser_profile": (
                             "/var/lib/fusekit-runner/visual/chrome-provider-profile"
                         ),

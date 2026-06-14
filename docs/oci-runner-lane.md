@@ -120,9 +120,13 @@ best-effort shell setup. A demo-ready run must prove the disposable VM has the
 expected x86_64 architecture, supported Ubuntu/browser dependency stack,
 FuseKit runner helpers, OpenClaw or the approved browser spine, Playwright
 Chromium smoke-test readiness, noVNC, and the shared Chrome provider profile
-before the first provider account gate is shown. If any of those checks fail,
-FuseKit should stop on a runner repair gate or select a verified prepared image
-instead of continuing into provider setup with a brittle partial toolchain.
+before the first provider account gate is shown. The readiness artifact must
+also include a non-secret installed-binary inventory for Python, FuseKit,
+`fusekit-runner-verify`, `fusekit-runner-loop-once`, `fusekit-visual-start`,
+OpenClaw, Xvfb, x11vnc, fluxbox, the noVNC gateway, and Playwright Chromium.
+If any of those checks fail, FuseKit should stop on a runner repair gate or
+select a verified prepared image instead of continuing into provider setup with
+a brittle partial toolchain.
 The proof is stored as `.fusekit/runner_readiness.json` with a
 `fusekit.runner-profile.v1` contract naming the required OCI visual-browser
 profile, 16 GB memory floor, supported Linux image ids, public noVNC/control-room

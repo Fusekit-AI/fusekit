@@ -65,10 +65,22 @@ from fusekit.providers.verification import VerificationResult
 from fusekit.runner.gates import GateService
 from fusekit.runner.job import JobState
 from fusekit.runner.oci_live import OciWorkspace
+from fusekit.runner.readiness import REQUIRED_RUNNER_BINARIES
 from fusekit.runner.remote import remote_worker_cleanup_proof
 from fusekit.spine.playbooks import BrowserPlaybookEvent
 from fusekit.vault import Vault
 from fusekit.verification_report import VerificationReport
+
+
+def _runner_binary_records() -> dict[str, dict[str, object]]:
+    return {
+        name: {
+            "path": f"/usr/local/bin/{name.replace('_', '-')}",
+            "present": True,
+            "version": "",
+        }
+        for name in REQUIRED_RUNNER_BINARIES
+    }
 
 
 def test_provider_strategy_record_preserves_guidance_panels() -> None:
@@ -3198,6 +3210,7 @@ def test_save_launch_job_writes_durable_state_after_job_state_exists(tmp_path) -
                         "playwright_chromium",
                         "shared_provider_browser_profile",
                     ],
+                    "required_binaries": list(REQUIRED_RUNNER_BINARIES),
                 },
                 "observed": {
                     "os_id": "ubuntu",
@@ -3213,6 +3226,7 @@ def test_save_launch_job_writes_durable_state_after_job_state_exists(tmp_path) -
                     "playwright_chromium": True,
                     "shared_provider_browser_profile": True,
                 },
+                "installed_binaries": _runner_binary_records(),
                 "provider_browser_profile": (
                     "/var/lib/fusekit-runner/visual/chrome-provider-profile"
                 ),

@@ -817,6 +817,9 @@ def _runner_profile_summary(runner_readiness: dict[str, Any]) -> dict[str, Any]:
         "profile_contract": profile if isinstance(profile, dict) else {},
         "observed": observed if isinstance(observed, dict) else {},
         "checks": checks if isinstance(checks, dict) else {},
+        "installed_binaries": runner_readiness.get("installed_binaries", {})
+        if isinstance(runner_readiness.get("installed_binaries"), dict)
+        else {},
         "provider_browser_profile": str(runner_readiness.get("provider_browser_profile", "")),
         "playwright_browsers_path": str(runner_readiness.get("playwright_browsers_path", "")),
     }
