@@ -224,8 +224,8 @@ gateway logs, and the disposable compute workspace: instance, boot volume,
 ephemeral public IP, VCN, subnet, internet gateway, route table, security list,
 and network security group. The only survivors are the
 encrypted vault and redacted proof artifacts such as job state, checkpoints,
-gate events, provider strategies, verification, rollback, detonation receipt,
-and the Run Record itself.
+gate events, provider strategies, worker-replacement drill proof, verification,
+rollback, detonation receipt, and the Run Record itself.
 
 The worker-replacement drill is part of the public OCI contract, not an
 operator-only exercise. At any supervised gate, FuseKit must be able to stop or
@@ -234,7 +234,11 @@ lose the disposable VM, provision a new runner with the same
 artifacts, reopen the live control room, and continue from the latest gate or
 verifier without using host-machine browser state, shell history, plaintext
 provider auth, or VM-local scratch files. If that drill cannot be proven, the
-run remains in progress and must not show the "ready for recording" state.
+run remains in progress and must not show the "ready for recording" state. The
+proof must be a redacted `worker_replacement_drill.json` survivor that records
+the replacement runner profile, restored source labels, reopened control room,
+and resumed gate or verifier without raw secrets, host-machine state, or
+VM-local plaintext.
 
 Full OCI tenancy/account deletion is not a default detonation target. It should be a separate destructive workflow with explicit user approval.
 

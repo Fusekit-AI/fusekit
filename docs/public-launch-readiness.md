@@ -148,9 +148,13 @@ must be provider-observed deletion proof, not merely the instance-termination
 request that asked OCI to delete the volume. The final recording
 contract must expose `worker_replacement` as its own green check, separate from
 general durable-state readiness, so the demo cannot hide an unproven kill/recreate
-drill inside a broader status summary. It must also agree with the Run Record
-error list: public demo readiness is false if any unresolved error remains, even
-when all other proof sections look shaped correctly. Error entries themselves
+drill inside a broader status summary. That check requires redacted
+`worker_replacement_drill.json` proof showing the worker was destroyed, a
+replacement runner profile was verified, durable source labels were restored,
+the control room reopened, and a gate or verifier resumed with
+`host_machine_state_required=false` and no VM-local plaintext reuse. It must
+also agree with the Run Record error list: public demo readiness is false if any
+unresolved error remains, even when all other proof sections look shaped correctly. Error entries themselves
 must be redacted and shaped as source/id/detail records; provider callback URLs,
 bearer strings, raw tokens, passwords, and long secret-like values are not
 allowed in the durable Run Record.

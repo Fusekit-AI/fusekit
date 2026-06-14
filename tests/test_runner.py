@@ -283,6 +283,39 @@ def _detonation_survivor_statement() -> str:
     )
 
 
+def _write_worker_replacement_drill(root: Path) -> None:
+    (root / "worker_replacement_drill.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "fusekit.worker-replacement-drill.v1",
+                "status": "passed",
+                "worker_destroyed": True,
+                "replacement_runner_profile_ready": True,
+                "control_room_reopened": True,
+                "resume_checkpoint_restored": True,
+                "gate_or_verifier_resumed": True,
+                "host_machine_state_required": False,
+                "volatile_state_reused": False,
+                "restored_from": [
+                    "encrypted_vault",
+                    "job_state",
+                    "run_state",
+                    "checkpoints",
+                    "gates",
+                    "gate_events",
+                    "provider_strategies",
+                    "runner_readiness",
+                ],
+                "statement": (
+                    "FuseKit recreated the disposable worker from encrypted/redacted "
+                    "survivor state with no host-machine state and no VM-local plaintext."
+                ),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def _control_room_post_headers(root: Path, **extra: str) -> dict[str, str]:
     token = (root / "control-room-action-token").read_text(encoding="utf-8").strip()
     return {
@@ -570,6 +603,7 @@ def test_run_record_centralizes_resume_audit_and_detonation_state(tmp_path) -> N
         encoding="utf-8",
     )
     _write_runner_readiness(tmp_path)
+    _write_worker_replacement_drill(tmp_path)
     job.save(tmp_path / "job.json")
 
     record_path = write_run_record(
@@ -1411,6 +1445,7 @@ def test_run_record_recording_contract_blocks_missing_provider_playbook(tmp_path
     visual_dir.mkdir()
     (visual_dir / "provider-gate.png").write_bytes(b"proof")
     _write_runner_readiness(tmp_path)
+    _write_worker_replacement_drill(tmp_path)
     (tmp_path / "workspace_detonation.json").write_text(
         json.dumps(
             {
@@ -1517,6 +1552,7 @@ def test_recording_contract_rejects_volatile_durable_state_survivors(tmp_path) -
         encoding="utf-8",
     )
     _write_runner_readiness(tmp_path)
+    _write_worker_replacement_drill(tmp_path)
     (tmp_path / "workspace_detonation.json").write_text(
         json.dumps(
             {

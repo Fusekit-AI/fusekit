@@ -51,6 +51,7 @@ from fusekit.runner.run_record import (
     RUN_RECORD_SCHEMA_VERSION,
     VERIFIER_SUMMARY_SCHEMA_VERSION,
     VOLATILE_WORKER_SURFACES,
+    WORKER_REPLACEMENT_DRILL_SCHEMA_VERSION,
     WORKER_REPLACEMENT_SOURCE_IDS,
 )
 from fusekit.scanner import scan_repo
@@ -580,6 +581,9 @@ def _run_record_shape_failures(raw: dict[str, Any]) -> list[str]:
             failures.extend(_runner_profile_contract_failures(profile_contract))
         _require_dict_field(runner_profile, "checks", failures, prefix="runner_profile")
         _require_dict_field(runner_profile, "observed", failures, prefix="runner_profile")
+    worker_replacement_drill = _require_dict_field(raw, "worker_replacement_drill", failures)
+    if worker_replacement_drill is not None:
+        failures.extend(_worker_replacement_drill_shape_failures(worker_replacement_drill))
     verifiers = _require_dict_field(raw, "verifiers", failures)
     if verifiers is not None:
         failures.extend(_verifier_summary_shape_failures(verifiers))
@@ -5608,7 +5612,54 @@ def _durable_state_shape_failures(durable_state: dict[str, Any]) -> list[str]:
     return failures
 
 
+def _worker_replacement_drill_shape_failures(drill: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    if str(drill.get("schema_version", "")).strip() != WORKER_REPLACEMENT_DRILL_SCHEMA_VERSION:
+        failures.append("worker_replacement_drill.schema_version is unsupported")
+    if str(drill.get("status", "") or "") != "passed":
+        failures.append("worker_replacement_drill.status must be passed")
+    for drill_field in (
+        "worker_destroyed",
+        "replacement_runner_profile_ready",
+        "control_room_reopened",
+        "resume_checkpoint_restored",
+        "gate_or_verifier_resumed",
+    ):
+        if drill.get(drill_field) is not True:
+            failures.append(f"worker_replacement_drill.{drill_field} must be true")
+    if drill.get("host_machine_state_required") is not False:
+        failures.append("worker_replacement_drill.host_machine_state_required must be false")
+    if drill.get("volatile_state_reused") is not False:
+        failures.append("worker_replacement_drill.volatile_state_reused must be false")
+    restored_from = drill.get("restored_from", [])
+    restored_values = (
+        {str(item) for item in restored_from} if isinstance(restored_from, list) else set()
+    )
+    required_restore = set(WORKER_REPLACEMENT_SOURCE_IDS)
+    if not isinstance(restored_from, list) or not required_restore.issubset(restored_values):
+        failures.append("worker_replacement_drill.restored_from is incomplete")
+    else:
+        volatile_restores = sorted(
+            value for value in restored_values if _volatile_durable_text_marker(value)
+        )
+        if volatile_restores:
+            failures.append(
+                "worker_replacement_drill.restored_from must not include volatile "
+                "worker state: " + ", ".join(volatile_restores)
+            )
+    statement = str(drill.get("statement", "") or "")
+    if (
+        "encrypted/redacted" not in statement
+        or "no host-machine state" not in statement
+        or "no VM-local plaintext" not in statement
+    ):
+        failures.append("worker_replacement_drill.statement is incomplete")
+    return failures
+
+
 def _volatile_durable_state_marker(source: dict[str, Any]) -> str:
+    if str(source.get("id", "") or "") == "worker_replacement_drill":
+        return _volatile_durable_text_marker(str(source.get("role", "") or ""))
     text = " ".join(str(source.get(field, "") or "") for field in ("id", "path", "role"))
     return _volatile_durable_text_marker(text)
 
@@ -5616,6 +5667,8 @@ def _volatile_durable_state_marker(source: dict[str, Any]) -> str:
 def _volatile_durable_text_marker(value: str) -> str:
     text = str(value or "").strip().lower().replace("_", "-")
     if not text:
+        return ""
+    if text == "worker-replacement-drill":
         return ""
     for marker in VOLATILE_DURABLE_STATE_MARKERS:
         normalized = marker.lower().replace("_", "-")

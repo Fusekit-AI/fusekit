@@ -28,6 +28,7 @@ AUTOMATION_BOUNDARY_SCHEMA_VERSION = "fusekit.automation-boundary.v1"
 VERIFIER_SUMMARY_SCHEMA_VERSION = "fusekit.verifier-summary.v1"
 AUDIT_TRAIL_SCHEMA_VERSION = "fusekit.audit-trail.v1"
 RECORDING_CONTRACT_SCHEMA_VERSION = "fusekit.recording-contract.v1"
+WORKER_REPLACEMENT_DRILL_SCHEMA_VERSION = "fusekit.worker-replacement-drill.v1"
 DURABLE_STATE_SOURCES = (
     ("encrypted_vault", "fusekit.vault.json", "encrypted capability vault", "encrypted"),
     ("job_state", "job.json", "runner job state", "non-secret"),
@@ -37,6 +38,12 @@ DURABLE_STATE_SOURCES = (
     ("gate_events", "gate_events.jsonl", "evented resume wake proof", "non-secret"),
     ("provider_strategies", "provider_strategies.json", "provider route decisions", "non-secret"),
     ("runner_readiness", "runner_readiness.json", "runner profile readiness proof", "non-secret"),
+    (
+        "worker_replacement_drill",
+        "worker_replacement_drill.json",
+        "replacement drill proof",
+        "non-secret",
+    ),
     ("setup_receipt", "setup_receipt.json", "redacted provider setup receipt", "non-secret"),
     (
         "verification_report",
@@ -136,6 +143,7 @@ DETONATION_PRESERVES = (
     "gate_events",
     "provider_strategies",
     "runner_readiness",
+    "worker_replacement_drill",
     "setup_receipt",
     "workspace_detonation",
     "verification_report",
@@ -179,6 +187,7 @@ def build_run_record(
     workspace_detonation = _read_json_object(root / "workspace_detonation.json")
     provider_strategies = _read_json_object(root / "provider_strategies.json")
     runner_readiness = _read_json_object(root / "runner_readiness.json")
+    worker_replacement_drill = _read_json_object(root / "worker_replacement_drill.json")
     wake_events = _read_gate_wake_events(root / "gate_events.jsonl")
     run_state = _read_run_state(root / "run_state.json")
     artifacts = _artifact_records(job, root)
@@ -201,6 +210,9 @@ def build_run_record(
         "provider_gates": _gate_summary(gates),
         "durable_state": durable_state,
         "runner_profile": _runner_profile_summary(runner_readiness),
+        "worker_replacement_drill": _worker_replacement_drill_summary(
+            worker_replacement_drill
+        ),
         "provider_playbook": _provider_playbook_summary(provider_strategies),
         "verifiers": _verifier_summary(verification),
         "wake_events": _wake_event_summary(wake_events),
@@ -845,6 +857,30 @@ def _runner_profile_summary(runner_readiness: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _worker_replacement_drill_summary(drill: dict[str, Any]) -> dict[str, Any]:
+    """Summarize the non-secret kill/recreate drill proof for public demos."""
+
+    if not drill:
+        return {}
+    return _redacted_record_entry(
+        {
+            "schema_version": str(drill.get("schema_version", "") or ""),
+            "status": str(drill.get("status", "") or ""),
+            "worker_destroyed": drill.get("worker_destroyed") is True,
+            "replacement_runner_profile_ready": (
+                drill.get("replacement_runner_profile_ready") is True
+            ),
+            "control_room_reopened": drill.get("control_room_reopened") is True,
+            "resume_checkpoint_restored": drill.get("resume_checkpoint_restored") is True,
+            "gate_or_verifier_resumed": drill.get("gate_or_verifier_resumed") is True,
+            "host_machine_state_required": drill.get("host_machine_state_required") is True,
+            "volatile_state_reused": drill.get("volatile_state_reused") is True,
+            "restored_from": _safe_string_list(drill.get("restored_from")),
+            "statement": str(drill.get("statement", "") or ""),
+        }
+    )
+
+
 def _provider_playbook_summary(provider_strategies: dict[str, Any]) -> dict[str, Any]:
     playbook = provider_strategies.get("playbook", {})
     if not isinstance(playbook, dict):
@@ -1474,11 +1510,17 @@ def _recording_durable_source_ready(source: object) -> bool:
         and not path.startswith("/")
         and source.get("exists") is True
         and secret_class in {"encrypted", "non-secret"}
-        and not _recording_volatile_marker(
-            " ".join(
-                str(source.get(field, "") or "")
-                for field in ("id", "path", "role")
-            )
+        and not _recording_durable_source_volatile_marker(source)
+    )
+
+
+def _recording_durable_source_volatile_marker(source: dict[str, Any]) -> str:
+    source_id = str(source.get("id", "") or "")
+    if source_id == "worker_replacement_drill":
+        return _recording_volatile_marker(str(source.get("role", "") or ""))
+    return _recording_volatile_marker(
+        " ".join(
+            str(source.get(field, "") or "") for field in ("id", "path", "role")
         )
     )
 
@@ -1486,6 +1528,8 @@ def _recording_durable_source_ready(source: object) -> bool:
 def _recording_worker_replacement_ready(record: dict[str, Any]) -> bool:
     durable = record.get("durable_state", {})
     if not isinstance(durable, dict):
+        return False
+    if not _worker_replacement_drill_ready(record.get("worker_replacement_drill", {})):
         return False
     sources = durable.get("sources", [])
     source_ids = {
@@ -1521,9 +1565,38 @@ def _recording_worker_replacement_ready(record: dict[str, Any]) -> bool:
     )
 
 
+def _worker_replacement_drill_ready(drill: object) -> bool:
+    if not isinstance(drill, dict):
+        return False
+    restored_from = drill.get("restored_from", [])
+    restored_values = (
+        {str(item) for item in restored_from} if isinstance(restored_from, list) else set()
+    )
+    required_restore = set(WORKER_REPLACEMENT_SOURCE_IDS)
+    statement = str(drill.get("statement", "") or "")
+    return (
+        str(drill.get("schema_version", "") or "") == WORKER_REPLACEMENT_DRILL_SCHEMA_VERSION
+        and str(drill.get("status", "") or "") == "passed"
+        and drill.get("worker_destroyed") is True
+        and drill.get("replacement_runner_profile_ready") is True
+        and drill.get("control_room_reopened") is True
+        and drill.get("resume_checkpoint_restored") is True
+        and drill.get("gate_or_verifier_resumed") is True
+        and drill.get("host_machine_state_required") is False
+        and drill.get("volatile_state_reused") is False
+        and required_restore.issubset(restored_values)
+        and not any(_recording_volatile_marker(item) for item in restored_values)
+        and "encrypted/redacted" in statement
+        and "no host-machine state" in statement
+        and "no VM-local plaintext" in statement
+    )
+
+
 def _recording_volatile_marker(value: object) -> str:
     text = str(value or "").strip().lower().replace("_", "-")
     if not text:
+        return ""
+    if text == "worker-replacement-drill":
         return ""
     for marker in VOLATILE_DURABLE_STATE_MARKERS:
         normalized = marker.lower().replace("_", "-")

@@ -319,6 +319,25 @@ def _workspace_detonation_receipt() -> dict[str, object]:
     }
 
 
+def _worker_replacement_drill() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.worker-replacement-drill.v1",
+        "status": "passed",
+        "worker_destroyed": True,
+        "replacement_runner_profile_ready": True,
+        "control_room_reopened": True,
+        "resume_checkpoint_restored": True,
+        "gate_or_verifier_resumed": True,
+        "host_machine_state_required": False,
+        "volatile_state_reused": False,
+        "restored_from": list(WORKER_REPLACEMENT_SOURCE_IDS),
+        "statement": (
+            "FuseKit recreated the disposable worker from encrypted/redacted "
+            "survivor state with no host-machine state and no VM-local plaintext."
+        ),
+    }
+
+
 def _durable_state() -> dict[str, object]:
     return {
         "schema_version": "fusekit.durable-state.v1",
@@ -1311,6 +1330,7 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
                 "durable_state": _durable_state(),
                 "provider_playbook": _provider_playbook(),
                 "runner_profile": _runner_profile_from_readiness_fixture(fusekit_dir),
+                "worker_replacement_drill": _worker_replacement_drill(),
                 "wake_events": _wake_event_summary_fixture(fusekit_dir),
                 "human_actions": _human_action_trace(),
                 "automation_boundary": _automation_boundary(),
@@ -5105,6 +5125,51 @@ def test_acceptance_run_record_requires_runner_profile_for_worker_replacement(
         "volatile_worker_surfaces" in failures
     )
     assert "durable_state.worker_replacement_contract.statement is incomplete" in failures
+
+
+def test_acceptance_run_record_requires_worker_replacement_drill(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+
+    record["worker_replacement_drill"] = {
+        "schema_version": "fusekit.worker-replacement-drill.v1",
+        "status": "skipped",
+        "worker_destroyed": False,
+        "replacement_runner_profile_ready": False,
+        "control_room_reopened": False,
+        "resume_checkpoint_restored": False,
+        "gate_or_verifier_resumed": False,
+        "host_machine_state_required": True,
+        "volatile_state_reused": True,
+        "restored_from": ["encrypted_vault", "browser-profile"],
+        "statement": "worker was checked",
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert "worker_replacement_drill.status must be passed" in failures
+    assert "worker_replacement_drill.worker_destroyed must be true" in failures
+    assert (
+        "worker_replacement_drill.replacement_runner_profile_ready must be true"
+        in failures
+    )
+    assert "worker_replacement_drill.control_room_reopened must be true" in failures
+    assert (
+        "worker_replacement_drill.resume_checkpoint_restored must be true"
+        in failures
+    )
+    assert "worker_replacement_drill.gate_or_verifier_resumed must be true" in failures
+    assert (
+        "worker_replacement_drill.host_machine_state_required must be false"
+        in failures
+    )
+    assert "worker_replacement_drill.volatile_state_reused must be false" in failures
+    assert "worker_replacement_drill.restored_from is incomplete" in failures
+    assert "worker_replacement_drill.statement is incomplete" in failures
 
 
 def test_acceptance_run_record_requires_coherent_worker_replacement_contract(
