@@ -1628,6 +1628,84 @@ function renderDurableState(job) {
     .join("");
 }
 
+function renderRuntimeResumeContract(job) {
+  const root = document.querySelector("[data-runtime-resume-checks]");
+  if (!root) return;
+  const runRecord = job.run_record || {};
+  const durable = runRecord.durable_state || {};
+  const scope = durable.detonation_scope || {};
+  const wakeEvents = runRecord.wake_events || {};
+  const drill = runRecord.worker_replacement_drill || {};
+  const boundary = runRecord.automation_boundary || {};
+  const runRecordReady = String(runRecord.schema_version || "") === "fusekit.run-record.v1";
+  const wakeCount = Number.isFinite(Number(wakeEvents.total)) ? Number(wakeEvents.total) : 0;
+  const drillPassed = String(drill.status || "") === "passed";
+  const noHostState = (
+    scope.host_machine_state_required === false &&
+    scope.resume_until_complete === true &&
+    boundary.no_user_machine_state === true
+  );
+  const summaryNode = document.querySelector("[data-runtime-resume-overall]");
+  if (summaryNode) {
+    summaryNode.textContent = runRecordReady && drillPassed && noHostState
+      ? "resume can survive VM replacement"
+      : "resume contract still proving itself";
+  }
+  root.innerHTML = [
+    runtimeResumeCard(
+      "run_record",
+      "Run Record is source of truth",
+      runRecordReady,
+      (
+        "State, checkpoints, gates, provider routes, verifiers, audit, and " +
+        "detonation proof are tied together outside the VM."
+      ),
+      "central product object",
+    ),
+    runtimeResumeCard(
+      "wake_events",
+      "Wake events resume the worker",
+      wakeCount > 0,
+      wakeCount > 0
+        ? `${wakeCount} Capture, approval, or retry wake events are preserved for evented resume.`
+        : (
+            "Waiting for Capture or approval wake events before this run has " +
+            "human-gate resume proof."
+          ),
+      "gate_events.jsonl",
+    ),
+    runtimeResumeCard(
+      "worker_replacement",
+      "Worker replacement drill passed",
+      drillPassed,
+      drillPassed
+        ? (
+            "FuseKit proved it can recreate the disposable OCI worker from " +
+            "encrypted/redacted survivor state."
+          )
+        : "Waiting for a live kill/recreate drill before public recording can go green.",
+      "worker_replacement_drill.json",
+    ),
+    runtimeResumeCard(
+      "no_host_state",
+      "No host-machine state required",
+      noHostState,
+      (
+        "Resume is based on durable encrypted/redacted artifacts; local browser " +
+        "profiles, clipboard history, and VM plaintext are not sources of truth."
+      ),
+      "detonation scope",
+    ),
+  ].join("");
+}
+
+function runtimeResumeCard(id, title, passed, detail, meta) {
+  const status = passed ? "passed" : "pending";
+  return trustCard(status, passed ? "passed" : "checking", title, detail, meta, {
+    "data-runtime-resume": id,
+  });
+}
+
 function renderHumanActions(job) {
   const root = document.querySelector("[data-human-action-checks]");
   if (!root) return;
@@ -2003,6 +2081,7 @@ function render(job) {
   renderCheckpoints(job);
   renderRunState(job);
   renderDurableState(job);
+  renderRuntimeResumeContract(job);
   renderHumanActions(job);
   renderAutomationBoundary(job);
   renderRunRecordVerifiers(job);

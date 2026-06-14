@@ -67,6 +67,7 @@ def render_control_room(
     {_render_recovery(job)}
     {_render_run_state(control_payload.get("run_state", {}))}
     {_render_durable_state(control_payload.get("run_record", {}))}
+    {_render_runtime_resume_contract(control_payload.get("run_record", {}))}
     {_render_human_actions(control_payload.get("run_record", {}))}
     {_render_automation_boundary(control_payload.get("run_record", {}))}
     {_render_run_record_verifiers(control_payload.get("run_record", {}))}
@@ -1363,6 +1364,137 @@ def _render_durable_source_card(
           </div>
         </article>
 """
+
+
+def _render_runtime_resume_contract(run_record: Any) -> str:
+    run_record = run_record if isinstance(run_record, dict) else {}
+    durable = run_record.get("durable_state", {})
+    durable = durable if isinstance(durable, dict) else {}
+    scope = durable.get("detonation_scope", {})
+    scope = scope if isinstance(scope, dict) else {}
+    wake_events = run_record.get("wake_events", {})
+    wake_events = wake_events if isinstance(wake_events, dict) else {}
+    drill = run_record.get("worker_replacement_drill", {})
+    drill = drill if isinstance(drill, dict) else {}
+    boundary = run_record.get("automation_boundary", {})
+    boundary = boundary if isinstance(boundary, dict) else {}
+
+    run_record_ready = str(run_record.get("schema_version", "") or "") == "fusekit.run-record.v1"
+    wake_count = _runtime_resume_int(wake_events.get("total"), 0)
+    drill_passed = str(drill.get("status", "") or "") == "passed"
+    no_host_state = (
+        scope.get("host_machine_state_required") is False
+        and scope.get("resume_until_complete") is True
+        and boundary.get("no_user_machine_state") is True
+    )
+    summary = (
+        "resume can survive VM replacement"
+        if run_record_ready and drill_passed and no_host_state
+        else "resume contract still proving itself"
+    )
+    cards = "\n".join(
+        (
+            _render_runtime_resume_card(
+                "run_record",
+                "Run Record is source of truth",
+                run_record_ready,
+                (
+                    "State, checkpoints, gates, provider routes, verifiers, audit, "
+                    "and detonation proof are tied together outside the VM."
+                ),
+                "central product object",
+            ),
+            _render_runtime_resume_card(
+                "wake_events",
+                "Wake events resume the worker",
+                wake_count > 0,
+                (
+                    f"{wake_count} Capture, approval, or retry wake events are "
+                    "preserved for evented resume."
+                    if wake_count > 0
+                    else (
+                        "Waiting for Capture or approval wake events before this "
+                        "run has human-gate resume proof."
+                    )
+                ),
+                "gate_events.jsonl",
+            ),
+            _render_runtime_resume_card(
+                "worker_replacement",
+                "Worker replacement drill passed",
+                drill_passed,
+                (
+                    "FuseKit proved it can recreate the disposable OCI worker from "
+                    "encrypted/redacted survivor state."
+                    if drill_passed
+                    else (
+                        "Waiting for a live kill/recreate drill before public "
+                        "recording can go green."
+                    )
+                ),
+                "worker_replacement_drill.json",
+            ),
+            _render_runtime_resume_card(
+                "no_host_state",
+                "No host-machine state required",
+                no_host_state,
+                (
+                    "Resume is based on durable encrypted/redacted artifacts; local "
+                    "browser profiles, clipboard history, and VM plaintext are not "
+                    "sources of truth."
+                ),
+                "detonation scope",
+            ),
+        )
+    )
+    return f"""
+    <section class="run-state-panel" aria-label="Runtime resume contract">
+      <div class="section-head compact">
+        <div>
+          <span class="section-kicker">Runtime resume</span>
+          <h2>VM can disappear without losing the run</h2>
+        </div>
+        <span class="live-pill" data-runtime-resume-overall>{html.escape(summary)}</span>
+      </div>
+      <p class="muted">
+        FuseKit treats the OCI VM as an execution surface, not the product. The
+        Run Record and encrypted/redacted survivor artifacts stay durable until
+        completion; the VM, browser sessions, auth scratch, app archive, logs,
+        boot volume, ephemeral public IP, and FuseKit-created network resources
+        are detonation targets.
+      </p>
+      <div class="run-state-grid" data-runtime-resume-checks>{cards}</div>
+    </section>
+"""
+
+
+def _render_runtime_resume_card(
+    card_id: str,
+    title: str,
+    passed: bool,
+    detail: str,
+    meta: str,
+) -> str:
+    status = "passed" if passed else "pending"
+    snow = "passed" if passed else "checking"
+    return f"""
+        <article class="trust-card {status}" data-runtime-resume="{html.escape(card_id)}">
+          <div class="trust-snow state-{snow}" aria-hidden="true"></div>
+          <div>
+            <span>{html.escape(status_label(status))}</span>
+            <strong>{html.escape(title)}</strong>
+            <p>{html.escape(detail)}</p>
+            <em>{html.escape(meta)}</em>
+          </div>
+        </article>
+"""
+
+
+def _runtime_resume_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return default
 
 
 def _render_human_actions(run_record: Any) -> str:

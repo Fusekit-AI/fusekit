@@ -2082,6 +2082,17 @@ def test_control_room_renders_durable_state_from_run_record(tmp_path) -> None:
     assert "is required to resume" in html
     assert 'data-durable-state-source="encrypted_vault"' in html
     assert "encrypted capability vault" in html
+    assert "VM can disappear without losing the run" in html
+    assert "resume can survive VM replacement" in html
+    assert 'data-runtime-resume="run_record"' in html
+    assert "Run Record is source of truth" in html
+    assert 'data-runtime-resume="wake_events"' in html
+    assert "Wake events resume the worker" in html
+    assert 'data-runtime-resume="worker_replacement"' in html
+    assert "Worker replacement drill passed" in html
+    assert 'data-runtime-resume="no_host_state"' in html
+    assert "No host-machine state required" in html
+    assert "the OCI VM as an execution surface, not the product" in html
     assert payload["run_record"]["human_actions"]["total"] == 1
     assert "Human actions matched to gates" in html
     assert "Capture RESEND_API_KEY from VM clipboard" in html
@@ -2175,6 +2186,7 @@ def test_control_room_names_durable_final_proof_blockers(tmp_path) -> None:
 def test_live_control_room_refreshes_all_run_record_proof_panels() -> None:
     for renderer, selector in (
         ("renderDurableState(job)", "data-durable-state-checks"),
+        ("renderRuntimeResumeContract(job)", "data-runtime-resume-checks"),
         ("renderHumanActions(job)", "data-human-action-checks"),
         ("renderAutomationBoundary(job)", "data-automation-boundary-checks"),
         ("renderRunRecordVerifiers(job)", "data-verifier-checks"),
