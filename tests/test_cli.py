@@ -68,6 +68,7 @@ from fusekit.runner.oci_live import OciWorkspace
 from fusekit.runner.readiness import REQUIRED_RUNNER_BINARIES
 from fusekit.runner.remote import remote_worker_cleanup_proof
 from fusekit.runner.run_record import DETONATION_PRESERVES
+from fusekit.runner.worker_replacement import build_passed_worker_replacement_drill
 from fusekit.spine.playbooks import BrowserPlaybookEvent
 from fusekit.vault import Vault
 from fusekit.verification_report import VerificationReport
@@ -3328,8 +3329,17 @@ def test_save_launch_job_writes_durable_state_after_job_state_exists(tmp_path) -
     _save_launch_job(args, job)
 
     record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    worker_drill = json.loads(
+        (fusekit_dir / "worker_replacement_drill.json").read_text(encoding="utf-8")
+    )
     assert (fusekit_dir / "job.json").exists()
     assert (fusekit_dir / "checkpoints.json").exists()
+    assert worker_drill["status"] == "pending"
+    assert worker_drill["host_machine_state_required"] is False
+    assert worker_drill["volatile_state_reused"] is False
+    assert job.artifacts["worker_replacement_drill"] == str(
+        fusekit_dir / "worker_replacement_drill.json"
+    )
     assert record["durable_state"]["resume_ready"] is True
     assert record["durable_state"]["missing"] == []
     assert set(record["durable_state"]["final_proof_missing"]) >= {
@@ -3340,6 +3350,8 @@ def test_save_launch_job_writes_durable_state_after_job_state_exists(tmp_path) -
     }
     assert record["durable_state"]["runner_profile_ready"] is True
     assert record["durable_state"]["worker_replacement_contract"]["can_recreate_worker"] is True
+    assert record["worker_replacement_drill"]["status"] == "pending"
+    assert record["recording_contract"]["checks"]["worker_replacement"] is False
     assert record["recording_contract"]["checks"]["durable_state"] is False
     assert "durable_state" in record["recording_contract"]["blockers"]
 
@@ -3672,33 +3684,7 @@ def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch)
         encoding="utf-8",
     )
     (remote_fusekit / "worker_replacement_drill.json").write_text(
-        json.dumps(
-            {
-                "schema_version": "fusekit.worker-replacement-drill.v1",
-                "status": "passed",
-                "worker_destroyed": True,
-                "replacement_runner_profile_ready": True,
-                "control_room_reopened": True,
-                "resume_checkpoint_restored": True,
-                "gate_or_verifier_resumed": True,
-                "host_machine_state_required": False,
-                "volatile_state_reused": False,
-                "restored_from": [
-                    "encrypted_vault",
-                    "job_state",
-                    "run_state",
-                    "checkpoints",
-                    "gates",
-                    "gate_events",
-                    "provider_strategies",
-                    "runner_readiness",
-                ],
-                "statement": (
-                    "FuseKit recreated the disposable worker from encrypted/redacted "
-                    "survivor state with no host-machine state and no VM-local plaintext."
-                ),
-            }
-        ),
+        json.dumps(build_passed_worker_replacement_drill()),
         encoding="utf-8",
     )
 

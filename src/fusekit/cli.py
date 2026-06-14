@@ -106,6 +106,7 @@ from fusekit.runner.remote import (
 from fusekit.runner.run_record import DETONATION_PRESERVES, write_run_record
 from fusekit.runner.run_state import LaunchRunState, update_run_state
 from fusekit.runner.server import serve_control_room
+from fusekit.runner.worker_replacement import ensure_pending_worker_replacement_drill
 from fusekit.runtime import bootstrap_runtime, doctor
 from fusekit.runtime.bootstrap import openclaw_state_home
 from fusekit.scanner import scan_repo
@@ -2091,6 +2092,10 @@ def _save_launch_job(
     run_record_path = args.job_state.with_name("run_record.json")
     if job.artifacts.get("run_record") != str(run_record_path):
         job.add_artifact("run_record", run_record_path)
+    worker_replacement_drill_path = args.job_state.with_name("worker_replacement_drill.json")
+    ensure_pending_worker_replacement_drill(worker_replacement_drill_path)
+    if job.artifacts.get("worker_replacement_drill") != str(worker_replacement_drill_path):
+        job.add_artifact("worker_replacement_drill", worker_replacement_drill_path)
     control_path = args.job_state.parent / "control-room.html"
     if getattr(args, "control_room", False):
         if job.artifacts.get("control_room") != str(control_path):

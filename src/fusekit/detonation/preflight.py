@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from fusekit.runner.worker_replacement import worker_replacement_drill_failures
 from fusekit.security import contains_durable_secret_text, scan_for_secret_leaks
 
 PENDING_SAFE_CHECKS = {
@@ -65,55 +66,15 @@ def run_detonation_preflight(
     if run_record.is_file():
         failures.extend(_run_record_failures(_read_json(run_record)))
     if worker_replacement_drill is not None and worker_replacement_drill.is_file():
-        failures.extend(_worker_replacement_drill_failures(_read_json(worker_replacement_drill)))
+        failures.extend(
+            worker_replacement_drill_failures(_read_json(worker_replacement_drill))
+        )
 
     leaks = scan_for_secret_leaks(root)
     if leaks:
         failures.append(f"secret leak scan found {len(leaks)} finding(s)")
 
     return DetonationPreflightResult(ok=not failures, failures=tuple(failures))
-
-
-def _worker_replacement_drill_failures(payload: dict[str, Any]) -> list[str]:
-    failures: list[str] = []
-    if not payload:
-        return ["worker replacement drill could not be read"]
-    if str(payload.get("schema_version", "") or "") != "fusekit.worker-replacement-drill.v1":
-        failures.append("worker replacement drill has unsupported schema")
-    if str(payload.get("status", "") or "") != "passed":
-        failures.append("worker replacement drill did not pass")
-    for key in (
-        "worker_destroyed",
-        "replacement_runner_profile_ready",
-        "control_room_reopened",
-        "resume_checkpoint_restored",
-        "gate_or_verifier_resumed",
-    ):
-        if payload.get(key) is not True:
-            failures.append(f"worker replacement drill missing {key}")
-    if payload.get("host_machine_state_required") is not False:
-        failures.append("worker replacement drill requires host-machine state")
-    if payload.get("volatile_state_reused") is not False:
-        failures.append("worker replacement drill reused volatile state")
-    restored_from = payload.get("restored_from", [])
-    required = {
-        "encrypted_vault",
-        "job_state",
-        "run_state",
-        "checkpoints",
-        "gates",
-        "gate_events",
-        "provider_strategies",
-        "runner_readiness",
-    }
-    restored = {str(item) for item in restored_from} if isinstance(restored_from, list) else set()
-    if not required.issubset(restored):
-        failures.append("worker replacement drill restore sources are incomplete")
-    for path, value in _walk_json_strings(payload, path="worker replacement drill"):
-        if contains_durable_secret_text(value):
-            failures.append(f"{path} contains credential-looking text")
-            break
-    return failures
 
 
 def verification_report_failures(report: dict[str, Any]) -> list[str]:

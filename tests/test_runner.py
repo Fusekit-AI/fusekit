@@ -90,6 +90,7 @@ from fusekit.runner.run_record import (
 )
 from fusekit.runner.run_state import LaunchRunState, update_run_state
 from fusekit.runner.server import _handler, _is_loopback, control_room_payload, serve_control_room
+from fusekit.runner.worker_replacement import build_passed_worker_replacement_drill
 from fusekit.security import scan_for_secret_leaks
 from fusekit.vault import Vault
 
@@ -285,33 +286,7 @@ def _detonation_survivor_statement() -> str:
 
 def _write_worker_replacement_drill(root: Path) -> None:
     (root / "worker_replacement_drill.json").write_text(
-        json.dumps(
-            {
-                "schema_version": "fusekit.worker-replacement-drill.v1",
-                "status": "passed",
-                "worker_destroyed": True,
-                "replacement_runner_profile_ready": True,
-                "control_room_reopened": True,
-                "resume_checkpoint_restored": True,
-                "gate_or_verifier_resumed": True,
-                "host_machine_state_required": False,
-                "volatile_state_reused": False,
-                "restored_from": [
-                    "encrypted_vault",
-                    "job_state",
-                    "run_state",
-                    "checkpoints",
-                    "gates",
-                    "gate_events",
-                    "provider_strategies",
-                    "runner_readiness",
-                ],
-                "statement": (
-                    "FuseKit recreated the disposable worker from encrypted/redacted "
-                    "survivor state with no host-machine state and no VM-local plaintext."
-                ),
-            }
-        ),
+        json.dumps(build_passed_worker_replacement_drill()),
         encoding="utf-8",
     )
 
@@ -8296,34 +8271,7 @@ def test_remote_setup_uploads_executes_and_downloads_without_secret_paths(tmp_pa
                 encoding="utf-8",
             )
             worker_drill.write_text(
-                json.dumps(
-                    {
-                        "schema_version": "fusekit.worker-replacement-drill.v1",
-                        "status": "passed",
-                        "worker_destroyed": True,
-                        "replacement_runner_profile_ready": True,
-                        "control_room_reopened": True,
-                        "resume_checkpoint_restored": True,
-                        "gate_or_verifier_resumed": True,
-                        "host_machine_state_required": False,
-                        "volatile_state_reused": False,
-                        "restored_from": [
-                            "encrypted_vault",
-                            "job_state",
-                            "run_state",
-                            "checkpoints",
-                            "gates",
-                            "gate_events",
-                            "provider_strategies",
-                            "runner_readiness",
-                        ],
-                        "statement": (
-                            "FuseKit recreated the disposable worker from "
-                            "encrypted/redacted survivor state with no "
-                            "host-machine state and no VM-local plaintext."
-                        ),
-                    }
-                ),
+                json.dumps(build_passed_worker_replacement_drill()),
                 encoding="utf-8",
             )
             archive.add(payload, arcname=".fusekit/job.json")

@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from fusekit.runner import worker_replacement as worker_replacement_contract
 from fusekit.runner.gates import GateRecord
 from fusekit.runner.job import JobState
 from fusekit.runner.readiness import runner_readiness_failures
@@ -28,7 +29,10 @@ AUTOMATION_BOUNDARY_SCHEMA_VERSION = "fusekit.automation-boundary.v1"
 VERIFIER_SUMMARY_SCHEMA_VERSION = "fusekit.verifier-summary.v1"
 AUDIT_TRAIL_SCHEMA_VERSION = "fusekit.audit-trail.v1"
 RECORDING_CONTRACT_SCHEMA_VERSION = "fusekit.recording-contract.v1"
-WORKER_REPLACEMENT_DRILL_SCHEMA_VERSION = "fusekit.worker-replacement-drill.v1"
+WORKER_REPLACEMENT_DRILL_SCHEMA_VERSION = (
+    worker_replacement_contract.WORKER_REPLACEMENT_DRILL_SCHEMA_VERSION
+)
+WORKER_REPLACEMENT_SOURCE_IDS = worker_replacement_contract.WORKER_REPLACEMENT_SOURCE_IDS
 DURABLE_STATE_SOURCES = (
     ("encrypted_vault", "fusekit.vault.json", "encrypted capability vault", "encrypted"),
     ("job_state", "job.json", "runner job state", "non-secret"),
@@ -59,16 +63,6 @@ DURABLE_STATE_SOURCES = (
         "non-secret",
     ),
     ("run_record", "run_record.json", "central run record", "non-secret"),
-)
-WORKER_REPLACEMENT_SOURCE_IDS = (
-    "encrypted_vault",
-    "job_state",
-    "run_state",
-    "checkpoints",
-    "gates",
-    "gate_events",
-    "provider_strategies",
-    "runner_readiness",
 )
 VOLATILE_WORKER_SURFACES = (
     "worker",
