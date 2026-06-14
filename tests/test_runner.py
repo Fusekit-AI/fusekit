@@ -6988,11 +6988,30 @@ def test_oci_detonation_reports_provider_delete_failures(
         status = 409
         code = "Conflict"
 
+    class DeletedVolume(Exception):
+        status = 404
+        code = "EntityNotFound"
+
     class Response:
         def __init__(self, data: object) -> None:
             self.data = data
 
+    class Attachment:
+        boot_volume_id = "ocid1.bootvolume.oc1..example"
+
     class FakeCompute:
+        def list_boot_volume_attachments(
+            self,
+            *,
+            availability_domain: str,
+            compartment_id: str,
+            instance_id: str,
+        ) -> Response:
+            assert availability_domain == "AD-1"
+            assert compartment_id == "ocid1.tenancy.oc1..example"
+            assert instance_id == "ocid1.instance.oc1..example"
+            return Response([Attachment()])
+
         def terminate_instance(self, instance_id: str, *, preserve_boot_volume: bool) -> None:
             assert instance_id == "ocid1.instance.oc1..example"
             assert preserve_boot_volume is False
@@ -7033,9 +7052,15 @@ def test_oci_detonation_reports_provider_delete_failures(
         def delete_compartment(self, resource_id: str) -> None:
             raise FailedDelete(resource_id)
 
+    class FakeBlockstorage:
+        def get_boot_volume(self, boot_volume_id: str) -> Response:
+            assert boot_volume_id == "ocid1.bootvolume.oc1..example"
+            raise DeletedVolume(boot_volume_id)
+
     monkeypatch.setattr(time, "sleep", lambda _seconds: None)
     provisioner = object.__new__(OciProvisioner)
     provisioner.compute = FakeCompute()
+    provisioner.blockstorage = FakeBlockstorage()
     network = FakeNetwork()
     provisioner.network = network
     provisioner.identity = FakeIdentity()
@@ -7060,7 +7085,7 @@ def test_oci_detonation_reports_provider_delete_failures(
     deleted = provisioner.detonate(workspace)
 
     assert deleted["instance"] == "ocid1.instance.oc1..example"
-    assert deleted["boot_volume"] == "delete-on-terminate"
+    assert deleted["boot_volume"] == "ocid1.bootvolume.oc1..example"
     assert deleted["ephemeral_public_ip"] == "203.0.113.10"
     assert deleted["failed.subnet"] == "409 Conflict"
     assert deleted["failed.compartment"] == "409 Conflict"

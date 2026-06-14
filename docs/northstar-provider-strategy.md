@@ -98,8 +98,9 @@ The pressure-test rules are:
   readiness must stay false if the worker-replacement contract is missing.
 - Detonation is a receipt, not a hope: the control room must show live verifier
   status and the workspace detonation resource receipt, including any failed
-  deletion keys. A run is not green if the OCI VM or FuseKit-created network
-  resources remain.
+  deletion keys. A run is not green without provider-observed boot volume deletion
+  proof, OCI VM termination proof, ephemeral public IP release proof, and
+  FuseKit-created network resource cleanup proof.
 - Evented resume beats click-and-hope: token capture, DNS approval, provider
   verification, and retryable service gates write wake events so the worker can
   continue after a user action or after being recreated.

@@ -118,6 +118,7 @@ def test_northstar_defines_detonation_pressure_test() -> None:
     assert "Public recording" in text
     assert "readiness must stay false" in text
     assert "Evented resume beats click-and-hope" in text
+    assert "provider-observed boot volume deletion" in text
 
 
 def test_oci_lane_requires_detonation_survivor_set() -> None:
@@ -143,6 +144,7 @@ def test_northstar_pressure_tests_background_agent_objects() -> None:
     assert "Disposable Workers, Durable State" in text
     assert "Audit-First UX" in text
     assert "Repeated or stale clicks must be idempotent" in text
+    assert "provider-observed boot volume deletion" in text
 
 
 def test_northstar_defines_background_agent_contract() -> None:

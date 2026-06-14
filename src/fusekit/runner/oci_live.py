@@ -107,6 +107,7 @@ class OciProvisioner:
         )
         self.network = oci.core.VirtualNetworkClient(auth.config, **auth_kwargs)
         self.compute = oci.core.ComputeClient(auth.config, **auth_kwargs)
+        self.blockstorage = oci.core.BlockstorageClient(auth.config, **auth_kwargs)
         self._progress = progress or (lambda message: None)
 
     def provision(self, plan: OciRunnerPlan, vault: Vault) -> OciWorkspace:
@@ -239,15 +240,36 @@ class OciProvisioner:
         deleted: dict[str, str] = {}
         instance_id = workspace.resource_ids.get("instance")
         if instance_id:
+            boot_volume_ids: tuple[str, ...] = ()
+            try:
+                boot_volume_ids = self._instance_boot_volume_ids(workspace, instance_id)
+            except Exception as exc:  # pragma: no cover - exception type is SDK-defined.
+                deleted["failed.boot_volume"] = (
+                    "could not identify instance boot volume before termination: "
+                    f"{_safe_oci_error(exc)}"
+                )
             try:
                 self.compute.terminate_instance(instance_id, preserve_boot_volume=False)
                 deleted["instance"] = instance_id
-                deleted["boot_volume"] = "delete-on-terminate"
                 self._wait_for_instance_network_release(workspace.compartment_id, instance_id)
                 if workspace.public_ip:
                     deleted["ephemeral_public_ip"] = workspace.public_ip
             except Exception as exc:  # pragma: no cover - exception type is SDK-defined.
                 deleted["failed.instance"] = _safe_oci_error(exc)
+            if "failed.instance" not in deleted:
+                if boot_volume_ids:
+                    if self._wait_for_boot_volume_deletion(boot_volume_ids):
+                        deleted["boot_volume"] = ",".join(boot_volume_ids)
+                    else:
+                        deleted["failed.boot_volume"] = (
+                            "boot volume deletion was requested during instance termination "
+                            "but was not verified before the detonation timeout: "
+                            + ",".join(boot_volume_ids)
+                        )
+                elif "failed.boot_volume" not in deleted:
+                    deleted["failed.boot_volume"] = (
+                        "could not identify instance boot volume before termination"
+                    )
         for key, method_name in (
             ("subnet", "delete_subnet"),
             ("route_table", "delete_route_table"),
@@ -299,6 +321,54 @@ class OciProvisioner:
             if not active:
                 return
             time.sleep(10)
+
+    def _instance_boot_volume_ids(
+        self,
+        workspace: OciWorkspace,
+        instance_id: str,
+    ) -> tuple[str, ...]:
+        if not hasattr(self.compute, "list_boot_volume_attachments"):
+            raise FuseKitError("OCI compute client cannot list boot volume attachments.")
+        attachments = self.compute.list_boot_volume_attachments(
+            availability_domain=workspace.availability_domain,
+            compartment_id=workspace.compartment_id,
+            instance_id=instance_id,
+        ).data
+        boot_volume_ids = tuple(
+            str(getattr(attachment, "boot_volume_id", "") or "")
+            for attachment in attachments
+            if str(getattr(attachment, "boot_volume_id", "") or "").strip()
+        )
+        if not boot_volume_ids:
+            raise FuseKitError("OCI reported no boot volume attachment for the runner VM.")
+        return boot_volume_ids
+
+    def _wait_for_boot_volume_deletion(
+        self,
+        boot_volume_ids: tuple[str, ...],
+        *,
+        timeout_seconds: int = 600,
+    ) -> bool:
+        blockstorage = getattr(self, "blockstorage", None)
+        if blockstorage is None or not hasattr(blockstorage, "get_boot_volume"):
+            return False
+        deadline = time.time() + timeout_seconds
+        remaining = set(boot_volume_ids)
+        while remaining and time.time() < deadline:
+            for boot_volume_id in tuple(remaining):
+                try:
+                    volume = blockstorage.get_boot_volume(boot_volume_id).data
+                except Exception as exc:  # pragma: no cover - exception type is SDK-defined.
+                    if _is_oci_resource_gone(exc):
+                        remaining.discard(boot_volume_id)
+                        continue
+                    raise
+                state = str(getattr(volume, "lifecycle_state", "") or "").upper()
+                if state in {"DELETED", "TERMINATED"}:
+                    remaining.discard(boot_volume_id)
+            if remaining:
+                time.sleep(10)
+        return not remaining
 
     def _delete_oci_resource(
         self,
@@ -1048,6 +1118,15 @@ def _is_oci_not_authorized_or_not_found(exc: Exception) -> bool:
     status = str(getattr(exc, "status", ""))
     code = str(getattr(exc, "code", ""))
     return status == "404" and code == "NotAuthorizedOrNotFound"
+
+
+def _is_oci_resource_gone(exc: Exception) -> bool:
+    status = str(getattr(exc, "status", ""))
+    code = str(getattr(exc, "code", ""))
+    text = str(exc).lower()
+    return (status == "404" and code in {"EntityNotFound", "NotAuthorizedOrNotFound"}) or (
+        status == "404" and "not found" in text
+    )
 
 
 def _is_oci_region_unavailable(exc: Exception) -> bool:
