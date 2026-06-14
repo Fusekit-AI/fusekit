@@ -811,6 +811,8 @@ def test_recording_automation_boundary_requires_complete_route_proof() -> None:
                     "recipe": "resend-domain",
                     "route": "api",
                     "owner": "fusekit",
+                    "deterministic": True,
+                    "implemented": True,
                     "status": "ok",
                 },
                 {
@@ -818,6 +820,8 @@ def test_recording_automation_boundary_requires_complete_route_proof() -> None:
                     "recipe": "resend-api-key",
                     "route": "browser_guided",
                     "owner": "human_gate",
+                    "deterministic": False,
+                    "implemented": False,
                     "status": "needs_human_gate",
                 },
             ],

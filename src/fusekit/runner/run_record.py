@@ -1711,6 +1711,11 @@ def _recording_automation_boundary_ready(record: dict[str, Any]) -> bool:
     human_gate = [
         route for route in routes if isinstance(route, dict) and route.get("owner") == "human_gate"
     ]
+    if any(
+        route.get("deterministic") is not True or route.get("implemented") is not True
+        for route in fusekit_owned
+    ):
+        return False
     return (
         str(boundary.get("status", "") or "") == "ready"
         and boundary.get("resume_after_worker_replace") is True
