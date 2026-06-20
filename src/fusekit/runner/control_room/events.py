@@ -71,20 +71,11 @@ function publicCopy(value, captureTargetList = []) {
   for (const [oldText, newText] of replacements) {
     text = text.replaceAll(oldText, newText);
   }
-  return text;
+  return publicRedactedText(text);
 }
 
-function publicCaptureInstruction(captureTargetList = []) {
-  const labels = (captureTargetList || [])
-    .map((item) => `Capture ${String(item || "").toUpperCase()} from VM clipboard`)
-    .filter((item) => item.trim() !== "Capture  from VM clipboard");
-  if (labels.length === 1) return labels[0];
-  if (labels.length > 1) return "one of these visible buttons: " + labels.join(", ");
-  return "the exact env-named Capture button shown on the active launcher gate";
-}
-
-function publicTarget(value) {
-  let text = publicCopy(value);
+function publicRedactedText(value) {
+  let text = String(value || "");
   const patterns = [
     /sk-[A-Za-z0-9_-]{12,}/g,
     /sk_(?:live|test|prod)_[A-Za-z0-9_-]{12,}/g,
@@ -106,6 +97,19 @@ function publicTarget(value) {
     "$1[redacted]",
   );
   return text;
+}
+
+function publicCaptureInstruction(captureTargetList = []) {
+  const labels = (captureTargetList || [])
+    .map((item) => `Capture ${String(item || "").toUpperCase()} from VM clipboard`)
+    .filter((item) => item.trim() !== "Capture  from VM clipboard");
+  if (labels.length === 1) return labels[0];
+  if (labels.length > 1) return "one of these visible buttons: " + labels.join(", ");
+  return "the exact env-named Capture button shown on the active launcher gate";
+}
+
+function publicTarget(value) {
+  return publicRedactedText(publicCopy(value));
 }
 
 function statusCounts(steps) {
@@ -882,9 +886,10 @@ function acceptanceCards(report) {
         snow: "passed",
         label: "Passed",
         title: "Acceptance blockers are clear",
-        body: "The live run has the required proof to be launch-ready.",
+        body: "The live run has the required public and recording proof.",
         foot: "Record the demo from this clean state.",
       },
+      ...acceptanceRecordingContractCards(report, true),
     ];
   }
   if (publicReady) {
@@ -899,36 +904,10 @@ function acceptanceCards(report) {
           "explicitly proven demo recording readiness.",
         foot:
           "Keep the live launcher/control room open while FuseKit finishes " +
-          "recording-readiness proof for the current provider run.",
+          "recording-readiness proof for the current provider run, then rerun " +
+          "live acceptance with --remote-artifacts and --require-recording.",
       },
-    ];
-  }
-  if (report.launch_ready && mode === "rehearsal") {
-    return [
-      {
-        status: "pending",
-        snow: "checking",
-        label: "Rehearsal passed",
-        title: "Live acceptance is still required",
-        body: "Local rehearsal proof is clear, but it is not live provider evidence.",
-        foot:
-          "Keep using the live launcher/control room for the provider run; " +
-          "FuseKit must collect live provider evidence before recording.",
-      },
-    ];
-  }
-  if (report.launch_ready) {
-    return [
-      {
-        status: "pending",
-        snow: "checking",
-        label: "Not recordable",
-        title: "Public launch proof is still required",
-        body: "The acceptance report has not explicitly proven public/demo readiness.",
-        foot:
-          "Keep the live launcher/control room open while FuseKit rebuilds " +
-          "launch-readiness proof from the current provider run.",
-      },
+      ...acceptanceRecordingContractCards(report, false),
     ];
   }
   if (blockers.length) {
@@ -944,6 +923,36 @@ function acceptanceCards(report) {
       foot: "FuseKit will keep this visible until acceptance proof passes.",
     }));
   }
+  if (report.launch_ready && mode === "rehearsal") {
+    return [
+      {
+        status: "pending",
+        snow: "checking",
+        label: "Rehearsal passed",
+        title: "Live acceptance is still required",
+        body: "Local rehearsal proof is clear, but it is not live provider evidence.",
+        foot:
+          "Keep using the live launcher/control room for the provider run; " +
+          "FuseKit must collect live provider evidence before recording, then " +
+          "pass live acceptance with --remote-artifacts and --require-recording.",
+      },
+    ];
+  }
+  if (report.launch_ready) {
+    return [
+      {
+        status: "pending",
+        snow: "checking",
+        label: "Not recordable",
+        title: "Public launch proof is still required",
+        body: "The acceptance report has not explicitly proven public/demo readiness.",
+        foot:
+          "Keep the live launcher/control room open while FuseKit rebuilds " +
+          "launch-readiness proof from the current provider run, then rerun " +
+          "live acceptance with --remote-artifacts and --require-recording.",
+      },
+    ];
+  }
   return [
     {
       status: "pending",
@@ -957,11 +966,91 @@ function acceptanceCards(report) {
 }
 
 function acceptancePublicReady(report, mode) {
-  return report.public_launch_ready === true && report.launch_ready === true && mode === "live";
+  return report.public_launch_ready === true
+    && report.launch_ready === true
+    && mode === "live"
+    && !acceptanceHasUnresolvedEvidence(report);
 }
 
 function acceptanceRecordingReady(report, publicReady) {
-  return report.recording_ready === true && publicReady;
+  const contract = report.recording_contract && typeof report.recording_contract === "object"
+    ? report.recording_contract
+    : {};
+  return report.recording_ready === true
+    && report.recording_proof_ready === true
+    && acceptanceRemoteArtifactsReady(report)
+    && publicReady
+    && contract.recording_ready === true;
+}
+
+function acceptanceRemoteArtifactsReady(report) {
+  if (report.remote_artifacts_ready === true) return true;
+  const checks = Array.isArray(report.checks) ? report.checks : [];
+  return checks.some((check) =>
+    check
+    && check.id === "remote_artifacts.loaded"
+    && check.status === "ok"
+  );
+}
+
+function acceptanceHasUnresolvedEvidence(report) {
+  return Boolean(report.error) || acceptanceBlockers(report).length > 0;
+}
+
+const RECORDING_CONTRACT_CARD_ORDER = [
+  "worker_replacement",
+  "rehearsal_review",
+  "model_inference",
+  "provider_playbook",
+  "verifiers",
+  "detonation",
+  "control_room_security",
+  "automation_boundary",
+  "durable_state",
+  "runner_profile",
+  "provider_gates",
+  "human_actions",
+  "audit_trail",
+  "evidence",
+  "artifacts",
+  "vault",
+  "wake_events",
+  "timeline",
+  "errors_empty",
+];
+
+function recordingContractSortKey(name) {
+  const index = RECORDING_CONTRACT_CARD_ORDER.indexOf(name);
+  return [index === -1 ? RECORDING_CONTRACT_CARD_ORDER.length : index, name];
+}
+
+function acceptanceRecordingContractCards(report, passedOnly) {
+  const contract = report.recording_contract && typeof report.recording_contract === "object"
+    ? report.recording_contract
+    : {};
+  const checks = contract.checks && typeof contract.checks === "object" ? contract.checks : {};
+  return Object.keys(checks).sort((left, right) => {
+    const leftKey = recordingContractSortKey(left);
+    const rightKey = recordingContractSortKey(right);
+    if (leftKey[0] !== rightKey[0]) return leftKey[0] - rightKey[0];
+    return leftKey[1].localeCompare(rightKey[1]);
+  }).reduce((cards, name) => {
+    if (cards.length >= 6) return cards;
+    const passed = checks[name] === true;
+    if (passedOnly && !passed) return cards;
+    if (!passedOnly && passed) return cards;
+    const status = passed ? "passed" : "pending";
+    cards.push({
+      status,
+      snow: passed ? "passed" : "checking",
+      label: label(status),
+      title: `recording contract: ${name.replaceAll("_", " ")}`,
+      body: recordingContractDetail(name, passed),
+      foot: "from acceptance report recording_contract",
+      recordingCheck: name,
+    });
+    return cards;
+  }, []);
 }
 
 function acceptanceBlockers(report) {
@@ -969,10 +1058,210 @@ function acceptanceBlockers(report) {
   const normalized = blockers.filter((blocker) => blocker && typeof blocker === "object");
   if (normalized.length) return normalized;
   const missing = Array.isArray(report.missing) ? report.missing : [];
-  return missing
+  const missingBlockers = missing
     .map((item) => String(item).trim())
     .filter(Boolean)
     .map((item) => missingAcceptanceBlocker(item));
+  if (missingBlockers.length) return missingBlockers;
+  const checks = Array.isArray(report.checks) ? report.checks : [];
+  return checks
+    .filter((check) => isFailedAcceptanceCheck(check))
+    .map((check) => acceptanceCheckBlocker(check));
+}
+
+function isFailedAcceptanceCheck(check) {
+  if (!check || typeof check !== "object") return false;
+  const status = String(check.status || "").trim().toLowerCase();
+  return Boolean(status && !["ok", "passed", "skipped"].includes(status));
+}
+
+function acceptanceCheckBlocker(check) {
+  const item = String(check.id || check.item || "Acceptance check").trim();
+  const detail = String(check.detail || "");
+  const [category, nextAction] = acceptanceCheckGuidance(item, detail);
+  const blocker = { category, item, next_action: nextAction };
+  if (detail) blocker.detail = detail;
+  return blocker;
+}
+
+function acceptanceCheckGuidance(item, detail = "") {
+  if (item === "remote_artifacts.loaded") {
+    return [
+      "Remote artifacts",
+      "Keep the live launcher/control room open while FuseKit retrieves the " +
+        "complete OCI artifact bundle before detonation; missing survivor files " +
+        "mean the run cannot be recorded or trusted for public launch.",
+    ];
+  }
+  if (item === "detonation.workspace_receipt") {
+    return [
+      "Workspace detonation",
+      "Keep the launcher/control room open until FuseKit writes the OCI " +
+        "workspace detonation receipt proving the VM, boot volume, ephemeral " +
+        "public IP, network resources, and remote worker cleanup were destroyed.",
+    ];
+  }
+  if (item === "runner_readiness.prepared") {
+    return [
+      "Runner readiness",
+      "Keep the live launcher/control room open while FuseKit verifies the OCI " +
+        "visual runner: x86_64 architecture, OpenClaw, Playwright Chromium, noVNC, " +
+        "shared provider browser profile, helper binaries, and encrypted vault " +
+        "access must be proven before provider gates continue.",
+    ];
+  }
+  if (item === "visual_state.safe") {
+    return [
+      "Visual session",
+      "Keep the live launcher/control room open while FuseKit refreshes visual " +
+        "session metadata with only safe noVNC/control-room URLs and safe noVNC " +
+        "password metadata.",
+    ];
+  }
+  if (item === "provider_packs.validated" || item.startsWith("provider_pack.")) {
+    return [
+      "Provider packs",
+      "Keep the live launcher/control room open while FuseKit loads and " +
+        "validates provider capability packs for the services in the manifest " +
+        "before provider setup, route planning, or verification continues.",
+    ];
+  }
+  if (item.startsWith("manifest.")) {
+    return [
+      "Manifest",
+      "Keep the launcher/control room open while FuseKit rescans the app, " +
+        "loads `fusekit.yaml`, and snapshots the setup manifest before " +
+        "provider planning continues.",
+    ];
+  }
+  if (item === "plan.generated") {
+    return [
+      "Setup plan",
+      "Keep the launcher/control room open while FuseKit rebuilds the setup " +
+        "plan from the current manifest and waits for the visible Approve setup " +
+        "plan control before provider mutations continue.",
+    ];
+  }
+  if (item.startsWith("verification_report.")) {
+    return [
+      "Verification",
+      "Keep the live launcher/control room open while FuseKit verifies every " +
+        "provider, resolves visible VM-browser gates, and keeps only safe pending " +
+        "DNS/deploy waits.",
+    ];
+  }
+  if (item.startsWith("rollback_metadata.")) {
+    return [
+      "Rollback",
+      "Keep the live launcher/control room open after the redacted receipt is " +
+        "saved so FuseKit writes provider rollback actions for every provider " +
+        "declared by the manifest before launch.",
+    ];
+  }
+  if (item.startsWith("audit.")) {
+    return [
+      "Audit log",
+      "Keep the live launcher/control room open while FuseKit writes the " +
+        "redacted JSONL audit log for vault captures, provider actions, " +
+        "approvals, verifier checks, and detonation without raw secrets.",
+    ];
+  }
+  if (item.startsWith("gates.")) {
+    return [
+      "Human gates",
+      "Keep the live launcher/control room open while FuseKit rebuilds the " +
+        "gate so it shows Open provider gate in VM, an exact env-named Capture " +
+        "button for copy-once values, or the I finished this step control as the next " +
+        "visible action.",
+    ];
+  }
+  if (item === "provider_strategies.order") {
+    return [
+      "Provider order",
+      "Capture RESEND_API_KEY first, then let FuseKit create or reuse the " +
+        "Resend domain by API before you approve DNS apply.",
+    ];
+  }
+  if (item === "provider_strategies.playbook") {
+    return [
+      "Provider playbook",
+      "Keep the live launcher/control room open until the Provider playbook " +
+        "shows the ordered VM-browser actions, exact Capture controls, DNS " +
+        "approval, and Resend no-manual-setup safety notes.",
+    ];
+  }
+  if (item.startsWith("provider_strategies.")) {
+    return [
+      "Provider routes",
+      "Keep the live launcher/control room open and let the setup worker " +
+        "record provider route decisions in the correct order.",
+    ];
+  }
+  if (item.startsWith("vault.")) {
+    return [
+      "Vault",
+      "Keep the live launcher/control room open with vault capture enabled; " +
+        "use the visible VM clipboard Capture controls for provider secrets so " +
+        "FuseKit can save and unlock encrypted vault proof.",
+    ];
+  }
+  if (item.startsWith("receipt.")) {
+    return [
+      "Receipt",
+      "Keep the live launcher/control room open and let the setup worker finish " +
+        "provider setup so FuseKit can save a redacted receipt with no raw secrets.",
+    ];
+  }
+  if (item === "detonation.worker_state") {
+    return [
+      "Detonation",
+      "Keep the launcher/control room open while FuseKit detonates plaintext " +
+        "worker, browser, visual, provider-auth, control-room, and gateway " +
+        "scratch state after encrypted artifacts are preserved.",
+    ];
+  }
+  if (item === "leak_scan.clean") {
+    return [
+      "Security",
+      "Keep the launcher/control room open while FuseKit runs the leak scan; " +
+        "if it flags plaintext setup secrets, move them out of app files and " +
+        "back into vault Capture/provider secret storage.",
+    ];
+  }
+  if (item === "run_record.complete") {
+    const lowerDetail = String(detail || "").toLowerCase();
+    if (lowerDetail.includes("rehearsal_review")) {
+      return [
+        "Rehearsal review",
+        "Keep the live launcher/control room open while FuseKit writes a " +
+          "clean rehearsal review: every human action must match visible " +
+          "control-room instructions, with no host browser, terminal, side " +
+          "channel, or user interpretation.",
+      ];
+    }
+    if (lowerDetail.includes("model_inference") || lowerDetail.includes("llm_contract")) {
+      return [
+        "Model inference",
+        "Keep the live launcher/control room open until the model/inference " +
+          "card shows an encrypted API-key lane or encrypted OpenClaw OpenAI " +
+          "authorization. Use Capture OPENAI_API_KEY from VM clipboard when " +
+          "the API-key lane is required, or complete the visible OpenClaw " +
+          "authorization gate; FuseKit writes only the non-secret " +
+          "llm_contract.json proof.",
+      ];
+    }
+    if (lowerDetail.includes("worker_replacement")) {
+      return [
+        "Worker replacement",
+        "Keep the live launcher/control room open while FuseKit runs the " +
+          "worker replacement drill: destroy the original OCI worker, restore " +
+          "only encrypted/redacted durable sources onto a replacement runner, " +
+          "reopen the control room, and resume a gate or verifier without " +
+          "host-machine state.",
+      ];
+    }
+  }
+  return ["Launch evidence", unknownAcceptanceBlockerAction(item)];
 }
 
 function missingAcceptanceBlocker(item) {
@@ -1022,6 +1311,12 @@ function missingAcceptanceBlocker(item) {
       "Keep the live launcher/control room open while FuseKit rebuilds each " +
         "gate card with follow-me steps, next action, and resume hint.",
     ],
+    "safe gate state": [
+      "Human gates",
+      "Keep the live launcher/control room open while FuseKit rewrites durable " +
+        "gate and wake proof without callback URLs, token-shaped text, or raw " +
+        "provider return data.",
+    ],
     "provider strategy decisions": [
       "Provider routes",
       "Keep the live launcher/control room open and let the setup worker record " +
@@ -1044,6 +1339,20 @@ function missingAcceptanceBlocker(item) {
       "Keep the live launcher/control room open until the Provider playbook shows " +
         "the ordered VM-browser actions, exact Capture controls, DNS approval, and " +
         "Resend no-manual-setup safety notes.",
+    ],
+    "model inference": [
+      "Model inference",
+      "Keep the live launcher/control room open until the model/inference card " +
+        "shows an encrypted API-key lane or encrypted OpenClaw OpenAI authorization. " +
+        "Use Capture OPENAI_API_KEY from VM clipboard when the API-key lane is " +
+        "required, or complete the visible OpenClaw authorization gate; FuseKit " +
+        "writes only the non-secret llm_contract.json proof.",
+    ],
+    "model inference contract": [
+      "Model inference",
+      "Keep the live launcher/control room open until FuseKit writes " +
+        "llm_contract.json and the Run Record model_inference summary from an " +
+        "encrypted API-key lane or encrypted OpenClaw OpenAI authorization.",
     ],
     "provider route recovery checkpoints": [
       "Provider routes",
@@ -1097,6 +1406,13 @@ function missingAcceptanceBlocker(item) {
         "session metadata with only safe noVNC/control-room URLs and safe noVNC " +
         "password metadata.",
     ],
+    "prepared runner readiness proof": [
+      "Runner readiness",
+      "Keep the live launcher/control room open while FuseKit verifies the OCI " +
+        "visual runner: x86_64 architecture, OpenClaw, Playwright Chromium, noVNC, " +
+        "shared provider browser profile, helper binaries, and encrypted vault " +
+        "access must be proven before provider gates continue.",
+    ],
     "verified live URL": [
       "Deployment",
       "Let FuseKit verify the deployed live URL and write it into the setup receipt.",
@@ -1119,6 +1435,7 @@ function missingAcceptanceBlocker(item) {
         "workspace detonation receipt proving the VM, boot volume, ephemeral " +
         "public IP, network resources, and remote worker cleanup were destroyed.",
     ],
+    "remote_artifacts.loaded": acceptanceCheckGuidance("remote_artifacts.loaded"),
   };
   const fallback = [
     "Launch evidence",
@@ -1152,7 +1469,7 @@ function renderAcceptance(job) {
   if (report.error) {
     summary = "acceptance report needs repair";
   } else if (recordable) {
-    summary = "launch-ready proof is clear";
+    summary = "recording-ready proof is clear";
   } else if (publicReady) {
     summary = "recording proof still required";
   } else if (report.launch_ready && mode === "rehearsal") {
@@ -1169,8 +1486,11 @@ function renderAcceptance(job) {
       const detail = card.detail
         ? `<code>${escapeHtml(publicCopy(card.detail))}</code>`
         : "";
+      const recordingCheck = card.recordingCheck
+        ? ` data-acceptance-recording-check="${escapeHtml(card.recordingCheck)}"`
+        : "";
       return `
-      <article class="trust-card ${classToken(card.status)}">
+      <article class="trust-card ${classToken(card.status)}"${recordingCheck}>
         <div class="trust-snow state-${classToken(card.snow)}" aria-hidden="true"></div>
         <div>
           <span>${escapeHtml(card.label)}</span>
@@ -1797,6 +2117,71 @@ function renderSecuritySurface(job) {
   root.innerHTML = routes.map((route) => securitySurfaceCard(route)).join("");
 }
 
+function renderModelInference(job) {
+  const root = document.querySelector("[data-model-inference-checks]");
+  if (!root) return;
+  const contract = job.llm_contract || {};
+  const summary = job.run_record?.model_inference || {};
+  const status = String(summary.status || contract.status || "pending");
+  const readyStatuses = new Set([
+    "api_key_encrypted",
+    "openclaw_profile_encrypted",
+    "optional_for_rehearsal",
+  ]);
+  const ready = summary.ready === true || readyStatuses.has(status);
+  const provider = String(summary.provider || contract.provider || "openai");
+  const model = String(summary.model || contract.model || "gpt-5.5");
+  const envName = String(summary.api_key_env || contract.api_key_env || "OPENAI_API_KEY");
+  const authMode = String(summary.auth_mode || contract.auth_mode || "auto");
+  const nextAction = String(
+    summary.next_action ||
+    contract.next_action ||
+    "Provide an LLM key or complete the supported OpenClaw authorization gate.",
+  );
+  const canProceedWithoutKey = (
+    summary.can_proceed_without_api_key === true ||
+    contract.can_proceed_without_api_key === true
+  );
+  const summaryNode = document.querySelector("[data-model-inference-overall]");
+  if (summaryNode) {
+    summaryNode.textContent = ready ? "model lane ready" : status.replaceAll("_", " ");
+  }
+  const copy = document.querySelector("[data-model-inference-copy]");
+  if (copy) {
+    const withoutKey = canProceedWithoutKey
+      ? "OpenClaw can authorize the default OpenAI lane if no API key is available."
+      : "This lane needs an API key; OpenClaw fallback is unavailable for this provider.";
+    copy.textContent = (
+      `FuseKit uses ${provider} / ${model} for provider-page reasoning. ` +
+      `API-key lane: capture ${envName} into the encrypted vault. ` +
+      `Auth mode: ${authMode}. ${withoutKey} Next: ${nextAction}`
+    );
+  }
+  const lanes = Array.isArray(contract.lanes) ? contract.lanes : [];
+  if (!lanes.length) {
+    root.innerHTML = pendingRunRecordCard(
+      "Model lane contract",
+      "Waiting for FuseKit to write the non-secret model/inference contract.",
+      "OPENAI_API_KEY or OpenClaw auth",
+    );
+    return;
+  }
+  root.innerHTML = lanes.map((lane) => modelInferenceLaneCard(lane)).join("");
+}
+
+function modelInferenceLaneCard(lane) {
+  const available = lane?.available === true;
+  const needsAction = lane?.requires_user_action === true;
+  const status = available && needsAction ? "pending" : available ? "passed" : "skipped";
+  const snow = status === "passed" ? "passed" : "checking";
+  const title = String(lane?.label || lane?.id || "model lane");
+  const detail = String(lane?.description || "");
+  const meta = needsAction ? "needs human action" : available ? "available" : "unavailable";
+  return trustCard(status, snow, title, detail, meta, {
+    "data-model-lane": String(lane?.id || ""),
+  });
+}
+
 function securitySurfaceCard(route) {
   const stateChange = route?.state_change === true;
   const methods = Array.isArray(route?.methods) ? route.methods.join(", ") : "";
@@ -1824,6 +2209,9 @@ function renderHumanActions(job) {
   const humanActions = job.run_record?.human_actions || {};
   const rehearsalReview = job.run_record?.rehearsal_review || {};
   const actions = Array.isArray(humanActions.actions) ? humanActions.actions : [];
+  const reviewedActions = Array.isArray(rehearsalReview.reviewed_actions)
+    ? rehearsalReview.reviewed_actions
+    : [];
   const summaryNode = document.querySelector("[data-human-action-overall]");
   if (summaryNode) {
     summaryNode.textContent = rehearsalReview.status === "ready"
@@ -1838,15 +2226,21 @@ function renderHumanActions(job) {
     );
     return;
   }
-  root.innerHTML = actions.slice(0, 6).map((action) => {
+  root.innerHTML = actions.slice(0, 6).map((action, index) => {
     const guided = action?.guided === true;
+    const reviewed = reviewedActions[index] && typeof reviewedActions[index] === "object"
+      ? reviewedActions[index]
+      : {};
+    const proofSource = String(reviewed.proof_source || "");
+    const matched = reviewed.matched === true;
     const status = guided ? "passed" : "failed";
     const snow = guided ? "passed" : "failed";
     const title = String(action?.visible_control || action?.action || "human action");
     const provider = String(action?.provider || "provider");
     const gateId = String(action?.gate_id || "gate");
     const detail = guided
-      ? "Matched to the current control-room gate instructions."
+      ? "Matched to the current control-room gate instructions" +
+          (matched && proofSource ? `; proof: ${proofSource}.` : ".")
       : String(action?.guidance_gap || "Missing guided control-room proof.");
     return trustCard(status, snow, title, detail, provider, {
       "data-human-action": gateId,
@@ -1916,8 +2310,11 @@ function renderRunRecordVerifiers(job) {
   const checks = Array.isArray(verifiers.checks) ? verifiers.checks : [];
   const summaryNode = document.querySelector("[data-verifier-overall]");
   if (summaryNode) {
-    summaryNode.textContent = verifiers.all_passed_or_pending_safe === true
-      ? "all verifiers green or pending-safe"
+    const skippedCount = Number(verifiers.counts?.skipped || 0);
+    summaryNode.textContent = verifiers.all_passed_or_pending_safe === true && skippedCount > 0
+      ? "verifiers green/pending-safe; skipped optional checks do not count"
+      : verifiers.all_passed_or_pending_safe === true
+        ? "all verifiers green or pending-safe"
       : "verifiers still running";
   }
   if (!checks.length) {
@@ -1930,7 +2327,7 @@ function renderRunRecordVerifiers(job) {
   }
   root.innerHTML = checks.slice(0, 6).map((check) => {
     const rawStatus = String(check?.status || "pending");
-    const passed = ["passed", "pending_safe", "skipped"].includes(rawStatus);
+    const passed = ["passed", "pending_safe"].includes(rawStatus);
     const status = passed ? "passed" : "pending";
     const provider = String(check?.provider || "provider");
     const checkName = String(check?.check || "provider_status");
@@ -2010,18 +2407,61 @@ function renderRecordingContract(job) {
   root.innerHTML = names.map((name) => {
     const ready = checks[name] === true;
     const status = ready ? "passed" : "pending";
-    const detail = ready
-      ? "This proof input is present and agrees with the Run Record."
-      : "Waiting for this proof before the public demo can be recorded.";
     return trustCard(
       status,
       ready ? "passed" : "checking",
       name.replaceAll("_", " "),
-      detail,
+      recordingContractDetail(name, ready),
       "recording readiness",
       {"data-recording-contract-check": name},
     );
   }).join("");
+}
+
+function recordingContractDetail(name, passed) {
+  const readyDetails = {
+    durable_state: "Encrypted/redacted survivor state is present outside the OCI worker.",
+    worker_replacement:
+      "The worker replacement drill proved the run can resume without host-machine state.",
+    runner_profile: "The disposable VM/browser runner profile matches the launch contract.",
+    model_inference: "The encrypted model/inference lane is proven and matches the contract.",
+    provider_playbook: "Provider steps have ordered You/FuseKit ownership proof.",
+    human_actions: "Human actions are tied to exact visible launcher controls.",
+    rehearsal_review: "Every recorded human action matched visible control-room instructions.",
+    automation_boundary: "Post-gate automation and human-gate routes agree.",
+    control_room_security: "State-changing routes are bounded by action-token proof.",
+    verifiers: "Provider and live-app checks are green or explicitly pending-safe.",
+    audit_trail: "Required credential, provider, approval, and detonation events are redacted.",
+    evidence: "Evidence inventory paths and counts match durable survivor files.",
+    detonation: "OCI worker, browser, auth, visual, and workspace cleanup proof agrees.",
+    errors_empty: "The Run Record has no unresolved launch errors.",
+  };
+  const pendingDetails = {
+    durable_state: "Waiting for encrypted/redacted survivor state outside the OCI worker.",
+    worker_replacement:
+      "Waiting for a passed kill/recreate drill that restores only durable sources.",
+    runner_profile: "Waiting for the verified x86 visual/browser runner profile.",
+    model_inference: "Waiting for encrypted API-key or encrypted OpenClaw model-lane proof.",
+    provider_playbook: "Waiting for ordered provider steps with explicit You/FuseKit ownership.",
+    human_actions: "Waiting for each provider open, Capture, or approval to name a gate.",
+    rehearsal_review:
+      "Waiting for a clean rehearsal review proving every human action matched " +
+      "visible launcher/VNC instructions with no host browser, terminal, side " +
+      "channel, or user interpretation.",
+    automation_boundary: "Waiting for proof that FuseKit owns all post-gate automation.",
+    control_room_security: "Waiting for protected route inventory and no-CORS proof.",
+    verifiers: "Waiting for provider and live-app checks to pass or become pending-safe.",
+    audit_trail: "Waiting for required redacted audit categories and source proof.",
+    evidence: "Waiting for evidence inventory paths and counts to match survivor files.",
+    detonation: "Waiting for complete no-trace OCI workspace and worker cleanup proof.",
+    errors_empty: "Waiting for unresolved Run Record errors to be cleared.",
+  };
+  const details = passed ? readyDetails : pendingDetails;
+  return details[name] || (
+    passed
+      ? "This proof input is present and agrees with the Run Record."
+      : "Waiting for this proof before the public demo can be recorded."
+  );
 }
 
 function renderDetonationReceipt(job) {
@@ -2194,6 +2634,7 @@ function render(job) {
   renderRunState(job);
   renderDurableState(job);
   renderRuntimeResumeContract(job);
+  renderModelInference(job);
   renderSecuritySurface(job);
   renderHumanActions(job);
   renderAutomationBoundary(job);

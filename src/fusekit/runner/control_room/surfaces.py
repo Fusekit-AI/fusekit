@@ -4,49 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-CONTROL_ROOM_ROUTE_SURFACE: tuple[dict[str, object], ...] = (
-    {
-        "route": "/",
-        "methods": ("GET",),
-        "state_change": False,
-        "protection": "local-or-remote-token",
-    },
-    {
-        "route": "/index.html",
-        "methods": ("GET",),
-        "state_change": False,
-        "protection": "local-or-remote-token",
-    },
-    {
-        "route": "/api/job",
-        "methods": ("GET",),
-        "state_change": False,
-        "protection": "local-or-remote-token",
-    },
-    {
-        "route": "/api/gates/<gate_id>/pass",
-        "methods": ("POST",),
-        "state_change": True,
-        "protection": "control-room-header-origin-fetch-site-action-token",
-    },
-    {
-        "route": "/api/gates/<gate_id>/open",
-        "methods": ("POST",),
-        "state_change": True,
-        "protection": "control-room-header-origin-fetch-site-action-token",
-    },
-    {
-        "route": "/api/gates/<gate_id>/capture-clipboard",
-        "methods": ("POST",),
-        "state_change": True,
-        "protection": "control-room-header-origin-fetch-site-action-token",
-    },
-    {
-        "route": "unknown",
-        "methods": ("GET", "POST", "OPTIONS"),
-        "state_change": False,
-        "protection": "security-headers-no-cors-posts-auth-before-404",
-    },
+from fusekit.runner.control_room_security import (
+    CONTROL_ROOM_REQUIRED_POST_PROTECTION,
+    CONTROL_ROOM_ROUTE_SURFACE,
+    CONTROL_ROOM_SECURITY_SCHEMA_VERSION,
+    CONTROL_ROOM_UNKNOWN_ROUTE_PROTECTION,
 )
 
 
@@ -71,13 +33,13 @@ def public_control_room_security_surface() -> dict[str, Any]:
         )
     state_changing = [route for route in routes if route["state_change"] is True]
     return {
-        "schema_version": "fusekit.control-room-security-surface.v1",
+        "schema_version": CONTROL_ROOM_SECURITY_SCHEMA_VERSION,
         "routes": routes,
         "route_count": len(routes),
         "state_changing_route_count": len(state_changing),
         "state_changing_routes": [route["route"] for route in state_changing],
-        "required_post_protection": "control-room-header-origin-fetch-site-action-token",
-        "unknown_route_protection": "security-headers-no-cors-posts-auth-before-404",
+        "required_post_protection": CONTROL_ROOM_REQUIRED_POST_PROTECTION,
+        "unknown_route_protection": CONTROL_ROOM_UNKNOWN_ROUTE_PROTECTION,
         "statement": (
             "The control room has three browser-reachable state-changing routes. "
             "Each one requires the explicit control-room header, trusted browser "

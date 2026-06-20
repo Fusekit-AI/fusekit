@@ -13,7 +13,7 @@ import urllib.parse
 import urllib.request
 import zipfile
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Protocol, cast
 
 from fusekit.errors import FuseKitError
@@ -24,6 +24,29 @@ GITHUB_HTTPS_RE = re.compile(
     r"^https://github\.com/"
     r"(?P<owner>[A-Za-z0-9_.-]+)/"
     r"(?P<repo>[A-Za-z0-9_.-]+?)(?:\.git)?/?(?:[?#].*)?$"
+)
+EXCLUDED_SOURCE_PATHS = (
+    ".git",
+    ".env",
+    ".env.local",
+    ".env.development",
+    ".env.production",
+    ".env.preview",
+    ".npmrc",
+    ".pypirc",
+    ".vercel",
+    ".fusekit",
+    "node_modules",
+    "__pycache__",
+    ".cache",
+    ".turbo",
+    ".parcel-cache",
+    ".vite",
+    ".nyc_output",
+    "coverage",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".mypy_cache",
 )
 
 
@@ -204,12 +227,22 @@ def _extract_single_root_zip(archive: Path, dest: Path) -> None:
             target = (dest.parent / name).resolve()
             if not _within(target, dest.parent.resolve()):
                 raise FuseKitError("GitHub source archive contains unsafe paths.")
+        included_names = [
+            name
+            for name in names
+            if _should_extract_source_path(PurePosixPath(name).relative_to(root))
+        ]
+        if not included_names:
+            raise FuseKitError("GitHub source archive had no includable app files.")
         staging = dest.with_name(f"{dest.name}.download")
         if staging.exists():
             shutil.rmtree(staging)
         try:
             for member in zipped.infolist():
                 if member.is_dir():
+                    continue
+                relative_name = PurePosixPath(member.filename).relative_to(root)
+                if not _should_extract_source_path(relative_name):
                     continue
                 target = (staging / member.filename).resolve()
                 if not _within(target, staging.resolve()):
@@ -225,6 +258,29 @@ def _extract_single_root_zip(archive: Path, dest: Path) -> None:
             shutil.move(str(extracted_root), str(dest))
         finally:
             shutil.rmtree(staging, ignore_errors=True)
+
+
+def _should_extract_source_path(path: PurePosixPath) -> bool:
+    """Return true when an archive path may enter the fetched app source tree."""
+
+    parts = {part.lower() for part in path.parts}
+    if any(excluded in parts for excluded in EXCLUDED_SOURCE_PATHS):
+        return False
+    name = path.name
+    lower_name = name.lower()
+    if lower_name.startswith(".env."):
+        return False
+    if lower_name.endswith(".tsbuildinfo"):
+        return False
+    if lower_name in {"id_rsa", "id_ed25519", "id_ecdsa", "credentials.json"}:
+        return False
+    if lower_name.endswith((".vault", ".vault.json", ".pem", ".key", ".p12", ".pfx")):
+        return False
+    if any(marker in lower_name for marker in ("secret", "credential", "private_key")) and (
+        lower_name.endswith((".json", ".txt", ".env", ".yaml", ".yml"))
+    ):
+        return False
+    return True
 
 
 def _validate_zip_member(member: zipfile.ZipInfo) -> None:

@@ -17,11 +17,28 @@ WORKER_REPLACEMENT_SOURCE_IDS = (
     "gates",
     "gate_events",
     "provider_strategies",
+    "llm_contract",
     "runner_readiness",
 )
 WORKER_REPLACEMENT_DRILL_STATEMENT = (
     "FuseKit recreated the disposable worker from encrypted/redacted survivor "
     "state with no host-machine state and no VM-local plaintext."
+)
+WORKER_REPLACEMENT_DRILL_KEYS = frozenset(
+    {
+        "schema_version",
+        "status",
+        "worker_destroyed",
+        "replacement_runner_profile_ready",
+        "control_room_reopened",
+        "resume_checkpoint_restored",
+        "gate_or_verifier_resumed",
+        "host_machine_state_required",
+        "volatile_state_reused",
+        "restored_from",
+        "statement",
+        "pending_reason",
+    }
 )
 
 
@@ -112,9 +129,20 @@ def worker_replacement_drill_failures(payload: dict[str, Any]) -> list[str]:
     failures: list[str] = []
     if not payload:
         return ["worker replacement drill could not be read"]
-    if str(payload.get("schema_version", "") or "") != WORKER_REPLACEMENT_DRILL_SCHEMA_VERSION:
+    unexpected = sorted(set(payload) - WORKER_REPLACEMENT_DRILL_KEYS)
+    if unexpected:
+        failures.append(
+            "worker replacement drill has unexpected fields: " + ", ".join(unexpected)
+        )
+    schema_version = str(payload.get("schema_version", "") or "")
+    if schema_version != schema_version.strip():
+        failures.append("worker replacement drill schema_version must be trimmed")
+    if schema_version != WORKER_REPLACEMENT_DRILL_SCHEMA_VERSION:
         failures.append("worker replacement drill has unsupported schema")
-    if str(payload.get("status", "") or "") != "passed":
+    status = str(payload.get("status", "") or "")
+    if status != status.strip():
+        failures.append("worker replacement drill status must be trimmed")
+    if status != "passed":
         failures.append("worker replacement drill did not pass")
     for key in (
         "worker_destroyed",
@@ -130,14 +158,56 @@ def worker_replacement_drill_failures(payload: dict[str, Any]) -> list[str]:
     if payload.get("volatile_state_reused") is not False:
         failures.append("worker replacement drill reused volatile state")
     restored_from = payload.get("restored_from", [])
-    restored = {str(item) for item in restored_from} if isinstance(restored_from, list) else set()
-    if not set(WORKER_REPLACEMENT_SOURCE_IDS).issubset(restored):
-        failures.append("worker replacement drill restore sources are incomplete")
+    if not isinstance(restored_from, list):
+        failures.append("worker replacement drill restored_from must be a list")
+        restored = set()
+    else:
+        for index, item in enumerate(restored_from):
+            if not isinstance(item, str) or not item:
+                failures.append(
+                    f"worker replacement drill restored_from[{index}] must be a string"
+                )
+            elif item != item.strip():
+                failures.append(
+                    f"worker replacement drill restored_from[{index}] must be trimmed"
+                )
+        restored = {item for item in restored_from if isinstance(item, str)}
+    if restored != set(WORKER_REPLACEMENT_SOURCE_IDS):
+        failures.append("worker replacement drill restore sources must match durable source ids")
+    elif isinstance(restored_from, list) and _has_duplicate_strings(restored_from):
+        failures.append("worker replacement drill restore sources must be unique")
+    for name in ("statement", "pending_reason"):
+        if name not in payload:
+            continue
+        value = payload.get(name)
+        if not isinstance(value, str):
+            failures.append(f"worker replacement drill {name} must be a string")
+        elif value != value.strip():
+            failures.append(f"worker replacement drill {name} must be trimmed")
+    statement = str(payload.get("statement", "") or "")
+    if (
+        "encrypted/redacted" not in statement
+        or "no host-machine state" not in statement
+        or "no VM-local plaintext" not in statement
+    ):
+        failures.append("worker replacement drill statement is incomplete")
     for path, value in _walk_json_strings(payload, path="worker replacement drill"):
         if contains_durable_secret_text(value):
             failures.append(f"{path} contains credential-looking text")
             break
     return failures
+
+
+def _has_duplicate_strings(values: list[Any]) -> bool:
+    seen: set[str] = set()
+    for value in values:
+        text = str(value).strip()
+        if not text:
+            continue
+        if text in seen:
+            return True
+        seen.add(text)
+    return False
 
 
 def _walk_json_strings(value: object, *, path: str) -> list[tuple[str, str]]:

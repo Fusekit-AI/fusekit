@@ -9,6 +9,37 @@ The app is `Moonlite RSVP`: a party invitation and RSVP page that needs GitHub,
 Vercel, custom DNS, Resend, a webhook secret, vault encryption, verification,
 and detonation.
 
+## Current Run Log
+
+2026-06-20 local checks passed before the live gate attempt:
+
+```zsh
+python -m pytest
+python -m ruff check .
+python -m mypy src
+```
+
+The requested recording gate was attempted with the absolute Moonlite artifact
+path:
+
+```zsh
+fusekit acceptance run /Users/ileanaphoenix/Developer/fusekit/examples/moonlite-rsvp \
+  --mode live \
+  --remote-artifacts /Users/ileanaphoenix/Developer/fusekit/examples/moonlite-rsvp/.fusekit/remote-artifacts \
+  --require-recording \
+  --json
+```
+
+It failed closed because the retrieved OCI survivor bundle does not exist yet:
+
+```text
+fusekit: Remote artifact path does not exist: /Users/ileanaphoenix/Developer/fusekit/examples/moonlite-rsvp/.fusekit/remote-artifacts
+```
+
+Do not mark the public walkthrough ready until the supervised provider gates
+are completed and `.fusekit/remote-artifacts` has been retrieved from the
+detonated worker.
+
 ## Recording Outline
 
 1. Show the generated app repo.
@@ -26,9 +57,11 @@ and detonation.
 11. Show the encrypted vault file is unreadable.
 12. Show wrong passphrase fails.
 13. Show redacted receipt and audit log.
-14. Run `fusekit acceptance run --mode live`.
+14. Run `fusekit acceptance run --mode live --remote-artifacts .fusekit/remote-artifacts --require-recording`.
 15. Show `"launch_ready": true`, `"public_launch_ready": true`, and
-    `"recording_ready": true`.
+    `"remote_artifacts_ready": true`, plus `"recording_ready": true`, and a
+    redacted `"recording_contract"` object whose section checks are all `true`
+    and whose `blockers` list is empty.
 16. Show detonation proof.
 
 ## Real Launch Command Shape
@@ -81,8 +114,14 @@ Then run the proof gate:
 fusekit acceptance run /path/to/moonlite-rsvp \
   --mode live \
   --remote-artifacts /path/to/moonlite-rsvp/.fusekit/remote-artifacts \
-  --passphrase-file /path/to/pass.txt
+  --passphrase-file /path/to/pass.txt \
+  --require-recording
 ```
+
+`--require-recording` is the public OCI recording gate. FuseKit accepts it only
+with `--mode live` and a retrieved `--remote-artifacts` bundle, so the final
+ready-to-record claim comes from encrypted/redacted survivor artifacts after the
+disposable worker has been detonated.
 
 ## Launch Bar
 
@@ -93,6 +132,8 @@ Do not publish the public walkthrough until:
 - the custom domain resolves
 - Resend API/domain verification passes
 - provider strategy order proves Resend ran before Cloudflare/DNS
+- Run Record `model_inference` matches `llm_contract.json` and proves an
+  encrypted API-key or encrypted OpenClaw lane
 - Vercel deployment is live
 - GitHub secrets/deploy-key verification passes
 - no control-room gate remains waiting, resurfaced, retrying, or failed

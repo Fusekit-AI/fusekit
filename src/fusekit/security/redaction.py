@@ -11,16 +11,16 @@ def redact_public_text(value: object) -> str:
 
     redacted = str(value or "")
     patterns = (
-        r"sk-[A-Za-z0-9_-]{12,}",
-        r"sk_(?:live|test|prod)_[A-Za-z0-9_-]{12,}",
-        r"pk_(?:live|test|prod)_[A-Za-z0-9_-]{12,}",
-        r"gh[pousr]_[A-Za-z0-9_]{12,}",
-        r"github_pat_[A-Za-z0-9_]{12,}",
-        r"whsec_[A-Za-z0-9_]{12,}",
-        r"rk_[A-Za-z0-9_-]{12,}",
-        r"re_[A-Za-z0-9_-]{12,}",
-        r"plaid-[A-Za-z0-9_-]{12,}",
-        r"eyJ[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{8,}",
+        r"\bsk-[A-Za-z0-9_-]{12,}",
+        r"\bsk_(?:live|test|prod)_[A-Za-z0-9_-]{12,}",
+        r"\bpk_(?:live|test|prod)_[A-Za-z0-9_-]{12,}",
+        r"\bgh[pousr]_[A-Za-z0-9_]{12,}",
+        r"\bgithub_pat_[A-Za-z0-9_]{12,}",
+        r"\bwhsec_[A-Za-z0-9_]{12,}",
+        r"\brk_[A-Za-z0-9_-]{12,}",
+        r"\bre_[A-Za-z0-9_-]{12,}",
+        r"\bplaid-[A-Za-z0-9_-]{12,}",
+        r"\beyJ[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{8,}",
         r"\b[A-Za-z0-9_-]{36,}\b",
         (
             r"([?&](?:access_token|auth_token|token|api_key|key|secret|code|password|"
@@ -67,23 +67,28 @@ def contains_durable_secret_text(value: str) -> bool:
     )
     if any(re.search(pattern, value, flags=re.IGNORECASE) for pattern in token_patterns):
         return True
+    redacted_boundary = r"(?:$|[&#\s,;\.\"'\]\})])"
     if re.search(
         (
             r"([?&](?:access_token|auth_token|token|api_key|key|secret|code|password|"
-            r"passphrase|signature)=)(?!\[redacted\](?:[&#\s]|$))[^&#\s]+"
+            r"passphrase|signature)=)(?!\[redacted\](?:[&#]|"
+            + redacted_boundary
+            + r"))[^&#\s]+"
         ),
         value,
         flags=re.IGNORECASE,
     ):
         return True
-    if re.search(r"\bbearer\s+(?!\[redacted\](?:$|[\s,;]))[^\s,;]+", lowered):
+    if re.search(r"\bbearer\s+(?!\[redacted\]" + redacted_boundary + r")[^\s,;]+", lowered):
         return True
     return bool(
         re.search(
             (
                 r"\b(?:access[_-]?token|auth[_-]?token|api[_-]?key|token|secret|"
                 r"password|private[-_ ]?key|passphrase|signature)\s*[:=]\s*"
-                r"(?!\[redacted\](?:$|[\s,;])|redacted\b|none\b|null\b|false\b|true\b|$)"
+                r"(?!\[redacted\]"
+                + redacted_boundary
+                + r"|redacted\b|none\b|null\b|false\b|true\b|$)"
                 r"[^\s,;]+"
             ),
             lowered,

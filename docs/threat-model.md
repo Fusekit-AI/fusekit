@@ -54,11 +54,12 @@ The control room is the only browser-facing surface that can advance a live
 setup run. Its state-changing routes are intentionally small:
 
 - `/api/gates/<gate_id>/pass` records a protected human approval or resume
-  signal after a provider gate is complete.
+  signal after a provider gate is complete and accepts no request body.
 - `/api/gates/<gate_id>/open` opens the provider URL inside the VM visual
-  browser, using fixed argv execution rather than shell-evaluated strings.
+  browser, accepts no request body, and uses fixed argv execution rather than shell-evaluated strings.
 - `/api/gates/<gate_id>/capture-clipboard` captures the VM clipboard for the
-  named secret target and writes it to the encrypted vault.
+  named secret target from a bounded JSON body and writes it to the encrypted
+  vault.
 
 Every state-changing control-room POST must keep all of these protections:
 
@@ -72,6 +73,8 @@ Every state-changing control-room POST must keep all of these protections:
   browser features
 - remote access disabled unless an explicit generated remote token is configured
   with at least 32 URL-safe characters
+- pass/open state changes accept no request body; capture is the only
+  body-bearing control-room mutation route
 
 Non-browser runner/local automation can omit `Origin` and `Sec-Fetch-Site`, but it
 still cannot mutate state without the explicit control-room header and owner-only

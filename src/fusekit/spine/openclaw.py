@@ -67,7 +67,10 @@ class OpenClawBrowserSpine:
         if not self.available():
             return False
         run = self.runner or _default_runner
-        completed = run([*_openclaw_env_prefix(), self._binary(), "browser", "doctor"])
+        try:
+            completed = run([*_openclaw_env_prefix(), self._binary(), "browser", "doctor"])
+        except (OSError, subprocess.TimeoutExpired):
+            return False
         return completed.returncode == 0
 
     def start(self) -> SpineResult:

@@ -21,6 +21,7 @@ from fusekit.runner.control_room import (
     control_room_payload as build_control_room_payload,
 )
 from fusekit.runner.control_room import (
+    redacted_public_payload,
     render_control_room,
 )
 from fusekit.runner.gates import GateService
@@ -177,6 +178,11 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
                 if not gate_id:
                     self._write_not_found()
                     return
+                try:
+                    self._reject_request_body()
+                except FuseKitError as exc:
+                    self._write_json({"ok": False, "error": str(exc)}, status=400)
+                    return
                 service = GateService.load(job_state.parent / "gates.json")
                 if gate_id not in service.records:
                     self._write_json({"ok": False, "error": "gate not found"}, status=404)
@@ -241,6 +247,11 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
             if gate_id is not None:
                 if not gate_id:
                     self._write_not_found()
+                    return
+                try:
+                    self._reject_request_body()
+                except FuseKitError as exc:
+                    self._write_json({"ok": False, "error": str(exc)}, status=400)
                     return
                 service = GateService.load(job_state.parent / "gates.json")
                 open_gate = service.records.get(gate_id)
@@ -374,14 +385,23 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
             return ""
 
         def _write_json(self, payload: dict[str, Any], status: int = 200) -> None:
-            data = json.dumps(payload, indent=2, sort_keys=True).encode("utf-8")
+            redacted_payload = redacted_public_payload(payload)
+            if not isinstance(redacted_payload, dict):
+                redacted_payload = {
+                    "ok": False,
+                    "error": "Control-room response payload was not a JSON object.",
+                }
+            data = json.dumps(redacted_payload, indent=2, sort_keys=True).encode("utf-8")
             self.send_response(status)
             self.send_header("content-type", "application/json")
             self.send_header("content-length", str(len(data)))
             self._write_security_headers()
             self._write_control_room_cookie()
             self.end_headers()
-            self.wfile.write(data)
+            try:
+                self.wfile.write(data)
+            except (BrokenPipeError, ConnectionResetError):
+                return
 
         def _write_not_found(self) -> None:
             self.send_response(404)
@@ -429,6 +449,18 @@ def _handler(job_state: Path) -> type[BaseHTTPRequestHandler]:
             if not isinstance(data, dict):
                 raise FuseKitError("Control-room request body must be a JSON object.")
             return data
+
+        def _reject_request_body(self) -> None:
+            if self.headers.get("transfer-encoding", "").strip():
+                raise FuseKitError("Control-room request body is not accepted on this route.")
+            try:
+                length = int(self.headers.get("content-length", "0"))
+            except ValueError as exc:
+                raise FuseKitError(
+                    "Control-room request body is not accepted on this route."
+                ) from exc
+            if length > 0:
+                raise FuseKitError("Control-room request body is not accepted on this route.")
 
         def _write_control_room_cookie(self) -> None:
             expected = os.environ.get("FUSEKIT_CONTROL_ROOM_TOKEN", "")

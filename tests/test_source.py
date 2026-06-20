@@ -106,6 +106,60 @@ def test_fetch_public_github_source_uses_default_branch_from_api(tmp_path) -> No
     assert (tmp_path / "app" / "app.js").exists()
 
 
+def test_fetch_github_source_filters_local_state_and_secret_artifacts(tmp_path) -> None:
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, "w") as archive:
+        archive.writestr("repo-main/index.js", "console.log('ok')")
+        archive.writestr("repo-main/dist/index.html", "<main>built app</main>")
+        archive.writestr("repo-main/.env", "DATABASE_URL=postgres://secret")
+        archive.writestr("repo-main/.env.staging", "API_KEY=secret")
+        archive.writestr("repo-main/.fusekit/job.json", "{}")
+        archive.writestr("repo-main/node_modules/pkg/index.js", "module.exports = {}")
+        archive.writestr("repo-main/tsconfig.tsbuildinfo", "{}")
+        archive.writestr("repo-main/.turbo/cache.json", "{}")
+        archive.writestr("repo-main/.parcel-cache/data.json", "{}")
+        archive.writestr("repo-main/coverage/lcov.info", "TN:")
+        archive.writestr("repo-main/id_rsa", "private key")
+        archive.writestr("repo-main/service-account.key", "private key")
+        archive.writestr("repo-main/webhook-secret.json", "{}")
+        archive.writestr("repo-main/private_key.yaml", "secret: true")
+        archive.writestr("repo-main/.FuseKit/job.json", "{}")
+        archive.writestr("repo-main/Node_Modules/pkg/index.js", "module.exports = {}")
+        archive.writestr("repo-main/.NPMRC", "//registry.example/:_authToken=secret")
+        archive.writestr("repo-main/.Vercel/project.json", "{}")
+
+    def opener(request: Request | str, timeout: float | None = None) -> Response:
+        url = request.full_url if isinstance(request, Request) else request
+        if url == "https://api.github.com/repos/owner/public":
+            return Response(json.dumps({"default_branch": "main"}).encode())
+        return Response(payload.getvalue())
+
+    fetch_github_source_archive(
+        "https://github.com/owner/public.git",
+        tmp_path / "app",
+        opener=opener,
+    )
+
+    assert (tmp_path / "app" / "index.js").read_text(encoding="utf-8") == "console.log('ok')"
+    assert (tmp_path / "app" / "dist" / "index.html").exists()
+    assert not (tmp_path / "app" / ".env").exists()
+    assert not (tmp_path / "app" / ".env.staging").exists()
+    assert not (tmp_path / "app" / ".fusekit" / "job.json").exists()
+    assert not (tmp_path / "app" / "node_modules" / "pkg" / "index.js").exists()
+    assert not (tmp_path / "app" / "tsconfig.tsbuildinfo").exists()
+    assert not (tmp_path / "app" / ".turbo" / "cache.json").exists()
+    assert not (tmp_path / "app" / ".parcel-cache" / "data.json").exists()
+    assert not (tmp_path / "app" / "coverage" / "lcov.info").exists()
+    assert not (tmp_path / "app" / "id_rsa").exists()
+    assert not (tmp_path / "app" / "service-account.key").exists()
+    assert not (tmp_path / "app" / "webhook-secret.json").exists()
+    assert not (tmp_path / "app" / "private_key.yaml").exists()
+    assert not (tmp_path / "app" / ".FuseKit" / "job.json").exists()
+    assert not (tmp_path / "app" / "Node_Modules" / "pkg" / "index.js").exists()
+    assert not (tmp_path / "app" / ".NPMRC").exists()
+    assert not (tmp_path / "app" / ".Vercel" / "project.json").exists()
+
+
 def test_fetch_github_source_rejects_unsafe_archive_paths(tmp_path) -> None:
     payload = io.BytesIO()
     with zipfile.ZipFile(payload, "w") as archive:

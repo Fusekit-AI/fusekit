@@ -23,6 +23,56 @@ DEFAULT_CAPTURE_TARGETS_BY_PROVIDER = {
     "resend": ("RESEND_API_KEY",),
     "vercel": ("VERCEL_TOKEN",),
 }
+VERIFICATION_REPORT_SCHEMA_VERSION = "fusekit.verification-report.v1"
+VERIFICATION_REPORT_PROVIDER_FIELD = "provider"
+VERIFICATION_REPORT_CHECK_FIELD = "check"
+VERIFICATION_REPORT_STATUS_FIELD = "status"
+VERIFICATION_REPORT_SUMMARY_FIELD = "summary"
+VERIFICATION_REPORT_REPAIR_FIELD = "repair"
+VERIFICATION_REPORT_DETAILS_FIELD = "details"
+VERIFICATION_REPORT_CHECK_FIELDS = (
+    VERIFICATION_REPORT_PROVIDER_FIELD,
+    VERIFICATION_REPORT_CHECK_FIELD,
+    VERIFICATION_REPORT_STATUS_FIELD,
+    VERIFICATION_REPORT_SUMMARY_FIELD,
+    VERIFICATION_REPORT_REPAIR_FIELD,
+    VERIFICATION_REPORT_DETAILS_FIELD,
+)
+VERIFICATION_REPORT_CHECK_KEYS = frozenset(VERIFICATION_REPORT_CHECK_FIELDS)
+VERIFICATION_REPORT_REQUIRED_TEXT_FIELDS = (
+    VERIFICATION_REPORT_PROVIDER_FIELD,
+    VERIFICATION_REPORT_CHECK_FIELD,
+    VERIFICATION_REPORT_STATUS_FIELD,
+)
+VERIFICATION_REPORT_OPTIONAL_TEXT_FIELDS = (
+    VERIFICATION_REPORT_SUMMARY_FIELD,
+    VERIFICATION_REPORT_REPAIR_FIELD,
+)
+VERIFICATION_STATUS_PASSED = "passed"
+VERIFICATION_STATUS_PENDING = "pending"
+VERIFICATION_STATUS_REPAIRING = "repairing"
+VERIFICATION_STATUS_FAILED = "failed"
+VERIFICATION_STATUS_SKIPPED = "skipped"
+VERIFICATION_STATUS_NEEDS_HUMAN_GATE = "needs_human_gate"
+VERIFICATION_REPORT_STATUS_FIELDS = (
+    VERIFICATION_STATUS_PASSED,
+    VERIFICATION_STATUS_PENDING,
+    VERIFICATION_STATUS_REPAIRING,
+    VERIFICATION_STATUS_FAILED,
+    VERIFICATION_STATUS_SKIPPED,
+    VERIFICATION_STATUS_NEEDS_HUMAN_GATE,
+)
+VERIFICATION_REPORT_SAFE_STATUSES = frozenset(
+    {VERIFICATION_STATUS_PASSED, VERIFICATION_STATUS_SKIPPED}
+)
+VERIFICATION_REPORT_PENDING_SAFE_CHECKS = frozenset(
+    {
+        "dns_propagated",
+        "dns_record_exists",
+        "domain_verified",
+        "deployment_url_exists",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -40,12 +90,12 @@ class VerificationCheck:
         """Serialize a redacted verification check."""
 
         return {
-            "provider": self.provider,
-            "check": self.check,
-            "status": self.status,
-            "summary": self.summary,
-            "repair": self.repair,
-            "details": redact(self.details),
+            VERIFICATION_REPORT_PROVIDER_FIELD: self.provider,
+            VERIFICATION_REPORT_CHECK_FIELD: self.check,
+            VERIFICATION_REPORT_STATUS_FIELD: self.status,
+            VERIFICATION_REPORT_SUMMARY_FIELD: self.summary,
+            VERIFICATION_REPORT_REPAIR_FIELD: self.repair,
+            VERIFICATION_REPORT_DETAILS_FIELD: redact(self.details),
         }
 
 
@@ -65,7 +115,13 @@ class VerificationReport:
 
         ok = bool(result.get("ok"))
         pending_safe = bool(result.get("pending_safe"))
-        status = "passed" if ok else "pending" if pending_safe else "failed"
+        status = (
+            VERIFICATION_STATUS_PASSED
+            if ok
+            else VERIFICATION_STATUS_PENDING
+            if pending_safe
+            else VERIFICATION_STATUS_FAILED
+        )
         self.checks.append(
             VerificationCheck(
                 provider="live_app",
@@ -73,20 +129,20 @@ class VerificationReport:
                 status=status,
                 summary=(
                     "The deployed app answered successfully."
-                    if status == "passed"
+                    if status == VERIFICATION_STATUS_PASSED
                     else "The live URL has not become reachable yet."
-                    if status == "pending"
+                    if status == VERIFICATION_STATUS_PENDING
                     else "The deployed app did not answer successfully yet."
                 ),
                 repair=(
                     "Nothing needed."
-                    if status == "passed"
+                    if status == VERIFICATION_STATUS_PASSED
                     else (
                         "Keep the control room open while FuseKit retries DNS and deployment "
                         "health checks; any provider-owned blocker will resurface as a guided "
                         "launcher gate."
                     )
-                    if status == "pending"
+                    if status == VERIFICATION_STATUS_PENDING
                     else (
                         "FuseKit will retry the live URL health check, reapply provider setup "
                         "through API routes where possible, and surface a guided control-room "
@@ -112,28 +168,21 @@ class VerificationReport:
     def to_dict(self) -> dict[str, Any]:
         """Serialize the report."""
 
-        counts = {
-            "passed": 0,
-            "pending": 0,
-            "repairing": 0,
-            "failed": 0,
-            "skipped": 0,
-            "needs_human_gate": 0,
-        }
+        counts = {status: 0 for status in VERIFICATION_REPORT_STATUS_FIELDS}
         for check in self.checks:
             if check.status in counts:
                 counts[check.status] += 1
-        overall = "pending" if not self.checks else "passed"
-        if counts["failed"]:
-            overall = "failed"
-        elif counts["repairing"]:
-            overall = "repairing"
-        elif counts["needs_human_gate"]:
-            overall = "needs_human_gate"
-        elif counts["pending"]:
-            overall = "pending"
+        overall = VERIFICATION_STATUS_PENDING if not self.checks else VERIFICATION_STATUS_PASSED
+        if counts[VERIFICATION_STATUS_FAILED]:
+            overall = VERIFICATION_STATUS_FAILED
+        elif counts[VERIFICATION_STATUS_REPAIRING]:
+            overall = VERIFICATION_STATUS_REPAIRING
+        elif counts[VERIFICATION_STATUS_NEEDS_HUMAN_GATE]:
+            overall = VERIFICATION_STATUS_NEEDS_HUMAN_GATE
+        elif counts[VERIFICATION_STATUS_PENDING]:
+            overall = VERIFICATION_STATUS_PENDING
         return {
-            "schema_version": "fusekit.verification-report.v1",
+            "schema_version": VERIFICATION_REPORT_SCHEMA_VERSION,
             "app_name": self.app_name,
             "live_url": self.live_url,
             "generated_at": self.generated_at,
@@ -178,16 +227,16 @@ def _check_from_result(
 
 def _report_status(status: str, *, repaired: bool) -> str:
     if status == "ok":
-        return "passed"
+        return VERIFICATION_STATUS_PASSED
     if status == "skipped":
-        return "skipped"
+        return VERIFICATION_STATUS_SKIPPED
     if status == "pending":
-        return "pending"
+        return VERIFICATION_STATUS_PENDING
     if status == "needs_human_gate":
-        return "needs_human_gate"
+        return VERIFICATION_STATUS_NEEDS_HUMAN_GATE
     if repaired:
-        return "repairing"
-    return "failed"
+        return VERIFICATION_STATUS_REPAIRING
+    return VERIFICATION_STATUS_FAILED
 
 
 def _check_name(kind: str) -> str:
