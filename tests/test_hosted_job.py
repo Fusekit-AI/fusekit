@@ -13,6 +13,7 @@ from fusekit.hosted import (
     create_hosted_job_token,
     hosted_launch_job_from_dict,
     hosted_proof_receipt,
+    hosted_worker_request,
     render_hosted_control_room,
     render_hosted_proof_receipt,
     verify_hosted_job_token,
@@ -82,6 +83,38 @@ def test_hosted_proof_receipt_is_redacted_and_not_prematurely_complete() -> None
     assert "Back to control room" in html
     assert "ghs_" not in serialized
     assert "PRIVATE KEY" not in serialized
+
+
+def test_hosted_worker_request_binds_live_acceptance_and_no_secret_policy() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    started = advance_hosted_launch_job(job, "start", now=1_700_000_001)
+    request = hosted_worker_request(started, now=1_700_000_002)
+    serialized = json.dumps(request)
+
+    assert request["schema_version"] == "fusekit.hosted-worker-request.v1"
+    assert request["job_id"] == "hosted-test"
+    assert request["github_source"] == "https://github.com/example/job-demo"
+    assert request["claim_policy"]["runner"] == "hosted-fusekit-worker"
+    assert request["claim_policy"]["mode"] == "live"
+    assert request["claim_policy"]["remote_artifacts_required"] is True
+    assert request["claim_policy"]["recording_required"] is True
+    assert request["acceptance_gate"] == {
+        "mode": "live",
+        "remote_artifacts": ".fusekit/remote-artifacts",
+        "require_recording": True,
+        "command": (
+            "fusekit acceptance run <app> --mode live "
+            "--remote-artifacts <app>/.fusekit/remote-artifacts --require-recording"
+        ),
+    }
+    assert "retrieved_remote_artifacts" in request["completion_requires"]
+    assert "detonation_receipt" in request["completion_requires"]
+    assert ".fusekit/run_record.json" in request["required_artifacts"]
+    assert ".fusekit/workspace_detonation.json" in request["required_artifacts"]
+    assert any("Do not bypass MFA" in item for item in request["prohibited"])
+    assert "ghs_" not in serialized
+    assert "PRIVATE KEY" not in serialized
+    assert "VERCEL_TOKEN" not in serialized
 
 
 def test_hosted_control_room_embeds_redacted_job_json() -> None:

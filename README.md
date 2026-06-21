@@ -149,12 +149,17 @@ control-room state without a database or raw provider token. Browser form
 actions return the updated control room instead of raw JSON, while API clients
 can still request the redacted job object. A browser-facing proof receipt page
 shows redacted proof, required artifacts, rollback metadata, and detonation
-requirements without claiming completion before live evidence exists. A redacted
-hosted readiness endpoint reports only configuration presence and shape errors,
-and keeps the homepage launch button disabled until the GitHub App id, slug,
-RSA private key, origin, and state secret are configured and valid. Direct
-GitHub intake routes also fail closed with the same redacted readiness object
-until those checks pass. The
+requirements without claiming completion before live evidence exists. After the
+protected `Start worker` action, `/api/hosted/jobs/<job>/worker-request` exposes
+a signed-job-token-compatible, redacted machine handoff for the eventual hosted
+worker. That request binds the selected GitHub source, approved plan actions,
+provider gates, required remote artifacts, live acceptance mode, recording
+requirement, rollback metadata, Run Record, and detonation receipt without
+turning the user path into a terminal workflow. A redacted hosted readiness
+endpoint reports only configuration presence and shape errors, and keeps the
+homepage launch button disabled until the GitHub App id, slug, RSA private key,
+origin, and state secret are configured and valid. Direct GitHub intake routes
+also fail closed with the same redacted readiness object until those checks pass. The
 remaining slices are real hosted job execution, final proof artifact production,
 rollback/detonation execution, and production DNS/deployment.
 

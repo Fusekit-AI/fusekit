@@ -804,9 +804,84 @@ def test_hosted_job_action_from_browser_returns_updated_control_room_html() -> N
     assert "Hosted launch control room." in text
     assert "waiting for provider gates" in text
     assert "Hosted worker contract queued" in text
+    assert "View worker request" in text
     assert "job=" in text
     assert payload["status"] == "waiting_for_provider_gates"
     assert "ghs_fake" not in text
+
+
+def test_hosted_worker_request_requires_start_and_supports_stateless_job_token() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    settings = _settings_with_github(opener)
+
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=f"installation_id=42&repo=example/one&state={state}",
+        settings=settings,
+    )
+    assert status == "200 OK"
+    text = body.decode("utf-8")
+    job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    control = _match(text, r"control=([A-Za-z0-9_.-]+)")
+    job_token = _match(text, r"job=([A-Za-z0-9_.-]+)")
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/worker-request",
+        query_string=f"job={job_token}",
+        settings=settings,
+    )
+    assert status == "409 Conflict"
+    assert json.loads(body.decode("utf-8")) == {"error": "worker_not_started"}
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/start",
+        method="POST",
+        query_string=f"control={control}&job={job_token}",
+        settings=settings,
+    )
+    started = json.loads(body.decode("utf-8"))
+    stateless_settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=FAKE_PRIVATE_KEY,
+        state_secret=STATE_SECRET,
+    )
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/worker-request",
+        query_string=f"job={started['job_token']}",
+        settings=stateless_settings,
+    )
+    request = json.loads(body.decode("utf-8"))
+    serialized = json.dumps(request)
+
+    assert status == "200 OK"
+    assert request["schema_version"] == "fusekit.hosted-worker-request.v1"
+    assert request["job_id"] == job_id
+    assert request["claim_policy"]["mode"] == "live"
+    assert request["claim_policy"]["remote_artifacts_required"] is True
+    assert request["acceptance_gate"]["require_recording"] is True
+    assert ".fusekit/run_record.json" in request["required_artifacts"]
+    assert "ghs_fake" not in serialized
+    assert "PRIVATE KEY" not in serialized
 
 
 def test_hosted_proof_receipt_page_uses_signed_job_token_without_process_memory() -> None:

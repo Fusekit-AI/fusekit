@@ -30,6 +30,7 @@ from fusekit.hosted.job import (
     advance_hosted_launch_job,
     build_hosted_launch_job,
     create_hosted_job_token,
+    hosted_worker_request,
     render_hosted_control_room,
     render_hosted_proof_receipt,
     verify_hosted_job_token,
@@ -608,6 +609,8 @@ def _hosted_job_api_response(
         return _hosted_job_response(settings, start_response, job)
     if len(parts) == 5 and parts[4] == "proof" and method == "GET":
         return _hosted_proof_receipt_response(settings, start_response, job)
+    if len(parts) == 5 and parts[4] == "worker-request" and method == "GET":
+        return _hosted_worker_request_response(start_response, job)
     if len(parts) == 6 and parts[4] == "actions" and method == "POST":
         return _hosted_job_action_response(
             settings,
@@ -677,6 +680,15 @@ def _hosted_proof_receipt_response(
         start_response,
         render_hosted_proof_receipt(job, job_token=job_token),
     )
+
+
+def _hosted_worker_request_response(
+    start_response: StartResponse,
+    job: HostedLaunchJob,
+) -> Iterable[bytes]:
+    if job.status == "waiting_for_worker":
+        return _response(start_response, HTTPStatus.CONFLICT, {"error": "worker_not_started"})
+    return _response(start_response, HTTPStatus.OK, hosted_worker_request(job))
 
 
 def _hosted_job_response(

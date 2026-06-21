@@ -21,6 +21,7 @@ HOSTED_JOB_TOKEN_SCHEMA_VERSION = "fusekit.hosted-job-token.v1"
 HOSTED_JOB_TOKEN_TTL_SECONDS = 86_400
 HOSTED_PROOF_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-proof-receipt.v1"
 HOSTED_WORKER_CONTRACT_SCHEMA_VERSION = "fusekit.hosted-worker-contract.v1"
+HOSTED_WORKER_REQUEST_SCHEMA_VERSION = "fusekit.hosted-worker-request.v1"
 
 
 @dataclass(frozen=True)
@@ -395,6 +396,7 @@ def render_hosted_control_room(
     rows = "\n".join(_step_card(step) for step in job.steps)
     controls = _control_forms(job, control_token=control_token, job_token=job_token)
     proof_link = _proof_link(job, job_token=job_token)
+    worker_request_link = _worker_request_link(job, job_token=job_token)
     proof = _list(job.proof)
     rollback = _list(job.rollback)
     detonation = _list(job.detonation)
@@ -507,6 +509,7 @@ def render_hosted_control_room(
         <h2>Launch steps</h2>
         {controls}
         {proof_link}
+        {worker_request_link}
         {rows}
       </section>
       <aside aria-label="Proof and rollback">
@@ -547,6 +550,59 @@ def hosted_proof_receipt(job: HostedLaunchJob) -> dict[str, object]:
         "detonation": list(job.detonation),
         "required_artifacts": list(job.worker_contract.required_artifacts),
         "steps": [step.to_dict() for step in job.steps],
+    }
+
+
+def hosted_worker_request(job: HostedLaunchJob, *, now: int | None = None) -> dict[str, object]:
+    """Build the redacted machine handoff a hosted worker may claim."""
+
+    requested_at = int(time.time() if now is None else now)
+    return {
+        "schema_version": HOSTED_WORKER_REQUEST_SCHEMA_VERSION,
+        "job_id": job.job_id,
+        "app_name": job.app_name,
+        "github_source": job.github_source,
+        "status": job.status,
+        "requested_at": requested_at,
+        "claim_policy": {
+            "runner": job.worker_contract.lane,
+            "source_intake": "github-app-selected-repository-archive",
+            "mode": "live",
+            "remote_artifacts_required": True,
+            "recording_required": True,
+            "human_gates_required": list(job.worker_contract.gates),
+        },
+        "approved_actions": list(job.worker_contract.approved_actions),
+        "required_artifacts": list(job.worker_contract.required_artifacts),
+        "acceptance_gate": {
+            "mode": "live",
+            "remote_artifacts": ".fusekit/remote-artifacts",
+            "require_recording": True,
+            "command": (
+                "fusekit acceptance run <app> --mode live "
+                "--remote-artifacts <app>/.fusekit/remote-artifacts --require-recording"
+            ),
+        },
+        "completion_requires": [
+            "live_url",
+            "provider_verifiers",
+            "dns_propagation",
+            "rollback_metadata",
+            "retrieved_remote_artifacts",
+            "run_record",
+            "detonation_receipt",
+            "live_acceptance_report",
+        ],
+        "prohibited": [
+            "Do not bypass MFA, CAPTCHA, passkeys, billing, fraud, or consent gates.",
+            (
+                "Do not render or return raw provider credentials, installation tokens, "
+                "or vault secrets."
+            ),
+            "Do not mutate DNS or paid provider resources without explicit visible approval.",
+            "Do not claim completion before live acceptance and detonation proof pass.",
+        ],
+        "worker_contract": job.worker_contract.to_dict(),
     }
 
 
@@ -727,6 +783,17 @@ def _proof_link(job: HostedLaunchJob, *, job_token: str) -> str:
         quote=True,
     )
     return f'<a class="button" href="{href}">View proof receipt</a>'
+
+
+def _worker_request_link(job: HostedLaunchJob, *, job_token: str) -> str:
+    if not job_token or job.status == "waiting_for_worker":
+        return ""
+    href = html.escape(
+        f"/api/hosted/jobs/{urllib.parse.quote(job.job_id)}/worker-request?"
+        + urllib.parse.urlencode({"job": job_token}),
+        quote=True,
+    )
+    return f'<a class="button" href="{href}">View worker request</a>'
 
 
 def _control_room_link(job: HostedLaunchJob, *, job_token: str) -> str:
