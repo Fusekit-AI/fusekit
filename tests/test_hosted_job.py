@@ -582,17 +582,25 @@ def test_hosted_control_room_renders_real_controls_only_with_control_token() -> 
     )
 
     assert "Protected controls unavailable" not in html
-    assert 'action="/api/hosted/jobs/hosted-test/actions/start?job=signed-public-job"' in html
-    assert 'action="/api/hosted/jobs/hosted-test/actions/stop?job=signed-public-job"' in html
+    assert (
+        '<form method="post" enctype="application/x-www-form-urlencoded" '
+        'action="/api/hosted/jobs/hosted-test/actions/start?job=signed-public-job">'
+    ) in html
+    assert (
+        '<form method="post" enctype="application/x-www-form-urlencoded" '
+        'action="/api/hosted/jobs/hosted-test/actions/stop?job=signed-public-job">'
+    ) in html
     assert 'name="control" value="signed-start-control-token"' in html
     assert 'name="control" value="signed-stop-control-token"' in html
     assert "?control=" not in html
     assert (
-        'action="/api/hosted/jobs/hosted-test/actions/rollback?job=signed-public-job"'
+        '<form method="post" enctype="application/x-www-form-urlencoded" '
+        'action="/api/hosted/jobs/hosted-test/actions/rollback?job=signed-public-job">'
         not in html
     )
     assert (
-        'action="/api/hosted/jobs/hosted-test/actions/detonate?job=signed-public-job"'
+        '<form method="post" enctype="application/x-www-form-urlencoded" '
+        'action="/api/hosted/jobs/hosted-test/actions/detonate?job=signed-public-job">'
         not in html
     )
     assert 'name="control" value="signed-rollback-control-token"' not in html

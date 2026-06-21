@@ -2481,7 +2481,8 @@ def _match(text: str, pattern: str) -> str:
 def _control_for_action(text: str, action: str) -> str:
     return _match(
         text,
-        rf'<form method="post" action="/api/hosted/jobs/[^"]+/actions/{action}'
+        rf'<form method="post" enctype="application/x-www-form-urlencoded" '
+        rf'action="/api/hosted/jobs/[^"]+/actions/{action}'
         rf'(?:\?job=[^"]+)?">\s*'
         rf'<input type="hidden" name="control" value="([A-Za-z0-9_.-]+)">',
     )

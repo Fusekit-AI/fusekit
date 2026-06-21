@@ -1278,11 +1278,11 @@ def _control_forms(
 """
     if job.status == "waiting_for_worker":
         return f"""
-        <form method="post" action="{start_action}">
+        <form method="post" enctype="application/x-www-form-urlencoded" action="{start_action}">
           <input type="hidden" name="control" value="{_control_value(control_tokens, "start")}">
           <button type="submit">Start worker</button>
         </form>
-        <form method="post" action="{stop_action}">
+        <form method="post" enctype="application/x-www-form-urlencoded" action="{stop_action}">
           <input type="hidden" name="control" value="{_control_value(control_tokens, "stop")}">
           <button type="submit">Stop launch</button>
         </form>
@@ -1290,11 +1290,11 @@ def _control_forms(
     if job.status == "stopped":
         return ""
     return f"""
-        <form method="post" action="{rollback_action}">
+        <form method="post" enctype="application/x-www-form-urlencoded" action="{rollback_action}">
           <input type="hidden" name="control" value="{_control_value(control_tokens, "rollback")}">
           <button type="submit">Request rollback</button>
         </form>
-        <form method="post" action="{detonate_action}">
+        <form method="post" enctype="application/x-www-form-urlencoded" action="{detonate_action}">
           <input type="hidden" name="control" value="{_control_value(control_tokens, "detonate")}">
           <button type="submit">Request detonation</button>
         </form>
