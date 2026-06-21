@@ -18,6 +18,7 @@ from fusekit.errors import FuseKitError
 from fusekit.hosted.launcher import (
     HOSTED_COMPLETION_EVIDENCE_KEYS,
     HOSTED_LAUNCH_PATH,
+    HOSTED_PLAIN_LANGUAGE_JOURNEY,
     HOSTED_PROOF_REQUIREMENTS,
     HOSTED_REVERSAL_PATH,
     NO_TERMINAL_PROMISE,
@@ -258,6 +259,7 @@ def hosted_github_intake_contract(
         "trust_story": list(TRUST_STORY),
         "no_terminal_promise": NO_TERMINAL_PROMISE,
         "launch_path": list(HOSTED_LAUNCH_PATH),
+        "plain_language_journey": list(HOSTED_PLAIN_LANGUAGE_JOURNEY),
         "proof": list(HOSTED_PROOF_REQUIREMENTS),
         "proof_evidence_keys": list(HOSTED_COMPLETION_EVIDENCE_KEYS),
         "reversal": list(HOSTED_REVERSAL_PATH),

@@ -22,6 +22,7 @@ from fusekit.hosted.github_app import (
 from fusekit.hosted.launcher import (
     HOSTED_COMPLETION_EVIDENCE_KEYS,
     HOSTED_LAUNCH_PATH,
+    HOSTED_PLAIN_LANGUAGE_JOURNEY,
     HOSTED_PROOF_REQUIREMENTS,
     HOSTED_REVERSAL_PATH,
     NO_TERMINAL_PROMISE,
@@ -572,6 +573,8 @@ def _one_click_launch_contract_failures(payload: object) -> list[str]:
         failures.append("one_click_launch_github_permission_mismatch")
     if payload.get("launch_path") != list(HOSTED_LAUNCH_PATH):
         failures.append("one_click_launch_path_mismatch")
+    if payload.get("plain_language_journey") != list(HOSTED_PLAIN_LANGUAGE_JOURNEY):
+        failures.append("one_click_launch_plain_language_journey_mismatch")
     if payload.get("completion_requires") != list(HOSTED_PROOF_REQUIREMENTS):
         failures.append("one_click_launch_completion_requires_mismatch")
     if payload.get("completion_evidence_keys") != list(HOSTED_COMPLETION_EVIDENCE_KEYS):
@@ -625,6 +628,11 @@ def _hosted_home_failures(
         "hosted_home_all_repository_rejection_missing": "all-repository",
         "hosted_home_contents_write_rejection_missing": "contents:write",
         "hosted_home_launch_path_missing": "What happens after the click",
+        "hosted_home_plain_language_click_path_missing": (
+            "For someone who just wants to click"
+        ),
+        "hosted_home_plain_language_open_step_missing": HOSTED_PLAIN_LANGUAGE_JOURNEY[0],
+        "hosted_home_plain_language_provider_step_missing": HOSTED_PLAIN_LANGUAGE_JOURNEY[5],
         "hosted_home_completion_requirements_missing": "Completion requires",
         "hosted_home_live_url_proof_missing": "Live URL verification",
         "hosted_home_provider_verifier_proof_missing": "Provider verifier results",
@@ -782,6 +790,8 @@ def _github_intake_contract_failures(payload: dict[str, Any]) -> list[str]:
         failures.append("github_intake_no_terminal_promise_mismatch")
     if payload.get("launch_path") != list(HOSTED_LAUNCH_PATH):
         failures.append("github_intake_launch_path_mismatch")
+    if payload.get("plain_language_journey") != list(HOSTED_PLAIN_LANGUAGE_JOURNEY):
+        failures.append("github_intake_plain_language_journey_mismatch")
     if payload.get("proof") != list(HOSTED_PROOF_REQUIREMENTS):
         failures.append("github_intake_proof_mismatch")
     if payload.get("proof_evidence_keys") != list(HOSTED_COMPLETION_EVIDENCE_KEYS):

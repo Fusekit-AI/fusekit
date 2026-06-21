@@ -4,7 +4,7 @@ import json
 import re
 
 from fusekit.hosted import build_hosted_launch_plan, render_hosted_launcher
-from fusekit.hosted.launcher import public_plan_summary
+from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY, public_plan_summary
 from fusekit.manifest import (
     DomainRequirement,
     ServiceRequirement,
@@ -104,9 +104,13 @@ def test_hosted_launcher_html_has_no_terminal_or_download_happy_path() -> None:
     assert "Download redacted plan" not in html
     assert "Trust contract" in html
     assert "Launch path" in html
+    assert "Plain-language click path" in html
     assert 'href="#narrow-permissions"' in html
     assert 'id="narrow-permissions"' in html
     assert "Visit the hosted FuseKit URL." in html
+    assert "Open fusekit.snowmanai.org in a browser." in html
+    assert "Sign in to GitHub if asked and choose exactly one repository." in html
+    assert "Complete only the provider-owned screens FuseKit highlights." in html
     assert "Review the visible plan and approved action ids before worker start." in html
     assert "Receive the live URL, redacted proof receipt" in html
     assert "Narrow permissions" in html
@@ -214,6 +218,7 @@ def test_public_plan_summary_is_small_and_trust_first() -> None:
         ],
         "no_terminal": True,
         "launch_path": list(plan.trust.launch_path),
+        "plain_language_journey": list(HOSTED_PLAIN_LANGUAGE_JOURNEY),
         "proof": list(plan.trust.proof),
         "rollback": list(plan.trust.rollback),
     }

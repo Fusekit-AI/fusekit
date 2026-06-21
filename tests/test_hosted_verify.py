@@ -9,6 +9,7 @@ import urllib.request
 import pytest
 
 from fusekit.errors import FuseKitError
+from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY
 from fusekit.hosted.verify import (
     HOSTED_DEPLOYMENT_VERIFICATION_SCHEMA_VERSION,
     verify_hosted_deployment,
@@ -490,6 +491,7 @@ def test_verify_hosted_deployment_requires_one_click_contract() -> None:
     one_click["terminal_required"] = True
     one_click["download_required"] = True
     one_click["launch_path"] = ["Run a terminal command."]
+    one_click["plain_language_journey"] = ["Open a terminal."]
     one_click["completion_requires"] = ["Live URL verification"]
     one_click["completion_evidence_keys"] = ["live_url"]
     opener = SequenceOpener(
@@ -520,6 +522,9 @@ def test_verify_hosted_deployment_requires_one_click_contract() -> None:
         "failures"
     ]
     assert "one_click_launch_path_mismatch" in checks["hosted.deployment"]["failures"]
+    assert "one_click_launch_plain_language_journey_mismatch" in checks[
+        "hosted.deployment"
+    ]["failures"]
     assert "one_click_launch_completion_requires_mismatch" in checks["hosted.deployment"][
         "failures"
     ]
@@ -532,6 +537,7 @@ def test_verify_hosted_deployment_requires_github_intake_contract() -> None:
     intake = _github_intake_contract()
     intake["route"] = "oauth-app"
     intake["launch_path"] = ["Download a CLI."]
+    intake["plain_language_journey"] = ["Paste a command."]
     intake["proof_evidence_keys"] = ["live_url"]
     intake["permissions"] = ["Install on every repository."]
     intake["token_boundary"] = {
@@ -564,6 +570,9 @@ def test_verify_hosted_deployment_requires_github_intake_contract() -> None:
     assert "github_intake_launch_path_mismatch" in checks["hosted.github_intake"][
         "failures"
     ]
+    assert "github_intake_plain_language_journey_mismatch" in checks[
+        "hosted.github_intake"
+    ]["failures"]
     assert "github_intake_proof_evidence_keys_mismatch" in checks[
         "hosted.github_intake"
     ]["failures"]
@@ -640,6 +649,12 @@ def test_verify_hosted_deployment_requires_trustworthy_homepage() -> None:
     assert "hosted_home_visible_plan_missing" in checks["hosted.home"]["failures"]
     assert "hosted_home_redacted_proof_missing" in checks["hosted.home"]["failures"]
     assert "hosted_home_completion_requirements_missing" in checks["hosted.home"][
+        "failures"
+    ]
+    assert "hosted_home_plain_language_click_path_missing" in checks["hosted.home"][
+        "failures"
+    ]
+    assert "hosted_home_plain_language_provider_step_missing" in checks["hosted.home"][
         "failures"
     ]
     assert "hosted_home_recording_proof_missing" in checks["hosted.home"]["failures"]
@@ -798,6 +813,9 @@ def _home_html(
           installation tokens.
         </section>
         <section>What happens after the click</section>
+        <section>For someone who just wants to click</section>
+        <section>Open fusekit.snowmanai.org in a browser.</section>
+        <section>Complete only the provider-owned screens FuseKit highlights.</section>
         <section>Completion requires</section>
         <section>Live URL verification</section>
         <section>Provider verifier results</section>
@@ -898,6 +916,7 @@ def _deployment_contract() -> dict[str, object]:
                     "and detonation receipt."
                 ),
             ],
+            "plain_language_journey": list(HOSTED_PLAIN_LANGUAGE_JOURNEY),
             "human_gates": [
                 "GitHub sign-in, MFA, passkey, SSO, consent, or repository selection",
                 (
@@ -1075,6 +1094,7 @@ def _github_intake_contract() -> dict[str, object]:
                 "and detonation receipt."
             ),
         ],
+        "plain_language_journey": list(HOSTED_PLAIN_LANGUAGE_JOURNEY),
         "proof": [
             "Live URL verification",
             "Provider verifier results",

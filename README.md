@@ -167,7 +167,11 @@ the visible plan, and tell the user that action drift requires fresh approval.
 The hosted home and selected-repository plan now publish the same no-terminal
 launch path: visit the hosted URL, install the GitHub App on one repository,
 review the plan, click start, pass provider-owned gates, and receive the live
-URL with redacted proof, rollback metadata, and detonation receipt.
+URL with redacted proof, rollback metadata, and detonation receipt. The same
+contract now carries a plain-language click path for nontechnical users:
+open `fusekit.snowmanai.org`, click start, sign in to GitHub if asked, choose
+one repository, review the plan, complete only highlighted provider-owned
+screens, and review the final proof.
 The homepage also shows the completion proof checklist up front: live URL
 verification, provider verifiers, DNS propagation, redacted receipt/audit proof,
 Run Record, detonation receipt, and live acceptance report must exist before a
@@ -282,8 +286,10 @@ proof receipt renders the same redacted `completion_requires` checklist, so a
 launcher can see exactly which evidence keys must still be produced. The public
 deployment and GitHub intake contracts also expose those exact evidence keys
 beside the readable proof labels, letting `fusekit-hosted-verify` catch proof
-vocabulary drift before launch. The friendly browser checklist also names
-recording proof explicitly, and protected action plus worker-claim receipts
+vocabulary drift before launch. The verifier also checks the public
+plain-language click path so the hosted flow cannot quietly fall back to
+terminal, download, or expert-only instructions. The friendly browser checklist
+also names recording proof explicitly, and protected action plus worker-claim receipts
 reuse that same evidence vocabulary, so a start click cannot understate the
 remaining recording or remote-artifact proof. The outside-in hosted verifier
 checks every friendly completion-proof label on the homepage, not just the

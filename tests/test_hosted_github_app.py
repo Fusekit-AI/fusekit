@@ -21,6 +21,7 @@ from fusekit.hosted.github_app import (
     list_installation_repositories,
     require_hosted_installation_token_boundary,
 )
+from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY
 
 
 class FakeResponse:
@@ -234,6 +235,7 @@ def test_hosted_github_intake_contract_has_no_secret_material() -> None:
         "Click Start hosted launch and pass only provider-owned human gates.",
         "Receive the live URL, redacted proof receipt, rollback metadata, and detonation receipt.",
     ]
+    assert contract["plain_language_journey"] == list(HOSTED_PLAIN_LANGUAGE_JOURNEY)
     assert "Run Record" in contract["proof"]
     assert "Detonation receipt" in contract["proof"]
     assert any("rollback" in item for item in contract["reversal"])

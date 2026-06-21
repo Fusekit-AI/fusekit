@@ -32,6 +32,15 @@ HOSTED_LAUNCH_PATH = (
     "Click Start hosted launch and pass only provider-owned human gates.",
     "Receive the live URL, redacted proof receipt, rollback metadata, and detonation receipt.",
 )
+HOSTED_PLAIN_LANGUAGE_JOURNEY = (
+    "Open fusekit.snowmanai.org in a browser.",
+    "Click Start hosted launch.",
+    "Sign in to GitHub if asked and choose exactly one repository.",
+    "Review the setup plan FuseKit shows before provider changes.",
+    "Click Start hosted launch in the control room.",
+    "Complete only the provider-owned screens FuseKit highlights.",
+    "Review the live URL, redacted proof, rollback metadata, and detonation receipt.",
+)
 HOSTED_PROOF_REQUIREMENTS = (
     "Live URL verification",
     "Provider verifier results",
@@ -69,6 +78,7 @@ class HostedLaunchTrustContract:
     permissions: tuple[str, ...]
     secret_boundary: str
     launch_path: tuple[str, ...]
+    plain_language_journey: tuple[str, ...]
     proof: tuple[str, ...]
     proof_evidence_keys: tuple[str, ...]
     rollback: tuple[str, ...]
@@ -85,6 +95,7 @@ class HostedLaunchTrustContract:
             "permissions": list(self.permissions),
             "secret_boundary": self.secret_boundary,
             "launch_path": list(self.launch_path),
+            "plain_language_journey": list(self.plain_language_journey),
             "proof": list(self.proof),
             "proof_evidence_keys": list(self.proof_evidence_keys),
             "rollback": list(self.rollback),
@@ -151,6 +162,7 @@ def build_hosted_launch_plan(
             "or generated apps except for app-scoped runtime values the provider requires."
         ),
         launch_path=HOSTED_LAUNCH_PATH,
+        plain_language_journey=HOSTED_PLAIN_LANGUAGE_JOURNEY,
         proof=HOSTED_PROOF_REQUIREMENTS,
         proof_evidence_keys=HOSTED_COMPLETION_EVIDENCE_KEYS,
         rollback=HOSTED_REVERSAL_PATH,
@@ -184,6 +196,7 @@ def render_hosted_launcher(plan: HostedLaunchPlan, *, launch_url: str = "") -> s
     scope = _list_markup(trust.scope)
     permissions = _list_markup(trust.permissions)
     launch_path = _ordered_list_markup(trust.launch_path)
+    plain_language_journey = _ordered_list_markup(trust.plain_language_journey)
     story = " / ".join(TRUST_STORY)
     title = html.escape(f"Launch {plan.app_name} with FuseKit")
     source = html.escape(plan.github_source)
@@ -403,6 +416,8 @@ def render_hosted_launcher(plan: HostedLaunchPlan, *, launch_url: str = "") -> s
         {permissions}
         <h2>Launch path</h2>
         {launch_path}
+        <h2>Plain-language click path</h2>
+        {plain_language_journey}
         <h2>Scope</h2>
         {scope}
         <h2>Provider gates</h2>
@@ -497,6 +512,7 @@ def public_plan_summary(plan: HostedLaunchPlan) -> dict[str, Any]:
         "trust_story": list(TRUST_STORY),
         "no_terminal": True,
         "launch_path": list(plan.trust.launch_path),
+        "plain_language_journey": list(plan.trust.plain_language_journey),
         "proof": list(plan.trust.proof),
         "rollback": list(plan.trust.rollback),
     }

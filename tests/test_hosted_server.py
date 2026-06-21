@@ -14,6 +14,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from fusekit.hosted.github_app import GitHubAppConfig
+from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY
 from fusekit.hosted.server import HostedSettings, hosted_application, render_hosted_home
 from fusekit.hosted.session import create_hosted_state_token
 
@@ -188,6 +189,10 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
     assert "copy-once secret values" in html
     assert "approved action ids" in html
     assert "What happens after the click" in html
+    assert "For someone who just wants to click" in html
+    assert "Open fusekit.snowmanai.org in a browser." in html
+    assert "Sign in to GitHub if asked and choose exactly one repository." in html
+    assert "Complete only the provider-owned screens FuseKit highlights." in html
     assert "Completion requires" in html
     assert "Live URL verification" in html
     assert "Provider verifier results" in html
@@ -399,6 +404,9 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     assert payload["one_click_launch"]["launch_path"][0] == "Visit the hosted FuseKit URL."
     assert payload["one_click_launch"]["launch_path"][-1] == (
         "Receive the live URL, redacted proof receipt, rollback metadata, and detonation receipt."
+    )
+    assert payload["one_click_launch"]["plain_language_journey"] == list(
+        HOSTED_PLAIN_LANGUAGE_JOURNEY
     )
     assert "Run Record" in payload["one_click_launch"]["completion_requires"]
     assert "Detonation receipt" in payload["one_click_launch"]["completion_requires"]
@@ -645,6 +653,7 @@ def test_hosted_github_intake_endpoint_is_public_safe() -> None:
     assert payload["launch_path"][-1] == (
         "Receive the live URL, redacted proof receipt, rollback metadata, and detonation receipt."
     )
+    assert payload["plain_language_journey"] == list(HOSTED_PLAIN_LANGUAGE_JOURNEY)
     assert "Run Record" in payload["proof"]
     assert "Detonation receipt" in payload["proof"]
     assert payload["proof_evidence_keys"] == [
