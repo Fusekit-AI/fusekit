@@ -19,6 +19,7 @@ from fusekit.hosted.session import create_hosted_state_token
 
 FAKE_PRIVATE_KEY = "-----BEGIN PRIVATE KEY-----\nnot-real\n-----END PRIVATE KEY-----"
 STATE_SECRET = "hosted-state-secret"
+WORKER_SECRET = "hosted-worker-secret"
 
 
 def _call(
@@ -37,6 +38,7 @@ def _call(
             github_app_slug="fusekit-launcher",
             github_private_key_pem=_private_key_pem(),
             state_secret=STATE_SECRET,
+            worker_secret=WORKER_SECRET,
         )
     )
     captured: dict[str, object] = {}
@@ -117,6 +119,7 @@ def _settings_with_github(opener: SequenceOpener) -> HostedSettings:
         github_app_slug=config.app_slug,
         github_private_key_pem=config.private_key_pem,
         state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
         github_opener=opener,
     )
 
@@ -143,6 +146,7 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
             github_app_slug="fusekit-launcher",
             github_private_key_pem=_private_key_pem(),
             state_secret=STATE_SECRET,
+            worker_secret=WORKER_SECRET,
         )
     )
 
@@ -170,6 +174,7 @@ def test_hosted_home_waits_for_complete_operator_configuration() -> None:
             github_app_slug="fusekit-launcher",
             github_private_key_pem="",
             state_secret=STATE_SECRET,
+            worker_secret=WORKER_SECRET,
         )
     )
 
@@ -191,6 +196,7 @@ def test_hosted_home_shows_invalid_operator_configuration_codes_only() -> None:
             github_app_slug="bad/slug",
             github_private_key_pem=FAKE_PRIVATE_KEY,
             state_secret="abc123",
+            worker_secret="abc123",
         )
     )
 
@@ -200,6 +206,7 @@ def test_hosted_home_shows_invalid_operator_configuration_codes_only() -> None:
     assert "invalid:github_app_slug_is_invalid" in html
     assert "invalid:github_app_private_key_must_be_rsa_pem" in html
     assert "invalid:hosted_state_secret_too_short" in html
+    assert "invalid:hosted_worker_secret_too_short" in html
     assert 'href="#" aria-disabled="true"' in html
     assert "state=" not in html
     assert "not-a-number" not in html
@@ -207,6 +214,7 @@ def test_hosted_home_shows_invalid_operator_configuration_codes_only() -> None:
     assert "http://snowmanai.org/path" not in html
     assert "not-real" not in html
     assert "abc123" not in html
+    assert WORKER_SECRET not in html
 
 
 def test_hosted_wsgi_routes_return_safe_responses() -> None:
@@ -241,6 +249,7 @@ def test_hosted_readiness_endpoint_reports_presence_without_secret_values() -> N
             "-----BEGIN PRIVATE KEY-----\nsuper-sensitive-material\n-----END PRIVATE KEY-----"
         ),
         state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
     )
 
     status, headers, body = _call(
@@ -257,9 +266,11 @@ def test_hosted_readiness_endpoint_reports_presence_without_secret_values() -> N
     assert payload["configured"]["FUSEKIT_GITHUB_APP_PRIVATE_KEY"] is True
     assert payload["configured"]["FUSEKIT_GITHUB_APP_ID"] is False
     assert payload["missing"] == ["FUSEKIT_GITHUB_APP_ID"]
+    assert payload["configured"]["FUSEKIT_HOSTED_WORKER_SECRET"] is True
     assert "PRIVATE KEY" not in serialized
     assert "super-sensitive-material" not in serialized
     assert STATE_SECRET not in serialized
+    assert WORKER_SECRET not in serialized
 
 
 def test_hosted_readiness_endpoint_reports_ready_when_configured() -> None:
@@ -298,8 +309,10 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     )
     assert payload["github_app"]["repository_permission"] == "contents:read"
     assert "FUSEKIT_GITHUB_APP_PRIVATE_KEY" in payload["required_runtime_env"]
+    assert "FUSEKIT_HOSTED_WORKER_SECRET" in payload["required_runtime_env"]
     assert "PRIVATE KEY" not in serialized
     assert STATE_SECRET not in serialized
+    assert WORKER_SECRET not in serialized
 
 
 def test_hosted_readiness_endpoint_rejects_invalid_config_shape_without_values() -> None:
@@ -309,6 +322,7 @@ def test_hosted_readiness_endpoint_rejects_invalid_config_shape_without_values()
         github_app_slug="bad/slug",
         github_private_key_pem=FAKE_PRIVATE_KEY,
         state_secret="abc123",
+        worker_secret="abc123",
     )
 
     status, _headers, body = _call("/api/hosted/readiness", settings=settings)
@@ -324,12 +338,14 @@ def test_hosted_readiness_endpoint_rejects_invalid_config_shape_without_values()
         "github_app_slug_is_invalid",
         "github_app_private_key_must_be_rsa_pem",
         "hosted_state_secret_too_short",
+        "hosted_worker_secret_too_short",
     ]
     assert "not-a-number" not in serialized
     assert "bad/slug" not in serialized
     assert "http://snowmanai.org/path" not in serialized
     assert "not-real" not in serialized
     assert "abc123" not in serialized
+    assert WORKER_SECRET not in serialized
 
 
 def test_hosted_github_intake_routes_fail_closed_when_not_ready() -> None:
@@ -339,6 +355,7 @@ def test_hosted_github_intake_routes_fail_closed_when_not_ready() -> None:
         github_app_slug="fusekit-launcher",
         github_private_key_pem="",
         state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
     )
 
     for path in ("/api/github/intake", "/github/callback"):
@@ -353,6 +370,7 @@ def test_hosted_github_intake_routes_fail_closed_when_not_ready() -> None:
         assert "FUSEKIT_GITHUB_APP_ID" in payload["readiness"]["missing"]
         assert "PRIVATE KEY" not in serialized
         assert STATE_SECRET not in serialized
+        assert WORKER_SECRET not in serialized
 
 
 def test_vercel_wsgi_entrypoint_serves_healthz(monkeypatch) -> None:
@@ -361,6 +379,7 @@ def test_vercel_wsgi_entrypoint_serves_healthz(monkeypatch) -> None:
     monkeypatch.setenv("FUSEKIT_GITHUB_APP_SLUG", "fusekit-launcher")
     monkeypatch.setenv("FUSEKIT_GITHUB_APP_PRIVATE_KEY", FAKE_PRIVATE_KEY)
     monkeypatch.setenv("FUSEKIT_HOSTED_STATE_SECRET", STATE_SECRET)
+    monkeypatch.setenv("FUSEKIT_HOSTED_WORKER_SECRET", WORKER_SECRET)
     spec = importlib.util.spec_from_file_location(
         "fusekit_vercel_app",
         Path(__file__).parents[1] / "app.py",
@@ -727,6 +746,7 @@ def test_hosted_job_api_accepts_signed_job_token_without_process_memory() -> Non
         github_app_slug="fusekit-launcher",
         github_private_key_pem=FAKE_PRIVATE_KEY,
         state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
     )
 
     status, _headers, body = _call(
@@ -863,6 +883,7 @@ def test_hosted_worker_request_requires_start_and_supports_stateless_job_token()
         github_app_slug="fusekit-launcher",
         github_private_key_pem=FAKE_PRIVATE_KEY,
         state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
     )
 
     status, _headers, body = _call(
@@ -882,6 +903,92 @@ def test_hosted_worker_request_requires_start_and_supports_stateless_job_token()
     assert ".fusekit/run_record.json" in request["required_artifacts"]
     assert "ghs_fake" not in serialized
     assert "PRIVATE KEY" not in serialized
+
+
+def test_hosted_worker_claim_requires_backend_auth_and_returns_redacted_receipt() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    settings = _settings_with_github(opener)
+
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=f"installation_id=42&repo=example/one&state={state}",
+        settings=settings,
+    )
+    assert status == "200 OK"
+    text = body.decode("utf-8")
+    job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    control = _match(text, r"control=([A-Za-z0-9_.-]+)")
+    job_token = _match(text, r"job=([A-Za-z0-9_.-]+)")
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/start",
+        method="POST",
+        query_string=f"control={control}&job={job_token}",
+        settings=settings,
+    )
+    started = json.loads(body.decode("utf-8"))
+    stateless_settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=FAKE_PRIVATE_KEY,
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+    )
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/worker-claims",
+        method="POST",
+        query_string=f"job={started['job_token']}",
+        settings=stateless_settings,
+    )
+    assert status == "403 Forbidden"
+    assert json.loads(body.decode("utf-8")) == {"error": "invalid_worker_auth"}
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/worker-claims",
+        method="POST",
+        query_string=f"job={started['job_token']}",
+        headers={
+            "Authorization": f"Bearer {WORKER_SECRET}",
+            "X-FuseKit-Worker-Id": "worker-01<script>",
+        },
+        settings=stateless_settings,
+    )
+    payload = json.loads(body.decode("utf-8"))
+    serialized = json.dumps(payload)
+    steps = {step["id"]: step for step in payload["job"]["steps"]}
+
+    assert status == "200 OK"
+    assert payload["job"]["status"] == "worker_claimed"
+    assert payload["job_token"]
+    assert payload["claim_receipt"]["schema_version"] == "fusekit.hosted-worker-claim.v1"
+    assert payload["claim_receipt"]["worker_id"] == "worker-01script"
+    assert payload["worker_request"]["schema_version"] == "fusekit.hosted-worker-request.v1"
+    assert steps["worker.prepare"]["status"] == "done"
+    assert steps["provider.gates"]["status"] == "waiting"
+    assert WORKER_SECRET not in serialized
+    assert STATE_SECRET not in serialized
+    assert "ghs_fake" not in serialized
+    assert "PRIVATE KEY" not in serialized
+    assert "<script>" not in serialized
 
 
 def test_hosted_proof_receipt_page_uses_signed_job_token_without_process_memory() -> None:
@@ -920,6 +1027,7 @@ def test_hosted_proof_receipt_page_uses_signed_job_token_without_process_memory(
         github_app_slug="fusekit-launcher",
         github_private_key_pem=FAKE_PRIVATE_KEY,
         state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
     )
 
     status, headers, body = _call(
@@ -984,6 +1092,7 @@ def test_hosted_proof_receipt_page_rejects_tampered_signed_job_token() -> None:
         github_app_slug="fusekit-launcher",
         github_private_key_pem=FAKE_PRIVATE_KEY,
         state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
     )
 
     status, _headers, body = _call(
@@ -1033,6 +1142,7 @@ def test_hosted_job_api_rejects_tampered_signed_job_token() -> None:
         github_app_slug="fusekit-launcher",
         github_private_key_pem=FAKE_PRIVATE_KEY,
         state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
     )
 
     status, _headers, body = _call(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import html
 import json
 import os
@@ -29,7 +30,9 @@ from fusekit.hosted.job import (
     HostedLaunchJob,
     advance_hosted_launch_job,
     build_hosted_launch_job,
+    claim_hosted_launch_job,
     create_hosted_job_token,
+    hosted_worker_claim_receipt,
     hosted_worker_request,
     render_hosted_control_room,
     render_hosted_proof_receipt,
@@ -61,6 +64,7 @@ REQUIRED_HOSTED_ENV = (
     "FUSEKIT_GITHUB_APP_SLUG",
     "FUSEKIT_GITHUB_APP_PRIVATE_KEY",
     "FUSEKIT_HOSTED_STATE_SECRET",
+    "FUSEKIT_HOSTED_WORKER_SECRET",
 )
 
 
@@ -73,6 +77,7 @@ class HostedSettings:
     github_app_slug: str = "fusekit-launcher"
     github_private_key_pem: str = ""
     state_secret: str = ""
+    worker_secret: str = ""
     github_opener: UrlOpener | None = None
     hosted_jobs: MutableMapping[str, HostedLaunchJob] = field(default_factory=dict)
 
@@ -86,6 +91,7 @@ class HostedSettings:
             github_app_slug=os.environ.get("FUSEKIT_GITHUB_APP_SLUG", "fusekit-launcher"),
             github_private_key_pem=os.environ.get("FUSEKIT_GITHUB_APP_PRIVATE_KEY", ""),
             state_secret=os.environ.get("FUSEKIT_HOSTED_STATE_SECRET", ""),
+            worker_secret=os.environ.get("FUSEKIT_HOSTED_WORKER_SECRET", ""),
         )
 
     def github_config(self) -> GitHubAppConfig:
@@ -106,6 +112,7 @@ class HostedSettings:
             "FUSEKIT_GITHUB_APP_SLUG": bool(self.github_app_slug),
             "FUSEKIT_GITHUB_APP_PRIVATE_KEY": bool(self.github_private_key_pem),
             "FUSEKIT_HOSTED_STATE_SECRET": bool(self.state_secret),
+            "FUSEKIT_HOSTED_WORKER_SECRET": bool(self.worker_secret),
         }
         missing = tuple(key for key in REQUIRED_HOSTED_ENV if not configured[key])
         invalid = _hosted_config_errors(self) if not missing else ()
@@ -611,6 +618,8 @@ def _hosted_job_api_response(
         return _hosted_proof_receipt_response(settings, start_response, job)
     if len(parts) == 5 and parts[4] == "worker-request" and method == "GET":
         return _hosted_worker_request_response(start_response, job)
+    if len(parts) == 5 and parts[4] == "worker-claims" and method == "POST":
+        return _hosted_worker_claim_response(settings, environ, start_response, job)
     if len(parts) == 6 and parts[4] == "actions" and method == "POST":
         return _hosted_job_action_response(
             settings,
@@ -689,6 +698,35 @@ def _hosted_worker_request_response(
     if job.status == "waiting_for_worker":
         return _response(start_response, HTTPStatus.CONFLICT, {"error": "worker_not_started"})
     return _response(start_response, HTTPStatus.OK, hosted_worker_request(job))
+
+
+def _hosted_worker_claim_response(
+    settings: HostedSettings,
+    environ: dict[str, object],
+    start_response: StartResponse,
+    job: HostedLaunchJob,
+) -> Iterable[bytes]:
+    if not settings.worker_secret or len(settings.worker_secret) < 16:
+        return _response(
+            start_response,
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            {"error": "hosted_worker_not_ready", "readiness": settings.readiness()},
+        )
+    if not _worker_authorized(settings, environ):
+        return _response(start_response, HTTPStatus.FORBIDDEN, {"error": "invalid_worker_auth"})
+    worker_id = _worker_id(environ)
+    try:
+        updated = claim_hosted_launch_job(job, worker_id=worker_id)
+    except ValueError:
+        return _response(start_response, HTTPStatus.CONFLICT, {"error": "worker_claim_rejected"})
+    settings.hosted_jobs[job.job_id] = updated
+    payload: dict[str, object] = {
+        "job": updated.to_dict(),
+        "job_token": create_hosted_job_token(settings.state_secret, updated),
+        "worker_request": hosted_worker_request(updated),
+        "claim_receipt": hosted_worker_claim_receipt(updated, worker_id=worker_id),
+    }
+    return _response(start_response, HTTPStatus.OK, payload)
 
 
 def _hosted_job_response(
@@ -903,7 +941,23 @@ def _hosted_config_errors(settings: HostedSettings) -> tuple[str, ...]:
         errors.append("github_app_private_key_must_be_rsa_pem")
     if len(settings.state_secret) < 16:
         errors.append("hosted_state_secret_too_short")
+    if len(settings.worker_secret) < 16:
+        errors.append("hosted_worker_secret_too_short")
     return tuple(errors)
+
+
+def _worker_authorized(settings: HostedSettings, environ: dict[str, object]) -> bool:
+    authorization = str(environ.get("HTTP_AUTHORIZATION", ""))
+    prefix = "Bearer "
+    if not authorization.startswith(prefix):
+        return False
+    supplied = authorization[len(prefix) :]
+    return hmac.compare_digest(supplied, settings.worker_secret)
+
+
+def _worker_id(environ: dict[str, object]) -> str:
+    value = str(environ.get("HTTP_X_FUSEKIT_WORKER_ID", "")).strip()
+    return value or "hosted-worker"
 
 
 def _public_origin_label(value: str) -> str:

@@ -155,11 +155,16 @@ a signed-job-token-compatible, redacted machine handoff for the eventual hosted
 worker. That request binds the selected GitHub source, approved plan actions,
 provider gates, required remote artifacts, live acceptance mode, recording
 requirement, rollback metadata, Run Record, and detonation receipt without
-turning the user path into a terminal workflow. A redacted hosted readiness
-endpoint reports only configuration presence and shape errors, and keeps the
-homepage launch button disabled until the GitHub App id, slug, RSA private key,
-origin, and state secret are configured and valid. Direct GitHub intake routes
-also fail closed with the same redacted readiness object until those checks pass. The
+turning the user path into a terminal workflow. A backend-only
+`/api/hosted/jobs/<job>/worker-claims` endpoint lets a configured hosted worker
+claim that request with `FUSEKIT_HOSTED_WORKER_SECRET`, updates the public job
+state, and returns a redacted claim receipt without rendering the worker secret,
+provider tokens, GitHub installation token, or vault material. A redacted hosted
+readiness endpoint reports only configuration presence and shape errors, and
+keeps the homepage launch button disabled until the GitHub App id, slug, RSA
+private key, origin, state secret, and worker secret are configured and valid.
+Direct GitHub intake routes also fail closed with the same redacted readiness
+object until those checks pass. The
 remaining slices are real hosted job execution, final proof artifact production,
 rollback/detonation execution, and production DNS/deployment.
 
@@ -177,10 +182,11 @@ Production still needs the Vercel project connected to this repository,
 subdomain routed to the exact Vercel-provided CNAME target, and these runtime
 environment variables set in Vercel: `FUSEKIT_HOSTED_ORIGIN`,
 `FUSEKIT_GITHUB_APP_ID`, `FUSEKIT_GITHUB_APP_SLUG`,
-`FUSEKIT_GITHUB_APP_PRIVATE_KEY`, and `FUSEKIT_HOSTED_STATE_SECRET`. As of the
-latest local check, `https://fusekit.snowmanai.org` resolves through Cloudflare
-but returns Cloudflare's "DNS points to prohibited IP" page instead of the
-FuseKit hosted app, so DNS/custom-domain attachment is not complete yet.
+`FUSEKIT_GITHUB_APP_PRIVATE_KEY`, `FUSEKIT_HOSTED_STATE_SECRET`, and
+`FUSEKIT_HOSTED_WORKER_SECRET`. As of the latest local check,
+`https://fusekit.snowmanai.org` resolves through Cloudflare but returns
+Cloudflare's "DNS points to prohibited IP" page instead of the FuseKit hosted
+app, so DNS/custom-domain attachment is not complete yet.
 
 ## Real Provider Acceptance Run
 

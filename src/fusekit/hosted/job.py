@@ -22,6 +22,7 @@ HOSTED_JOB_TOKEN_TTL_SECONDS = 86_400
 HOSTED_PROOF_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-proof-receipt.v1"
 HOSTED_WORKER_CONTRACT_SCHEMA_VERSION = "fusekit.hosted-worker-contract.v1"
 HOSTED_WORKER_REQUEST_SCHEMA_VERSION = "fusekit.hosted-worker-request.v1"
+HOSTED_WORKER_CLAIM_SCHEMA_VERSION = "fusekit.hosted-worker-claim.v1"
 
 
 @dataclass(frozen=True)
@@ -384,6 +385,47 @@ def advance_hosted_launch_job(
     raise ValueError(f"Unsupported hosted job action: {action}")
 
 
+def claim_hosted_launch_job(
+    job: HostedLaunchJob,
+    *,
+    worker_id: str,
+    now: int | None = None,
+) -> HostedLaunchJob:
+    """Return an updated hosted job after a worker claims the request."""
+
+    current = int(time.time() if now is None else now)
+    if job.status == "waiting_for_worker":
+        raise ValueError("Hosted worker request has not been started.")
+    if job.status in {"rollback_requested", "detonation_requested", "complete"}:
+        raise ValueError("Hosted worker request cannot be claimed in its current state.")
+    worker_label = _public_worker_id(worker_id)
+    return _replace_job(
+        job,
+        status="worker_claimed",
+        created_at=job.created_at or current,
+        steps=_update_steps(
+            job.steps,
+            {
+                "worker.prepare": (
+                    "done",
+                    f"Hosted worker {worker_label} claimed the redacted request.",
+                ),
+                "provider.gates": (
+                    "waiting",
+                    (
+                        "Waiting for provider-owned login, MFA, billing, consent, "
+                        "domain, or copy-once secret gates."
+                    ),
+                ),
+                "setup.execute": (
+                    "waiting",
+                    "Worker may run only the approved visible-plan actions after gates clear.",
+                ),
+            },
+        ),
+    )
+
+
 def render_hosted_control_room(
     job: HostedLaunchJob,
     *,
@@ -603,6 +645,40 @@ def hosted_worker_request(job: HostedLaunchJob, *, now: int | None = None) -> di
             "Do not claim completion before live acceptance and detonation proof pass.",
         ],
         "worker_contract": job.worker_contract.to_dict(),
+    }
+
+
+def hosted_worker_claim_receipt(
+    job: HostedLaunchJob,
+    *,
+    worker_id: str,
+    now: int | None = None,
+) -> dict[str, object]:
+    """Build a redacted receipt for a hosted worker claim."""
+
+    claimed_at = int(time.time() if now is None else now)
+    return {
+        "schema_version": HOSTED_WORKER_CLAIM_SCHEMA_VERSION,
+        "job_id": job.job_id,
+        "worker_id": _public_worker_id(worker_id),
+        "claimed_at": claimed_at,
+        "status": job.status,
+        "secret_boundary": (
+            "The worker claim proves a configured backend worker authenticated. "
+            "It never includes worker secrets, provider tokens, vault material, "
+            "GitHub installation tokens, or copy-once credentials."
+        ),
+        "next_required_proof": [
+            "provider_gate_events",
+            "live_url",
+            "provider_verifiers",
+            "dns_propagation",
+            "retrieved_remote_artifacts",
+            "run_record",
+            "rollback_metadata",
+            "detonation_receipt",
+            "live_acceptance_report",
+        ],
     }
 
 
@@ -881,6 +957,13 @@ def _completion_ready(job: HostedLaunchJob) -> bool:
         and steps.get("rollback.ready") == "done"
         and steps.get("detonate.worker") == "done"
     )
+
+
+def _public_worker_id(value: str) -> str:
+    sanitized = "".join(
+        character for character in value.strip()[:80] if character.isalnum() or character in "-_"
+    )
+    return sanitized or "hosted-worker"
 
 
 def _worker_contract_from_dict(payload: dict[str, Any]) -> HostedWorkerContract:

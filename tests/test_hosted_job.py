@@ -10,9 +10,11 @@ from fusekit.hosted import (
     advance_hosted_launch_job,
     build_hosted_launch_job,
     build_hosted_worker_contract,
+    claim_hosted_launch_job,
     create_hosted_job_token,
     hosted_launch_job_from_dict,
     hosted_proof_receipt,
+    hosted_worker_claim_receipt,
     hosted_worker_request,
     render_hosted_control_room,
     render_hosted_proof_receipt,
@@ -115,6 +117,49 @@ def test_hosted_worker_request_binds_live_acceptance_and_no_secret_policy() -> N
     assert "ghs_" not in serialized
     assert "PRIVATE KEY" not in serialized
     assert "VERCEL_TOKEN" not in serialized
+
+
+def test_hosted_worker_claim_updates_job_and_writes_redacted_receipt() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    started = advance_hosted_launch_job(job, "start", now=1_700_000_001)
+    claimed = claim_hosted_launch_job(
+        started,
+        worker_id="worker-01<script>",
+        now=1_700_000_002,
+    )
+    receipt = hosted_worker_claim_receipt(
+        claimed,
+        worker_id="worker-01<script>",
+        now=1_700_000_003,
+    )
+    steps = {step["id"]: step for step in claimed.to_dict()["steps"]}
+    serialized = json.dumps(receipt) + json.dumps(claimed.to_dict())
+
+    assert claimed.status == "worker_claimed"
+    assert steps["worker.prepare"]["status"] == "done"
+    assert "worker-01script" in steps["worker.prepare"]["proof"]
+    assert steps["provider.gates"]["status"] == "waiting"
+    assert steps["setup.execute"]["status"] == "waiting"
+    assert receipt["schema_version"] == "fusekit.hosted-worker-claim.v1"
+    assert receipt["job_id"] == "hosted-test"
+    assert receipt["worker_id"] == "worker-01script"
+    assert "provider_gate_events" in receipt["next_required_proof"]
+    assert "detonation_receipt" in receipt["next_required_proof"]
+    assert "<script>" not in serialized
+    assert "PRIVATE KEY" not in serialized
+    assert "ghs_" not in serialized
+
+
+def test_hosted_worker_claim_rejects_unstarted_or_terminal_jobs() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+
+    with pytest.raises(ValueError):
+        claim_hosted_launch_job(job, worker_id="worker-01")
+
+    started = advance_hosted_launch_job(job, "start", now=1_700_000_001)
+    rollback = advance_hosted_launch_job(started, "rollback", now=1_700_000_002)
+    with pytest.raises(ValueError):
+        claim_hosted_launch_job(rollback, worker_id="worker-01")
 
 
 def test_hosted_control_room_embeds_redacted_job_json() -> None:
