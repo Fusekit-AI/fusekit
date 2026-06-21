@@ -62,6 +62,34 @@ StartResponse = Callable[[str, list[tuple[str, str]]], object]
 
 HOSTED_CANONICAL_ORIGIN = "https://fusekit.snowmanai.org"
 HOSTED_SOURCE_REPOSITORY = "https://github.com/xpxpxp-coder/fusekit"
+HOSTED_OPERATOR_SETUP_STEPS: tuple[dict[str, str], ...] = (
+    {
+        "id": "connect_vercel_project",
+        "label": "Connect the Vercel project to the open-source FuseKit repository.",
+        "proof": "Vercel deployment serves app.py from the public repository.",
+    },
+    {
+        "id": "attach_custom_domain",
+        "label": "Add fusekit.snowmanai.org as the Vercel custom domain.",
+        "proof": "Vercel reports the domain as assigned to this project.",
+    },
+    {
+        "id": "route_cloudflare_cname",
+        "label": (
+            "In Cloudflare DNS, set the fusekit record to the exact "
+            "Vercel-provided CNAME target."
+        ),
+        "proof": "The subdomain serves FuseKit instead of a Cloudflare error page.",
+    },
+    {
+        "id": "verify_public_contracts",
+        "label": (
+            "Verify https://fusekit.snowmanai.org/healthz, /api/hosted/readiness, "
+            "and /api/hosted/deployment from outside the deployment."
+        ),
+        "proof": "fusekit-hosted-verify reports DNS, health, readiness, and deployment ok.",
+    },
+)
 HOSTED_READINESS_SCHEMA_VERSION = "fusekit.hosted-readiness.v1"
 HOSTED_DEPLOYMENT_SCHEMA_VERSION = "fusekit.hosted-deployment.v1"
 HOSTED_WORKER_DISPATCH_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch.v1"
@@ -179,6 +207,15 @@ class HostedSettings:
                 "record_value": "Use the exact Vercel-provided CNAME target for this project.",
                 "verification": "The subdomain must serve this app, not a Cloudflare error page.",
             },
+            "operator_setup": {
+                "target_subdomain": "fusekit.snowmanai.org",
+                "steps": [dict(step) for step in HOSTED_OPERATOR_SETUP_STEPS],
+                "secret_boundary": (
+                    "Operator setup names provider surfaces and expected public proof only. "
+                    "It does not include Vercel tokens, Cloudflare API tokens, GitHub private "
+                    "keys, HMAC secrets, or vault material."
+                ),
+            },
             "github_app": {
                 "callback_url": f"{public_origin}/github/callback",
                 "intake_url": f"{public_origin}/api/github/intake",
@@ -288,6 +325,15 @@ def render_hosted_home(settings: HostedSettings) -> str:
     readiness_payload = html.escape(json.dumps(readiness, sort_keys=True))
     deployment_contract = settings.deployment_contract()
     deployment_payload = html.escape(json.dumps(deployment_contract, sort_keys=True))
+    operator_setup = "\n".join(
+        (
+            "<li>"
+            f"{html.escape(step['label'])} "
+            f"<span class=\"origin\">Proof: {html.escape(step['proof'])}</span>"
+            "</li>"
+        )
+        for step in HOSTED_OPERATOR_SETUP_STEPS
+    )
     source_repository = html.escape(HOSTED_SOURCE_REPOSITORY, quote=True)
     status = (
         "Hosted GitHub intake is ready."
@@ -452,6 +498,7 @@ def render_hosted_home(settings: HostedSettings) -> str:
           names only, never secret values.
         </li>
       </ul>
+      <ol>{operator_setup}</ol>
     </section>
     <script id="fusekit-github-intake" type="application/json">{payload}</script>
     <script id="fusekit-hosted-readiness" type="application/json">{readiness_payload}</script>

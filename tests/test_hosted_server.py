@@ -176,6 +176,9 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
     assert "Install the FuseKit GitHub App on one selected repository." in html
     assert "Click Start hosted launch and pass only provider-owned human gates." in html
     assert "Receive the live URL, redacted proof receipt" in html
+    assert "Add fusekit.snowmanai.org as the Vercel custom domain." in html
+    assert "set the fusekit record to the exact Vercel-provided CNAME target" in html
+    assert "fusekit-hosted-verify reports DNS, health, readiness, and deployment ok" in html
     assert "state=" in html
     assert "Hosted GitHub intake is ready." in html
     assert "fusekit launch" not in html
@@ -345,6 +348,21 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     assert payload["cloudflare_dns"]["zone"] == "snowmanai.org"
     assert payload["cloudflare_dns"]["record_name"] == "fusekit"
     assert payload["cloudflare_dns"]["record_type"] == "CNAME"
+    assert payload["operator_setup"]["target_subdomain"] == "fusekit.snowmanai.org"
+    assert [step["id"] for step in payload["operator_setup"]["steps"]] == [
+        "connect_vercel_project",
+        "attach_custom_domain",
+        "route_cloudflare_cname",
+        "verify_public_contracts",
+    ]
+    assert payload["operator_setup"]["steps"][1]["label"] == (
+        "Add fusekit.snowmanai.org as the Vercel custom domain."
+    )
+    assert (
+        "exact Vercel-provided CNAME target"
+        in payload["operator_setup"]["steps"][2]["label"]
+    )
+    assert "tokens" in payload["operator_setup"]["secret_boundary"]
     assert payload["github_app"]["callback_url"] == (
         "https://fusekit.snowmanai.org/github/callback"
     )

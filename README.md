@@ -249,8 +249,10 @@ also pins Python 3.12 with `.python-version` and uses a wheel-backed
 compilation for the public launcher. The hosted app also serves
 `/api/hosted/deployment`, a public deployment contract that lists the canonical
 origin, Vercel WSGI entrypoint/routing files, GitHub callback URL, Cloudflare DNS record name,
-health/readiness URLs, and required environment variable names without exposing
-secret values. `fusekit-hosted-verify --origin https://fusekit.snowmanai.org`
+health/readiness URLs, the operator setup checklist for attaching
+`fusekit.snowmanai.org` to Vercel and Cloudflare, and required environment
+variable names without exposing secret values.
+`fusekit-hosted-verify --origin https://fusekit.snowmanai.org`
 performs the outside-in deployment check against public DNS propagation, `/healthz`,
 `/api/hosted/readiness`, and `/api/hosted/deployment`; add
 `--worker-dispatch-url` to verify the worker receiver `/healthz` and
