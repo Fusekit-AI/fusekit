@@ -161,7 +161,13 @@ and are never embedded in hosted pages, job tokens, receipts, or public proof. A
 `/api/hosted/jobs/<job>/worker-claims` endpoint lets a configured hosted worker
 claim that request with `FUSEKIT_HOSTED_WORKER_SECRET`, updates the public job
 state, and returns a redacted claim receipt without rendering the worker secret,
-provider tokens, GitHub installation token, or vault material. The backend-only
+provider tokens, GitHub installation token, or vault material. Backend worker
+preparation can now exchange the selected repository's GitHub App installation
+token inside FuseKit, fetch the approved source into worker scratch space,
+re-scan it, and reject execution if the providers, required env vars, approved
+actions, gates, or required artifacts differ from the visible plan the user
+approved. Its execution-plan output uses public labels only; it does not include
+the token, private key, provider credentials, or host filesystem paths. The backend-only
 `/api/hosted/jobs/<job>/worker-proof` endpoint accepts redacted worker proof
 snapshots, rejects credential-looking public notes or unsupported artifact
 labels, updates public job steps, and only marks hosted completion when live URL,
@@ -172,8 +178,9 @@ and keeps the homepage launch button disabled until the GitHub App id, slug, RSA
 private key, origin, state secret, and worker secret are configured and valid.
 Direct GitHub intake routes also fail closed with the same redacted readiness
 object until those checks pass. The
-remaining slices are real hosted job execution, final proof artifact production,
-rollback/detonation execution, and production DNS/deployment.
+remaining slices are running the approved setup actions inside the hosted worker,
+final proof artifact production, rollback/detonation execution, and production
+DNS/deployment.
 
 The repository includes a minimal Vercel-compatible WSGI entrypoint at `app.py`
 for the hosted subdomain. The hosted app also serves

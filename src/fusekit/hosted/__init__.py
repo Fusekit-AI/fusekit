@@ -41,6 +41,11 @@ from fusekit.hosted.session import (
     create_hosted_state_token,
     verify_hosted_state_token,
 )
+from fusekit.hosted.worker import (
+    HOSTED_WORKER_EXECUTION_SCHEMA_VERSION,
+    HostedWorkerExecutionPlan,
+    prepare_hosted_worker_execution,
+)
 
 __all__ = [
     "GitHubAppConfig",
@@ -50,7 +55,9 @@ __all__ = [
     "HostedLaunchState",
     "HostedLaunchTrustContract",
     "HostedWorkerContract",
+    "HostedWorkerExecutionPlan",
     "InstallationToken",
+    "HOSTED_WORKER_EXECUTION_SCHEMA_VERSION",
     "build_github_app_jwt",
     "advance_hosted_launch_job",
     "apply_hosted_worker_proof",
@@ -72,6 +79,7 @@ __all__ = [
     "render_hosted_control_room",
     "render_hosted_proof_receipt",
     "render_hosted_launcher",
+    "prepare_hosted_worker_execution",
     "verify_hosted_job_token",
     "verify_hosted_state_token",
 ]
