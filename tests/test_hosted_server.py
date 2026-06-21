@@ -522,6 +522,7 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
         "actions": ["start", "stop", "rollback", "detonate"],
         "http_method": "POST",
         "control_token_transport": "hidden_form_field",
+        "query_control_behavior": "rejected_as_missing_control",
         "job_token_transport": "signed_public_query_parameter",
         "binding": "job_id_and_action",
         "token_lifetime": "short-lived",
@@ -1217,7 +1218,7 @@ def test_hosted_job_api_returns_redacted_status_and_accepts_protected_action() -
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/rollback",
         method="POST",
-        query_string=f"control={control}",
+        form_body={"control": control},
         settings=settings,
     )
     assert status == "403 Forbidden"
@@ -1232,7 +1233,7 @@ def test_hosted_job_api_returns_redacted_status_and_accepts_protected_action() -
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/rollback",
         method="POST",
-        query_string=f"control={rollback_control}",
+        form_body={"control": rollback_control},
         settings=settings,
     )
     payload = json.loads(body.decode("utf-8"))
@@ -1354,7 +1355,8 @@ def test_hosted_job_api_accepts_signed_job_token_without_process_memory() -> Non
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
-        query_string=f"control={control}&job={job_token}",
+        query_string=f"job={job_token}",
+        form_body={"control": control},
         settings=stateless_settings,
     )
     payload = json.loads(body.decode("utf-8"))
@@ -1492,7 +1494,8 @@ def test_hosted_job_start_dispatches_signed_worker_envelope_when_configured() ->
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
-        query_string=f"control={control}&job={job_token}",
+        query_string=f"job={job_token}",
+        form_body={"control": control},
         settings=settings,
     )
     response = json.loads(body.decode("utf-8"))
@@ -1591,7 +1594,8 @@ def test_hosted_job_actions_reject_duplicate_start_without_second_dispatch() -> 
     status, _headers, _body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
-        query_string=f"control={control}&job={job_token}",
+        query_string=f"job={job_token}",
+        form_body={"control": control},
         settings=settings,
     )
     assert status == "200 OK"
@@ -1599,7 +1603,8 @@ def test_hosted_job_actions_reject_duplicate_start_without_second_dispatch() -> 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
-        query_string=f"control={control}&job={job_token}",
+        query_string=f"job={job_token}",
+        form_body={"control": control},
         settings=settings,
     )
 
@@ -1647,7 +1652,7 @@ def test_hosted_job_actions_reject_rollback_and_detonation_before_start() -> Non
         status, _headers, body = _call(
             f"/api/hosted/jobs/{job_id}/actions/{action}",
             method="POST",
-            query_string=f"control={control}",
+            form_body={"control": control},
             settings=settings,
         )
         assert status == "400 Bad Request"
@@ -1699,7 +1704,8 @@ def test_hosted_worker_request_requires_start_and_supports_stateless_job_token()
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
-        query_string=f"control={control}&job={job_token}",
+        query_string=f"job={job_token}",
+        form_body={"control": control},
         settings=settings,
     )
     started = json.loads(body.decode("utf-8"))
@@ -1768,7 +1774,8 @@ def test_hosted_worker_claim_requires_backend_auth_and_returns_redacted_receipt(
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
-        query_string=f"control={control}&job={job_token}",
+        query_string=f"job={job_token}",
+        form_body={"control": control},
         settings=settings,
     )
     started = json.loads(body.decode("utf-8"))
@@ -1860,7 +1867,8 @@ def test_hosted_worker_proof_submission_requires_backend_auth_and_redacted_evide
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
-        query_string=f"control={control}&job={job_token}",
+        query_string=f"job={job_token}",
+        form_body={"control": control},
         settings=settings,
     )
     started = json.loads(body.decode("utf-8"))
@@ -2176,12 +2184,54 @@ def test_hosted_job_api_rejects_bad_control_token() -> None:
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
-        query_string="control=bad",
+        form_body={"control": "bad"},
         settings=settings,
     )
 
     assert status == "403 Forbidden"
     assert json.loads(body.decode("utf-8")) == {"error": "invalid_control"}
+    assert settings.hosted_jobs[job_id].status == "waiting_for_worker"
+
+
+def test_hosted_job_api_rejects_query_control_token() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    settings = _settings_with_github(opener)
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=f"installation_id=42&repo=example/one&state={state}",
+        settings=settings,
+    )
+    assert status == "200 OK"
+    text = body.decode("utf-8")
+    job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    control = _control_for_action(text, "start")
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/start",
+        method="POST",
+        query_string=f"control={control}",
+        settings=settings,
+    )
+
+    assert status == "400 Bad Request"
+    assert json.loads(body.decode("utf-8")) == {"error": "missing_control"}
     assert settings.hosted_jobs[job_id].status == "waiting_for_worker"
 
 
@@ -2268,7 +2318,7 @@ def test_hosted_job_api_rejects_control_token_for_different_job() -> None:
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
-        query_string=f"control={control}",
+        form_body={"control": control},
         settings=settings,
     )
 
@@ -2313,7 +2363,7 @@ def test_hosted_job_api_rejects_control_token_for_different_action() -> None:
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
-        query_string=f"control={control}",
+        form_body={"control": control},
         settings=settings,
     )
 

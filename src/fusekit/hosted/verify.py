@@ -732,6 +732,7 @@ def _protected_controls_contract_failures(payload: object) -> list[str]:
         "actions": ["start", "stop", "rollback", "detonate"],
         "http_method": "POST",
         "control_token_transport": "hidden_form_field",
+        "query_control_behavior": "rejected_as_missing_control",
         "job_token_transport": "signed_public_query_parameter",
         "binding": "job_id_and_action",
         "token_lifetime": "short-lived",

@@ -420,6 +420,7 @@ class HostedSettings:
                 "actions": ["start", "stop", "rollback", "detonate"],
                 "http_method": "POST",
                 "control_token_transport": "hidden_form_field",
+                "query_control_behavior": "rejected_as_missing_control",
                 "job_token_transport": "signed_public_query_parameter",
                 "binding": "job_id_and_action",
                 "token_lifetime": "short-lived",
@@ -1188,12 +1189,11 @@ def _hosted_job_action_response(
     job: HostedLaunchJob,
     action: str,
 ) -> Iterable[bytes]:
-    query = urllib.parse.parse_qs(str(environ.get("QUERY_STRING", "")), keep_blank_values=True)
     try:
         form = _form_request_body(environ)
     except FuseKitError:
         return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "missing_control"})
-    control_token = _first_query_value(form, "control") or _first_query_value(query, "control")
+    control_token = _first_query_value(form, "control")
     if not control_token:
         return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "missing_control"})
     try:

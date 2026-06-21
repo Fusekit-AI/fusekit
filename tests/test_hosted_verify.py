@@ -807,6 +807,7 @@ def test_verify_hosted_deployment_requires_protected_controls_contract() -> None
     assert isinstance(protected, dict)
     protected["actions"] = ["start"]
     protected["control_token_transport"] = "query_parameter"
+    protected["query_control_behavior"] = "accepted"
     protected["binding"] = "job_id"
     protected["public_url_policy"] = "control tokens may appear in action URLs"
     protected["secret_boundary"] = "Protected controls are public links."
@@ -831,6 +832,7 @@ def test_verify_hosted_deployment_requires_protected_controls_contract() -> None
     assert report["ready"] is False
     assert "protected_controls_actions_mismatch" in failures
     assert "protected_controls_control_token_transport_mismatch" in failures
+    assert "protected_controls_query_control_behavior_mismatch" in failures
     assert "protected_controls_binding_mismatch" in failures
     assert "protected_controls_public_url_policy_mismatch" in failures
     assert "protected_controls_secret_boundary_missing" in failures
@@ -1338,6 +1340,7 @@ def _deployment_contract() -> dict[str, object]:
             "actions": ["start", "stop", "rollback", "detonate"],
             "http_method": "POST",
             "control_token_transport": "hidden_form_field",
+            "query_control_behavior": "rejected_as_missing_control",
             "job_token_transport": "signed_public_query_parameter",
             "binding": "job_id_and_action",
             "token_lifetime": "short-lived",
