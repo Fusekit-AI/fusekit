@@ -94,6 +94,7 @@ def test_hosted_proof_receipt_is_redacted_and_not_prematurely_complete() -> None
         "GitHub App installation" in item["control"]
         for item in receipt["reversal_playbook"]
     )
+    assert any("Stop launch" in item["control"] for item in receipt["reversal_playbook"])
     assert "Proof receipt." in html
     assert "Permission boundary" in html
     assert "contents:read" in html
@@ -105,6 +106,7 @@ def test_hosted_proof_receipt_is_redacted_and_not_prematurely_complete() -> None
     assert "MFA" in html
     assert "Reversible setup" in html
     assert "Reversal playbook" in html
+    assert "Stop launch" in html
     assert "Request rollback" in html
     assert "Request detonation" in html
     assert "GitHub App installation" in html

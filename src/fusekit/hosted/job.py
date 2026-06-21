@@ -719,10 +719,11 @@ def hosted_reversal_playbook(job: HostedLaunchJob) -> list[dict[str, str]]:
     del job
     return [
         {
-            "control": "Pause at human gates",
+            "control": "Stop launch before worker start",
             "proof": (
-                "Provider-owned MFA, CAPTCHA, billing, fraud, consent, and DNS ownership "
-                "screens remain human-owned; FuseKit must wait instead of bypassing them."
+                "Use the protected control-room stop button before worker start. FuseKit "
+                "freezes the job before worker claim or provider mutation and preserves "
+                "the redacted public proof trail."
             ),
         },
         {

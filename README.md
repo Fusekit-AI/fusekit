@@ -162,7 +162,7 @@ clicks now show that same latest protected-action receipt in the control room,
 including public worker-dispatch status, so a nontechnical user sees what the
 button requested and what proof remains without seeing any token. The control
 room and proof receipt now also publish a browser-visible reversal playbook:
-pause at human gates, revoke or narrow the GitHub App installation, request
+stop before worker start, revoke or narrow the GitHub App installation, request
 rollback with provider inventory proof, and request worker detonation while
 preserving redacted public proof. A
 browser-facing proof receipt page
