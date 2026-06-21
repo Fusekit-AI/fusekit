@@ -263,6 +263,35 @@ def test_verify_hosted_deployment_requires_runtime_and_dns_contract() -> None:
     assert "cloudflare_record_type_mismatch" in checks["hosted.deployment"]["failures"]
 
 
+def test_verify_hosted_deployment_requires_canonical_subdomain_contract() -> None:
+    contract = _deployment_contract()
+    contract["canonical_origin"] = "https://www.snowmanai.org"
+    contract["public_origin"] = "https://preview-fusekit.vercel.app"
+    contract["domain"] = "www.snowmanai.org"
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            contract,
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["hosted.deployment"]["status"] == "failed"
+    assert "canonical_origin_mismatch" in checks["hosted.deployment"]["failures"]
+    assert "public_origin_mismatch" in checks["hosted.deployment"]["failures"]
+    assert "domain_mismatch" in checks["hosted.deployment"]["failures"]
+
+
 def test_verify_hosted_deployment_requires_operator_setup_contract() -> None:
     contract = _deployment_contract()
     operator_setup = contract["operator_setup"]
@@ -590,6 +619,9 @@ def _home_html() -> str:
 def _deployment_contract() -> dict[str, object]:
     return {
         "schema_version": "fusekit.hosted-deployment.v1",
+        "canonical_origin": "https://fusekit.snowmanai.org",
+        "public_origin": "https://fusekit.snowmanai.org",
+        "domain": "fusekit.snowmanai.org",
         "trust_story": [
             "open core",
             "narrow permissions",

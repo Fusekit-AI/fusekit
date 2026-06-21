@@ -98,6 +98,7 @@ def verify_hosted_deployment(
             opener=opener,
             expect_schema=HOSTED_DEPLOYMENT_SCHEMA_VERSION,
             expect_hosted_runtime_contract=True,
+            expected_public_origin=public_origin,
         )
     )
     checks.append(
@@ -204,6 +205,7 @@ def _json_check(
     expect_hosted_runtime_contract: bool = False,
     expect_github_intake_contract: bool = False,
     expect_worker_dispatch_readiness: bool = False,
+    expected_public_origin: str = "",
 ) -> dict[str, object]:
     try:
         status, payload = _fetch_json(url, opener=opener)
@@ -223,7 +225,12 @@ def _json_check(
     if expect_ready_field and payload.get("ready") is not True:
         failures.append("ready_field_not_true")
     if expect_hosted_runtime_contract:
-        failures.extend(_hosted_runtime_contract_failures(payload))
+        failures.extend(
+            _hosted_runtime_contract_failures(
+                payload,
+                expected_public_origin=expected_public_origin,
+            )
+        )
     if expect_github_intake_contract:
         failures.extend(_github_intake_contract_failures(payload))
     if expect_worker_dispatch_readiness:
@@ -313,8 +320,18 @@ def _is_non_public_address(value: str) -> bool:
     return not address.is_global
 
 
-def _hosted_runtime_contract_failures(payload: dict[str, Any]) -> list[str]:
+def _hosted_runtime_contract_failures(
+    payload: dict[str, Any],
+    *,
+    expected_public_origin: str = "",
+) -> list[str]:
     failures: list[str] = []
+    if payload.get("canonical_origin") != HOSTED_CANONICAL_ORIGIN:
+        failures.append("canonical_origin_mismatch")
+    if expected_public_origin and payload.get("public_origin") != expected_public_origin:
+        failures.append("public_origin_mismatch")
+    if payload.get("domain") != urllib.parse.urlparse(HOSTED_CANONICAL_ORIGIN).hostname:
+        failures.append("domain_mismatch")
     runtime = payload.get("runtime")
     if not isinstance(runtime, dict):
         return ["runtime_contract_missing"]
