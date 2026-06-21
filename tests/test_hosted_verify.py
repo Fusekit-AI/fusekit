@@ -86,6 +86,8 @@ def test_verify_hosted_deployment_passes_launcher_and_dispatch_checks() -> None:
 
     assert report["schema_version"] == HOSTED_DEPLOYMENT_VERIFICATION_SCHEMA_VERSION
     assert report["ready"] is True
+    assert report["blocking_checks"] == []
+    assert report["next_actions"] == []
     assert [check["id"] for check in report["checks"]] == [
         "hosted.dns",
         "hosted.home",
@@ -177,6 +179,17 @@ def test_verify_hosted_deployment_reports_cloudflare_error_without_claiming_read
     checks = {check["id"]: check for check in report["checks"]}
 
     assert report["ready"] is False
+    assert report["blocking_checks"] == [
+        "hosted.home",
+        "hosted.readiness",
+    ]
+    assert report["next_actions"] == [
+        (
+            "Attach fusekit.snowmanai.org to the Vercel project, then set the "
+            "Cloudflare fusekit CNAME to the exact Vercel-provided target. Do not "
+            "point the proxied record at a prohibited IP or Cloudflare-owned address."
+        )
+    ]
     assert checks["hosted.dns"]["status"] == "ok"
     assert checks["hosted.home"]["status"] == "failed"
     assert checks["hosted.home"]["http_status"] == 403

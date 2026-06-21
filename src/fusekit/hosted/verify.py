@@ -140,11 +140,14 @@ def verify_hosted_deployment(
                 expect_worker_dispatch_readiness=True,
             )
         )
+    blocking_checks = _blocking_check_ids(checks)
     return {
         "schema_version": HOSTED_DEPLOYMENT_VERIFICATION_SCHEMA_VERSION,
         "public_origin": public_origin,
         "worker_dispatch_url": dispatch_public_url,
-        "ready": all(check["status"] == "ok" for check in checks),
+        "ready": not blocking_checks,
+        "blocking_checks": blocking_checks,
+        "next_actions": _next_actions(checks),
         "checks": checks,
         "secret_boundary": (
             "Hosted deployment verification fetches public HTML/JSON endpoints only. It never "
@@ -174,6 +177,23 @@ def main(argv: list[str] | None = None) -> int:
         }
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0 if report.get("ready") is True else 1
+
+
+def _blocking_check_ids(checks: list[dict[str, object]]) -> list[str]:
+    return [
+        str(check["id"])
+        for check in checks
+        if check.get("status") != "ok" and isinstance(check.get("id"), str)
+    ]
+
+
+def _next_actions(checks: list[dict[str, object]]) -> list[str]:
+    actions: list[str] = []
+    for check in checks:
+        action = check.get("next_action")
+        if isinstance(action, str) and action and action not in actions:
+            actions.append(action)
+    return actions
 
 
 def _text_check(

@@ -332,8 +332,10 @@ runtime/open-core/DNS drift, deployment trust-story drift, homepage completion
 proof checklist drift, homepage reversible-setup drift, one-click launch
 contract drift, embedded homepage contract drift, capability-vault boundary
 drift, pre-install GitHub intake trust drift, and operator-setup contract drift
-as redacted JSON instead of claiming launch readiness. Every public HTML/JSON
-payload it fetches is also
+as redacted JSON instead of claiming launch readiness. It also publishes
+top-level `blocking_checks` and deduplicated `next_actions` so an operator can
+see the remaining public setup work without searching every check row. Every
+public HTML/JSON payload it fetches is also
 checked with FuseKit's credential-text detector, and any failure is reported
 only as a redacted failure code. It
 also recognizes Cloudflare Error 1000 (`DNS points to prohibited IP`) and
