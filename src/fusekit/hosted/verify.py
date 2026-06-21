@@ -133,7 +133,7 @@ def _json_check(
     try:
         status, payload = _fetch_json(url, opener=opener)
     except urllib.error.HTTPError as exc:
-        return _failed_check(check_id, url, "http_error", http_status=exc.code)
+        return _http_error_check(check_id, url, exc)
     except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
         return _failed_check(check_id, url, exc.__class__.__name__)
     failures: list[str] = []
@@ -178,8 +178,10 @@ def _failed_check(
     reason: str,
     *,
     http_status: int = 0,
+    diagnosis: str = "",
+    next_action: str = "",
 ) -> dict[str, object]:
-    return {
+    check: dict[str, object] = {
         "id": check_id,
         "url": _public_url(url),
         "status": "failed",
@@ -187,6 +189,54 @@ def _failed_check(
         "schema_version": "",
         "failures": [reason],
     }
+    if diagnosis:
+        check["diagnosis"] = diagnosis
+    if next_action:
+        check["next_action"] = next_action
+    return check
+
+
+def _http_error_check(
+    check_id: str,
+    url: str,
+    exc: urllib.error.HTTPError,
+) -> dict[str, object]:
+    diagnostic = _diagnose_http_error(_read_error_body(exc))
+    return _failed_check(
+        check_id,
+        url,
+        "http_error",
+        http_status=exc.code,
+        diagnosis=diagnostic.get("diagnosis", ""),
+        next_action=diagnostic.get("next_action", ""),
+    )
+
+
+def _read_error_body(exc: urllib.error.HTTPError) -> str:
+    try:
+        raw = exc.read(65_536)
+    except OSError:
+        return ""
+    if not isinstance(raw, bytes):
+        return ""
+    return raw.decode("utf-8", errors="replace")
+
+
+def _diagnose_http_error(body: str) -> dict[str, str]:
+    lower = body.lower()
+    if (
+        ("error 1000" in lower and "dns points to prohibited ip" in lower)
+        or "error code: 1000" in lower
+    ):
+        return {
+            "diagnosis": "cloudflare_error_1000_dns_points_to_prohibited_ip",
+            "next_action": (
+                "Attach fusekit.snowmanai.org to the Vercel project, then set the "
+                "Cloudflare fusekit CNAME to the exact Vercel-provided target. Do not "
+                "point the proxied record at a prohibited IP or Cloudflare-owned address."
+            ),
+        }
+    return {}
 
 
 def _valid_public_origin(value: str) -> str:

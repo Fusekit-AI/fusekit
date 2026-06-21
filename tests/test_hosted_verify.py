@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import urllib.error
 import urllib.request
@@ -93,7 +94,13 @@ def test_verify_hosted_deployment_reports_cloudflare_error_without_claiming_read
                 403,
                 "Forbidden",
                 {},
-                None,
+                io.BytesIO(
+                    b"""
+                    <title>DNS points to prohibited IP | Cloudflare</title>
+                    <h1>Error 1000</h1>
+                    <span>Ray ID: test-ray-id</span>
+                    """
+                ),
             ),
             {"schema_version": "fusekit.hosted-readiness.v1", "ready": False},
             {"schema_version": "fusekit.hosted-deployment.v1"},
@@ -110,7 +117,12 @@ def test_verify_hosted_deployment_reports_cloudflare_error_without_claiming_read
     assert checks["hosted.health"]["status"] == "failed"
     assert checks["hosted.health"]["http_status"] == 403
     assert checks["hosted.health"]["failures"] == ["http_error"]
+    assert checks["hosted.health"]["diagnosis"] == (
+        "cloudflare_error_1000_dns_points_to_prohibited_ip"
+    )
+    assert "Vercel-provided target" in checks["hosted.health"]["next_action"]
     assert checks["hosted.readiness"]["failures"] == ["ready_field_not_true"]
+    assert "test-ray-id" not in json.dumps(report)
 
 
 def test_verify_hosted_deployment_rejects_non_origin_or_secret_url() -> None:
@@ -122,3 +134,30 @@ def test_verify_hosted_deployment_rejects_non_origin_or_secret_url() -> None:
             origin="https://fusekit.snowmanai.org",
             worker_dispatch_url="https://token@worker.snowmanai.org/dispatch",
         )
+
+
+def test_verify_hosted_deployment_diagnoses_compact_cloudflare_1000_body() -> None:
+    opener = SequenceOpener(
+        [
+            urllib.error.HTTPError(
+                "https://fusekit.snowmanai.org/healthz",
+                403,
+                "Forbidden",
+                {},
+                io.BytesIO(b"error code: 1000\n"),
+            ),
+            {"schema_version": "fusekit.hosted-readiness.v1", "ready": False},
+            {"schema_version": "fusekit.hosted-deployment.v1"},
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert checks["hosted.health"]["diagnosis"] == (
+        "cloudflare_error_1000_dns_points_to_prohibited_ip"
+    )
+    assert "Cloudflare fusekit CNAME" in checks["hosted.health"]["next_action"]
