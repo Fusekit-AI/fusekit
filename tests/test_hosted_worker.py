@@ -23,6 +23,7 @@ from fusekit.hosted.worker import (
     build_hosted_worker_launch_invocation,
     build_hosted_worker_maintenance_invocation,
     build_hosted_worker_proof_payload,
+    build_hosted_worker_workspace_proof_payload,
     prepare_hosted_worker_execution,
 )
 from fusekit.scanner import scan_repo
@@ -319,6 +320,48 @@ def test_hosted_worker_proof_payload_marks_complete_only_from_live_artifacts(
     assert "PRIVATE KEY" not in serialized
 
 
+def test_hosted_worker_rollback_proof_requires_post_rollback_verification(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True, rollback_post_verified=False)
+
+    bundle = build_hosted_worker_workspace_proof_payload(
+        source_dir=invocation.execution.source_dir,
+        artifact_paths=invocation.artifact_paths,
+        required_artifacts=invocation.execution.required_artifacts,
+        maintenance_action="rollback",
+        maintenance_returncode=0,
+    )
+    evidence = bundle.payload["evidence"]
+
+    assert evidence["rollback_execution_receipt"] is True
+    assert evidence["post_rollback_verification"] is False
+
+
+def test_hosted_worker_rollback_proof_marks_post_rollback_verification(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True, rollback_post_verified=True)
+
+    bundle = build_hosted_worker_workspace_proof_payload(
+        source_dir=invocation.execution.source_dir,
+        artifact_paths=invocation.artifact_paths,
+        required_artifacts=invocation.execution.required_artifacts,
+        maintenance_action="rollback",
+        maintenance_returncode=0,
+    )
+    evidence = bundle.payload["evidence"]
+
+    assert evidence["rollback_execution_receipt"] is True
+    assert evidence["post_rollback_verification"] is True
+
+
 def test_prepare_hosted_worker_execution_requires_claimed_job(tmp_path: Path) -> None:
     source = tmp_path / "approved"
     _write_demo_app(source, dependency='"resend": "latest"')
@@ -458,7 +501,12 @@ def _write_required_artifacts(invocation) -> None:
             path.write_text('{"ok":true}\n', encoding="utf-8")
 
 
-def _write_acceptance_report(invocation, *, recording_ready: bool) -> None:
+def _write_acceptance_report(
+    invocation,
+    *,
+    recording_ready: bool,
+    rollback_post_verified: bool = False,
+) -> None:
     invocation.artifact_paths["remote_artifacts"].mkdir(parents=True, exist_ok=True)
     report = {
         "mode": "live",
@@ -476,6 +524,10 @@ def _write_acceptance_report(invocation, *, recording_ready: bool) -> None:
         "missing": [],
         "blockers": [],
     }
+    if rollback_post_verified:
+        report["checks"].append(
+            {"id": "rollback.post_verification", "status": "ok", "detail": "redacted"}
+        )
     output = invocation.artifact_paths["acceptance_output"]
     output.mkdir(parents=True, exist_ok=True)
     (output / "report.json").write_text(json.dumps(report), encoding="utf-8")

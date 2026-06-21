@@ -229,6 +229,8 @@ def _proof_payload(
     complete: bool,
     note: str = "",
     completed_artifacts: list[str] | None = None,
+    rollback_execution_receipt: bool | None = None,
+    post_rollback_verification: bool | None = None,
 ) -> dict[str, object]:
     evidence = {
         "live_url": complete,
@@ -241,6 +243,10 @@ def _proof_payload(
         "live_acceptance_report": complete,
         "recording": complete,
     }
+    if rollback_execution_receipt is not None:
+        evidence["rollback_execution_receipt"] = rollback_execution_receipt
+    if post_rollback_verification is not None:
+        evidence["post_rollback_verification"] = post_rollback_verification
     return {
         "schema_version": "fusekit.hosted-worker-proof.v1",
         "evidence": evidence,
@@ -308,6 +314,63 @@ def test_hosted_worker_proof_submission_can_mark_complete_only_with_full_evidenc
     assert steps["proof.collect"]["status"] == "done"
     assert steps["rollback.ready"]["status"] == "done"
     assert steps["detonate.worker"]["status"] == "done"
+
+
+def test_hosted_worker_proof_requires_rollback_execution_after_rollback_request() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    started = advance_hosted_launch_job(job, "start", now=1_700_000_001)
+    rollback = advance_hosted_launch_job(started, "rollback", now=1_700_000_002)
+
+    updated, receipt = apply_hosted_worker_proof(
+        rollback,
+        _proof_payload(
+            complete=True,
+            completed_artifacts=list(rollback.worker_contract.required_artifacts),
+            note="Rollback metadata exists; execution proof is still pending.",
+        ),
+        worker_id="worker-01",
+        now=1_700_000_003,
+    )
+    steps = {step["id"]: step for step in updated.to_dict()["steps"]}
+
+    assert updated.status == "proof_submitted"
+    assert receipt["completion_ready"] is False
+    assert receipt["maintenance_ready"] is False
+    assert receipt["maintenance_required_proof"] == [
+        "rollback_execution_receipt",
+        "post_rollback_verification",
+    ]
+    assert receipt["evidence"]["rollback_execution_receipt"] is False
+    assert receipt["evidence"]["post_rollback_verification"] is False
+    assert steps["rollback.ready"]["status"] == "waiting"
+    assert "rollback execution receipt" in steps["rollback.ready"]["proof"]
+
+
+def test_hosted_worker_proof_marks_rollback_request_complete_with_execution_proof() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    started = advance_hosted_launch_job(job, "start", now=1_700_000_001)
+    rollback = advance_hosted_launch_job(started, "rollback", now=1_700_000_002)
+
+    updated, receipt = apply_hosted_worker_proof(
+        rollback,
+        _proof_payload(
+            complete=True,
+            completed_artifacts=list(rollback.worker_contract.required_artifacts),
+            rollback_execution_receipt=True,
+            post_rollback_verification=True,
+            note="Rollback execution and post-rollback verification passed.",
+        ),
+        worker_id="worker-01",
+        now=1_700_000_003,
+    )
+    steps = {step["id"]: step for step in updated.to_dict()["steps"]}
+
+    assert updated.status == "complete"
+    assert receipt["completion_ready"] is True
+    assert receipt["maintenance_ready"] is True
+    assert receipt["evidence"]["rollback_execution_receipt"] is True
+    assert receipt["evidence"]["post_rollback_verification"] is True
+    assert steps["rollback.ready"]["status"] == "done"
 
 
 def test_hosted_worker_proof_rejects_unknown_artifact_and_secret_text() -> None:

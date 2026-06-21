@@ -261,6 +261,8 @@ def build_hosted_worker_workspace_proof_payload(
     source_dir: Path,
     artifact_paths: Mapping[str, Path],
     required_artifacts: tuple[str, ...],
+    maintenance_action: str = "",
+    maintenance_returncode: int | None = None,
 ) -> HostedWorkerProofBundle:
     """Build worker proof from an existing hosted worker workspace."""
 
@@ -289,6 +291,11 @@ def build_hosted_worker_workspace_proof_payload(
         ),
         "recording": acceptance.get("recording_ready") is True,
     }
+    if maintenance_action == "rollback":
+        evidence["rollback_execution_receipt"] = (
+            maintenance_returncode == 0 and evidence["rollback_metadata"] is True
+        )
+        evidence["post_rollback_verification"] = checks.get("rollback.post_verification") == "ok"
     payload: dict[str, object] = {
         "schema_version": HOSTED_WORKER_PROOF_SCHEMA_VERSION,
         "evidence": evidence,

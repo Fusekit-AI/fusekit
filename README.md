@@ -228,7 +228,10 @@ private launch/acceptance invocations, and submit redacted proof back to the
 hosted API. The same entrypoint now accepts a protected action mode, so a hosted
 worker can run the existing `fusekit rollback --execute` or `fusekit detonate`
 surfaces for signed rollback/detonation requests against the existing worker
-workspace, then submit redacted proof. In production, protected control-room
+workspace, then submit redacted proof. Rollback maintenance proof is
+action-aware: rollback metadata alone cannot satisfy a rollback request; the
+hosted proof receipt stays incomplete until the worker reports a rollback
+execution receipt and explicit post-rollback verification. In production, protected control-room
 actions can also post a
 signed dispatch envelope to `FUSEKIT_HOSTED_WORKER_DISPATCH_URL`, letting the
 hosted button wake a worker service without asking the user to run a terminal

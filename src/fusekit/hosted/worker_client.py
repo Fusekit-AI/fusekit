@@ -169,6 +169,10 @@ def _run_hosted_worker_maintenance_once(
         source_dir=maintenance.source_dir,
         artifact_paths=maintenance.artifact_paths,
         required_artifacts=job.worker_contract.required_artifacts,
+        maintenance_action=action,
+        maintenance_returncode=rollback_returncode
+        if action == "rollback"
+        else detonation_returncode,
     )
     proof_response = post(
         _job_url(origin, job_id, "worker-proof", job_token),

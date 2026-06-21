@@ -39,6 +39,10 @@ HOSTED_WORKER_PROOF_KEYS = (
     "live_acceptance_report",
     "recording",
 )
+HOSTED_WORKER_MAINTENANCE_PROOF_KEYS = (
+    "rollback_execution_receipt",
+    "post_rollback_verification",
+)
 
 
 @dataclass(frozen=True)
@@ -526,6 +530,7 @@ def apply_hosted_worker_proof(
     if not isinstance(evidence, dict):
         raise ValueError("Hosted worker proof evidence is invalid.")
     completion_ready = receipt["completion_ready"] is True
+    rollback_execution_required = job.status == "rollback_requested"
     updated = _replace_job(
         job,
         status="complete" if completion_ready else "proof_submitted",
@@ -536,7 +541,10 @@ def apply_hosted_worker_proof(
                 "provider.gates": _provider_gate_step(evidence),
                 "setup.execute": _setup_execute_step(completion_ready),
                 "proof.collect": _proof_collect_step(evidence),
-                "rollback.ready": _rollback_step(evidence),
+                "rollback.ready": _rollback_step(
+                    evidence,
+                    execution_required=rollback_execution_required,
+                ),
                 "detonate.worker": _detonation_step(evidence),
             },
         ),
@@ -925,9 +933,11 @@ def hosted_worker_proof_receipt(
         for artifact in job.worker_contract.required_artifacts
         if artifact not in completed_artifacts
     )
+    maintenance_ready = _maintenance_ready(job, evidence)
     completion_ready = (
         all(evidence[key] for key in HOSTED_WORKER_PROOF_KEYS)
         and not missing_artifacts
+        and maintenance_ready
     )
     return {
         "schema_version": HOSTED_WORKER_PROOF_RECEIPT_SCHEMA_VERSION,
@@ -936,6 +946,7 @@ def hosted_worker_proof_receipt(
         "received_at": int(time.time() if now is None else now),
         "status": job.status,
         "completion_ready": completion_ready,
+        "maintenance_ready": maintenance_ready,
         "completion_statement": (
             "Hosted completion proof is present."
             if completion_ready
@@ -944,6 +955,7 @@ def hosted_worker_proof_receipt(
         "evidence": evidence,
         "completed_artifacts": list(completed_artifacts),
         "missing_artifacts": list(missing_artifacts),
+        "maintenance_required_proof": _maintenance_required_proof(job),
         "note": note,
         "secret_boundary": (
             "Worker proof accepts only redacted evidence flags, public artifact labels, "
@@ -1355,10 +1367,40 @@ def _proof_evidence(value: object) -> dict[str, bool]:
         if not isinstance(item, bool):
             raise ValueError(f"Hosted worker proof evidence {key} must be boolean.")
         evidence[key] = item
-    unexpected = sorted(str(key) for key in value if key not in HOSTED_WORKER_PROOF_KEYS)
+    for key in HOSTED_WORKER_MAINTENANCE_PROOF_KEYS:
+        item = value.get(key, False)
+        if not isinstance(item, bool):
+            raise ValueError(f"Hosted worker proof evidence {key} must be boolean.")
+        evidence[key] = item
+    allowed = set(HOSTED_WORKER_PROOF_KEYS) | set(HOSTED_WORKER_MAINTENANCE_PROOF_KEYS)
+    unexpected = sorted(str(key) for key in value if key not in allowed)
     if unexpected:
         raise ValueError("Hosted worker proof evidence contains unsupported keys.")
     return evidence
+
+
+def _maintenance_ready(job: HostedLaunchJob, evidence: dict[str, bool]) -> bool:
+    if job.status == "rollback_requested":
+        return (
+            evidence["rollback_execution_receipt"]
+            and evidence["post_rollback_verification"]
+        )
+    return True
+
+
+def _maintenance_required_proof(job: HostedLaunchJob) -> list[str]:
+    if job.status == "rollback_requested":
+        return [
+            "rollback_execution_receipt",
+            "post_rollback_verification",
+        ]
+    if job.status == "detonation_requested":
+        return [
+            "workspace_detonation_receipt",
+            "scratch_state_destroyed",
+            "redacted_public_proof_preserved",
+        ]
+    return []
 
 
 def _completed_artifacts(
@@ -1433,7 +1475,19 @@ def _proof_collect_step(evidence: dict[str, bool]) -> tuple[str, str]:
     )
 
 
-def _rollback_step(evidence: dict[str, bool]) -> tuple[str, str]:
+def _rollback_step(
+    evidence: dict[str, bool],
+    *,
+    execution_required: bool = False,
+) -> tuple[str, str]:
+    if execution_required and (
+        not evidence["rollback_execution_receipt"]
+        or not evidence["post_rollback_verification"]
+    ):
+        return (
+            "waiting",
+            "Waiting for rollback execution receipt and post-rollback verification.",
+        )
     if evidence["rollback_metadata"]:
         return ("done", "Rollback metadata is present in the redacted proof bundle.")
     return ("waiting", "Waiting for rollback metadata before completion can be claimed.")
