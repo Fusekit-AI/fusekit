@@ -503,6 +503,9 @@ def _hosted_home_failures(
         "hosted_home_headline_missing": "Launch any GitHub app without touching a terminal.",
         "hosted_home_start_control_missing": "Start hosted launch",
         "hosted_home_open_core_missing": "Open core",
+        "hosted_home_narrow_permissions_missing": "narrow permissions",
+        "hosted_home_visible_plan_missing": "visible plan",
+        "hosted_home_redacted_proof_missing": "redacted proof",
         "hosted_home_capability_vault_boundary_missing": "Capability vault boundary",
         "hosted_home_raw_secret_policy_missing": (
             "Raw secrets must never leave the vault runtime."

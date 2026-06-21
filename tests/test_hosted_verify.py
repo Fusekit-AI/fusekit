@@ -579,6 +579,9 @@ def test_verify_hosted_deployment_requires_trustworthy_homepage() -> None:
     assert "public_text_contains_credential_text" in checks["hosted.home"]["failures"]
     assert "hosted_home_headline_missing" in checks["hosted.home"]["failures"]
     assert "hosted_home_open_core_missing" in checks["hosted.home"]["failures"]
+    assert "hosted_home_narrow_permissions_missing" in checks["hosted.home"]["failures"]
+    assert "hosted_home_visible_plan_missing" in checks["hosted.home"]["failures"]
+    assert "hosted_home_redacted_proof_missing" in checks["hosted.home"]["failures"]
     assert "hosted_home_completion_requirements_missing" in checks["hosted.home"][
         "failures"
     ]
@@ -717,6 +720,9 @@ def _home_html(
       <body>
         <h1>Launch any GitHub app without touching a terminal.</h1>
         <a>Start hosted launch</a>
+        <section>
+          open core / narrow permissions / visible plan / redacted proof / reversible setup
+        </section>
         <section>Open core https://github.com/xpxpxp-coder/fusekit</section>
         <section>Capability vault boundary</section>
         <section>Raw secrets must never leave the vault runtime.</section>
