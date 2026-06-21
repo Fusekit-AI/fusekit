@@ -434,6 +434,7 @@ def test_verify_hosted_deployment_requires_one_click_contract() -> None:
     one_click["download_required"] = True
     one_click["launch_path"] = ["Run a terminal command."]
     one_click["completion_requires"] = ["Live URL verification"]
+    one_click["completion_evidence_keys"] = ["live_url"]
     opener = SequenceOpener(
         [
             _home_html(),
@@ -465,12 +466,16 @@ def test_verify_hosted_deployment_requires_one_click_contract() -> None:
     assert "one_click_launch_completion_requires_mismatch" in checks["hosted.deployment"][
         "failures"
     ]
+    assert "one_click_launch_completion_evidence_keys_mismatch" in checks[
+        "hosted.deployment"
+    ]["failures"]
 
 
 def test_verify_hosted_deployment_requires_github_intake_contract() -> None:
     intake = _github_intake_contract()
     intake["route"] = "oauth-app"
     intake["launch_path"] = ["Download a CLI."]
+    intake["proof_evidence_keys"] = ["live_url"]
     intake["permissions"] = ["Install on every repository."]
     intake["token_boundary"] = {
         "repository_selection": "all",
@@ -502,6 +507,9 @@ def test_verify_hosted_deployment_requires_github_intake_contract() -> None:
     assert "github_intake_launch_path_mismatch" in checks["hosted.github_intake"][
         "failures"
     ]
+    assert "github_intake_proof_evidence_keys_mismatch" in checks[
+        "hosted.github_intake"
+    ]["failures"]
     assert "github_intake_permissions_mismatch" in checks["hosted.github_intake"][
         "failures"
     ]
@@ -828,6 +836,17 @@ def _deployment_contract() -> dict[str, object]:
                 "Detonation receipt",
                 "Live acceptance report",
             ],
+            "completion_evidence_keys": [
+                "live_url",
+                "provider_verifiers",
+                "dns_propagation",
+                "rollback_metadata",
+                "retrieved_remote_artifacts",
+                "run_record",
+                "detonation_receipt",
+                "live_acceptance_report",
+                "recording",
+            ],
             "reversal": [
                 "Show rollback metadata before risky changes.",
                 "Preserve rollback actions for provider resources FuseKit creates.",
@@ -915,6 +934,17 @@ def _github_intake_contract() -> dict[str, object]:
             "Run Record",
             "Detonation receipt",
             "Live acceptance report",
+        ],
+        "proof_evidence_keys": [
+            "live_url",
+            "provider_verifiers",
+            "dns_propagation",
+            "rollback_metadata",
+            "retrieved_remote_artifacts",
+            "run_record",
+            "detonation_receipt",
+            "live_acceptance_report",
+            "recording",
         ],
         "reversal": [
             "Show rollback metadata before risky changes.",

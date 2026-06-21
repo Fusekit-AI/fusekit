@@ -20,6 +20,7 @@ from fusekit.hosted.github_app import (
     hosted_github_public_token_boundary,
 )
 from fusekit.hosted.launcher import (
+    HOSTED_COMPLETION_EVIDENCE_KEYS,
     HOSTED_LAUNCH_PATH,
     HOSTED_PROOF_REQUIREMENTS,
     HOSTED_REVERSAL_PATH,
@@ -464,6 +465,8 @@ def _one_click_launch_contract_failures(payload: object) -> list[str]:
         failures.append("one_click_launch_path_mismatch")
     if payload.get("completion_requires") != list(HOSTED_PROOF_REQUIREMENTS):
         failures.append("one_click_launch_completion_requires_mismatch")
+    if payload.get("completion_evidence_keys") != list(HOSTED_COMPLETION_EVIDENCE_KEYS):
+        failures.append("one_click_launch_completion_evidence_keys_mismatch")
     if payload.get("reversal") != list(HOSTED_REVERSAL_PATH):
         failures.append("one_click_launch_reversal_mismatch")
     if payload.get("terminal_required") is not False:
@@ -662,6 +665,8 @@ def _github_intake_contract_failures(payload: dict[str, Any]) -> list[str]:
         failures.append("github_intake_launch_path_mismatch")
     if payload.get("proof") != list(HOSTED_PROOF_REQUIREMENTS):
         failures.append("github_intake_proof_mismatch")
+    if payload.get("proof_evidence_keys") != list(HOSTED_COMPLETION_EVIDENCE_KEYS):
+        failures.append("github_intake_proof_evidence_keys_mismatch")
     if payload.get("reversal") != list(HOSTED_REVERSAL_PATH):
         failures.append("github_intake_reversal_mismatch")
     if payload.get("permissions") != list(HOSTED_GITHUB_INTAKE_PERMISSIONS):

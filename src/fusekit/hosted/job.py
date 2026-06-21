@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from fusekit.errors import FuseKitError
-from fusekit.hosted.launcher import HostedLaunchPlan
+from fusekit.hosted.launcher import HOSTED_COMPLETION_EVIDENCE_KEYS, HostedLaunchPlan
 from fusekit.security.redaction import contains_durable_secret_text, redact_public_text
 
 HOSTED_JOB_SCHEMA_VERSION = "fusekit.hosted-job.v1"
@@ -28,17 +28,7 @@ HOSTED_WORKER_CLAIM_SCHEMA_VERSION = "fusekit.hosted-worker-claim.v1"
 HOSTED_WORKER_PROOF_SCHEMA_VERSION = "fusekit.hosted-worker-proof.v1"
 HOSTED_WORKER_PROOF_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-worker-proof-receipt.v1"
 
-HOSTED_WORKER_PROOF_KEYS = (
-    "live_url",
-    "provider_verifiers",
-    "dns_propagation",
-    "rollback_metadata",
-    "retrieved_remote_artifacts",
-    "run_record",
-    "detonation_receipt",
-    "live_acceptance_report",
-    "recording",
-)
+HOSTED_WORKER_PROOF_KEYS = HOSTED_COMPLETION_EVIDENCE_KEYS
 HOSTED_WORKER_MAINTENANCE_PROOF_KEYS = (
     "rollback_execution_receipt",
     "post_rollback_verification",

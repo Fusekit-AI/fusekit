@@ -172,6 +172,17 @@ def test_hosted_launcher_embeds_redacted_public_plan_json() -> None:
         "Detonation receipt",
         "Live acceptance report",
     ]
+    assert payload["trust"]["proof_evidence_keys"] == [
+        "live_url",
+        "provider_verifiers",
+        "dns_propagation",
+        "rollback_metadata",
+        "retrieved_remote_artifacts",
+        "run_record",
+        "detonation_receipt",
+        "live_acceptance_report",
+        "recording",
+    ]
     serialized = json.dumps(payload)
     assert re.search(r"\bgh[pousr]_[A-Za-z0-9_]{12,}", serialized) is None
     assert re.search(r"\bgithub_pat_[A-Za-z0-9_]{12,}", serialized) is None

@@ -16,6 +16,7 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.launcher import (
+    HOSTED_COMPLETION_EVIDENCE_KEYS,
     HOSTED_LAUNCH_PATH,
     HOSTED_PROOF_REQUIREMENTS,
     HOSTED_REVERSAL_PATH,
@@ -258,6 +259,7 @@ def hosted_github_intake_contract(
         "no_terminal_promise": NO_TERMINAL_PROMISE,
         "launch_path": list(HOSTED_LAUNCH_PATH),
         "proof": list(HOSTED_PROOF_REQUIREMENTS),
+        "proof_evidence_keys": list(HOSTED_COMPLETION_EVIDENCE_KEYS),
         "reversal": list(HOSTED_REVERSAL_PATH),
         "open_core": {
             "source_repository": source_repository,

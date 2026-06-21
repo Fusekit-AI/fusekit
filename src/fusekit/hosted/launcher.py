@@ -42,6 +42,17 @@ HOSTED_PROOF_REQUIREMENTS = (
     "Detonation receipt",
     "Live acceptance report",
 )
+HOSTED_COMPLETION_EVIDENCE_KEYS = (
+    "live_url",
+    "provider_verifiers",
+    "dns_propagation",
+    "rollback_metadata",
+    "retrieved_remote_artifacts",
+    "run_record",
+    "detonation_receipt",
+    "live_acceptance_report",
+    "recording",
+)
 HOSTED_REVERSAL_PATH = (
     "Show rollback metadata before risky changes.",
     "Preserve rollback actions for provider resources FuseKit creates.",
@@ -58,6 +69,7 @@ class HostedLaunchTrustContract:
     secret_boundary: str
     launch_path: tuple[str, ...]
     proof: tuple[str, ...]
+    proof_evidence_keys: tuple[str, ...]
     rollback: tuple[str, ...]
     user_gates: tuple[str, ...]
 
@@ -73,6 +85,7 @@ class HostedLaunchTrustContract:
             "secret_boundary": self.secret_boundary,
             "launch_path": list(self.launch_path),
             "proof": list(self.proof),
+            "proof_evidence_keys": list(self.proof_evidence_keys),
             "rollback": list(self.rollback),
             "user_gates": list(self.user_gates),
         }
@@ -138,6 +151,7 @@ def build_hosted_launch_plan(
         ),
         launch_path=HOSTED_LAUNCH_PATH,
         proof=HOSTED_PROOF_REQUIREMENTS,
+        proof_evidence_keys=HOSTED_COMPLETION_EVIDENCE_KEYS,
         rollback=HOSTED_REVERSAL_PATH,
         user_gates=tuple(
             f"{provider}: login, MFA, CAPTCHA, billing, consent, or copy-once secret screens"

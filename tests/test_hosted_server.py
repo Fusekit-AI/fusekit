@@ -392,6 +392,17 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     )
     assert "Run Record" in payload["one_click_launch"]["completion_requires"]
     assert "Detonation receipt" in payload["one_click_launch"]["completion_requires"]
+    assert payload["one_click_launch"]["completion_evidence_keys"] == [
+        "live_url",
+        "provider_verifiers",
+        "dns_propagation",
+        "rollback_metadata",
+        "retrieved_remote_artifacts",
+        "run_record",
+        "detonation_receipt",
+        "live_acceptance_report",
+        "recording",
+    ]
     assert any("rollback" in item for item in payload["one_click_launch"]["reversal"])
     assert any("MFA" in item for item in payload["one_click_launch"]["human_gates"])
     assert payload["runtime"] == {
@@ -616,6 +627,17 @@ def test_hosted_github_intake_endpoint_is_public_safe() -> None:
     )
     assert "Run Record" in payload["proof"]
     assert "Detonation receipt" in payload["proof"]
+    assert payload["proof_evidence_keys"] == [
+        "live_url",
+        "provider_verifiers",
+        "dns_propagation",
+        "rollback_metadata",
+        "retrieved_remote_artifacts",
+        "run_record",
+        "detonation_receipt",
+        "live_acceptance_report",
+        "recording",
+    ]
     assert any("revoke access" in item for item in payload["reversal"])
     assert payload["open_core"] == {
         "source_repository": "https://github.com/xpxpxp-coder/fusekit",

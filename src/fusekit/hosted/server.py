@@ -45,6 +45,7 @@ from fusekit.hosted.job import (
     verify_hosted_job_token,
 )
 from fusekit.hosted.launcher import (
+    HOSTED_COMPLETION_EVIDENCE_KEYS,
     HOSTED_LAUNCH_PATH,
     HOSTED_PROOF_REQUIREMENTS,
     HOSTED_REVERSAL_PATH,
@@ -255,6 +256,7 @@ class HostedSettings:
                     "DNS changes only after FuseKit shows the exact proposed records",
                 ],
                 "completion_requires": list(HOSTED_PROOF_REQUIREMENTS),
+                "completion_evidence_keys": list(HOSTED_COMPLETION_EVIDENCE_KEYS),
                 "reversal": list(HOSTED_REVERSAL_PATH),
                 "terminal_required": False,
                 "download_required": False,
