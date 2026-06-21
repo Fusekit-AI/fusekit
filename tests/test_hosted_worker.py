@@ -21,6 +21,7 @@ from fusekit.hosted.job import (
 from fusekit.hosted.launcher import build_hosted_launch_plan
 from fusekit.hosted.worker import (
     build_hosted_worker_launch_invocation,
+    build_hosted_worker_proof_payload,
     prepare_hosted_worker_execution,
 )
 from fusekit.scanner import scan_repo
@@ -195,6 +196,81 @@ def test_hosted_worker_launch_invocation_rejects_invalid_retry_settings(
         build_hosted_worker_launch_invocation(execution, gate_retry_seconds=-1)
 
 
+def test_hosted_worker_proof_payload_stays_partial_without_artifacts(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+
+    bundle = build_hosted_worker_proof_payload(invocation)
+    payload = bundle.payload
+
+    assert payload["schema_version"] == "fusekit.hosted-worker-proof.v1"
+    assert payload["completed_artifacts"] == []
+    assert ".fusekit/run_record.json" in bundle.missing_artifacts
+    assert all(value is False for value in payload["evidence"].values())
+    assert payload["note"] == (
+        "Hosted worker proof is partial; required artifact labels are still missing."
+    )
+    assert str(tmp_path) not in json.dumps(bundle.to_dict())
+
+
+def test_hosted_worker_proof_payload_requires_real_recording_ready_report(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=False)
+
+    bundle = build_hosted_worker_proof_payload(invocation)
+    evidence = bundle.payload["evidence"]
+
+    assert bundle.missing_artifacts == ()
+    assert evidence["live_url"] is True
+    assert evidence["provider_verifiers"] is True
+    assert evidence["dns_propagation"] is True
+    assert evidence["retrieved_remote_artifacts"] is True
+    assert evidence["run_record"] is True
+    assert evidence["detonation_receipt"] is True
+    assert evidence["live_acceptance_report"] is True
+    assert evidence["recording"] is False
+    assert bundle.payload["note"] == (
+        "Hosted worker proof is partial; live acceptance is not recording-ready yet."
+    )
+
+
+def test_hosted_worker_proof_payload_marks_complete_only_from_live_artifacts(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True)
+
+    bundle = build_hosted_worker_proof_payload(invocation)
+    serialized = json.dumps(bundle.to_dict())
+
+    assert bundle.missing_artifacts == ()
+    assert tuple(bundle.payload["completed_artifacts"]) == execution.required_artifacts
+    assert all(value is True for value in bundle.payload["evidence"].values())
+    assert bundle.payload["note"] == (
+        "Hosted worker produced live acceptance, remote artifacts, rollback, and detonation proof."
+    )
+    assert bundle.to_dict()["acceptance_report"] == {
+        "mode": "live",
+        "launch_ready": True,
+        "public_launch_ready": True,
+        "remote_artifacts_ready": True,
+        "recording_proof_ready": True,
+        "recording_ready": True,
+        "check_count": 4,
+    }
+    assert str(tmp_path) not in serialized
+    assert "ghs_fake_installation_token" not in serialized
+    assert "PRIVATE KEY" not in serialized
+
+
 def test_prepare_hosted_worker_execution_requires_claimed_job(tmp_path: Path) -> None:
     source = tmp_path / "approved"
     _write_demo_app(source, dependency='"resend": "latest"')
@@ -320,6 +396,43 @@ def _prepared_execution(tmp_path: Path):
         workspace=tmp_path / "worker",
         opener=opener,
     )
+
+
+def _write_required_artifacts(invocation) -> None:
+    for label in invocation.execution.required_artifacts:
+        path = invocation.execution.source_dir / label
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if label.endswith("/remote-artifacts"):
+            path.mkdir(exist_ok=True)
+        elif label.endswith(".jsonl"):
+            path.write_text('{"event":"redacted"}\n', encoding="utf-8")
+        else:
+            path.write_text('{"ok":true}\n', encoding="utf-8")
+
+
+def _write_acceptance_report(invocation, *, recording_ready: bool) -> None:
+    invocation.artifact_paths["remote_artifacts"].mkdir(parents=True, exist_ok=True)
+    report = {
+        "mode": "live",
+        "launch_ready": True,
+        "public_launch_ready": True,
+        "remote_artifacts_ready": True,
+        "recording_proof_ready": recording_ready,
+        "recording_ready": recording_ready,
+        "checks": [
+            {"id": "receipt.live_url", "status": "ok", "detail": "redacted"},
+            {"id": "verification_report.safe", "status": "ok", "detail": "redacted"},
+            {"id": "verification_report.coverage", "status": "ok", "detail": "redacted"},
+            {"id": "cloudflare.dns_propagation", "status": "ok", "detail": "redacted"},
+        ],
+        "missing": [],
+        "blockers": [],
+    }
+    output = invocation.artifact_paths["acceptance_output"]
+    output.mkdir(parents=True, exist_ok=True)
+    (output / "report.json").write_text(json.dumps(report), encoding="utf-8")
+    acceptance_label = invocation.execution.source_dir / ".fusekit/acceptance_report.json"
+    acceptance_label.write_text(json.dumps(report), encoding="utf-8")
 
 
 def _write_demo_app(path: Path, *, dependency: str) -> None:

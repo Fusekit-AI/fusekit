@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.github_app import GitHubAppConfig, UrlOpener, exchange_installation_token
 from fusekit.hosted.job import (
+    HOSTED_WORKER_PROOF_KEYS,
+    HOSTED_WORKER_PROOF_SCHEMA_VERSION,
     HostedLaunchJob,
     HostedWorkerContract,
     build_hosted_worker_contract,
@@ -137,6 +140,26 @@ class HostedWorkerLaunchInvocation:
         }
 
 
+@dataclass(frozen=True)
+class HostedWorkerProofBundle:
+    """Redacted proof payload derived from worker artifacts."""
+
+    payload: dict[str, object]
+    acceptance_report: dict[str, Any]
+    completed_artifacts: tuple[str, ...]
+    missing_artifacts: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        """Serialize the proof bundle without local worker paths."""
+
+        return {
+            "payload": self.payload,
+            "acceptance_report": _redacted_acceptance_summary(self.acceptance_report),
+            "completed_artifacts": list(self.completed_artifacts),
+            "missing_artifacts": list(self.missing_artifacts),
+        }
+
+
 def prepare_hosted_worker_execution(
     job: HostedLaunchJob,
     *,
@@ -182,6 +205,47 @@ def prepare_hosted_worker_execution(
         required_env=job.worker_contract.required_env,
         approved_actions=job.worker_contract.approved_actions,
         required_artifacts=job.worker_contract.required_artifacts,
+    )
+
+
+def build_hosted_worker_proof_payload(
+    invocation: HostedWorkerLaunchInvocation,
+) -> HostedWorkerProofBundle:
+    """Build the worker-proof payload from real hosted worker artifacts."""
+
+    report_path = invocation.artifact_paths["acceptance_output"] / "report.json"
+    acceptance = _read_acceptance_report(report_path)
+    completed, missing = _artifact_completion(invocation)
+    checks = _check_statuses(acceptance)
+    evidence = {
+        "live_url": checks.get("receipt.live_url") == "ok",
+        "provider_verifiers": checks.get("verification_report.coverage") == "ok"
+        and checks.get("verification_report.safe") == "ok",
+        "dns_propagation": _dns_evidence_ready(checks, acceptance),
+        "rollback_metadata": ".fusekit/rollback_plan.json" in completed,
+        "retrieved_remote_artifacts": acceptance.get("remote_artifacts_ready") is True
+        and invocation.artifact_paths["remote_artifacts"].exists(),
+        "run_record": ".fusekit/run_record.json" in completed,
+        "detonation_receipt": ".fusekit/workspace_detonation.json" in completed,
+        "live_acceptance_report": (
+            acceptance.get("mode") == "live"
+            and report_path.exists()
+            and not missing
+            and acceptance.get("launch_ready") is True
+        ),
+        "recording": acceptance.get("recording_ready") is True,
+    }
+    payload: dict[str, object] = {
+        "schema_version": HOSTED_WORKER_PROOF_SCHEMA_VERSION,
+        "evidence": evidence,
+        "completed_artifacts": list(completed),
+        "note": _proof_note(evidence, missing, acceptance),
+    }
+    return HostedWorkerProofBundle(
+        payload=payload,
+        acceptance_report=acceptance,
+        completed_artifacts=completed,
+        missing_artifacts=missing,
     )
 
 
@@ -325,3 +389,88 @@ def _redacted_arg(arg: str, source_dir: Path) -> str:
 
 def _number_arg(value: float) -> str:
     return str(int(value)) if value.is_integer() else str(value)
+
+
+def _read_acceptance_report(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise FuseKitError("Hosted worker acceptance report could not be read.") from exc
+    if not isinstance(raw, dict):
+        raise FuseKitError("Hosted worker acceptance report must be a JSON object.")
+    return raw
+
+
+def _artifact_completion(
+    invocation: HostedWorkerLaunchInvocation,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    labels = invocation.execution.required_artifacts
+    completed: list[str] = []
+    missing: list[str] = []
+    for label in labels:
+        path = invocation.execution.source_dir / label
+        if path.exists():
+            completed.append(label)
+        else:
+            missing.append(label)
+    return tuple(completed), tuple(missing)
+
+
+def _check_statuses(acceptance: dict[str, Any]) -> dict[str, str]:
+    checks = acceptance.get("checks", [])
+    if not isinstance(checks, list):
+        return {}
+    result: dict[str, str] = {}
+    for item in checks:
+        if not isinstance(item, dict):
+            continue
+        check_id = item.get("id")
+        status = item.get("status")
+        if isinstance(check_id, str) and isinstance(status, str):
+            result[check_id] = status
+    return result
+
+
+def _dns_evidence_ready(checks: dict[str, str], acceptance: dict[str, Any]) -> bool:
+    if acceptance.get("recording_ready") is True:
+        return True
+    dns_checks = {
+        key: status
+        for key, status in checks.items()
+        if "dns" in key or "domain" in key or "cloudflare" in key
+    }
+    return bool(dns_checks) and all(status == "ok" for status in dns_checks.values())
+
+
+def _proof_note(
+    evidence: dict[str, bool],
+    missing: tuple[str, ...],
+    acceptance: dict[str, Any],
+) -> str:
+    if all(evidence[key] for key in HOSTED_WORKER_PROOF_KEYS) and not missing:
+        return (
+            "Hosted worker produced live acceptance, remote artifacts, rollback, "
+            "and detonation proof."
+        )
+    blockers = acceptance.get("blockers", [])
+    if isinstance(blockers, list) and blockers:
+        return "Hosted worker proof is partial; acceptance blockers remain."
+    if missing:
+        return "Hosted worker proof is partial; required artifact labels are still missing."
+    return "Hosted worker proof is partial; live acceptance is not recording-ready yet."
+
+
+def _redacted_acceptance_summary(acceptance: dict[str, Any]) -> dict[str, object]:
+    return {
+        "mode": acceptance.get("mode"),
+        "launch_ready": acceptance.get("launch_ready") is True,
+        "public_launch_ready": acceptance.get("public_launch_ready") is True,
+        "remote_artifacts_ready": acceptance.get("remote_artifacts_ready") is True,
+        "recording_proof_ready": acceptance.get("recording_proof_ready") is True,
+        "recording_ready": acceptance.get("recording_ready") is True,
+        "check_count": len(acceptance.get("checks", []))
+        if isinstance(acceptance.get("checks"), list)
+        else 0,
+    }

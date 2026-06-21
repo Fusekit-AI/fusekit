@@ -46,7 +46,9 @@ from fusekit.hosted.worker import (
     HOSTED_WORKER_INVOCATION_SCHEMA_VERSION,
     HostedWorkerExecutionPlan,
     HostedWorkerLaunchInvocation,
+    HostedWorkerProofBundle,
     build_hosted_worker_launch_invocation,
+    build_hosted_worker_proof_payload,
     prepare_hosted_worker_execution,
 )
 
@@ -60,6 +62,7 @@ __all__ = [
     "HostedWorkerContract",
     "HostedWorkerExecutionPlan",
     "HostedWorkerLaunchInvocation",
+    "HostedWorkerProofBundle",
     "InstallationToken",
     "HOSTED_WORKER_EXECUTION_SCHEMA_VERSION",
     "HOSTED_WORKER_INVOCATION_SCHEMA_VERSION",
@@ -70,6 +73,7 @@ __all__ = [
     "build_hosted_launch_plan",
     "build_hosted_worker_contract",
     "build_hosted_worker_launch_invocation",
+    "build_hosted_worker_proof_payload",
     "claim_hosted_launch_job",
     "create_hosted_state_token",
     "create_hosted_job_token",

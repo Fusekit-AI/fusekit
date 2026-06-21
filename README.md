@@ -171,7 +171,11 @@ the token, private key, provider credentials, or host filesystem paths. It also
 builds a private backend launch invocation for `fusekit launch` plus the live
 `fusekit acceptance run --mode live --remote-artifacts ... --require-recording`
 gate, while its public serialization redacts worker-local paths to
-`<hosted-worker-source>` labels. The backend-only
+`<hosted-worker-source>` labels. After the worker run, backend proof assembly
+can derive the `/worker-proof` payload from the real required artifact labels,
+retrieved remote-artifacts directory, and acceptance report; it stays partial
+unless live acceptance is recording-ready and every required public artifact
+exists. The backend-only
 `/api/hosted/jobs/<job>/worker-proof` endpoint accepts redacted worker proof
 snapshots, rejects credential-looking public notes or unsupported artifact
 labels, updates public job steps, and only marks hosted completion when live URL,
