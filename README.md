@@ -242,8 +242,9 @@ secret values. `fusekit-hosted-verify --origin https://fusekit.snowmanai.org`
 performs the outside-in deployment check against `/healthz`,
 `/api/hosted/readiness`, and `/api/hosted/deployment`; add
 `--worker-dispatch-url` to verify the worker receiver `/healthz` and
-`/readiness` too. The verifier reports Cloudflare/Vercel HTTP failures and
-readiness mismatches as redacted JSON instead of claiming launch readiness. It
+`/readiness` too. The verifier reports Cloudflare/Vercel HTTP failures,
+readiness mismatches, and hosted runtime/open-core/DNS contract drift as redacted
+JSON instead of claiming launch readiness. It
 also recognizes Cloudflare Error 1000 (`DNS points to prohibited IP`) and
 reports the non-secret next action: attach `fusekit.snowmanai.org` to the
 Vercel project and route the Cloudflare `fusekit` CNAME to the exact

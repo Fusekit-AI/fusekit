@@ -62,6 +62,7 @@ def verify_hosted_deployment(
             f"{public_origin}/api/hosted/deployment",
             opener=opener,
             expect_schema=HOSTED_DEPLOYMENT_SCHEMA_VERSION,
+            expect_hosted_runtime_contract=True,
         )
     )
     dispatch_public_url = ""
@@ -129,6 +130,7 @@ def _json_check(
     expect_schema: str = "",
     expect_ok_field: bool = False,
     expect_ready_field: bool = False,
+    expect_hosted_runtime_contract: bool = False,
 ) -> dict[str, object]:
     try:
         status, payload = _fetch_json(url, opener=opener)
@@ -146,6 +148,8 @@ def _json_check(
         failures.append("ok_field_not_true")
     if expect_ready_field and payload.get("ready") is not True:
         failures.append("ready_field_not_true")
+    if expect_hosted_runtime_contract:
+        failures.extend(_hosted_runtime_contract_failures(payload))
     return {
         "id": check_id,
         "url": _public_url(url),
@@ -154,6 +158,46 @@ def _json_check(
         "schema_version": schema if isinstance(schema, str) else "",
         "failures": failures,
     }
+
+
+def _hosted_runtime_contract_failures(payload: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    runtime = payload.get("runtime")
+    if not isinstance(runtime, dict):
+        return ["runtime_contract_missing"]
+    expected_runtime = {
+        "provider": "vercel",
+        "entrypoint": "app.py",
+        "routing_config": "vercel.json",
+        "requirements": "requirements.txt",
+        "python_version": ".python-version",
+        "application_export": "app",
+        "mode": "python-wsgi",
+    }
+    for key, expected in expected_runtime.items():
+        if runtime.get(key) != expected:
+            failures.append(f"runtime_{key}_mismatch")
+    cloudflare_dns = payload.get("cloudflare_dns")
+    if not isinstance(cloudflare_dns, dict):
+        failures.append("cloudflare_dns_contract_missing")
+    else:
+        if cloudflare_dns.get("zone") != "snowmanai.org":
+            failures.append("cloudflare_zone_mismatch")
+        if cloudflare_dns.get("record_name") != "fusekit":
+            failures.append("cloudflare_record_name_mismatch")
+        if cloudflare_dns.get("record_type") != "CNAME":
+            failures.append("cloudflare_record_type_mismatch")
+    open_core = payload.get("open_core")
+    if not isinstance(open_core, dict):
+        failures.append("open_core_contract_missing")
+    else:
+        if open_core.get("source_repository") != "https://github.com/xpxpxp-coder/fusekit":
+            failures.append("open_core_source_repository_mismatch")
+        if open_core.get("license") != "MIT":
+            failures.append("open_core_license_mismatch")
+        if open_core.get("reviewable_entrypoint") != "app.py":
+            failures.append("open_core_entrypoint_mismatch")
+    return failures
 
 
 def _fetch_json(

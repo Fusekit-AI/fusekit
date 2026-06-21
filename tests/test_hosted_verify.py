@@ -53,7 +53,7 @@ def test_verify_hosted_deployment_passes_launcher_and_dispatch_checks() -> None:
         [
             {"ok": True},
             {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
-            {"schema_version": "fusekit.hosted-deployment.v1"},
+            _deployment_contract(),
             {"ok": True},
             {
                 "schema_version": "fusekit.hosted-worker-dispatch-readiness.v1",
@@ -103,7 +103,7 @@ def test_verify_hosted_deployment_reports_cloudflare_error_without_claiming_read
                 ),
             ),
             {"schema_version": "fusekit.hosted-readiness.v1", "ready": False},
-            {"schema_version": "fusekit.hosted-deployment.v1"},
+            _deployment_contract(),
         ]
     )
 
@@ -147,7 +147,7 @@ def test_verify_hosted_deployment_diagnoses_compact_cloudflare_1000_body() -> No
                 io.BytesIO(b"error code: 1000\n"),
             ),
             {"schema_version": "fusekit.hosted-readiness.v1", "ready": False},
-            {"schema_version": "fusekit.hosted-deployment.v1"},
+            _deployment_contract(),
         ]
     )
 
@@ -161,3 +161,56 @@ def test_verify_hosted_deployment_diagnoses_compact_cloudflare_1000_body() -> No
         "cloudflare_error_1000_dns_points_to_prohibited_ip"
     )
     assert "Cloudflare fusekit CNAME" in checks["hosted.health"]["next_action"]
+
+
+def test_verify_hosted_deployment_requires_runtime_and_dns_contract() -> None:
+    contract = _deployment_contract()
+    runtime = contract["runtime"]
+    assert isinstance(runtime, dict)
+    runtime["python_version"] = "runtime.txt"
+    cloudflare_dns = contract["cloudflare_dns"]
+    assert isinstance(cloudflare_dns, dict)
+    cloudflare_dns["record_type"] = "A"
+    opener = SequenceOpener(
+        [
+            {"ok": True},
+            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            contract,
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["hosted.deployment"]["status"] == "failed"
+    assert "runtime_python_version_mismatch" in checks["hosted.deployment"]["failures"]
+    assert "cloudflare_record_type_mismatch" in checks["hosted.deployment"]["failures"]
+
+
+def _deployment_contract() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.hosted-deployment.v1",
+        "runtime": {
+            "provider": "vercel",
+            "entrypoint": "app.py",
+            "routing_config": "vercel.json",
+            "requirements": "requirements.txt",
+            "python_version": ".python-version",
+            "application_export": "app",
+            "mode": "python-wsgi",
+        },
+        "cloudflare_dns": {
+            "zone": "snowmanai.org",
+            "record_name": "fusekit",
+            "record_type": "CNAME",
+        },
+        "open_core": {
+            "source_repository": "https://github.com/xpxpxp-coder/fusekit",
+            "license": "MIT",
+            "reviewable_entrypoint": "app.py",
+        },
+    }
