@@ -48,6 +48,7 @@ from fusekit.hosted.launcher import (
     HOSTED_COMPLETION_EVIDENCE_KEYS,
     HOSTED_LAUNCH_PATH,
     HOSTED_PLAIN_LANGUAGE_JOURNEY,
+    HOSTED_PROHIBITED_ACTIONS,
     HOSTED_PROOF_REQUIREMENTS,
     HOSTED_REVERSAL_PATH,
     NO_TERMINAL_PROMISE,
@@ -361,6 +362,7 @@ class HostedSettings:
                 "github_repository_permission": "contents:read",
                 "launch_path": list(HOSTED_LAUNCH_PATH),
                 "plain_language_journey": list(HOSTED_PLAIN_LANGUAGE_JOURNEY),
+                "prohibited": list(HOSTED_PROHIBITED_ACTIONS),
                 "human_gates": [
                     "GitHub sign-in, MFA, passkey, SSO, consent, or repository selection",
                     (
@@ -539,6 +541,9 @@ def render_hosted_home(settings: HostedSettings) -> str:
     allowed_material = "\n".join(
         f"<li>{html.escape(item)}</li>" for item in HOSTED_ALLOWED_PUBLIC_MATERIAL
     )
+    prohibited_actions = "\n".join(
+        f"<li>{html.escape(item)}</li>" for item in HOSTED_PROHIBITED_ACTIONS
+    )
     reviewable_files = "\n".join(
         f"<li>{html.escape(item)}</li>"
         for item in cast(list[str], HOSTED_SOURCE_INTEGRITY_CONTRACT["reviewable_files"])
@@ -699,6 +704,10 @@ def render_hosted_home(settings: HostedSettings) -> str:
     <section aria-label="Launch path">
       <h2>What happens after the click</h2>
       <ol>{launch_path}</ol>
+    </section>
+    <section aria-label="Prohibited actions">
+      <h2>What FuseKit will not do</h2>
+      <ul>{prohibited_actions}</ul>
     </section>
     <section aria-label="Plain-language click path">
       <h2>For someone who just wants to click</h2>

@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from fusekit.hosted.github_app import GitHubAppConfig
-from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY
+from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY, HOSTED_PROHIBITED_ACTIONS
 from fusekit.hosted.server import (
     HOSTED_SECURITY_HEADERS_CONTRACT,
     HOSTED_SOURCE_INTEGRITY_CONTRACT,
@@ -201,6 +201,9 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
     assert "copy-once secret values" in html
     assert "approved action ids" in html
     assert "What happens after the click" in html
+    assert "What FuseKit will not do" in html
+    assert HOSTED_PROHIBITED_ACTIONS[0] in html
+    assert HOSTED_PROHIBITED_ACTIONS[1] in html
     assert "For someone who just wants to click" in html
     assert "Open fusekit.snowmanai.org in a browser." in html
     assert "Sign in to GitHub if asked and choose exactly one repository." in html
@@ -241,6 +244,7 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
         "redacted proof",
         "reversible setup",
     ]
+    assert payload["prohibited"] == list(HOSTED_PROHIBITED_ACTIONS)
     assert payload["open_core"]["source_repository"] == "https://github.com/xpxpxp-coder/fusekit"
     assert payload["open_core"]["reviewable_entrypoint"] == "app.py"
 
@@ -432,6 +436,7 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     assert payload["one_click_launch"]["plain_language_journey"] == list(
         HOSTED_PLAIN_LANGUAGE_JOURNEY
     )
+    assert payload["one_click_launch"]["prohibited"] == list(HOSTED_PROHIBITED_ACTIONS)
     assert "Run Record" in payload["one_click_launch"]["completion_requires"]
     assert "Detonation receipt" in payload["one_click_launch"]["completion_requires"]
     assert "Recording proof" in payload["one_click_launch"]["completion_requires"]
@@ -706,6 +711,7 @@ def test_hosted_github_intake_endpoint_is_public_safe() -> None:
         "Receive the live URL, redacted proof receipt, rollback metadata, and detonation receipt."
     )
     assert payload["plain_language_journey"] == list(HOSTED_PLAIN_LANGUAGE_JOURNEY)
+    assert payload["prohibited"] == list(HOSTED_PROHIBITED_ACTIONS)
     assert "Run Record" in payload["proof"]
     assert "Detonation receipt" in payload["proof"]
     assert payload["proof_evidence_keys"] == [
