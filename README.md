@@ -178,7 +178,13 @@ unless live acceptance is recording-ready and every required public artifact
 exists. A `fusekit-hosted-worker` entrypoint now ties those pieces together for
 one queued job: claim with the worker bearer secret, prepare source, run the
 private launch/acceptance invocations, and submit redacted proof back to the
-hosted API. The backend-only
+hosted API. In production, the protected `Start worker` action can also post a
+signed dispatch envelope to `FUSEKIT_HOSTED_WORKER_DISPATCH_URL`, letting the
+hosted button wake a worker service without asking the user to run a terminal
+command or download anything. That dispatch carries the signed public job token
+needed by `fusekit-hosted-worker` but omits the worker secret, GitHub
+installation token, provider credentials, signature, and vault material from the
+browser-facing receipt. The backend-only
 `/api/hosted/jobs/<job>/worker-proof` endpoint accepts redacted worker proof
 snapshots, rejects credential-looking public notes or unsupported artifact
 labels, updates public job steps, and only marks hosted completion when live URL,
@@ -208,7 +214,9 @@ subdomain routed to the exact Vercel-provided CNAME target, and these runtime
 environment variables set in Vercel: `FUSEKIT_HOSTED_ORIGIN`,
 `FUSEKIT_GITHUB_APP_ID`, `FUSEKIT_GITHUB_APP_SLUG`,
 `FUSEKIT_GITHUB_APP_PRIVATE_KEY`, `FUSEKIT_HOSTED_STATE_SECRET`, and
-`FUSEKIT_HOSTED_WORKER_SECRET`. As of the latest local check,
+`FUSEKIT_HOSTED_WORKER_SECRET`. Production one-click worker wakeup also needs
+`FUSEKIT_HOSTED_WORKER_DISPATCH_URL` pointed at an HTTPS worker dispatch
+service. As of the latest local check,
 `https://fusekit.snowmanai.org` resolves through Cloudflare but returns
 Cloudflare's "DNS points to prohibited IP" page instead of the FuseKit hosted
 app, so DNS/custom-domain attachment is not complete yet.

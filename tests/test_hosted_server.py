@@ -314,6 +314,8 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     assert payload["github_app"]["repository_permission"] == "contents:read"
     assert "FUSEKIT_GITHUB_APP_PRIVATE_KEY" in payload["required_runtime_env"]
     assert "FUSEKIT_HOSTED_WORKER_SECRET" in payload["required_runtime_env"]
+    assert payload["optional_runtime_env"] == ["FUSEKIT_HOSTED_WORKER_DISPATCH_URL"]
+    assert payload["worker_dispatch"]["schema_version"] == "fusekit.hosted-worker-dispatch.v1"
     assert "PRIVATE KEY" not in serialized
     assert STATE_SECRET not in serialized
     assert WORKER_SECRET not in serialized
@@ -327,6 +329,7 @@ def test_hosted_readiness_endpoint_rejects_invalid_config_shape_without_values()
         github_private_key_pem=FAKE_PRIVATE_KEY,
         state_secret="abc123",
         worker_secret="abc123",
+        worker_dispatch_url="http://worker.invalid/dispatch",
     )
 
     status, _headers, body = _call("/api/hosted/readiness", settings=settings)
@@ -338,6 +341,7 @@ def test_hosted_readiness_endpoint_rejects_invalid_config_shape_without_values()
     assert payload["missing"] == []
     assert payload["invalid"] == [
         "hosted_origin_must_be_https_origin",
+        "hosted_worker_dispatch_url_must_be_https",
         "github_app_id_must_be_positive_integer",
         "github_app_slug_is_invalid",
         "github_app_private_key_must_be_rsa_pem",
@@ -833,6 +837,100 @@ def test_hosted_job_action_from_browser_returns_updated_control_room_html() -> N
     assert "job=" in text
     assert payload["status"] == "waiting_for_provider_gates"
     assert "ghs_fake" not in text
+
+
+def test_hosted_job_start_dispatches_signed_worker_envelope_when_configured() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    github_opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    dispatch_opener = SequenceOpener([{}])
+    config = GitHubAppConfig(
+        app_id="12345",
+        app_slug="fusekit-launcher",
+        private_key_pem=_private_key_pem(),
+    )
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id=config.app_id,
+        github_app_slug=config.app_slug,
+        github_private_key_pem=config.private_key_pem,
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        github_opener=github_opener,
+        worker_dispatch_opener=dispatch_opener,
+    )
+
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=f"installation_id=42&repo=example/one&state={state}",
+        settings=settings,
+    )
+    assert status == "200 OK"
+    text = body.decode("utf-8")
+    job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    control = _match(text, r"control=([A-Za-z0-9_.-]+)")
+    job_token = _match(text, r"job=([A-Za-z0-9_.-]+)")
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/start",
+        method="POST",
+        query_string=f"control={control}&job={job_token}",
+        settings=settings,
+    )
+    response = json.loads(body.decode("utf-8"))
+    dispatch_body = dispatch_opener.bodies[0]
+    serialized = json.dumps(response) + json.dumps(dispatch_body)
+
+    assert status == "200 OK"
+    assert response["status"] == "waiting_for_provider_gates"
+    assert response["worker_dispatch"] == {
+        "schema_version": "fusekit.hosted-worker-dispatch.v1",
+        "dispatched": True,
+        "dispatch_url": "https://worker.snowmanai.org/dispatch",
+        "secret_boundary": (
+            "Dispatch receipt omits the job token, worker secret, signature, provider "
+            "tokens, and vault material."
+        ),
+    }
+    assert dispatch_body["schema_version"] == "fusekit.hosted-worker-dispatch.v1"
+    assert dispatch_body["origin"] == "https://fusekit.snowmanai.org"
+    assert dispatch_body["job_id"] == job_id
+    assert dispatch_body["job_token"] == response["job_token"]
+    assert dispatch_body["worker_command"] == [
+        "fusekit-hosted-worker",
+        "--origin",
+        "https://fusekit.snowmanai.org",
+        "--job-id",
+        job_id,
+        "--job-token",
+        "<signed-public-job-token>",
+    ]
+    assert dispatch_opener.requests[0].full_url == "https://worker.snowmanai.org/dispatch"
+    assert dispatch_opener.requests[0].headers["X-fusekit-dispatch-schema"] == (
+        "fusekit.hosted-worker-dispatch.v1"
+    )
+    assert dispatch_opener.requests[0].headers["X-fusekit-dispatch-signature"].startswith(
+        "sha256="
+    )
+    assert WORKER_SECRET not in serialized
+    assert "ghs_fake" not in serialized
+    assert "PRIVATE KEY" not in serialized
 
 
 def test_hosted_worker_request_requires_start_and_supports_stateless_job_token() -> None:

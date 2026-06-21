@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import html
 import json
@@ -59,6 +60,7 @@ StartResponse = Callable[[str, list[tuple[str, str]]], object]
 HOSTED_CANONICAL_ORIGIN = "https://fusekit.snowmanai.org"
 HOSTED_READINESS_SCHEMA_VERSION = "fusekit.hosted-readiness.v1"
 HOSTED_DEPLOYMENT_SCHEMA_VERSION = "fusekit.hosted-deployment.v1"
+HOSTED_WORKER_DISPATCH_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch.v1"
 REQUIRED_HOSTED_ENV = (
     "FUSEKIT_HOSTED_ORIGIN",
     "FUSEKIT_GITHUB_APP_ID",
@@ -67,6 +69,7 @@ REQUIRED_HOSTED_ENV = (
     "FUSEKIT_HOSTED_STATE_SECRET",
     "FUSEKIT_HOSTED_WORKER_SECRET",
 )
+OPTIONAL_HOSTED_ENV = ("FUSEKIT_HOSTED_WORKER_DISPATCH_URL",)
 
 
 @dataclass(frozen=True)
@@ -79,7 +82,9 @@ class HostedSettings:
     github_private_key_pem: str = ""
     state_secret: str = ""
     worker_secret: str = ""
+    worker_dispatch_url: str = ""
     github_opener: UrlOpener | None = None
+    worker_dispatch_opener: UrlOpener | None = None
     hosted_jobs: MutableMapping[str, HostedLaunchJob] = field(default_factory=dict)
 
     @classmethod
@@ -93,6 +98,7 @@ class HostedSettings:
             github_private_key_pem=os.environ.get("FUSEKIT_GITHUB_APP_PRIVATE_KEY", ""),
             state_secret=os.environ.get("FUSEKIT_HOSTED_STATE_SECRET", ""),
             worker_secret=os.environ.get("FUSEKIT_HOSTED_WORKER_SECRET", ""),
+            worker_dispatch_url=os.environ.get("FUSEKIT_HOSTED_WORKER_DISPATCH_URL", ""),
         )
 
     def github_config(self) -> GitHubAppConfig:
@@ -114,6 +120,7 @@ class HostedSettings:
             "FUSEKIT_GITHUB_APP_PRIVATE_KEY": bool(self.github_private_key_pem),
             "FUSEKIT_HOSTED_STATE_SECRET": bool(self.state_secret),
             "FUSEKIT_HOSTED_WORKER_SECRET": bool(self.worker_secret),
+            "FUSEKIT_HOSTED_WORKER_DISPATCH_URL": bool(self.worker_dispatch_url),
         }
         missing = tuple(key for key in REQUIRED_HOSTED_ENV if not configured[key])
         invalid = _hosted_config_errors(self) if not missing else ()
@@ -125,6 +132,7 @@ class HostedSettings:
             "configured": configured,
             "missing": list(missing),
             "invalid": list(invalid),
+            "optional_runtime_env": list(OPTIONAL_HOSTED_ENV),
             "secret_boundary": (
                 "Readiness reports only configuration presence. Raw GitHub App private keys, "
                 "state secrets, installation tokens, and provider credentials are never rendered."
@@ -164,6 +172,16 @@ class HostedSettings:
                 "deployment": f"{public_origin}/api/hosted/deployment",
             },
             "required_runtime_env": list(REQUIRED_HOSTED_ENV),
+            "optional_runtime_env": list(OPTIONAL_HOSTED_ENV),
+            "worker_dispatch": {
+                "env_var": "FUSEKIT_HOSTED_WORKER_DISPATCH_URL",
+                "schema_version": HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+                "authentication": "HMAC-SHA256 with FUSEKIT_HOSTED_WORKER_SECRET",
+                "secret_boundary": (
+                    "Dispatch sends a signed public job token and never sends the worker secret, "
+                    "GitHub installation token, provider credentials, or vault material."
+                ),
+            },
             "secret_boundary": (
                 "This contract is public. It contains URLs, record names, and env var names only; "
                 "it never includes private keys, state secrets, installation tokens, or provider "
@@ -660,10 +678,25 @@ def _hosted_job_action_response(
         updated = advance_hosted_launch_job(job, action)
     except ValueError:
         return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "invalid_action"})
+    job_token = create_hosted_job_token(settings.state_secret, updated)
+    dispatch_receipt: dict[str, object] | None = None
+    if action == "start":
+        try:
+            dispatch_receipt = _dispatch_hosted_worker(settings, updated, job_token=job_token)
+        except FuseKitError:
+            return _response(
+                start_response,
+                HTTPStatus.BAD_GATEWAY,
+                {"error": "worker_dispatch_failed"},
+            )
     settings.hosted_jobs[job.job_id] = updated
     if _wants_html(environ):
         return _hosted_job_html_response(settings, start_response, updated)
-    return _hosted_job_response(settings, start_response, updated)
+    payload = updated.to_dict()
+    payload["job_token"] = job_token
+    if dispatch_receipt is not None:
+        payload["worker_dispatch"] = dispatch_receipt
+    return _response(start_response, HTTPStatus.OK, payload)
 
 
 def _hosted_job_html_response(
@@ -968,6 +1001,8 @@ def _hosted_config_errors(settings: HostedSettings) -> tuple[str, ...]:
     errors: list[str] = []
     if not _valid_public_origin(settings.public_origin):
         errors.append("hosted_origin_must_be_https_origin")
+    if settings.worker_dispatch_url and not _valid_https_url(settings.worker_dispatch_url):
+        errors.append("hosted_worker_dispatch_url_must_be_https")
     if not settings.github_app_id.isdecimal() or int(settings.github_app_id) <= 0:
         errors.append("github_app_id_must_be_positive_integer")
     if not _valid_github_app_slug(settings.github_app_slug):
@@ -993,6 +1028,81 @@ def _worker_authorized(settings: HostedSettings, environ: dict[str, object]) -> 
 def _worker_id(environ: dict[str, object]) -> str:
     value = str(environ.get("HTTP_X_FUSEKIT_WORKER_ID", "")).strip()
     return value or "hosted-worker"
+
+
+def _dispatch_hosted_worker(
+    settings: HostedSettings,
+    job: HostedLaunchJob,
+    *,
+    job_token: str,
+) -> dict[str, object]:
+    """Send a signed non-secret dispatch envelope to the hosted worker service."""
+
+    if not settings.worker_dispatch_url:
+        return {
+            "schema_version": HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+            "dispatched": False,
+            "reason": "worker_dispatch_url_not_configured",
+        }
+    if not _valid_https_url(settings.worker_dispatch_url):
+        raise FuseKitError("Hosted worker dispatch URL must be https.")
+    payload: dict[str, object] = {
+        "schema_version": HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+        "origin": _public_origin_label(settings.public_origin),
+        "job_id": job.job_id,
+        "job_token": job_token,
+        "worker_command": [
+            "fusekit-hosted-worker",
+            "--origin",
+            _public_origin_label(settings.public_origin),
+            "--job-id",
+            job.job_id,
+            "--job-token",
+            "<signed-public-job-token>",
+        ],
+        "worker_request_url": (
+            f"{_public_origin_label(settings.public_origin)}/api/hosted/jobs/"
+            f"{urllib.parse.quote(job.job_id, safe='')}/worker-request"
+        ),
+        "secret_boundary": (
+            "Dispatch contains a signed public job token only. The worker secret, "
+            "GitHub installation token, provider credentials, and vault material stay "
+            "inside backend runtime."
+        ),
+    }
+    body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    request = urllib.request.Request(
+        settings.worker_dispatch_url,
+        data=body,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "FuseKit",
+            "X-FuseKit-Dispatch-Signature": _dispatch_signature(settings.worker_secret, body),
+            "X-FuseKit-Dispatch-Schema": HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+        },
+    )
+    opener = settings.worker_dispatch_opener or urllib.request.urlopen
+    with opener(request, timeout=30.0) as response:
+        status = int(getattr(response, "status", 200))
+    if status >= 400:
+        raise FuseKitError(f"Hosted worker dispatch returned HTTP {status}.")
+    return {
+        "schema_version": HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+        "dispatched": True,
+        "dispatch_url": _public_url_label(settings.worker_dispatch_url),
+        "secret_boundary": (
+            "Dispatch receipt omits the job token, worker secret, signature, provider "
+            "tokens, and vault material."
+        ),
+    }
+
+
+def _dispatch_signature(secret: str, body: bytes) -> str:
+    if len(secret) < 16:
+        raise FuseKitError("Hosted worker secret is required for dispatch.")
+    digest = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+    return f"sha256={digest}"
 
 
 def _json_request_body(environ: dict[str, object]) -> dict[str, object]:
@@ -1030,6 +1140,25 @@ def _valid_public_origin(value: str) -> bool:
         and not parsed.username
         and not parsed.password
     )
+
+
+def _valid_https_url(value: str) -> bool:
+    parsed = urllib.parse.urlparse(value)
+    return (
+        parsed.scheme == "https"
+        and bool(parsed.netloc)
+        and not parsed.username
+        and not parsed.password
+        and not parsed.fragment
+    )
+
+
+def _public_url_label(value: str) -> str:
+    parsed = urllib.parse.urlparse(value)
+    if not _valid_https_url(value):
+        return "https://worker.invalid"
+    path = parsed.path or "/"
+    return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, path, "", "", ""))
 
 
 def _valid_github_app_slug(value: str) -> bool:
