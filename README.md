@@ -229,10 +229,11 @@ remaining slices are running the approved setup actions inside the hosted worker
 operating the worker service in production, rollback/detonation execution, and
 production DNS/deployment.
 
-The repository includes a minimal Vercel-compatible WSGI entrypoint at `app.py`
-for the hosted subdomain. The hosted app also serves
+The repository includes a minimal Vercel-compatible WSGI entrypoint at `app.py`,
+a root `vercel.json` that routes all hosted paths to that entrypoint, and a
+minimal `requirements.txt` for the browser launcher runtime. The hosted app also serves
 `/api/hosted/deployment`, a public deployment contract that lists the canonical
-origin, Vercel WSGI entrypoint, GitHub callback URL, Cloudflare DNS record name,
+origin, Vercel WSGI entrypoint/routing files, GitHub callback URL, Cloudflare DNS record name,
 health/readiness URLs, and required environment variable names without exposing
 secret values. `fusekit-hosted-verify --origin https://fusekit.snowmanai.org`
 performs the outside-in deployment check against `/healthz`,

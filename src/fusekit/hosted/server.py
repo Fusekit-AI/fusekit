@@ -155,6 +155,8 @@ class HostedSettings:
             "runtime": {
                 "provider": "vercel",
                 "entrypoint": "app.py",
+                "routing_config": "vercel.json",
+                "requirements": "requirements.txt",
                 "application_export": "app",
                 "mode": "python-wsgi",
             },

@@ -306,6 +306,8 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     assert payload["runtime"] == {
         "provider": "vercel",
         "entrypoint": "app.py",
+        "routing_config": "vercel.json",
+        "requirements": "requirements.txt",
         "application_export": "app",
         "mode": "python-wsgi",
     }
@@ -452,6 +454,19 @@ def test_vercel_wsgi_entrypoint_serves_healthz(monkeypatch) -> None:
 
     assert captured["status"] == "200 OK"
     assert json.loads(body.decode("utf-8")) == {"ok": True}
+
+
+def test_vercel_deployment_files_route_all_paths_to_wsgi_entrypoint() -> None:
+    root = Path(__file__).parents[1]
+    vercel = json.loads((root / "vercel.json").read_text(encoding="utf-8"))
+    requirements = (root / "requirements.txt").read_text(encoding="utf-8").splitlines()
+
+    assert vercel["builds"] == [{"src": "app.py", "use": "@vercel/python"}]
+    assert vercel["routes"] == [{"src": "/(.*)", "dest": "app.py"}]
+    assert "cryptography>=42" in requirements
+    assert "PyYAML>=6" in requirements
+    assert not any("playwright" in line.lower() for line in requirements)
+    assert not any(line.startswith("oci") for line in requirements)
 
 
 def test_hosted_github_intake_endpoint_is_public_safe() -> None:
