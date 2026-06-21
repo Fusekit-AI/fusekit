@@ -295,7 +295,11 @@ def render_hosted_home(settings: HostedSettings) -> str:
         else "Hosted GitHub intake is waiting for operator configuration."
     )
     issues = _list_config_issues(readiness)
-    button_attrs = f'href="{install_url}"' if setup_ready else 'href="#" aria-disabled="true"'
+    start_control = (
+        f'<a class="button" href="{install_url}">Start hosted launch</a>'
+        if setup_ready
+        else '<span class="button disabled" aria-disabled="true">Start hosted launch</span>'
+    )
     launch_path = "\n".join(f"<li>{html.escape(item)}</li>" for item in HOSTED_LAUNCH_PATH)
     return f"""<!doctype html>
 <html lang="en">
@@ -358,6 +362,12 @@ def render_hosted_home(settings: HostedSettings) -> str:
       font-weight: 850;
       text-decoration: none;
     }}
+    .button.disabled {{
+      background: #d8e1ea;
+      border-color: #aebcca;
+      color: #52616f;
+      cursor: not-allowed;
+    }}
     section {{
       background: var(--panel);
       border: 1px solid var(--line);
@@ -387,7 +397,7 @@ def render_hosted_home(settings: HostedSettings) -> str:
         plan, redacted proof, and reversible setup. Start by installing the
         FuseKit GitHub App on one selected repository.
       </p>
-      <a class="button" {button_attrs}>Start hosted launch</a>
+      {start_control}
       <p class="origin">{public_origin}</p>
       <p>{html.escape(status)}</p>
       {issues}

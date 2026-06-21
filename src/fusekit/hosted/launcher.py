@@ -258,7 +258,8 @@ def render_hosted_launcher(plan: HostedLaunchPlan, *, launch_url: str = "") -> s
       justify-content: center;
       text-decoration: none;
     }}
-    button.secondary {{
+    button.secondary,
+    .button.secondary {{
       background: white;
       color: var(--blue);
     }}
@@ -350,7 +351,7 @@ def render_hosted_launcher(plan: HostedLaunchPlan, *, launch_url: str = "") -> s
       <p class="source">{source}</p>
       <div class="actions">
         {start_control}
-        <button type="button" class="secondary">Preview permissions</button>
+        <a class="button secondary" href="#narrow-permissions">Preview permissions</a>
       </div>
       <p class="lede">{no_terminal}</p>
     </header>
@@ -375,7 +376,7 @@ def render_hosted_launcher(plan: HostedLaunchPlan, *, launch_url: str = "") -> s
         <div class="action-list">{actions}</div>
       </section>
       <aside aria-label="Trust details">
-        <h2>Narrow permissions</h2>
+        <h2 id="narrow-permissions">Narrow permissions</h2>
         {permissions}
         <h2>Launch path</h2>
         {launch_path}

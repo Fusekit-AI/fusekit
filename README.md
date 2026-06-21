@@ -153,6 +153,8 @@ The hosted home and selected-repository plan now publish the same no-terminal
 launch path: visit the hosted URL, install the GitHub App on one repository,
 review the plan, click start, pass provider-owned gates, and receive the live
 URL with redacted proof, rollback metadata, and detonation receipt.
+Unavailable hosted start states render as disabled non-links, while preview
+controls jump to the relevant trust section instead of pretending to run.
 The provider-gate checklist is rendered as human-owned checkpoints so MFA,
 CAPTCHA, billing, fraud, consent, and domain ownership reviews are visible
 instead of hidden in logs. It exposes a redacted job status API and

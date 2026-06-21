@@ -194,7 +194,8 @@ def test_hosted_home_waits_for_complete_operator_configuration() -> None:
     assert "Operator setup pending" in html
     assert "FUSEKIT_GITHUB_APP_ID" in html
     assert "FUSEKIT_GITHUB_APP_PRIVATE_KEY" in html
-    assert 'href="#" aria-disabled="true"' in html
+    assert '<span class="button disabled" aria-disabled="true">Start hosted launch</span>' in html
+    assert 'href="#"' not in html
     assert "state=" not in html
     assert "PRIVATE KEY" not in html
     assert STATE_SECRET not in html
@@ -219,7 +220,8 @@ def test_hosted_home_shows_invalid_operator_configuration_codes_only() -> None:
     assert "invalid:github_app_private_key_must_be_rsa_pem" in html
     assert "invalid:hosted_state_secret_too_short" in html
     assert "invalid:hosted_worker_secret_too_short" in html
-    assert 'href="#" aria-disabled="true"' in html
+    assert '<span class="button disabled" aria-disabled="true">Start hosted launch</span>' in html
+    assert 'href="#"' not in html
     assert "state=" not in html
     assert "not-a-number" not in html
     assert "bad/slug" not in html

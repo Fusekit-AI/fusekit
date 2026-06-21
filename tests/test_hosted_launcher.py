@@ -98,6 +98,8 @@ def test_hosted_launcher_html_has_no_terminal_or_download_happy_path() -> None:
     assert "Download redacted plan" not in html
     assert "Trust contract" in html
     assert "Launch path" in html
+    assert 'href="#narrow-permissions"' in html
+    assert 'id="narrow-permissions"' in html
     assert "Visit the hosted FuseKit URL." in html
     assert "Review the visible plan and approved action ids before worker start." in html
     assert "Receive the live URL, redacted proof receipt" in html
@@ -110,6 +112,7 @@ def test_hosted_launcher_html_has_no_terminal_or_download_happy_path() -> None:
     assert "fusekit launch" not in visible_text
     assert "pip install" not in visible_text
     assert "copy/paste" not in visible_text.lower()
+    assert "Preview permissions</button>" not in html
 
 
 def test_hosted_launcher_can_link_to_control_room_without_commands() -> None:
