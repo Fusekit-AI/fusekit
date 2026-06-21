@@ -53,6 +53,7 @@ StartResponse = Callable[[str, list[tuple[str, str]]], object]
 
 HOSTED_CANONICAL_ORIGIN = "https://fusekit.snowmanai.org"
 HOSTED_READINESS_SCHEMA_VERSION = "fusekit.hosted-readiness.v1"
+HOSTED_DEPLOYMENT_SCHEMA_VERSION = "fusekit.hosted-deployment.v1"
 REQUIRED_HOSTED_ENV = (
     "FUSEKIT_HOSTED_ORIGIN",
     "FUSEKIT_GITHUB_APP_ID",
@@ -121,6 +122,46 @@ class HostedSettings:
             ),
         }
 
+    def deployment_contract(self) -> dict[str, object]:
+        """Return public hosted deployment metadata for operator verification."""
+
+        public_origin = _public_origin_label(self.public_origin)
+        return {
+            "schema_version": HOSTED_DEPLOYMENT_SCHEMA_VERSION,
+            "canonical_origin": HOSTED_CANONICAL_ORIGIN,
+            "public_origin": public_origin,
+            "domain": "fusekit.snowmanai.org",
+            "runtime": {
+                "provider": "vercel",
+                "entrypoint": "app.py",
+                "application_export": "app",
+                "mode": "python-wsgi",
+            },
+            "cloudflare_dns": {
+                "zone": "snowmanai.org",
+                "record_name": "fusekit",
+                "record_type": "CNAME",
+                "record_value": "Use the exact Vercel-provided CNAME target for this project.",
+                "verification": "The subdomain must serve this app, not a Cloudflare error page.",
+            },
+            "github_app": {
+                "callback_url": f"{public_origin}/github/callback",
+                "intake_url": f"{public_origin}/api/github/intake",
+                "repository_permission": "contents:read",
+            },
+            "checks": {
+                "health": f"{public_origin}/healthz",
+                "readiness": f"{public_origin}/api/hosted/readiness",
+                "deployment": f"{public_origin}/api/hosted/deployment",
+            },
+            "required_runtime_env": list(REQUIRED_HOSTED_ENV),
+            "secret_boundary": (
+                "This contract is public. It contains URLs, record names, and env var names only; "
+                "it never includes private keys, state secrets, installation tokens, or provider "
+                "credentials."
+            ),
+        }
+
 
 def application(
     environ: dict[str, object],
@@ -151,6 +192,8 @@ def hosted_application(
             return _response(start_response, HTTPStatus.OK, {"ok": True})
         if path == "/api/hosted/readiness":
             return _response(start_response, HTTPStatus.OK, settings.readiness())
+        if path == "/api/hosted/deployment":
+            return _response(start_response, HTTPStatus.OK, settings.deployment_contract())
         if path == "/":
             return _html_response(start_response, render_hosted_home(settings))
         if _requires_hosted_readiness(path) and not settings.readiness()["ready"]:
@@ -187,6 +230,7 @@ def render_hosted_home(settings: HostedSettings) -> str:
     public_origin = html.escape(str(readiness["public_origin"]))
     payload = html.escape(json.dumps(contract, sort_keys=True))
     readiness_payload = html.escape(json.dumps(readiness, sort_keys=True))
+    deployment_payload = html.escape(json.dumps(settings.deployment_contract(), sort_keys=True))
     status = (
         "Hosted GitHub intake is ready."
         if setup_ready
@@ -306,8 +350,27 @@ def render_hosted_home(settings: HostedSettings) -> str:
         <li>DNS changes only after FuseKit shows the exact proposed records.</li>
       </ul>
     </section>
+    <section aria-label="Hosted deployment contract">
+      <h2>Hosted deployment contract</h2>
+      <ul>
+        <li>This page is intended to run at <span class="origin">{public_origin}</span>.</li>
+        <li>
+          Vercel must serve the Python WSGI entrypoint exported from
+          <span class="origin">app.py</span>.
+        </li>
+        <li>
+          Cloudflare should route the <span class="origin">fusekit</span>
+          subdomain to the Vercel-provided CNAME target.
+        </li>
+        <li>
+          The public readiness and deployment endpoints expose configuration
+          names only, never secret values.
+        </li>
+      </ul>
+    </section>
     <script id="fusekit-github-intake" type="application/json">{payload}</script>
     <script id="fusekit-hosted-readiness" type="application/json">{readiness_payload}</script>
+    <script id="fusekit-hosted-deployment" type="application/json">{deployment_payload}</script>
   </main>
 </body>
 </html>
@@ -1015,11 +1078,7 @@ def _response(
     payload = json.dumps(body, sort_keys=True).encode("utf-8")
     start_response(
         f"{status.value} {status.phrase}",
-        [
-            ("Content-Type", "application/json; charset=utf-8"),
-            ("Cache-Control", "no-store"),
-            ("Content-Length", str(len(payload))),
-        ],
+        _headers("application/json; charset=utf-8", len(payload)),
     )
     return [payload]
 
@@ -1028,13 +1087,39 @@ def _html_response(start_response: StartResponse, body: str) -> Iterable[bytes]:
     payload = body.encode("utf-8")
     start_response(
         "200 OK",
-        [
-            ("Content-Type", "text/html; charset=utf-8"),
-            ("Cache-Control", "no-store"),
-            ("Content-Length", str(len(payload))),
-        ],
+        _headers("text/html; charset=utf-8", len(payload)),
     )
     return [payload]
+
+
+def _headers(content_type: str, content_length: int) -> list[tuple[str, str]]:
+    return [
+        ("Content-Type", content_type),
+        ("Cache-Control", "no-store"),
+        ("Content-Security-Policy", _content_security_policy()),
+        ("Cross-Origin-Opener-Policy", "same-origin"),
+        ("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()"),
+        ("Referrer-Policy", "no-referrer"),
+        ("Strict-Transport-Security", "max-age=31536000; includeSubDomains"),
+        ("X-Content-Type-Options", "nosniff"),
+        ("X-Frame-Options", "DENY"),
+        ("Content-Length", str(content_length)),
+    ]
+
+
+def _content_security_policy() -> str:
+    return "; ".join(
+        (
+            "default-src 'none'",
+            "base-uri 'none'",
+            "connect-src 'self'",
+            "form-action 'self'",
+            "frame-ancestors 'none'",
+            "img-src 'self' data:",
+            "script-src 'none'",
+            "style-src 'unsafe-inline'",
+        )
+    )
 
 
 def main() -> int:

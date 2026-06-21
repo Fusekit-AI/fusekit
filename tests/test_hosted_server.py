@@ -215,12 +215,20 @@ def test_hosted_wsgi_routes_return_safe_responses() -> None:
     assert status == "200 OK"
     assert headers["Content-Type"] == "text/html; charset=utf-8"
     assert headers["Cache-Control"] == "no-store"
+    assert headers["Content-Security-Policy"].startswith("default-src 'none'")
+    assert headers["X-Frame-Options"] == "DENY"
+    assert headers["X-Content-Type-Options"] == "nosniff"
+    assert headers["Referrer-Policy"] == "no-referrer"
+    assert headers["Strict-Transport-Security"] == "max-age=31536000; includeSubDomains"
     assert b"Start hosted launch" in body
+    assert b"Hosted deployment contract" in body
+    assert b"fusekit-hosted-deployment" in body
     assert b"PRIVATE KEY" not in body
 
     status, headers, body = _call("/healthz")
     assert status == "200 OK"
     assert headers["Content-Type"] == "application/json; charset=utf-8"
+    assert headers["Content-Security-Policy"].startswith("default-src 'none'")
     assert json.loads(body.decode("utf-8")) == {"ok": True}
 
 
@@ -264,6 +272,34 @@ def test_hosted_readiness_endpoint_reports_ready_when_configured() -> None:
     assert payload["invalid"] == []
     assert payload["public_origin"] == "https://fusekit.snowmanai.org"
     assert payload["github_app_slug"] == "fusekit-launcher"
+
+
+def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets() -> None:
+    status, headers, body = _call("/api/hosted/deployment")
+    payload = json.loads(body.decode("utf-8"))
+    serialized = json.dumps(payload)
+
+    assert status == "200 OK"
+    assert headers["Content-Type"] == "application/json; charset=utf-8"
+    assert payload["schema_version"] == "fusekit.hosted-deployment.v1"
+    assert payload["canonical_origin"] == "https://fusekit.snowmanai.org"
+    assert payload["domain"] == "fusekit.snowmanai.org"
+    assert payload["runtime"] == {
+        "provider": "vercel",
+        "entrypoint": "app.py",
+        "application_export": "app",
+        "mode": "python-wsgi",
+    }
+    assert payload["cloudflare_dns"]["zone"] == "snowmanai.org"
+    assert payload["cloudflare_dns"]["record_name"] == "fusekit"
+    assert payload["cloudflare_dns"]["record_type"] == "CNAME"
+    assert payload["github_app"]["callback_url"] == (
+        "https://fusekit.snowmanai.org/github/callback"
+    )
+    assert payload["github_app"]["repository_permission"] == "contents:read"
+    assert "FUSEKIT_GITHUB_APP_PRIVATE_KEY" in payload["required_runtime_env"]
+    assert "PRIVATE KEY" not in serialized
+    assert STATE_SECRET not in serialized
 
 
 def test_hosted_readiness_endpoint_rejects_invalid_config_shape_without_values() -> None:

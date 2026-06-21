@@ -159,12 +159,23 @@ remaining slices are real hosted job execution, final proof artifact production,
 rollback/detonation execution, and production DNS/deployment.
 
 The repository includes a minimal Vercel-compatible WSGI entrypoint at `app.py`
-for the hosted subdomain. Production still needs the Vercel project connected
-to this repository, `fusekit.snowmanai.org` added as the custom domain, the
-Cloudflare DNS record pointed at Vercel, and these runtime environment variables
-set in Vercel: `FUSEKIT_HOSTED_ORIGIN`, `FUSEKIT_GITHUB_APP_ID`,
-`FUSEKIT_GITHUB_APP_SLUG`, `FUSEKIT_GITHUB_APP_PRIVATE_KEY`, and
-`FUSEKIT_HOSTED_STATE_SECRET`.
+for the hosted subdomain. The hosted app also serves
+`/api/hosted/deployment`, a public deployment contract that lists the canonical
+origin, Vercel WSGI entrypoint, GitHub callback URL, Cloudflare DNS record name,
+health/readiness URLs, and required environment variable names without exposing
+secret values. Hosted responses include no-store caching and browser security
+headers so the launcher behaves like a hardened control surface from first
+deploy.
+
+Production still needs the Vercel project connected to this repository,
+`fusekit.snowmanai.org` added as the custom domain, the Cloudflare `fusekit`
+subdomain routed to the exact Vercel-provided CNAME target, and these runtime
+environment variables set in Vercel: `FUSEKIT_HOSTED_ORIGIN`,
+`FUSEKIT_GITHUB_APP_ID`, `FUSEKIT_GITHUB_APP_SLUG`,
+`FUSEKIT_GITHUB_APP_PRIVATE_KEY`, and `FUSEKIT_HOSTED_STATE_SECRET`. As of the
+latest local check, `https://fusekit.snowmanai.org` resolves through Cloudflare
+but returns Cloudflare's "DNS points to prohibited IP" page instead of the
+FuseKit hosted app, so DNS/custom-domain attachment is not complete yet.
 
 ## Real Provider Acceptance Run
 
