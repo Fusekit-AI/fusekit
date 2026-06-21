@@ -89,6 +89,18 @@ def test_hosted_launch_plan_is_universal_github_intake() -> None:
         "separate visible approval" in item for item in raw["trust"]["permissions"]
     )
     assert "Raw secrets are never rendered" in raw["trust"]["secret_boundary"]
+    assert raw["trust"]["prohibited"] == [
+        "Do not bypass MFA, CAPTCHA, passkeys, billing, fraud, consent, or domain gates.",
+        (
+            "Do not render or return raw provider credentials, installation tokens, "
+            "or vault secrets."
+        ),
+        "Do not mutate DNS or paid provider resources without explicit visible approval.",
+        (
+            "Do not claim completion before live acceptance, retrieved artifacts, "
+            "and detonation proof pass."
+        ),
+    ]
 
 
 def test_hosted_launcher_html_has_no_terminal_or_download_happy_path() -> None:
@@ -119,6 +131,9 @@ def test_hosted_launcher_html_has_no_terminal_or_download_happy_path() -> None:
     assert "Visible plan" in html
     assert "Redacted proof" in html
     assert "Reversible setup" in html
+    assert "What FuseKit will not do" in html
+    assert "Do not bypass MFA, CAPTCHA, passkeys, billing, fraud, consent, or domain gates." in html
+    assert "Do not mutate DNS or paid provider resources without explicit visible approval." in html
     assert "No terminal, local install, download, or copied command" in html
     assert "source .venv" not in visible_text
     assert "fusekit launch" not in visible_text
@@ -188,6 +203,9 @@ def test_hosted_launcher_embeds_redacted_public_plan_json() -> None:
         "live_acceptance_report",
         "recording",
     ]
+    assert "prohibited" in payload["trust"]
+    assert any("Do not bypass MFA" in item for item in payload["trust"]["prohibited"])
+    assert any("retrieved artifacts" in item for item in payload["trust"]["prohibited"])
     serialized = json.dumps(payload)
     assert re.search(r"\bgh[pousr]_[A-Za-z0-9_]{12,}", serialized) is None
     assert re.search(r"\bgithub_pat_[A-Za-z0-9_]{12,}", serialized) is None
@@ -221,4 +239,5 @@ def test_public_plan_summary_is_small_and_trust_first() -> None:
         "plain_language_journey": list(HOSTED_PLAIN_LANGUAGE_JOURNEY),
         "proof": list(plan.trust.proof),
         "rollback": list(plan.trust.rollback),
+        "prohibited": list(plan.trust.prohibited),
     }

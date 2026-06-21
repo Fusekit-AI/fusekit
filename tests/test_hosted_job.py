@@ -177,6 +177,8 @@ def test_hosted_worker_request_binds_live_acceptance_and_no_secret_policy() -> N
     assert ".fusekit/run_record.json" in request["required_artifacts"]
     assert ".fusekit/workspace_detonation.json" in request["required_artifacts"]
     assert any("Do not bypass MFA" in item for item in request["prohibited"])
+    assert any("retrieved artifacts" in item for item in request["prohibited"])
+    assert "fraud" in request["prohibited"][0]
     assert "ghs_" not in serialized
     assert "PRIVATE KEY" not in serialized
 

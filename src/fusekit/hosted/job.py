@@ -14,7 +14,11 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from fusekit.errors import FuseKitError
-from fusekit.hosted.launcher import HOSTED_COMPLETION_EVIDENCE_KEYS, HostedLaunchPlan
+from fusekit.hosted.launcher import (
+    HOSTED_COMPLETION_EVIDENCE_KEYS,
+    HOSTED_PROHIBITED_ACTIONS,
+    HostedLaunchPlan,
+)
 from fusekit.security.redaction import contains_durable_secret_text, redact_public_text
 
 HOSTED_JOB_SCHEMA_VERSION = "fusekit.hosted-job.v1"
@@ -874,15 +878,7 @@ def hosted_worker_request(job: HostedLaunchJob, *, now: int | None = None) -> di
             ),
         },
         "completion_requires": list(HOSTED_WORKER_PROOF_KEYS),
-        "prohibited": [
-            "Do not bypass MFA, CAPTCHA, passkeys, billing, fraud, or consent gates.",
-            (
-                "Do not render or return raw provider credentials, installation tokens, "
-                "or vault secrets."
-            ),
-            "Do not mutate DNS or paid provider resources without explicit visible approval.",
-            "Do not claim completion before live acceptance and detonation proof pass.",
-        ],
+        "prohibited": list(HOSTED_PROHIBITED_ACTIONS),
         "worker_contract": job.worker_contract.to_dict(),
     }
 

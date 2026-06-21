@@ -68,6 +68,15 @@ HOSTED_REVERSAL_PATH = (
     "Preserve rollback actions for provider resources FuseKit creates.",
     "Offer stop, revoke access, rollback, and download redacted proof actions.",
 )
+HOSTED_PROHIBITED_ACTIONS = (
+    "Do not bypass MFA, CAPTCHA, passkeys, billing, fraud, consent, or domain gates.",
+    "Do not render or return raw provider credentials, installation tokens, or vault secrets.",
+    "Do not mutate DNS or paid provider resources without explicit visible approval.",
+    (
+        "Do not claim completion before live acceptance, retrieved artifacts, "
+        "and detonation proof pass."
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -82,6 +91,7 @@ class HostedLaunchTrustContract:
     proof: tuple[str, ...]
     proof_evidence_keys: tuple[str, ...]
     rollback: tuple[str, ...]
+    prohibited: tuple[str, ...]
     user_gates: tuple[str, ...]
 
     def to_dict(self) -> dict[str, object]:
@@ -99,6 +109,7 @@ class HostedLaunchTrustContract:
             "proof": list(self.proof),
             "proof_evidence_keys": list(self.proof_evidence_keys),
             "rollback": list(self.rollback),
+            "prohibited": list(self.prohibited),
             "user_gates": list(self.user_gates),
         }
 
@@ -166,6 +177,7 @@ def build_hosted_launch_plan(
         proof=HOSTED_PROOF_REQUIREMENTS,
         proof_evidence_keys=HOSTED_COMPLETION_EVIDENCE_KEYS,
         rollback=HOSTED_REVERSAL_PATH,
+        prohibited=HOSTED_PROHIBITED_ACTIONS,
         user_gates=tuple(
             f"{provider}: login, MFA, CAPTCHA, billing, consent, or copy-once secret screens"
             for provider in user_gate_providers
@@ -192,6 +204,7 @@ def render_hosted_launcher(plan: HostedLaunchPlan, *, launch_url: str = "") -> s
     trust = plan.trust
     proof = _list_markup(trust.proof)
     rollback = _list_markup(trust.rollback)
+    prohibited = _list_markup(trust.prohibited)
     user_gates = _list_markup(trust.user_gates)
     scope = _list_markup(trust.scope)
     permissions = _list_markup(trust.permissions)
@@ -426,6 +439,8 @@ def render_hosted_launcher(plan: HostedLaunchPlan, *, launch_url: str = "") -> s
         {proof}
         <h2>Reversible setup</h2>
         {rollback}
+        <h2>What FuseKit will not do</h2>
+        {prohibited}
         <h2>Providers</h2>
         {providers}
         <h2>Runtime env labels</h2>
@@ -515,4 +530,5 @@ def public_plan_summary(plan: HostedLaunchPlan) -> dict[str, Any]:
         "plain_language_journey": list(plan.trust.plain_language_journey),
         "proof": list(plan.trust.proof),
         "rollback": list(plan.trust.rollback),
+        "prohibited": list(plan.trust.prohibited),
     }

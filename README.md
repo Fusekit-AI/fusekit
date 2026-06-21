@@ -164,6 +164,11 @@ checklist for the selected-repository GitHub App, `contents:read` source
 permission, backend-only token exchange, vault/provider-native credential
 storage, and HMAC worker dispatch. They also render the approved action ids from
 the visible plan, and tell the user that action drift requires fresh approval.
+The visible plan also publishes the same prohibited-action boundary as the
+backend worker request before worker start: no MFA/CAPTCHA/passkey, billing,
+fraud, consent, or domain-gate bypass; no raw secret rendering; no DNS or
+paid-resource mutation without explicit approval; and no completion claim before
+live acceptance, retrieved artifacts, and detonation proof pass.
 The hosted home and selected-repository plan now publish the same no-terminal
 launch path: visit the hosted URL, install the GitHub App on one repository,
 review the plan, click start, pass provider-owned gates, and receive the live

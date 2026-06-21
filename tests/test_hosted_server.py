@@ -914,6 +914,9 @@ def test_hosted_github_plan_fetches_source_and_renders_visible_plan() -> None:
     assert "Launch path" in text
     assert "Review the visible plan and approved action ids before worker start." in text
     assert "Receive the live URL, redacted proof receipt" in text
+    assert "What FuseKit will not do" in text
+    assert "Do not bypass MFA, CAPTCHA, passkeys, billing, fraud, consent, or domain gates." in text
+    assert "Do not mutate DNS or paid provider resources without explicit visible approval." in text
     assert "/github/control-room?installation_id=42&amp;repo=example%2Fone&amp;state=" in text
     assert "RESEND_API_KEY" in text
     assert "redacted proof" in text
