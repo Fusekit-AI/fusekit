@@ -28,6 +28,7 @@ def _call(
     *,
     query_string: str = "",
     headers: dict[str, str] | None = None,
+    json_body: dict[str, object] | None = None,
     settings: HostedSettings | None = None,
 ) -> tuple[str, dict[str, str], bytes]:
     app = hosted_application(
@@ -47,10 +48,13 @@ def _call(
         captured["status"] = status
         captured["headers"] = dict(headers)
 
+    body = json.dumps(json_body).encode("utf-8") if json_body is not None else b""
     environ: dict[str, object] = {
         "REQUEST_METHOD": method,
         "PATH_INFO": path,
         "QUERY_STRING": query_string,
+        "CONTENT_LENGTH": str(len(body)),
+        "wsgi.input": io.BytesIO(body),
     }
     for key, value in (headers or {}).items():
         environ[f"HTTP_{key.upper().replace('-', '_')}"] = value
@@ -989,6 +993,129 @@ def test_hosted_worker_claim_requires_backend_auth_and_returns_redacted_receipt(
     assert "ghs_fake" not in serialized
     assert "PRIVATE KEY" not in serialized
     assert "<script>" not in serialized
+
+
+def test_hosted_worker_proof_submission_requires_backend_auth_and_redacted_evidence() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    settings = _settings_with_github(opener)
+
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=f"installation_id=42&repo=example/one&state={state}",
+        settings=settings,
+    )
+    assert status == "200 OK"
+    text = body.decode("utf-8")
+    job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    control = _match(text, r"control=([A-Za-z0-9_.-]+)")
+    job_token = _match(text, r"job=([A-Za-z0-9_.-]+)")
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/start",
+        method="POST",
+        query_string=f"control={control}&job={job_token}",
+        settings=settings,
+    )
+    started = json.loads(body.decode("utf-8"))
+    stateless_settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=FAKE_PRIVATE_KEY,
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+    )
+    worker_headers = {
+        "Authorization": f"Bearer {WORKER_SECRET}",
+        "X-FuseKit-Worker-Id": "worker-01",
+    }
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/worker-claims",
+        method="POST",
+        query_string=f"job={started['job_token']}",
+        headers=worker_headers,
+        settings=stateless_settings,
+    )
+    claim = json.loads(body.decode("utf-8"))
+    required_artifacts = claim["worker_request"]["required_artifacts"]
+    evidence = {
+        "live_url": True,
+        "provider_verifiers": True,
+        "dns_propagation": True,
+        "rollback_metadata": True,
+        "retrieved_remote_artifacts": True,
+        "run_record": True,
+        "detonation_receipt": True,
+        "live_acceptance_report": True,
+        "recording": True,
+    }
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/worker-proof",
+        method="POST",
+        query_string=f"job={claim['job_token']}",
+        json_body={
+            "schema_version": "fusekit.hosted-worker-proof.v1",
+            "evidence": evidence,
+            "completed_artifacts": required_artifacts,
+            "note": "Authorization: Bearer raw-provider-token",
+        },
+        headers=worker_headers,
+        settings=stateless_settings,
+    )
+    assert status == "400 Bad Request"
+    assert json.loads(body.decode("utf-8")) == {"error": "invalid_worker_proof"}
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/worker-proof",
+        method="POST",
+        query_string=f"job={claim['job_token']}",
+        json_body={
+            "schema_version": "fusekit.hosted-worker-proof.v1",
+            "evidence": evidence,
+            "completed_artifacts": required_artifacts,
+            "note": "Live proof artifacts passed.",
+        },
+        headers=worker_headers,
+        settings=stateless_settings,
+    )
+    payload = json.loads(body.decode("utf-8"))
+    serialized = json.dumps(payload)
+    steps = {step["id"]: step for step in payload["job"]["steps"]}
+
+    assert status == "200 OK"
+    assert payload["job"]["status"] == "complete"
+    assert payload["proof_receipt"]["schema_version"] == (
+        "fusekit.hosted-worker-proof-receipt.v1"
+    )
+    assert payload["proof_receipt"]["completion_ready"] is True
+    assert payload["proof_receipt"]["missing_artifacts"] == []
+    assert steps["proof.collect"]["status"] == "done"
+    assert steps["rollback.ready"]["status"] == "done"
+    assert steps["detonate.worker"]["status"] == "done"
+    assert WORKER_SECRET not in serialized
+    assert STATE_SECRET not in serialized
+    assert "raw-provider-token" not in serialized
+    assert "ghs_fake" not in serialized
+    assert "PRIVATE KEY" not in serialized
 
 
 def test_hosted_proof_receipt_page_uses_signed_job_token_without_process_memory() -> None:

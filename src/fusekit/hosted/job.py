@@ -15,6 +15,7 @@ from typing import Any
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.launcher import HostedLaunchPlan
+from fusekit.security.redaction import contains_durable_secret_text, redact_public_text
 
 HOSTED_JOB_SCHEMA_VERSION = "fusekit.hosted-job.v1"
 HOSTED_JOB_TOKEN_SCHEMA_VERSION = "fusekit.hosted-job-token.v1"
@@ -23,6 +24,20 @@ HOSTED_PROOF_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-proof-receipt.v1"
 HOSTED_WORKER_CONTRACT_SCHEMA_VERSION = "fusekit.hosted-worker-contract.v1"
 HOSTED_WORKER_REQUEST_SCHEMA_VERSION = "fusekit.hosted-worker-request.v1"
 HOSTED_WORKER_CLAIM_SCHEMA_VERSION = "fusekit.hosted-worker-claim.v1"
+HOSTED_WORKER_PROOF_SCHEMA_VERSION = "fusekit.hosted-worker-proof.v1"
+HOSTED_WORKER_PROOF_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-worker-proof-receipt.v1"
+
+HOSTED_WORKER_PROOF_KEYS = (
+    "live_url",
+    "provider_verifiers",
+    "dns_propagation",
+    "rollback_metadata",
+    "retrieved_remote_artifacts",
+    "run_record",
+    "detonation_receipt",
+    "live_acceptance_report",
+    "recording",
+)
 
 
 @dataclass(frozen=True)
@@ -426,6 +441,41 @@ def claim_hosted_launch_job(
     )
 
 
+def apply_hosted_worker_proof(
+    job: HostedLaunchJob,
+    payload: dict[str, object],
+    *,
+    worker_id: str,
+    now: int | None = None,
+) -> tuple[HostedLaunchJob, dict[str, object]]:
+    """Apply a redacted worker proof snapshot and return the updated job plus receipt."""
+
+    if job.status != "worker_claimed":
+        raise ValueError("Hosted worker proof requires a claimed worker.")
+    receipt = hosted_worker_proof_receipt(job, payload, worker_id=worker_id, now=now)
+    evidence = receipt["evidence"]
+    if not isinstance(evidence, dict):
+        raise ValueError("Hosted worker proof evidence is invalid.")
+    completion_ready = receipt["completion_ready"] is True
+    updated = _replace_job(
+        job,
+        status="complete" if completion_ready else "proof_submitted",
+        created_at=job.created_at,
+        steps=_update_steps(
+            job.steps,
+            {
+                "provider.gates": _provider_gate_step(evidence),
+                "setup.execute": _setup_execute_step(completion_ready),
+                "proof.collect": _proof_collect_step(evidence),
+                "rollback.ready": _rollback_step(evidence),
+                "detonate.worker": _detonation_step(evidence),
+            },
+        ),
+    )
+    receipt["status"] = updated.status
+    return updated, receipt
+
+
 def render_hosted_control_room(
     job: HostedLaunchJob,
     *,
@@ -679,6 +729,56 @@ def hosted_worker_claim_receipt(
             "detonation_receipt",
             "live_acceptance_report",
         ],
+    }
+
+
+def hosted_worker_proof_receipt(
+    job: HostedLaunchJob,
+    payload: dict[str, object],
+    *,
+    worker_id: str,
+    now: int | None = None,
+) -> dict[str, object]:
+    """Build a redacted receipt for hosted worker proof submission."""
+
+    if payload.get("schema_version") != HOSTED_WORKER_PROOF_SCHEMA_VERSION:
+        raise ValueError("Hosted worker proof schema is unsupported.")
+    evidence = _proof_evidence(payload.get("evidence"))
+    completed_artifacts = _completed_artifacts(
+        payload.get("completed_artifacts"),
+        required_artifacts=job.worker_contract.required_artifacts,
+    )
+    note = _public_note(payload.get("note"))
+    missing_artifacts = tuple(
+        artifact
+        for artifact in job.worker_contract.required_artifacts
+        if artifact not in completed_artifacts
+    )
+    completion_ready = (
+        all(evidence[key] for key in HOSTED_WORKER_PROOF_KEYS)
+        and not missing_artifacts
+    )
+    return {
+        "schema_version": HOSTED_WORKER_PROOF_RECEIPT_SCHEMA_VERSION,
+        "job_id": job.job_id,
+        "worker_id": _public_worker_id(worker_id),
+        "received_at": int(time.time() if now is None else now),
+        "status": job.status,
+        "completion_ready": completion_ready,
+        "completion_statement": (
+            "Hosted completion proof is present."
+            if completion_ready
+            else "Hosted completion is still waiting on live proof artifacts."
+        ),
+        "evidence": evidence,
+        "completed_artifacts": list(completed_artifacts),
+        "missing_artifacts": list(missing_artifacts),
+        "note": note,
+        "secret_boundary": (
+            "Worker proof accepts only redacted evidence flags, public artifact labels, "
+            "and public notes. Raw provider credentials, vault contents, GitHub tokens, "
+            "and worker secrets are rejected before receipt rendering."
+        ),
     }
 
 
@@ -957,6 +1057,105 @@ def _completion_ready(job: HostedLaunchJob) -> bool:
         and steps.get("rollback.ready") == "done"
         and steps.get("detonate.worker") == "done"
     )
+
+
+def _proof_evidence(value: object) -> dict[str, bool]:
+    if not isinstance(value, dict):
+        raise ValueError("Hosted worker proof evidence is invalid.")
+    evidence: dict[str, bool] = {}
+    for key in HOSTED_WORKER_PROOF_KEYS:
+        item = value.get(key)
+        if not isinstance(item, bool):
+            raise ValueError(f"Hosted worker proof evidence {key} must be boolean.")
+        evidence[key] = item
+    unexpected = sorted(str(key) for key in value if key not in HOSTED_WORKER_PROOF_KEYS)
+    if unexpected:
+        raise ValueError("Hosted worker proof evidence contains unsupported keys.")
+    return evidence
+
+
+def _completed_artifacts(
+    value: object,
+    *,
+    required_artifacts: tuple[str, ...],
+) -> tuple[str, ...]:
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError("Hosted worker proof completed_artifacts must be a list of strings.")
+    required = set(required_artifacts)
+    result: list[str] = []
+    for item in value:
+        artifact = item.strip()
+        if artifact not in required:
+            raise ValueError("Hosted worker proof includes an unsupported artifact.")
+        if contains_durable_secret_text(artifact):
+            raise ValueError("Hosted worker proof artifact contains credential-looking text.")
+        if artifact not in result:
+            result.append(artifact)
+    return tuple(result)
+
+
+def _public_note(value: object) -> str:
+    raw = str(value or "")[:400]
+    if contains_durable_secret_text(raw):
+        raise ValueError("Hosted worker proof note contains credential-looking text.")
+    note = redact_public_text(raw)
+    if contains_durable_secret_text(note):
+        raise ValueError("Hosted worker proof note contains credential-looking text.")
+    return note
+
+
+def _provider_gate_step(evidence: dict[str, bool]) -> tuple[str, str]:
+    if evidence["retrieved_remote_artifacts"] and evidence["run_record"]:
+        return (
+            "done",
+            "Provider gate records and wake events are present in retrieved remote artifacts.",
+        )
+    return (
+        "waiting",
+        "Waiting for provider-owned gates and retrieved gate-event proof.",
+    )
+
+
+def _setup_execute_step(completion_ready: bool) -> tuple[str, str]:
+    if completion_ready:
+        return ("done", "Approved setup plan completed with live proof and acceptance.")
+    return (
+        "running",
+        "Worker submitted redacted proof; remaining live proof is still pending.",
+    )
+
+
+def _proof_collect_step(evidence: dict[str, bool]) -> tuple[str, str]:
+    required = (
+        "live_url",
+        "provider_verifiers",
+        "dns_propagation",
+        "retrieved_remote_artifacts",
+        "run_record",
+        "live_acceptance_report",
+        "recording",
+    )
+    if all(evidence[key] for key in required):
+        return (
+            "done",
+            "Live URL, verifiers, DNS, remote artifacts, Run Record, and recording proof passed.",
+        )
+    return (
+        "waiting",
+        "Waiting for live URL, verifiers, DNS, remote artifacts, Run Record, and recording proof.",
+    )
+
+
+def _rollback_step(evidence: dict[str, bool]) -> tuple[str, str]:
+    if evidence["rollback_metadata"]:
+        return ("done", "Rollback metadata is present in the redacted proof bundle.")
+    return ("waiting", "Waiting for rollback metadata before completion can be claimed.")
+
+
+def _detonation_step(evidence: dict[str, bool]) -> tuple[str, str]:
+    if evidence["detonation_receipt"]:
+        return ("done", "Hosted worker detonation receipt is present.")
+    return ("waiting", "Waiting for hosted worker detonation receipt.")
 
 
 def _public_worker_id(value: str) -> str:

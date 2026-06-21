@@ -12,7 +12,7 @@ from collections.abc import Callable, Iterable, MutableMapping
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 from wsgiref.simple_server import make_server
 
 from cryptography.hazmat.primitives import serialization
@@ -29,6 +29,7 @@ from fusekit.hosted.github_app import (
 from fusekit.hosted.job import (
     HostedLaunchJob,
     advance_hosted_launch_job,
+    apply_hosted_worker_proof,
     build_hosted_launch_job,
     claim_hosted_launch_job,
     create_hosted_job_token,
@@ -620,6 +621,8 @@ def _hosted_job_api_response(
         return _hosted_worker_request_response(start_response, job)
     if len(parts) == 5 and parts[4] == "worker-claims" and method == "POST":
         return _hosted_worker_claim_response(settings, environ, start_response, job)
+    if len(parts) == 5 and parts[4] == "worker-proof" and method == "POST":
+        return _hosted_worker_proof_response(settings, environ, start_response, job)
     if len(parts) == 6 and parts[4] == "actions" and method == "POST":
         return _hosted_job_action_response(
             settings,
@@ -725,6 +728,38 @@ def _hosted_worker_claim_response(
         "job_token": create_hosted_job_token(settings.state_secret, updated),
         "worker_request": hosted_worker_request(updated),
         "claim_receipt": hosted_worker_claim_receipt(updated, worker_id=worker_id),
+    }
+    return _response(start_response, HTTPStatus.OK, payload)
+
+
+def _hosted_worker_proof_response(
+    settings: HostedSettings,
+    environ: dict[str, object],
+    start_response: StartResponse,
+    job: HostedLaunchJob,
+) -> Iterable[bytes]:
+    if not settings.worker_secret or len(settings.worker_secret) < 16:
+        return _response(
+            start_response,
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            {"error": "hosted_worker_not_ready", "readiness": settings.readiness()},
+        )
+    if not _worker_authorized(settings, environ):
+        return _response(start_response, HTTPStatus.FORBIDDEN, {"error": "invalid_worker_auth"})
+    try:
+        proof_payload = _json_request_body(environ)
+        updated, receipt = apply_hosted_worker_proof(
+            job,
+            proof_payload,
+            worker_id=_worker_id(environ),
+        )
+    except (FuseKitError, ValueError, json.JSONDecodeError):
+        return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "invalid_worker_proof"})
+    settings.hosted_jobs[job.job_id] = updated
+    payload: dict[str, object] = {
+        "job": updated.to_dict(),
+        "job_token": create_hosted_job_token(settings.state_secret, updated),
+        "proof_receipt": receipt,
     }
     return _response(start_response, HTTPStatus.OK, payload)
 
@@ -958,6 +993,21 @@ def _worker_authorized(settings: HostedSettings, environ: dict[str, object]) -> 
 def _worker_id(environ: dict[str, object]) -> str:
     value = str(environ.get("HTTP_X_FUSEKIT_WORKER_ID", "")).strip()
     return value or "hosted-worker"
+
+
+def _json_request_body(environ: dict[str, object]) -> dict[str, object]:
+    try:
+        length = int(str(environ.get("CONTENT_LENGTH", "0") or "0"))
+    except ValueError as exc:
+        raise FuseKitError("Invalid content length.") from exc
+    body = environ.get("wsgi.input")
+    if not hasattr(body, "read"):
+        raise FuseKitError("Missing request body.")
+    raw = cast(Any, body).read(max(length, 0))
+    decoded = json.loads(raw.decode("utf-8") if raw else "{}")
+    if not isinstance(decoded, dict):
+        raise FuseKitError("JSON request body must be an object.")
+    return decoded
 
 
 def _public_origin_label(value: str) -> str:

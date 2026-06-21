@@ -8,6 +8,7 @@ import pytest
 from fusekit.errors import FuseKitError
 from fusekit.hosted import (
     advance_hosted_launch_job,
+    apply_hosted_worker_proof,
     build_hosted_launch_job,
     build_hosted_worker_contract,
     claim_hosted_launch_job,
@@ -15,6 +16,7 @@ from fusekit.hosted import (
     hosted_launch_job_from_dict,
     hosted_proof_receipt,
     hosted_worker_claim_receipt,
+    hosted_worker_proof_receipt,
     hosted_worker_request,
     render_hosted_control_room,
     render_hosted_proof_receipt,
@@ -160,6 +162,115 @@ def test_hosted_worker_claim_rejects_unstarted_or_terminal_jobs() -> None:
     rollback = advance_hosted_launch_job(started, "rollback", now=1_700_000_002)
     with pytest.raises(ValueError):
         claim_hosted_launch_job(rollback, worker_id="worker-01")
+
+
+def _proof_payload(
+    *,
+    complete: bool,
+    note: str = "",
+    completed_artifacts: list[str] | None = None,
+) -> dict[str, object]:
+    evidence = {
+        "live_url": complete,
+        "provider_verifiers": complete,
+        "dns_propagation": complete,
+        "rollback_metadata": complete,
+        "retrieved_remote_artifacts": complete,
+        "run_record": complete,
+        "detonation_receipt": complete,
+        "live_acceptance_report": complete,
+        "recording": complete,
+    }
+    return {
+        "schema_version": "fusekit.hosted-worker-proof.v1",
+        "evidence": evidence,
+        "completed_artifacts": completed_artifacts or [],
+        "note": note,
+    }
+
+
+def test_hosted_worker_proof_submission_updates_partial_job_without_completion() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    started = advance_hosted_launch_job(job, "start", now=1_700_000_001)
+    claimed = claim_hosted_launch_job(started, worker_id="worker-01", now=1_700_000_002)
+    updated, receipt = apply_hosted_worker_proof(
+        claimed,
+        _proof_payload(
+            complete=False,
+            completed_artifacts=[
+                ".fusekit/job.json",
+                ".fusekit/run_record.json",
+            ],
+            note="Provider gates are waiting.",
+        ),
+        worker_id="worker-01",
+        now=1_700_000_003,
+    )
+    steps = {step["id"]: step for step in updated.to_dict()["steps"]}
+    serialized = json.dumps(receipt) + json.dumps(updated.to_dict())
+
+    assert updated.status == "proof_submitted"
+    assert receipt["schema_version"] == "fusekit.hosted-worker-proof-receipt.v1"
+    assert receipt["completion_ready"] is False
+    assert ".fusekit/acceptance_report.json" in receipt["missing_artifacts"]
+    assert steps["setup.execute"]["status"] == "running"
+    assert steps["proof.collect"]["status"] == "waiting"
+    assert steps["rollback.ready"]["status"] == "waiting"
+    assert steps["detonate.worker"]["status"] == "waiting"
+    assert "Provider gates are waiting." in receipt["note"]
+    assert "ghs_" not in serialized
+    assert "PRIVATE KEY" not in serialized
+
+
+def test_hosted_worker_proof_submission_can_mark_complete_only_with_full_evidence() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    started = advance_hosted_launch_job(job, "start", now=1_700_000_001)
+    claimed = claim_hosted_launch_job(started, worker_id="worker-01", now=1_700_000_002)
+    updated, receipt = apply_hosted_worker_proof(
+        claimed,
+        _proof_payload(
+            complete=True,
+            completed_artifacts=list(claimed.worker_contract.required_artifacts),
+            note="Live proof passed.",
+        ),
+        worker_id="worker-01",
+        now=1_700_000_003,
+    )
+    proof_receipt = hosted_proof_receipt(updated)
+    steps = {step["id"]: step for step in updated.to_dict()["steps"]}
+
+    assert updated.status == "complete"
+    assert receipt["completion_ready"] is True
+    assert receipt["missing_artifacts"] == []
+    assert proof_receipt["completion_ready"] is True
+    assert steps["provider.gates"]["status"] == "done"
+    assert steps["setup.execute"]["status"] == "done"
+    assert steps["proof.collect"]["status"] == "done"
+    assert steps["rollback.ready"]["status"] == "done"
+    assert steps["detonate.worker"]["status"] == "done"
+
+
+def test_hosted_worker_proof_rejects_unknown_artifact_and_secret_text() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    started = advance_hosted_launch_job(job, "start", now=1_700_000_001)
+    claimed = claim_hosted_launch_job(started, worker_id="worker-01", now=1_700_000_002)
+
+    with pytest.raises(ValueError):
+        hosted_worker_proof_receipt(
+            claimed,
+            _proof_payload(complete=False, completed_artifacts=[".fusekit/not-real.json"]),
+            worker_id="worker-01",
+        )
+
+    with pytest.raises(ValueError):
+        hosted_worker_proof_receipt(
+            claimed,
+            _proof_payload(
+                complete=False,
+                note="Authorization: Bearer raw-provider-token",
+            ),
+            worker_id="worker-01",
+        )
 
 
 def test_hosted_control_room_embeds_redacted_job_json() -> None:

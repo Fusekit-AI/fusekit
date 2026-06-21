@@ -159,9 +159,14 @@ turning the user path into a terminal workflow. A backend-only
 `/api/hosted/jobs/<job>/worker-claims` endpoint lets a configured hosted worker
 claim that request with `FUSEKIT_HOSTED_WORKER_SECRET`, updates the public job
 state, and returns a redacted claim receipt without rendering the worker secret,
-provider tokens, GitHub installation token, or vault material. A redacted hosted
-readiness endpoint reports only configuration presence and shape errors, and
-keeps the homepage launch button disabled until the GitHub App id, slug, RSA
+provider tokens, GitHub installation token, or vault material. The backend-only
+`/api/hosted/jobs/<job>/worker-proof` endpoint accepts redacted worker proof
+snapshots, rejects credential-looking public notes or unsupported artifact
+labels, updates public job steps, and only marks hosted completion when live URL,
+provider verifier, DNS, rollback, retrieved remote artifact, Run Record,
+detonation, live acceptance, and recording proof are all present. A redacted
+hosted readiness endpoint reports only configuration presence and shape errors,
+and keeps the homepage launch button disabled until the GitHub App id, slug, RSA
 private key, origin, state secret, and worker secret are configured and valid.
 Direct GitHub intake routes also fail closed with the same redacted readiness
 object until those checks pass. The
