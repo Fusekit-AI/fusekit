@@ -1108,11 +1108,11 @@ def _github_control_room_response(
     job = build_hosted_launch_job(plan, github_installation_id=int(installation_id))
     settings.hosted_jobs[job.job_id] = job
     job_token = create_hosted_job_token(settings.state_secret, job)
-    control_token = create_hosted_state_token(
-        settings.state_secret,
-        return_path=f"/api/hosted/jobs/{job.job_id}",
+    body = render_hosted_control_room(
+        job,
+        control_tokens=_hosted_control_tokens(settings, job),
+        job_token=job_token,
     )
-    body = render_hosted_control_room(job, control_token=control_token, job_token=job_token)
     return _html_response(start_response, body)
 
 
@@ -1177,7 +1177,7 @@ def _hosted_job_action_response(
     if not control_token:
         return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "missing_control"})
     try:
-        _verify_hosted_control_token(settings, control_token, job=job)
+        _verify_hosted_control_token(settings, control_token, job=job, action=action)
     except FuseKitError:
         return _response(start_response, HTTPStatus.FORBIDDEN, {"error": "invalid_control"})
     try:
@@ -1203,15 +1203,11 @@ def _hosted_job_action_response(
             )
     settings.hosted_jobs[job.job_id] = updated
     if _wants_html(environ):
-        control_token = create_hosted_state_token(
-            settings.state_secret,
-            return_path=f"/api/hosted/jobs/{updated.job_id}",
-        )
         return _html_response(
             start_response,
             render_hosted_control_room(
                 updated,
-                control_token=control_token,
+                control_tokens=_hosted_control_tokens(settings, updated),
                 job_token=job_token,
                 action_receipt=action_receipt,
                 dispatch_receipt=dispatch_receipt,
@@ -1230,14 +1226,14 @@ def _hosted_job_html_response(
     start_response: StartResponse,
     job: HostedLaunchJob,
 ) -> Iterable[bytes]:
-    control_token = create_hosted_state_token(
-        settings.state_secret,
-        return_path=f"/api/hosted/jobs/{job.job_id}",
-    )
     job_token = create_hosted_job_token(settings.state_secret, job)
     return _html_response(
         start_response,
-        render_hosted_control_room(job, control_token=control_token, job_token=job_token),
+        render_hosted_control_room(
+            job,
+            control_tokens=_hosted_control_tokens(settings, job),
+            job_token=job_token,
+        ),
     )
 
 
@@ -1373,14 +1369,25 @@ def _verify_hosted_control_token(
     token: str,
     *,
     job: HostedLaunchJob,
+    action: str,
 ) -> None:
     control = verify_hosted_state_token(
         settings.state_secret,
         token,
         ttl_seconds=HOSTED_CONTROL_TOKEN_TTL_SECONDS,
     )
-    if control.return_path != f"/api/hosted/jobs/{job.job_id}":
+    if control.return_path != f"/api/hosted/jobs/{job.job_id}/actions/{action}":
         raise FuseKitError("Hosted control token does not match route.")
+
+
+def _hosted_control_tokens(settings: HostedSettings, job: HostedLaunchJob) -> dict[str, str]:
+    return {
+        action: create_hosted_state_token(
+            settings.state_secret,
+            return_path=f"/api/hosted/jobs/{job.job_id}/actions/{action}",
+        )
+        for action in ("start", "stop", "rollback", "detonate")
+    }
 
 
 def _build_plan_from_selected_repo(

@@ -1148,7 +1148,7 @@ def test_hosted_job_api_returns_redacted_status_and_accepts_protected_action() -
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
-    control = _match(text, r"control=([A-Za-z0-9_.-]+)")
+    control = _control_for_action(text, "start")
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}",
@@ -1194,6 +1194,21 @@ def test_hosted_job_api_returns_redacted_status_and_accepts_protected_action() -
         query_string=f"control={control}",
         settings=settings,
     )
+    assert status == "403 Forbidden"
+    assert json.loads(body.decode("utf-8")) == {"error": "invalid_control"}
+    assert settings.hosted_jobs[job_id].status == "waiting_for_provider_gates"
+
+    rollback_control = create_hosted_state_token(
+        STATE_SECRET,
+        return_path=f"/api/hosted/jobs/{job_id}/actions/rollback",
+        nonce="nonce-for-rollback-control-token",
+    )
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/rollback",
+        method="POST",
+        query_string=f"control={rollback_control}",
+        settings=settings,
+    )
     payload = json.loads(body.decode("utf-8"))
     assert status == "200 OK"
     assert payload["status"] == "rollback_requested"
@@ -1234,7 +1249,7 @@ def test_hosted_job_api_can_stop_before_worker_start() -> None:
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
-    control = _match(text, r"control=([A-Za-z0-9_.-]+)")
+    control = _control_for_action(text, "stop")
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/stop",
@@ -1289,7 +1304,7 @@ def test_hosted_job_api_accepts_signed_job_token_without_process_memory() -> Non
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
-    control = _match(text, r"control=([A-Za-z0-9_.-]+)")
+    control = _control_for_action(text, "start")
     job_token = _match(text, r"job=([A-Za-z0-9_.-]+)")
     stateless_settings = HostedSettings(
         public_origin="https://fusekit.snowmanai.org",
@@ -1352,7 +1367,7 @@ def test_hosted_job_action_from_browser_returns_updated_control_room_html() -> N
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
-    control = _match(text, r"control=([A-Za-z0-9_.-]+)")
+    control = _control_for_action(text, "start")
     job_token = _match(text, r"job=([A-Za-z0-9_.-]+)")
 
     status, headers, body = _call(
@@ -1444,7 +1459,7 @@ def test_hosted_job_start_dispatches_signed_worker_envelope_when_configured() ->
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
-    control = _match(text, r"control=([A-Za-z0-9_.-]+)")
+    control = _control_for_action(text, "start")
     job_token = _match(text, r"job=([A-Za-z0-9_.-]+)")
 
     status, _headers, body = _call(
@@ -1543,7 +1558,7 @@ def test_hosted_job_actions_reject_duplicate_start_without_second_dispatch() -> 
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
-    control = _match(text, r"control=([A-Za-z0-9_.-]+)")
+    control = _control_for_action(text, "start")
     job_token = _match(text, r"job=([A-Za-z0-9_.-]+)")
 
     status, _headers, _body = _call(
@@ -1595,9 +1610,13 @@ def test_hosted_job_actions_reject_rollback_and_detonation_before_start() -> Non
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
-    control = _match(text, r"control=([A-Za-z0-9_.-]+)")
 
     for action in ("rollback", "detonate"):
+        control = create_hosted_state_token(
+            STATE_SECRET,
+            return_path=f"/api/hosted/jobs/{job_id}/actions/{action}",
+            nonce=f"nonce-for-{action}-control-token",
+        )
         status, _headers, body = _call(
             f"/api/hosted/jobs/{job_id}/actions/{action}",
             method="POST",
@@ -1639,7 +1658,7 @@ def test_hosted_worker_request_requires_start_and_supports_stateless_job_token()
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
-    control = _match(text, r"control=([A-Za-z0-9_.-]+)")
+    control = _control_for_action(text, "start")
     job_token = _match(text, r"job=([A-Za-z0-9_.-]+)")
 
     status, _headers, body = _call(
@@ -1716,7 +1735,7 @@ def test_hosted_worker_claim_requires_backend_auth_and_returns_redacted_receipt(
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
-    control = _match(text, r"control=([A-Za-z0-9_.-]+)")
+    control = _control_for_action(text, "start")
     job_token = _match(text, r"job=([A-Za-z0-9_.-]+)")
 
     status, _headers, body = _call(
@@ -1808,7 +1827,7 @@ def test_hosted_worker_proof_submission_requires_backend_auth_and_redacted_evide
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
-    control = _match(text, r"control=([A-Za-z0-9_.-]+)")
+    control = _control_for_action(text, "start")
     job_token = _match(text, r"job=([A-Za-z0-9_.-]+)")
 
     status, _headers, body = _call(
@@ -2168,7 +2187,7 @@ def test_hosted_job_api_rejects_expired_control_token(monkeypatch) -> None:
     job_id = _match(body.decode("utf-8"), r"hosted-[A-Za-z0-9_-]+")
     control = create_hosted_state_token(
         STATE_SECRET,
-        return_path=f"/api/hosted/jobs/{job_id}",
+        return_path=f"/api/hosted/jobs/{job_id}/actions/start",
         now=1_700_000_000,
         nonce="nonce-for-control-token",
     )
@@ -2215,8 +2234,53 @@ def test_hosted_job_api_rejects_control_token_for_different_job() -> None:
     job_id = _match(body.decode("utf-8"), r"hosted-[A-Za-z0-9_-]+")
     control = create_hosted_state_token(
         STATE_SECRET,
-        return_path="/api/hosted/jobs/hosted-other",
+        return_path="/api/hosted/jobs/hosted-other/actions/start",
         nonce="nonce-for-control-token",
+    )
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/start",
+        method="POST",
+        query_string=f"control={control}",
+        settings=settings,
+    )
+
+    assert status == "403 Forbidden"
+    assert json.loads(body.decode("utf-8")) == {"error": "invalid_control"}
+    assert settings.hosted_jobs[job_id].status == "waiting_for_worker"
+
+
+def test_hosted_job_api_rejects_control_token_for_different_action() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    settings = _settings_with_github(opener)
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=f"installation_id=42&repo=example/one&state={state}",
+        settings=settings,
+    )
+    assert status == "200 OK"
+    job_id = _match(body.decode("utf-8"), r"hosted-[A-Za-z0-9_-]+")
+    control = create_hosted_state_token(
+        STATE_SECRET,
+        return_path=f"/api/hosted/jobs/{job_id}/actions/rollback",
+        nonce="nonce-for-rollback-control-token",
     )
 
     status, _headers, body = _call(
@@ -2245,3 +2309,10 @@ def _match(text: str, pattern: str) -> str:
     match = re.search(pattern, text)
     assert match is not None
     return match.group(1) if match.groups() else match.group(0)
+
+
+def _control_for_action(text: str, action: str) -> str:
+    return _match(
+        text,
+        rf"/api/hosted/jobs/[^\"<>]+/actions/{action}\?control=([A-Za-z0-9_.-]+)",
+    )

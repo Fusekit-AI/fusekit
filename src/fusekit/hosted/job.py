@@ -602,7 +602,7 @@ def apply_hosted_worker_proof(
 def render_hosted_control_room(
     job: HostedLaunchJob,
     *,
-    control_token: str = "",
+    control_tokens: dict[str, str] | None = None,
     job_token: str = "",
     action_receipt: dict[str, object] | None = None,
     dispatch_receipt: dict[str, object] | None = None,
@@ -617,7 +617,7 @@ def render_hosted_control_room(
         payload_dict["worker_dispatch"] = dispatch_receipt
     payload = html.escape(json.dumps(payload_dict, sort_keys=True))
     rows = "\n".join(_step_card(step) for step in job.steps)
-    controls = _control_forms(job, control_token=control_token, job_token=job_token)
+    controls = _control_forms(job, control_tokens=control_tokens or {}, job_token=job_token)
     action_outcome = _action_receipt_section(action_receipt, dispatch_receipt)
     proof_link = _proof_link(job, job_token=job_token)
     worker_request_link = _worker_request_link(job, job_token=job_token)
@@ -1214,16 +1214,16 @@ def _action_receipt_section(
 def _control_forms(
     job: HostedLaunchJob,
     *,
-    control_token: str,
+    control_tokens: dict[str, str],
     job_token: str,
 ) -> str:
-    if not control_token:
+    if not control_tokens:
         return """
         <article class="step" aria-label="Protected controls unavailable">
           <h3>Protected controls unavailable</h3>
           <p>
             Start, stop, rollback, and detonation controls require a short-lived
-            route-bound control token. FuseKit renders them disabled instead of
+            action-bound control token. FuseKit renders them disabled instead of
             pretending an unsafe or expired control can run.
           </p>
           <button type="button" disabled aria-disabled="true">Start worker</button>
@@ -1233,16 +1233,49 @@ def _control_forms(
         </article>
 """
     job_id = html.escape(job.job_id, quote=True)
-    token = html.escape(control_token, quote=True)
     job_param = (
         "&amp;" + urllib.parse.urlencode({"job": job_token})
         if job_token
         else ""
     )
-    start_action = f"/api/hosted/jobs/{job_id}/actions/start?control={token}{job_param}"
-    stop_action = f"/api/hosted/jobs/{job_id}/actions/stop?control={token}{job_param}"
-    rollback_action = f"/api/hosted/jobs/{job_id}/actions/rollback?control={token}{job_param}"
-    detonate_action = f"/api/hosted/jobs/{job_id}/actions/detonate?control={token}{job_param}"
+    start_action = _protected_action_url(
+        job_id=job_id,
+        action="start",
+        control_tokens=control_tokens,
+        job_param=job_param,
+    )
+    stop_action = _protected_action_url(
+        job_id=job_id,
+        action="stop",
+        control_tokens=control_tokens,
+        job_param=job_param,
+    )
+    rollback_action = _protected_action_url(
+        job_id=job_id,
+        action="rollback",
+        control_tokens=control_tokens,
+        job_param=job_param,
+    )
+    detonate_action = _protected_action_url(
+        job_id=job_id,
+        action="detonate",
+        control_tokens=control_tokens,
+        job_param=job_param,
+    )
+    if not start_action or not stop_action or not rollback_action or not detonate_action:
+        return """
+        <article class="step" aria-label="Protected controls unavailable">
+          <h3>Protected controls unavailable</h3>
+          <p>
+            FuseKit could not mint every action-bound control token, so protected
+            controls are disabled instead of sharing one approval across actions.
+          </p>
+          <button type="button" disabled aria-disabled="true">Start worker</button>
+          <button type="button" disabled aria-disabled="true">Stop launch</button>
+          <button type="button" disabled aria-disabled="true">Request rollback</button>
+          <button type="button" disabled aria-disabled="true">Request detonation</button>
+        </article>
+"""
     if job.status == "waiting_for_worker":
         return f"""
         <form method="post" action="{start_action}">
@@ -1262,6 +1295,20 @@ def _control_forms(
           <button type="submit">Request detonation</button>
         </form>
 """
+
+
+def _protected_action_url(
+    *,
+    job_id: str,
+    action: str,
+    control_tokens: dict[str, str],
+    job_param: str,
+) -> str:
+    control_token = control_tokens.get(action)
+    if not control_token:
+        return ""
+    token = html.escape(control_token, quote=True)
+    return f"/api/hosted/jobs/{job_id}/actions/{action}?control={token}{job_param}"
 
 
 def _proof_link(job: HostedLaunchJob, *, job_token: str) -> str:

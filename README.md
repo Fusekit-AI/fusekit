@@ -209,8 +209,9 @@ instead of hidden in logs. It exposes a redacted job status API and
 protected start, pre-worker stop, rollback, and detonation request controls.
 Those controls carry a signed redacted job token so a stateless hosted function
 can recover the public control-room state without a database or raw provider
-token, plus a short-lived route-bound control token for protected button clicks.
-If that control token is missing or expired, the control room shows disabled
+token, plus distinct short-lived action-bound control tokens for protected
+start, stop, rollback, and detonation clicks.
+If those control tokens are missing or expired, the control room shows disabled
 start/stop/rollback/detonation controls with a plain-language explanation
 instead of hiding the controls or rendering unsafe forms.
 Browser form actions return the updated control room instead of raw JSON, while
