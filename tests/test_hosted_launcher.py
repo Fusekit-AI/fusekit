@@ -121,6 +121,8 @@ def test_hosted_launcher_html_has_no_terminal_or_download_happy_path() -> None:
     assert "pip install" not in visible_text
     assert "copy/paste" not in visible_text.lower()
     assert "Preview permissions</button>" not in html
+    assert '<button type="button">Start hosted launch</button>' not in html
+    assert '<span class="button disabled" aria-disabled="true">Start hosted launch</span>' in html
 
 
 def test_hosted_launcher_can_link_to_control_room_without_commands() -> None:
@@ -133,8 +135,12 @@ def test_hosted_launcher_can_link_to_control_room_without_commands() -> None:
         launch_url="/github/control-room?installation_id=42&repo=example%2Fany-app",
     )
     visible_text = re.sub(r"<script.*?</script>", "", html, flags=re.DOTALL)
+    disabled_start = (
+        '<span class="button disabled" aria-disabled="true">Start hosted launch</span>'
+    )
 
     assert 'href="/github/control-room?installation_id=42&amp;repo=example%2Fany-app"' in html
+    assert disabled_start not in html
     assert "Start hosted launch" in html
     assert "source .venv" not in visible_text
     assert "fusekit launch" not in visible_text

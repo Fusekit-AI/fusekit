@@ -176,7 +176,7 @@ def render_hosted_launcher(plan: HostedLaunchPlan, *, launch_url: str = "") -> s
     start_control = (
         f'<a class="button" href="{html.escape(launch_url, quote=True)}">Start hosted launch</a>'
         if launch_url
-        else '<button type="button">Start hosted launch</button>'
+        else '<span class="button disabled" aria-disabled="true">Start hosted launch</span>'
     )
     secret_boundary = html.escape(trust.secret_boundary)
     no_terminal = html.escape(NO_TERMINAL_PROMISE)
@@ -264,6 +264,12 @@ def render_hosted_launcher(plan: HostedLaunchPlan, *, launch_url: str = "") -> s
     .button.secondary {{
       background: white;
       color: var(--blue);
+    }}
+    .button.disabled {{
+      background: #d8e1ea;
+      border-color: #aebcca;
+      color: #52616f;
+      cursor: not-allowed;
     }}
     .grid {{
       display: grid;
