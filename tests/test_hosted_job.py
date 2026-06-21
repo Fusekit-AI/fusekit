@@ -84,7 +84,11 @@ def test_hosted_proof_receipt_is_redacted_and_not_prematurely_complete() -> None
     assert "Completion is not yet proven" in receipt["completion_statement"]
     assert ".fusekit/run_record.json" in receipt["required_artifacts"]
     assert ".fusekit/workspace_detonation.json" in receipt["required_artifacts"]
+    assert any("MFA" in gate for gate in receipt["provider_gates"])
     assert "Proof receipt." in html
+    assert "Provider gates" in html
+    assert "These gates stay provider-owned and human-approved" in html
+    assert "MFA" in html
     assert "Reversible setup" in html
     assert "Back to control room" in html
     assert "ghs_" not in serialized
@@ -305,6 +309,8 @@ def test_hosted_control_room_embeds_redacted_job_json() -> None:
     assert "Worker contract" in html
     assert "Redacted proof" in html
     assert "Reversible setup" in html
+    assert "Provider gates" in html
+    assert "human-owned" in html
     assert ".fusekit/run_record.json" in html
     assert ".fusekit/workspace_detonation.json" in html
     assert "Latest protected action: start" in html
@@ -316,6 +322,7 @@ def test_hosted_control_room_embeds_redacted_job_json() -> None:
     assert payload["schema_version"] == "fusekit.hosted-job.v1"
     assert payload["latest_action_receipt"]["action"] == "start"
     assert payload["worker_dispatch"]["reason"] == "worker_dispatch_url_not_configured"
+    assert any("MFA" in gate for gate in payload["worker_contract"]["gates"])
     assert payload["worker_contract"]["schema_version"] == "fusekit.hosted-worker-contract.v1"
     assert "ghs_" not in json.dumps(payload)
 

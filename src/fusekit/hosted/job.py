@@ -671,6 +671,7 @@ def hosted_proof_receipt(job: HostedLaunchJob) -> dict[str, object]:
         "redacted_proof": list(job.proof),
         "rollback": list(job.rollback),
         "detonation": list(job.detonation),
+        "provider_gates": list(job.worker_contract.gates),
         "required_artifacts": list(job.worker_contract.required_artifacts),
         "steps": [step.to_dict() for step in job.steps],
     }
@@ -864,6 +865,7 @@ def render_hosted_proof_receipt(job: HostedLaunchJob, *, job_token: str = "") ->
     rollback = _list(job.rollback)
     detonation = _list(job.detonation)
     artifacts = _list(job.worker_contract.required_artifacts)
+    gates = _list(job.worker_contract.gates)
     back = _control_room_link(job, job_token=job_token)
     return f"""<!doctype html>
 <html lang="en">
@@ -960,6 +962,15 @@ def render_hosted_proof_receipt(job: HostedLaunchJob, *, job_token: str = "") ->
     <section aria-label="Required artifacts">
       <h2>Required artifacts</h2>
       {artifacts}
+    </section>
+    <section aria-label="Provider gates">
+      <h2>Provider gates</h2>
+      <p>
+        These gates stay provider-owned and human-approved. FuseKit must pause
+        instead of bypassing MFA, CAPTCHA, billing, fraud, consent, or domain
+        ownership checks.
+      </p>
+      {gates}
     </section>
     <section aria-label="Reversible setup">
       <h2>Reversible setup</h2>
@@ -1134,6 +1145,7 @@ def _list(items: tuple[str, ...]) -> str:
 
 def _worker_contract_section(contract: HostedWorkerContract) -> str:
     providers = _list(contract.providers or ("No providers detected yet",))
+    gates = _list(contract.gates)
     artifacts = _list(contract.required_artifacts)
     guarantees = _list(contract.guarantees)
     return f"""
@@ -1144,6 +1156,12 @@ def _worker_contract_section(contract: HostedWorkerContract) -> str:
         </p>
         <h3>Providers</h3>
         {providers}
+        <h3>Provider gates</h3>
+        <p>
+          These checkpoints remain human-owned; FuseKit must not bypass MFA,
+          CAPTCHA, billing, fraud, consent, or domain ownership verification.
+        </p>
+        {gates}
         <h3>Required artifacts</h3>
         {artifacts}
         <h3>Guarantees</h3>
