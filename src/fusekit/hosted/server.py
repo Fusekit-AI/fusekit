@@ -144,6 +144,7 @@ class HostedSettings:
         """Return public hosted deployment metadata for operator verification."""
 
         public_origin = _public_origin_label(self.public_origin)
+        dispatch_url = _public_url_label(self.worker_dispatch_url)
         return {
             "schema_version": HOSTED_DEPLOYMENT_SCHEMA_VERSION,
             "canonical_origin": HOSTED_CANONICAL_ORIGIN,
@@ -176,8 +177,19 @@ class HostedSettings:
             "optional_runtime_env": list(OPTIONAL_HOSTED_ENV),
             "worker_dispatch": {
                 "env_var": "FUSEKIT_HOSTED_WORKER_DISPATCH_URL",
+                "receiver_command": "fusekit-hosted-worker-dispatch",
                 "schema_version": HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
                 "authentication": "HMAC-SHA256 with FUSEKIT_HOSTED_WORKER_SECRET",
+                "checks": {
+                    "dispatch": dispatch_url,
+                    "health": f"{dispatch_url.rstrip('/')}/healthz",
+                    "readiness": f"{dispatch_url.rstrip('/')}/readiness",
+                },
+                "required_runtime_env": [
+                    "FUSEKIT_HOSTED_WORKER_SECRET",
+                    "FUSEKIT_HOSTED_WORKER_ID",
+                ],
+                "optional_runtime_env": ["FUSEKIT_HOSTED_WORKER_WORKSPACE"],
                 "secret_boundary": (
                     "Dispatch sends a signed public job token and never sends the worker secret, "
                     "GitHub installation token, provider credentials, or vault material."

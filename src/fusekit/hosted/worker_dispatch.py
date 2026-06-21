@@ -19,6 +19,7 @@ from fusekit.errors import FuseKitError
 
 HOSTED_WORKER_DISPATCH_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch.v1"
 HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch-receipt.v1"
+HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch-readiness.v1"
 
 StartResponse = Callable[[str, list[tuple[str, str]]], object]
 
@@ -48,6 +49,36 @@ class HostedWorkerDispatchSettings:
             worker_id=os.environ.get("FUSEKIT_HOSTED_WORKER_ID", "hosted-worker-dispatch"),
             workspace=Path(workspace) if workspace else None,
         )
+
+    def readiness(self) -> dict[str, object]:
+        """Return public, redacted dispatch receiver readiness metadata."""
+
+        configured = {
+            "FUSEKIT_HOSTED_WORKER_SECRET": bool(self.worker_secret),
+            "FUSEKIT_HOSTED_WORKER_ID": bool(self.worker_id),
+            "FUSEKIT_HOSTED_WORKER_WORKSPACE": self.workspace is not None,
+        }
+        invalid = []
+        if self.worker_secret and len(self.worker_secret) < 16:
+            invalid.append("hosted_worker_secret_too_short")
+        if not self.worker_id:
+            invalid.append("hosted_worker_id_required")
+        return {
+            "schema_version": HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION,
+            "ready": bool(self.worker_secret) and bool(self.worker_id) and not invalid,
+            "configured": configured,
+            "invalid": invalid,
+            "optional_runtime_env": ["FUSEKIT_HOSTED_WORKER_WORKSPACE"],
+            "required_runtime_env": [
+                "FUSEKIT_HOSTED_WORKER_SECRET",
+                "FUSEKIT_HOSTED_WORKER_ID",
+            ],
+            "secret_boundary": (
+                "Dispatch readiness reports only configuration presence and shape errors. "
+                "It never renders worker secrets, signed job tokens, HMAC signatures, "
+                "provider credentials, GitHub installation tokens, or vault material."
+            ),
+        }
 
 
 @dataclass(frozen=True)
@@ -115,6 +146,8 @@ def hosted_worker_dispatch_application(
         path = str(environ.get("PATH_INFO", "/") or "/")
         if path == "/healthz" and method == "GET":
             return _response(start_response, 200, {"ok": True})
+        if path == "/readiness" and method == "GET":
+            return _response(start_response, 200, settings.readiness())
         if path != "/dispatch":
             return _response(start_response, 404, {"error": "not_found"})
         if method != "POST":

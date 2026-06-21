@@ -316,6 +316,16 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     assert "FUSEKIT_HOSTED_WORKER_SECRET" in payload["required_runtime_env"]
     assert payload["optional_runtime_env"] == ["FUSEKIT_HOSTED_WORKER_DISPATCH_URL"]
     assert payload["worker_dispatch"]["schema_version"] == "fusekit.hosted-worker-dispatch.v1"
+    assert payload["worker_dispatch"]["receiver_command"] == "fusekit-hosted-worker-dispatch"
+    assert payload["worker_dispatch"]["checks"] == {
+        "dispatch": "https://worker.invalid",
+        "health": "https://worker.invalid/healthz",
+        "readiness": "https://worker.invalid/readiness",
+    }
+    assert payload["worker_dispatch"]["required_runtime_env"] == [
+        "FUSEKIT_HOSTED_WORKER_SECRET",
+        "FUSEKIT_HOSTED_WORKER_ID",
+    ]
     assert "PRIVATE KEY" not in serialized
     assert STATE_SECRET not in serialized
     assert WORKER_SECRET not in serialized

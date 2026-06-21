@@ -9,6 +9,7 @@ import pytest
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.worker_dispatch import (
+    HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION,
     HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION,
     HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
     HostedWorkerDispatchSettings,
@@ -46,6 +47,41 @@ def test_verify_hosted_worker_dispatch_accepts_signed_envelope_without_leaks() -
     assert dispatch.origin == "https://fusekit.snowmanai.org"
     assert dispatch.job_id == "hosted-test"
     assert dispatch.job_token == "signed-public-job-token"
+
+
+def test_hosted_worker_dispatch_readiness_reports_presence_without_secrets() -> None:
+    settings = HostedWorkerDispatchSettings(
+        worker_secret=WORKER_SECRET,
+        worker_id="worker-01",
+    )
+    readiness = settings.readiness()
+    serialized = json.dumps(readiness)
+
+    assert readiness["schema_version"] == HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION
+    assert readiness["ready"] is True
+    assert readiness["configured"] == {
+        "FUSEKIT_HOSTED_WORKER_SECRET": True,
+        "FUSEKIT_HOSTED_WORKER_ID": True,
+        "FUSEKIT_HOSTED_WORKER_WORKSPACE": False,
+    }
+    assert readiness["required_runtime_env"] == [
+        "FUSEKIT_HOSTED_WORKER_SECRET",
+        "FUSEKIT_HOSTED_WORKER_ID",
+    ]
+    assert WORKER_SECRET not in serialized
+    assert "signed-public-job-token" not in serialized
+
+
+def test_hosted_worker_dispatch_readiness_reports_shape_errors_only() -> None:
+    readiness = HostedWorkerDispatchSettings(
+        worker_secret="short",
+        worker_id="worker-01",
+    ).readiness()
+    serialized = json.dumps(readiness)
+
+    assert readiness["ready"] is False
+    assert readiness["invalid"] == ["hosted_worker_secret_too_short"]
+    assert '"short"' not in serialized
 
 
 def test_verify_hosted_worker_dispatch_rejects_tampering() -> None:
@@ -143,6 +179,33 @@ def test_hosted_worker_dispatch_wsgi_accepts_signed_post() -> None:
     assert payload["accepted"] is True
     assert payload["action"] == "start"
     assert len(spawner.calls) == 1
+
+
+def test_hosted_worker_dispatch_wsgi_serves_readiness_without_secret_values() -> None:
+    app = hosted_worker_dispatch_application(
+        HostedWorkerDispatchSettings(
+            worker_secret=WORKER_SECRET,
+            worker_id="worker-01",
+        )
+    )
+    status_headers: dict[str, object] = {}
+
+    response = b"".join(
+        app(
+            {
+                "REQUEST_METHOD": "GET",
+                "PATH_INFO": "/readiness",
+                "wsgi.input": io.BytesIO(b""),
+            },
+            lambda status, headers: status_headers.update(status=status, headers=headers),
+        )
+    )
+    payload = json.loads(response.decode("utf-8"))
+
+    assert status_headers["status"] == "200 OK"
+    assert payload["schema_version"] == HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION
+    assert payload["ready"] is True
+    assert WORKER_SECRET not in response.decode("utf-8")
 
 
 def _dispatch_body(*, action: str) -> bytes:

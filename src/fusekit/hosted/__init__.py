@@ -61,6 +61,7 @@ from fusekit.hosted.worker_client import (
     run_hosted_worker_once,
 )
 from fusekit.hosted.worker_dispatch import (
+    HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION,
     HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION,
     HostedWorkerDispatch,
     HostedWorkerDispatchSettings,
@@ -86,6 +87,7 @@ __all__ = [
     "HostedWorkerDispatchSettings",
     "InstallationToken",
     "HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION",
+    "HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION",
     "HOSTED_WORKER_EXECUTION_SCHEMA_VERSION",
     "HOSTED_WORKER_INVOCATION_SCHEMA_VERSION",
     "HOSTED_WORKER_MAINTENANCE_SCHEMA_VERSION",
