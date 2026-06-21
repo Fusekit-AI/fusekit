@@ -186,6 +186,10 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
     assert "Run Record" in html
     assert "Detonation receipt" in html
     assert "Live acceptance report" in html
+    assert "Reversible setup" in html
+    assert "Show rollback metadata before risky changes." in html
+    assert "Preserve rollback actions for provider resources FuseKit creates." in html
+    assert "Offer stop, revoke access, rollback, and download redacted proof actions." in html
     assert "Install the FuseKit GitHub App on one selected repository." in html
     assert "Click Start hosted launch and pass only provider-owned human gates." in html
     assert "Receive the live URL, redacted proof receipt" in html

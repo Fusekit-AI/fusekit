@@ -430,6 +430,9 @@ def render_hosted_home(settings: HostedSettings) -> str:
     completion_requirements = "\n".join(
         f"<li>{html.escape(item)}</li>" for item in HOSTED_PROOF_REQUIREMENTS
     )
+    reversal_steps = "\n".join(
+        f"<li>{html.escape(item)}</li>" for item in HOSTED_REVERSAL_PATH
+    )
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -564,6 +567,14 @@ def render_hosted_home(settings: HostedSettings) -> str:
         redacted proof for every required live artifact.
       </p>
       <ul>{completion_requirements}</ul>
+    </section>
+    <section aria-label="Reversible setup">
+      <h2>Reversible setup</h2>
+      <p>
+        FuseKit keeps recovery controls visible: stop before worker start,
+        revoke GitHub access, request rollback, and require detonation proof.
+      </p>
+      <ul>{reversal_steps}</ul>
     </section>
     <section aria-label="Open core">
       <h2>Open core</h2>

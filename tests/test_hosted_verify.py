@@ -458,6 +458,7 @@ def test_verify_hosted_deployment_requires_trustworthy_homepage() -> None:
     assert "hosted_home_completion_requirements_missing" in checks["hosted.home"][
         "failures"
     ]
+    assert "hosted_home_reversible_setup_missing" in checks["hosted.home"]["failures"]
     assert "github_pat_" not in serialized
 
 
@@ -527,6 +528,9 @@ def _home_html() -> str:
         <section>Live URL verification</section>
         <section>Run Record</section>
         <section>Detonation receipt</section>
+        <section>Reversible setup</section>
+        <section>Show rollback metadata before risky changes.</section>
+        <section>Offer stop, revoke access, rollback, and download redacted proof actions.</section>
         <section>What you may need to approve</section>
         <section>Hosted deployment contract</section>
       </body>

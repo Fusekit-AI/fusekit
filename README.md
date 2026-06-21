@@ -166,6 +166,9 @@ The homepage also shows the completion proof checklist up front: live URL
 verification, provider verifiers, DNS propagation, redacted receipt/audit proof,
 Run Record, detonation receipt, and live acceptance report must exist before a
 hosted launch can claim completion.
+It also shows the reversible setup path before install: rollback metadata before
+risky changes, rollback actions for created provider resources, and stop,
+revoke-access, rollback, and redacted-proof controls.
 Unavailable hosted start states render as disabled non-links, while preview
 controls jump to the relevant trust section instead of pretending to run.
 The provider-gate checklist is rendered as human-owned checkpoints so MFA,
@@ -273,10 +276,10 @@ hosted homepage, `/healthz`, `/api/hosted/readiness`, and
 `/readiness` too. The verifier reports Cloudflare/Vercel HTTP failures,
 readiness mismatches, public DNS failures, homepage trust drift, hosted
 runtime/open-core/DNS drift, deployment trust-story drift, homepage completion
-proof checklist drift, one-click launch contract drift, capability-vault
-boundary drift, pre-install GitHub intake trust drift, and operator-setup
-contract drift as redacted JSON instead of claiming launch readiness. Every
-public HTML/JSON payload it fetches is also
+proof checklist drift, homepage reversible-setup drift, one-click launch
+contract drift, capability-vault boundary drift, pre-install GitHub intake
+trust drift, and operator-setup contract drift as redacted JSON instead of
+claiming launch readiness. Every public HTML/JSON payload it fetches is also
 checked with FuseKit's credential-text detector, and any failure is reported
 only as a redacted failure code. It
 also recognizes Cloudflare Error 1000 (`DNS points to prohibited IP`) and
