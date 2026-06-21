@@ -27,6 +27,7 @@ from fusekit.hosted.worker import (
     build_hosted_worker_workspace_proof_payload,
     prepare_hosted_worker_execution,
 )
+from fusekit.runner.remote_survivors import REMOTE_REQUIRED_SURVIVOR_FILES
 from fusekit.scanner import scan_repo
 
 
@@ -380,6 +381,36 @@ def test_hosted_worker_proof_payload_rejects_remote_artifact_file_placeholder(
     assert bundle.payload["evidence"]["retrieved_remote_artifacts"] is False
 
 
+def test_hosted_worker_proof_payload_rejects_incomplete_remote_survivor_bundle(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True)
+    remote_fusekit = invocation.artifact_paths["remote_artifacts"] / ".fusekit"
+    (remote_fusekit / "setup_receipt.json").unlink()
+
+    bundle = build_hosted_worker_proof_payload(invocation)
+
+    assert bundle.payload["evidence"]["retrieved_remote_artifacts"] is False
+
+
+def test_hosted_worker_proof_payload_rejects_unexpected_remote_survivor(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True)
+    remote_fusekit = invocation.artifact_paths["remote_artifacts"] / ".fusekit"
+    (remote_fusekit / ".env").write_text("SECRET=value\n", encoding="utf-8")
+
+    bundle = build_hosted_worker_proof_payload(invocation)
+
+    assert bundle.payload["evidence"]["retrieved_remote_artifacts"] is False
+
+
 def test_hosted_worker_proof_payload_marks_complete_only_from_live_artifacts(
     tmp_path: Path,
 ) -> None:
@@ -665,14 +696,25 @@ def _write_acceptance_report(
         report["checks"].append(
             {"id": "rollback.post_verification", "status": "ok", "detail": "redacted"}
         )
-    remote_fusekit = invocation.artifact_paths["remote_artifacts"] / ".fusekit"
-    remote_fusekit.mkdir(parents=True, exist_ok=True)
-    (remote_fusekit / "run_record.json").write_text('{"ok":true}\n', encoding="utf-8")
+    _write_remote_survivors(invocation.artifact_paths["remote_artifacts"])
     output = invocation.artifact_paths["acceptance_output"]
     output.mkdir(parents=True, exist_ok=True)
     (output / "report.json").write_text(json.dumps(report), encoding="utf-8")
     acceptance_label = invocation.execution.source_dir / ".fusekit/acceptance_report.json"
     acceptance_label.write_text(json.dumps(report), encoding="utf-8")
+
+
+def _write_remote_survivors(remote_artifacts: Path) -> None:
+    remote_fusekit = remote_artifacts / ".fusekit"
+    remote_fusekit.mkdir(parents=True, exist_ok=True)
+    for filename in REMOTE_REQUIRED_SURVIVOR_FILES:
+        path = remote_fusekit / filename
+        if filename == "gate_events.jsonl":
+            path.write_text("", encoding="utf-8")
+        elif filename.endswith(".jsonl"):
+            path.write_text('{"event":"redacted"}\n', encoding="utf-8")
+        else:
+            path.write_text('{"ok":true}\n', encoding="utf-8")
 
 
 def _write_demo_app(path: Path, *, dependency: str) -> None:

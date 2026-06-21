@@ -22,6 +22,7 @@ from fusekit.hosted.job import (
 )
 from fusekit.hosted.launcher import build_hosted_launch_plan
 from fusekit.hosted.worker_client import run_hosted_worker_once
+from fusekit.runner.remote_survivors import REMOTE_REQUIRED_SURVIVOR_FILES
 from fusekit.scanner import scan_repo
 
 WORKER_SECRET = "hosted-worker-secret"
@@ -375,7 +376,14 @@ def _write_acceptance_report(source: Path, *, recording_ready: bool) -> None:
     }
     remote = source / ".fusekit/remote-artifacts/.fusekit"
     remote.mkdir(parents=True, exist_ok=True)
-    (remote / "run_record.json").write_text('{"ok":true}\n', encoding="utf-8")
+    for filename in REMOTE_REQUIRED_SURVIVOR_FILES:
+        path = remote / filename
+        if filename == "gate_events.jsonl":
+            path.write_text("", encoding="utf-8")
+        elif filename.endswith(".jsonl"):
+            path.write_text('{"event":"redacted"}\n', encoding="utf-8")
+        else:
+            path.write_text('{"ok":true}\n', encoding="utf-8")
     output = source / ".fusekit/acceptance"
     output.mkdir(parents=True, exist_ok=True)
     (output / "report.json").write_text(json.dumps(report), encoding="utf-8")

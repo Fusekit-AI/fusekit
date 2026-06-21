@@ -18,6 +18,10 @@ from fusekit.hosted.job import (
     build_hosted_worker_contract,
 )
 from fusekit.hosted.launcher import build_hosted_launch_plan
+from fusekit.runner.remote_survivors import (
+    REMOTE_ALLOWED_SURVIVOR_FILE_SET,
+    REMOTE_REQUIRED_SURVIVOR_FILES,
+)
 from fusekit.scanner import scan_repo
 from fusekit.source import (
     SourceFetchResult,
@@ -544,14 +548,24 @@ def _required_artifact_present(label: str, path: Path) -> bool:
 def _remote_artifacts_bundle_present(path: Path) -> bool:
     if path.is_symlink() or not path.is_dir():
         return False
+    remote_fusekit_dir = path if path.name == ".fusekit" else path / ".fusekit"
+    if remote_fusekit_dir.is_symlink() or not remote_fusekit_dir.is_dir():
+        return False
     try:
-        rows = path.rglob("*")
-        return any(
-            item.is_file() and not item.is_symlink() and item.stat().st_size > 0
-            for item in rows
-        )
+        children = list(remote_fusekit_dir.iterdir())
     except OSError:
         return False
+    unexpected = [
+        child
+        for child in children
+        if child.name not in REMOTE_ALLOWED_SURVIVOR_FILE_SET
+    ]
+    if unexpected:
+        return False
+    return all(
+        _required_artifact_present(filename, remote_fusekit_dir / filename)
+        for filename in REMOTE_REQUIRED_SURVIVOR_FILES
+    )
 
 
 def _check_statuses(acceptance: dict[str, Any]) -> dict[str, str]:
