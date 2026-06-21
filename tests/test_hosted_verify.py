@@ -362,6 +362,7 @@ def test_verify_hosted_deployment_requires_github_intake_contract() -> None:
     intake = _github_intake_contract()
     intake["route"] = "oauth-app"
     intake["launch_path"] = ["Download a CLI."]
+    intake["permissions"] = ["Install on every repository."]
     open_core = intake["open_core"]
     assert isinstance(open_core, dict)
     open_core["reviewable_entrypoint"] = "server.py"
@@ -386,6 +387,9 @@ def test_verify_hosted_deployment_requires_github_intake_contract() -> None:
     assert checks["hosted.github_intake"]["status"] == "failed"
     assert "github_intake_route_mismatch" in checks["hosted.github_intake"]["failures"]
     assert "github_intake_launch_path_mismatch" in checks["hosted.github_intake"][
+        "failures"
+    ]
+    assert "github_intake_permissions_mismatch" in checks["hosted.github_intake"][
         "failures"
     ]
     assert "github_intake_open_core_entrypoint_mismatch" in checks["hosted.github_intake"][
@@ -689,6 +693,14 @@ def _github_intake_contract() -> dict[str, object]:
             "Show rollback metadata before risky changes.",
             "Preserve rollback actions for provider resources FuseKit creates.",
             "Offer stop, revoke access, rollback, and download redacted proof actions.",
+        ],
+        "permissions": [
+            "Install the FuseKit GitHub App on one selected repository.",
+            "Grant contents:read access for source scan and setup planning.",
+            (
+                "Approve any GitHub write capability separately through the visible plan "
+                "before FuseKit mutates repository settings."
+            ),
         ],
         "open_core": {
             "source_repository": "https://github.com/xpxpxp-coder/fusekit",

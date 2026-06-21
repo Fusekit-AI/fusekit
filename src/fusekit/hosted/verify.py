@@ -12,6 +12,7 @@ import urllib.request
 from typing import Any, Protocol
 
 from fusekit.errors import FuseKitError
+from fusekit.hosted.github_app import HOSTED_GITHUB_INTAKE_PERMISSIONS
 from fusekit.hosted.launcher import (
     HOSTED_LAUNCH_PATH,
     HOSTED_PROOF_REQUIREMENTS,
@@ -469,6 +470,8 @@ def _github_intake_contract_failures(payload: dict[str, Any]) -> list[str]:
         failures.append("github_intake_proof_mismatch")
     if payload.get("reversal") != list(HOSTED_REVERSAL_PATH):
         failures.append("github_intake_reversal_mismatch")
+    if payload.get("permissions") != list(HOSTED_GITHUB_INTAKE_PERMISSIONS):
+        failures.append("github_intake_permissions_mismatch")
     open_core = payload.get("open_core")
     if not isinstance(open_core, dict):
         failures.append("github_intake_open_core_missing")

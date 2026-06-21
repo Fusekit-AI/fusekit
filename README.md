@@ -141,8 +141,11 @@ embeds the same trust story, no-terminal launch path, required proof list,
 reversal path, and open-core metadata before the install click. It
 publishes the capability vault boundary as a user-facing and machine-checkable
 promise: generated apps may request capabilities, only FuseKit may use secrets
-internally, and raw secrets must never leave the vault runtime.
-also includes the GitHub App install URL, app JWT, installation
+internally, and raw secrets must never leave the vault runtime. It also makes
+the GitHub permission boundary explicit: pre-install intake grants
+`contents:read` on one selected repository, while any GitHub write capability
+requires a separate visible approval/provider route before mutation. It also
+includes the GitHub App install URL, app JWT, installation
 token exchange, signed callback state, selected-repository listing page, and
 server-side source fetch/scan into a visible hosted launch plan. It also has a
 public-safe hosted job/control-room shell that tracks proof, rollback, and

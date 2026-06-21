@@ -81,7 +81,13 @@ def test_hosted_launch_plan_is_universal_github_intake() -> None:
         "Click Start hosted launch and pass only provider-owned human gates.",
         "Receive the live URL, redacted proof receipt, rollback metadata, and detonation receipt.",
     ]
-    assert any("GitHub App installation scoped" in item for item in raw["trust"]["permissions"])
+    assert any(
+        "one selected repository with contents:read" in item
+        for item in raw["trust"]["permissions"]
+    )
+    assert any(
+        "separate visible approval" in item for item in raw["trust"]["permissions"]
+    )
     assert "Raw secrets are never rendered" in raw["trust"]["secret_boundary"]
 
 
@@ -104,6 +110,8 @@ def test_hosted_launcher_html_has_no_terminal_or_download_happy_path() -> None:
     assert "Review the visible plan and approved action ids before worker start." in html
     assert "Receive the live URL, redacted proof receipt" in html
     assert "Narrow permissions" in html
+    assert "one selected repository with contents:read" in html
+    assert "separate visible approval" in html
     assert "Visible plan" in html
     assert "Redacted proof" in html
     assert "Reversible setup" in html

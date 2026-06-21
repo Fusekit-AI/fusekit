@@ -195,7 +195,14 @@ def test_hosted_github_intake_contract_has_no_secret_material() -> None:
         "license": "MIT",
         "reviewable_entrypoint": "app.py",
     }
-    assert "Install the FuseKit GitHub App on one selected repository." in contract["permissions"]
+    assert contract["permissions"] == [
+        "Install the FuseKit GitHub App on one selected repository.",
+        "Grant contents:read access for source scan and setup planning.",
+        (
+            "Approve any GitHub write capability separately through the visible plan "
+            "before FuseKit mutates repository settings."
+        ),
+    ]
     assert "GitHub sign-in" in contract["human_gates"]
     assert "PRIVATE KEY" not in serialized
     assert "ghs_" not in serialized

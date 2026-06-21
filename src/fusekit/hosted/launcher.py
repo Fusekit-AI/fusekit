@@ -426,8 +426,11 @@ def _user_gate_providers(actions: tuple[SetupAction, ...]) -> tuple[str, ...]:
 
 def _permission_summary(providers: tuple[str, ...]) -> tuple[str, ...]:
     items = [
-        "GitHub App installation scoped to the selected repository.",
-        "Read repository source and write only launch-required secrets/deploy keys.",
+        "GitHub App installation scoped to one selected repository with contents:read.",
+        (
+            "GitHub write changes, such as deploy keys or repository secrets, require "
+            "a separate visible approval/provider route before mutation."
+        ),
     ]
     if "vercel" in providers:
         items.append("Vercel project/env/deploy access for the selected app.")

@@ -26,6 +26,14 @@ from fusekit.hosted.launcher import (
 GITHUB_APP_JWT_ALGORITHM = "RS256"
 GITHUB_APP_JWT_MAX_TTL_SECONDS = 600
 GITHUB_APP_JWT_CLOCK_SKEW_SECONDS = 60
+HOSTED_GITHUB_INTAKE_PERMISSIONS = (
+    "Install the FuseKit GitHub App on one selected repository.",
+    "Grant contents:read access for source scan and setup planning.",
+    (
+        "Approve any GitHub write capability separately through the visible plan "
+        "before FuseKit mutates repository settings."
+    ),
+)
 
 
 class UrlOpener(Protocol):
@@ -224,11 +232,7 @@ def hosted_github_intake_contract(
             "license": license_name,
             "reviewable_entrypoint": reviewable_entrypoint,
         },
-        "permissions": [
-            "Install the FuseKit GitHub App on one selected repository.",
-            "Read repository source for scan and setup planning.",
-            "Write launch-required deploy keys and Actions/repository secrets only when approved.",
-        ],
+        "permissions": list(HOSTED_GITHUB_INTAKE_PERMISSIONS),
         "human_gates": [
             "GitHub sign-in",
             "MFA, passkey, CAPTCHA, SSO, or consent screens GitHub requires",
