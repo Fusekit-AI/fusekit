@@ -60,6 +60,14 @@ from fusekit.hosted.worker_client import (
     HostedWorkerRunResult,
     run_hosted_worker_once,
 )
+from fusekit.hosted.worker_dispatch import (
+    HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION,
+    HostedWorkerDispatch,
+    HostedWorkerDispatchSettings,
+    accept_hosted_worker_dispatch,
+    hosted_worker_dispatch_application,
+    verify_hosted_worker_dispatch,
+)
 
 __all__ = [
     "GitHubAppConfig",
@@ -74,7 +82,10 @@ __all__ = [
     "HostedWorkerMaintenanceInvocation",
     "HostedWorkerProofBundle",
     "HostedWorkerRunResult",
+    "HostedWorkerDispatch",
+    "HostedWorkerDispatchSettings",
     "InstallationToken",
+    "HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION",
     "HOSTED_WORKER_EXECUTION_SCHEMA_VERSION",
     "HOSTED_WORKER_INVOCATION_SCHEMA_VERSION",
     "HOSTED_WORKER_MAINTENANCE_SCHEMA_VERSION",
@@ -88,6 +99,7 @@ __all__ = [
     "build_hosted_worker_maintenance_invocation",
     "build_hosted_worker_proof_payload",
     "build_hosted_worker_workspace_proof_payload",
+    "accept_hosted_worker_dispatch",
     "claim_hosted_launch_job",
     "create_hosted_state_token",
     "create_hosted_job_token",
@@ -100,6 +112,7 @@ __all__ = [
     "hosted_worker_proof_receipt",
     "hosted_worker_request",
     "hosted_github_intake_contract",
+    "hosted_worker_dispatch_application",
     "list_installation_repositories",
     "render_hosted_control_room",
     "render_hosted_proof_receipt",
@@ -107,5 +120,6 @@ __all__ = [
     "prepare_hosted_worker_execution",
     "run_hosted_worker_once",
     "verify_hosted_job_token",
+    "verify_hosted_worker_dispatch",
     "verify_hosted_state_token",
 ]
