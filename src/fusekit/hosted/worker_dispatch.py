@@ -61,6 +61,7 @@ class HostedWorkerDispatchSettings:
     def readiness(self) -> dict[str, object]:
         """Return public, redacted dispatch receiver readiness metadata."""
 
+        idempotency = self.idempotency_contract()
         configured = {
             "FUSEKIT_HOSTED_WORKER_SECRET": bool(self.worker_secret),
             "FUSEKIT_HOSTED_WORKER_ID": bool(self.worker_id),
@@ -75,8 +76,15 @@ class HostedWorkerDispatchSettings:
         return {
             "schema_version": HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION,
             "ready": bool(self.worker_secret) and bool(self.worker_id) and not invalid,
+            "production_ready": (
+                bool(self.worker_secret)
+                and bool(self.worker_id)
+                and not invalid
+                and idempotency["durable"] is True
+            ),
             "configured": configured,
             "invalid": invalid,
+            "idempotency": idempotency,
             "optional_runtime_env": [
                 "FUSEKIT_HOSTED_WORKER_WORKSPACE",
                 "FUSEKIT_HOSTED_WORKER_DISPATCH_STATE_DIR",
@@ -89,6 +97,40 @@ class HostedWorkerDispatchSettings:
                 "Dispatch readiness reports only configuration presence and shape errors. "
                 "It never renders worker secrets, signed job tokens, HMAC signatures, "
                 "provider credentials, GitHub installation tokens, or vault material."
+            ),
+        }
+
+    def idempotency_contract(self) -> dict[str, object]:
+        """Return public dispatch idempotency metadata without exposing paths."""
+
+        if self.dispatch_state_dir is not None:
+            return {
+                "mode": "dispatch-state-dir",
+                "durable": True,
+                "scope": "worker deployment",
+                "proof": (
+                    "Duplicate job/action dispatches are reserved through a configured "
+                    "non-secret state directory before worker spawn."
+                ),
+            }
+        if self.workspace is not None:
+            return {
+                "mode": "workspace",
+                "durable": True,
+                "scope": "worker workspace",
+                "proof": (
+                    "Duplicate job/action dispatches are reserved through a non-secret "
+                    "marker in the worker workspace before worker spawn."
+                ),
+            }
+        return {
+            "mode": "process",
+            "durable": False,
+            "scope": "single receiver process",
+            "proof": (
+                "Duplicate job/action dispatches are guarded in process only; configure "
+                "FUSEKIT_HOSTED_WORKER_DISPATCH_STATE_DIR or FUSEKIT_HOSTED_WORKER_WORKSPACE "
+                "for production."
             ),
         }
 

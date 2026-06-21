@@ -67,6 +67,11 @@ def test_verify_hosted_deployment_passes_launcher_and_dispatch_checks() -> None:
             {
                 "schema_version": "fusekit.hosted-worker-dispatch-readiness.v1",
                 "ready": True,
+                "production_ready": True,
+                "idempotency": {
+                    "mode": "dispatch-state-dir",
+                    "durable": True,
+                },
             },
         ]
     )
@@ -102,6 +107,44 @@ def test_verify_hosted_deployment_passes_launcher_and_dispatch_checks() -> None:
     assert opener.requests[6].full_url == "https://worker.snowmanai.org/readiness"
     assert "WORKER_SECRET" not in serialized
     assert "signed-public-job-token" not in serialized
+
+
+def test_verify_hosted_deployment_requires_durable_worker_dispatch_idempotency() -> None:
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _deployment_contract(),
+            _github_intake_contract(),
+            {"ok": True},
+            {
+                "schema_version": "fusekit.hosted-worker-dispatch-readiness.v1",
+                "ready": True,
+                "production_ready": False,
+                "idempotency": {
+                    "mode": "process",
+                    "durable": False,
+                },
+            },
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["worker_dispatch.readiness"]["status"] == "failed"
+    assert checks["worker_dispatch.readiness"]["failures"] == [
+        "worker_dispatch_idempotency_not_durable",
+        "worker_dispatch_idempotency_mode_not_production",
+        "worker_dispatch_production_ready_not_true",
+    ]
 
 
 def test_verify_hosted_deployment_reports_cloudflare_error_without_claiming_ready() -> None:

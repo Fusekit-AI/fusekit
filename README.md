@@ -246,7 +246,9 @@ configured dispatch state directory, so duplicate protected clicks do not spawn
 duplicate setup, rollback, or detonation workers. Its
 `/readiness` endpoint reports only configuration presence and shape errors for
 the worker secret, worker id, optional workspace root, and optional dispatch
-state directory. The
+state directory, and separates basic `ready` status from production readiness:
+production readiness requires durable dispatch idempotency through the workspace
+or dispatch state directory. The
 backend-only
 `/api/hosted/jobs/<job>/worker-proof` endpoint accepts redacted worker proof
 snapshots, rejects credential-looking public notes or unsupported artifact
@@ -280,7 +282,8 @@ performs the outside-in deployment check against public DNS propagation, the
 hosted homepage, `/healthz`, `/api/hosted/readiness`, and
 `/api/hosted/deployment`; add
 `--worker-dispatch-url` to verify the worker receiver `/healthz` and
-`/readiness` too. The verifier reports Cloudflare/Vercel HTTP failures,
+`/readiness` too, including durable worker-dispatch idempotency for production.
+The verifier reports Cloudflare/Vercel HTTP failures,
 readiness mismatches, public DNS failures, homepage trust drift, hosted
 runtime/open-core/DNS drift, deployment trust-story drift, homepage completion
 proof checklist drift, homepage reversible-setup drift, one-click launch

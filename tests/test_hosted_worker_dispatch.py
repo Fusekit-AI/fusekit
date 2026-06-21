@@ -60,11 +60,22 @@ def test_hosted_worker_dispatch_readiness_reports_presence_without_secrets() -> 
 
     assert readiness["schema_version"] == HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION
     assert readiness["ready"] is True
+    assert readiness["production_ready"] is False
     assert readiness["configured"] == {
         "FUSEKIT_HOSTED_WORKER_SECRET": True,
         "FUSEKIT_HOSTED_WORKER_ID": True,
         "FUSEKIT_HOSTED_WORKER_WORKSPACE": False,
         "FUSEKIT_HOSTED_WORKER_DISPATCH_STATE_DIR": False,
+    }
+    assert readiness["idempotency"] == {
+        "mode": "process",
+        "durable": False,
+        "scope": "single receiver process",
+        "proof": (
+            "Duplicate job/action dispatches are guarded in process only; configure "
+            "FUSEKIT_HOSTED_WORKER_DISPATCH_STATE_DIR or FUSEKIT_HOSTED_WORKER_WORKSPACE "
+            "for production."
+        ),
     }
     assert readiness["required_runtime_env"] == [
         "FUSEKIT_HOSTED_WORKER_SECRET",
@@ -72,6 +83,29 @@ def test_hosted_worker_dispatch_readiness_reports_presence_without_secrets() -> 
     ]
     assert WORKER_SECRET not in serialized
     assert "signed-public-job-token" not in serialized
+
+
+def test_hosted_worker_dispatch_readiness_reports_durable_idempotency(tmp_path: Path) -> None:
+    readiness = HostedWorkerDispatchSettings(
+        worker_secret=WORKER_SECRET,
+        worker_id="worker-01",
+        dispatch_state_dir=tmp_path / "dispatch-state",
+    ).readiness()
+    serialized = json.dumps(readiness)
+
+    assert readiness["ready"] is True
+    assert readiness["production_ready"] is True
+    assert readiness["idempotency"] == {
+        "mode": "dispatch-state-dir",
+        "durable": True,
+        "scope": "worker deployment",
+        "proof": (
+            "Duplicate job/action dispatches are reserved through a configured "
+            "non-secret state directory before worker spawn."
+        ),
+    }
+    assert str(tmp_path) not in serialized
+    assert WORKER_SECRET not in serialized
 
 
 def test_hosted_worker_dispatch_readiness_reports_shape_errors_only() -> None:

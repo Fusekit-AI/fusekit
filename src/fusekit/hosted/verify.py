@@ -125,6 +125,7 @@ def verify_hosted_deployment(
                 opener=opener,
                 expect_schema=HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION,
                 expect_ready_field=True,
+                expect_worker_dispatch_readiness=True,
             )
         )
     return {
@@ -202,6 +203,7 @@ def _json_check(
     expect_ready_field: bool = False,
     expect_hosted_runtime_contract: bool = False,
     expect_github_intake_contract: bool = False,
+    expect_worker_dispatch_readiness: bool = False,
 ) -> dict[str, object]:
     try:
         status, payload = _fetch_json(url, opener=opener)
@@ -224,6 +226,8 @@ def _json_check(
         failures.extend(_hosted_runtime_contract_failures(payload))
     if expect_github_intake_contract:
         failures.extend(_github_intake_contract_failures(payload))
+    if expect_worker_dispatch_readiness:
+        failures.extend(_worker_dispatch_readiness_failures(payload))
     return {
         "id": check_id,
         "url": _public_url(url),
@@ -232,6 +236,22 @@ def _json_check(
         "schema_version": schema if isinstance(schema, str) else "",
         "failures": failures,
     }
+
+
+def _worker_dispatch_readiness_failures(payload: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    idempotency = payload.get("idempotency")
+    if not isinstance(idempotency, dict):
+        return ["worker_dispatch_idempotency_missing"]
+    if idempotency.get("durable") is not True:
+        failures.append("worker_dispatch_idempotency_not_durable")
+    mode = idempotency.get("mode")
+    if mode not in {"dispatch-state-dir", "workspace"}:
+        failures.append("worker_dispatch_idempotency_mode_not_production")
+    production_ready = payload.get("production_ready")
+    if production_ready is not True:
+        failures.append("worker_dispatch_production_ready_not_true")
+    return failures
 
 
 def _dns_check(
