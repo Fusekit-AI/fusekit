@@ -252,7 +252,7 @@ proof is action-aware too: the hosted proof receipt stays incomplete after a
 detonation request until the worker proves the workspace detonation receipt,
 scratch-state destruction, provider-auth session closure, and preserved redacted
 public proof. In production, protected control-room
-actions can also post a
+actions must post a
 signed dispatch envelope to `FUSEKIT_HOSTED_WORKER_DISPATCH_URL`, letting the
 hosted button wake a worker service without asking the user to run a terminal
 command or download anything. That dispatch carries the signed public job token
@@ -296,7 +296,8 @@ checklist, including the Vercel custom-domain and Cloudflare CNAME label/proof
 text, so the subdomain instructions cannot quietly drift. A redacted
 hosted readiness endpoint reports only configuration presence and shape errors,
 and keeps the homepage launch button disabled until the GitHub App id, slug, RSA
-private key, origin, state secret, and worker secret are configured and valid.
+private key, origin, state secret, worker secret, and worker dispatch URL are
+configured and valid.
 Direct GitHub intake routes also fail closed with the same redacted readiness
 object until those checks pass. The
 remaining slices are running the approved setup actions inside the hosted worker,
@@ -314,8 +315,8 @@ origin, machine-readable trust story, Vercel WSGI entrypoint/routing files,
 GitHub callback URL, Cloudflare DNS record name, health/readiness URLs, the
 operator setup checklist for attaching `fusekit.snowmanai.org` to Vercel and
 Cloudflare, a structured one-click launch contract proving the hosted path needs
-no terminal or download, and required environment variable names without
-exposing secret values.
+no terminal or download, production-required worker dispatch wiring, and required
+environment variable names without exposing secret values.
 `fusekit-hosted-verify --origin https://fusekit.snowmanai.org`
 performs the outside-in deployment check against public DNS propagation, the
 hosted homepage, `/healthz`, `/api/hosted/readiness`, and

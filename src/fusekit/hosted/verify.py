@@ -34,6 +34,7 @@ from fusekit.hosted.server import (
     HOSTED_OPERATOR_SETUP_STEPS,
     HOSTED_PUBLIC_TRUST_CONTRACT,
     HOSTED_READINESS_SCHEMA_VERSION,
+    HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
 )
 from fusekit.hosted.worker_dispatch import HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION
 from fusekit.security import contains_durable_secret_text
@@ -424,6 +425,50 @@ def _hosted_runtime_contract_failures(
             actual_steps = [step for step in steps if isinstance(step, dict)]
             if actual_steps != expected_steps:
                 failures.append("operator_setup_steps_mismatch")
+    required_runtime_env = payload.get("required_runtime_env")
+    if not isinstance(required_runtime_env, list):
+        failures.append("required_runtime_env_missing")
+    elif "FUSEKIT_HOSTED_WORKER_DISPATCH_URL" not in required_runtime_env:
+        failures.append("worker_dispatch_runtime_env_not_required")
+    optional_runtime_env = payload.get("optional_runtime_env")
+    if optional_runtime_env != []:
+        failures.append("optional_runtime_env_mismatch")
+    failures.extend(_worker_dispatch_contract_failures(payload.get("worker_dispatch")))
+    return failures
+
+
+def _worker_dispatch_contract_failures(payload: object) -> list[str]:
+    failures: list[str] = []
+    if not isinstance(payload, dict):
+        return ["worker_dispatch_contract_missing"]
+    if payload.get("schema_version") != HOSTED_WORKER_DISPATCH_SCHEMA_VERSION:
+        failures.append("worker_dispatch_schema_mismatch")
+    if payload.get("receiver_command") != "fusekit-hosted-worker-dispatch":
+        failures.append("worker_dispatch_receiver_command_mismatch")
+    if payload.get("production_required") is not True:
+        failures.append("worker_dispatch_production_required_not_true")
+    if payload.get("no_terminal_wakeup_required") is not True:
+        failures.append("worker_dispatch_no_terminal_wakeup_required_not_true")
+    checks = payload.get("checks")
+    if not isinstance(checks, dict):
+        failures.append("worker_dispatch_checks_missing")
+        return failures
+    dispatch_url = checks.get("dispatch")
+    if not isinstance(dispatch_url, str) or not dispatch_url:
+        failures.append("worker_dispatch_dispatch_url_missing")
+    elif dispatch_url == "https://worker.invalid":
+        failures.append("worker_dispatch_dispatch_url_placeholder")
+    else:
+        try:
+            _valid_https_url(dispatch_url)
+        except FuseKitError:
+            failures.append("worker_dispatch_dispatch_url_invalid")
+    health_url = checks.get("health")
+    readiness_url = checks.get("readiness")
+    if not isinstance(health_url, str) or not health_url.endswith("/healthz"):
+        failures.append("worker_dispatch_health_url_invalid")
+    if not isinstance(readiness_url, str) or not readiness_url.endswith("/readiness"):
+        failures.append("worker_dispatch_readiness_url_invalid")
     return failures
 
 

@@ -154,8 +154,9 @@ REQUIRED_HOSTED_ENV = (
     "FUSEKIT_GITHUB_APP_PRIVATE_KEY",
     "FUSEKIT_HOSTED_STATE_SECRET",
     "FUSEKIT_HOSTED_WORKER_SECRET",
+    "FUSEKIT_HOSTED_WORKER_DISPATCH_URL",
 )
-OPTIONAL_HOSTED_ENV = ("FUSEKIT_HOSTED_WORKER_DISPATCH_URL",)
+OPTIONAL_HOSTED_ENV: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -313,6 +314,8 @@ class HostedSettings:
                 "receiver_command": "fusekit-hosted-worker-dispatch",
                 "schema_version": HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
                 "authentication": "HMAC-SHA256 with FUSEKIT_HOSTED_WORKER_SECRET",
+                "production_required": True,
+                "no_terminal_wakeup_required": True,
                 "checks": {
                     "dispatch": dispatch_url,
                     "health": f"{dispatch_receiver_base}/healthz",

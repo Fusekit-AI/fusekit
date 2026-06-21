@@ -40,6 +40,7 @@ def _call(
             github_private_key_pem=_private_key_pem(),
             state_secret=STATE_SECRET,
             worker_secret=WORKER_SECRET,
+            worker_dispatch_url="https://worker.snowmanai.org/dispatch",
         )
     )
     captured: dict[str, object] = {}
@@ -124,7 +125,9 @@ def _settings_with_github(opener: SequenceOpener) -> HostedSettings:
         github_private_key_pem=config.private_key_pem,
         state_secret=STATE_SECRET,
         worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
         github_opener=opener,
+        worker_dispatch_opener=SequenceOpener([{} for _ in range(8)]),
     )
 
 
@@ -151,6 +154,7 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
             github_private_key_pem=_private_key_pem(),
             state_secret=STATE_SECRET,
             worker_secret=WORKER_SECRET,
+            worker_dispatch_url="https://worker.snowmanai.org/dispatch",
         )
     )
     payload = json.loads(
@@ -238,6 +242,7 @@ def test_hosted_home_waits_for_complete_operator_configuration() -> None:
     assert "Operator setup pending" in html
     assert "FUSEKIT_GITHUB_APP_ID" in html
     assert "FUSEKIT_GITHUB_APP_PRIVATE_KEY" in html
+    assert "FUSEKIT_HOSTED_WORKER_DISPATCH_URL" in html
     assert '<span class="button disabled" aria-disabled="true">Start hosted launch</span>' in html
     assert 'href="#"' not in html
     assert "state=" not in html
@@ -254,6 +259,7 @@ def test_hosted_home_shows_invalid_operator_configuration_codes_only() -> None:
             github_private_key_pem=FAKE_PRIVATE_KEY,
             state_secret="abc123",
             worker_secret="abc123",
+            worker_dispatch_url="http://worker.invalid/dispatch",
         )
     )
 
@@ -308,6 +314,7 @@ def test_hosted_readiness_endpoint_reports_presence_without_secret_values() -> N
         ),
         state_secret=STATE_SECRET,
         worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
     )
 
     status, headers, body = _call(
@@ -459,13 +466,16 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     }
     assert "FUSEKIT_GITHUB_APP_PRIVATE_KEY" in payload["required_runtime_env"]
     assert "FUSEKIT_HOSTED_WORKER_SECRET" in payload["required_runtime_env"]
-    assert payload["optional_runtime_env"] == ["FUSEKIT_HOSTED_WORKER_DISPATCH_URL"]
+    assert "FUSEKIT_HOSTED_WORKER_DISPATCH_URL" in payload["required_runtime_env"]
+    assert payload["optional_runtime_env"] == []
     assert payload["worker_dispatch"]["schema_version"] == "fusekit.hosted-worker-dispatch.v1"
     assert payload["worker_dispatch"]["receiver_command"] == "fusekit-hosted-worker-dispatch"
+    assert payload["worker_dispatch"]["production_required"] is True
+    assert payload["worker_dispatch"]["no_terminal_wakeup_required"] is True
     assert payload["worker_dispatch"]["checks"] == {
-        "dispatch": "https://worker.invalid",
-        "health": "https://worker.invalid/healthz",
-        "readiness": "https://worker.invalid/readiness",
+        "dispatch": "https://worker.snowmanai.org/dispatch",
+        "health": "https://worker.snowmanai.org/healthz",
+        "readiness": "https://worker.snowmanai.org/readiness",
     }
     assert payload["worker_dispatch"]["required_runtime_env"] == [
         "FUSEKIT_HOSTED_WORKER_SECRET",
@@ -1173,7 +1183,7 @@ def test_hosted_job_action_from_browser_returns_updated_control_room_html() -> N
     assert "Request detonation" in text
     assert "Latest protected action: start" in text
     assert "Next proof required" in text
-    assert "Worker dispatch: not configured" in text
+    assert "Worker dispatch: accepted" in text
     assert "View worker request" in text
     assert "job=" in text
     assert payload["status"] == "waiting_for_provider_gates"
@@ -1184,7 +1194,8 @@ def test_hosted_job_action_from_browser_returns_updated_control_room_html() -> N
         "fusekit.hosted-job-action-receipt.v1"
     )
     assert payload["latest_action_receipt"]["action"] == "start"
-    assert payload["worker_dispatch"]["reason"] == "worker_dispatch_url_not_configured"
+    assert payload["worker_dispatch"]["dispatched"] is True
+    assert payload["worker_dispatch"]["dispatch_url"] == "https://worker.snowmanai.org/dispatch"
     assert "ghs_fake" not in text
 
 

@@ -364,6 +364,50 @@ def test_verify_hosted_deployment_requires_github_app_token_boundary() -> None:
     ]
 
 
+def test_verify_hosted_deployment_requires_worker_dispatch_contract() -> None:
+    contract = _deployment_contract()
+    contract["required_runtime_env"] = [
+        "FUSEKIT_HOSTED_ORIGIN",
+        "FUSEKIT_GITHUB_APP_ID",
+        "FUSEKIT_GITHUB_APP_SLUG",
+        "FUSEKIT_GITHUB_APP_PRIVATE_KEY",
+        "FUSEKIT_HOSTED_STATE_SECRET",
+        "FUSEKIT_HOSTED_WORKER_SECRET",
+    ]
+    contract["optional_runtime_env"] = ["FUSEKIT_HOSTED_WORKER_DISPATCH_URL"]
+    worker_dispatch = contract["worker_dispatch"]
+    assert isinstance(worker_dispatch, dict)
+    worker_dispatch["production_required"] = False
+    worker_dispatch["no_terminal_wakeup_required"] = False
+    checks = worker_dispatch["checks"]
+    assert isinstance(checks, dict)
+    checks["dispatch"] = "https://worker.invalid"
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            contract,
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks_by_id = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    failures = checks_by_id["hosted.deployment"]["failures"]
+    assert "worker_dispatch_runtime_env_not_required" in failures
+    assert "optional_runtime_env_mismatch" in failures
+    assert "worker_dispatch_production_required_not_true" in failures
+    assert "worker_dispatch_no_terminal_wakeup_required_not_true" in failures
+    assert "worker_dispatch_dispatch_url_placeholder" in failures
+
+
 def test_verify_hosted_deployment_requires_public_trust_contract() -> None:
     contract = _deployment_contract()
     contract["trust_story"] = ["open core", "redacted proof"]
@@ -948,6 +992,27 @@ def _deployment_contract() -> dict[str, object]:
                     "contents:write installation tokens",
                     "unexpected GitHub write permissions",
                 ],
+            },
+        },
+        "required_runtime_env": [
+            "FUSEKIT_HOSTED_ORIGIN",
+            "FUSEKIT_GITHUB_APP_ID",
+            "FUSEKIT_GITHUB_APP_SLUG",
+            "FUSEKIT_GITHUB_APP_PRIVATE_KEY",
+            "FUSEKIT_HOSTED_STATE_SECRET",
+            "FUSEKIT_HOSTED_WORKER_SECRET",
+            "FUSEKIT_HOSTED_WORKER_DISPATCH_URL",
+        ],
+        "optional_runtime_env": [],
+        "worker_dispatch": {
+            "schema_version": "fusekit.hosted-worker-dispatch.v1",
+            "receiver_command": "fusekit-hosted-worker-dispatch",
+            "production_required": True,
+            "no_terminal_wakeup_required": True,
+            "checks": {
+                "dispatch": "https://worker.snowmanai.org/dispatch",
+                "health": "https://worker.snowmanai.org/healthz",
+                "readiness": "https://worker.snowmanai.org/readiness",
             },
         },
     }
