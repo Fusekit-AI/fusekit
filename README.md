@@ -142,7 +142,9 @@ repository owner/name, branch/ref, commit SHA, and production environment, so
 the public launcher can be matched back to the reviewed open-source commit.
 Hosted readiness now keeps the start button disabled until that source
 provenance verifies, preventing a public launch from starting from an
-unreviewable or miswired deployment.
+unreviewable or miswired deployment. The outside-in hosted verifier checks the
+readiness endpoint for that same public provenance proof, not just the embedded
+homepage contract.
 The public GitHub intake contract also
 embeds the same trust story, no-terminal launch path, required proof list,
 reversal path, and open-core metadata before the install click. It

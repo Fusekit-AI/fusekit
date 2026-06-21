@@ -117,7 +117,7 @@ def verify_hosted_deployment(
         f"{public_origin}/api/hosted/readiness",
         opener=opener,
         expect_schema=HOSTED_READINESS_SCHEMA_VERSION,
-        expect_ready_field=True,
+        expect_hosted_readiness_contract=True,
     )
     checks.append(hosted_readiness)
     hosted_deployment, deployment_payload = _json_check_with_payload(
@@ -259,6 +259,7 @@ def _json_check(
     expect_schema: str = "",
     expect_ok_field: bool = False,
     expect_ready_field: bool = False,
+    expect_hosted_readiness_contract: bool = False,
     expect_hosted_runtime_contract: bool = False,
     expect_github_intake_contract: bool = False,
     expect_worker_dispatch_readiness: bool = False,
@@ -271,6 +272,7 @@ def _json_check(
         expect_schema=expect_schema,
         expect_ok_field=expect_ok_field,
         expect_ready_field=expect_ready_field,
+        expect_hosted_readiness_contract=expect_hosted_readiness_contract,
         expect_hosted_runtime_contract=expect_hosted_runtime_contract,
         expect_github_intake_contract=expect_github_intake_contract,
         expect_worker_dispatch_readiness=expect_worker_dispatch_readiness,
@@ -287,6 +289,7 @@ def _json_check_with_payload(
     expect_schema: str = "",
     expect_ok_field: bool = False,
     expect_ready_field: bool = False,
+    expect_hosted_readiness_contract: bool = False,
     expect_hosted_runtime_contract: bool = False,
     expect_github_intake_contract: bool = False,
     expect_worker_dispatch_readiness: bool = False,
@@ -310,6 +313,8 @@ def _json_check_with_payload(
         failures.append("ok_field_not_true")
     if expect_ready_field and payload.get("ready") is not True:
         failures.append("ready_field_not_true")
+    if expect_hosted_readiness_contract:
+        failures.extend(_hosted_home_readiness_failures(payload))
     if expect_hosted_runtime_contract:
         failures.extend(
             _hosted_runtime_contract_failures(

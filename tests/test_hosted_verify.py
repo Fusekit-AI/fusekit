@@ -93,7 +93,7 @@ def test_verify_hosted_deployment_passes_launcher_and_dispatch_checks() -> None:
         [
             _home_html(),
             {"ok": True},
-            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _readiness_contract(),
             _deployment_contract(),
             _github_intake_contract(),
             {"ok": True},
@@ -153,7 +153,7 @@ def test_verify_hosted_deployment_requires_security_headers() -> None:
         [
             (_home_html(), {}),
             {"ok": True},
-            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _readiness_contract(),
             _deployment_contract(),
             _github_intake_contract(),
         ]
@@ -186,7 +186,7 @@ def test_verify_hosted_deployment_requires_durable_worker_dispatch_idempotency()
         [
             _home_html(),
             {"ok": True},
-            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _readiness_contract(),
             _deployment_contract(),
             _github_intake_contract(),
             {"ok": True},
@@ -223,7 +223,7 @@ def test_verify_hosted_deployment_requires_worker_dispatch_idempotency_proof() -
         [
             _home_html(),
             {"ok": True},
-            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _readiness_contract(),
             _deployment_contract(),
             _github_intake_contract(),
             {"ok": True},
@@ -310,6 +310,39 @@ def test_verify_hosted_deployment_reports_cloudflare_error_without_claiming_read
     assert "test-ray-id" not in json.dumps(report)
 
 
+def test_verify_hosted_deployment_requires_readiness_source_provenance_contract() -> None:
+    readiness = _readiness_contract()
+    readiness["required_source_provenance_env"] = ["VERCEL_ENV"]
+    provenance = readiness["source_provenance"]
+    assert isinstance(provenance, dict)
+    provenance["verified"] = False
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            readiness,
+            _deployment_contract(),
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["hosted.readiness"]["status"] == "failed"
+    assert "required_source_provenance_env_mismatch" in checks["hosted.readiness"][
+        "failures"
+    ]
+    assert "readiness_source_provenance_not_verified" in checks["hosted.readiness"][
+        "failures"
+    ]
+
+
 def test_verify_hosted_deployment_rejects_non_origin_or_secret_url() -> None:
     with pytest.raises(FuseKitError, match="hosted_origin_must_be_https_origin"):
         verify_hosted_deployment(origin="https://user:pass@fusekit.snowmanai.org")
@@ -364,7 +397,7 @@ def test_verify_hosted_deployment_requires_runtime_and_dns_contract() -> None:
         [
             _home_html(),
             {"ok": True},
-            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _readiness_contract(),
             contract,
             _github_intake_contract(),
         ]
@@ -392,7 +425,7 @@ def test_verify_hosted_deployment_requires_canonical_subdomain_contract() -> Non
         [
             _home_html(),
             {"ok": True},
-            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _readiness_contract(),
             contract,
             _github_intake_contract(),
         ]
@@ -426,7 +459,7 @@ def test_verify_hosted_deployment_requires_operator_setup_contract() -> None:
         [
             _home_html(),
             {"ok": True},
-            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _readiness_contract(),
             contract,
             _github_intake_contract(),
         ]
@@ -461,7 +494,7 @@ def test_verify_hosted_deployment_requires_github_app_token_boundary() -> None:
         [
             _home_html(),
             {"ok": True},
-            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _readiness_contract(),
             contract,
             _github_intake_contract(),
         ]
@@ -505,7 +538,7 @@ def test_verify_hosted_deployment_requires_worker_dispatch_contract() -> None:
         [
             _home_html(),
             {"ok": True},
-            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _readiness_contract(),
             contract,
             _github_intake_contract(),
         ]
@@ -537,7 +570,7 @@ def test_verify_hosted_deployment_requires_public_trust_contract() -> None:
         [
             _home_html(),
             {"ok": True},
-            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _readiness_contract(),
             contract,
             _github_intake_contract(),
         ]
@@ -568,7 +601,7 @@ def test_verify_hosted_deployment_requires_capability_vault_boundary() -> None:
         [
             _home_html(),
             {"ok": True},
-            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _readiness_contract(),
             contract,
             _github_intake_contract(),
         ]
@@ -601,7 +634,7 @@ def test_verify_hosted_deployment_requires_security_header_contract() -> None:
         [
             _home_html(),
             {"ok": True},
-            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _readiness_contract(),
             contract,
             _github_intake_contract(),
         ]
@@ -639,7 +672,7 @@ def test_verify_hosted_deployment_requires_source_integrity_contract() -> None:
         [
             _home_html(),
             {"ok": True},
-            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _readiness_contract(),
             contract,
             _github_intake_contract(),
         ]
@@ -687,7 +720,7 @@ def test_verify_hosted_deployment_requires_source_provenance_contract() -> None:
         [
             _home_html(),
             {"ok": True},
-            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _readiness_contract(),
             contract,
             _github_intake_contract(),
         ]
@@ -730,7 +763,7 @@ def test_verify_hosted_deployment_requires_one_click_contract() -> None:
         [
             _home_html(),
             {"ok": True},
-            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _readiness_contract(),
             contract,
             _github_intake_contract(),
         ]
@@ -787,7 +820,7 @@ def test_verify_hosted_deployment_requires_github_intake_contract() -> None:
         [
             _home_html(),
             {"ok": True},
-            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _readiness_contract(),
             _deployment_contract(),
             intake,
         ]
@@ -827,15 +860,13 @@ def test_verify_hosted_deployment_requires_github_intake_contract() -> None:
 
 
 def test_verify_hosted_deployment_rejects_credential_text_in_public_json() -> None:
+    readiness = _readiness_contract()
+    readiness["debug"] = "Authorization: Bearer raw-provider-token"
     opener = SequenceOpener(
         [
             _home_html(),
             {"ok": True},
-            {
-                "schema_version": "fusekit.hosted-readiness.v1",
-                "ready": True,
-                "debug": "Authorization: Bearer raw-provider-token",
-            },
+            readiness,
             _deployment_contract(),
             _github_intake_contract(),
         ]
@@ -865,7 +896,7 @@ def test_verify_hosted_deployment_requires_trustworthy_homepage() -> None:
                 "github_pat_1234567890abcdefghijklmnop</body></html>"
             ),
             {"ok": True},
-            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _readiness_contract(),
             _deployment_contract(),
             _github_intake_contract(),
         ]
@@ -947,7 +978,7 @@ def test_verify_hosted_deployment_requires_valid_homepage_embedded_contracts() -
         [
             home,
             {"ok": True},
-            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _readiness_contract(),
             _deployment_contract(),
             _github_intake_contract(),
         ]
@@ -992,7 +1023,7 @@ def test_verify_hosted_deployment_requires_homepage_readiness_source_provenance(
         [
             home,
             {"ok": True},
-            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _readiness_contract(),
             _deployment_contract(),
             _github_intake_contract(),
         ]
@@ -1023,7 +1054,7 @@ def test_verify_hosted_deployment_reports_dns_resolution_failure() -> None:
         [
             _home_html(),
             {"ok": True},
-            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _readiness_contract(),
             _deployment_contract(),
             _github_intake_contract(),
         ]
@@ -1047,7 +1078,7 @@ def test_verify_hosted_deployment_rejects_private_dns_addresses() -> None:
         [
             _home_html(),
             {"ok": True},
-            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _readiness_contract(),
             _deployment_contract(),
             _github_intake_contract(),
         ]
@@ -1078,14 +1109,7 @@ def _home_html(
 ) -> str:
     github_intake = _github_intake_contract() if github_intake is None else github_intake
     readiness = (
-        {
-            "schema_version": "fusekit.hosted-readiness.v1",
-            "ready": True,
-            "blocking_checks": [],
-            "next_actions": [],
-            "required_source_provenance_env": list(HOSTED_SOURCE_PROVENANCE_ENV),
-            "source_provenance": _source_provenance_contract(),
-        }
+        _readiness_contract()
         if readiness is None
         else readiness
     )
@@ -1150,6 +1174,17 @@ def _home_html(
 
 def _json_script(script_id: str, payload: str) -> str:
     return f'<script id="{script_id}" type="application/json">{payload}</script>'
+
+
+def _readiness_contract() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.hosted-readiness.v1",
+        "ready": True,
+        "blocking_checks": [],
+        "next_actions": [],
+        "required_source_provenance_env": list(HOSTED_SOURCE_PROVENANCE_ENV),
+        "source_provenance": _source_provenance_contract(),
+    }
 
 
 def _deployment_contract() -> dict[str, object]:
