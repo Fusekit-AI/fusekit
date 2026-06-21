@@ -676,6 +676,8 @@ def test_hosted_github_control_room_fetches_source_and_renders_job() -> None:
     assert "Hosted launch control room." in text
     assert "provider-owned" in text
     assert "Worker contract" in text
+    assert "Permission boundary" in text
+    assert "contents:read" in text
     assert "Provider gates" in text
     assert "human-owned" in text
     assert "View proof receipt" in text
@@ -876,6 +878,7 @@ def test_hosted_job_action_from_browser_returns_updated_control_room_html() -> N
     assert "Hosted launch control room." in text
     assert "waiting for provider gates" in text
     assert "Hosted worker contract queued" in text
+    assert "Permission boundary" in text
     assert "Provider gates" in text
     assert "Latest protected action: start" in text
     assert "Next proof required" in text
@@ -883,6 +886,7 @@ def test_hosted_job_action_from_browser_returns_updated_control_room_html() -> N
     assert "View worker request" in text
     assert "job=" in text
     assert payload["status"] == "waiting_for_provider_gates"
+    assert payload["worker_contract"]["permission_boundary"]
     assert payload["worker_contract"]["gates"]
     assert payload["latest_action_receipt"]["schema_version"] == (
         "fusekit.hosted-job-action-receipt.v1"

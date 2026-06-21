@@ -142,10 +142,12 @@ detonation expectations without exposing provider tokens. The control room now
 publishes a redacted hosted-worker contract with the approved action ids,
 provider gates, required public artifacts, Run Record, rollback metadata,
 acceptance report, and workspace detonation receipt that must exist before the
-hosted path can claim completion; the control room and proof receipt now render
-the provider-gate checklist as human-owned checkpoints so MFA, CAPTCHA, billing,
-fraud, consent, and domain ownership reviews are visible instead of hidden in
-logs. It exposes a redacted job status API and
+hosted path can claim completion. The same pages render a permission-boundary
+checklist for the selected-repository GitHub App, `contents:read` source
+permission, backend-only token exchange, vault/provider-native credential
+storage, and HMAC worker dispatch. They also render the provider-gate checklist
+as human-owned checkpoints so MFA, CAPTCHA, billing, fraud, consent, and domain
+ownership reviews are visible instead of hidden in logs. It exposes a redacted job status API and
 protected start, rollback, and detonation request controls. Those controls carry
 a signed redacted job token so a stateless hosted function can recover the public
 control-room state without a database or raw provider token. Browser form

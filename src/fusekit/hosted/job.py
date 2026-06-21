@@ -50,6 +50,7 @@ class HostedWorkerContract:
     github_installation_id: int | None
     providers: tuple[str, ...]
     required_env: tuple[str, ...]
+    permission_boundary: tuple[str, ...]
     approved_actions: tuple[str, ...]
     required_artifacts: tuple[str, ...]
     gates: tuple[str, ...]
@@ -70,6 +71,7 @@ class HostedWorkerContract:
             ),
             "providers": list(self.providers),
             "required_env": list(self.required_env),
+            "permission_boundary": list(self.permission_boundary),
             "approved_actions": list(self.approved_actions),
             "required_artifacts": list(self.required_artifacts),
             "gates": list(self.gates),
@@ -314,6 +316,13 @@ def build_hosted_worker_contract(
         github_installation_id=github_installation_id,
         providers=plan.providers,
         required_env=plan.required_env,
+        permission_boundary=(
+            "GitHub App installation is limited to one selected repository.",
+            "GitHub repository permission is contents:read for source intake.",
+            "GitHub installation tokens are exchanged only inside the backend worker.",
+            "Provider credentials stay inside the FuseKit vault or provider-native secret stores.",
+            "Worker dispatch uses an HMAC envelope; worker secrets are never sent to browsers.",
+        ),
         approved_actions=tuple(action.id for action in plan.actions),
         required_artifacts=(
             ".fusekit/job.json",
@@ -672,6 +681,7 @@ def hosted_proof_receipt(job: HostedLaunchJob) -> dict[str, object]:
         "rollback": list(job.rollback),
         "detonation": list(job.detonation),
         "provider_gates": list(job.worker_contract.gates),
+        "permission_boundary": list(job.worker_contract.permission_boundary),
         "required_artifacts": list(job.worker_contract.required_artifacts),
         "steps": [step.to_dict() for step in job.steps],
     }
@@ -866,6 +876,7 @@ def render_hosted_proof_receipt(job: HostedLaunchJob, *, job_token: str = "") ->
     detonation = _list(job.detonation)
     artifacts = _list(job.worker_contract.required_artifacts)
     gates = _list(job.worker_contract.gates)
+    permissions = _list(job.worker_contract.permission_boundary)
     back = _control_room_link(job, job_token=job_token)
     return f"""<!doctype html>
 <html lang="en">
@@ -971,6 +982,10 @@ def render_hosted_proof_receipt(job: HostedLaunchJob, *, job_token: str = "") ->
         ownership checks.
       </p>
       {gates}
+    </section>
+    <section aria-label="Permission boundary">
+      <h2>Permission boundary</h2>
+      {permissions}
     </section>
     <section aria-label="Reversible setup">
       <h2>Reversible setup</h2>
@@ -1145,6 +1160,7 @@ def _list(items: tuple[str, ...]) -> str:
 
 def _worker_contract_section(contract: HostedWorkerContract) -> str:
     providers = _list(contract.providers or ("No providers detected yet",))
+    permissions = _list(contract.permission_boundary)
     gates = _list(contract.gates)
     artifacts = _list(contract.required_artifacts)
     guarantees = _list(contract.guarantees)
@@ -1156,6 +1172,8 @@ def _worker_contract_section(contract: HostedWorkerContract) -> str:
         </p>
         <h3>Providers</h3>
         {providers}
+        <h3>Permission boundary</h3>
+        {permissions}
         <h3>Provider gates</h3>
         <p>
           These checkpoints remain human-owned; FuseKit must not bypass MFA,
@@ -1343,6 +1361,10 @@ def _worker_contract_from_dict(payload: dict[str, Any]) -> HostedWorkerContract:
         github_installation_id=github_installation_id,
         providers=_str_tuple(payload.get("providers"), "providers"),
         required_env=_str_tuple(payload.get("required_env"), "required_env"),
+        permission_boundary=_str_tuple(
+            payload.get("permission_boundary", []),
+            "permission_boundary",
+        ),
         approved_actions=_str_tuple(payload.get("approved_actions"), "approved_actions"),
         required_artifacts=_str_tuple(payload.get("required_artifacts"), "required_artifacts"),
         gates=_str_tuple(payload.get("gates"), "gates"),

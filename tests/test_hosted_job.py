@@ -65,6 +65,7 @@ def test_hosted_launch_job_is_public_safe_and_trust_complete() -> None:
     assert payload["worker_contract"]["schema_version"] == "fusekit.hosted-worker-contract.v1"
     assert payload["worker_contract"]["lane"] == "hosted-fusekit-worker"
     assert payload["worker_contract"]["github_installation_id"] is None
+    assert "contents:read" in " ".join(payload["worker_contract"]["permission_boundary"])
     assert ".fusekit/run_record.json" in payload["worker_contract"]["required_artifacts"]
     assert ".fusekit/workspace_detonation.json" in payload["worker_contract"]["required_artifacts"]
     assert any(step["id"] == "provider.gates" for step in payload["steps"])
@@ -85,7 +86,10 @@ def test_hosted_proof_receipt_is_redacted_and_not_prematurely_complete() -> None
     assert ".fusekit/run_record.json" in receipt["required_artifacts"]
     assert ".fusekit/workspace_detonation.json" in receipt["required_artifacts"]
     assert any("MFA" in gate for gate in receipt["provider_gates"])
+    assert any("contents:read" in item for item in receipt["permission_boundary"])
     assert "Proof receipt." in html
+    assert "Permission boundary" in html
+    assert "contents:read" in html
     assert "Provider gates" in html
     assert "These gates stay provider-owned and human-approved" in html
     assert "MFA" in html
@@ -309,6 +313,8 @@ def test_hosted_control_room_embeds_redacted_job_json() -> None:
     assert "Worker contract" in html
     assert "Redacted proof" in html
     assert "Reversible setup" in html
+    assert "Permission boundary" in html
+    assert "backend worker" in html
     assert "Provider gates" in html
     assert "human-owned" in html
     assert ".fusekit/run_record.json" in html
@@ -322,6 +328,10 @@ def test_hosted_control_room_embeds_redacted_job_json() -> None:
     assert payload["schema_version"] == "fusekit.hosted-job.v1"
     assert payload["latest_action_receipt"]["action"] == "start"
     assert payload["worker_dispatch"]["reason"] == "worker_dispatch_url_not_configured"
+    assert any(
+        "selected repository" in item
+        for item in payload["worker_contract"]["permission_boundary"]
+    )
     assert any("MFA" in gate for gate in payload["worker_contract"]["gates"])
     assert payload["worker_contract"]["schema_version"] == "fusekit.hosted-worker-contract.v1"
     assert "ghs_" not in json.dumps(payload)
@@ -398,6 +408,8 @@ def test_hosted_worker_contract_is_public_and_binds_approved_plan() -> None:
     assert "Installation tokens are never embedded" in payload["source_token_policy"]
     assert payload["providers"] == ["github", "vercel"]
     assert payload["required_env"] == ["RESEND_API_KEY"]
+    assert any("contents:read" in item for item in payload["permission_boundary"])
+    assert any("backend worker" in item for item in payload["permission_boundary"])
     assert payload["approved_actions"]
     assert ".fusekit/acceptance_report.json" in payload["required_artifacts"]
     assert any("Live acceptance" in guarantee for guarantee in payload["guarantees"])
@@ -405,6 +417,18 @@ def test_hosted_worker_contract_is_public_and_binds_approved_plan() -> None:
     assert "ghs_" not in serialized
     assert "PRIVATE KEY" not in serialized
     assert "VERCEL_TOKEN" not in serialized
+
+
+def test_hosted_worker_contract_decodes_older_public_payload_without_boundary() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    payload = job.to_dict()
+    worker_contract = payload["worker_contract"]
+    assert isinstance(worker_contract, dict)
+    worker_contract.pop("permission_boundary")
+
+    decoded = hosted_launch_job_from_dict(payload)
+
+    assert decoded.worker_contract.permission_boundary == ()
 
 
 def test_hosted_job_token_round_trips_redacted_public_job() -> None:
