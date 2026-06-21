@@ -282,7 +282,9 @@ proof receipt renders the same redacted `completion_requires` checklist, so a
 launcher can see exactly which evidence keys must still be produced. The public
 deployment and GitHub intake contracts also expose those exact evidence keys
 beside the readable proof labels, letting `fusekit-hosted-verify` catch proof
-vocabulary drift before launch. A redacted
+vocabulary drift before launch. Protected action and worker-claim receipts reuse
+that same evidence vocabulary, so a start click cannot understate the remaining
+recording or remote-artifact proof. A redacted
 hosted readiness endpoint reports only configuration presence and shape errors,
 and keeps the homepage launch button disabled until the GitHub App id, slug, RSA
 private key, origin, state secret, and worker secret are configured and valid.

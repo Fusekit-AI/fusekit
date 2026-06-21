@@ -219,6 +219,7 @@ def test_hosted_worker_claim_updates_job_and_writes_redacted_receipt() -> None:
     assert receipt["worker_id"] == "worker-01script"
     assert "provider_gate_events" in receipt["next_required_proof"]
     assert "detonation_receipt" in receipt["next_required_proof"]
+    assert "recording" in receipt["next_required_proof"]
     assert "<script>" not in serialized
     assert "PRIVATE KEY" not in serialized
     assert "ghs_" not in serialized
@@ -630,10 +631,15 @@ def test_hosted_job_action_receipts_are_redacted_and_proof_oriented() -> None:
     assert start_receipt["next_required_proof"] == [
         "worker_claim",
         "provider_gate_events",
-        "live_acceptance_report",
-        "retrieved_remote_artifacts",
+        "live_url",
+        "provider_verifiers",
+        "dns_propagation",
         "rollback_metadata",
+        "retrieved_remote_artifacts",
+        "run_record",
         "detonation_receipt",
+        "live_acceptance_report",
+        "recording",
     ]
     assert stop_receipt["status"] == "stopped"
     assert stop_receipt["next_required_proof"] == [

@@ -866,7 +866,8 @@ def hosted_job_action_receipt(
             "Rollback and detonation requests do not erase public proof requirements.",
             (
                 "Completion still requires live acceptance, retrieved remote "
-                "artifacts, rollback metadata, and detonation receipt."
+                "artifacts, rollback metadata, Run Record, detonation receipt, "
+                "and recording proof."
             ),
         ],
         "secret_boundary": (
@@ -899,14 +900,7 @@ def hosted_worker_claim_receipt(
         ),
         "next_required_proof": [
             "provider_gate_events",
-            "live_url",
-            "provider_verifiers",
-            "dns_propagation",
-            "retrieved_remote_artifacts",
-            "run_record",
-            "rollback_metadata",
-            "detonation_receipt",
-            "live_acceptance_report",
+            *HOSTED_WORKER_PROOF_KEYS,
         ],
     }
 
@@ -1571,10 +1565,7 @@ def _action_next_required_proof(action: str) -> list[str]:
         return [
             "worker_claim",
             "provider_gate_events",
-            "live_acceptance_report",
-            "retrieved_remote_artifacts",
-            "rollback_metadata",
-            "detonation_receipt",
+            *HOSTED_WORKER_PROOF_KEYS,
         ]
     if action == "stop":
         return [

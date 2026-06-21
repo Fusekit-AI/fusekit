@@ -976,6 +976,7 @@ def test_hosted_job_api_returns_redacted_status_and_accepts_protected_action() -
     assert payload["action_receipt"]["action"] == "start"
     assert "worker_claim" in payload["action_receipt"]["next_required_proof"]
     assert "detonation_receipt" in payload["action_receipt"]["next_required_proof"]
+    assert "recording" in payload["action_receipt"]["next_required_proof"]
     assert steps["provider.gates"]["status"] == "waiting"
     assert "ghs_fake" not in json.dumps(payload)
 
