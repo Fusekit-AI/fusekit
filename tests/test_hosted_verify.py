@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import io
 import json
 import urllib.error
@@ -580,6 +581,48 @@ def test_verify_hosted_deployment_requires_trustworthy_homepage() -> None:
     assert "github_pat_" not in serialized
 
 
+def test_verify_hosted_deployment_requires_valid_homepage_embedded_contracts() -> None:
+    home = _home_html(
+        github_intake={"provider": "oauth-app"},
+        readiness={
+            "schema_version": "fusekit.hosted-readiness.v1",
+            "ready": False,
+        },
+        deployment={"runtime": {"provider": "static-html"}},
+    )
+    opener = SequenceOpener(
+        [
+            home,
+            {"ok": True},
+            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _deployment_contract(),
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["hosted.home"]["status"] == "failed"
+    assert "hosted_home_embedded_github_intake_github_intake_provider_mismatch" in checks[
+        "hosted.home"
+    ]["failures"]
+    assert "hosted_home_embedded_readiness_ready_field_not_true" in checks[
+        "hosted.home"
+    ]["failures"]
+    assert "hosted_home_embedded_deployment_canonical_origin_mismatch" in checks[
+        "hosted.home"
+    ]["failures"]
+    assert "hosted_home_embedded_deployment_runtime_entrypoint_mismatch" in checks[
+        "hosted.home"
+    ]["failures"]
+
+
 def test_verify_hosted_deployment_reports_dns_resolution_failure() -> None:
     opener = SequenceOpener(
         [
@@ -632,8 +675,26 @@ def _public_dns_resolver(hostname: str) -> list[str]:
     return PUBLIC_DNS_ADDRESSES
 
 
-def _home_html() -> str:
-    return """
+def _home_html(
+    *,
+    github_intake: dict[str, object] | None = None,
+    readiness: dict[str, object] | None = None,
+    deployment: dict[str, object] | None = None,
+) -> str:
+    github_intake = _github_intake_contract() if github_intake is None else github_intake
+    readiness = (
+        {"schema_version": "fusekit.hosted-readiness.v1", "ready": True}
+        if readiness is None
+        else readiness
+    )
+    deployment = _deployment_contract() if deployment is None else deployment
+    intake_payload = html.escape(json.dumps(github_intake, sort_keys=True))
+    readiness_payload = html.escape(json.dumps(readiness, sort_keys=True))
+    deployment_payload = html.escape(json.dumps(deployment, sort_keys=True))
+    intake_script = _json_script("fusekit-github-intake", intake_payload)
+    readiness_script = _json_script("fusekit-hosted-readiness", readiness_payload)
+    deployment_script = _json_script("fusekit-hosted-deployment", deployment_payload)
+    return f"""
     <html>
       <body>
         <h1>Launch any GitHub app without touching a terminal.</h1>
@@ -651,12 +712,16 @@ def _home_html() -> str:
         <section>Offer stop, revoke access, rollback, and download redacted proof actions.</section>
         <section>What you may need to approve</section>
         <section>Hosted deployment contract</section>
-        <script id="fusekit-github-intake" type="application/json">{}</script>
-        <script id="fusekit-hosted-readiness" type="application/json">{}</script>
-        <script id="fusekit-hosted-deployment" type="application/json">{}</script>
+        {intake_script}
+        {readiness_script}
+        {deployment_script}
       </body>
     </html>
     """
+
+
+def _json_script(script_id: str, payload: str) -> str:
+    return f'<script id="{script_id}" type="application/json">{payload}</script>'
 
 
 def _deployment_contract() -> dict[str, object]:

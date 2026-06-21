@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import html
 import ipaddress
 import json
 import socket
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
+from html.parser import HTMLParser
 from typing import Any, Protocol
 
 from fusekit.errors import FuseKitError
@@ -35,6 +38,7 @@ from fusekit.hosted.worker_dispatch import HOSTED_WORKER_DISPATCH_READINESS_SCHE
 from fusekit.security import contains_durable_secret_text
 
 HOSTED_DEPLOYMENT_VERIFICATION_SCHEMA_VERSION = "fusekit.hosted-deployment-verification.v1"
+HomeContractValidator = Callable[[dict[str, Any]], list[str]]
 
 
 class UrlOpener(Protocol):
@@ -76,6 +80,7 @@ def verify_hosted_deployment(
             f"{public_origin}/",
             opener=opener,
             expect_hosted_home=True,
+            expected_public_origin=public_origin,
         )
     )
     checks.append(
@@ -174,6 +179,7 @@ def _text_check(
     *,
     opener: UrlOpener | None,
     expect_hosted_home: bool = False,
+    expected_public_origin: str = "",
 ) -> dict[str, object]:
     try:
         status, text = _fetch_text(url, opener=opener)
@@ -186,7 +192,12 @@ def _text_check(
         failures.append("http_error")
     failures.extend(_public_text_secret_failures(text))
     if expect_hosted_home:
-        failures.extend(_hosted_home_failures(text))
+        failures.extend(
+            _hosted_home_failures(
+                text,
+                expected_public_origin=expected_public_origin,
+            )
+        )
     return {
         "id": check_id,
         "url": _public_url(url),
@@ -480,7 +491,11 @@ def _public_text_secret_failures(text: str) -> list[str]:
     return []
 
 
-def _hosted_home_failures(text: str) -> list[str]:
+def _hosted_home_failures(
+    text: str,
+    *,
+    expected_public_origin: str = "",
+) -> list[str]:
     expected = {
         "hosted_home_headline_missing": "Launch any GitHub app without touching a terminal.",
         "hosted_home_start_control_missing": "Start hosted launch",
@@ -506,7 +521,121 @@ def _hosted_home_failures(text: str) -> list[str]:
         ),
         "hosted_home_source_repository_missing": "https://github.com/xpxpxp-coder/fusekit",
     }
-    return [failure for failure, marker in expected.items() if marker not in text]
+    failures = [failure for failure, marker in expected.items() if marker not in text]
+    failures.extend(
+        _hosted_home_embedded_contract_failures(
+            text,
+            expected_public_origin=expected_public_origin,
+        )
+    )
+    return failures
+
+
+def _hosted_home_embedded_contract_failures(
+    text: str,
+    *,
+    expected_public_origin: str,
+) -> list[str]:
+    scripts = _embedded_json_scripts(text)
+    checks: dict[str, tuple[str, HomeContractValidator]] = {
+        "fusekit-github-intake": (
+            "github_intake",
+            lambda payload: _github_intake_contract_failures(payload),
+        ),
+        "fusekit-hosted-readiness": (
+            "readiness",
+            _hosted_home_readiness_failures,
+        ),
+        "fusekit-hosted-deployment": (
+            "deployment",
+            lambda payload: _hosted_runtime_contract_failures(
+                payload,
+                expected_public_origin=expected_public_origin,
+            ),
+        ),
+    }
+    failures: list[str] = []
+    for script_id, (label, validator) in checks.items():
+        raw = scripts.get(script_id)
+        if raw is None:
+            failures.append(f"hosted_home_embedded_{label}_contract_missing")
+            continue
+        try:
+            payload = json.loads(html.unescape(raw))
+        except json.JSONDecodeError:
+            failures.append(f"hosted_home_embedded_{label}_contract_invalid_json")
+            continue
+        if not isinstance(payload, dict):
+            failures.append(f"hosted_home_embedded_{label}_contract_not_object")
+            continue
+        secret_failures = _public_payload_secret_failures(payload)
+        failures.extend(
+            f"hosted_home_embedded_{label}_{failure}"
+            for failure in secret_failures
+        )
+        contract_failures = validator(payload)
+        failures.extend(
+            f"hosted_home_embedded_{label}_{failure}"
+            for failure in contract_failures
+        )
+    return failures
+
+
+def _hosted_home_readiness_failures(payload: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    if payload.get("schema_version") != HOSTED_READINESS_SCHEMA_VERSION:
+        failures.append("schema_mismatch")
+    if payload.get("ready") is not True:
+        failures.append("ready_field_not_true")
+    return failures
+
+
+def _embedded_json_scripts(text: str) -> dict[str, str]:
+    parser = _EmbeddedJsonScriptParser()
+    parser.feed(text)
+    parser.close()
+    return parser.scripts
+
+
+class _EmbeddedJsonScriptParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self.scripts: dict[str, str] = {}
+        self._active_id = ""
+        self._chunks: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() != "script":
+            return
+        values = {key.lower(): value or "" for key, value in attrs}
+        if values.get("type") != "application/json":
+            return
+        script_id = values.get("id", "")
+        if script_id in {
+            "fusekit-github-intake",
+            "fusekit-hosted-readiness",
+            "fusekit-hosted-deployment",
+        }:
+            self._active_id = script_id
+            self._chunks = []
+
+    def handle_data(self, data: str) -> None:
+        if self._active_id:
+            self._chunks.append(data)
+
+    def handle_entityref(self, name: str) -> None:
+        if self._active_id:
+            self._chunks.append(f"&{name};")
+
+    def handle_charref(self, name: str) -> None:
+        if self._active_id:
+            self._chunks.append(f"&#{name};")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() == "script" and self._active_id:
+            self.scripts[self._active_id] = "".join(self._chunks)
+            self._active_id = ""
+            self._chunks = []
 
 
 def _github_intake_contract_failures(payload: dict[str, Any]) -> list[str]:

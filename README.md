@@ -176,6 +176,9 @@ revoke-access, rollback, and redacted-proof controls.
 The same page embeds public JSON contract blocks for GitHub intake, hosted
 readiness, and hosted deployment so operators and verifiers can inspect the
 machine-readable trust contract without browser storage, tokens, or raw secrets.
+The outside-in verifier now parses those embedded homepage contracts and fails
+closed if the visible page carries empty, stale, broader-permission, or
+credential-looking JSON.
 Unavailable hosted start states render as disabled non-links, while preview
 controls jump to the relevant trust section instead of pretending to run.
 The provider-gate checklist is rendered as human-owned checkpoints so MFA,
