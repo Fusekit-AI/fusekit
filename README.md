@@ -285,7 +285,9 @@ beside the readable proof labels, letting `fusekit-hosted-verify` catch proof
 vocabulary drift before launch. The friendly browser checklist also names
 recording proof explicitly, and protected action plus worker-claim receipts
 reuse that same evidence vocabulary, so a start click cannot understate the
-remaining recording or remote-artifact proof. A redacted
+remaining recording or remote-artifact proof. The outside-in hosted verifier
+checks every friendly completion-proof label on the homepage, not just the
+embedded JSON contracts. A redacted
 hosted readiness endpoint reports only configuration presence and shape errors,
 and keeps the homepage launch button disabled until the GitHub App id, slug, RSA
 private key, origin, state secret, and worker secret are configured and valid.

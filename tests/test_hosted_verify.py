@@ -582,6 +582,7 @@ def test_verify_hosted_deployment_requires_trustworthy_homepage() -> None:
     assert "hosted_home_completion_requirements_missing" in checks["hosted.home"][
         "failures"
     ]
+    assert "hosted_home_recording_proof_missing" in checks["hosted.home"]["failures"]
     assert "hosted_home_selected_repository_boundary_missing" in checks["hosted.home"][
         "failures"
     ]
@@ -727,8 +728,14 @@ def _home_html(
         <section>What happens after the click</section>
         <section>Completion requires</section>
         <section>Live URL verification</section>
+        <section>Provider verifier results</section>
+        <section>DNS propagation status</section>
+        <section>Redacted setup receipt</section>
+        <section>Redacted audit log</section>
         <section>Run Record</section>
         <section>Detonation receipt</section>
+        <section>Live acceptance report</section>
+        <section>Recording proof</section>
         <section>Reversible setup</section>
         <section>Show rollback metadata before risky changes.</section>
         <section>Offer stop, revoke access, rollback, and download redacted proof actions.</section>
