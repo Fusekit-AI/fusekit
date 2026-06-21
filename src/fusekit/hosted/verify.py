@@ -862,6 +862,10 @@ def _hosted_home_readiness_failures(payload: dict[str, Any]) -> list[str]:
             failures.append("blocking_checks_not_empty")
         if payload.get("next_actions") != []:
             failures.append("next_actions_not_empty")
+        if payload.get("required_source_provenance_env") != list(HOSTED_SOURCE_PROVENANCE_ENV):
+            failures.append("required_source_provenance_env_mismatch")
+        for failure in _source_provenance_failures(payload.get("source_provenance")):
+            failures.append(f"readiness_{failure}")
     return failures
 
 

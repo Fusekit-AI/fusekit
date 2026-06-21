@@ -403,6 +403,41 @@ def test_hosted_readiness_endpoint_reports_ready_when_configured() -> None:
     assert payload["next_actions"] == []
     assert payload["public_origin"] == "https://fusekit.snowmanai.org"
     assert payload["github_app_slug"] == "fusekit-launcher"
+    assert payload["required_source_provenance_env"] == list(HOSTED_SOURCE_PROVENANCE_ENV)
+    assert payload["source_provenance"]["verified"] is True
+    assert payload["source_provenance"]["actual"]["commit_sha"] == VERCEL_COMMIT_SHA
+
+
+def test_hosted_readiness_blocks_launch_without_verified_source_provenance() -> None:
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=_private_key_pem(),
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+    )
+
+    status, _headers, body = _call("/api/hosted/readiness", settings=settings)
+    payload = json.loads(body.decode("utf-8"))
+    serialized = json.dumps(payload)
+
+    assert status == "200 OK"
+    assert payload["ready"] is False
+    assert payload["missing"] == []
+    assert payload["invalid"] == ["source_provenance_not_verified"]
+    assert payload["blocking_checks"] == ["invalid:source_provenance_not_verified"]
+    assert payload["next_actions"] == [
+        (
+            "Enable Vercel system environment variables and deploy from "
+            "xpxpxp-coder/fusekit so the public source provenance verifies."
+        )
+    ]
+    assert payload["source_provenance"]["verified"] is False
+    assert "PRIVATE KEY" not in serialized
+    assert STATE_SECRET not in serialized
+    assert WORKER_SECRET not in serialized
 
 
 def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets() -> None:
@@ -652,6 +687,7 @@ def test_hosted_readiness_endpoint_rejects_invalid_config_shape_without_values()
         "github_app_private_key_must_be_rsa_pem",
         "hosted_state_secret_too_short",
         "hosted_worker_secret_too_short",
+        "source_provenance_not_verified",
     ]
     assert payload["blocking_checks"] == [
         "invalid:hosted_origin_must_be_https_origin",
@@ -661,6 +697,7 @@ def test_hosted_readiness_endpoint_rejects_invalid_config_shape_without_values()
         "invalid:github_app_private_key_must_be_rsa_pem",
         "invalid:hosted_state_secret_too_short",
         "invalid:hosted_worker_secret_too_short",
+        "invalid:source_provenance_not_verified",
     ]
     assert payload["next_actions"] == [
         "Use an HTTPS origin with no path, query, credentials, or fragment.",
@@ -670,6 +707,10 @@ def test_hosted_readiness_endpoint_rejects_invalid_config_shape_without_values()
         "Store a valid RSA PEM private key for the GitHub App.",
         "Use at least 16 characters for the hosted state secret.",
         "Use at least 16 characters for the worker secret.",
+        (
+            "Enable Vercel system environment variables and deploy from "
+            "xpxpxp-coder/fusekit so the public source provenance verifies."
+        ),
     ]
     assert "not-a-number" not in serialized
     assert "bad/slug" not in serialized
@@ -1392,6 +1433,7 @@ def test_hosted_job_start_dispatches_signed_worker_envelope_when_configured() ->
         worker_dispatch_url="https://worker.snowmanai.org/dispatch",
         github_opener=github_opener,
         worker_dispatch_opener=dispatch_opener,
+        **_vercel_provenance_kwargs(),
     )
 
     status, _headers, body = _call(
@@ -1490,6 +1532,7 @@ def test_hosted_job_actions_reject_duplicate_start_without_second_dispatch() -> 
         worker_dispatch_url="https://worker.snowmanai.org/dispatch",
         github_opener=github_opener,
         worker_dispatch_opener=dispatch_opener,
+        **_vercel_provenance_kwargs(),
     )
 
     status, _headers, body = _call(

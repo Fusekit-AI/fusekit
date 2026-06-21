@@ -976,6 +976,48 @@ def test_verify_hosted_deployment_requires_valid_homepage_embedded_contracts() -
     ]["failures"]
 
 
+def test_verify_hosted_deployment_requires_homepage_readiness_source_provenance() -> None:
+    provenance = _source_provenance_contract()
+    provenance["verified"] = False
+    readiness = {
+        "schema_version": "fusekit.hosted-readiness.v1",
+        "ready": True,
+        "blocking_checks": [],
+        "next_actions": [],
+        "required_source_provenance_env": ["VERCEL_ENV"],
+        "source_provenance": provenance,
+    }
+    home = _home_html(readiness=readiness)
+    opener = SequenceOpener(
+        [
+            home,
+            {"ok": True},
+            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _deployment_contract(),
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    failures = {check["id"]: check for check in report["checks"]}["hosted.home"][
+        "failures"
+    ]
+
+    assert report["ready"] is False
+    assert (
+        "hosted_home_embedded_readiness_required_source_provenance_env_mismatch"
+        in failures
+    )
+    assert (
+        "hosted_home_embedded_readiness_readiness_source_provenance_not_verified"
+        in failures
+    )
+
+
 def test_verify_hosted_deployment_reports_dns_resolution_failure() -> None:
     opener = SequenceOpener(
         [
@@ -1041,6 +1083,8 @@ def _home_html(
             "ready": True,
             "blocking_checks": [],
             "next_actions": [],
+            "required_source_provenance_env": list(HOSTED_SOURCE_PROVENANCE_ENV),
+            "source_provenance": _source_provenance_contract(),
         }
         if readiness is None
         else readiness
@@ -1236,33 +1280,7 @@ def _deployment_contract() -> dict[str, object]:
         },
         "security_headers": dict(HOSTED_SECURITY_HEADERS_CONTRACT),
         "source_integrity": dict(HOSTED_SOURCE_INTEGRITY_CONTRACT),
-        "source_provenance": {
-            "provider": "vercel",
-            "source": "vercel_system_environment_variables",
-            "expected": {
-                "deployment_environment": "production",
-                "git_provider": "github",
-                "repo_owner": "xpxpxp-coder",
-                "repo_slug": "fusekit",
-                "source_repository": "https://github.com/xpxpxp-coder/fusekit",
-            },
-            "actual": {
-                "deployment_environment": "production",
-                "deployment_url": "fusekit-snowmanai-org.vercel.app",
-                "git_provider": "github",
-                "repo_owner": "xpxpxp-coder",
-                "repo_slug": "fusekit",
-                "commit_ref": "main",
-                "commit_sha": VERCEL_COMMIT_SHA,
-            },
-            "verified": True,
-            "required_env": list(HOSTED_SOURCE_PROVENANCE_ENV),
-            "secret_boundary": (
-                "Source provenance publishes only Vercel/Git metadata. It does not "
-                "publish Vercel tokens, project IDs, OIDC tokens, deploy hooks, GitHub "
-                "installation tokens, provider credentials, or vault material."
-            ),
-        },
+        "source_provenance": _source_provenance_contract(),
         "open_core": {
             "source_repository": "https://github.com/xpxpxp-coder/fusekit",
             "license": "MIT",
@@ -1366,6 +1384,36 @@ def _deployment_contract() -> dict[str, object]:
                 "readiness": "https://worker.snowmanai.org/readiness",
             },
         },
+    }
+
+
+def _source_provenance_contract() -> dict[str, object]:
+    return {
+        "provider": "vercel",
+        "source": "vercel_system_environment_variables",
+        "expected": {
+            "deployment_environment": "production",
+            "git_provider": "github",
+            "repo_owner": "xpxpxp-coder",
+            "repo_slug": "fusekit",
+            "source_repository": "https://github.com/xpxpxp-coder/fusekit",
+        },
+        "actual": {
+            "deployment_environment": "production",
+            "deployment_url": "fusekit-snowmanai-org.vercel.app",
+            "git_provider": "github",
+            "repo_owner": "xpxpxp-coder",
+            "repo_slug": "fusekit",
+            "commit_ref": "main",
+            "commit_sha": VERCEL_COMMIT_SHA,
+        },
+        "verified": True,
+        "required_env": list(HOSTED_SOURCE_PROVENANCE_ENV),
+        "secret_boundary": (
+            "Source provenance publishes only Vercel/Git metadata. It does not "
+            "publish Vercel tokens, project IDs, OIDC tokens, deploy hooks, GitHub "
+            "installation tokens, provider credentials, or vault material."
+        ),
     }
 
 

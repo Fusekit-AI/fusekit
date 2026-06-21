@@ -281,6 +281,10 @@ HOSTED_READINESS_NEXT_ACTIONS: dict[str, str] = {
     ),
     "hosted_state_secret_too_short": "Use at least 16 characters for the hosted state secret.",
     "hosted_worker_secret_too_short": "Use at least 16 characters for the worker secret.",
+    "source_provenance_not_verified": (
+        "Enable Vercel system environment variables and deploy from "
+        "xpxpxp-coder/fusekit so the public source provenance verifies."
+    ),
 }
 
 
@@ -348,6 +352,7 @@ class HostedSettings:
             "FUSEKIT_HOSTED_WORKER_SECRET": bool(self.worker_secret),
             "FUSEKIT_HOSTED_WORKER_DISPATCH_URL": bool(self.worker_dispatch_url),
         }
+        source_provenance = self.source_provenance()
         missing = tuple(key for key in REQUIRED_HOSTED_ENV if not configured[key])
         invalid = _hosted_config_errors(self) if not missing else ()
         blocking_checks = _hosted_readiness_blocking_checks(missing, invalid)
@@ -362,6 +367,8 @@ class HostedSettings:
             "blocking_checks": blocking_checks,
             "next_actions": _hosted_readiness_next_actions(missing, invalid),
             "optional_runtime_env": list(OPTIONAL_HOSTED_ENV),
+            "required_source_provenance_env": list(HOSTED_SOURCE_PROVENANCE_ENV),
+            "source_provenance": source_provenance,
             "secret_boundary": (
                 "Readiness reports only configuration presence. Raw GitHub App private keys, "
                 "state secrets, installation tokens, and provider credentials are never rendered."
@@ -1610,6 +1617,8 @@ def _hosted_config_errors(settings: HostedSettings) -> tuple[str, ...]:
         errors.append("hosted_state_secret_too_short")
     if len(settings.worker_secret) < 16:
         errors.append("hosted_worker_secret_too_short")
+    if settings.source_provenance().get("verified") is not True:
+        errors.append("source_provenance_not_verified")
     return tuple(errors)
 
 
