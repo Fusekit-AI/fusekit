@@ -16,12 +16,29 @@ from fusekit.hosted.verify import (
 )
 
 PUBLIC_DNS_ADDRESSES = ["2606:4700::6810:84e5", "76.76.21.21"]
+SAFE_RESPONSE_HEADERS = {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+    "cross-origin-opener-policy": "same-origin",
+    "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+    "referrer-policy": "no-referrer",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+}
 
 
 class FakeResponse:
-    def __init__(self, payload: dict[str, object] | str, *, status: int = 200) -> None:
+    def __init__(
+        self,
+        payload: dict[str, object] | str,
+        *,
+        status: int = 200,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         self.status = status
         self.payload = payload
+        self.headers = dict(SAFE_RESPONSE_HEADERS if headers is None else headers)
 
     def __enter__(self) -> FakeResponse:
         return self
@@ -38,7 +55,12 @@ class FakeResponse:
 class SequenceOpener:
     def __init__(
         self,
-        payloads: list[dict[str, object] | str | urllib.error.HTTPError],
+        payloads: list[
+            dict[str, object]
+            | str
+            | urllib.error.HTTPError
+            | tuple[dict[str, object] | str, dict[str, str]]
+        ],
     ) -> None:
         self.payloads = payloads
         self.requests: list[urllib.request.Request] = []
@@ -54,6 +76,9 @@ class SequenceOpener:
         payload = self.payloads.pop(0)
         if isinstance(payload, urllib.error.HTTPError):
             raise payload
+        if isinstance(payload, tuple):
+            body, headers = payload
+            return FakeResponse(body, headers=headers)
         return FakeResponse(payload)
 
 
@@ -115,6 +140,39 @@ def test_verify_hosted_deployment_passes_launcher_and_dispatch_checks() -> None:
     assert opener.requests[6].full_url == "https://worker.snowmanai.org/readiness"
     assert "WORKER_SECRET" not in serialized
     assert "signed-public-job-token" not in serialized
+
+
+def test_verify_hosted_deployment_requires_security_headers() -> None:
+    opener = SequenceOpener(
+        [
+            (_home_html(), {}),
+            {"ok": True},
+            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _deployment_contract(),
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["hosted.home"]["status"] == "failed"
+    assert checks["hosted.home"]["failures"] == [
+        "security_header_cache_control_missing",
+        "security_header_csp_default_src_missing",
+        "security_header_csp_frame_ancestors_missing",
+        "security_header_cross_origin_opener_policy_missing",
+        "security_header_permissions_policy_missing",
+        "security_header_referrer_policy_missing",
+        "security_header_hsts_missing",
+        "security_header_content_type_options_missing",
+        "security_header_frame_options_missing",
+    ]
 
 
 def test_verify_hosted_deployment_requires_durable_worker_dispatch_idempotency() -> None:

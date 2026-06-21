@@ -345,7 +345,10 @@ top-level `blocking_checks` and deduplicated `next_actions` so an operator can
 see the remaining public setup work without searching every check row. Every
 public HTML/JSON payload it fetches is also
 checked with FuseKit's credential-text detector, and any failure is reported
-only as a redacted failure code. It
+only as a redacted failure code. Successful public HTTP responses must also
+publish no-store, default-deny CSP, no-framing, no-referrer, nosniff, HSTS,
+disabled-permissions, and same-origin opener headers before the verifier marks
+them ready. It
 also recognizes Cloudflare Error 1000 (`DNS points to prohibited IP`) and
 reports the non-secret next action: attach `fusekit.snowmanai.org` to the
 Vercel project and route the Cloudflare `fusekit` CNAME to the exact

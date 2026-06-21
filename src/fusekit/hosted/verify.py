@@ -42,6 +42,16 @@ from fusekit.security import contains_durable_secret_text
 
 HOSTED_DEPLOYMENT_VERIFICATION_SCHEMA_VERSION = "fusekit.hosted-deployment-verification.v1"
 HomeContractValidator = Callable[[dict[str, Any]], list[str]]
+SECURITY_HEADER_NAMES = (
+    "cache-control",
+    "content-security-policy",
+    "cross-origin-opener-policy",
+    "permissions-policy",
+    "referrer-policy",
+    "strict-transport-security",
+    "x-content-type-options",
+    "x-frame-options",
+)
 
 
 class UrlOpener(Protocol):
@@ -206,7 +216,7 @@ def _text_check(
     expected_public_origin: str = "",
 ) -> dict[str, object]:
     try:
-        status, text = _fetch_text(url, opener=opener)
+        status, text, headers = _fetch_text(url, opener=opener)
     except urllib.error.HTTPError as exc:
         return _http_error_check(check_id, url, exc)
     except (urllib.error.URLError, TimeoutError, OSError, UnicodeDecodeError) as exc:
@@ -214,6 +224,7 @@ def _text_check(
     failures: list[str] = []
     if status >= 400:
         failures.append("http_error")
+    failures.extend(_security_header_failures(headers))
     failures.extend(_public_text_secret_failures(text))
     if expect_hosted_home:
         failures.extend(
@@ -274,7 +285,7 @@ def _json_check_with_payload(
     expected_public_origin: str = "",
 ) -> tuple[dict[str, object], dict[str, Any]]:
     try:
-        status, payload = _fetch_json(url, opener=opener)
+        status, payload, headers = _fetch_json(url, opener=opener)
     except urllib.error.HTTPError as exc:
         return _http_error_check(check_id, url, exc), {}
     except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
@@ -282,6 +293,7 @@ def _json_check_with_payload(
     failures: list[str] = []
     if status >= 400:
         failures.append("http_error")
+    failures.extend(_security_header_failures(headers))
     failures.extend(_public_payload_secret_failures(payload))
     schema = payload.get("schema_version")
     if expect_schema and schema != expect_schema:
@@ -829,29 +841,70 @@ def _fetch_text(
     url: str,
     *,
     opener: UrlOpener | None,
-) -> tuple[int, str]:
+) -> tuple[int, str, dict[str, str]]:
     request = urllib.request.Request(url, method="GET", headers={"User-Agent": "FuseKit"})
     actual_opener = opener or urllib.request.urlopen
     with actual_opener(request, timeout=20.0) as response:
         status = int(getattr(response, "status", 200))
         raw = response.read()
-    return status, raw.decode("utf-8")
+        headers = _response_headers(response)
+    return status, raw.decode("utf-8"), headers
 
 
 def _fetch_json(
     url: str,
     *,
     opener: UrlOpener | None,
-) -> tuple[int, dict[str, Any]]:
+) -> tuple[int, dict[str, Any], dict[str, str]]:
     request = urllib.request.Request(url, method="GET", headers={"User-Agent": "FuseKit"})
     actual_opener = opener or urllib.request.urlopen
     with actual_opener(request, timeout=20.0) as response:
         status = int(getattr(response, "status", 200))
         raw = response.read()
+        headers = _response_headers(response)
     payload = json.loads(raw.decode("utf-8") if raw else "{}")
     if not isinstance(payload, dict):
         raise FuseKitError("Hosted verification endpoint returned non-object JSON.")
-    return status, payload
+    return status, payload, headers
+
+
+def _response_headers(response: object) -> dict[str, str]:
+    raw_headers = getattr(response, "headers", {})
+    headers: dict[str, str] = {}
+    for name in SECURITY_HEADER_NAMES:
+        value = ""
+        getter = getattr(raw_headers, "get", None)
+        if callable(getter):
+            value = str(getter(name, "") or getter(name.title(), "") or "")
+        if value:
+            headers[name] = value
+    return headers
+
+
+def _security_header_failures(headers: dict[str, str]) -> list[str]:
+    failures: list[str] = []
+    cache_control = headers.get("cache-control", "")
+    if "no-store" not in cache_control.lower():
+        failures.append("security_header_cache_control_missing")
+    csp = headers.get("content-security-policy", "")
+    if "default-src 'none'" not in csp:
+        failures.append("security_header_csp_default_src_missing")
+    if "frame-ancestors 'none'" not in csp:
+        failures.append("security_header_csp_frame_ancestors_missing")
+    if headers.get("cross-origin-opener-policy", "") != "same-origin":
+        failures.append("security_header_cross_origin_opener_policy_missing")
+    permissions = headers.get("permissions-policy", "")
+    if "camera=()" not in permissions or "microphone=()" not in permissions:
+        failures.append("security_header_permissions_policy_missing")
+    if headers.get("referrer-policy", "") != "no-referrer":
+        failures.append("security_header_referrer_policy_missing")
+    if "max-age=31536000" not in headers.get("strict-transport-security", ""):
+        failures.append("security_header_hsts_missing")
+    if headers.get("x-content-type-options", "") != "nosniff":
+        failures.append("security_header_content_type_options_missing")
+    if headers.get("x-frame-options", "") != "DENY":
+        failures.append("security_header_frame_options_missing")
+    return failures
 
 
 def _failed_check(
