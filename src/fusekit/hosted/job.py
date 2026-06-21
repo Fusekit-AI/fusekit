@@ -747,6 +747,7 @@ def hosted_proof_receipt(job: HostedLaunchJob) -> dict[str, object]:
         "redacted_proof": list(job.proof),
         "rollback": list(job.rollback),
         "detonation": list(job.detonation),
+        "completion_requires": list(HOSTED_WORKER_PROOF_KEYS),
         "reversal_playbook": hosted_reversal_playbook(job),
         "provider_gates": list(job.worker_contract.gates),
         "permission_boundary": list(job.worker_contract.permission_boundary),
@@ -836,16 +837,7 @@ def hosted_worker_request(job: HostedLaunchJob, *, now: int | None = None) -> di
                 "--remote-artifacts <app>/.fusekit/remote-artifacts --require-recording"
             ),
         },
-        "completion_requires": [
-            "live_url",
-            "provider_verifiers",
-            "dns_propagation",
-            "rollback_metadata",
-            "retrieved_remote_artifacts",
-            "run_record",
-            "detonation_receipt",
-            "live_acceptance_report",
-        ],
+        "completion_requires": list(HOSTED_WORKER_PROOF_KEYS),
         "prohibited": [
             "Do not bypass MFA, CAPTCHA, passkeys, billing, fraud, or consent gates.",
             (
@@ -993,6 +985,7 @@ def render_hosted_proof_receipt(job: HostedLaunchJob, *, job_token: str = "") ->
     job_id = html.escape(job.job_id)
     status = html.escape(job.status.replace("_", " "))
     completion = html.escape(str(receipt["completion_statement"]))
+    completion_requires = _list(HOSTED_WORKER_PROOF_KEYS)
     proof = _list(job.proof)
     rollback = _list(job.rollback)
     detonation = _list(job.detonation)
@@ -1091,6 +1084,8 @@ def render_hosted_proof_receipt(job: HostedLaunchJob, *, job_token: str = "") ->
         until live URL, provider verifier, DNS, Run Record, rollback, acceptance,
         and detonation proof are present.
       </p>
+      <h3>Completion requires</h3>
+      {completion_requires}
     </section>
     <section aria-label="Redacted proof">
       <h2>Redacted proof</h2>

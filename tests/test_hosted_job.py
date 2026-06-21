@@ -85,6 +85,17 @@ def test_hosted_proof_receipt_is_redacted_and_not_prematurely_complete() -> None
     assert "Completion is not yet proven" in receipt["completion_statement"]
     assert ".fusekit/run_record.json" in receipt["required_artifacts"]
     assert ".fusekit/workspace_detonation.json" in receipt["required_artifacts"]
+    assert receipt["completion_requires"] == [
+        "live_url",
+        "provider_verifiers",
+        "dns_propagation",
+        "rollback_metadata",
+        "retrieved_remote_artifacts",
+        "run_record",
+        "detonation_receipt",
+        "live_acceptance_report",
+        "recording",
+    ]
     assert any("MFA" in gate for gate in receipt["provider_gates"])
     assert any("contents:read" in item for item in receipt["permission_boundary"])
     assert "github.authorize" in receipt["approved_actions"]
@@ -96,6 +107,9 @@ def test_hosted_proof_receipt_is_redacted_and_not_prematurely_complete() -> None
     )
     assert any("Stop launch" in item["control"] for item in receipt["reversal_playbook"])
     assert "Proof receipt." in html
+    assert "Completion requires" in html
+    assert "retrieved_remote_artifacts" in html
+    assert "recording" in html
     assert "Permission boundary" in html
     assert "contents:read" in html
     assert "Approved actions" in html
@@ -147,6 +161,7 @@ def test_hosted_worker_request_binds_live_acceptance_and_no_secret_policy() -> N
     }
     assert "retrieved_remote_artifacts" in request["completion_requires"]
     assert "detonation_receipt" in request["completion_requires"]
+    assert "recording" in request["completion_requires"]
     assert ".fusekit/run_record.json" in request["required_artifacts"]
     assert ".fusekit/workspace_detonation.json" in request["required_artifacts"]
     assert any("Do not bypass MFA" in item for item in request["prohibited"])

@@ -277,7 +277,9 @@ backend-only
 snapshots, rejects credential-looking public notes or unsupported artifact
 labels, updates public job steps, and only marks hosted completion when live URL,
 provider verifier, DNS, rollback, retrieved remote artifact, Run Record,
-detonation, live acceptance, and recording proof are all present. A redacted
+detonation, live acceptance, and recording proof are all present. The public
+proof receipt renders the same redacted `completion_requires` checklist, so a
+launcher can see exactly which evidence keys must still be produced. A redacted
 hosted readiness endpoint reports only configuration presence and shape errors,
 and keeps the homepage launch button disabled until the GitHub App id, slug, RSA
 private key, origin, state secret, and worker secret are configured and valid.
