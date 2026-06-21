@@ -323,7 +323,8 @@ GitHub callback URL, Cloudflare DNS record name, health/readiness URLs, the
 operator setup checklist for attaching `fusekit.snowmanai.org` to Vercel and
 Cloudflare, worker dispatch receiver setup/verification steps, a structured
 one-click launch contract proving the hosted path needs no terminal or download,
-production-required worker dispatch wiring, and required environment variable
+production-required worker dispatch wiring, the machine-readable security header
+policy, and required environment variable
 names without exposing secret values.
 `fusekit-hosted-verify --origin https://fusekit.snowmanai.org`
 performs the outside-in deployment check against public DNS propagation, the

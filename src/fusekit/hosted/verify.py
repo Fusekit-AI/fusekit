@@ -35,6 +35,7 @@ from fusekit.hosted.server import (
     HOSTED_OPERATOR_SETUP_STEPS,
     HOSTED_PUBLIC_TRUST_CONTRACT,
     HOSTED_READINESS_SCHEMA_VERSION,
+    HOSTED_SECURITY_HEADERS_CONTRACT,
     HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
 )
 from fusekit.hosted.worker_dispatch import HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION
@@ -459,6 +460,7 @@ def _hosted_runtime_contract_failures(
     failures.extend(
         _capability_vault_boundary_failures(payload.get("capability_vault_boundary"))
     )
+    failures.extend(_security_headers_contract_failures(payload.get("security_headers")))
     failures.extend(_one_click_launch_contract_failures(payload.get("one_click_launch")))
     expected_runtime = {
         "provider": "vercel",
@@ -574,6 +576,23 @@ def _capability_vault_boundary_failures(payload: object) -> list[str]:
     for key in ("forbidden_public_material", "allowed_public_material"):
         if payload.get(key) != expected[key]:
             failures.append(f"capability_vault_boundary_{key}_mismatch")
+    return failures
+
+
+def _security_headers_contract_failures(payload: object) -> list[str]:
+    failures: list[str] = []
+    if not isinstance(payload, dict):
+        return ["security_headers_contract_missing"]
+    expected = HOSTED_SECURITY_HEADERS_CONTRACT
+    if payload.get("applies_to") != expected["applies_to"]:
+        failures.append("security_headers_applies_to_mismatch")
+    if payload.get("required_headers") != expected["required_headers"]:
+        failures.append("security_headers_required_headers_mismatch")
+    if payload.get("requirements") != expected["requirements"]:
+        failures.append("security_headers_requirements_mismatch")
+    boundary = payload.get("secret_boundary")
+    if not isinstance(boundary, str) or "do not include tokens" not in boundary:
+        failures.append("security_headers_secret_boundary_missing")
     return failures
 
 

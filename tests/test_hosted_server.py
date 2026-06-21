@@ -15,7 +15,12 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 from fusekit.hosted.github_app import GitHubAppConfig
 from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY
-from fusekit.hosted.server import HostedSettings, hosted_application, render_hosted_home
+from fusekit.hosted.server import (
+    HOSTED_SECURITY_HEADERS_CONTRACT,
+    HostedSettings,
+    hosted_application,
+    render_hosted_home,
+)
 from fusekit.hosted.session import create_hosted_state_token
 
 FAKE_PRIVATE_KEY = "-----BEGIN PRIVATE KEY-----\nnot-real\n-----END PRIVATE KEY-----"
@@ -445,6 +450,9 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     assert payload["cloudflare_dns"]["zone"] == "snowmanai.org"
     assert payload["cloudflare_dns"]["record_name"] == "fusekit"
     assert payload["cloudflare_dns"]["record_type"] == "CNAME"
+    assert payload["security_headers"] == HOSTED_SECURITY_HEADERS_CONTRACT
+    assert "Cache-Control" in payload["security_headers"]["required_headers"]
+    assert "tokens" in payload["security_headers"]["secret_boundary"]
     assert payload["operator_setup"]["target_subdomain"] == "fusekit.snowmanai.org"
     assert [step["id"] for step in payload["operator_setup"]["steps"]] == [
         "connect_vercel_project",

@@ -164,6 +164,37 @@ HOSTED_CAPABILITY_VAULT_BOUNDARY: dict[str, object] = {
     "forbidden_public_material": list(HOSTED_FORBIDDEN_PUBLIC_MATERIAL),
     "allowed_public_material": list(HOSTED_ALLOWED_PUBLIC_MATERIAL),
 }
+HOSTED_SECURITY_HEADERS_CONTRACT: dict[str, object] = {
+    "applies_to": [
+        "hosted launcher HTML",
+        "hosted JSON APIs",
+        "hosted worker dispatch JSON APIs",
+    ],
+    "required_headers": [
+        "Cache-Control",
+        "Content-Security-Policy",
+        "Cross-Origin-Opener-Policy",
+        "Permissions-Policy",
+        "Referrer-Policy",
+        "Strict-Transport-Security",
+        "X-Content-Type-Options",
+        "X-Frame-Options",
+    ],
+    "requirements": {
+        "cache": "no-store",
+        "content_security_policy": "default-src 'none' and frame-ancestors 'none'",
+        "cross_origin_opener_policy": "same-origin",
+        "permissions_policy": "camera, microphone, geolocation, payment, and usb disabled",
+        "referrer_policy": "no-referrer",
+        "strict_transport_security": "max-age=31536000 with includeSubDomains",
+        "content_type_options": "nosniff",
+        "frame_options": "DENY",
+    },
+    "secret_boundary": (
+        "Security header contracts list header names and public policy requirements only. "
+        "They do not include tokens, cookies, signatures, provider credentials, or vault material."
+    ),
+}
 HOSTED_READINESS_SCHEMA_VERSION = "fusekit.hosted-readiness.v1"
 HOSTED_DEPLOYMENT_SCHEMA_VERSION = "fusekit.hosted-deployment.v1"
 HOSTED_WORKER_DISPATCH_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch.v1"
@@ -261,6 +292,7 @@ class HostedSettings:
             "trust_story": list(TRUST_STORY),
             "trust_contract": dict(HOSTED_PUBLIC_TRUST_CONTRACT),
             "capability_vault_boundary": dict(HOSTED_CAPABILITY_VAULT_BOUNDARY),
+            "security_headers": dict(HOSTED_SECURITY_HEADERS_CONTRACT),
             "one_click_launch": {
                 "public_url": HOSTED_CANONICAL_ORIGIN,
                 "start_control": "Start hosted launch",
