@@ -88,6 +88,12 @@ def test_hosted_proof_receipt_is_redacted_and_not_prematurely_complete() -> None
     assert any("MFA" in gate for gate in receipt["provider_gates"])
     assert any("contents:read" in item for item in receipt["permission_boundary"])
     assert "github.authorize" in receipt["approved_actions"]
+    assert any("Request rollback" in item["control"] for item in receipt["reversal_playbook"])
+    assert any("Request detonation" in item["control"] for item in receipt["reversal_playbook"])
+    assert any(
+        "GitHub App installation" in item["control"]
+        for item in receipt["reversal_playbook"]
+    )
     assert "Proof receipt." in html
     assert "Permission boundary" in html
     assert "contents:read" in html
@@ -98,6 +104,10 @@ def test_hosted_proof_receipt_is_redacted_and_not_prematurely_complete() -> None
     assert "These gates stay provider-owned and human-approved" in html
     assert "MFA" in html
     assert "Reversible setup" in html
+    assert "Reversal playbook" in html
+    assert "Request rollback" in html
+    assert "Request detonation" in html
+    assert "GitHub App installation" in html
     assert "Back to control room" in html
     assert "ghs_" not in serialized
     assert "PRIVATE KEY" not in serialized
@@ -317,6 +327,9 @@ def test_hosted_control_room_embeds_redacted_job_json() -> None:
     assert "Worker contract" in html
     assert "Redacted proof" in html
     assert "Reversible setup" in html
+    assert "Request rollback" in html
+    assert "Request detonation" in html
+    assert "GitHub App installation" in html
     assert "Permission boundary" in html
     assert "backend worker" in html
     assert "Approved actions" in html
@@ -335,6 +348,11 @@ def test_hosted_control_room_embeds_redacted_job_json() -> None:
     assert payload["schema_version"] == "fusekit.hosted-job.v1"
     assert payload["latest_action_receipt"]["action"] == "start"
     assert payload["worker_dispatch"]["reason"] == "worker_dispatch_url_not_configured"
+    assert any("Request rollback" in item["control"] for item in payload["reversal_playbook"])
+    assert any(
+        "GitHub App installation" in item["control"]
+        for item in payload["reversal_playbook"]
+    )
     assert any(
         "selected repository" in item
         for item in payload["worker_contract"]["permission_boundary"]

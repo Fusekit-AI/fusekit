@@ -695,6 +695,8 @@ def test_hosted_github_control_room_fetches_source_and_renders_job() -> None:
     assert "vercel.deploy_verify" in text
     assert "Provider gates" in text
     assert "human-owned" in text
+    assert "Request rollback" in text
+    assert "GitHub App installation" in text
     assert "View proof receipt" in text
     assert "Run Record" in text
     assert ".fusekit/workspace_detonation.json" in text
@@ -896,6 +898,8 @@ def test_hosted_job_action_from_browser_returns_updated_control_room_html() -> N
     assert "Permission boundary" in text
     assert "Approved actions" in text
     assert "Provider gates" in text
+    assert "Request rollback" in text
+    assert "Request detonation" in text
     assert "Latest protected action: start" in text
     assert "Next proof required" in text
     assert "Worker dispatch: not configured" in text
@@ -1356,7 +1360,11 @@ def test_hosted_proof_receipt_page_uses_signed_job_token_without_process_memory(
     assert ".fusekit/run_record.json" in text
     assert ".fusekit/workspace_detonation.json" in text
     assert "Reversible setup" in text
+    assert "Reversal playbook" in text
+    assert "Request rollback" in text
+    assert "GitHub App installation" in text
     assert payload["schema_version"] == "fusekit.hosted-proof-receipt.v1"
+    assert payload["reversal_playbook"]
     assert payload["completion_ready"] is False
     assert "ghs_fake" not in text
 

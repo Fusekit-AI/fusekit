@@ -160,7 +160,11 @@ can still request the redacted job object plus a redacted action receipt naming
 the next proof required for worker start, rollback, or detonation. Browser
 clicks now show that same latest protected-action receipt in the control room,
 including public worker-dispatch status, so a nontechnical user sees what the
-button requested and what proof remains without seeing any token. A
+button requested and what proof remains without seeing any token. The control
+room and proof receipt now also publish a browser-visible reversal playbook:
+pause at human gates, revoke or narrow the GitHub App installation, request
+rollback with provider inventory proof, and request worker detonation while
+preserving redacted public proof. A
 browser-facing proof receipt page
 shows redacted proof, required artifacts, rollback metadata, and detonation
 requirements without claiming completion before live evidence exists. After the

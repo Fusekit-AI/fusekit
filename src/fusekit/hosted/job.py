@@ -518,6 +518,7 @@ def render_hosted_control_room(
     """Render the public no-terminal hosted control-room shell."""
 
     payload_dict = job.to_dict()
+    payload_dict["reversal_playbook"] = hosted_reversal_playbook(job)
     if action_receipt is not None:
         payload_dict["latest_action_receipt"] = action_receipt
     if dispatch_receipt is not None:
@@ -531,6 +532,7 @@ def render_hosted_control_room(
     proof = _list(job.proof)
     rollback = _list(job.rollback)
     detonation = _list(job.detonation)
+    reversal_playbook = _reversal_playbook_section(hosted_reversal_playbook(job))
     worker_contract = _worker_contract_section(job.worker_contract)
     app_name = html.escape(job.app_name)
     github_source = html.escape(job.github_source)
@@ -650,6 +652,7 @@ def render_hosted_control_room(
         {proof}
         <h2>Reversible setup</h2>
         {rollback}
+        {reversal_playbook}
         <h2>Detonation</h2>
         {detonation}
       </aside>
@@ -680,12 +683,52 @@ def hosted_proof_receipt(job: HostedLaunchJob) -> dict[str, object]:
         "redacted_proof": list(job.proof),
         "rollback": list(job.rollback),
         "detonation": list(job.detonation),
+        "reversal_playbook": hosted_reversal_playbook(job),
         "provider_gates": list(job.worker_contract.gates),
         "permission_boundary": list(job.worker_contract.permission_boundary),
         "approved_actions": list(job.worker_contract.approved_actions),
         "required_artifacts": list(job.worker_contract.required_artifacts),
         "steps": [step.to_dict() for step in job.steps],
     }
+
+
+def hosted_reversal_playbook(job: HostedLaunchJob) -> list[dict[str, str]]:
+    """Return public browser-safe recovery controls for a hosted launch."""
+
+    del job
+    return [
+        {
+            "control": "Pause at human gates",
+            "proof": (
+                "Provider-owned MFA, CAPTCHA, billing, fraud, consent, and DNS ownership "
+                "screens remain human-owned; FuseKit must wait instead of bypassing them."
+            ),
+        },
+        {
+            "control": "Revoke GitHub App installation",
+            "proof": (
+                "Remove or narrow the GitHub App installation in GitHub settings. "
+                "FuseKit never renders installation tokens in the browser, job token, "
+                "proof receipt, or public logs."
+            ),
+        },
+        {
+            "control": "Request rollback",
+            "proof": (
+                "Use the protected control-room rollback button. Completion then requires "
+                "rollback plan, provider resource inventory, rollback execution receipt, "
+                "and post-rollback verification."
+            ),
+        },
+        {
+            "control": "Request detonation",
+            "proof": (
+                "Use the protected control-room detonation button. FuseKit must preserve "
+                "redacted public proof and destroy hosted worker scratch state, provider "
+                "auth sessions, and plaintext vault material."
+            ),
+        },
+    ]
 
 
 def hosted_worker_request(job: HostedLaunchJob, *, now: int | None = None) -> dict[str, object]:
@@ -875,6 +918,7 @@ def render_hosted_proof_receipt(job: HostedLaunchJob, *, job_token: str = "") ->
     proof = _list(job.proof)
     rollback = _list(job.rollback)
     detonation = _list(job.detonation)
+    reversal_playbook = _reversal_playbook_section(hosted_reversal_playbook(job))
     artifacts = _list(job.worker_contract.required_artifacts)
     gates = _list(job.worker_contract.gates)
     permissions = _list(job.worker_contract.permission_boundary)
@@ -1000,6 +1044,10 @@ def render_hosted_proof_receipt(job: HostedLaunchJob, *, job_token: str = "") ->
     <section aria-label="Reversible setup">
       <h2>Reversible setup</h2>
       {rollback}
+    </section>
+    <section aria-label="Reversal playbook">
+      <h2>Reversal playbook</h2>
+      {reversal_playbook}
     </section>
     <section aria-label="Detonation">
       <h2>Detonation</h2>
@@ -1201,6 +1249,15 @@ def _worker_contract_section(contract: HostedWorkerContract) -> str:
         <h3>Guarantees</h3>
         {guarantees}
 """
+
+
+def _reversal_playbook_section(playbook: list[dict[str, str]]) -> str:
+    items = []
+    for item in playbook:
+        control = html.escape(item["control"])
+        proof = html.escape(item["proof"])
+        items.append(f"<li><strong>{control}:</strong> {proof}</li>")
+    return "<ul>" + "".join(items) + "</ul>"
 
 
 def _completion_ready(job: HostedLaunchJob) -> bool:
