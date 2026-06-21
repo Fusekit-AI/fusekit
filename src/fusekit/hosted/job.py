@@ -716,8 +716,8 @@ def hosted_proof_receipt(job: HostedLaunchJob) -> dict[str, object]:
 def hosted_reversal_playbook(job: HostedLaunchJob) -> list[dict[str, str]]:
     """Return public browser-safe recovery controls for a hosted launch."""
 
-    del job
-    return [
+    revoke_url = _github_installation_settings_url(job.worker_contract.github_installation_id)
+    playbook = [
         {
             "control": "Stop launch before worker start",
             "proof": (
@@ -751,6 +751,15 @@ def hosted_reversal_playbook(job: HostedLaunchJob) -> list[dict[str, str]]:
             ),
         },
     ]
+    if revoke_url:
+        playbook[1]["action_url"] = revoke_url
+    return playbook
+
+
+def _github_installation_settings_url(installation_id: int | None) -> str:
+    if installation_id is None or installation_id <= 0:
+        return ""
+    return f"https://github.com/settings/installations/{installation_id}"
 
 
 def hosted_worker_request(job: HostedLaunchJob, *, now: int | None = None) -> dict[str, object]:
@@ -1300,7 +1309,13 @@ def _reversal_playbook_section(playbook: list[dict[str, str]]) -> str:
     for item in playbook:
         control = html.escape(item["control"])
         proof = html.escape(item["proof"])
-        items.append(f"<li><strong>{control}:</strong> {proof}</li>")
+        action_url = item.get("action_url", "")
+        action = (
+            f' <a href="{html.escape(action_url, quote=True)}">Open settings</a>'
+            if action_url
+            else ""
+        )
+        items.append(f"<li><strong>{control}:</strong> {proof}{action}</li>")
     return "<ul>" + "".join(items) + "</ul>"
 
 

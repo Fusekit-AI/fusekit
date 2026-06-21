@@ -170,7 +170,9 @@ button requested and what proof remains without seeing any token. The control
 room and proof receipt now also publish a browser-visible reversal playbook:
 stop before worker start, revoke or narrow the GitHub App installation, request
 rollback with provider inventory proof, and request worker detonation while
-preserving redacted public proof. A
+preserving redacted public proof. When GitHub provides the non-secret
+installation id, the revoke step links to the GitHub installation settings page
+without exposing installation tokens. A
 browser-facing proof receipt page
 shows redacted proof, required artifacts, rollback metadata, and detonation
 requirements without claiming completion before live evidence exists. The same

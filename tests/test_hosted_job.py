@@ -152,6 +152,29 @@ def test_hosted_worker_request_binds_live_acceptance_and_no_secret_policy() -> N
     assert any("Do not bypass MFA" in item for item in request["prohibited"])
     assert "ghs_" not in serialized
     assert "PRIVATE KEY" not in serialized
+
+
+def test_hosted_reversal_playbook_links_known_github_installation_settings() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        github_installation_id=42,
+        job_id="hosted-test",
+        now=1_700_000_000,
+    )
+    receipt = hosted_proof_receipt(job)
+    html = render_hosted_proof_receipt(job, job_token="signed-public-job")
+    revoke = next(
+        item
+        for item in receipt["reversal_playbook"]
+        if item["control"] == "Revoke GitHub App installation"
+    )
+    serialized = json.dumps(receipt) + html
+
+    assert revoke["action_url"] == "https://github.com/settings/installations/42"
+    assert 'href="https://github.com/settings/installations/42"' in html
+    assert "Open settings" in html
+    assert "ghs_" not in serialized
+    assert "PRIVATE KEY" not in serialized
     assert "VERCEL_TOKEN" not in serialized
 
 

@@ -1446,9 +1446,15 @@ def test_hosted_proof_receipt_page_uses_signed_job_token_without_process_memory(
     assert "Reversal playbook" in text
     assert "Request rollback" in text
     assert "GitHub App installation" in text
+    assert "https://github.com/settings/installations/42" in text
+    assert "Open settings" in text
     assert "Download proof JSON" in text
     assert payload["schema_version"] == "fusekit.hosted-proof-receipt.v1"
     assert payload["reversal_playbook"]
+    assert any(
+        item.get("action_url") == "https://github.com/settings/installations/42"
+        for item in payload["reversal_playbook"]
+    )
     assert payload["completion_ready"] is False
     assert "ghs_fake" not in text
 
