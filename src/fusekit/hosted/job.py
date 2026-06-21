@@ -503,12 +503,20 @@ def render_hosted_control_room(
     *,
     control_token: str = "",
     job_token: str = "",
+    action_receipt: dict[str, object] | None = None,
+    dispatch_receipt: dict[str, object] | None = None,
 ) -> str:
     """Render the public no-terminal hosted control-room shell."""
 
-    payload = html.escape(json.dumps(job.to_dict(), sort_keys=True))
+    payload_dict = job.to_dict()
+    if action_receipt is not None:
+        payload_dict["latest_action_receipt"] = action_receipt
+    if dispatch_receipt is not None:
+        payload_dict["worker_dispatch"] = dispatch_receipt
+    payload = html.escape(json.dumps(payload_dict, sort_keys=True))
     rows = "\n".join(_step_card(step) for step in job.steps)
     controls = _control_forms(job, control_token=control_token, job_token=job_token)
+    action_outcome = _action_receipt_section(action_receipt, dispatch_receipt)
     proof_link = _proof_link(job, job_token=job_token)
     worker_request_link = _worker_request_link(job, job_token=job_token)
     proof = _list(job.proof)
@@ -621,6 +629,7 @@ def render_hosted_control_room(
     <div class="grid">
       <section aria-label="Launch steps">
         <h2>Launch steps</h2>
+        {action_outcome}
         {controls}
         {proof_link}
         {worker_request_link}
@@ -976,6 +985,40 @@ def _step_card(step: HostedLaunchJobStep) -> str:
         f"<p>{html.escape(step.proof)}</p>"
         "</article>"
     )
+
+
+def _action_receipt_section(
+    action_receipt: dict[str, object] | None,
+    dispatch_receipt: dict[str, object] | None,
+) -> str:
+    if action_receipt is None:
+        return ""
+    action = html.escape(str(action_receipt.get("action", "action")))
+    statement = html.escape(str(action_receipt.get("receipt_statement", "")))
+    next_required = action_receipt.get("next_required_proof")
+    proof_items = (
+        tuple(str(item) for item in next_required)
+        if isinstance(next_required, list)
+        else ()
+    )
+    dispatch = ""
+    if dispatch_receipt is not None:
+        dispatched = dispatch_receipt.get("dispatched")
+        dispatch_status = "accepted" if dispatched is True else "not configured"
+        reason = dispatch_receipt.get("reason")
+        reason_label = f" ({html.escape(str(reason))})" if isinstance(reason, str) else ""
+        dispatch = (
+            f"<p>Worker dispatch: {html.escape(dispatch_status)}{reason_label}.</p>"
+        )
+    return f"""
+        <article class="step done" aria-label="Latest protected action receipt">
+          <h3>Latest protected action: {action}</h3>
+          <p>{statement}</p>
+          {dispatch}
+          <small>Next proof required</small>
+          {_list(proof_items)}
+        </article>
+"""
 
 
 def _control_forms(

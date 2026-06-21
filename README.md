@@ -148,7 +148,10 @@ a signed redacted job token so a stateless hosted function can recover the publi
 control-room state without a database or raw provider token. Browser form
 actions return the updated control room instead of raw JSON, while API clients
 can still request the redacted job object plus a redacted action receipt naming
-the next proof required for worker start, rollback, or detonation. A
+the next proof required for worker start, rollback, or detonation. Browser
+clicks now show that same latest protected-action receipt in the control room,
+including public worker-dispatch status, so a nontechnical user sees what the
+button requested and what proof remains without seeing any token. A
 browser-facing proof receipt page
 shows redacted proof, required artifacts, rollback metadata, and detonation
 requirements without claiming completion before live evidence exists. After the

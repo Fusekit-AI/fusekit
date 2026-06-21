@@ -283,7 +283,18 @@ def test_hosted_worker_proof_rejects_unknown_artifact_and_secret_text() -> None:
 
 def test_hosted_control_room_embeds_redacted_job_json() -> None:
     job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
-    html = render_hosted_control_room(job)
+    started = advance_hosted_launch_job(job, "start", now=1_700_000_001)
+    action_receipt = hosted_job_action_receipt(started, action="start", now=1_700_000_002)
+    html = render_hosted_control_room(
+        started,
+        action_receipt=action_receipt,
+        dispatch_receipt={
+            "schema_version": "fusekit.hosted-worker-dispatch.v1",
+            "action": "start",
+            "dispatched": False,
+            "reason": "worker_dispatch_url_not_configured",
+        },
+    )
     match = re.search(
         r'<script id="fusekit-hosted-job" type="application/json">(.*?)</script>',
         html,
@@ -296,10 +307,15 @@ def test_hosted_control_room_embeds_redacted_job_json() -> None:
     assert "Reversible setup" in html
     assert ".fusekit/run_record.json" in html
     assert ".fusekit/workspace_detonation.json" in html
+    assert "Latest protected action: start" in html
+    assert "Next proof required" in html
+    assert "Worker dispatch: not configured" in html
     assert "Detonation" in html
     assert match is not None
     payload = json.loads(match.group(1).replace("&quot;", '"'))
     assert payload["schema_version"] == "fusekit.hosted-job.v1"
+    assert payload["latest_action_receipt"]["action"] == "start"
+    assert payload["worker_dispatch"]["reason"] == "worker_dispatch_url_not_configured"
     assert payload["worker_contract"]["schema_version"] == "fusekit.hosted-worker-contract.v1"
     assert "ghs_" not in json.dumps(payload)
 

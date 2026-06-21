@@ -874,9 +874,17 @@ def test_hosted_job_action_from_browser_returns_updated_control_room_html() -> N
     assert "Hosted launch control room." in text
     assert "waiting for provider gates" in text
     assert "Hosted worker contract queued" in text
+    assert "Latest protected action: start" in text
+    assert "Next proof required" in text
+    assert "Worker dispatch: not configured" in text
     assert "View worker request" in text
     assert "job=" in text
     assert payload["status"] == "waiting_for_provider_gates"
+    assert payload["latest_action_receipt"]["schema_version"] == (
+        "fusekit.hosted-job-action-receipt.v1"
+    )
+    assert payload["latest_action_receipt"]["action"] == "start"
+    assert payload["worker_dispatch"]["reason"] == "worker_dispatch_url_not_configured"
     assert "ghs_fake" not in text
 
 

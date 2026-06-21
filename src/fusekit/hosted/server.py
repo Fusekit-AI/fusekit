@@ -692,6 +692,7 @@ def _hosted_job_action_response(
         updated = advance_hosted_launch_job(job, action)
     except ValueError:
         return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "invalid_action"})
+    action_receipt = hosted_job_action_receipt(updated, action=action)
     job_token = create_hosted_job_token(settings.state_secret, updated)
     dispatch_receipt: dict[str, object] | None = None
     if action in {"start", "rollback", "detonate"}:
@@ -710,10 +711,23 @@ def _hosted_job_action_response(
             )
     settings.hosted_jobs[job.job_id] = updated
     if _wants_html(environ):
-        return _hosted_job_html_response(settings, start_response, updated)
+        control_token = create_hosted_state_token(
+            settings.state_secret,
+            return_path=f"/api/hosted/jobs/{updated.job_id}",
+        )
+        return _html_response(
+            start_response,
+            render_hosted_control_room(
+                updated,
+                control_token=control_token,
+                job_token=job_token,
+                action_receipt=action_receipt,
+                dispatch_receipt=dispatch_receipt,
+            ),
+        )
     payload = updated.to_dict()
     payload["job_token"] = job_token
-    payload["action_receipt"] = hosted_job_action_receipt(updated, action=action)
+    payload["action_receipt"] = action_receipt
     if dispatch_receipt is not None:
         payload["worker_dispatch"] = dispatch_receipt
     return _response(start_response, HTTPStatus.OK, payload)
