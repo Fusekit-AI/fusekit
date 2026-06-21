@@ -416,6 +416,22 @@ class HostedSettings:
                 "terminal_required": False,
                 "download_required": False,
             },
+            "protected_controls": {
+                "actions": ["start", "stop", "rollback", "detonate"],
+                "http_method": "POST",
+                "control_token_transport": "hidden_form_field",
+                "job_token_transport": "signed_public_query_parameter",
+                "binding": "job_id_and_action",
+                "token_lifetime": "short-lived",
+                "public_url_policy": "action URLs must not include control tokens",
+                "missing_token_behavior": "render disabled protected controls",
+                "secret_boundary": (
+                    "Protected action receipts and public job tokens are redacted. Control "
+                    "tokens are action-bound click capabilities, not provider credentials, "
+                    "and must not appear in action URLs, deployment contracts, receipts, or "
+                    "logs."
+                ),
+            },
             "runtime": {
                 "provider": "vercel",
                 "entrypoint": "app.py",

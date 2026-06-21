@@ -476,6 +476,7 @@ def _hosted_runtime_contract_failures(
     failures.extend(_source_integrity_contract_failures(payload.get("source_integrity")))
     failures.extend(_source_provenance_failures(payload.get("source_provenance")))
     failures.extend(_one_click_launch_contract_failures(payload.get("one_click_launch")))
+    failures.extend(_protected_controls_contract_failures(payload.get("protected_controls")))
     expected_runtime = {
         "provider": "vercel",
         "entrypoint": "app.py",
@@ -720,6 +721,34 @@ def _one_click_launch_contract_failures(payload: object) -> list[str]:
         failures.append("one_click_launch_human_gates_missing")
     elif not any(isinstance(item, str) and "MFA" in item for item in human_gates):
         failures.append("one_click_launch_human_gates_mfa_missing")
+    return failures
+
+
+def _protected_controls_contract_failures(payload: object) -> list[str]:
+    failures: list[str] = []
+    if not isinstance(payload, dict):
+        return ["protected_controls_contract_missing"]
+    expected = {
+        "actions": ["start", "stop", "rollback", "detonate"],
+        "http_method": "POST",
+        "control_token_transport": "hidden_form_field",
+        "job_token_transport": "signed_public_query_parameter",
+        "binding": "job_id_and_action",
+        "token_lifetime": "short-lived",
+        "public_url_policy": "action URLs must not include control tokens",
+        "missing_token_behavior": "render disabled protected controls",
+    }
+    for key, value in expected.items():
+        if payload.get(key) != value:
+            failures.append(f"protected_controls_{key}_mismatch")
+    boundary = payload.get("secret_boundary")
+    if not isinstance(boundary, str):
+        failures.append("protected_controls_secret_boundary_missing")
+    else:
+        for required in ("action-bound", "must not appear in action URLs"):
+            if required not in boundary:
+                failures.append("protected_controls_secret_boundary_missing")
+                break
     return failures
 
 

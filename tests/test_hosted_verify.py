@@ -801,6 +801,41 @@ def test_verify_hosted_deployment_requires_one_click_contract() -> None:
     ]["failures"]
 
 
+def test_verify_hosted_deployment_requires_protected_controls_contract() -> None:
+    contract = _deployment_contract()
+    protected = contract["protected_controls"]
+    assert isinstance(protected, dict)
+    protected["actions"] = ["start"]
+    protected["control_token_transport"] = "query_parameter"
+    protected["binding"] = "job_id"
+    protected["public_url_policy"] = "control tokens may appear in action URLs"
+    protected["secret_boundary"] = "Protected controls are public links."
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            _readiness_contract(),
+            contract,
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+    failures = checks["hosted.deployment"]["failures"]
+
+    assert report["ready"] is False
+    assert "protected_controls_actions_mismatch" in failures
+    assert "protected_controls_control_token_transport_mismatch" in failures
+    assert "protected_controls_binding_mismatch" in failures
+    assert "protected_controls_public_url_policy_mismatch" in failures
+    assert "protected_controls_secret_boundary_missing" in failures
+
+
 def test_verify_hosted_deployment_requires_github_intake_contract() -> None:
     intake = _github_intake_contract()
     intake["route"] = "oauth-app"
@@ -1298,6 +1333,22 @@ def _deployment_contract() -> dict[str, object]:
             ],
             "terminal_required": False,
             "download_required": False,
+        },
+        "protected_controls": {
+            "actions": ["start", "stop", "rollback", "detonate"],
+            "http_method": "POST",
+            "control_token_transport": "hidden_form_field",
+            "job_token_transport": "signed_public_query_parameter",
+            "binding": "job_id_and_action",
+            "token_lifetime": "short-lived",
+            "public_url_policy": "action URLs must not include control tokens",
+            "missing_token_behavior": "render disabled protected controls",
+            "secret_boundary": (
+                "Protected action receipts and public job tokens are redacted. Control "
+                "tokens are action-bound click capabilities, not provider credentials, "
+                "and must not appear in action URLs, deployment contracts, receipts, or "
+                "logs."
+            ),
         },
         "runtime": {
             "provider": "vercel",
