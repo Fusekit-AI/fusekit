@@ -13,7 +13,9 @@ from typing import Any, Protocol
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.server import (
+    HOSTED_CANONICAL_ORIGIN,
     HOSTED_DEPLOYMENT_SCHEMA_VERSION,
+    HOSTED_OPERATOR_SETUP_STEPS,
     HOSTED_READINESS_SCHEMA_VERSION,
 )
 from fusekit.hosted.worker_dispatch import HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION
@@ -268,6 +270,26 @@ def _hosted_runtime_contract_failures(payload: dict[str, Any]) -> list[str]:
             failures.append("open_core_license_mismatch")
         if open_core.get("reviewable_entrypoint") != "app.py":
             failures.append("open_core_entrypoint_mismatch")
+    operator_setup = payload.get("operator_setup")
+    if not isinstance(operator_setup, dict):
+        failures.append("operator_setup_contract_missing")
+    else:
+        if operator_setup.get("target_subdomain") != urllib.parse.urlparse(
+            HOSTED_CANONICAL_ORIGIN
+        ).hostname:
+            failures.append("operator_setup_target_subdomain_mismatch")
+        steps = operator_setup.get("steps")
+        if not isinstance(steps, list):
+            failures.append("operator_setup_steps_missing")
+        else:
+            expected_step_ids = [step["id"] for step in HOSTED_OPERATOR_SETUP_STEPS]
+            actual_step_ids = [
+                step.get("id")
+                for step in steps
+                if isinstance(step, dict) and isinstance(step.get("id"), str)
+            ]
+            if actual_step_ids != expected_step_ids:
+                failures.append("operator_setup_steps_mismatch")
     return failures
 
 

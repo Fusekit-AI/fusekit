@@ -203,6 +203,37 @@ def test_verify_hosted_deployment_requires_runtime_and_dns_contract() -> None:
     assert "cloudflare_record_type_mismatch" in checks["hosted.deployment"]["failures"]
 
 
+def test_verify_hosted_deployment_requires_operator_setup_contract() -> None:
+    contract = _deployment_contract()
+    operator_setup = contract["operator_setup"]
+    assert isinstance(operator_setup, dict)
+    operator_setup["target_subdomain"] = "www.snowmanai.org"
+    steps = operator_setup["steps"]
+    assert isinstance(steps, list)
+    steps.pop()
+    opener = SequenceOpener(
+        [
+            {"ok": True},
+            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            contract,
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["hosted.deployment"]["status"] == "failed"
+    assert "operator_setup_target_subdomain_mismatch" in checks["hosted.deployment"][
+        "failures"
+    ]
+    assert "operator_setup_steps_mismatch" in checks["hosted.deployment"]["failures"]
+
+
 def test_verify_hosted_deployment_reports_dns_resolution_failure() -> None:
     opener = SequenceOpener(
         [
@@ -272,5 +303,14 @@ def _deployment_contract() -> dict[str, object]:
             "source_repository": "https://github.com/xpxpxp-coder/fusekit",
             "license": "MIT",
             "reviewable_entrypoint": "app.py",
+        },
+        "operator_setup": {
+            "target_subdomain": "fusekit.snowmanai.org",
+            "steps": [
+                {"id": "connect_vercel_project"},
+                {"id": "attach_custom_domain"},
+                {"id": "route_cloudflare_cname"},
+                {"id": "verify_public_contracts"},
+            ],
         },
     }
