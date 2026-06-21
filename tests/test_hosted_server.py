@@ -179,6 +179,13 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
     assert "copy-once secret values" in html
     assert "approved action ids" in html
     assert "What happens after the click" in html
+    assert "Completion requires" in html
+    assert "Live URL verification" in html
+    assert "Provider verifier results" in html
+    assert "DNS propagation status" in html
+    assert "Run Record" in html
+    assert "Detonation receipt" in html
+    assert "Live acceptance report" in html
     assert "Install the FuseKit GitHub App on one selected repository." in html
     assert "Click Start hosted launch and pass only provider-owned human gates." in html
     assert "Receive the live URL, redacted proof receipt" in html

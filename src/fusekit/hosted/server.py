@@ -427,6 +427,9 @@ def render_hosted_home(settings: HostedSettings) -> str:
         else '<span class="button disabled" aria-disabled="true">Start hosted launch</span>'
     )
     launch_path = "\n".join(f"<li>{html.escape(item)}</li>" for item in HOSTED_LAUNCH_PATH)
+    completion_requirements = "\n".join(
+        f"<li>{html.escape(item)}</li>" for item in HOSTED_PROOF_REQUIREMENTS
+    )
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -553,6 +556,14 @@ def render_hosted_home(settings: HostedSettings) -> str:
     <section aria-label="Launch path">
       <h2>What happens after the click</h2>
       <ol>{launch_path}</ol>
+    </section>
+    <section aria-label="Completion proof">
+      <h2>Completion requires</h2>
+      <p>
+        FuseKit does not call a hosted launch complete until the worker submits
+        redacted proof for every required live artifact.
+      </p>
+      <ul>{completion_requirements}</ul>
     </section>
     <section aria-label="Open core">
       <h2>Open core</h2>

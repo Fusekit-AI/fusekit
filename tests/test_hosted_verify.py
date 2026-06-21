@@ -455,6 +455,9 @@ def test_verify_hosted_deployment_requires_trustworthy_homepage() -> None:
     assert "public_text_contains_credential_text" in checks["hosted.home"]["failures"]
     assert "hosted_home_headline_missing" in checks["hosted.home"]["failures"]
     assert "hosted_home_open_core_missing" in checks["hosted.home"]["failures"]
+    assert "hosted_home_completion_requirements_missing" in checks["hosted.home"][
+        "failures"
+    ]
     assert "github_pat_" not in serialized
 
 
@@ -520,6 +523,10 @@ def _home_html() -> str:
         <section>Capability vault boundary</section>
         <section>Raw secrets must never leave the vault runtime.</section>
         <section>What happens after the click</section>
+        <section>Completion requires</section>
+        <section>Live URL verification</section>
+        <section>Run Record</section>
+        <section>Detonation receipt</section>
         <section>What you may need to approve</section>
         <section>Hosted deployment contract</section>
       </body>

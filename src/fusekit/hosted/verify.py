@@ -442,6 +442,10 @@ def _hosted_home_failures(text: str) -> list[str]:
             "Raw secrets must never leave the vault runtime."
         ),
         "hosted_home_launch_path_missing": "What happens after the click",
+        "hosted_home_completion_requirements_missing": "Completion requires",
+        "hosted_home_live_url_proof_missing": "Live URL verification",
+        "hosted_home_run_record_proof_missing": "Run Record",
+        "hosted_home_detonation_receipt_missing": "Detonation receipt",
         "hosted_home_provider_gates_missing": "What you may need to approve",
         "hosted_home_deployment_contract_missing": "Hosted deployment contract",
         "hosted_home_source_repository_missing": "https://github.com/xpxpxp-coder/fusekit",
