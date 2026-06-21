@@ -21,6 +21,7 @@ FuseKit scans generated apps, plans service setup, captures approved provider cr
 - Real-provider execution by default; incomplete local rehearsals require `--allow-incomplete`.
 - Acceptance harness: `fusekit acceptance run` writes a redacted run ledger, artifact snapshots, and launch-readiness report.
 - OCI Cloud Shell deeplink launcher for a no-local-prerequisite browser-first lane.
+- Hosted launcher contract for the planned `fusekit.snowmanai.org` no-terminal path.
 - Encrypted vault bundles using scrypt and AES-256-GCM.
 - Wrong-passphrase failure and ciphertext-only vault files.
 - Redacted JSONL audit logs and setup receipts.
@@ -120,6 +121,50 @@ Use `--require-recording` for the public walkthrough gate; it is accepted only
 with `--mode live` and `--remote-artifacts`, and exits nonzero unless the live
 report proves `recording_ready: true` from the retrieved disposable worker
 bundle.
+
+## Hosted Universal Launcher
+
+The product launch target is `fusekit.snowmanai.org`: a hosted FuseKit launcher
+where a nontechnical user visits a URL, clicks `Start hosted launch`, selects a
+GitHub repository through the FuseKit GitHub App, approves provider-owned gates,
+and receives a live URL plus redacted proof. The trust story is open core,
+narrow permissions, visible plan, redacted proof, and reversible setup.
+
+The open-source core now includes the hosted launch contract and trust-first
+renderer in `fusekit.hosted`. This first slice is non-mutating: it can render a
+universal GitHub intake preview, provider summary, narrow-permission contract,
+visible setup plan, proof list, and rollback promise without asking the user to
+run commands. It also includes the GitHub App install URL, app JWT, installation
+token exchange, signed callback state, selected-repository listing page, and
+server-side source fetch/scan into a visible hosted launch plan. It also has a
+public-safe hosted job/control-room shell that tracks proof, rollback, and
+detonation expectations without exposing provider tokens. The control room now
+publishes a redacted hosted-worker contract with the approved action ids,
+provider gates, required public artifacts, Run Record, rollback metadata,
+acceptance report, and workspace detonation receipt that must exist before the
+hosted path can claim completion. It exposes a redacted job status API and
+protected start, rollback, and detonation request controls. Those controls carry
+a signed redacted job token so a stateless hosted function can recover the public
+control-room state without a database or raw provider token. Browser form
+actions return the updated control room instead of raw JSON, while API clients
+can still request the redacted job object. A browser-facing proof receipt page
+shows redacted proof, required artifacts, rollback metadata, and detonation
+requirements without claiming completion before live evidence exists. A redacted
+hosted readiness endpoint reports only configuration presence and shape errors,
+and keeps the homepage launch button disabled until the GitHub App id, slug,
+RSA private key, origin, and state secret are configured and valid. Direct
+GitHub intake routes also fail closed with the same redacted readiness object
+until those checks pass. The
+remaining slices are real hosted job execution, final proof artifact production,
+rollback/detonation execution, and production DNS/deployment.
+
+The repository includes a minimal Vercel-compatible WSGI entrypoint at `app.py`
+for the hosted subdomain. Production still needs the Vercel project connected
+to this repository, `fusekit.snowmanai.org` added as the custom domain, the
+Cloudflare DNS record pointed at Vercel, and these runtime environment variables
+set in Vercel: `FUSEKIT_HOSTED_ORIGIN`, `FUSEKIT_GITHUB_APP_ID`,
+`FUSEKIT_GITHUB_APP_SLUG`, `FUSEKIT_GITHUB_APP_PRIVATE_KEY`, and
+`FUSEKIT_HOSTED_STATE_SECRET`.
 
 ## Real Provider Acceptance Run
 

@@ -9,6 +9,7 @@
 - [x] Real-capable provider adapter contracts exist.
 - [x] Cipher vault format for created passwords, API keys, SSH keys, DNS settings, provider tokens, and service credentials exists.
 - [ ] First real website setup path exists. Local acceptance works; the 2026-06-20 live acceptance gate failed closed because Moonlite has no retrieved `.fusekit/remote-artifacts` bundle yet, so the real provider run still awaits supervised GitHub/Vercel/Cloudflare/Resend/OpenAI/OCI authorization and DNS approval.
+- [ ] Hosted universal launcher exists. The open-core contract, trust-first page, GitHub App install helpers, signed callback state, public callback receipt, selected-repository listing page, source fetch/scan, visible hosted plan, public-safe hosted job/control-room shell, redacted hosted-worker contract, signed stateless job handoff, browser-facing proof receipt page, redacted hosted readiness contract with config-shape validation and fail-closed GitHub intake routing, redacted job status API, browser-native protected start/rollback/detonation controls, and Vercel-compatible WSGI entrypoint are in place; real hosted job execution, final proof artifact production, rollback/detonation execution, and `fusekit.snowmanai.org` deployment still need implementation.
 - [x] Security invariants are enforced by tests.
 - [x] CLI defaults to real-provider execution; incomplete local rehearsals require explicit opt-in.
 - [x] FuseKit bootstraps its own runtime components instead of assuming Codex/OpenClaw is preinstalled.
@@ -571,6 +572,7 @@
 - [x] Harden live gate-event survivor exactness: live acceptance now applies the generated wake-event row shape to raw `gate_events.jsonl` before Run Record signature comparison, matching cleanup preflight and rejecting sidecar wake proof before launch readiness can pass.
 - [x] Harden live provider-gate survivor exactness: live acceptance now applies the generated provider-gate envelope and row shape to raw `gates.json` before gate readiness, matching cleanup preflight and rejecting sidecar gate proof before launch readiness can pass.
 - [ ] Complete supervised public real acceptance run. README now documents the exact supervised run protocol and current status.
+- [ ] Ship hosted GitHub intake for `fusekit.snowmanai.org`: sign in, install/select repo, verify signed callback state, scan, visible plan, control room, proof page, rollback, and detonation without terminal/download steps. Current open-core slice covers the signed install link, callback receipt, selected-repository listing, source fetch/scan, visible hosted plan, public control-room shell, redacted hosted-worker contract, signed stateless job handoff, browser-facing proof receipt page, redacted hosted readiness contract with config-shape validation and fail-closed GitHub intake routing, redacted job status API, browser-native protected request controls, and Vercel-compatible WSGI entrypoint; the production service still needs deployment, real job execution, final proof artifact production, rollback execution, and detonation execution.
 
 ## North Star Audit Remediation
 

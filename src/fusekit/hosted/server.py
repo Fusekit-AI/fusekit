@@ -1,0 +1,1049 @@
+"""Minimal hosted FuseKit launcher web entrypoint."""
+
+from __future__ import annotations
+
+import html
+import json
+import os
+import tempfile
+import urllib.parse
+from collections.abc import Callable, Iterable, MutableMapping
+from dataclasses import dataclass, field
+from http import HTTPStatus
+from pathlib import Path
+from typing import cast
+from wsgiref.simple_server import make_server
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+
+from fusekit.errors import FuseKitError
+from fusekit.hosted.github_app import (
+    GitHubAppConfig,
+    UrlOpener,
+    exchange_installation_token,
+    hosted_github_intake_contract,
+    list_installation_repositories,
+)
+from fusekit.hosted.job import (
+    HostedLaunchJob,
+    advance_hosted_launch_job,
+    build_hosted_launch_job,
+    create_hosted_job_token,
+    render_hosted_control_room,
+    render_hosted_proof_receipt,
+    verify_hosted_job_token,
+)
+from fusekit.hosted.launcher import (
+    HostedLaunchPlan,
+    build_hosted_launch_plan,
+    render_hosted_launcher,
+)
+from fusekit.hosted.session import create_hosted_state_token, verify_hosted_state_token
+from fusekit.scanner import scan_repo
+from fusekit.source import (
+    UrlOpener as SourceUrlOpener,
+)
+from fusekit.source import (
+    fetch_github_source_archive,
+    normalize_github_repo_slug,
+)
+
+StartResponse = Callable[[str, list[tuple[str, str]]], object]
+
+HOSTED_CANONICAL_ORIGIN = "https://fusekit.snowmanai.org"
+HOSTED_READINESS_SCHEMA_VERSION = "fusekit.hosted-readiness.v1"
+REQUIRED_HOSTED_ENV = (
+    "FUSEKIT_HOSTED_ORIGIN",
+    "FUSEKIT_GITHUB_APP_ID",
+    "FUSEKIT_GITHUB_APP_SLUG",
+    "FUSEKIT_GITHUB_APP_PRIVATE_KEY",
+    "FUSEKIT_HOSTED_STATE_SECRET",
+)
+
+
+@dataclass(frozen=True)
+class HostedSettings:
+    """Public hosted launcher settings."""
+
+    public_origin: str = HOSTED_CANONICAL_ORIGIN
+    github_app_id: str = ""
+    github_app_slug: str = "fusekit-launcher"
+    github_private_key_pem: str = ""
+    state_secret: str = ""
+    github_opener: UrlOpener | None = None
+    hosted_jobs: MutableMapping[str, HostedLaunchJob] = field(default_factory=dict)
+
+    @classmethod
+    def from_env(cls) -> HostedSettings:
+        """Load hosted settings from environment variables."""
+
+        return cls(
+            public_origin=os.environ.get("FUSEKIT_HOSTED_ORIGIN", HOSTED_CANONICAL_ORIGIN),
+            github_app_id=os.environ.get("FUSEKIT_GITHUB_APP_ID", ""),
+            github_app_slug=os.environ.get("FUSEKIT_GITHUB_APP_SLUG", "fusekit-launcher"),
+            github_private_key_pem=os.environ.get("FUSEKIT_GITHUB_APP_PRIVATE_KEY", ""),
+            state_secret=os.environ.get("FUSEKIT_HOSTED_STATE_SECRET", ""),
+        )
+
+    def github_config(self) -> GitHubAppConfig:
+        """Return the GitHub App config for hosted intake."""
+
+        return GitHubAppConfig(
+            app_id=self.github_app_id,
+            app_slug=self.github_app_slug,
+            private_key_pem=self.github_private_key_pem,
+        )
+
+    def readiness(self) -> dict[str, object]:
+        """Return public, redacted hosted readiness metadata."""
+
+        configured = {
+            "FUSEKIT_HOSTED_ORIGIN": bool(self.public_origin),
+            "FUSEKIT_GITHUB_APP_ID": bool(self.github_app_id),
+            "FUSEKIT_GITHUB_APP_SLUG": bool(self.github_app_slug),
+            "FUSEKIT_GITHUB_APP_PRIVATE_KEY": bool(self.github_private_key_pem),
+            "FUSEKIT_HOSTED_STATE_SECRET": bool(self.state_secret),
+        }
+        missing = tuple(key for key in REQUIRED_HOSTED_ENV if not configured[key])
+        invalid = _hosted_config_errors(self) if not missing else ()
+        return {
+            "schema_version": HOSTED_READINESS_SCHEMA_VERSION,
+            "ready": not missing and not invalid,
+            "public_origin": _public_origin_label(self.public_origin),
+            "github_app_slug": _github_app_slug_label(self.github_app_slug),
+            "configured": configured,
+            "missing": list(missing),
+            "invalid": list(invalid),
+            "secret_boundary": (
+                "Readiness reports only configuration presence. Raw GitHub App private keys, "
+                "state secrets, installation tokens, and provider credentials are never rendered."
+            ),
+        }
+
+
+def application(
+    environ: dict[str, object],
+    start_response: StartResponse,
+) -> Iterable[bytes]:
+    """WSGI application for the hosted launcher."""
+
+    return hosted_application(HostedSettings.from_env())(environ, start_response)
+
+
+def hosted_application(
+    settings: HostedSettings,
+) -> Callable[[dict[str, object], StartResponse], Iterable[bytes]]:
+    """Build a configured WSGI app."""
+
+    def app(environ: dict[str, object], start_response: StartResponse) -> Iterable[bytes]:
+        method = str(environ.get("REQUEST_METHOD", "GET")).upper()
+        path = str(environ.get("PATH_INFO", "/") or "/")
+        if path.startswith("/api/hosted/jobs/"):
+            return _hosted_job_api_response(settings, environ, start_response, method=method)
+        if method != "GET":
+            return _response(
+                start_response,
+                HTTPStatus.METHOD_NOT_ALLOWED,
+                {"error": "method_not_allowed"},
+            )
+        if path == "/healthz":
+            return _response(start_response, HTTPStatus.OK, {"ok": True})
+        if path == "/api/hosted/readiness":
+            return _response(start_response, HTTPStatus.OK, settings.readiness())
+        if path == "/":
+            return _html_response(start_response, render_hosted_home(settings))
+        if _requires_hosted_readiness(path) and not settings.readiness()["ready"]:
+            return _hosted_not_ready_response(settings, start_response)
+        if path == "/api/github/intake":
+            return _response(
+                start_response,
+                HTTPStatus.OK,
+                hosted_github_intake_contract(settings.github_config()),
+            )
+        if path == "/github/callback":
+            return _github_callback_response(settings, environ, start_response)
+        if path == "/github/repositories":
+            return _github_repositories_response(settings, environ, start_response)
+        if path == "/github/plan":
+            return _github_plan_response(settings, environ, start_response)
+        if path == "/github/control-room":
+            return _github_control_room_response(settings, environ, start_response)
+        return _response(start_response, HTTPStatus.NOT_FOUND, {"error": "not_found"})
+
+    return app
+
+
+def render_hosted_home(settings: HostedSettings) -> str:
+    """Render the public no-terminal hosted launcher home page."""
+
+    state = ""
+    readiness = settings.readiness()
+    setup_ready = readiness["ready"] is True
+    if setup_ready:
+        state = create_hosted_state_token(settings.state_secret, return_path="/")
+    contract = hosted_github_intake_contract(settings.github_config(), state=state)
+    install_url = html.escape(str(contract["install_url"]), quote=True)
+    public_origin = html.escape(str(readiness["public_origin"]))
+    payload = html.escape(json.dumps(contract, sort_keys=True))
+    readiness_payload = html.escape(json.dumps(readiness, sort_keys=True))
+    status = (
+        "Hosted GitHub intake is ready."
+        if setup_ready
+        else "Hosted GitHub intake is waiting for operator configuration."
+    )
+    issues = _list_config_issues(readiness)
+    button_attrs = f'href="{install_url}"' if setup_ready else 'href="#" aria-disabled="true"'
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FuseKit hosted launcher</title>
+  <style>
+    :root {{
+      color-scheme: light;
+      font-family:
+        Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", sans-serif;
+      --ink: #101820;
+      --muted: #536476;
+      --line: #cfd9e2;
+      --blue: #0077cc;
+      --bg: #f6fbff;
+      --panel: #ffffff;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin: 0; background: var(--bg); color: var(--ink); }}
+    main {{
+      width: min(1040px, calc(100vw - 28px));
+      margin: 0 auto;
+      padding: 34px 0 48px;
+      display: grid;
+      gap: 20px;
+    }}
+    header {{
+      border-bottom: 2px solid var(--ink);
+      padding-bottom: 22px;
+      display: grid;
+      gap: 14px;
+    }}
+    h1, h2, p {{ margin: 0; }}
+    h1 {{
+      max-width: 820px;
+      font-size: clamp(38px, 6vw, 72px);
+      line-height: 0.98;
+      letter-spacing: 0;
+    }}
+    p {{ color: #31465c; line-height: 1.5; max-width: 780px; }}
+    .eyebrow {{
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 850;
+      text-transform: uppercase;
+    }}
+    .button {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 46px;
+      width: fit-content;
+      border-radius: 6px;
+      background: var(--blue);
+      color: white;
+      padding: 0 18px;
+      font-weight: 850;
+      text-decoration: none;
+    }}
+    section {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      display: grid;
+      gap: 12px;
+    }}
+    ul {{ margin: 0; padding-left: 20px; color: #2e4256; }}
+    li + li {{ margin-top: 6px; }}
+    .origin {{
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      overflow-wrap: anywhere;
+    }}
+    script[type="application/json"] {{ display: none; }}
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="eyebrow">SnowmanAI / FuseKit</div>
+      <h1>Launch any GitHub app without touching a terminal.</h1>
+      <p>
+        FuseKit is an open-core setup worker with narrow permissions, a visible
+        plan, redacted proof, and reversible setup. Start by installing the
+        FuseKit GitHub App on one selected repository.
+      </p>
+      <a class="button" {button_attrs}>Start hosted launch</a>
+      <p class="origin">{public_origin}</p>
+      <p>{html.escape(status)}</p>
+      {issues}
+    </header>
+    <section aria-label="Trust contract">
+      <h2>Before FuseKit runs</h2>
+      <ul>
+        <li>You choose exactly which GitHub repository FuseKit may read.</li>
+        <li>FuseKit shows the detected providers and setup plan before changes.</li>
+        <li>Provider credentials stay server-side or inside the encrypted vault.</li>
+        <li>Receipts, logs, proof, and generated apps do not expose raw secrets.</li>
+        <li>You can stop, revoke access, roll back, and review the detonation receipt.</li>
+      </ul>
+    </section>
+    <section aria-label="Provider gates">
+      <h2>What you may need to approve</h2>
+      <ul>
+        <li>GitHub sign-in, MFA, passkey, SSO, consent, or repository selection.</li>
+        <li>Provider-owned billing, CAPTCHA, domain ownership, or copy-once secret screens.</li>
+        <li>DNS changes only after FuseKit shows the exact proposed records.</li>
+      </ul>
+    </section>
+    <script id="fusekit-github-intake" type="application/json">{payload}</script>
+    <script id="fusekit-hosted-readiness" type="application/json">{readiness_payload}</script>
+  </main>
+</body>
+</html>
+"""
+
+
+def _github_callback_response(
+    settings: HostedSettings,
+    environ: dict[str, object],
+    start_response: StartResponse,
+) -> Iterable[bytes]:
+    query = urllib.parse.parse_qs(str(environ.get("QUERY_STRING", "")), keep_blank_values=True)
+    state_token = _first_query_value(query, "state")
+    installation_id = _first_query_value(query, "installation_id")
+    setup_action = _first_query_value(query, "setup_action") or "install"
+    if not state_token:
+        return _response(
+            start_response,
+            HTTPStatus.BAD_REQUEST,
+            {"error": "missing_state"},
+        )
+    if not installation_id or not installation_id.isdecimal() or int(installation_id) <= 0:
+        return _response(
+            start_response,
+            HTTPStatus.BAD_REQUEST,
+            {"error": "invalid_installation"},
+        )
+    try:
+        state = verify_hosted_state_token(settings.state_secret, state_token)
+    except FuseKitError:
+        return _response(
+            start_response,
+            HTTPStatus.BAD_REQUEST,
+            {"error": "invalid_state"},
+        )
+    body = _render_github_callback_page(
+        public_origin=settings.public_origin,
+        installation_id=int(installation_id),
+        setup_action=setup_action,
+        return_path=state.return_path,
+        state_token=state_token,
+    )
+    return _html_response(start_response, body)
+
+
+def _github_repositories_response(
+    settings: HostedSettings,
+    environ: dict[str, object],
+    start_response: StartResponse,
+) -> Iterable[bytes]:
+    query = urllib.parse.parse_qs(str(environ.get("QUERY_STRING", "")), keep_blank_values=True)
+    state_token = _first_query_value(query, "state")
+    installation_id = _first_query_value(query, "installation_id")
+    if not state_token:
+        return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "missing_state"})
+    if not installation_id or not installation_id.isdecimal() or int(installation_id) <= 0:
+        return _response(
+            start_response,
+            HTTPStatus.BAD_REQUEST,
+            {"error": "invalid_installation"},
+        )
+    try:
+        verify_hosted_state_token(settings.state_secret, state_token)
+    except FuseKitError:
+        return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "invalid_state"})
+    try:
+        token = exchange_installation_token(
+            settings.github_config(),
+            installation_id=int(installation_id),
+            permissions={"contents": "read"},
+            opener=settings.github_opener,
+        )
+        repositories = list_installation_repositories(
+            settings.github_config(),
+            token=token.token,
+            opener=settings.github_opener,
+        )
+    except FuseKitError:
+        return _response(
+            start_response,
+            HTTPStatus.BAD_GATEWAY,
+            {"error": "github_repository_intake_failed"},
+        )
+    body = _render_github_repositories_page(
+        public_origin=settings.public_origin,
+        installation_id=int(installation_id),
+        state_token=state_token,
+        repositories=repositories,
+    )
+    return _html_response(start_response, body)
+
+
+def _github_plan_response(
+    settings: HostedSettings,
+    environ: dict[str, object],
+    start_response: StartResponse,
+) -> Iterable[bytes]:
+    query = urllib.parse.parse_qs(str(environ.get("QUERY_STRING", "")), keep_blank_values=True)
+    state_token = _first_query_value(query, "state")
+    installation_id = _first_query_value(query, "installation_id")
+    repo = _first_query_value(query, "repo")
+    if not state_token:
+        return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "missing_state"})
+    if not installation_id or not installation_id.isdecimal() or int(installation_id) <= 0:
+        return _response(
+            start_response,
+            HTTPStatus.BAD_REQUEST,
+            {"error": "invalid_installation"},
+        )
+    if not _safe_repo_slug(repo):
+        return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "invalid_repository"})
+    try:
+        verify_hosted_state_token(settings.state_secret, state_token)
+    except FuseKitError:
+        return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "invalid_state"})
+    try:
+        token = exchange_installation_token(
+            settings.github_config(),
+            installation_id=int(installation_id),
+            permissions={"contents": "read"},
+            opener=settings.github_opener,
+        )
+        repositories = list_installation_repositories(
+            settings.github_config(),
+            token=token.token,
+            opener=settings.github_opener,
+        )
+        if repo not in _repository_names(repositories):
+            return _response(
+                start_response,
+                HTTPStatus.FORBIDDEN,
+                {"error": "repository_not_selected"},
+            )
+        plan = _build_plan_from_selected_repo(
+            settings,
+            repo=repo,
+            token=token.token,
+        )
+    except FuseKitError:
+        return _response(start_response, HTTPStatus.BAD_GATEWAY, {"error": "github_plan_failed"})
+    body = render_hosted_launcher(
+        plan,
+        launch_url=_hosted_control_room_url(
+            installation_id=int(installation_id),
+            repo=repo,
+            state_token=state_token,
+        ),
+    )
+    return _html_response(start_response, body)
+
+
+def _github_control_room_response(
+    settings: HostedSettings,
+    environ: dict[str, object],
+    start_response: StartResponse,
+) -> Iterable[bytes]:
+    query = urllib.parse.parse_qs(str(environ.get("QUERY_STRING", "")), keep_blank_values=True)
+    state_token = _first_query_value(query, "state")
+    installation_id = _first_query_value(query, "installation_id")
+    repo = _first_query_value(query, "repo")
+    if not state_token:
+        return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "missing_state"})
+    if not installation_id or not installation_id.isdecimal() or int(installation_id) <= 0:
+        return _response(
+            start_response,
+            HTTPStatus.BAD_REQUEST,
+            {"error": "invalid_installation"},
+        )
+    if not _safe_repo_slug(repo):
+        return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "invalid_repository"})
+    try:
+        verify_hosted_state_token(settings.state_secret, state_token)
+    except FuseKitError:
+        return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "invalid_state"})
+    try:
+        token = exchange_installation_token(
+            settings.github_config(),
+            installation_id=int(installation_id),
+            permissions={"contents": "read"},
+            opener=settings.github_opener,
+        )
+        repositories = list_installation_repositories(
+            settings.github_config(),
+            token=token.token,
+            opener=settings.github_opener,
+        )
+        if repo not in _repository_names(repositories):
+            return _response(
+                start_response,
+                HTTPStatus.FORBIDDEN,
+                {"error": "repository_not_selected"},
+            )
+        plan = _build_plan_from_selected_repo(
+            settings,
+            repo=repo,
+            token=token.token,
+        )
+    except FuseKitError:
+        return _response(start_response, HTTPStatus.BAD_GATEWAY, {"error": "github_job_failed"})
+    job = build_hosted_launch_job(plan)
+    settings.hosted_jobs[job.job_id] = job
+    job_token = create_hosted_job_token(settings.state_secret, job)
+    control_token = create_hosted_state_token(
+        settings.state_secret,
+        return_path=f"/api/hosted/jobs/{job.job_id}",
+    )
+    body = render_hosted_control_room(job, control_token=control_token, job_token=job_token)
+    return _html_response(start_response, body)
+
+
+def _hosted_job_api_response(
+    settings: HostedSettings,
+    environ: dict[str, object],
+    start_response: StartResponse,
+    *,
+    method: str,
+) -> Iterable[bytes]:
+    path = str(environ.get("PATH_INFO", "") or "")
+    parts = [part for part in path.split("/") if part]
+    if len(parts) < 4 or parts[:3] != ["api", "hosted", "jobs"]:
+        return _response(start_response, HTTPStatus.NOT_FOUND, {"error": "not_found"})
+    job_id = parts[3]
+    query = urllib.parse.parse_qs(str(environ.get("QUERY_STRING", "")), keep_blank_values=True)
+    job = settings.hosted_jobs.get(job_id)
+    if job is None:
+        try:
+            job = _job_from_query_token(settings, query, job_id=job_id)
+        except FuseKitError:
+            return _response(start_response, HTTPStatus.FORBIDDEN, {"error": "invalid_job"})
+    if job is None:
+        return _response(start_response, HTTPStatus.NOT_FOUND, {"error": "job_not_found"})
+    if len(parts) == 4 and method == "GET" and _wants_html(environ):
+        return _hosted_job_html_response(settings, start_response, job)
+    if len(parts) == 4 and method == "GET":
+        return _hosted_job_response(settings, start_response, job)
+    if len(parts) == 5 and parts[4] == "proof" and method == "GET":
+        return _hosted_proof_receipt_response(settings, start_response, job)
+    if len(parts) == 6 and parts[4] == "actions" and method == "POST":
+        return _hosted_job_action_response(
+            settings,
+            environ,
+            start_response,
+            job=job,
+            action=parts[5],
+        )
+    return _response(
+        start_response,
+        HTTPStatus.METHOD_NOT_ALLOWED if method != "GET" else HTTPStatus.NOT_FOUND,
+        {"error": "method_not_allowed" if method != "GET" else "not_found"},
+    )
+
+
+def _hosted_job_action_response(
+    settings: HostedSettings,
+    environ: dict[str, object],
+    start_response: StartResponse,
+    *,
+    job: HostedLaunchJob,
+    action: str,
+) -> Iterable[bytes]:
+    query = urllib.parse.parse_qs(str(environ.get("QUERY_STRING", "")), keep_blank_values=True)
+    control_token = _first_query_value(query, "control")
+    if not control_token:
+        return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "missing_control"})
+    try:
+        control = verify_hosted_state_token(settings.state_secret, control_token)
+    except FuseKitError:
+        return _response(start_response, HTTPStatus.FORBIDDEN, {"error": "invalid_control"})
+    if control.return_path != f"/api/hosted/jobs/{job.job_id}":
+        return _response(start_response, HTTPStatus.FORBIDDEN, {"error": "invalid_control"})
+    try:
+        updated = advance_hosted_launch_job(job, action)
+    except ValueError:
+        return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "invalid_action"})
+    settings.hosted_jobs[job.job_id] = updated
+    if _wants_html(environ):
+        return _hosted_job_html_response(settings, start_response, updated)
+    return _hosted_job_response(settings, start_response, updated)
+
+
+def _hosted_job_html_response(
+    settings: HostedSettings,
+    start_response: StartResponse,
+    job: HostedLaunchJob,
+) -> Iterable[bytes]:
+    control_token = create_hosted_state_token(
+        settings.state_secret,
+        return_path=f"/api/hosted/jobs/{job.job_id}",
+    )
+    job_token = create_hosted_job_token(settings.state_secret, job)
+    return _html_response(
+        start_response,
+        render_hosted_control_room(job, control_token=control_token, job_token=job_token),
+    )
+
+
+def _hosted_proof_receipt_response(
+    settings: HostedSettings,
+    start_response: StartResponse,
+    job: HostedLaunchJob,
+) -> Iterable[bytes]:
+    job_token = create_hosted_job_token(settings.state_secret, job)
+    return _html_response(
+        start_response,
+        render_hosted_proof_receipt(job, job_token=job_token),
+    )
+
+
+def _hosted_job_response(
+    settings: HostedSettings,
+    start_response: StartResponse,
+    job: HostedLaunchJob,
+) -> Iterable[bytes]:
+    payload = job.to_dict()
+    payload["job_token"] = create_hosted_job_token(settings.state_secret, job)
+    return _response(start_response, HTTPStatus.OK, payload)
+
+
+def _wants_html(environ: dict[str, object]) -> bool:
+    accept = str(environ.get("HTTP_ACCEPT", ""))
+    return "text/html" in accept.lower()
+
+
+def _job_from_query_token(
+    settings: HostedSettings,
+    query: dict[str, list[str]],
+    *,
+    job_id: str,
+) -> HostedLaunchJob | None:
+    job_token = _first_query_value(query, "job")
+    if not job_token:
+        return None
+    job = verify_hosted_job_token(settings.state_secret, job_token)
+    if job.job_id != job_id:
+        raise FuseKitError("Hosted job token does not match route.")
+    return job
+
+
+def _build_plan_from_selected_repo(
+    settings: HostedSettings,
+    *,
+    repo: str,
+    token: str,
+) -> HostedLaunchPlan:
+    source = f"https://github.com/{repo}"
+    with tempfile.TemporaryDirectory(prefix="fusekit-hosted-source-") as temp_dir:
+        source_result = fetch_github_source_archive(
+            source,
+            Path(temp_dir) / "app",
+            token=token,
+            opener=cast(SourceUrlOpener | None, settings.github_opener),
+        )
+        manifest = scan_repo(source_result.dest)
+        return build_hosted_launch_plan(manifest, github_source=source)
+
+
+def _hosted_control_room_url(
+    *,
+    installation_id: int,
+    repo: str,
+    state_token: str,
+) -> str:
+    return "/github/control-room?" + urllib.parse.urlencode(
+        {
+            "installation_id": str(installation_id),
+            "repo": repo,
+            "state": state_token,
+        }
+    )
+
+
+def _render_github_callback_page(
+    *,
+    public_origin: str,
+    installation_id: int,
+    setup_action: str,
+    return_path: str,
+    state_token: str,
+) -> str:
+    safe_origin = html.escape(public_origin)
+    safe_action = html.escape(setup_action)
+    safe_return_path = html.escape(return_path, quote=True)
+    repositories_url = html.escape(
+        "/github/repositories?"
+        + urllib.parse.urlencode(
+            {
+                "installation_id": str(installation_id),
+                "state": state_token,
+            }
+        ),
+        quote=True,
+    )
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FuseKit GitHub connected</title>
+  <style>
+    :root {{
+      color-scheme: light;
+      font-family:
+        Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", sans-serif;
+      --ink: #101820;
+      --muted: #536476;
+      --line: #cfd9e2;
+      --blue: #0077cc;
+      --bg: #f6fbff;
+      --panel: #ffffff;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin: 0; background: var(--bg); color: var(--ink); }}
+    main {{
+      width: min(760px, calc(100vw - 28px));
+      margin: 0 auto;
+      padding: 34px 0 48px;
+      display: grid;
+      gap: 18px;
+    }}
+    h1, p {{ margin: 0; }}
+    h1 {{ font-size: clamp(34px, 5vw, 56px); line-height: 1; letter-spacing: 0; }}
+    p {{ color: #31465c; line-height: 1.5; }}
+    .panel {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      display: grid;
+      gap: 10px;
+    }}
+    .button {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      width: fit-content;
+      border-radius: 6px;
+      background: var(--blue);
+      color: white;
+      padding: 0 16px;
+      font-weight: 850;
+      text-decoration: none;
+    }}
+    .origin {{
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      overflow-wrap: anywhere;
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>GitHub App connected.</h1>
+    <p>
+      FuseKit received GitHub installation {installation_id} after the
+      provider-owned {safe_action} gate. No installation token is embedded in
+      this page.
+    </p>
+    <div class="panel">
+      <p>Next: scan the selected repository and show the visible launch plan.</p>
+      <p class="origin">{safe_origin}{safe_return_path}</p>
+      <a class="button" href="{repositories_url}">Continue</a>
+    </div>
+  </main>
+</body>
+</html>
+"""
+
+
+def _requires_hosted_readiness(path: str) -> bool:
+    return path == "/api/github/intake" or path.startswith("/github/")
+
+
+def _hosted_not_ready_response(
+    settings: HostedSettings,
+    start_response: StartResponse,
+) -> Iterable[bytes]:
+    return _response(
+        start_response,
+        HTTPStatus.SERVICE_UNAVAILABLE,
+        {
+            "error": "hosted_not_ready",
+            "readiness": settings.readiness(),
+        },
+    )
+
+
+def _list_config_issues(readiness: dict[str, object]) -> str:
+    missing = readiness.get("missing")
+    invalid = readiness.get("invalid")
+    rows: list[str] = []
+    if isinstance(missing, list):
+        rows.extend(f"missing:{item}" for item in missing)
+    if isinstance(invalid, list):
+        rows.extend(f"invalid:{item}" for item in invalid)
+    if not rows:
+        return ""
+    items = "\n".join(f"<li>{html.escape(str(item))}</li>" for item in rows)
+    return f"""
+      <section aria-label="Missing hosted configuration">
+        <h2>Operator setup pending</h2>
+        <p>FuseKit will not start hosted intake until these configuration checks pass.</p>
+        <ul>{items}</ul>
+      </section>
+"""
+
+
+def _hosted_config_errors(settings: HostedSettings) -> tuple[str, ...]:
+    errors: list[str] = []
+    if not _valid_public_origin(settings.public_origin):
+        errors.append("hosted_origin_must_be_https_origin")
+    if not settings.github_app_id.isdecimal() or int(settings.github_app_id) <= 0:
+        errors.append("github_app_id_must_be_positive_integer")
+    if not _valid_github_app_slug(settings.github_app_slug):
+        errors.append("github_app_slug_is_invalid")
+    if not _valid_rsa_private_key(settings.github_private_key_pem):
+        errors.append("github_app_private_key_must_be_rsa_pem")
+    if len(settings.state_secret) < 16:
+        errors.append("hosted_state_secret_too_short")
+    return tuple(errors)
+
+
+def _public_origin_label(value: str) -> str:
+    return value if _valid_public_origin(value) else HOSTED_CANONICAL_ORIGIN
+
+
+def _github_app_slug_label(value: str) -> str:
+    return value if _valid_github_app_slug(value) else "fusekit-launcher"
+
+
+def _valid_public_origin(value: str) -> bool:
+    parsed = urllib.parse.urlparse(value)
+    return (
+        parsed.scheme == "https"
+        and bool(parsed.netloc)
+        and not parsed.path.rstrip("/")
+        and not parsed.params
+        and not parsed.query
+        and not parsed.fragment
+        and not parsed.username
+        and not parsed.password
+    )
+
+
+def _valid_github_app_slug(value: str) -> bool:
+    return bool(value) and urllib.parse.quote(value.strip("/"), safe="") == value
+
+
+def _valid_rsa_private_key(value: str) -> bool:
+    try:
+        private_key = serialization.load_pem_private_key(
+            value.encode("utf-8"),
+            password=None,
+        )
+    except (TypeError, ValueError):
+        return False
+    return isinstance(private_key, rsa.RSAPrivateKey)
+
+
+def _render_github_repositories_page(
+    *,
+    public_origin: str,
+    installation_id: int,
+    state_token: str,
+    repositories: tuple[dict[str, object], ...],
+) -> str:
+    safe_origin = html.escape(public_origin)
+    repo_rows = "\n".join(
+        _repository_row(repo, installation_id=installation_id, state_token=state_token)
+        for repo in repositories
+    )
+    if not repo_rows:
+        repo_rows = "<li>No selected repositories were returned by GitHub.</li>"
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FuseKit repository selection</title>
+  <style>
+    :root {{
+      color-scheme: light;
+      font-family:
+        Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", sans-serif;
+      --ink: #101820;
+      --muted: #536476;
+      --line: #cfd9e2;
+      --blue: #0077cc;
+      --bg: #f6fbff;
+      --panel: #ffffff;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin: 0; background: var(--bg); color: var(--ink); }}
+    main {{
+      width: min(840px, calc(100vw - 28px));
+      margin: 0 auto;
+      padding: 34px 0 48px;
+      display: grid;
+      gap: 18px;
+    }}
+    h1, h2, p {{ margin: 0; }}
+    h1 {{ font-size: clamp(34px, 5vw, 56px); line-height: 1; letter-spacing: 0; }}
+    p {{ color: #31465c; line-height: 1.5; }}
+    section {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      display: grid;
+      gap: 12px;
+    }}
+    ul {{ margin: 0; padding-left: 20px; color: #2e4256; }}
+    li + li {{ margin-top: 8px; }}
+    .origin {{
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      overflow-wrap: anywhere;
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Choose the repository to scan.</h1>
+    <p>
+      FuseKit exchanged the GitHub installation through the server-side app key
+      and kept the installation token out of this page.
+    </p>
+    <section aria-label="Selected repositories">
+      <h2>GitHub installation {installation_id}</h2>
+      <ul>
+        {repo_rows}
+      </ul>
+    </section>
+    <section aria-label="Next visible plan">
+      <h2>Next</h2>
+      <p>
+        FuseKit will scan the selected source, detect providers, and show a
+        visible launch plan before any provider mutation or DNS change.
+      </p>
+      <p class="origin">{safe_origin}</p>
+    </section>
+  </main>
+</body>
+</html>
+"""
+
+
+def _repository_row(
+    repository: dict[str, object],
+    *,
+    installation_id: int,
+    state_token: str,
+) -> str:
+    full_name = repository.get("full_name")
+    if not isinstance(full_name, str) or not full_name:
+        full_name = "unknown repository"
+    visibility = "private" if repository.get("private") is True else "public"
+    if not _safe_repo_slug(full_name):
+        return f"<li>{html.escape(full_name)} <span>({visibility})</span></li>"
+    plan_url = html.escape(
+        "/github/plan?"
+        + urllib.parse.urlencode(
+            {
+                "installation_id": str(installation_id),
+                "repo": full_name,
+                "state": state_token,
+            }
+        ),
+        quote=True,
+    )
+    return (
+        f'<li><a href="{plan_url}">{html.escape(full_name)}</a> '
+        f"<span>({visibility})</span></li>"
+    )
+
+
+def _repository_names(repositories: tuple[dict[str, object], ...]) -> set[str]:
+    names: set[str] = set()
+    for repository in repositories:
+        full_name = repository.get("full_name")
+        if isinstance(full_name, str) and _safe_repo_slug(full_name):
+            names.add(full_name)
+    return names
+
+
+def _safe_repo_slug(value: str) -> bool:
+    try:
+        return normalize_github_repo_slug(value) == value
+    except FuseKitError:
+        return False
+
+
+def _first_query_value(query: dict[str, list[str]], key: str) -> str:
+    values = query.get(key, [])
+    return values[0] if values else ""
+
+
+def _response(
+    start_response: StartResponse,
+    status: HTTPStatus,
+    body: dict[str, object],
+) -> Iterable[bytes]:
+    payload = json.dumps(body, sort_keys=True).encode("utf-8")
+    start_response(
+        f"{status.value} {status.phrase}",
+        [
+            ("Content-Type", "application/json; charset=utf-8"),
+            ("Cache-Control", "no-store"),
+            ("Content-Length", str(len(payload))),
+        ],
+    )
+    return [payload]
+
+
+def _html_response(start_response: StartResponse, body: str) -> Iterable[bytes]:
+    payload = body.encode("utf-8")
+    start_response(
+        "200 OK",
+        [
+            ("Content-Type", "text/html; charset=utf-8"),
+            ("Cache-Control", "no-store"),
+            ("Content-Length", str(len(payload))),
+        ],
+    )
+    return [payload]
+
+
+def main() -> int:
+    """Run a local hosted-launcher server for deployment smoke checks."""
+
+    host = os.environ.get("FUSEKIT_HOSTED_BIND", "127.0.0.1")
+    port = int(os.environ.get("FUSEKIT_HOSTED_PORT", "8080"))
+    app = hosted_application(HostedSettings.from_env())
+    with make_server(host, port, app) as server:
+        print(f"FuseKit hosted launcher listening on http://{host}:{port}")
+        server.serve_forever()
+    return 0
