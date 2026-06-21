@@ -513,6 +513,10 @@ def test_hosted_control_room_embeds_redacted_job_json() -> None:
     assert "Next proof required" in html
     assert "Worker dispatch: not configured" in html
     assert "Detonation" in html
+    assert "Protected controls unavailable" in html
+    assert "short-lived" in html
+    assert 'disabled aria-disabled="true">Request rollback</button>' in html
+    assert "/api/hosted/jobs/hosted-test/actions/rollback?control=" not in html
     assert match is not None
     payload = json.loads(match.group(1).replace("&quot;", '"'))
     assert payload["schema_version"] == "fusekit.hosted-job.v1"
@@ -531,6 +535,23 @@ def test_hosted_control_room_embeds_redacted_job_json() -> None:
     assert any("MFA" in gate for gate in payload["worker_contract"]["gates"])
     assert payload["worker_contract"]["schema_version"] == "fusekit.hosted-worker-contract.v1"
     assert "ghs_" not in json.dumps(payload)
+
+
+def test_hosted_control_room_renders_real_controls_only_with_control_token() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    html = render_hosted_control_room(
+        job,
+        control_token="signed-control-token",
+        job_token="signed-public-job",
+    )
+
+    assert "Protected controls unavailable" not in html
+    assert "/api/hosted/jobs/hosted-test/actions/start?control=signed-control-token" in html
+    assert "/api/hosted/jobs/hosted-test/actions/stop?control=signed-control-token" in html
+    assert "job=signed-public-job" in html
+    assert 'disabled aria-disabled="true">Start worker</button>' not in html
+    assert '<button type="submit">Start worker</button>' in html
+    assert '<button type="submit">Stop launch</button>' in html
 
 
 def test_hosted_launch_job_actions_record_truthful_waiting_states() -> None:

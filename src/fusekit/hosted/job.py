@@ -661,6 +661,7 @@ def render_hosted_control_room(
     }}
     .step.done {{ border-left-color: var(--green); }}
     .step small {{ color: var(--muted); }}
+    button,
     .button {{
       display: inline-flex;
       align-items: center;
@@ -673,6 +674,15 @@ def render_hosted_control_room(
       padding: 0 14px;
       font-weight: 850;
       text-decoration: none;
+      border: 1px solid var(--blue);
+      cursor: pointer;
+    }}
+    button[disabled],
+    .button.disabled {{
+      background: #d8e1ea;
+      border-color: #aebcca;
+      color: #52616f;
+      cursor: not-allowed;
     }}
     ul {{ margin: 0; padding-left: 20px; color: #2e4256; }}
     li + li {{ margin-top: 6px; }}
@@ -1182,7 +1192,20 @@ def _control_forms(
     job_token: str,
 ) -> str:
     if not control_token:
-        return ""
+        return """
+        <article class="step" aria-label="Protected controls unavailable">
+          <h3>Protected controls unavailable</h3>
+          <p>
+            Start, stop, rollback, and detonation controls require a short-lived
+            route-bound control token. FuseKit renders them disabled instead of
+            pretending an unsafe or expired control can run.
+          </p>
+          <button type="button" disabled aria-disabled="true">Start worker</button>
+          <button type="button" disabled aria-disabled="true">Stop launch</button>
+          <button type="button" disabled aria-disabled="true">Request rollback</button>
+          <button type="button" disabled aria-disabled="true">Request detonation</button>
+        </article>
+"""
     job_id = html.escape(job.job_id, quote=True)
     token = html.escape(control_token, quote=True)
     job_param = (
