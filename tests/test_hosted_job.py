@@ -108,6 +108,8 @@ def test_hosted_proof_receipt_is_redacted_and_not_prematurely_complete() -> None
     assert "Request rollback" in html
     assert "Request detonation" in html
     assert "GitHub App installation" in html
+    assert "Download proof JSON" in html
+    assert "format=json" in html
     assert "Back to control room" in html
     assert "ghs_" not in serialized
     assert "PRIVATE KEY" not in serialized

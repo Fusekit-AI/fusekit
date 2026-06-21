@@ -924,6 +924,7 @@ def render_hosted_proof_receipt(job: HostedLaunchJob, *, job_token: str = "") ->
     permissions = _list(job.worker_contract.permission_boundary)
     actions = _list(job.worker_contract.approved_actions)
     back = _control_room_link(job, job_token=job_token)
+    proof_json = _proof_json_link(job, job_token=job_token)
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -1003,6 +1004,7 @@ def render_hosted_proof_receipt(job: HostedLaunchJob, *, job_token: str = "") ->
       <p>{completion}</p>
       <p class="source">{app_name} / {github_source}</p>
       {back}
+      {proof_json}
     </header>
     <section class="warning" aria-label="Completion status">
       <h2>Completion status</h2>
@@ -1145,6 +1147,17 @@ def _proof_link(job: HostedLaunchJob, *, job_token: str) -> str:
         quote=True,
     )
     return f'<a class="button" href="{href}">View proof receipt</a>'
+
+
+def _proof_json_link(job: HostedLaunchJob, *, job_token: str) -> str:
+    if not job_token:
+        return ""
+    href = html.escape(
+        f"/api/hosted/jobs/{urllib.parse.quote(job.job_id)}/proof?"
+        + urllib.parse.urlencode({"job": job_token, "format": "json"}),
+        quote=True,
+    )
+    return f'<a class="button" href="{href}">Download proof JSON</a>'
 
 
 def _worker_request_link(job: HostedLaunchJob, *, job_token: str) -> str:

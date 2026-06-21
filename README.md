@@ -167,7 +167,9 @@ rollback with provider inventory proof, and request worker detonation while
 preserving redacted public proof. A
 browser-facing proof receipt page
 shows redacted proof, required artifacts, rollback metadata, and detonation
-requirements without claiming completion before live evidence exists. After the
+requirements without claiming completion before live evidence exists. The same
+signed proof route can return the redacted receipt as JSON for download or
+operator archival without exposing tokens. After the
 protected `Start worker` action, `/api/hosted/jobs/<job>/worker-request` exposes
 a signed-job-token-compatible, redacted machine handoff for the eventual hosted
 worker. That request binds the selected GitHub source, approved plan actions,

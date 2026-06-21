@@ -35,6 +35,7 @@ from fusekit.hosted.job import (
     claim_hosted_launch_job,
     create_hosted_job_token,
     hosted_job_action_receipt,
+    hosted_proof_receipt,
     hosted_worker_claim_receipt,
     hosted_worker_request,
     render_hosted_control_room,
@@ -674,7 +675,7 @@ def _hosted_job_api_response(
     if len(parts) == 4 and method == "GET":
         return _hosted_job_response(settings, start_response, job)
     if len(parts) == 5 and parts[4] == "proof" and method == "GET":
-        return _hosted_proof_receipt_response(settings, start_response, job)
+        return _hosted_proof_receipt_response(settings, environ, start_response, job, query=query)
     if len(parts) == 5 and parts[4] == "worker-request" and method == "GET":
         return _hosted_worker_request_response(start_response, job)
     if len(parts) == 5 and parts[4] == "worker-claims" and method == "POST":
@@ -777,9 +778,14 @@ def _hosted_job_html_response(
 
 def _hosted_proof_receipt_response(
     settings: HostedSettings,
+    environ: dict[str, object],
     start_response: StartResponse,
     job: HostedLaunchJob,
+    *,
+    query: dict[str, list[str]],
 ) -> Iterable[bytes]:
+    if _first_query_value(query, "format") == "json" or not _wants_html(environ):
+        return _response(start_response, HTTPStatus.OK, hosted_proof_receipt(job))
     job_token = create_hosted_job_token(settings.state_secret, job)
     return _html_response(
         start_response,

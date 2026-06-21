@@ -1381,10 +1381,27 @@ def test_hosted_proof_receipt_page_uses_signed_job_token_without_process_memory(
     assert "Reversal playbook" in text
     assert "Request rollback" in text
     assert "GitHub App installation" in text
+    assert "Download proof JSON" in text
     assert payload["schema_version"] == "fusekit.hosted-proof-receipt.v1"
     assert payload["reversal_playbook"]
     assert payload["completion_ready"] is False
     assert "ghs_fake" not in text
+
+    status, headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/proof",
+        query_string=f"job={job_token}&format=json",
+        settings=stateless_settings,
+    )
+    json_payload = json.loads(body.decode("utf-8"))
+    serialized = json.dumps(json_payload)
+
+    assert status == "200 OK"
+    assert headers["Content-Type"] == "application/json; charset=utf-8"
+    assert json_payload["schema_version"] == "fusekit.hosted-proof-receipt.v1"
+    assert json_payload["completion_ready"] is False
+    assert ".fusekit/run_record.json" in json_payload["required_artifacts"]
+    assert "ghs_fake" not in serialized
+    assert "PRIVATE KEY" not in serialized
 
 
 def test_hosted_proof_receipt_page_rejects_tampered_signed_job_token() -> None:
