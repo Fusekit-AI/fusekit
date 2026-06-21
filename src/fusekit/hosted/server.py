@@ -43,6 +43,7 @@ from fusekit.hosted.job import (
     verify_hosted_job_token,
 )
 from fusekit.hosted.launcher import (
+    HOSTED_LAUNCH_PATH,
     HostedLaunchPlan,
     build_hosted_launch_plan,
     render_hosted_launcher,
@@ -295,6 +296,7 @@ def render_hosted_home(settings: HostedSettings) -> str:
     )
     issues = _list_config_issues(readiness)
     button_attrs = f'href="{install_url}"' if setup_ready else 'href="#" aria-disabled="true"'
+    launch_path = "\n".join(f"<li>{html.escape(item)}</li>" for item in HOSTED_LAUNCH_PATH)
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -365,6 +367,7 @@ def render_hosted_home(settings: HostedSettings) -> str:
       gap: 12px;
     }}
     ul {{ margin: 0; padding-left: 20px; color: #2e4256; }}
+    ol {{ margin: 0; padding-left: 20px; color: #2e4256; }}
     li + li {{ margin-top: 6px; }}
     .origin {{
       color: var(--muted);
@@ -398,6 +401,10 @@ def render_hosted_home(settings: HostedSettings) -> str:
         <li>Receipts, logs, proof, and generated apps do not expose raw secrets.</li>
         <li>You can stop, revoke access, roll back, and review the detonation receipt.</li>
       </ul>
+    </section>
+    <section aria-label="Launch path">
+      <h2>What happens after the click</h2>
+      <ol>{launch_path}</ol>
     </section>
     <section aria-label="Open core">
       <h2>Open core</h2>

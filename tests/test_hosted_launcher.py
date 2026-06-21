@@ -74,6 +74,13 @@ def test_hosted_launch_plan_is_universal_github_intake() -> None:
         "reversible setup",
     ]
     assert raw["trust"]["no_terminal_promise"].startswith("No terminal")
+    assert raw["trust"]["launch_path"] == [
+        "Visit the hosted FuseKit URL.",
+        "Install the FuseKit GitHub App on one selected repository.",
+        "Review the visible plan and approved action ids before worker start.",
+        "Click Start hosted launch and pass only provider-owned human gates.",
+        "Receive the live URL, redacted proof receipt, rollback metadata, and detonation receipt.",
+    ]
     assert any("GitHub App installation scoped" in item for item in raw["trust"]["permissions"])
     assert "Raw secrets are never rendered" in raw["trust"]["secret_boundary"]
 
@@ -90,6 +97,10 @@ def test_hosted_launcher_html_has_no_terminal_or_download_happy_path() -> None:
     assert "Start hosted launch" in html
     assert "Download redacted plan" not in html
     assert "Trust contract" in html
+    assert "Launch path" in html
+    assert "Visit the hosted FuseKit URL." in html
+    assert "Review the visible plan and approved action ids before worker start." in html
+    assert "Receive the live URL, redacted proof receipt" in html
     assert "Narrow permissions" in html
     assert "Visible plan" in html
     assert "Redacted proof" in html
@@ -173,6 +184,7 @@ def test_public_plan_summary_is_small_and_trust_first() -> None:
             "reversible setup",
         ],
         "no_terminal": True,
+        "launch_path": list(plan.trust.launch_path),
         "proof": list(plan.trust.proof),
         "rollback": list(plan.trust.rollback),
     }

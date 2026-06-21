@@ -166,6 +166,10 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
     assert "visible" in html
     assert "redacted proof" in html
     assert "reversible setup" in html
+    assert "What happens after the click" in html
+    assert "Install the FuseKit GitHub App on one selected repository." in html
+    assert "Click Start hosted launch and pass only provider-owned human gates." in html
+    assert "Receive the live URL, redacted proof receipt" in html
     assert "state=" in html
     assert "Hosted GitHub intake is ready." in html
     assert "fusekit launch" not in html
@@ -639,6 +643,9 @@ def test_hosted_github_plan_fetches_source_and_renders_visible_plan() -> None:
     assert "Launch hosted-demo with FuseKit" in text
     assert "https://github.com/example/one" in text
     assert "Visible plan" in text
+    assert "Launch path" in text
+    assert "Review the visible plan and approved action ids before worker start." in text
+    assert "Receive the live URL, redacted proof receipt" in text
     assert "/github/control-room?installation_id=42&amp;repo=example%2Fone&amp;state=" in text
     assert "RESEND_API_KEY" in text
     assert "redacted proof" in text

@@ -25,6 +25,14 @@ NO_TERMINAL_PROMISE = (
     "No terminal, local install, download, or copied command is required in the hosted path."
 )
 
+HOSTED_LAUNCH_PATH = (
+    "Visit the hosted FuseKit URL.",
+    "Install the FuseKit GitHub App on one selected repository.",
+    "Review the visible plan and approved action ids before worker start.",
+    "Click Start hosted launch and pass only provider-owned human gates.",
+    "Receive the live URL, redacted proof receipt, rollback metadata, and detonation receipt.",
+)
+
 
 @dataclass(frozen=True)
 class HostedLaunchTrustContract:
@@ -33,6 +41,7 @@ class HostedLaunchTrustContract:
     scope: tuple[str, ...]
     permissions: tuple[str, ...]
     secret_boundary: str
+    launch_path: tuple[str, ...]
     proof: tuple[str, ...]
     rollback: tuple[str, ...]
     user_gates: tuple[str, ...]
@@ -47,6 +56,7 @@ class HostedLaunchTrustContract:
             "scope": list(self.scope),
             "permissions": list(self.permissions),
             "secret_boundary": self.secret_boundary,
+            "launch_path": list(self.launch_path),
             "proof": list(self.proof),
             "rollback": list(self.rollback),
             "user_gates": list(self.user_gates),
@@ -111,6 +121,7 @@ def build_hosted_launch_plan(
             "Raw secrets are never rendered in the hosted page, proof, receipts, logs, "
             "or generated apps except for app-scoped runtime values the provider requires."
         ),
+        launch_path=HOSTED_LAUNCH_PATH,
         proof=(
             "Live URL verification",
             "Provider verifier results",
@@ -155,6 +166,7 @@ def render_hosted_launcher(plan: HostedLaunchPlan, *, launch_url: str = "") -> s
     user_gates = _list_markup(trust.user_gates)
     scope = _list_markup(trust.scope)
     permissions = _list_markup(trust.permissions)
+    launch_path = _ordered_list_markup(trust.launch_path)
     story = " / ".join(TRUST_STORY)
     title = html.escape(f"Launch {plan.app_name} with FuseKit")
     source = html.escape(plan.github_source)
@@ -365,6 +377,8 @@ def render_hosted_launcher(plan: HostedLaunchPlan, *, launch_url: str = "") -> s
       <aside aria-label="Trust details">
         <h2>Narrow permissions</h2>
         {permissions}
+        <h2>Launch path</h2>
+        {launch_path}
         <h2>Scope</h2>
         {scope}
         <h2>Provider gates</h2>
@@ -429,6 +443,11 @@ def _list_markup(items: tuple[str, ...]) -> str:
     return f"<ul>{rows}</ul>"
 
 
+def _ordered_list_markup(items: tuple[str, ...]) -> str:
+    rows = "\n".join(f"<li>{html.escape(item)}</li>" for item in items)
+    return f"<ol>{rows}</ol>"
+
+
 def _action_card(action: SetupAction) -> str:
     return (
         f'<article class="action-card {html.escape(action.kind)}">'
@@ -450,6 +469,7 @@ def public_plan_summary(plan: HostedLaunchPlan) -> dict[str, Any]:
         "action_count": len(plan.actions),
         "trust_story": list(TRUST_STORY),
         "no_terminal": True,
+        "launch_path": list(plan.trust.launch_path),
         "proof": list(plan.trust.proof),
         "rollback": list(plan.trust.rollback),
     }

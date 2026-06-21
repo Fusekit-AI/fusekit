@@ -149,6 +149,10 @@ checklist for the selected-repository GitHub App, `contents:read` source
 permission, backend-only token exchange, vault/provider-native credential
 storage, and HMAC worker dispatch. They also render the approved action ids from
 the visible plan, and tell the user that action drift requires fresh approval.
+The hosted home and selected-repository plan now publish the same no-terminal
+launch path: visit the hosted URL, install the GitHub App on one repository,
+review the plan, click start, pass provider-owned gates, and receive the live
+URL with redacted proof, rollback metadata, and detonation receipt.
 The provider-gate checklist is rendered as human-owned checkpoints so MFA,
 CAPTCHA, billing, fraud, consent, and domain ownership reviews are visible
 instead of hidden in logs. It exposes a redacted job status API and
