@@ -29,6 +29,7 @@ from fusekit.source import (
 
 HOSTED_WORKER_EXECUTION_SCHEMA_VERSION = "fusekit.hosted-worker-execution.v1"
 HOSTED_WORKER_INVOCATION_SCHEMA_VERSION = "fusekit.hosted-worker-invocation.v1"
+HOSTED_WORKER_MAINTENANCE_SCHEMA_VERSION = "fusekit.hosted-worker-maintenance.v1"
 
 HOSTED_WORKER_ARTIFACTS = {
     "job_state": ".fusekit/job.json",
@@ -141,6 +142,41 @@ class HostedWorkerLaunchInvocation:
 
 
 @dataclass(frozen=True)
+class HostedWorkerMaintenanceInvocation:
+    """Private rollback/detonation commands for an existing hosted worker workspace."""
+
+    job: HostedLaunchJob
+    action: str
+    source_dir: Path
+    artifact_paths: Mapping[str, Path]
+    rollback_args: tuple[str, ...]
+    detonation_args: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        """Serialize maintenance commands without worker-local paths or secret values."""
+
+        return {
+            "schema_version": HOSTED_WORKER_MAINTENANCE_SCHEMA_VERSION,
+            "job_id": self.job.job_id,
+            "action": self.action,
+            "status": self.job.status,
+            "source_workspace": "<hosted-worker-source>",
+            "artifact_labels": dict(HOSTED_WORKER_ARTIFACTS),
+            "rollback_args": _redacted_args(self.rollback_args, self.source_dir),
+            "detonation_args": _redacted_args(self.detonation_args, self.source_dir),
+            "env_contract": [
+                "FUSEKIT_PASSPHRASE",
+                "provider credentials remain inside the encrypted FuseKit vault",
+            ],
+            "secret_boundary": (
+                "The real argv uses worker-local paths and reads passphrases/provider "
+                "credentials from the backend worker environment or vault only. Public "
+                "serialization redacts paths and never includes secret values."
+            ),
+        }
+
+
+@dataclass(frozen=True)
 class HostedWorkerProofBundle:
     """Redacted proof payload derived from worker artifacts."""
 
@@ -213,9 +249,27 @@ def build_hosted_worker_proof_payload(
 ) -> HostedWorkerProofBundle:
     """Build the worker-proof payload from real hosted worker artifacts."""
 
-    report_path = invocation.artifact_paths["acceptance_output"] / "report.json"
+    return build_hosted_worker_workspace_proof_payload(
+        source_dir=invocation.execution.source_dir,
+        artifact_paths=invocation.artifact_paths,
+        required_artifacts=invocation.execution.required_artifacts,
+    )
+
+
+def build_hosted_worker_workspace_proof_payload(
+    *,
+    source_dir: Path,
+    artifact_paths: Mapping[str, Path],
+    required_artifacts: tuple[str, ...],
+) -> HostedWorkerProofBundle:
+    """Build worker proof from an existing hosted worker workspace."""
+
+    report_path = artifact_paths["acceptance_output"] / "report.json"
     acceptance = _read_acceptance_report(report_path)
-    completed, missing = _artifact_completion(invocation)
+    completed, missing = _artifact_completion(
+        source_dir=source_dir,
+        required_artifacts=required_artifacts,
+    )
     checks = _check_statuses(acceptance)
     evidence = {
         "live_url": checks.get("receipt.live_url") == "ok",
@@ -224,7 +278,7 @@ def build_hosted_worker_proof_payload(
         "dns_propagation": _dns_evidence_ready(checks, acceptance),
         "rollback_metadata": ".fusekit/rollback_plan.json" in completed,
         "retrieved_remote_artifacts": acceptance.get("remote_artifacts_ready") is True
-        and invocation.artifact_paths["remote_artifacts"].exists(),
+        and artifact_paths["remote_artifacts"].exists(),
         "run_record": ".fusekit/run_record.json" in completed,
         "detonation_receipt": ".fusekit/workspace_detonation.json" in completed,
         "live_acceptance_report": (
@@ -342,6 +396,45 @@ def build_hosted_worker_launch_invocation(
     )
 
 
+def build_hosted_worker_maintenance_invocation(
+    job: HostedLaunchJob,
+    *,
+    workspace: Path,
+) -> HostedWorkerMaintenanceInvocation:
+    """Build rollback/detonation commands for a previously prepared hosted workspace."""
+
+    if job.status not in {"rollback_requested", "detonation_requested"}:
+        raise FuseKitError("Hosted worker maintenance requires rollback or detonation request.")
+    action = "rollback" if job.status == "rollback_requested" else "detonate"
+    source_dir = (workspace / job.job_id / "source").resolve()
+    artifacts = _artifact_paths(source_dir)
+    rollback_args = (
+        "fusekit",
+        "rollback",
+        "--receipt",
+        str(artifacts["setup_receipt"]),
+        "--vault",
+        str(artifacts["vault"]),
+        "--execute",
+    )
+    detonation_args = (
+        "fusekit",
+        "detonate",
+        str(source_dir / ".fusekit/worker"),
+        str(source_dir / ".fusekit/tmp"),
+        "--workspace-root",
+        str(source_dir),
+    )
+    return HostedWorkerMaintenanceInvocation(
+        job=job,
+        action=action,
+        source_dir=source_dir,
+        artifact_paths=artifacts,
+        rollback_args=rollback_args,
+        detonation_args=detonation_args,
+    )
+
+
 def _require_approved_contract(
     job: HostedLaunchJob,
     refreshed_contract: HostedWorkerContract,
@@ -404,13 +497,15 @@ def _read_acceptance_report(path: Path) -> dict[str, Any]:
 
 
 def _artifact_completion(
-    invocation: HostedWorkerLaunchInvocation,
+    *,
+    source_dir: Path,
+    required_artifacts: tuple[str, ...],
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    labels = invocation.execution.required_artifacts
+    labels = required_artifacts
     completed: list[str] = []
     missing: list[str] = []
     for label in labels:
-        path = invocation.execution.source_dir / label
+        path = source_dir / label
         if path.exists():
             completed.append(label)
         else:

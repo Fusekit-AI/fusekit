@@ -21,6 +21,7 @@ from fusekit.hosted.job import (
 from fusekit.hosted.launcher import build_hosted_launch_plan
 from fusekit.hosted.worker import (
     build_hosted_worker_launch_invocation,
+    build_hosted_worker_maintenance_invocation,
     build_hosted_worker_proof_payload,
     prepare_hosted_worker_execution,
 )
@@ -194,6 +195,47 @@ def test_hosted_worker_launch_invocation_rejects_invalid_retry_settings(
         build_hosted_worker_launch_invocation(execution, verify_attempts=0)
     with pytest.raises(FuseKitError, match="retry settings"):
         build_hosted_worker_launch_invocation(execution, gate_retry_seconds=-1)
+
+
+def test_hosted_worker_maintenance_invocation_uses_existing_cli_surfaces(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    rollback_job = advance_hosted_launch_job(
+        build_hosted_launch_job(
+            build_hosted_launch_plan(
+                scan_repo(execution.source_dir),
+                github_source="https://github.com/example/hosted-demo",
+            ),
+            github_installation_id=42,
+            job_id="hosted-test",
+            now=1_700_000_000,
+        ),
+        "rollback",
+        now=1_700_000_001,
+    )
+
+    invocation = build_hosted_worker_maintenance_invocation(
+        rollback_job,
+        workspace=tmp_path / "worker",
+    )
+    payload = invocation.to_dict()
+    serialized = json.dumps(payload)
+
+    assert invocation.action == "rollback"
+    assert invocation.rollback_args[:2] == ("fusekit", "rollback")
+    assert "--execute" in invocation.rollback_args
+    assert str(invocation.artifact_paths["setup_receipt"]) in invocation.rollback_args
+    assert str(invocation.artifact_paths["vault"]) in invocation.rollback_args
+    assert invocation.detonation_args[:2] == ("fusekit", "detonate")
+    assert "--workspace-root" in invocation.detonation_args
+    assert payload["schema_version"] == "fusekit.hosted-worker-maintenance.v1"
+    assert payload["source_workspace"] == "<hosted-worker-source>"
+    assert "<hosted-worker-source>/.fusekit/setup_receipt.json" in payload["rollback_args"]
+    assert "<hosted-worker-source>/.fusekit/worker" in payload["detonation_args"]
+    assert "FUSEKIT_PASSPHRASE" in payload["env_contract"]
+    assert str(tmp_path) not in serialized
+    assert "PRIVATE KEY" not in serialized
 
 
 def test_hosted_worker_proof_payload_stays_partial_without_artifacts(

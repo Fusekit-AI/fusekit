@@ -88,6 +88,42 @@ class FakeHostedApi:
         }
 
 
+class FakeHostedGet:
+    def __init__(self, payload: dict[str, object]) -> None:
+        self.payload = payload
+        self.calls: list[tuple[str, dict[str, str]]] = []
+
+    def __call__(self, url: str, headers: dict[str, str]) -> dict[str, Any]:
+        self.calls.append((url, dict(headers)))
+        assert headers["Authorization"] == f"Bearer {WORKER_SECRET}"
+        return dict(self.payload)
+
+
+class FakeMaintenanceApi:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, str], dict[str, object] | None]] = []
+
+    def __call__(
+        self,
+        url: str,
+        headers: dict[str, str],
+        payload: dict[str, object] | None,
+    ) -> dict[str, Any]:
+        self.calls.append((url, dict(headers), payload))
+        assert "/worker-proof?job=maintenance-job-token" in url
+        assert headers["Authorization"] == f"Bearer {WORKER_SECRET}"
+        return {
+            "proof_receipt": {
+                "schema_version": "fusekit.hosted-worker-proof-receipt.v1",
+                "completion_ready": bool(
+                    payload
+                    and isinstance(payload.get("evidence"), dict)
+                    and payload["evidence"].get("detonation_receipt") is True
+                ),
+            }
+        }
+
+
 def test_run_hosted_worker_once_claims_runs_and_submits_redacted_proof(
     tmp_path: Path,
 ) -> None:
@@ -191,6 +227,69 @@ def test_run_hosted_worker_once_submits_partial_proof_when_launch_fails(
     assert all(value is False for value in proof["evidence"].values())
     assert proof["completed_artifacts"] == []
     assert result.to_dict()["proof_receipt"]["completion_ready"] is False
+
+
+def test_run_hosted_worker_once_handles_detonation_request_from_signed_job(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "worker/hosted-test/source"
+    _write_demo_app(source)
+    _write_required_artifacts(source)
+    _write_acceptance_report(source, recording_ready=True)
+    plan = build_hosted_launch_plan(
+        scan_repo(source),
+        github_source="https://github.com/example/hosted-demo",
+    )
+    job = advance_hosted_launch_job(
+        advance_hosted_launch_job(
+            build_hosted_launch_job(
+                plan,
+                github_installation_id=42,
+                job_id="hosted-test",
+                now=1_700_000_000,
+            ),
+            "start",
+        ),
+        "detonate",
+    )
+    get = FakeHostedGet(job.to_dict())
+    api = FakeMaintenanceApi()
+    command_calls: list[tuple[str, ...]] = []
+
+    def run_command(args: tuple[str, ...]) -> int:
+        command_calls.append(args)
+        return 0
+
+    result = run_hosted_worker_once(
+        origin="https://fusekit.snowmanai.org",
+        job_id="hosted-test",
+        job_token="maintenance-job-token",
+        worker_secret=WORKER_SECRET,
+        worker_id="worker-01",
+        action="detonate",
+        github_config=_github_config(),
+        workspace=tmp_path / "worker",
+        get_json=get,
+        post_json=api,
+        command_runner=run_command,
+    )
+    serialized = json.dumps(result.to_dict())
+
+    assert get.calls[0][0] == (
+        "https://fusekit.snowmanai.org/api/hosted/jobs/hosted-test?"
+        "job=maintenance-job-token"
+    )
+    assert result.action == "detonate"
+    assert result.detonation_returncode == 0
+    assert command_calls == [result.maintenance_invocation.detonation_args]
+    assert command_calls[0][:2] == ("fusekit", "detonate")
+    assert api.calls[0][2]["schema_version"] == "fusekit.hosted-worker-proof.v1"
+    assert api.calls[0][2]["evidence"]["detonation_receipt"] is True
+    assert result.to_dict()["proof_receipt"]["completion_ready"] is True
+    assert str(tmp_path) not in serialized
+    assert WORKER_SECRET not in serialized
+    assert "maintenance-job-token" not in serialized
+    assert "PRIVATE KEY" not in serialized
 
 
 def test_run_hosted_worker_once_rejects_missing_inputs(tmp_path: Path) -> None:

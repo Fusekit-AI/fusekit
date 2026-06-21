@@ -918,6 +918,7 @@ def test_hosted_job_start_dispatches_signed_worker_envelope_when_configured() ->
     assert response["status"] == "waiting_for_provider_gates"
     assert response["worker_dispatch"] == {
         "schema_version": "fusekit.hosted-worker-dispatch.v1",
+        "action": "start",
         "dispatched": True,
         "dispatch_url": "https://worker.snowmanai.org/dispatch",
         "secret_boundary": (
@@ -926,6 +927,7 @@ def test_hosted_job_start_dispatches_signed_worker_envelope_when_configured() ->
         ),
     }
     assert dispatch_body["schema_version"] == "fusekit.hosted-worker-dispatch.v1"
+    assert dispatch_body["action"] == "start"
     assert dispatch_body["origin"] == "https://fusekit.snowmanai.org"
     assert dispatch_body["job_id"] == job_id
     assert dispatch_body["job_token"] == response["job_token"]
@@ -937,6 +939,8 @@ def test_hosted_job_start_dispatches_signed_worker_envelope_when_configured() ->
         job_id,
         "--job-token",
         "<signed-public-job-token>",
+        "--action",
+        "start",
     ]
     assert dispatch_opener.requests[0].full_url == "https://worker.snowmanai.org/dispatch"
     assert dispatch_opener.requests[0].headers["X-fusekit-dispatch-schema"] == (

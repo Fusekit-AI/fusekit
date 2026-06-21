@@ -180,13 +180,19 @@ unless live acceptance is recording-ready and every required public artifact
 exists. A `fusekit-hosted-worker` entrypoint now ties those pieces together for
 one queued job: claim with the worker bearer secret, prepare source, run the
 private launch/acceptance invocations, and submit redacted proof back to the
-hosted API. In production, the protected `Start worker` action can also post a
+hosted API. The same entrypoint now accepts a protected action mode, so a hosted
+worker can run the existing `fusekit rollback --execute` or `fusekit detonate`
+surfaces for signed rollback/detonation requests against the existing worker
+workspace, then submit redacted proof. In production, protected control-room
+actions can also post a
 signed dispatch envelope to `FUSEKIT_HOSTED_WORKER_DISPATCH_URL`, letting the
 hosted button wake a worker service without asking the user to run a terminal
 command or download anything. That dispatch carries the signed public job token
 needed by `fusekit-hosted-worker` but omits the worker secret, GitHub
 installation token, provider credentials, signature, and vault material from the
-browser-facing receipt. The backend-only
+browser-facing receipt. The dispatch envelope names the requested action
+(`start`, `rollback`, or `detonate`) and the public receipt redacts the signed
+job token. The backend-only
 `/api/hosted/jobs/<job>/worker-proof` endpoint accepts redacted worker proof
 snapshots, rejects credential-looking public notes or unsupported artifact
 labels, updates public job steps, and only marks hosted completion when live URL,

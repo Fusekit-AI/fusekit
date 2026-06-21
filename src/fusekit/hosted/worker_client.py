@@ -19,11 +19,15 @@ from fusekit.hosted.github_app import GitHubAppConfig, UrlOpener
 from fusekit.hosted.job import hosted_launch_job_from_dict
 from fusekit.hosted.worker import (
     HostedWorkerLaunchInvocation,
+    HostedWorkerMaintenanceInvocation,
     build_hosted_worker_launch_invocation,
+    build_hosted_worker_maintenance_invocation,
     build_hosted_worker_proof_payload,
+    build_hosted_worker_workspace_proof_payload,
     prepare_hosted_worker_execution,
 )
 
+JsonGet = Callable[[str, Mapping[str, str]], dict[str, Any]]
 JsonPost = Callable[[str, Mapping[str, str], dict[str, object] | None], dict[str, Any]]
 CommandRunner = Callable[[tuple[str, ...]], int]
 
@@ -35,22 +39,33 @@ class HostedWorkerRunResult:
     job_id: str
     launch_returncode: int
     acceptance_returncode: int | None
-    invocation: HostedWorkerLaunchInvocation
+    invocation: HostedWorkerLaunchInvocation | None
     proof_payload: dict[str, object]
     proof_response: dict[str, Any]
+    action: str = "start"
+    maintenance_invocation: HostedWorkerMaintenanceInvocation | None = None
+    rollback_returncode: int | None = None
+    detonation_returncode: int | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Serialize without worker secrets, provider credentials, or local paths."""
 
         proof_receipt = self.proof_response.get("proof_receipt", {})
-        return {
+        payload: dict[str, object] = {
+            "action": self.action,
             "job_id": self.job_id,
             "launch_returncode": self.launch_returncode,
             "acceptance_returncode": self.acceptance_returncode,
-            "invocation": self.invocation.to_dict(),
             "proof_payload": self.proof_payload,
             "proof_receipt": proof_receipt if isinstance(proof_receipt, dict) else {},
         }
+        if self.invocation is not None:
+            payload["invocation"] = self.invocation.to_dict()
+        if self.maintenance_invocation is not None:
+            payload["maintenance_invocation"] = self.maintenance_invocation.to_dict()
+            payload["rollback_returncode"] = self.rollback_returncode
+            payload["detonation_returncode"] = self.detonation_returncode
+        return payload
 
 
 def run_hosted_worker_once(
@@ -62,6 +77,8 @@ def run_hosted_worker_once(
     github_config: GitHubAppConfig,
     workspace: Path,
     worker_id: str = "hosted-worker",
+    action: str = "start",
+    get_json: JsonGet | None = None,
     post_json: JsonPost | None = None,
     command_runner: CommandRunner | None = None,
     opener: UrlOpener | None = None,
@@ -69,6 +86,19 @@ def run_hosted_worker_once(
     """Claim one hosted job, run local worker commands, and submit redacted proof."""
 
     _require_inputs(origin=origin, job_id=job_id, job_token=job_token, worker_secret=worker_secret)
+    if action != "start":
+        return _run_hosted_worker_maintenance_once(
+            origin=origin,
+            job_id=job_id,
+            job_token=job_token,
+            worker_secret=worker_secret,
+            workspace=workspace,
+            worker_id=worker_id,
+            action=action,
+            get_json=get_json,
+            post_json=post_json,
+            command_runner=command_runner,
+        )
     post = post_json or _post_json
     run_command = command_runner or _run_command
     headers = _worker_headers(worker_secret=worker_secret, worker_id=worker_id)
@@ -105,6 +135,60 @@ def run_hosted_worker_once(
     )
 
 
+def _run_hosted_worker_maintenance_once(
+    *,
+    origin: str,
+    job_id: str,
+    job_token: str,
+    worker_secret: str,
+    workspace: Path,
+    worker_id: str,
+    action: str,
+    get_json: JsonGet | None,
+    post_json: JsonPost | None,
+    command_runner: CommandRunner | None,
+) -> HostedWorkerRunResult:
+    if action not in {"rollback", "detonate"}:
+        raise FuseKitError("Hosted worker action must be start, rollback, or detonate.")
+    get = get_json or _get_json
+    post = post_json or _post_json
+    run_command = command_runner or _run_command
+    headers = _worker_headers(worker_secret=worker_secret, worker_id=worker_id)
+    job_payload = get(_job_status_url(origin, job_id, job_token), headers)
+    job = hosted_launch_job_from_dict(job_payload)
+    maintenance = build_hosted_worker_maintenance_invocation(job, workspace=workspace)
+    if maintenance.action != action:
+        raise FuseKitError("Hosted worker action does not match requested job state.")
+    rollback_returncode: int | None = None
+    detonation_returncode: int | None = None
+    if action == "rollback":
+        rollback_returncode = run_command(maintenance.rollback_args)
+    else:
+        detonation_returncode = run_command(maintenance.detonation_args)
+    proof_bundle = build_hosted_worker_workspace_proof_payload(
+        source_dir=maintenance.source_dir,
+        artifact_paths=maintenance.artifact_paths,
+        required_artifacts=job.worker_contract.required_artifacts,
+    )
+    proof_response = post(
+        _job_url(origin, job_id, "worker-proof", job_token),
+        headers,
+        proof_bundle.payload,
+    )
+    return HostedWorkerRunResult(
+        action=action,
+        job_id=job_id,
+        launch_returncode=0,
+        acceptance_returncode=None,
+        invocation=None,
+        proof_payload=proof_bundle.payload,
+        proof_response=proof_response,
+        maintenance_invocation=maintenance,
+        rollback_returncode=rollback_returncode,
+        detonation_returncode=detonation_returncode,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run one hosted worker job from environment-backed configuration."""
 
@@ -122,8 +206,13 @@ def main(argv: list[str] | None = None) -> int:
         ),
         workspace=workspace,
         worker_id=args.worker_id,
+        action=args.action,
     )
     print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+    if result.action == "rollback":
+        return 0 if result.rollback_returncode == 0 else 1
+    if result.action == "detonate":
+        return 0 if result.detonation_returncode == 0 else 1
     return 0 if result.acceptance_returncode == 0 else 1
 
 
@@ -134,6 +223,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--job-token", default="")
     parser.add_argument("--worker-secret", default="")
     parser.add_argument("--worker-id", default="hosted-worker")
+    parser.add_argument("--action", choices=("start", "rollback", "detonate"), default="start")
     parser.add_argument("--workspace", type=Path, default=None)
     return parser
 
@@ -162,12 +252,32 @@ def _job_url(origin: str, job_id: str, action: str, job_token: str) -> str:
     return f"{base}/api/hosted/jobs/{quoted_job}/{action}?{query}"
 
 
+def _job_status_url(origin: str, job_id: str, job_token: str) -> str:
+    base = origin.rstrip("/")
+    quoted_job = urllib.parse.quote(job_id, safe="")
+    query = urllib.parse.urlencode({"job": job_token})
+    return f"{base}/api/hosted/jobs/{quoted_job}?{query}"
+
+
 def _worker_headers(*, worker_secret: str, worker_id: str) -> dict[str, str]:
     return {
         "Authorization": f"Bearer {worker_secret}",
         "Content-Type": "application/json",
         "X-FuseKit-Worker-Id": worker_id,
     }
+
+
+def _get_json(url: str, headers: Mapping[str, str]) -> dict[str, Any]:
+    request = urllib.request.Request(url, method="GET", headers=dict(headers))
+    with urllib.request.urlopen(request, timeout=90.0) as response:
+        status = int(getattr(response, "status", 200))
+        body = response.read()
+    if status >= 400:
+        raise FuseKitError(f"Hosted worker API returned HTTP {status}.")
+    raw = json.loads(body.decode("utf-8"))
+    if not isinstance(raw, dict):
+        raise FuseKitError("Hosted worker API response must be a JSON object.")
+    return raw
 
 
 def _post_json(

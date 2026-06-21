@@ -681,9 +681,14 @@ def _hosted_job_action_response(
         return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "invalid_action"})
     job_token = create_hosted_job_token(settings.state_secret, updated)
     dispatch_receipt: dict[str, object] | None = None
-    if action == "start":
+    if action in {"start", "rollback", "detonate"}:
         try:
-            dispatch_receipt = _dispatch_hosted_worker(settings, updated, job_token=job_token)
+            dispatch_receipt = _dispatch_hosted_worker(
+                settings,
+                updated,
+                action=action,
+                job_token=job_token,
+            )
         except FuseKitError:
             return _response(
                 start_response,
@@ -1036,6 +1041,7 @@ def _dispatch_hosted_worker(
     settings: HostedSettings,
     job: HostedLaunchJob,
     *,
+    action: str,
     job_token: str,
 ) -> dict[str, object]:
     """Send a signed non-secret dispatch envelope to the hosted worker service."""
@@ -1043,6 +1049,7 @@ def _dispatch_hosted_worker(
     if not settings.worker_dispatch_url:
         return {
             "schema_version": HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+            "action": action,
             "dispatched": False,
             "reason": "worker_dispatch_url_not_configured",
         }
@@ -1050,6 +1057,7 @@ def _dispatch_hosted_worker(
         raise FuseKitError("Hosted worker dispatch URL must be https.")
     payload: dict[str, object] = {
         "schema_version": HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+        "action": action,
         "origin": _public_origin_label(settings.public_origin),
         "job_id": job.job_id,
         "job_token": job_token,
@@ -1061,6 +1069,8 @@ def _dispatch_hosted_worker(
             job.job_id,
             "--job-token",
             "<signed-public-job-token>",
+            "--action",
+            action,
         ],
         "worker_request_url": (
             f"{_public_origin_label(settings.public_origin)}/api/hosted/jobs/"
@@ -1091,6 +1101,7 @@ def _dispatch_hosted_worker(
         raise FuseKitError(f"Hosted worker dispatch returned HTTP {status}.")
     return {
         "schema_version": HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+        "action": action,
         "dispatched": True,
         "dispatch_url": _public_url_label(settings.worker_dispatch_url),
         "secret_boundary": (

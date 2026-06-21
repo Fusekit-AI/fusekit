@@ -467,8 +467,13 @@ def apply_hosted_worker_proof(
 ) -> tuple[HostedLaunchJob, dict[str, object]]:
     """Apply a redacted worker proof snapshot and return the updated job plus receipt."""
 
-    if job.status != "worker_claimed":
-        raise ValueError("Hosted worker proof requires a claimed worker.")
+    if job.status not in {
+        "worker_claimed",
+        "rollback_requested",
+        "detonation_requested",
+        "proof_submitted",
+    }:
+        raise ValueError("Hosted worker proof requires an active worker or maintenance request.")
     receipt = hosted_worker_proof_receipt(job, payload, worker_id=worker_id, now=now)
     evidence = receipt["evidence"]
     if not isinstance(evidence, dict):
