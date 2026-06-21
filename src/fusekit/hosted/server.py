@@ -145,6 +145,7 @@ class HostedSettings:
 
         public_origin = _public_origin_label(self.public_origin)
         dispatch_url = _public_url_label(self.worker_dispatch_url)
+        dispatch_receiver_base = _worker_dispatch_receiver_base_url(self.worker_dispatch_url)
         return {
             "schema_version": HOSTED_DEPLOYMENT_SCHEMA_VERSION,
             "canonical_origin": HOSTED_CANONICAL_ORIGIN,
@@ -182,8 +183,8 @@ class HostedSettings:
                 "authentication": "HMAC-SHA256 with FUSEKIT_HOSTED_WORKER_SECRET",
                 "checks": {
                     "dispatch": dispatch_url,
-                    "health": f"{dispatch_url.rstrip('/')}/healthz",
-                    "readiness": f"{dispatch_url.rstrip('/')}/readiness",
+                    "health": f"{dispatch_receiver_base}/healthz",
+                    "readiness": f"{dispatch_receiver_base}/readiness",
                 },
                 "required_runtime_env": [
                     "FUSEKIT_HOSTED_WORKER_SECRET",
@@ -1183,6 +1184,15 @@ def _public_url_label(value: str) -> str:
     if not _valid_https_url(value):
         return "https://worker.invalid"
     path = parsed.path or "/"
+    return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, path, "", "", ""))
+
+
+def _worker_dispatch_receiver_base_url(value: str) -> str:
+    public_url = _public_url_label(value)
+    parsed = urllib.parse.urlparse(public_url)
+    path = parsed.path.rstrip("/")
+    if path == "/dispatch" or path.endswith("/dispatch"):
+        path = path[: -len("/dispatch")]
     return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, path, "", "", ""))
 
 

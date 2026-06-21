@@ -331,6 +331,20 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     assert WORKER_SECRET not in serialized
 
 
+def test_hosted_deployment_contract_normalizes_worker_dispatch_receiver_checks() -> None:
+    settings = HostedSettings(worker_dispatch_url="https://worker.snowmanai.org/dispatch")
+
+    status, _headers, body = _call("/api/hosted/deployment", settings=settings)
+    payload = json.loads(body.decode("utf-8"))
+
+    assert status == "200 OK"
+    assert payload["worker_dispatch"]["checks"] == {
+        "dispatch": "https://worker.snowmanai.org/dispatch",
+        "health": "https://worker.snowmanai.org/healthz",
+        "readiness": "https://worker.snowmanai.org/readiness",
+    }
+
+
 def test_hosted_readiness_endpoint_rejects_invalid_config_shape_without_values() -> None:
     settings = HostedSettings(
         public_origin="http://snowmanai.org/path",

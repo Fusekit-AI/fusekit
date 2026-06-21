@@ -218,9 +218,14 @@ for the hosted subdomain. The hosted app also serves
 `/api/hosted/deployment`, a public deployment contract that lists the canonical
 origin, Vercel WSGI entrypoint, GitHub callback URL, Cloudflare DNS record name,
 health/readiness URLs, and required environment variable names without exposing
-secret values. Hosted responses include no-store caching and browser security
-headers so the launcher behaves like a hardened control surface from first
-deploy.
+secret values. `fusekit-hosted-verify --origin https://fusekit.snowmanai.org`
+performs the outside-in deployment check against `/healthz`,
+`/api/hosted/readiness`, and `/api/hosted/deployment`; add
+`--worker-dispatch-url` to verify the worker receiver `/healthz` and
+`/readiness` too. The verifier reports Cloudflare/Vercel HTTP failures and
+readiness mismatches as redacted JSON instead of claiming launch readiness.
+Hosted responses include no-store caching and browser security headers so the
+launcher behaves like a hardened control surface from first deploy.
 
 Production still needs the Vercel project connected to this repository,
 `fusekit.snowmanai.org` added as the custom domain, the Cloudflare `fusekit`
