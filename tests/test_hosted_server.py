@@ -51,6 +51,8 @@ def _call(
     headers: dict[str, str] | None = None,
     json_body: dict[str, object] | None = None,
     form_body: dict[str, str] | None = None,
+    raw_body: bytes | None = None,
+    raw_content_type: str = "",
     settings: HostedSettings | None = None,
 ) -> tuple[str, dict[str, str], bytes]:
     app = hosted_application(
@@ -80,6 +82,9 @@ def _call(
     if form_body is not None:
         body = urllib.parse.urlencode(form_body).encode("utf-8")
         content_type = "application/x-www-form-urlencoded"
+    if raw_body is not None:
+        body = raw_body
+        content_type = raw_content_type
     environ: dict[str, object] = {
         "REQUEST_METHOD": method,
         "PATH_INFO": path,
@@ -522,6 +527,7 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
         "actions": ["start", "stop", "rollback", "detonate"],
         "http_method": "POST",
         "control_token_transport": "hidden_form_field",
+        "content_type": "application/x-www-form-urlencoded",
         "query_control_behavior": "rejected_as_missing_control",
         "job_token_transport": "signed_public_query_parameter",
         "binding": "job_id_and_action",
@@ -2227,6 +2233,90 @@ def test_hosted_job_api_rejects_query_control_token() -> None:
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
         query_string=f"control={control}",
+        settings=settings,
+    )
+
+    assert status == "400 Bad Request"
+    assert json.loads(body.decode("utf-8")) == {"error": "missing_control"}
+    assert settings.hosted_jobs[job_id].status == "waiting_for_worker"
+
+
+def test_hosted_job_api_rejects_json_control_body() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    settings = _settings_with_github(opener)
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=f"installation_id=42&repo=example/one&state={state}",
+        settings=settings,
+    )
+    assert status == "200 OK"
+    text = body.decode("utf-8")
+    job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    control = _control_for_action(text, "start")
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/start",
+        method="POST",
+        json_body={"control": control},
+        settings=settings,
+    )
+
+    assert status == "400 Bad Request"
+    assert json.loads(body.decode("utf-8")) == {"error": "missing_control"}
+    assert settings.hosted_jobs[job_id].status == "waiting_for_worker"
+
+
+def test_hosted_job_api_rejects_untyped_control_body() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    settings = _settings_with_github(opener)
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=f"installation_id=42&repo=example/one&state={state}",
+        settings=settings,
+    )
+    assert status == "200 OK"
+    text = body.decode("utf-8")
+    job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    control = _control_for_action(text, "start")
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/start",
+        method="POST",
+        raw_body=urllib.parse.urlencode({"control": control}).encode("utf-8"),
         settings=settings,
     )
 

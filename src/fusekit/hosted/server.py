@@ -420,6 +420,7 @@ class HostedSettings:
                 "actions": ["start", "stop", "rollback", "detonate"],
                 "http_method": "POST",
                 "control_token_transport": "hidden_form_field",
+                "content_type": "application/x-www-form-urlencoded",
                 "query_control_behavior": "rejected_as_missing_control",
                 "job_token_transport": "signed_public_query_parameter",
                 "binding": "job_id_and_action",
@@ -1766,6 +1767,9 @@ def _form_request_body(environ: dict[str, object]) -> dict[str, list[str]]:
         raise FuseKitError("Invalid content length.") from exc
     if length <= 0:
         return {}
+    content_type = str(environ.get("CONTENT_TYPE", "") or "").split(";", 1)[0].strip().lower()
+    if content_type != "application/x-www-form-urlencoded":
+        raise FuseKitError("Protected controls require form encoding.")
     body = environ.get("wsgi.input")
     if not hasattr(body, "read"):
         raise FuseKitError("Missing request body.")
