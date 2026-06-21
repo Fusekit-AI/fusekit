@@ -284,6 +284,48 @@ def test_verify_hosted_deployment_requires_public_trust_contract() -> None:
     ]
 
 
+def test_verify_hosted_deployment_requires_one_click_contract() -> None:
+    contract = _deployment_contract()
+    one_click = contract["one_click_launch"]
+    assert isinstance(one_click, dict)
+    one_click["no_terminal_promise"] = "Download the CLI and paste this command."
+    one_click["terminal_required"] = True
+    one_click["download_required"] = True
+    one_click["launch_path"] = ["Run a terminal command."]
+    one_click["completion_requires"] = ["Live URL verification"]
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            contract,
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert "one_click_launch_no_terminal_promise_mismatch" in checks["hosted.deployment"][
+        "failures"
+    ]
+    assert "one_click_launch_terminal_required_not_false" in checks["hosted.deployment"][
+        "failures"
+    ]
+    assert "one_click_launch_download_required_not_false" in checks["hosted.deployment"][
+        "failures"
+    ]
+    assert "one_click_launch_path_mismatch" in checks["hosted.deployment"]["failures"]
+    assert "one_click_launch_completion_requires_mismatch" in checks["hosted.deployment"][
+        "failures"
+    ]
+
+
 def test_verify_hosted_deployment_requires_github_intake_contract() -> None:
     intake = _github_intake_contract()
     intake["route"] = "oauth-app"
@@ -463,6 +505,52 @@ def _deployment_contract() -> dict[str, object]:
             "visible_plan": "Providers, approved action ids, gates, and artifacts are shown.",
             "redacted_proof": "Public receipts use redacted notes only.",
             "reversible_setup": "Stop, revoke, rollback, and detonation controls exist.",
+        },
+        "one_click_launch": {
+            "public_url": "https://fusekit.snowmanai.org",
+            "start_control": "Start hosted launch",
+            "no_terminal_promise": (
+                "No terminal, local install, download, or copied command is required "
+                "in the hosted path."
+            ),
+            "intake": "github-app",
+            "repository_scope": "one selected GitHub repository",
+            "github_repository_permission": "contents:read",
+            "launch_path": [
+                "Visit the hosted FuseKit URL.",
+                "Install the FuseKit GitHub App on one selected repository.",
+                "Review the visible plan and approved action ids before worker start.",
+                "Click Start hosted launch and pass only provider-owned human gates.",
+                (
+                    "Receive the live URL, redacted proof receipt, rollback metadata, "
+                    "and detonation receipt."
+                ),
+            ],
+            "human_gates": [
+                "GitHub sign-in, MFA, passkey, SSO, consent, or repository selection",
+                (
+                    "Provider-owned billing, CAPTCHA, domain ownership, or copy-once "
+                    "secret screens"
+                ),
+                "DNS changes only after FuseKit shows the exact proposed records",
+            ],
+            "completion_requires": [
+                "Live URL verification",
+                "Provider verifier results",
+                "DNS propagation status",
+                "Redacted setup receipt",
+                "Redacted audit log",
+                "Run Record",
+                "Detonation receipt",
+                "Live acceptance report",
+            ],
+            "reversal": [
+                "Show rollback metadata before risky changes.",
+                "Preserve rollback actions for provider resources FuseKit creates.",
+                "Offer stop, revoke access, rollback, and download redacted proof actions.",
+            ],
+            "terminal_required": False,
+            "download_required": False,
         },
         "runtime": {
             "provider": "vercel",

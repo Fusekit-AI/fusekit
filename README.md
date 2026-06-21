@@ -252,8 +252,9 @@ compilation for the public launcher. The hosted app also serves
 origin, machine-readable trust story, Vercel WSGI entrypoint/routing files,
 GitHub callback URL, Cloudflare DNS record name, health/readiness URLs, the
 operator setup checklist for attaching `fusekit.snowmanai.org` to Vercel and
-Cloudflare, and required environment variable names without exposing secret
-values.
+Cloudflare, a structured one-click launch contract proving the hosted path needs
+no terminal or download, and required environment variable names without
+exposing secret values.
 `fusekit-hosted-verify --origin https://fusekit.snowmanai.org`
 performs the outside-in deployment check against public DNS propagation, the
 hosted homepage, `/healthz`, `/api/hosted/readiness`, and
@@ -261,9 +262,10 @@ hosted homepage, `/healthz`, `/api/hosted/readiness`, and
 `--worker-dispatch-url` to verify the worker receiver `/healthz` and
 `/readiness` too. The verifier reports Cloudflare/Vercel HTTP failures,
 readiness mismatches, public DNS failures, homepage trust drift, hosted
-runtime/open-core/DNS drift, deployment trust-story drift, pre-install GitHub
-intake trust drift, and operator-setup contract drift as redacted JSON instead
-of claiming launch readiness. Every public HTML/JSON payload it fetches is also
+runtime/open-core/DNS drift, deployment trust-story drift, one-click launch
+contract drift, pre-install GitHub intake trust drift, and operator-setup
+contract drift as redacted JSON instead of claiming launch readiness. Every
+public HTML/JSON payload it fetches is also
 checked with FuseKit's credential-text detector, and any failure is reported
 only as a redacted failure code. It
 also recognizes Cloudflare Error 1000 (`DNS points to prohibited IP`) and

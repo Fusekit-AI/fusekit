@@ -44,6 +44,9 @@ from fusekit.hosted.job import (
 )
 from fusekit.hosted.launcher import (
     HOSTED_LAUNCH_PATH,
+    HOSTED_PROOF_REQUIREMENTS,
+    HOSTED_REVERSAL_PATH,
+    NO_TERMINAL_PROMISE,
     TRUST_STORY,
     HostedLaunchPlan,
     build_hosted_launch_plan,
@@ -197,6 +200,27 @@ class HostedSettings:
             "domain": "fusekit.snowmanai.org",
             "trust_story": list(TRUST_STORY),
             "trust_contract": dict(HOSTED_PUBLIC_TRUST_CONTRACT),
+            "one_click_launch": {
+                "public_url": HOSTED_CANONICAL_ORIGIN,
+                "start_control": "Start hosted launch",
+                "no_terminal_promise": NO_TERMINAL_PROMISE,
+                "intake": "github-app",
+                "repository_scope": "one selected GitHub repository",
+                "github_repository_permission": "contents:read",
+                "launch_path": list(HOSTED_LAUNCH_PATH),
+                "human_gates": [
+                    "GitHub sign-in, MFA, passkey, SSO, consent, or repository selection",
+                    (
+                        "Provider-owned billing, CAPTCHA, domain ownership, or "
+                        "copy-once secret screens"
+                    ),
+                    "DNS changes only after FuseKit shows the exact proposed records",
+                ],
+                "completion_requires": list(HOSTED_PROOF_REQUIREMENTS),
+                "reversal": list(HOSTED_REVERSAL_PATH),
+                "terminal_required": False,
+                "download_required": False,
+            },
             "runtime": {
                 "provider": "vercel",
                 "entrypoint": "app.py",

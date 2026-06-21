@@ -343,6 +343,21 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     }
     assert "contents:read" in payload["trust_contract"]["narrow_permissions"]
     assert "redacted" in payload["trust_contract"]["redacted_proof"]
+    assert payload["one_click_launch"]["public_url"] == "https://fusekit.snowmanai.org"
+    assert payload["one_click_launch"]["start_control"] == "Start hosted launch"
+    assert payload["one_click_launch"]["terminal_required"] is False
+    assert payload["one_click_launch"]["download_required"] is False
+    assert payload["one_click_launch"]["intake"] == "github-app"
+    assert payload["one_click_launch"]["repository_scope"] == "one selected GitHub repository"
+    assert payload["one_click_launch"]["github_repository_permission"] == "contents:read"
+    assert payload["one_click_launch"]["launch_path"][0] == "Visit the hosted FuseKit URL."
+    assert payload["one_click_launch"]["launch_path"][-1] == (
+        "Receive the live URL, redacted proof receipt, rollback metadata, and detonation receipt."
+    )
+    assert "Run Record" in payload["one_click_launch"]["completion_requires"]
+    assert "Detonation receipt" in payload["one_click_launch"]["completion_requires"]
+    assert any("rollback" in item for item in payload["one_click_launch"]["reversal"])
+    assert any("MFA" in item for item in payload["one_click_launch"]["human_gates"])
     assert payload["runtime"] == {
         "provider": "vercel",
         "entrypoint": "app.py",

@@ -310,6 +310,7 @@ def _hosted_runtime_contract_failures(payload: dict[str, Any]) -> list[str]:
         for key in expected_trust_keys:
             if not isinstance(trust_contract.get(key), str) or not trust_contract.get(key):
                 failures.append(f"trust_contract_{key}_missing")
+    failures.extend(_one_click_launch_contract_failures(payload.get("one_click_launch")))
     expected_runtime = {
         "provider": "vercel",
         "entrypoint": "app.py",
@@ -362,6 +363,40 @@ def _hosted_runtime_contract_failures(payload: dict[str, Any]) -> list[str]:
             ]
             if actual_step_ids != expected_step_ids:
                 failures.append("operator_setup_steps_mismatch")
+    return failures
+
+
+def _one_click_launch_contract_failures(payload: object) -> list[str]:
+    failures: list[str] = []
+    if not isinstance(payload, dict):
+        return ["one_click_launch_contract_missing"]
+    if payload.get("public_url") != HOSTED_CANONICAL_ORIGIN:
+        failures.append("one_click_launch_public_url_mismatch")
+    if payload.get("start_control") != "Start hosted launch":
+        failures.append("one_click_launch_start_control_mismatch")
+    if payload.get("no_terminal_promise") != NO_TERMINAL_PROMISE:
+        failures.append("one_click_launch_no_terminal_promise_mismatch")
+    if payload.get("intake") != "github-app":
+        failures.append("one_click_launch_intake_mismatch")
+    if payload.get("repository_scope") != "one selected GitHub repository":
+        failures.append("one_click_launch_repository_scope_mismatch")
+    if payload.get("github_repository_permission") != "contents:read":
+        failures.append("one_click_launch_github_permission_mismatch")
+    if payload.get("launch_path") != list(HOSTED_LAUNCH_PATH):
+        failures.append("one_click_launch_path_mismatch")
+    if payload.get("completion_requires") != list(HOSTED_PROOF_REQUIREMENTS):
+        failures.append("one_click_launch_completion_requires_mismatch")
+    if payload.get("reversal") != list(HOSTED_REVERSAL_PATH):
+        failures.append("one_click_launch_reversal_mismatch")
+    if payload.get("terminal_required") is not False:
+        failures.append("one_click_launch_terminal_required_not_false")
+    if payload.get("download_required") is not False:
+        failures.append("one_click_launch_download_required_not_false")
+    human_gates = payload.get("human_gates")
+    if not isinstance(human_gates, list) or not human_gates:
+        failures.append("one_click_launch_human_gates_missing")
+    elif not any(isinstance(item, str) and "MFA" in item for item in human_gates):
+        failures.append("one_click_launch_human_gates_mfa_missing")
     return failures
 
 
