@@ -12,7 +12,13 @@ import urllib.request
 from typing import Any, Protocol
 
 from fusekit.errors import FuseKitError
-from fusekit.hosted.launcher import TRUST_STORY
+from fusekit.hosted.launcher import (
+    HOSTED_LAUNCH_PATH,
+    HOSTED_PROOF_REQUIREMENTS,
+    HOSTED_REVERSAL_PATH,
+    NO_TERMINAL_PROMISE,
+    TRUST_STORY,
+)
 from fusekit.hosted.server import (
     HOSTED_CANONICAL_ORIGIN,
     HOSTED_DEPLOYMENT_SCHEMA_VERSION,
@@ -83,6 +89,14 @@ def verify_hosted_deployment(
             expect_hosted_runtime_contract=True,
         )
     )
+    checks.append(
+        _json_check(
+            "hosted.github_intake",
+            f"{public_origin}/api/github/intake",
+            opener=opener,
+            expect_github_intake_contract=True,
+        )
+    )
     if dispatch_public_url:
         dispatch_base = _worker_dispatch_receiver_base_url(dispatch_public_url)
         checks.append(
@@ -147,6 +161,7 @@ def _json_check(
     expect_ok_field: bool = False,
     expect_ready_field: bool = False,
     expect_hosted_runtime_contract: bool = False,
+    expect_github_intake_contract: bool = False,
 ) -> dict[str, object]:
     try:
         status, payload = _fetch_json(url, opener=opener)
@@ -166,6 +181,8 @@ def _json_check(
         failures.append("ready_field_not_true")
     if expect_hosted_runtime_contract:
         failures.extend(_hosted_runtime_contract_failures(payload))
+    if expect_github_intake_contract:
+        failures.extend(_github_intake_contract_failures(payload))
     return {
         "id": check_id,
         "url": _public_url(url),
@@ -306,6 +323,40 @@ def _hosted_runtime_contract_failures(payload: dict[str, Any]) -> list[str]:
             ]
             if actual_step_ids != expected_step_ids:
                 failures.append("operator_setup_steps_mismatch")
+    return failures
+
+
+def _github_intake_contract_failures(payload: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    if payload.get("provider") != "github":
+        failures.append("github_intake_provider_mismatch")
+    if payload.get("route") != "github-app":
+        failures.append("github_intake_route_mismatch")
+    install_url = payload.get("install_url")
+    if not isinstance(install_url, str) or not install_url.startswith(
+        "https://github.com/apps/"
+    ):
+        failures.append("github_intake_install_url_invalid")
+    if payload.get("trust_story") != list(TRUST_STORY):
+        failures.append("github_intake_trust_story_mismatch")
+    if payload.get("no_terminal_promise") != NO_TERMINAL_PROMISE:
+        failures.append("github_intake_no_terminal_promise_mismatch")
+    if payload.get("launch_path") != list(HOSTED_LAUNCH_PATH):
+        failures.append("github_intake_launch_path_mismatch")
+    if payload.get("proof") != list(HOSTED_PROOF_REQUIREMENTS):
+        failures.append("github_intake_proof_mismatch")
+    if payload.get("reversal") != list(HOSTED_REVERSAL_PATH):
+        failures.append("github_intake_reversal_mismatch")
+    open_core = payload.get("open_core")
+    if not isinstance(open_core, dict):
+        failures.append("github_intake_open_core_missing")
+    else:
+        if open_core.get("source_repository") != "https://github.com/xpxpxp-coder/fusekit":
+            failures.append("github_intake_open_core_source_repository_mismatch")
+        if open_core.get("license") != "MIT":
+            failures.append("github_intake_open_core_license_mismatch")
+        if open_core.get("reviewable_entrypoint") != "app.py":
+            failures.append("github_intake_open_core_entrypoint_mismatch")
     return failures
 
 

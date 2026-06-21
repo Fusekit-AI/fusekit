@@ -56,6 +56,7 @@ def test_verify_hosted_deployment_passes_launcher_and_dispatch_checks() -> None:
             {"ok": True},
             {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
             _deployment_contract(),
+            _github_intake_contract(),
             {"ok": True},
             {
                 "schema_version": "fusekit.hosted-worker-dispatch-readiness.v1",
@@ -79,6 +80,7 @@ def test_verify_hosted_deployment_passes_launcher_and_dispatch_checks() -> None:
         "hosted.health",
         "hosted.readiness",
         "hosted.deployment",
+        "hosted.github_intake",
         "worker_dispatch.health",
         "worker_dispatch.readiness",
     ]
@@ -87,8 +89,9 @@ def test_verify_hosted_deployment_passes_launcher_and_dispatch_checks() -> None:
     assert checks["hosted.dns"]["addresses"] == PUBLIC_DNS_ADDRESSES
     assert report["worker_dispatch_url"] == "https://worker.snowmanai.org/dispatch"
     assert opener.requests[0].full_url == "https://fusekit.snowmanai.org/healthz"
-    assert opener.requests[3].full_url == "https://worker.snowmanai.org/healthz"
-    assert opener.requests[4].full_url == "https://worker.snowmanai.org/readiness"
+    assert opener.requests[3].full_url == "https://fusekit.snowmanai.org/api/github/intake"
+    assert opener.requests[4].full_url == "https://worker.snowmanai.org/healthz"
+    assert opener.requests[5].full_url == "https://worker.snowmanai.org/readiness"
     assert "WORKER_SECRET" not in serialized
     assert "signed-public-job-token" not in serialized
 
@@ -111,6 +114,7 @@ def test_verify_hosted_deployment_reports_cloudflare_error_without_claiming_read
             ),
             {"schema_version": "fusekit.hosted-readiness.v1", "ready": False},
             _deployment_contract(),
+            _github_intake_contract(),
         ]
     )
 
@@ -158,6 +162,7 @@ def test_verify_hosted_deployment_diagnoses_compact_cloudflare_1000_body() -> No
             ),
             {"schema_version": "fusekit.hosted-readiness.v1", "ready": False},
             _deployment_contract(),
+            _github_intake_contract(),
         ]
     )
 
@@ -187,6 +192,7 @@ def test_verify_hosted_deployment_requires_runtime_and_dns_contract() -> None:
             {"ok": True},
             {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
             contract,
+            _github_intake_contract(),
         ]
     )
 
@@ -216,6 +222,7 @@ def test_verify_hosted_deployment_requires_operator_setup_contract() -> None:
             {"ok": True},
             {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
             contract,
+            _github_intake_contract(),
         ]
     )
 
@@ -245,6 +252,7 @@ def test_verify_hosted_deployment_requires_public_trust_contract() -> None:
             {"ok": True},
             {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
             contract,
+            _github_intake_contract(),
         ]
     )
 
@@ -263,12 +271,47 @@ def test_verify_hosted_deployment_requires_public_trust_contract() -> None:
     ]
 
 
+def test_verify_hosted_deployment_requires_github_intake_contract() -> None:
+    intake = _github_intake_contract()
+    intake["route"] = "oauth-app"
+    intake["launch_path"] = ["Download a CLI."]
+    open_core = intake["open_core"]
+    assert isinstance(open_core, dict)
+    open_core["reviewable_entrypoint"] = "server.py"
+    opener = SequenceOpener(
+        [
+            {"ok": True},
+            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _deployment_contract(),
+            intake,
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["hosted.github_intake"]["status"] == "failed"
+    assert "github_intake_route_mismatch" in checks["hosted.github_intake"]["failures"]
+    assert "github_intake_launch_path_mismatch" in checks["hosted.github_intake"][
+        "failures"
+    ]
+    assert "github_intake_open_core_entrypoint_mismatch" in checks["hosted.github_intake"][
+        "failures"
+    ]
+
+
 def test_verify_hosted_deployment_reports_dns_resolution_failure() -> None:
     opener = SequenceOpener(
         [
             {"ok": True},
             {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
             _deployment_contract(),
+            _github_intake_contract(),
         ]
     )
 
@@ -291,6 +334,7 @@ def test_verify_hosted_deployment_rejects_private_dns_addresses() -> None:
             {"ok": True},
             {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
             _deployment_contract(),
+            _github_intake_contract(),
         ]
     )
 
@@ -355,5 +399,54 @@ def _deployment_contract() -> dict[str, object]:
                 {"id": "route_cloudflare_cname"},
                 {"id": "verify_public_contracts"},
             ],
+        },
+    }
+
+
+def _github_intake_contract() -> dict[str, object]:
+    return {
+        "provider": "github",
+        "route": "github-app",
+        "install_url": "https://github.com/apps/fusekit-launcher/installations/new",
+        "trust_story": [
+            "open core",
+            "narrow permissions",
+            "visible plan",
+            "redacted proof",
+            "reversible setup",
+        ],
+        "no_terminal_promise": (
+            "No terminal, local install, download, or copied command is required "
+            "in the hosted path."
+        ),
+        "launch_path": [
+            "Visit the hosted FuseKit URL.",
+            "Install the FuseKit GitHub App on one selected repository.",
+            "Review the visible plan and approved action ids before worker start.",
+            "Click Start hosted launch and pass only provider-owned human gates.",
+            (
+                "Receive the live URL, redacted proof receipt, rollback metadata, "
+                "and detonation receipt."
+            ),
+        ],
+        "proof": [
+            "Live URL verification",
+            "Provider verifier results",
+            "DNS propagation status",
+            "Redacted setup receipt",
+            "Redacted audit log",
+            "Run Record",
+            "Detonation receipt",
+            "Live acceptance report",
+        ],
+        "reversal": [
+            "Show rollback metadata before risky changes.",
+            "Preserve rollback actions for provider resources FuseKit creates.",
+            "Offer stop, revoke access, rollback, and download redacted proof actions.",
+        ],
+        "open_core": {
+            "source_repository": "https://github.com/xpxpxp-coder/fusekit",
+            "license": "MIT",
+            "reviewable_entrypoint": "app.py",
         },
     }

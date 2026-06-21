@@ -260,8 +260,9 @@ performs the outside-in deployment check against public DNS propagation, `/healt
 `--worker-dispatch-url` to verify the worker receiver `/healthz` and
 `/readiness` too. The verifier reports Cloudflare/Vercel HTTP failures,
 readiness mismatches, public DNS failures, hosted runtime/open-core/DNS drift,
-trust-story drift, and operator-setup contract drift as redacted JSON instead
-of claiming launch readiness. It
+deployment trust-story drift, pre-install GitHub intake trust drift, and
+operator-setup contract drift as redacted JSON instead of claiming launch
+readiness. It
 also recognizes Cloudflare Error 1000 (`DNS points to prohibited IP`) and
 reports the non-secret next action: attach `fusekit.snowmanai.org` to the
 Vercel project and route the Cloudflare `fusekit` CNAME to the exact
