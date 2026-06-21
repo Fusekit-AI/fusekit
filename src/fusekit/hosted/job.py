@@ -11,7 +11,7 @@ import secrets
 import time
 import urllib.parse
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.launcher import HOSTED_COMPLETION_EVIDENCE_KEYS, HostedLaunchPlan
@@ -37,6 +37,44 @@ HOSTED_WORKER_MAINTENANCE_PROOF_KEYS = (
     "provider_auth_session_closed",
     "redacted_public_proof_preserved",
 )
+HOSTED_PLAN_INTEGRITY_COVERAGE = (
+    "app_name",
+    "github_source",
+    "providers",
+    "required_env",
+    "approved_actions",
+    "required_artifacts",
+    "provider_gates",
+    "worker_guarantees",
+)
+HOSTED_WORKER_REQUIRED_ARTIFACTS = (
+    ".fusekit/job.json",
+    ".fusekit/run_record.json",
+    ".fusekit/verification_report.json",
+    ".fusekit/rollback_plan.json",
+    ".fusekit/setup_receipt.json",
+    ".fusekit/audit.jsonl",
+    ".fusekit/provider_strategies.json",
+    ".fusekit/runner_readiness.json",
+    ".fusekit/gates.json",
+    ".fusekit/gate_events.jsonl",
+    ".fusekit/llm_contract.json",
+    ".fusekit/workspace_detonation.json",
+    ".fusekit/acceptance_report.json",
+)
+HOSTED_WORKER_GUARANTEES = (
+    "Only actions from the visible plan may run.",
+    (
+        "Provider-owned login, MFA, billing, consent, and copy-once "
+        "secret screens remain human-owned."
+    ),
+    "DNS changes require explicit approval before provider mutation.",
+    "Raw secrets must remain inside the encrypted FuseKit vault runtime.",
+    "Public proof must be redacted before it is rendered or downloaded.",
+    "Rollback metadata must exist before risky provider changes are considered complete.",
+    "Hosted worker scratch, browser, auth, and plaintext setup state must be detonated.",
+    "Live acceptance must require retrieved remote artifacts and recording proof.",
+)
 
 
 @dataclass(frozen=True)
@@ -46,6 +84,7 @@ class HostedWorkerContract:
     lane: str
     github_source: str
     github_installation_id: int | None
+    plan_fingerprint: str
     providers: tuple[str, ...]
     required_env: tuple[str, ...]
     permission_boundary: tuple[str, ...]
@@ -62,6 +101,7 @@ class HostedWorkerContract:
             "lane": self.lane,
             "github_source": self.github_source,
             "github_installation_id": self.github_installation_id,
+            "plan_integrity": self.plan_integrity(),
             "source_token_policy": (
                 "Exchange GitHub App installation tokens inside the FuseKit backend worker only. "
                 "Installation tokens are never embedded in browser pages, job tokens, receipts, "
@@ -74,6 +114,20 @@ class HostedWorkerContract:
             "required_artifacts": list(self.required_artifacts),
             "gates": list(self.gates),
             "guarantees": list(self.guarantees),
+        }
+
+    def plan_integrity(self) -> dict[str, object]:
+        """Return public integrity metadata for the approved hosted plan."""
+
+        return {
+            "algorithm": "sha256",
+            "fingerprint": self.plan_fingerprint,
+            "covers": list(HOSTED_PLAN_INTEGRITY_COVERAGE),
+            "secret_boundary": (
+                "Plan integrity covers only non-secret approved-plan metadata: app name, "
+                "source repository URL, provider names, environment variable names, action "
+                "ids, artifact labels, human-gate labels, and worker guarantees."
+            ),
         }
 
 
@@ -308,12 +362,28 @@ def build_hosted_worker_contract(
 ) -> HostedWorkerContract:
     """Build the redacted execution contract for the hosted setup worker."""
 
+    providers = plan.providers
+    required_env = plan.required_env
+    approved_actions = tuple(action.id for action in plan.actions)
+    required_artifacts = HOSTED_WORKER_REQUIRED_ARTIFACTS
+    gates = plan.trust.user_gates
+    guarantees = HOSTED_WORKER_GUARANTEES
     return HostedWorkerContract(
         lane="hosted-fusekit-worker",
         github_source=plan.github_source,
         github_installation_id=github_installation_id,
-        providers=plan.providers,
-        required_env=plan.required_env,
+        plan_fingerprint=_approved_plan_fingerprint(
+            app_name=plan.app_name,
+            github_source=plan.github_source,
+            providers=providers,
+            required_env=required_env,
+            approved_actions=approved_actions,
+            required_artifacts=required_artifacts,
+            gates=gates,
+            guarantees=guarantees,
+        ),
+        providers=providers,
+        required_env=required_env,
         permission_boundary=(
             "GitHub App installation is limited to one selected repository.",
             "GitHub repository permission is contents:read for source intake.",
@@ -321,36 +391,10 @@ def build_hosted_worker_contract(
             "Provider credentials stay inside the FuseKit vault or provider-native secret stores.",
             "Worker dispatch uses an HMAC envelope; worker secrets are never sent to browsers.",
         ),
-        approved_actions=tuple(action.id for action in plan.actions),
-        required_artifacts=(
-            ".fusekit/job.json",
-            ".fusekit/run_record.json",
-            ".fusekit/verification_report.json",
-            ".fusekit/rollback_plan.json",
-            ".fusekit/setup_receipt.json",
-            ".fusekit/audit.jsonl",
-            ".fusekit/provider_strategies.json",
-            ".fusekit/runner_readiness.json",
-            ".fusekit/gates.json",
-            ".fusekit/gate_events.jsonl",
-            ".fusekit/llm_contract.json",
-            ".fusekit/workspace_detonation.json",
-            ".fusekit/acceptance_report.json",
-        ),
-        gates=plan.trust.user_gates,
-        guarantees=(
-            "Only actions from the visible plan may run.",
-            (
-                "Provider-owned login, MFA, billing, consent, and copy-once "
-                "secret screens remain human-owned."
-            ),
-            "DNS changes require explicit approval before provider mutation.",
-            "Raw secrets must remain inside the encrypted FuseKit vault runtime.",
-            "Public proof must be redacted before it is rendered or downloaded.",
-            "Rollback metadata must exist before risky provider changes are considered complete.",
-            "Hosted worker scratch, browser, auth, and plaintext setup state must be detonated.",
-            "Live acceptance must require retrieved remote artifacts and recording proof.",
-        ),
+        approved_actions=approved_actions,
+        required_artifacts=required_artifacts,
+        gates=gates,
+        guarantees=guarantees,
     )
 
 
@@ -738,6 +782,7 @@ def hosted_proof_receipt(job: HostedLaunchJob) -> dict[str, object]:
         "rollback": list(job.rollback),
         "detonation": list(job.detonation),
         "completion_requires": list(HOSTED_WORKER_PROOF_KEYS),
+        "plan_integrity": job.worker_contract.plan_integrity(),
         "reversal_playbook": hosted_reversal_playbook(job),
         "provider_gates": list(job.worker_contract.gates),
         "permission_boundary": list(job.worker_contract.permission_boundary),
@@ -807,6 +852,7 @@ def hosted_worker_request(job: HostedLaunchJob, *, now: int | None = None) -> di
         "github_source": job.github_source,
         "status": job.status,
         "requested_at": requested_at,
+        "plan_integrity": job.worker_contract.plan_integrity(),
         "claim_policy": {
             "runner": job.worker_contract.lane,
             "source_intake": "github-app-selected-repository-archive",
@@ -856,6 +902,7 @@ def hosted_job_action_receipt(
         "action": action_id,
         "status": job.status,
         "requested_at": int(time.time() if now is None else now),
+        "plan_integrity": job.worker_contract.plan_integrity(),
         "receipt_statement": _action_receipt_statement(action_id),
         "next_required_proof": _action_next_required_proof(action_id),
         "safeguards": [
@@ -893,6 +940,7 @@ def hosted_worker_claim_receipt(
         "worker_id": _public_worker_id(worker_id),
         "claimed_at": claimed_at,
         "status": job.status,
+        "plan_integrity": job.worker_contract.plan_integrity(),
         "secret_boundary": (
             "The worker claim proves a configured backend worker authenticated. "
             "It never includes worker secrets, provider tokens, vault material, "
@@ -941,6 +989,7 @@ def hosted_worker_proof_receipt(
         "status": job.status,
         "completion_ready": completion_ready,
         "maintenance_ready": maintenance_ready,
+        "plan_integrity": job.worker_contract.plan_integrity(),
         "completion_statement": (
             "Hosted completion proof is present."
             if completion_ready
@@ -978,6 +1027,7 @@ def render_hosted_proof_receipt(job: HostedLaunchJob, *, job_token: str = "") ->
     gates = _list(job.worker_contract.gates)
     permissions = _list(job.worker_contract.permission_boundary)
     actions = _list(job.worker_contract.approved_actions)
+    plan_integrity = _plan_integrity_section(job.worker_contract)
     back = _control_room_link(job, job_token=job_token)
     proof_json = _proof_json_link(job, job_token=job_token)
     return f"""<!doctype html>
@@ -1087,6 +1137,7 @@ def render_hosted_proof_receipt(job: HostedLaunchJob, *, job_token: str = "") ->
       </p>
       {actions}
     </section>
+    {plan_integrity}
     <section aria-label="Provider gates">
       <h2>Provider gates</h2>
       <p>
@@ -1315,12 +1366,14 @@ def _worker_contract_section(contract: HostedWorkerContract) -> str:
     gates = _list(contract.gates)
     artifacts = _list(contract.required_artifacts)
     guarantees = _list(contract.guarantees)
+    plan_integrity = _plan_integrity_section(contract, heading_level=3)
     return f"""
         <h2>Worker contract</h2>
         <p>
           FuseKit may not call this launch complete until the hosted worker produces
           the required redacted artifacts and keeps these guarantees.
         </p>
+        {plan_integrity}
         <h3>Providers</h3>
         {providers}
         <h3>Permission boundary</h3>
@@ -1340,6 +1393,30 @@ def _worker_contract_section(contract: HostedWorkerContract) -> str:
         {artifacts}
         <h3>Guarantees</h3>
         {guarantees}
+"""
+
+
+def _plan_integrity_section(
+    contract: HostedWorkerContract,
+    *,
+    heading_level: int = 2,
+) -> str:
+    heading = f"h{heading_level}"
+    integrity = contract.plan_integrity()
+    fingerprint = html.escape(str(integrity["fingerprint"]))
+    coverage = _list(tuple(str(item) for item in cast(list[object], integrity["covers"])))
+    wrapper = "section" if heading_level == 2 else "div"
+    return f"""
+    <{wrapper} aria-label="Approved plan integrity">
+      <{heading}>Approved plan integrity</{heading}>
+      <p class="source">{fingerprint}</p>
+      <p>
+        This fingerprint covers the non-secret plan shape the user approved.
+        Provider, action, gate, artifact, source, or env-name drift requires a
+        fresh visible plan before execution.
+      </p>
+      {coverage}
+    </{wrapper}>
 """
 
 
@@ -1591,16 +1668,45 @@ def _action_next_required_proof(action: str) -> list[str]:
     return []
 
 
+def _approved_plan_fingerprint(
+    *,
+    app_name: str,
+    github_source: str,
+    providers: tuple[str, ...],
+    required_env: tuple[str, ...],
+    approved_actions: tuple[str, ...],
+    required_artifacts: tuple[str, ...],
+    gates: tuple[str, ...],
+    guarantees: tuple[str, ...],
+) -> str:
+    payload = {
+        "app_name": app_name,
+        "github_source": github_source,
+        "providers": list(providers),
+        "required_env": list(required_env),
+        "approved_actions": list(approved_actions),
+        "required_artifacts": list(required_artifacts),
+        "provider_gates": list(gates),
+        "worker_guarantees": list(guarantees),
+    }
+    digest = hashlib.sha256(
+        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    return f"sha256:{digest}"
+
+
 def _worker_contract_from_dict(payload: dict[str, Any]) -> HostedWorkerContract:
     if payload.get("schema_version") != HOSTED_WORKER_CONTRACT_SCHEMA_VERSION:
         raise FuseKitError("Hosted worker contract schema is unsupported.")
     github_installation_id = payload.get("github_installation_id")
     if github_installation_id is not None and not isinstance(github_installation_id, int):
         raise FuseKitError("Hosted worker contract github_installation_id is invalid.")
+    plan_fingerprint = _plan_fingerprint_from_payload(payload)
     return HostedWorkerContract(
         lane=_required_str(payload, "lane"),
         github_source=_required_str(payload, "github_source"),
         github_installation_id=github_installation_id,
+        plan_fingerprint=plan_fingerprint,
         providers=_str_tuple(payload.get("providers"), "providers"),
         required_env=_str_tuple(payload.get("required_env"), "required_env"),
         permission_boundary=_str_tuple(
@@ -1611,6 +1717,33 @@ def _worker_contract_from_dict(payload: dict[str, Any]) -> HostedWorkerContract:
         required_artifacts=_str_tuple(payload.get("required_artifacts"), "required_artifacts"),
         gates=_str_tuple(payload.get("gates"), "gates"),
         guarantees=_str_tuple(payload.get("guarantees"), "guarantees"),
+    )
+
+
+def _plan_fingerprint_from_payload(payload: dict[str, Any]) -> str:
+    plan_integrity = payload.get("plan_integrity")
+    if not isinstance(plan_integrity, dict):
+        raise FuseKitError("Hosted worker contract plan_integrity is invalid.")
+    if plan_integrity.get("algorithm") != "sha256":
+        raise FuseKitError("Hosted worker contract plan_integrity algorithm is invalid.")
+    if plan_integrity.get("covers") != list(HOSTED_PLAN_INTEGRITY_COVERAGE):
+        raise FuseKitError("Hosted worker contract plan_integrity coverage is invalid.")
+    fingerprint = plan_integrity.get("fingerprint")
+    if not isinstance(fingerprint, str) or not _valid_plan_fingerprint(fingerprint):
+        raise FuseKitError("Hosted worker contract plan_integrity fingerprint is invalid.")
+    boundary = plan_integrity.get("secret_boundary")
+    if not isinstance(boundary, str) or "non-secret approved-plan metadata" not in boundary:
+        raise FuseKitError("Hosted worker contract plan_integrity boundary is invalid.")
+    return fingerprint
+
+
+def _valid_plan_fingerprint(value: str) -> bool:
+    prefix = "sha256:"
+    digest = value.removeprefix(prefix)
+    return (
+        value.startswith(prefix)
+        and len(digest) == 64
+        and all(character in "0123456789abcdef" for character in digest)
     )
 
 

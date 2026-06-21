@@ -65,6 +65,11 @@ def test_hosted_launch_job_is_public_safe_and_trust_complete() -> None:
     assert payload["worker_contract"]["schema_version"] == "fusekit.hosted-worker-contract.v1"
     assert payload["worker_contract"]["lane"] == "hosted-fusekit-worker"
     assert payload["worker_contract"]["github_installation_id"] is None
+    assert payload["worker_contract"]["plan_integrity"]["algorithm"] == "sha256"
+    assert str(payload["worker_contract"]["plan_integrity"]["fingerprint"]).startswith(
+        "sha256:"
+    )
+    assert "approved_actions" in payload["worker_contract"]["plan_integrity"]["covers"]
     assert "contents:read" in " ".join(payload["worker_contract"]["permission_boundary"])
     assert ".fusekit/run_record.json" in payload["worker_contract"]["required_artifacts"]
     assert ".fusekit/workspace_detonation.json" in payload["worker_contract"]["required_artifacts"]
@@ -96,6 +101,7 @@ def test_hosted_proof_receipt_is_redacted_and_not_prematurely_complete() -> None
         "live_acceptance_report",
         "recording",
     ]
+    assert receipt["plan_integrity"] == job.worker_contract.plan_integrity()
     assert any("MFA" in gate for gate in receipt["provider_gates"])
     assert any("contents:read" in item for item in receipt["permission_boundary"])
     assert "github.authorize" in receipt["approved_actions"]
@@ -114,6 +120,8 @@ def test_hosted_proof_receipt_is_redacted_and_not_prematurely_complete() -> None
     assert "contents:read" in html
     assert "Approved actions" in html
     assert "vercel.deploy_verify" in html
+    assert "Approved plan integrity" in html
+    assert job.worker_contract.plan_fingerprint in html
     assert "fresh visible plan" in html
     assert "Provider gates" in html
     assert "These gates stay provider-owned and human-approved" in html
@@ -150,6 +158,10 @@ def test_hosted_worker_request_binds_live_acceptance_and_no_secret_policy() -> N
     assert request["claim_policy"]["mode"] == "live"
     assert request["claim_policy"]["remote_artifacts_required"] is True
     assert request["claim_policy"]["recording_required"] is True
+    assert request["plan_integrity"] == started.worker_contract.plan_integrity()
+    assert request["worker_contract"]["plan_integrity"] == (
+        started.worker_contract.plan_integrity()
+    )
     assert request["acceptance_gate"] == {
         "mode": "live",
         "remote_artifacts": ".fusekit/remote-artifacts",
@@ -217,6 +229,7 @@ def test_hosted_worker_claim_updates_job_and_writes_redacted_receipt() -> None:
     assert receipt["schema_version"] == "fusekit.hosted-worker-claim.v1"
     assert receipt["job_id"] == "hosted-test"
     assert receipt["worker_id"] == "worker-01script"
+    assert receipt["plan_integrity"] == claimed.worker_contract.plan_integrity()
     assert "provider_gate_events" in receipt["next_required_proof"]
     assert "detonation_receipt" in receipt["next_required_proof"]
     assert "recording" in receipt["next_required_proof"]
@@ -628,6 +641,12 @@ def test_hosted_job_action_receipts_are_redacted_and_proof_oriented() -> None:
     )
 
     assert start_receipt["schema_version"] == "fusekit.hosted-job-action-receipt.v1"
+    assert start_receipt["plan_integrity"] == started.worker_contract.plan_integrity()
+    assert stop_receipt["plan_integrity"] == stopped.worker_contract.plan_integrity()
+    assert rollback_receipt["plan_integrity"] == rollback.worker_contract.plan_integrity()
+    assert detonation_receipt["plan_integrity"] == (
+        detonation.worker_contract.plan_integrity()
+    )
     assert start_receipt["next_required_proof"] == [
         "worker_claim",
         "provider_gate_events",
@@ -669,6 +688,21 @@ def test_hosted_worker_contract_is_public_and_binds_approved_plan() -> None:
     assert "Installation tokens are never embedded" in payload["source_token_policy"]
     assert payload["providers"] == ["github", "vercel"]
     assert payload["required_env"] == ["RESEND_API_KEY"]
+    assert payload["plan_integrity"] == contract.plan_integrity()
+    assert payload["plan_integrity"]["fingerprint"] == contract.plan_fingerprint
+    assert payload["plan_integrity"]["covers"] == [
+        "app_name",
+        "github_source",
+        "providers",
+        "required_env",
+        "approved_actions",
+        "required_artifacts",
+        "provider_gates",
+        "worker_guarantees",
+    ]
+    assert "non-secret approved-plan metadata" in payload["plan_integrity"][
+        "secret_boundary"
+    ]
     assert any("contents:read" in item for item in payload["permission_boundary"])
     assert any("backend worker" in item for item in payload["permission_boundary"])
     assert payload["approved_actions"]
@@ -690,6 +724,20 @@ def test_hosted_worker_contract_decodes_older_public_payload_without_boundary() 
     decoded = hosted_launch_job_from_dict(payload)
 
     assert decoded.worker_contract.permission_boundary == ()
+    assert decoded.worker_contract.plan_fingerprint == job.worker_contract.plan_fingerprint
+
+
+def test_hosted_worker_contract_rejects_invalid_plan_integrity() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    payload = job.to_dict()
+    worker_contract = payload["worker_contract"]
+    assert isinstance(worker_contract, dict)
+    plan_integrity = worker_contract["plan_integrity"]
+    assert isinstance(plan_integrity, dict)
+    plan_integrity["fingerprint"] = "sha256:not-a-real-digest"
+
+    with pytest.raises(FuseKitError, match="plan_integrity fingerprint is invalid"):
+        hosted_launch_job_from_dict(payload)
 
 
 def test_hosted_job_token_round_trips_redacted_public_job() -> None:
@@ -701,6 +749,7 @@ def test_hosted_job_token_round_trips_redacted_public_job() -> None:
 
     assert verified == job
     assert decoded == job
+    assert verified.worker_contract.plan_fingerprint == job.worker_contract.plan_fingerprint
     assert "ghs_" not in serialized
     assert "PRIVATE KEY" not in serialized
 

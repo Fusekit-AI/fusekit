@@ -469,6 +469,7 @@ def _require_approved_contract(
     expected = job.worker_contract
     if (
         job.github_source != refreshed_contract.github_source
+        or expected.plan_fingerprint != refreshed_contract.plan_fingerprint
         or expected.providers != refreshed_contract.providers
         or expected.required_env != refreshed_contract.required_env
         or expected.approved_actions != refreshed_contract.approved_actions

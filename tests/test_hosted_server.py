@@ -950,6 +950,9 @@ def test_hosted_github_control_room_fetches_source_and_renders_job() -> None:
     assert "Hosted launch control room." in text
     assert "provider-owned" in text
     assert "Worker contract" in text
+    assert "Approved plan integrity" in text
+    assert "sha256:" in text
+    assert "fresh visible plan before execution" in text
     assert "Permission boundary" in text
     assert "contents:read" in text
     assert "Approved actions" in text
@@ -1007,6 +1010,10 @@ def test_hosted_job_api_returns_redacted_status_and_accepts_protected_action() -
     assert payload["status"] == "waiting_for_worker"
     assert payload["worker_contract"]["required_artifacts"]
     assert payload["worker_contract"]["github_installation_id"] == 42
+    plan_integrity = payload["worker_contract"]["plan_integrity"]
+    assert plan_integrity["algorithm"] == "sha256"
+    assert str(plan_integrity["fingerprint"]).startswith("sha256:")
+    assert "approved_actions" in plan_integrity["covers"]
     assert ".fusekit/run_record.json" in payload["worker_contract"]["required_artifacts"]
     assert "ghs_fake" not in json.dumps(payload)
 
@@ -1023,6 +1030,9 @@ def test_hosted_job_api_returns_redacted_status_and_accepts_protected_action() -
     assert payload["worker_contract"]["schema_version"] == "fusekit.hosted-worker-contract.v1"
     assert payload["action_receipt"]["schema_version"] == "fusekit.hosted-job-action-receipt.v1"
     assert payload["action_receipt"]["action"] == "start"
+    assert payload["action_receipt"]["plan_integrity"] == payload["worker_contract"][
+        "plan_integrity"
+    ]
     assert "worker_claim" in payload["action_receipt"]["next_required_proof"]
     assert "detonation_receipt" in payload["action_receipt"]["next_required_proof"]
     assert "recording" in payload["action_receipt"]["next_required_proof"]
@@ -1039,6 +1049,9 @@ def test_hosted_job_api_returns_redacted_status_and_accepts_protected_action() -
     assert status == "200 OK"
     assert payload["status"] == "rollback_requested"
     assert payload["action_receipt"]["action"] == "rollback"
+    assert payload["action_receipt"]["plan_integrity"]["fingerprint"] == plan_integrity[
+        "fingerprint"
+    ]
     assert "rollback_execution_receipt" in payload["action_receipt"]["next_required_proof"]
     assert "ghs_fake" not in json.dumps(payload)
 
@@ -1516,6 +1529,7 @@ def test_hosted_worker_request_requires_start_and_supports_stateless_job_token()
     assert request["claim_policy"]["mode"] == "live"
     assert request["claim_policy"]["github_installation_id"] == 42
     assert request["claim_policy"]["remote_artifacts_required"] is True
+    assert request["plan_integrity"] == request["worker_contract"]["plan_integrity"]
     assert request["acceptance_gate"]["require_recording"] is True
     assert ".fusekit/run_record.json" in request["required_artifacts"]
     assert "ghs_fake" not in serialized
@@ -1599,6 +1613,12 @@ def test_hosted_worker_claim_requires_backend_auth_and_returns_redacted_receipt(
     assert payload["claim_receipt"]["schema_version"] == "fusekit.hosted-worker-claim.v1"
     assert payload["claim_receipt"]["worker_id"] == "worker-01script"
     assert payload["worker_request"]["schema_version"] == "fusekit.hosted-worker-request.v1"
+    assert payload["claim_receipt"]["plan_integrity"] == payload["job"]["worker_contract"][
+        "plan_integrity"
+    ]
+    assert payload["worker_request"]["plan_integrity"] == payload["job"]["worker_contract"][
+        "plan_integrity"
+    ]
     assert steps["worker.prepare"]["status"] == "done"
     assert steps["provider.gates"]["status"] == "waiting"
     assert WORKER_SECRET not in serialized
@@ -1721,6 +1741,9 @@ def test_hosted_worker_proof_submission_requires_backend_auth_and_redacted_evide
     )
     assert payload["proof_receipt"]["completion_ready"] is True
     assert payload["proof_receipt"]["missing_artifacts"] == []
+    assert payload["proof_receipt"]["plan_integrity"] == payload["job"]["worker_contract"][
+        "plan_integrity"
+    ]
     assert steps["proof.collect"]["status"] == "done"
     assert steps["rollback.ready"]["status"] == "done"
     assert steps["detonate.worker"]["status"] == "done"

@@ -361,6 +361,13 @@ launcher behaves like a hardened control surface from first deploy. The worker
 dispatch receiver returns the same no-store, no-framing, no-referrer,
 nosniff, HSTS, and disabled-permissions headers on its JSON readiness and
 dispatch receipt endpoints.
+Hosted launch jobs, protected action receipts, backend worker requests, worker
+claim receipts, and worker proof receipts also publish the same non-secret
+approved-plan fingerprint. The fingerprint covers the selected app name,
+GitHub source URL, detected providers, required environment variable names,
+approved action ids, required artifact labels, provider gate labels, and worker
+guarantees, so provider/action/gate/artifact/source drift requires a fresh
+visible plan before execution.
 
 Production still needs the Vercel project connected to this repository, an
 HTTPS worker dispatch service running `fusekit-hosted-worker-dispatch` with
