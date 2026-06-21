@@ -203,9 +203,11 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
     assert "Install the FuseKit GitHub App on one selected repository." in html
     assert "Click Start hosted launch and pass only provider-owned human gates." in html
     assert "Receive the live URL, redacted proof receipt" in html
+    assert "Deploy an HTTPS worker dispatch service" in html
+    assert "Set FUSEKIT_HOSTED_WORKER_DISPATCH_URL" in html
     assert "Add fusekit.snowmanai.org as the Vercel custom domain." in html
     assert "set the fusekit record to the exact Vercel-provided CNAME target" in html
-    assert "fusekit-hosted-verify reports DNS, health, readiness, and deployment ok" in html
+    assert "and --worker-dispatch-url checks ok" in html
     assert 'id="fusekit-github-intake"' in html
     assert 'id="fusekit-hosted-readiness"' in html
     assert 'id="fusekit-hosted-deployment"' in html
@@ -438,16 +440,22 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     assert payload["operator_setup"]["target_subdomain"] == "fusekit.snowmanai.org"
     assert [step["id"] for step in payload["operator_setup"]["steps"]] == [
         "connect_vercel_project",
+        "deploy_worker_dispatch_receiver",
+        "configure_worker_dispatch_url",
         "attach_custom_domain",
         "route_cloudflare_cname",
         "verify_public_contracts",
     ]
-    assert payload["operator_setup"]["steps"][1]["label"] == (
+    assert "fusekit-hosted-worker-dispatch" in payload["operator_setup"]["steps"][1]["label"]
+    assert "FUSEKIT_HOSTED_WORKER_DISPATCH_URL" in payload["operator_setup"]["steps"][2][
+        "label"
+    ]
+    assert payload["operator_setup"]["steps"][3]["label"] == (
         "Add fusekit.snowmanai.org as the Vercel custom domain."
     )
     assert (
         "exact Vercel-provided CNAME target"
-        in payload["operator_setup"]["steps"][2]["label"]
+        in payload["operator_setup"]["steps"][4]["label"]
     )
     assert "tokens" in payload["operator_setup"]["secret_boundary"]
     assert payload["github_app"]["callback_url"] == (

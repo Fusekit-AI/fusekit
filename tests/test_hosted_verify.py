@@ -300,8 +300,8 @@ def test_verify_hosted_deployment_requires_operator_setup_contract() -> None:
     operator_setup["target_subdomain"] = "www.snowmanai.org"
     steps = operator_setup["steps"]
     assert isinstance(steps, list)
-    assert isinstance(steps[1], dict)
-    steps[1]["label"] = "Add www.snowmanai.org as the Vercel custom domain."
+    assert isinstance(steps[3], dict)
+    steps[3]["label"] = "Add www.snowmanai.org as the Vercel custom domain."
     steps.pop()
     opener = SequenceOpener(
         [
@@ -953,6 +953,26 @@ def _deployment_contract() -> dict[str, object]:
                     "proof": "Vercel deployment serves app.py from the public repository.",
                 },
                 {
+                    "id": "deploy_worker_dispatch_receiver",
+                    "label": (
+                        "Deploy an HTTPS worker dispatch service running "
+                        "fusekit-hosted-worker-dispatch with durable dispatch state."
+                    ),
+                    "proof": (
+                        "Its /healthz and /readiness endpoints pass with production readiness."
+                    ),
+                },
+                {
+                    "id": "configure_worker_dispatch_url",
+                    "label": (
+                        "Set FUSEKIT_HOSTED_WORKER_DISPATCH_URL in the hosted Vercel "
+                        "project to that HTTPS dispatch endpoint."
+                    ),
+                    "proof": (
+                        "Hosted readiness reports the dispatch URL is configured before launch."
+                    ),
+                },
+                {
                     "id": "attach_custom_domain",
                     "label": "Add fusekit.snowmanai.org as the Vercel custom domain.",
                     "proof": "Vercel reports the domain as assigned to this project.",
@@ -971,12 +991,12 @@ def _deployment_contract() -> dict[str, object]:
                     "id": "verify_public_contracts",
                     "label": (
                         "Verify https://fusekit.snowmanai.org/healthz, "
-                        "/api/hosted/readiness, and /api/hosted/deployment from "
-                        "outside the deployment."
+                        "/api/hosted/readiness, /api/hosted/deployment, and the "
+                        "worker dispatch receiver from outside the deployment."
                     ),
                     "proof": (
                         "fusekit-hosted-verify reports DNS, health, readiness, "
-                        "and deployment ok."
+                        "deployment, and --worker-dispatch-url checks ok."
                     ),
                 },
             ],

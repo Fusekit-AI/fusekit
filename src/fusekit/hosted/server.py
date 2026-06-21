@@ -76,6 +76,22 @@ HOSTED_OPERATOR_SETUP_STEPS: tuple[dict[str, str], ...] = (
         "proof": "Vercel deployment serves app.py from the public repository.",
     },
     {
+        "id": "deploy_worker_dispatch_receiver",
+        "label": (
+            "Deploy an HTTPS worker dispatch service running "
+            "fusekit-hosted-worker-dispatch with durable dispatch state."
+        ),
+        "proof": "Its /healthz and /readiness endpoints pass with production readiness.",
+    },
+    {
+        "id": "configure_worker_dispatch_url",
+        "label": (
+            "Set FUSEKIT_HOSTED_WORKER_DISPATCH_URL in the hosted Vercel project "
+            "to that HTTPS dispatch endpoint."
+        ),
+        "proof": "Hosted readiness reports the dispatch URL is configured before launch.",
+    },
+    {
         "id": "attach_custom_domain",
         "label": "Add fusekit.snowmanai.org as the Vercel custom domain.",
         "proof": "Vercel reports the domain as assigned to this project.",
@@ -92,9 +108,13 @@ HOSTED_OPERATOR_SETUP_STEPS: tuple[dict[str, str], ...] = (
         "id": "verify_public_contracts",
         "label": (
             "Verify https://fusekit.snowmanai.org/healthz, /api/hosted/readiness, "
-            "and /api/hosted/deployment from outside the deployment."
+            "/api/hosted/deployment, and the worker dispatch receiver from outside "
+            "the deployment."
         ),
-        "proof": "fusekit-hosted-verify reports DNS, health, readiness, and deployment ok.",
+        "proof": (
+            "fusekit-hosted-verify reports DNS, health, readiness, deployment, "
+            "and --worker-dispatch-url checks ok."
+        ),
     },
 )
 HOSTED_PUBLIC_TRUST_CONTRACT: dict[str, str] = {

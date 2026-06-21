@@ -314,9 +314,10 @@ compilation for the public launcher. The hosted app also serves
 origin, machine-readable trust story, Vercel WSGI entrypoint/routing files,
 GitHub callback URL, Cloudflare DNS record name, health/readiness URLs, the
 operator setup checklist for attaching `fusekit.snowmanai.org` to Vercel and
-Cloudflare, a structured one-click launch contract proving the hosted path needs
-no terminal or download, production-required worker dispatch wiring, and required
-environment variable names without exposing secret values.
+Cloudflare, worker dispatch receiver setup/verification steps, a structured
+one-click launch contract proving the hosted path needs no terminal or download,
+production-required worker dispatch wiring, and required environment variable
+names without exposing secret values.
 `fusekit-hosted-verify --origin https://fusekit.snowmanai.org`
 performs the outside-in deployment check against public DNS propagation, the
 hosted homepage, `/healthz`, `/api/hosted/readiness`, and
@@ -340,10 +341,12 @@ Vercel-provided target.
 Hosted responses include no-store caching and browser security headers so the
 launcher behaves like a hardened control surface from first deploy.
 
-Production still needs the Vercel project connected to this repository,
-`fusekit.snowmanai.org` added as the custom domain, the Cloudflare `fusekit`
-subdomain routed to the exact Vercel-provided CNAME target, and these runtime
-environment variables set in Vercel: `FUSEKIT_HOSTED_ORIGIN`,
+Production still needs the Vercel project connected to this repository, an
+HTTPS worker dispatch service running `fusekit-hosted-worker-dispatch` with
+durable dispatch state, `FUSEKIT_HOSTED_WORKER_DISPATCH_URL` set in Vercel to
+that service, `fusekit.snowmanai.org` added as the custom domain, the Cloudflare
+`fusekit` subdomain routed to the exact Vercel-provided CNAME target, and these
+runtime environment variables set in Vercel: `FUSEKIT_HOSTED_ORIGIN`,
 `FUSEKIT_GITHUB_APP_ID`, `FUSEKIT_GITHUB_APP_SLUG`,
 `FUSEKIT_GITHUB_APP_PRIVATE_KEY`, `FUSEKIT_HOSTED_STATE_SECRET`, and
 `FUSEKIT_HOSTED_WORKER_SECRET`. Production one-click worker wakeup also needs
