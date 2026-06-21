@@ -73,6 +73,11 @@ def test_verify_hosted_deployment_passes_launcher_and_dispatch_checks() -> None:
                 "idempotency": {
                     "mode": "dispatch-state-dir",
                     "durable": True,
+                    "scope": "worker deployment",
+                    "proof": (
+                        "Duplicate job/action dispatches are reserved through a configured "
+                        "non-secret state directory before worker spawn."
+                    ),
                 },
             },
         ]
@@ -146,6 +151,44 @@ def test_verify_hosted_deployment_requires_durable_worker_dispatch_idempotency()
         "worker_dispatch_idempotency_not_durable",
         "worker_dispatch_idempotency_mode_not_production",
         "worker_dispatch_production_ready_not_true",
+    ]
+
+
+def test_verify_hosted_deployment_requires_worker_dispatch_idempotency_proof() -> None:
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _deployment_contract(),
+            _github_intake_contract(),
+            {"ok": True},
+            {
+                "schema_version": "fusekit.hosted-worker-dispatch-readiness.v1",
+                "ready": True,
+                "production_ready": True,
+                "idempotency": {
+                    "mode": "dispatch-state-dir",
+                    "durable": True,
+                    "scope": "single receiver process",
+                    "proof": "Duplicate dispatches are handled.",
+                },
+            },
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["worker_dispatch.readiness"]["status"] == "failed"
+    assert checks["worker_dispatch.readiness"]["failures"] == [
+        "worker_dispatch_idempotency_scope_mismatch",
+        "worker_dispatch_idempotency_proof_missing",
     ]
 
 

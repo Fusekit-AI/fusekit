@@ -275,7 +275,8 @@ duplicate setup, rollback, or detonation workers. Its
 the worker secret, worker id, optional workspace root, and optional dispatch
 state directory, and separates basic `ready` status from production readiness:
 production readiness requires durable dispatch idempotency through the workspace
-or dispatch state directory. The
+or dispatch state directory, plus public mode/scope/proof text showing the
+non-secret reservation is recorded before worker spawn. The
 backend-only
 `/api/hosted/jobs/<job>/worker-proof` endpoint accepts redacted worker proof
 snapshots, rejects credential-looking public notes or unsupported artifact
@@ -330,7 +331,8 @@ hosted homepage, `/healthz`, `/api/hosted/readiness`, and
 `/api/hosted/deployment`. When the deployment contract publishes a worker
 dispatch URL, the same command automatically verifies the worker receiver
 `/healthz` and `/readiness` too, including durable worker-dispatch idempotency
-for production. `--worker-dispatch-url` remains available for checking an
+mode, scope, and reservation-before-spawn proof for production.
+`--worker-dispatch-url` remains available for checking an
 explicit receiver URL before it is published in the hosted contract.
 The verifier reports Cloudflare/Vercel HTTP failures,
 readiness mismatches, public DNS failures, homepage trust drift, hosted

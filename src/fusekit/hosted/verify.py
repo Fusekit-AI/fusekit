@@ -340,6 +340,16 @@ def _worker_dispatch_readiness_failures(payload: dict[str, Any]) -> list[str]:
     mode = idempotency.get("mode")
     if mode not in {"dispatch-state-dir", "workspace"}:
         failures.append("worker_dispatch_idempotency_mode_not_production")
+    elif mode == "dispatch-state-dir":
+        if idempotency.get("scope") != "worker deployment":
+            failures.append("worker_dispatch_idempotency_scope_mismatch")
+    elif idempotency.get("scope") != "worker workspace":
+        failures.append("worker_dispatch_idempotency_scope_mismatch")
+    proof = idempotency.get("proof")
+    if mode in {"dispatch-state-dir", "workspace"} and (
+        not isinstance(proof, str) or "before worker spawn" not in proof
+    ):
+        failures.append("worker_dispatch_idempotency_proof_missing")
     production_ready = payload.get("production_ready")
     if production_ready is not True:
         failures.append("worker_dispatch_production_ready_not_true")

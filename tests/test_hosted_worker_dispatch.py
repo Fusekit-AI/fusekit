@@ -155,6 +155,13 @@ def test_accept_hosted_worker_dispatch_spawns_env_backed_worker_and_redacts_rece
     assert receipt["accepted"] is True
     assert receipt["duplicate"] is False
     assert receipt["action"] == "detonate"
+    assert receipt["idempotency"] == {
+        "mode": "process",
+        "durable": False,
+        "scope": "process",
+        "duplicate": False,
+        "proof": "in-process dispatch guard accepted this job/action once.",
+    }
     assert receipt["worker_command"] == [
         "<fusekit-hosted-worker>",
         "--origin",
@@ -209,13 +216,53 @@ def test_accept_hosted_worker_dispatch_is_idempotent_per_job_action(tmp_path: Pa
     assert second["duplicate"] is True
     assert second["spawned"] == {"pid": None}
     assert second["idempotency"] == {
-        "scope": "workspace",
+        "mode": "dispatch-state-dir",
+        "durable": True,
+        "scope": "worker deployment",
         "duplicate": True,
-        "proof": "non-secret worker dispatch marker recorded for this job/action.",
+        "proof": (
+            "non-secret worker dispatch marker recorded in the configured state directory "
+            "before worker spawn."
+        ),
     }
     assert len(spawner.calls) == 1
     assert WORKER_SECRET not in serialized
     assert "signed-public-job-token" not in serialized
+
+
+def test_accept_hosted_worker_dispatch_receipt_labels_workspace_idempotency(
+    tmp_path: Path,
+) -> None:
+    body = _dispatch_body(action="start")
+    dispatch = verify_hosted_worker_dispatch(
+        body,
+        signature=_signature(body),
+        schema=HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+        secret=WORKER_SECRET,
+    )
+    spawner = FakeSpawner()
+    settings = HostedWorkerDispatchSettings(
+        worker_secret=WORKER_SECRET,
+        worker_id="worker-01",
+        workspace=tmp_path / "workspace",
+        spawner=spawner,
+    )
+
+    receipt = accept_hosted_worker_dispatch(dispatch, settings=settings)
+    serialized = json.dumps(receipt)
+
+    assert receipt["idempotency"] == {
+        "mode": "workspace",
+        "durable": True,
+        "scope": "worker workspace",
+        "duplicate": False,
+        "proof": (
+            "non-secret worker dispatch marker recorded in the worker workspace "
+            "before worker spawn."
+        ),
+    }
+    assert str(tmp_path) not in serialized
+    assert WORKER_SECRET not in serialized
 
 
 def test_hosted_worker_dispatch_wsgi_accepts_signed_post() -> None:

@@ -324,10 +324,23 @@ def _reserve_dispatch(
             if not duplicate:
                 _ACCEPTED_DISPATCHES.add(key)
         return {
+            "mode": "process",
+            "durable": False,
             "scope": "process",
             "duplicate": duplicate,
             "proof": "in-process dispatch guard accepted this job/action once.",
         }
+    mode = "dispatch-state-dir" if settings.dispatch_state_dir is not None else "workspace"
+    scope = "worker deployment" if mode == "dispatch-state-dir" else "worker workspace"
+    proof = (
+        "non-secret worker dispatch marker recorded in the configured state directory "
+        "before worker spawn."
+        if mode == "dispatch-state-dir"
+        else (
+            "non-secret worker dispatch marker recorded in the worker workspace "
+            "before worker spawn."
+        )
+    )
     digest = hashlib.sha256(
         f"{dispatch.origin}:{dispatch.job_id}:{dispatch.action}".encode()
     ).hexdigest()
@@ -353,9 +366,11 @@ def _reserve_dispatch(
     else:
         duplicate = False
     return {
-        "scope": "workspace",
+        "mode": mode,
+        "durable": True,
+        "scope": scope,
         "duplicate": duplicate,
-        "proof": "non-secret worker dispatch marker recorded for this job/action.",
+        "proof": proof,
     }
 
 
