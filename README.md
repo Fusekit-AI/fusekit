@@ -169,6 +169,9 @@ hosted launch can claim completion.
 It also shows the reversible setup path before install: rollback metadata before
 risky changes, rollback actions for created provider resources, and stop,
 revoke-access, rollback, and redacted-proof controls.
+The same page embeds public JSON contract blocks for GitHub intake, hosted
+readiness, and hosted deployment so operators and verifiers can inspect the
+machine-readable trust contract without browser storage, tokens, or raw secrets.
 Unavailable hosted start states render as disabled non-links, while preview
 controls jump to the relevant trust section instead of pretending to run.
 The provider-gate checklist is rendered as human-owned checkpoints so MFA,
@@ -277,9 +280,10 @@ hosted homepage, `/healthz`, `/api/hosted/readiness`, and
 readiness mismatches, public DNS failures, homepage trust drift, hosted
 runtime/open-core/DNS drift, deployment trust-story drift, homepage completion
 proof checklist drift, homepage reversible-setup drift, one-click launch
-contract drift, capability-vault boundary drift, pre-install GitHub intake
-trust drift, and operator-setup contract drift as redacted JSON instead of
-claiming launch readiness. Every public HTML/JSON payload it fetches is also
+contract drift, embedded homepage contract drift, capability-vault boundary
+drift, pre-install GitHub intake trust drift, and operator-setup contract drift
+as redacted JSON instead of claiming launch readiness. Every public HTML/JSON
+payload it fetches is also
 checked with FuseKit's credential-text detector, and any failure is reported
 only as a redacted failure code. It
 also recognizes Cloudflare Error 1000 (`DNS points to prohibited IP`) and

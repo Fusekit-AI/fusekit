@@ -451,6 +451,11 @@ def _hosted_home_failures(text: str) -> list[str]:
         "hosted_home_revoke_access_missing": "revoke access",
         "hosted_home_provider_gates_missing": "What you may need to approve",
         "hosted_home_deployment_contract_missing": "Hosted deployment contract",
+        "hosted_home_embedded_intake_contract_missing": 'id="fusekit-github-intake"',
+        "hosted_home_embedded_readiness_contract_missing": 'id="fusekit-hosted-readiness"',
+        "hosted_home_embedded_deployment_contract_missing": (
+            'id="fusekit-hosted-deployment"'
+        ),
         "hosted_home_source_repository_missing": "https://github.com/xpxpxp-coder/fusekit",
     }
     return [failure for failure, marker in expected.items() if marker not in text]

@@ -196,6 +196,9 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
     assert "Add fusekit.snowmanai.org as the Vercel custom domain." in html
     assert "set the fusekit record to the exact Vercel-provided CNAME target" in html
     assert "fusekit-hosted-verify reports DNS, health, readiness, and deployment ok" in html
+    assert 'id="fusekit-github-intake"' in html
+    assert 'id="fusekit-hosted-readiness"' in html
+    assert 'id="fusekit-hosted-deployment"' in html
     assert "state=" in html
     assert "Hosted GitHub intake is ready." in html
     assert "fusekit launch" not in html

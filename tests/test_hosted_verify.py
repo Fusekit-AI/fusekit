@@ -459,6 +459,9 @@ def test_verify_hosted_deployment_requires_trustworthy_homepage() -> None:
         "failures"
     ]
     assert "hosted_home_reversible_setup_missing" in checks["hosted.home"]["failures"]
+    assert "hosted_home_embedded_intake_contract_missing" in checks["hosted.home"][
+        "failures"
+    ]
     assert "github_pat_" not in serialized
 
 
@@ -533,6 +536,9 @@ def _home_html() -> str:
         <section>Offer stop, revoke access, rollback, and download redacted proof actions.</section>
         <section>What you may need to approve</section>
         <section>Hosted deployment contract</section>
+        <script id="fusekit-github-intake" type="application/json">{}</script>
+        <script id="fusekit-hosted-readiness" type="application/json">{}</script>
+        <script id="fusekit-hosted-deployment" type="application/json">{}</script>
       </body>
     </html>
     """
