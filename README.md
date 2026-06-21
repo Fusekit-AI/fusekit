@@ -262,7 +262,9 @@ performs the outside-in deployment check against public DNS propagation, `/healt
 readiness mismatches, public DNS failures, hosted runtime/open-core/DNS drift,
 deployment trust-story drift, pre-install GitHub intake trust drift, and
 operator-setup contract drift as redacted JSON instead of claiming launch
-readiness. It
+readiness. Every public JSON payload it fetches is also checked with FuseKit's
+credential-text detector, and any failure is reported only as a redacted failure
+code. It
 also recognizes Cloudflare Error 1000 (`DNS points to prohibited IP`) and
 reports the non-secret next action: attach `fusekit.snowmanai.org` to the
 Vercel project and route the Cloudflare `fusekit` CNAME to the exact

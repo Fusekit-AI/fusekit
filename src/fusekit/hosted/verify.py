@@ -27,6 +27,7 @@ from fusekit.hosted.server import (
     HOSTED_READINESS_SCHEMA_VERSION,
 )
 from fusekit.hosted.worker_dispatch import HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION
+from fusekit.security import contains_durable_secret_text
 
 HOSTED_DEPLOYMENT_VERIFICATION_SCHEMA_VERSION = "fusekit.hosted-deployment-verification.v1"
 
@@ -172,6 +173,7 @@ def _json_check(
     failures: list[str] = []
     if status >= 400:
         failures.append("http_error")
+    failures.extend(_public_payload_secret_failures(payload))
     schema = payload.get("schema_version")
     if expect_schema and schema != expect_schema:
         failures.append("schema_mismatch")
@@ -324,6 +326,13 @@ def _hosted_runtime_contract_failures(payload: dict[str, Any]) -> list[str]:
             if actual_step_ids != expected_step_ids:
                 failures.append("operator_setup_steps_mismatch")
     return failures
+
+
+def _public_payload_secret_failures(payload: dict[str, Any]) -> list[str]:
+    serialized = json.dumps(payload, sort_keys=True)
+    if contains_durable_secret_text(serialized):
+        return ["public_json_contains_credential_text"]
+    return []
 
 
 def _github_intake_contract_failures(payload: dict[str, Any]) -> list[str]:

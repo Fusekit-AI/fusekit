@@ -305,6 +305,36 @@ def test_verify_hosted_deployment_requires_github_intake_contract() -> None:
     ]
 
 
+def test_verify_hosted_deployment_rejects_credential_text_in_public_json() -> None:
+    opener = SequenceOpener(
+        [
+            {"ok": True},
+            {
+                "schema_version": "fusekit.hosted-readiness.v1",
+                "ready": True,
+                "debug": "Authorization: Bearer raw-provider-token",
+            },
+            _deployment_contract(),
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+    serialized = json.dumps(report)
+
+    assert report["ready"] is False
+    assert checks["hosted.readiness"]["failures"] == [
+        "public_json_contains_credential_text"
+    ]
+    assert "raw-provider-token" not in serialized
+    assert "Authorization" not in serialized
+
+
 def test_verify_hosted_deployment_reports_dns_resolution_failure() -> None:
     opener = SequenceOpener(
         [
