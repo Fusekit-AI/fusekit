@@ -16,9 +16,12 @@ from fusekit.cli import (
     _capture_llm,
     _capture_manifest_provider_env,
     _capture_provider_tokens,
+    _cmd_acceptance_run,
+    _copy_workspace_detonation_to_remote_artifacts,
     _github_source_handoff,
     _has_pack_provider_token,
     _local_verification_job_result,
+    _mark_remote_worker_detonated_by_workspace_teardown,
     _ordered_provider_services,
     _playwright_headless,
     _provider_playbook,
@@ -31,6 +34,7 @@ from fusekit.cli import (
     _record_provider_strategy_gates,
     _record_provider_verification_gates,
     _record_workspace_detonation,
+    _remote_worker_cleanup_complete,
     _repair_navigation_completed,
     _run_handoff,
     _run_manifest_provider_pack_setup,
@@ -48,6 +52,12 @@ from fusekit.cli import (
 )
 from fusekit.detonation.preflight import verification_report_allows_detonation
 from fusekit.errors import ApprovalRequired, FuseKitError, ProviderError
+from fusekit.harness.acceptance import (
+    _RECORDING_CONTRACT_CHECK_KEYS,
+    AcceptanceCheck,
+    AcceptanceReport,
+)
+from fusekit.llm import LlmConfig, build_llm_contract, write_llm_contract
 from fusekit.manifest import (
     DnsRecord,
     DomainRequirement,
@@ -68,9 +78,19 @@ from fusekit.runner.control_room.surfaces import public_control_room_security_su
 from fusekit.runner.gates import GateService
 from fusekit.runner.job import JobState
 from fusekit.runner.oci_live import OciWorkspace
-from fusekit.runner.readiness import REQUIRED_RUNNER_BINARIES
+from fusekit.runner.readiness import (
+    EXPECTED_PROVIDER_BROWSER_PROFILE,
+    REQUIRED_RUNNER_BINARIES,
+)
 from fusekit.runner.remote import remote_worker_cleanup_proof
-from fusekit.runner.run_record import DETONATION_PRESERVES
+from fusekit.runner.run_record import (
+    DETONATION_PRESERVES,
+    DURABLE_STATE_SOURCES,
+    OCI_WORKSPACE_DETONATION_SURFACES,
+    VOLATILE_WORKER_SURFACES,
+    WORKER_REPLACEMENT_SOURCE_IDS,
+)
+from fusekit.runner.run_state import RUN_STATE_FIELDS
 from fusekit.runner.worker_replacement import build_passed_worker_replacement_drill
 from fusekit.spine.playbooks import BrowserPlaybookEvent
 from fusekit.vault import Vault
@@ -85,6 +105,699 @@ def _runner_binary_records() -> dict[str, dict[str, object]]:
             "version": "",
         }
         for name in REQUIRED_RUNNER_BINARIES
+    }
+
+
+def _pre_detonation_runner_readiness() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.runner-readiness.v1",
+        "status": "ready",
+        "architecture": "x86_64",
+        "profile_contract": {
+            "schema_version": "fusekit.runner-profile.v1",
+            "name": "oci-visual-browser-x86_64",
+            "architecture": "x86_64",
+            "os_family": "linux",
+            "supported_os_ids": ["ubuntu", "ol"],
+            "min_memory_mib": 15360,
+            "ports": {
+                "ssh": 22,
+                "control_room": 8765,
+                "novnc": 6080,
+                "vnc_loopback": 5900,
+                "openclaw_gateway_loopback": 19002,
+            },
+            "browser_stack": {
+                "spine": "openclaw",
+                "automation": "playwright",
+                "browser": "chromium",
+                "shared_provider_profile": EXPECTED_PROVIDER_BROWSER_PROFILE,
+            },
+            "required_health_checks": [
+                "x86_64_architecture",
+                "runner_helpers",
+                "visual_commands",
+                "novnc",
+                "openclaw",
+                "playwright_chromium",
+                "shared_provider_browser_profile",
+            ],
+            "required_binaries": list(REQUIRED_RUNNER_BINARIES),
+        },
+        "observed": {
+            "os_id": "ubuntu",
+            "os_version": "24.04",
+            "memory_mib": 24576,
+            "python": "3.12.0",
+        },
+        "checks": {
+            "x86_64_architecture": True,
+            "runner_helpers": True,
+            "visual_commands": True,
+            "novnc": True,
+            "openclaw": True,
+            "playwright_chromium": True,
+            "shared_provider_browser_profile": True,
+        },
+        "installed_binaries": _runner_binary_records(),
+        "provider_browser_profile": EXPECTED_PROVIDER_BROWSER_PROFILE,
+        "playwright_browsers_path": "/opt/fusekit-playwright-browsers",
+    }
+
+
+def _pre_detonation_run_state() -> dict[str, object]:
+    state: dict[str, object] = {field: True for field in RUN_STATE_FIELDS}
+    state["workspace_detonated"] = False
+    state["updated_at"] = 2.0
+    state["notes"] = []
+    state["missing_for_detonation"] = []
+    state["ready_to_detonate"] = True
+    return state
+
+
+def _pre_detonation_visual_state() -> dict[str, object]:
+    return {
+        "runner": "novnc",
+        "status": "ready",
+        "interactive": True,
+        "display": ":99",
+        "novnc_url": "http://93.184.216.34:6080/vnc.html?autoconnect=1",
+        "control_room_url": (
+            "http://93.184.216.34:8765/"
+            "?token=viewer_token_abcdefghijklmnopqrstuvwxyz0123456789"
+        ),
+        "novnc_password": "viewer-password",
+        "provider_browser_profile": EXPECTED_PROVIDER_BROWSER_PROFILE,
+        "notes": [
+            "The browser is running on the disposable OCI VM.",
+            "Use the noVNC window to complete human gates in the same session "
+            "FuseKit observes.",
+        ],
+    }
+
+
+def _write_ready_llm_contract(root: Path) -> None:
+    vault = Vault.empty()
+    vault.put(
+        "llm.openai.api_key",
+        "llm_api_key",
+        "openai",
+        "OpenAI API key",
+        "sk-test-secret-value",
+    )
+    write_llm_contract(
+        root / "llm_contract.json",
+        build_llm_contract(
+            LlmConfig(),
+            auth_mode="auto",
+            required=True,
+            vault=vault,
+            environ={},
+        ),
+    )
+
+
+def _pre_detonation_recording_contract() -> dict[str, object]:
+    checks = {
+        "durable_state": True,
+        "worker_replacement": True,
+        "runner_profile": True,
+        "provider_playbook": True,
+        "model_inference": True,
+        "timeline": True,
+        "provider_gates": True,
+        "vault": True,
+        "wake_events": True,
+        "human_actions": True,
+        "rehearsal_review": True,
+        "automation_boundary": True,
+        "control_room_security": True,
+        "verifiers": True,
+        "audit_trail": True,
+        "artifacts": True,
+        "evidence": True,
+        "detonation": False,
+        "errors_empty": True,
+    }
+    return {
+        "schema_version": "fusekit.recording-contract.v1",
+        "recording_ready": False,
+        "checks": checks,
+        "blockers": ["detonation"],
+        "statement": (
+            "Public demo recording waits only on detonation; provider playbooks, "
+            "guided human actions, model inference, verifiers, and audit proof are ready."
+        ),
+    }
+
+
+def _ready_recording_contract() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.recording-contract.v1",
+        "recording_ready": True,
+        "checks": {key: True for key in sorted(_RECORDING_CONTRACT_CHECK_KEYS)},
+        "blockers": [],
+        "statement": "Public demo proof is recordable.",
+    }
+
+
+def _pre_detonation_provider_playbook() -> dict[str, object]:
+    steps = [
+        {
+            "id": "github.capture_token",
+            "provider": "github",
+            "route": "browser_guided",
+            "instruction": "Capture the GitHub token from the VM browser.",
+            "control": "Capture GITHUB_TOKEN from VM clipboard",
+            "actor": "You",
+            "human_action_required": True,
+            "proof_source": "gate_events.jsonl",
+            "resume_event": "clipboard_captured -> resume_requested",
+        },
+        {
+            "id": "resend.capture_key",
+            "provider": "resend",
+            "route": "browser_guided",
+            "instruction": "Capture the Resend API key from the VM browser.",
+            "control": "Capture RESEND_API_KEY from VM clipboard",
+            "actor": "You",
+            "human_action_required": True,
+            "proof_source": "gate_events.jsonl",
+            "resume_event": "clipboard_captured -> resume_requested",
+        },
+        {
+            "id": "vercel.env_api",
+            "provider": "vercel",
+            "route": "api",
+            "instruction": "FuseKit writes approved environment variables by API.",
+            "control": "FuseKit API worker",
+            "actor": "FuseKit",
+            "human_action_required": False,
+            "proof_source": "setup_receipt.json",
+            "resume_event": "provider_action_recorded",
+        },
+        {
+            "id": "dns.approval",
+            "provider": "cloudflare",
+            "route": "human_follow_me",
+            "instruction": "Approve the exact DNS records in the control room.",
+            "control": "Approve DNS apply",
+            "actor": "You",
+            "human_action_required": True,
+            "proof_source": "gate_events.jsonl",
+            "resume_event": "dns_apply_approved -> resume_requested",
+        },
+    ]
+    return {
+        "schema_version": "fusekit.provider-playbook.v1",
+        "steps": steps,
+        "safety_notes": [
+            "Use the VM browser and visible FuseKit controls.",
+            "Do not create Resend domains or audiences manually.",
+            "Do not paste provider secrets into the host computer.",
+        ],
+    }
+
+
+def _pre_detonation_provider_strategies() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.provider-strategies.v1",
+        "providers": [
+            {
+                "provider": "github",
+                "strategies": [
+                    {
+                        "recipe": "github-repo-secrets",
+                        "strategy": "browser_guided",
+                        "status": "needs_human_gate",
+                        "decision": {
+                            "selected": {
+                                "kind": "browser_guided",
+                                "status": "available",
+                                "deterministic": False,
+                                "implemented": False,
+                                "reason": "GitHub token is captured through the VM browser.",
+                            },
+                            "candidates": [
+                                {"kind": "browser_guided", "status": "available"}
+                            ],
+                        },
+                        "follow_steps": ["Use the VM browser to create or reveal the token."],
+                        "next_action": "Capture GITHUB_TOKEN from VM clipboard",
+                        "resume_hint": "FuseKit resumes after the clipboard capture event.",
+                        "success_criteria": ["GITHUB_TOKEN was captured into the vault."],
+                        "avoid_steps": ["Do not paste provider secrets into the host computer."],
+                        "target": "GITHUB_TOKEN",
+                    }
+                ],
+            },
+            {
+                "provider": "resend",
+                "strategies": [
+                    {
+                        "recipe": "resend-domain",
+                        "strategy": "api",
+                        "status": "ok",
+                        "decision": {
+                            "selected": {
+                                "kind": "api",
+                                "status": "available",
+                                "deterministic": True,
+                                "implemented": True,
+                                "reason": "Resend domain setup is provider-native.",
+                                "evidence": {
+                                    "api_owns": "domain",
+                                    "user_manual_domain_step": "false",
+                                    "downstream_order": "before_dns_apply",
+                                },
+                            },
+                            "candidates": [{"kind": "api", "status": "available"}],
+                        },
+                    }
+                ],
+            },
+            {
+                "provider": "vercel",
+                "strategies": [
+                    {
+                        "recipe": "vercel-env",
+                        "strategy": "api",
+                        "status": "ok",
+                        "decision": {
+                            "selected": {
+                                "kind": "api",
+                                "status": "available",
+                                "deterministic": True,
+                                "implemented": True,
+                                "reason": "Vercel env setup is provider-native.",
+                            },
+                            "candidates": [{"kind": "api", "status": "available"}],
+                        },
+                    }
+                ],
+            },
+            {
+                "provider": "cloudflare",
+                "strategies": [
+                    {
+                        "recipe": "cloudflare-dns",
+                        "strategy": "human_follow_me",
+                        "status": "needs_human_gate",
+                        "decision": {
+                            "selected": {
+                                "kind": "human_follow_me",
+                                "status": "available",
+                                "deterministic": False,
+                                "implemented": False,
+                                "reason": "DNS apply waits for explicit approval.",
+                            },
+                            "candidates": [
+                                {"kind": "human_follow_me", "status": "available"}
+                            ],
+                        },
+                        "follow_steps": ["Review the exact DNS records in the control room."],
+                        "next_action": "Approve DNS apply",
+                        "resume_hint": "FuseKit resumes after DNS approval is recorded.",
+                        "success_criteria": ["The DNS apply approval was recorded."],
+                        "avoid_steps": ["Do not create Resend domains or audiences manually."],
+                    }
+                ],
+            },
+        ],
+        "playbook": _pre_detonation_provider_playbook(),
+    }
+
+
+def _pre_detonation_verifier_summary() -> dict[str, object]:
+    checks = [
+        {
+            "provider": "github",
+            "check": "repo_secret_exists",
+            "status": "passed",
+            "pending_safe": False,
+        },
+        {
+            "provider": "resend",
+            "check": "domain_verified",
+            "status": "passed",
+            "pending_safe": False,
+        },
+        {
+            "provider": "vercel",
+            "check": "deployment_url_exists",
+            "status": "passed",
+            "pending_safe": False,
+        },
+        {
+            "provider": "cloudflare",
+            "check": "dns_record_exists",
+            "status": "passed",
+            "pending_safe": False,
+        },
+        {
+            "provider": "live_app",
+            "check": "health",
+            "status": "passed",
+            "pending_safe": False,
+        },
+    ]
+    return {
+        "schema_version": "fusekit.verifier-summary.v1",
+        "overall": "passed",
+        "all_passed_or_pending_safe": True,
+        "counts": {
+            "passed": len(checks),
+            "pending_safe": 0,
+            "skipped": 0,
+            "pending": 0,
+            "repairing": 0,
+            "failed": 0,
+            "needs_human_gate": 0,
+            "unknown": 0,
+        },
+        "checks": checks,
+        "statement": (
+            "Live provider verifiers are summarized as green checks or pending-safe "
+            "checks before launch readiness is trusted."
+        ),
+    }
+
+
+def _pre_detonation_verification_report_checks() -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for check in _pre_detonation_verifier_summary()["checks"]:
+        assert isinstance(check, dict)
+        rows.append({key: value for key, value in check.items() if key != "pending_safe"})
+    return rows
+
+
+def _pre_detonation_provider_gates() -> dict[str, object]:
+    return {
+        "total": 1,
+        "statuses": {"captured": 1},
+        "providers": ["github"],
+        "records": [
+            {
+                "id": "provider.github.authorization",
+                "provider": "github",
+                "status": "captured",
+                "target": "GITHUB_TOKEN",
+                "captured_targets": ["GITHUB_TOKEN"],
+            }
+        ]
+    }
+
+
+def _pre_detonation_wake_events() -> dict[str, object]:
+    return {
+        "total": 1,
+        "event_counts": {"clipboard_captured": 1},
+        "events": [
+            {
+                "schema_version": "fusekit.gate-wake.v1",
+                "id": "wake-github-token",
+                "event": "clipboard_captured",
+                "gate_id": "provider.github.authorization",
+                "provider": "github",
+                "classification": "authorization",
+                "status": "captured",
+                "target": "GITHUB_TOKEN",
+                "target_count": 1,
+                "captured_targets": ["GITHUB_TOKEN"],
+                "created_at": 1.0,
+            }
+        ],
+    }
+
+
+def _pre_detonation_gates_file() -> dict[str, object]:
+    provider_gates = _pre_detonation_provider_gates()
+    records = provider_gates["records"]
+    assert isinstance(records, list)
+    return {"gates": records}
+
+
+def _pre_detonation_gate_events_jsonl() -> str:
+    wake_events = _pre_detonation_wake_events()
+    events = wake_events["events"]
+    assert isinstance(events, list)
+    return "\n".join(json.dumps(event, sort_keys=True) for event in events) + "\n"
+
+
+def _pre_detonation_durable_state() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.durable-state.v1",
+        "resume_ready": True,
+        "missing": [],
+        "runner_profile_ready": True,
+        "runner_profile_failures": [],
+        "sources": [
+            {
+                "id": source_id,
+                "path": path,
+                "role": role,
+                "secret_class": secret_class,
+                "exists": True,
+            }
+            for source_id, path, role, secret_class in DURABLE_STATE_SOURCES
+        ],
+        "volatile_worker_surfaces": list(VOLATILE_WORKER_SURFACES),
+        "detonation_preserves": list(DETONATION_PRESERVES),
+        "detonation_scope": {
+            "schema_version": "fusekit.detonation-scope.v1",
+            "mode": "worker-and-oci-workspace",
+            "must_delete": [
+                *VOLATILE_WORKER_SURFACES,
+                *OCI_WORKSPACE_DETONATION_SURFACES,
+            ],
+            "must_preserve": list(DETONATION_PRESERVES),
+            "resume_until_complete": True,
+            "host_machine_state_required": False,
+            "no_trace_statement": (
+                "Public OCI runs keep durable encrypted/redacted state outside the "
+                "disposable VM until completion, then detonate VM/browser/auth scratch "
+                "so no FuseKit worker state remains on the user's machine or in the "
+                "OCI workspace."
+            ),
+        },
+        "worker_replacement_contract": {
+            "worker_is_disposable": True,
+            "can_recreate_worker": True,
+            "runner_profile_ready": True,
+            "required_runner_profile": "oci-visual-browser-x86_64",
+            "host_machine_state_required": False,
+            "state_owner": "encrypted-vault-and-run-record",
+            "resume_sources": list(WORKER_REPLACEMENT_SOURCE_IDS),
+            "runner_profile_failures": [],
+            "volatile_surfaces": list(VOLATILE_WORKER_SURFACES),
+            "statement": (
+                "If the OCI VM is killed mid-run, FuseKit must recreate the runner "
+                "from encrypted/redacted run state instead of relying on local "
+                "browser profiles, host clipboard history, or plaintext VM scratch."
+            ),
+        },
+        "statement": (
+            "FuseKit can replace or detonate the disposable OCI worker without losing "
+            "the run when resume_ready is true; plaintext VM/browser/auth scratch is "
+            "volatile and encrypted/redacted state is the source of truth."
+        ),
+    }
+
+
+def _pre_detonation_human_actions() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.human-action-trace.v1",
+        "total": 1,
+        "counts": {
+            "open_provider_gate": 0,
+            "capture_vm_clipboard": 1,
+            "confirm_gate_finished": 0,
+        },
+        "actions": [
+            {
+                "gate_id": "provider.github.authorization",
+                "provider": "github",
+                "classification": "authorization",
+                "action": "capture_vm_clipboard",
+                "visible_control": "Capture GITHUB_TOKEN from VM clipboard",
+                "target": "GITHUB_TOKEN",
+                "guided": True,
+            }
+        ],
+        "unguided": [],
+        "statement": (
+            "Every recorded human action maps to one visible control-room gate "
+            "with no raw provider secret details."
+        ),
+    }
+
+
+def _pre_detonation_rehearsal_review() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.rehearsal-review.v1",
+        "status": "ready",
+        "action_count": 1,
+        "compared_action_count": 1,
+        "matched_control_count": 1,
+        "unguided_count": 0,
+        "side_channel_count": 0,
+        "requires_user_thinking": False,
+        "reviewed_actions": [
+            {
+                "gate_id": "provider.github.authorization",
+                "action": "capture_vm_clipboard",
+                "visible_control": "Capture GITHUB_TOKEN from VM clipboard",
+                "target": "GITHUB_TOKEN",
+                "matched": True,
+                "proof_source": "gates.json + gate_events.jsonl",
+            }
+        ],
+        "statement": (
+            "Every recorded human action is compared against the visible "
+            "control-room instructions before public recording readiness."
+        ),
+    }
+
+
+def _pre_detonation_automation_boundary() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.automation-boundary.v1",
+        "status": "ready",
+        "resume_after_worker_replace": True,
+        "detonation_scope": "worker-and-oci-workspace",
+        "no_user_machine_state": True,
+        "vnc_allowed_for": [
+            "login",
+            "mfa",
+            "captcha",
+            "consent",
+            "payment",
+            "copy_once_secret",
+        ],
+        "routes": [
+            {
+                "provider": "github",
+                "recipe": "github-repo-env",
+                "route": "local_vault",
+                "owner": "fusekit",
+                "deterministic": True,
+                "implemented": True,
+                "status": "ok",
+            },
+            {
+                "provider": "github",
+                "recipe": "github-authorization",
+                "route": "browser_guided",
+                "owner": "human_gate",
+                "deterministic": False,
+                "implemented": False,
+                "status": "needs_human_gate",
+            },
+        ],
+        "counts": {
+            "fusekit_owned": 1,
+            "human_gate": 1,
+            "blocked": 0,
+            "guided_human_actions": 1,
+        },
+        "post_gate_automation": {
+            "api_or_cli_routes": ["github:github-repo-env"],
+            "human_gate_routes": ["github:github-authorization"],
+        },
+        "statement": (
+            "Humans use VNC only for provider gates. After capture, FuseKit owns "
+            "provider mutations by API and can detonate the OCI worker."
+        ),
+    }
+
+
+def _pre_detonation_audit_trail() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.audit-trail.v1",
+        "entry_count": 2,
+        "counts": {"credential_capture": 1, "provider_action": 1},
+        "entries": [
+            {
+                "category": "credential_capture",
+                "action": "control_room.capture_vm_clipboard",
+                "provider": "github",
+                "target": "GITHUB_TOKEN",
+                "status": "captured",
+                "source": "gate_events.jsonl",
+                "wake_event_id": "wake-github-token",
+                "summary": "GITHUB_TOKEN was captured from the VM clipboard.",
+            },
+            {
+                "category": "provider_action",
+                "action": "verification.checks_passed",
+                "provider": "github",
+                "target": "",
+                "status": "passed",
+                "source": "setup_receipt.json",
+                "receipt_action_index": 1,
+                "summary": "Provider verification checks passed or are pending-safe.",
+            },
+        ],
+        "statement": (
+            "Credential captures, provider actions, DNS writes, human approvals, "
+            "and detonation events are summarized without storing raw secrets."
+        ),
+    }
+
+
+def _pre_detonation_vault_summary() -> dict[str, object]:
+    return {
+        "record_count": 1,
+        "records": [
+            {
+                "id": "provider.github.token",
+                "kind": "provider_token",
+                "provider": "github",
+                "label": "GitHub token",
+            }
+        ],
+    }
+
+
+def _pre_detonation_artifacts() -> list[dict[str, object]]:
+    return [
+        {"name": "run_record", "path": "run_record.json", "exists": True},
+        {"name": "audit_log", "path": "audit.jsonl", "exists": True},
+        {"name": "visual_state", "path": "visual.json", "exists": True},
+        {"name": "setup_receipt", "path": "setup_receipt.json", "exists": True},
+    ]
+
+
+def _pre_detonation_evidence() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.evidence-inventory.v1",
+        "logs": [
+            {"path": "audit.jsonl", "kind": "log", "source": "known-proof", "exists": True}
+        ],
+        "screenshots": [
+            {
+                "path": "screenshots/control-room-ready.png",
+                "kind": "screenshot",
+                "source": "artifact",
+                "exists": True,
+            }
+        ],
+        "visual": [
+            {"path": "visual.json", "kind": "visual", "source": "artifact", "exists": True}
+        ],
+        "receipts": [
+            {
+                "path": "setup_receipt.json",
+                "kind": "receipt",
+                "source": "artifact",
+                "exists": True,
+            }
+        ],
+        "counts": {"logs": 1, "screenshots": 1, "visual": 1, "receipts": 1},
+        "statement": (
+            "Run evidence is inventoried by path and type only; raw secrets are "
+            "not embedded in the Run Record."
+        ),
     }
 
 
@@ -429,6 +1142,577 @@ def test_workspace_detonation_rejects_legacy_remote_worker_string(tmp_path) -> N
     assert receipt["resource_summary"]["remote_worker"] is False
     assert receipt["resource_summary"]["remote_worker_cleanup"] == {}
     assert receipt["resource_summary"]["missing"] == ["remote_worker"]
+
+
+def test_workspace_detonation_rejects_duplicate_remote_worker_cleanup_rows() -> None:
+    cleanup = remote_worker_cleanup_proof()
+
+    assert _remote_worker_cleanup_complete(cleanup) is True
+
+    cleanup["process_patterns"].append(cleanup["process_patterns"][0])
+    assert _remote_worker_cleanup_complete(cleanup) is False
+    cleanup["process_patterns"].pop()
+
+    cleanup["paths"].append(cleanup["paths"][0])
+    assert _remote_worker_cleanup_complete(cleanup) is False
+
+
+def test_workspace_detonation_infers_remote_worker_cleanup_from_vm_teardown() -> None:
+    cleanup = {
+        "failed.remote_worker": "SSH cleanup was unavailable after runner loss.",
+        "boot_volume": "deleted",
+        "ephemeral_public_ip": "203.0.113.10",
+        "instance": "deleted",
+        "internet_gateway": "deleted",
+        "network_security_group": "deleted",
+        "route_table": "deleted",
+        "security_list": "deleted",
+        "subnet": "deleted",
+        "vcn": "deleted",
+    }
+
+    _mark_remote_worker_detonated_by_workspace_teardown(cleanup)
+
+    assert "failed.remote_worker" not in cleanup
+    assert _remote_worker_cleanup_complete(cleanup["remote_worker"]) is True
+    assert _workspace_detonation_complete(cleanup) is True
+
+
+def _prepare_final_receipt_copy_sources(fusekit_dir: Path, remote_fusekit: Path) -> None:
+    run_state = _pre_detonation_run_state()
+    run_state["workspace_detonated"] = True
+    (fusekit_dir / "run_state.json").write_text(json.dumps(run_state), encoding="utf-8")
+    remote_job = JobState.create("fk-remote", fusekit_dir.parent, "local")
+    remote_job.save(remote_fusekit / "job.json")
+
+
+def test_copy_workspace_detonation_attaches_to_existing_remote_artifacts(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    fusekit_dir = app / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    receipt = {"schema_version": "fusekit.workspace-detonation.v1", "status": "complete"}
+    (fusekit_dir / "workspace_detonation.json").write_text(
+        json.dumps(receipt),
+        encoding="utf-8",
+    )
+    remote_artifacts = tmp_path / "remote-artifacts"
+    remote_fusekit = remote_artifacts / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    _prepare_final_receipt_copy_sources(fusekit_dir, remote_fusekit)
+    args = argparse.Namespace(job_state=fusekit_dir / "job.json")
+
+    target = _copy_workspace_detonation_to_remote_artifacts(args, remote_artifacts)
+
+    assert target == remote_fusekit / "workspace_detonation.json"
+    assert json.loads(target.read_text(encoding="utf-8")) == receipt
+    remote_run_state = json.loads((remote_fusekit / "run_state.json").read_text("utf-8"))
+    remote_record = json.loads((remote_fusekit / "run_record.json").read_text("utf-8"))
+    assert remote_run_state["workspace_detonated"] is True
+    assert remote_record["state"]["workspace_detonated"] is True
+    assert remote_record["detonation"]["workspace_detonated"] is True
+
+
+def test_copy_workspace_detonation_requires_final_run_state(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    (fusekit_dir / "workspace_detonation.json").write_text(
+        '{"status":"complete"}',
+        encoding="utf-8",
+    )
+    remote_fusekit = tmp_path / "remote-artifacts" / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    JobState.create("fk-remote", fusekit_dir.parent, "local").save(
+        remote_fusekit / "job.json"
+    )
+    args = argparse.Namespace(job_state=fusekit_dir / "job.json")
+
+    with pytest.raises(FuseKitError, match="Final run state proof"):
+        _copy_workspace_detonation_to_remote_artifacts(
+            args,
+            tmp_path / "remote-artifacts",
+        )
+
+    assert not (remote_fusekit / "run_record.json").exists()
+
+
+def test_copy_workspace_detonation_rejects_invalid_remote_run_state(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    (fusekit_dir / "workspace_detonation.json").write_text(
+        '{"status":"complete"}',
+        encoding="utf-8",
+    )
+    remote_fusekit = tmp_path / "remote-artifacts" / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    _prepare_final_receipt_copy_sources(fusekit_dir, remote_fusekit)
+    (remote_fusekit / "run_state.json").mkdir()
+    args = argparse.Namespace(job_state=fusekit_dir / "job.json")
+
+    with pytest.raises(FuseKitError, match="final run state proof"):
+        _copy_workspace_detonation_to_remote_artifacts(
+            args,
+            tmp_path / "remote-artifacts",
+        )
+
+    assert (remote_fusekit / "run_state.json").is_dir()
+    assert not (remote_fusekit / "run_record.json").exists()
+
+
+def test_copy_workspace_detonation_requires_remote_job_state(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    (fusekit_dir / "workspace_detonation.json").write_text(
+        '{"status":"complete"}',
+        encoding="utf-8",
+    )
+    remote_fusekit = tmp_path / "remote-artifacts" / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    run_state = _pre_detonation_run_state()
+    run_state["workspace_detonated"] = True
+    (fusekit_dir / "run_state.json").write_text(
+        json.dumps(run_state),
+        encoding="utf-8",
+    )
+    args = argparse.Namespace(job_state=fusekit_dir / "job.json")
+
+    with pytest.raises(FuseKitError, match="retrieved job state is missing"):
+        _copy_workspace_detonation_to_remote_artifacts(
+            args,
+            tmp_path / "remote-artifacts",
+        )
+
+    assert not (remote_fusekit / "run_record.json").exists()
+
+
+def test_copy_workspace_detonation_rejects_invalid_run_record_target(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    (fusekit_dir / "workspace_detonation.json").write_text(
+        '{"status":"complete"}',
+        encoding="utf-8",
+    )
+    remote_fusekit = tmp_path / "remote-artifacts" / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    _prepare_final_receipt_copy_sources(fusekit_dir, remote_fusekit)
+    (remote_fusekit / "run_record.json").mkdir()
+    args = argparse.Namespace(job_state=fusekit_dir / "job.json")
+
+    with pytest.raises(FuseKitError, match="invalid survivor path"):
+        _copy_workspace_detonation_to_remote_artifacts(
+            args,
+            tmp_path / "remote-artifacts",
+        )
+
+    assert (remote_fusekit / "run_record.json").is_dir()
+
+
+def test_copy_workspace_detonation_rejects_run_record_temp_directory(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    (fusekit_dir / "workspace_detonation.json").write_text(
+        '{"status":"complete"}',
+        encoding="utf-8",
+    )
+    remote_fusekit = tmp_path / "remote-artifacts" / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    _prepare_final_receipt_copy_sources(fusekit_dir, remote_fusekit)
+    target = remote_fusekit / "run_record.json"
+    target.write_text('{"status":"previous"}', encoding="utf-8")
+    (remote_fusekit / ".run_record.json.tmp").mkdir()
+    args = argparse.Namespace(job_state=fusekit_dir / "job.json")
+
+    with pytest.raises(FuseKitError, match="temporary path must be a regular file"):
+        _copy_workspace_detonation_to_remote_artifacts(
+            args,
+            tmp_path / "remote-artifacts",
+        )
+
+    assert target.read_text(encoding="utf-8") == '{"status":"previous"}'
+
+
+def test_copy_workspace_detonation_rejects_invalid_checkpoints_target(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    (fusekit_dir / "workspace_detonation.json").write_text(
+        '{"status":"complete"}',
+        encoding="utf-8",
+    )
+    remote_fusekit = tmp_path / "remote-artifacts" / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    _prepare_final_receipt_copy_sources(fusekit_dir, remote_fusekit)
+    (remote_fusekit / "checkpoints.json").unlink()
+    (remote_fusekit / "checkpoints.json").mkdir()
+    args = argparse.Namespace(job_state=fusekit_dir / "job.json")
+
+    with pytest.raises(FuseKitError, match="checkpoints at invalid survivor path"):
+        _copy_workspace_detonation_to_remote_artifacts(
+            args,
+            tmp_path / "remote-artifacts",
+        )
+
+    assert (remote_fusekit / "checkpoints.json").is_dir()
+    assert not (remote_fusekit / "run_record.json").exists()
+
+
+def test_copy_workspace_detonation_preserves_run_record_on_refresh_failure(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import fusekit.cli as cli_module
+
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    (fusekit_dir / "workspace_detonation.json").write_text(
+        '{"status":"complete"}',
+        encoding="utf-8",
+    )
+    remote_fusekit = tmp_path / "remote-artifacts" / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    _prepare_final_receipt_copy_sources(fusekit_dir, remote_fusekit)
+    target = remote_fusekit / "run_record.json"
+    target.write_text('{"status":"previous"}', encoding="utf-8")
+    job_target = remote_fusekit / "job.json"
+    checkpoints_target = remote_fusekit / "checkpoints.json"
+    original_job = job_target.read_text(encoding="utf-8")
+    original_checkpoints = checkpoints_target.read_text(encoding="utf-8")
+    args = argparse.Namespace(job_state=fusekit_dir / "job.json")
+
+    def fail_write_run_record(*_args: object, **_kwargs: object) -> Path:
+        raise OSError("write failed")
+
+    monkeypatch.setattr(cli_module, "write_run_record", fail_write_run_record)
+
+    with pytest.raises(FuseKitError, match="Final Run Record proof could not be attached"):
+        _copy_workspace_detonation_to_remote_artifacts(
+            args,
+            tmp_path / "remote-artifacts",
+        )
+
+    assert target.read_text(encoding="utf-8") == '{"status":"previous"}'
+    assert job_target.read_text(encoding="utf-8") == original_job
+    assert checkpoints_target.read_text(encoding="utf-8") == original_checkpoints
+    assert not any(
+        step["id"] == "detonate.workspace" and step["status"] == "done"
+        for step in json.loads(job_target.read_text(encoding="utf-8"))["steps"]
+    )
+    assert not (remote_fusekit / ".job.json.tmp").exists()
+    assert not (remote_fusekit / ".checkpoints.json.tmp").exists()
+    assert not (remote_fusekit / ".run_record.json.tmp").exists()
+
+
+def test_copy_workspace_detonation_returns_none_when_receipt_missing(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    remote_artifacts = tmp_path / "remote-artifacts"
+    (remote_artifacts / ".fusekit").mkdir(parents=True)
+    args = argparse.Namespace(job_state=fusekit_dir / "job.json")
+
+    assert _copy_workspace_detonation_to_remote_artifacts(args, remote_artifacts) is None
+
+
+def test_copy_workspace_detonation_requires_existing_remote_bundle(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    (fusekit_dir / "workspace_detonation.json").write_text("{}", encoding="utf-8")
+    args = argparse.Namespace(job_state=fusekit_dir / "job.json")
+
+    with pytest.raises(FuseKitError, match="artifact bundle is missing"):
+        _copy_workspace_detonation_to_remote_artifacts(
+            args,
+            tmp_path / "remote-artifacts",
+        )
+
+
+def test_copy_workspace_detonation_rejects_symlinked_remote_bundle(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    (fusekit_dir / "workspace_detonation.json").write_text("{}", encoding="utf-8")
+    real_bundle = tmp_path / "real-bundle"
+    real_bundle.mkdir()
+    remote_artifacts = tmp_path / "remote-artifacts"
+    remote_artifacts.mkdir()
+    try:
+        (remote_artifacts / ".fusekit").symlink_to(real_bundle)
+    except OSError:
+        pytest.skip("symlink creation is unavailable")
+    args = argparse.Namespace(job_state=fusekit_dir / "job.json")
+
+    with pytest.raises(FuseKitError, match="artifact bundle is missing"):
+        _copy_workspace_detonation_to_remote_artifacts(args, remote_artifacts)
+
+
+def test_copy_workspace_detonation_rejects_invalid_target(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    (fusekit_dir / "workspace_detonation.json").write_text("{}", encoding="utf-8")
+    remote_fusekit = tmp_path / "remote-artifacts" / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    (remote_fusekit / "workspace_detonation.json").mkdir()
+    args = argparse.Namespace(job_state=fusekit_dir / "job.json")
+
+    with pytest.raises(FuseKitError, match="invalid survivor path"):
+        _copy_workspace_detonation_to_remote_artifacts(
+            args,
+            tmp_path / "remote-artifacts",
+        )
+
+
+def test_copy_workspace_detonation_rejects_symlinked_source_or_target(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    real_receipt = tmp_path / "workspace_detonation.json"
+    real_receipt.write_text("{}", encoding="utf-8")
+    try:
+        (fusekit_dir / "workspace_detonation.json").symlink_to(real_receipt)
+    except OSError:
+        pytest.skip("symlink creation is unavailable")
+    remote_fusekit = tmp_path / "remote-artifacts" / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    args = argparse.Namespace(job_state=fusekit_dir / "job.json")
+
+    with pytest.raises(FuseKitError, match="regular local receipt file"):
+        _copy_workspace_detonation_to_remote_artifacts(
+            args,
+            tmp_path / "remote-artifacts",
+        )
+
+    (fusekit_dir / "workspace_detonation.json").unlink()
+    (fusekit_dir / "workspace_detonation.json").write_text("{}", encoding="utf-8")
+    try:
+        (remote_fusekit / "workspace_detonation.json").symlink_to(real_receipt)
+    except OSError:
+        pytest.skip("symlink creation is unavailable")
+
+    with pytest.raises(FuseKitError, match="invalid survivor path"):
+        _copy_workspace_detonation_to_remote_artifacts(
+            args,
+            tmp_path / "remote-artifacts",
+        )
+
+
+def test_copy_workspace_detonation_preserves_existing_target_on_copy_failure(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import fusekit.cli as cli_module
+
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    (fusekit_dir / "workspace_detonation.json").write_text(
+        '{"status":"fresh"}',
+        encoding="utf-8",
+    )
+    remote_fusekit = tmp_path / "remote-artifacts" / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    target = remote_fusekit / "workspace_detonation.json"
+    target.write_text('{"status":"previous"}', encoding="utf-8")
+    args = argparse.Namespace(job_state=fusekit_dir / "job.json")
+
+    def fail_copy(*_args: object, **_kwargs: object) -> None:
+        raise OSError("copy failed")
+
+    monkeypatch.setattr(cli_module.shutil, "copyfileobj", fail_copy)
+
+    with pytest.raises(FuseKitError, match="could not be attached"):
+        _copy_workspace_detonation_to_remote_artifacts(
+            args,
+            tmp_path / "remote-artifacts",
+        )
+
+    assert target.read_text(encoding="utf-8") == '{"status":"previous"}'
+    assert not (remote_fusekit / ".workspace_detonation.json.tmp").exists()
+
+
+def test_copy_workspace_detonation_clears_stale_temp_file(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    (fusekit_dir / "workspace_detonation.json").write_text(
+        '{"status":"fresh"}',
+        encoding="utf-8",
+    )
+    remote_fusekit = tmp_path / "remote-artifacts" / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    target = remote_fusekit / "workspace_detonation.json"
+    target.write_text('{"status":"previous"}', encoding="utf-8")
+    _prepare_final_receipt_copy_sources(fusekit_dir, remote_fusekit)
+    (remote_fusekit / ".workspace_detonation.json.tmp").write_text(
+        '{"status":"stale-temp"}',
+        encoding="utf-8",
+    )
+    args = argparse.Namespace(job_state=fusekit_dir / "job.json")
+
+    _copy_workspace_detonation_to_remote_artifacts(args, tmp_path / "remote-artifacts")
+
+    assert target.read_text(encoding="utf-8") == '{"status":"fresh"}'
+    assert not (remote_fusekit / ".workspace_detonation.json.tmp").exists()
+
+
+def test_copy_workspace_detonation_clears_stale_temp_symlink(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    (fusekit_dir / "workspace_detonation.json").write_text(
+        '{"status":"fresh"}',
+        encoding="utf-8",
+    )
+    remote_fusekit = tmp_path / "remote-artifacts" / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    target = remote_fusekit / "workspace_detonation.json"
+    target.write_text('{"status":"previous"}', encoding="utf-8")
+    _prepare_final_receipt_copy_sources(fusekit_dir, remote_fusekit)
+    host_file = tmp_path / "host-receipt.json"
+    host_file.write_text('{"status":"host"}', encoding="utf-8")
+    try:
+        (remote_fusekit / ".workspace_detonation.json.tmp").symlink_to(host_file)
+    except OSError:
+        pytest.skip("symlink creation is unavailable")
+    args = argparse.Namespace(job_state=fusekit_dir / "job.json")
+
+    _copy_workspace_detonation_to_remote_artifacts(args, tmp_path / "remote-artifacts")
+
+    assert target.read_text(encoding="utf-8") == '{"status":"fresh"}'
+    assert host_file.read_text(encoding="utf-8") == '{"status":"host"}'
+    assert not (remote_fusekit / ".workspace_detonation.json.tmp").exists()
+
+
+def test_copy_workspace_detonation_rejects_temp_directory(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    (fusekit_dir / "workspace_detonation.json").write_text(
+        '{"status":"fresh"}',
+        encoding="utf-8",
+    )
+    remote_fusekit = tmp_path / "remote-artifacts" / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    target = remote_fusekit / "workspace_detonation.json"
+    target.write_text('{"status":"previous"}', encoding="utf-8")
+    (remote_fusekit / ".workspace_detonation.json.tmp").mkdir()
+    args = argparse.Namespace(job_state=fusekit_dir / "job.json")
+
+    with pytest.raises(FuseKitError, match="temporary path must be a regular file"):
+        _copy_workspace_detonation_to_remote_artifacts(
+            args,
+            tmp_path / "remote-artifacts",
+        )
+
+    assert target.read_text(encoding="utf-8") == '{"status":"previous"}'
+
+
+def test_workspace_detonation_does_not_infer_remote_worker_for_partial_teardown() -> None:
+    cleanup = {
+        "failed.remote_worker": "SSH cleanup was unavailable after runner loss.",
+        "ephemeral_public_ip": "203.0.113.10",
+        "instance": "deleted",
+        "internet_gateway": "deleted",
+        "network_security_group": "deleted",
+        "route_table": "deleted",
+        "security_list": "deleted",
+        "subnet": "deleted",
+        "vcn": "deleted",
+    }
+
+    _mark_remote_worker_detonated_by_workspace_teardown(cleanup)
+
+    assert "failed.remote_worker" in cleanup
+    assert "remote_worker" not in cleanup
+    assert _workspace_detonation_complete(cleanup) is False
+
+
+def test_runner_detonate_uses_job_workspace_artifact_without_vault(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    app = tmp_path / "app"
+    fusekit_dir = app / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    job_path = fusekit_dir / "job.json"
+    workspace = OciWorkspace(
+        id="fusekit-test",
+        compartment_id="ocid1.tenancy.oc1..example",
+        availability_domain="test-ad-1",
+        shape="VM.Standard.E5.Flex",
+        ssh_user="ubuntu",
+        public_ip="203.0.113.10",
+        resource_ids={
+            "instance": "ocid1.instance.oc1..example",
+            "internet_gateway": "ocid1.internetgateway.oc1..example",
+            "network_security_group": "ocid1.networksecuritygroup.oc1..example",
+            "route_table": "ocid1.routetable.oc1..example",
+            "security_list": "ocid1.securitylist.oc1..example",
+            "subnet": "ocid1.subnet.oc1..example",
+            "vcn": "ocid1.vcn.oc1..example",
+        },
+    )
+    workspace_path = fusekit_dir / "oci_workspace.json"
+    workspace_path.write_text(
+        json.dumps(workspace.to_dict(), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    job = JobState.create("fk-test", app, "oci")
+    job.add_artifact("oci_workspace", workspace_path)
+    job.save(job_path)
+
+    monkeypatch.setattr(
+        "fusekit.cli.load_oci_auth_from_vault_or_config",
+        lambda *args, **kwargs: object(),
+    )
+
+    class FakeProvisioner:
+        def __init__(self, auth) -> None:
+            self.auth = auth
+
+        def detonate(self, workspace) -> dict[str, str]:
+            return {
+                "boot_volume": "deleted",
+                "ephemeral_public_ip": workspace.public_ip,
+                "instance": workspace.resource_ids["instance"],
+                "internet_gateway": workspace.resource_ids["internet_gateway"],
+                "network_security_group": workspace.resource_ids["network_security_group"],
+                "route_table": workspace.resource_ids["route_table"],
+                "security_list": workspace.resource_ids["security_list"],
+                "subnet": workspace.resource_ids["subnet"],
+                "vcn": workspace.resource_ids["vcn"],
+            }
+
+    monkeypatch.setattr("fusekit.cli.OciProvisioner", FakeProvisioner)
+
+    assert (
+        main(
+            [
+                "runner",
+                "detonate",
+                "--job-state",
+                str(job_path),
+                "--vault",
+                str(fusekit_dir / "missing.vault.json"),
+            ]
+        )
+        == 0
+    )
+
+    receipt = json.loads(
+        (fusekit_dir / "workspace_detonation.json").read_text(encoding="utf-8")
+    )
+    assert receipt["status"] == "complete"
+    assert receipt["failures"] == {}
+    assert receipt["resource_summary"]["remote_worker"] is True
+    assert receipt["resource_summary"]["compute_instance"] is True
+    assert receipt["resource_summary"]["boot_volume_deleted"] is True
+    assert receipt["resource_summary"]["network_resources_deleted"] is True
+    updated_job = json.loads(job_path.read_text(encoding="utf-8"))
+    assert any(
+        step["id"] == "detonate.workspace" and step["status"] == "done"
+        for step in updated_job["steps"]
+    )
 
 
 def test_rebase_setup_artifacts_rebases_report_and_rollback(tmp_path) -> None:
@@ -1121,6 +2405,28 @@ def test_capture_llm_reuses_openclaw_profile_without_reauth(monkeypatch) -> None
     _capture_llm(args, vault, require=True)
 
 
+def test_capture_llm_writes_public_contract_without_key(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-secret-value")
+    args = argparse.Namespace(
+        capture_llm_key=False,
+        job_state=tmp_path / "job.json",
+        llm_api_key_env="OPENAI_API_KEY",
+        llm_auth_mode="auto",
+        llm_base_url="https://api.openai.com/v1",
+        llm_model="gpt-5.5",
+        llm_provider="openai",
+    )
+    vault = Vault.empty()
+
+    _capture_llm(args, vault, require=True)
+
+    contract_text = (tmp_path / "llm_contract.json").read_text(encoding="utf-8")
+    contract = json.loads(contract_text)
+    assert contract["status"] == "api_key_encrypted"
+    assert contract["api_key_env"] == "OPENAI_API_KEY"
+    assert "sk-test-secret-value" not in contract_text
+
+
 def test_install_can_write_local_cloud_shell_launcher(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()
@@ -1306,6 +2612,207 @@ def test_cli_scan_validate_plan_unlock_request(tmp_path, capsys) -> None:
     )
     request_payload = json.loads(capsys.readouterr().out)
     assert request_payload["ok"] is True
+
+
+def test_acceptance_run_cli_prints_recording_readiness(
+    monkeypatch,
+    tmp_path,
+    capsys,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    report = AcceptanceReport(
+        mode="live",
+        app_path=str(app),
+        launch_ready=True,
+        checks=(
+            AcceptanceCheck(
+                "remote_artifacts.loaded",
+                "ok",
+                "Using retrieved OCI artifacts as live acceptance evidence.",
+            ),
+            AcceptanceCheck("run_record.complete", "ok", "Run Record complete."),
+        ),
+        ledger_path=str(app / ".fusekit" / "acceptance" / "ledger.jsonl"),
+        report_path=str(app / ".fusekit" / "acceptance" / "report.json"),
+        recording_proof_ready=True,
+        recording_contract=_ready_recording_contract(),
+    )
+    monkeypatch.setattr("fusekit.cli.run_acceptance", lambda *args, **kwargs: report)
+
+    exit_code = _cmd_acceptance_run(
+        argparse.Namespace(
+            path=app,
+            mode="live",
+            manifest=None,
+            vault=None,
+            passphrase_file=None,
+            passphrase_env=None,
+            receipt=None,
+            audit_log=None,
+            remote_artifacts=None,
+            output_dir=None,
+            require_recording=False,
+            as_json=False,
+        )
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Launch ready: true" in output
+    assert "Public launch ready: true" in output
+    assert "Recording proof ready: true" in output
+    assert "Recording ready: true" in output
+
+
+def test_acceptance_run_cli_prints_effective_recording_proof(
+    monkeypatch,
+    tmp_path,
+    capsys,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    report = AcceptanceReport(
+        mode="live",
+        app_path=str(app),
+        launch_ready=True,
+        checks=(AcceptanceCheck("run_record.complete", "ok", "Run Record complete."),),
+        ledger_path=str(app / ".fusekit" / "acceptance" / "ledger.jsonl"),
+        report_path=str(app / ".fusekit" / "acceptance" / "report.json"),
+        recording_proof_ready=True,
+    )
+    monkeypatch.setattr("fusekit.cli.run_acceptance", lambda *args, **kwargs: report)
+
+    exit_code = _cmd_acceptance_run(
+        argparse.Namespace(
+            path=app,
+            mode="live",
+            manifest=None,
+            vault=None,
+            passphrase_file=None,
+            passphrase_env=None,
+            receipt=None,
+            audit_log=None,
+            remote_artifacts=None,
+            output_dir=None,
+            require_recording=False,
+            as_json=False,
+        )
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Public launch ready: true" in output
+    assert "Recording proof ready: false" in output
+    assert "Recording ready: false" in output
+
+
+def test_acceptance_run_cli_can_require_recording_readiness(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    remote_artifacts = tmp_path / "remote-artifacts"
+    remote_artifacts.mkdir()
+    report = AcceptanceReport(
+        mode="live",
+        app_path=str(app),
+        launch_ready=True,
+        checks=(),
+        ledger_path=str(app / ".fusekit" / "acceptance" / "ledger.jsonl"),
+        report_path=str(app / ".fusekit" / "acceptance" / "report.json"),
+        recording_proof_ready=False,
+    )
+    monkeypatch.setattr("fusekit.cli.run_acceptance", lambda *args, **kwargs: report)
+
+    assert (
+        _cmd_acceptance_run(
+            argparse.Namespace(
+                path=app,
+                mode="live",
+                manifest=None,
+                vault=None,
+                passphrase_file=None,
+                passphrase_env=None,
+                receipt=None,
+                audit_log=None,
+                remote_artifacts=None,
+                output_dir=None,
+                require_recording=False,
+                as_json=False,
+            )
+        )
+        == 0
+    )
+    assert (
+        _cmd_acceptance_run(
+            argparse.Namespace(
+                path=app,
+                mode="live",
+                manifest=None,
+                vault=None,
+                passphrase_file=None,
+                passphrase_env=None,
+                receipt=None,
+                audit_log=None,
+                remote_artifacts=remote_artifacts,
+                output_dir=None,
+                require_recording=True,
+                as_json=True,
+            )
+        )
+        == 1
+    )
+
+
+def test_acceptance_run_cli_requires_remote_artifacts_for_recording_gate(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("run_acceptance should not run without remote artifacts")
+
+    monkeypatch.setattr("fusekit.cli.run_acceptance", fail_if_called)
+
+    with pytest.raises(FuseKitError, match="--require-recording requires --mode live"):
+        _cmd_acceptance_run(
+            argparse.Namespace(
+                path=app,
+                mode="rehearsal",
+                manifest=None,
+                vault=None,
+                passphrase_file=None,
+                passphrase_env=None,
+                receipt=None,
+                audit_log=None,
+                remote_artifacts=None,
+                output_dir=None,
+                require_recording=True,
+                as_json=False,
+            )
+        )
+
+    with pytest.raises(FuseKitError, match="requires --remote-artifacts"):
+        _cmd_acceptance_run(
+            argparse.Namespace(
+                path=app,
+                mode="live",
+                manifest=None,
+                vault=None,
+                passphrase_file=None,
+                passphrase_env=None,
+                receipt=None,
+                audit_log=None,
+                remote_artifacts=None,
+                output_dir=None,
+                require_recording=True,
+                as_json=False,
+            )
+        )
 
 
 def test_cli_provider_synthesize_validate_and_authorize_pack(monkeypatch, tmp_path, capsys) -> None:
@@ -3206,6 +4713,7 @@ def test_save_launch_job_writes_durable_state_after_job_state_exists(tmp_path) -
     )
     job = JobState.create("fk-test", tmp_path, "oci")
     (fusekit_dir / "fusekit.vault.json").write_text("encrypted", encoding="utf-8")
+    _write_ready_llm_contract(fusekit_dir)
     (fusekit_dir / "run_state.json").write_text(
         json.dumps({"vault_created": True, "workspace_detonated": False}),
         encoding="utf-8",
@@ -3530,6 +5038,52 @@ def test_launch_cloud_shell_resumes_existing_waiting_job(tmp_path, monkeypatch) 
     assert run_state["provider_sessions_known"] is True
 
 
+def test_launch_cloud_shell_starts_fresh_after_failed_job(tmp_path, monkeypatch) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "index.js").write_text("console.log('launch')", encoding="utf-8")
+    (app / ".git").mkdir()
+    (app / ".git" / "config").write_text(
+        '[remote "origin"]\n\turl = https://github.com/example/app.git\n',
+        encoding="utf-8",
+    )
+    passphrase = tmp_path / "passphrase.txt"
+    passphrase.write_text("passphrase\n", encoding="utf-8")
+    job_state = app / ".fusekit" / "job.json"
+    from fusekit.runner.job import JobState
+
+    failed = JobState.create("fk-failed", app.resolve(), "oci-cloud-shell")
+    failed.mark("remote.bootstrap", "failed", "remote setup did not complete")
+    failed.save(job_state)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("OCI_CONFIG_FILE", raising=False)
+    monkeypatch.setattr("webbrowser.open", lambda url: None)
+
+    assert (
+        main(
+            [
+                "launch",
+                str(app),
+                "--runner",
+                "auto",
+                "--passphrase-file",
+                str(passphrase),
+                "--no-bootstrap",
+                "--job-state",
+                str(job_state),
+            ]
+        )
+        == 0
+    )
+
+    fresh = json.loads(job_state.read_text("utf-8"))
+    assert fresh["id"] != "fk-failed"
+    assert fresh["status"] == "waiting"
+    assert fresh["steps"][0]["status"] == "done"
+    assert "resumed from state" not in fresh["steps"][0]["detail"]
+    assert all(step["status"] != "failed" for step in fresh["steps"])
+
+
 def test_launch_cloud_shell_does_not_claim_unknown_app_repo(tmp_path, monkeypatch) -> None:
     app = tmp_path / "app"
     app.mkdir()
@@ -3755,11 +5309,23 @@ def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch)
     remote_artifacts = tmp_path / "remote-artifacts"
     remote_fusekit = remote_artifacts / ".fusekit"
     remote_fusekit.mkdir(parents=True)
+    remote_job = JobState.create("fk-remote", app, "local")
+    remote_job.save(remote_fusekit / "job.json")
     (remote_fusekit / "fusekit.vault.json").write_text("encrypted", encoding="utf-8")
     (remote_fusekit / "audit.jsonl").write_text('{"event":"ok"}\n', encoding="utf-8")
-    (remote_fusekit / "setup_receipt.json").write_text('{"actions":[]}', encoding="utf-8")
+    (remote_fusekit / "setup_receipt.json").write_text(
+        '{"actions":[],"raw_secrets_exposed":0}',
+        encoding="utf-8",
+    )
+    (remote_fusekit / "visual.json").write_text(
+        json.dumps(_pre_detonation_visual_state()),
+        encoding="utf-8",
+    )
+    screenshots = remote_fusekit / "screenshots"
+    screenshots.mkdir()
+    (screenshots / "control-room-ready.png").write_bytes(b"png")
     (remote_fusekit / "verification_report.json").write_text(
-        '{"checks":[{"provider":"github","check":"repo_secret_exists","status":"passed"}]}',
+        json.dumps({"checks": _pre_detonation_verification_report_checks()}),
         encoding="utf-8",
     )
     (remote_fusekit / "rollback_plan.json").write_text(
@@ -3767,17 +5333,24 @@ def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch)
         encoding="utf-8",
     )
     (remote_fusekit / "provider_strategies.json").write_text(
-        '{"providers":[]}',
+        json.dumps(_pre_detonation_provider_strategies()),
         encoding="utf-8",
     )
+    (remote_fusekit / "runner_readiness.json").write_text(
+        json.dumps(_pre_detonation_runner_readiness()),
+        encoding="utf-8",
+    )
+    (remote_fusekit / "gates.json").write_text(
+        json.dumps(_pre_detonation_gates_file()),
+        encoding="utf-8",
+    )
+    (remote_fusekit / "gate_events.jsonl").write_text(
+        _pre_detonation_gate_events_jsonl(),
+        encoding="utf-8",
+    )
+    _write_ready_llm_contract(remote_fusekit)
     (remote_fusekit / "run_state.json").write_text(
-        json.dumps(
-            {
-                "schema_version": "fusekit.run-state.v1",
-                "vault_created": True,
-                "receipt_written": True,
-            }
-        ),
+        json.dumps(_pre_detonation_run_state()),
         encoding="utf-8",
     )
     (remote_fusekit / "run_record.json").write_text(
@@ -3785,16 +5358,61 @@ def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch)
             {
                 "schema_version": "fusekit.run-record.v1",
                 "id": "fk-test",
-                "durable_state": {
-                    "detonation_scope": {
-                        "host_machine_state_required": False,
-                    }
+                "status": "pre_detonation_ready",
+                "app_path": "app",
+                "runner": "oci-free",
+                "created_at": 1.0,
+                "updated_at": 2.0,
+                "state": _pre_detonation_run_state(),
+                "durable_state": _pre_detonation_durable_state(),
+                "provider_gates": _pre_detonation_provider_gates(),
+                "steps": [{"id": "scan", "label": "Scan", "status": "passed"}],
+                "checkpoints": [{"id": "vault", "label": "Vault", "status": "passed"}],
+                "runner_profile": _pre_detonation_runner_readiness(),
+                "worker_replacement_drill": build_passed_worker_replacement_drill(),
+                "provider_playbook": _pre_detonation_provider_playbook(),
+                "provider_strategies": _pre_detonation_provider_strategies(),
+                "vault": _pre_detonation_vault_summary(),
+                "wake_events": _pre_detonation_wake_events(),
+                "approvals": [],
+                "errors": [],
+                "human_actions": _pre_detonation_human_actions(),
+                "rehearsal_review": _pre_detonation_rehearsal_review(),
+                "automation_boundary": _pre_detonation_automation_boundary(),
+                "verifiers": _pre_detonation_verifier_summary(),
+                "verification": {
+                    "checks": _pre_detonation_verification_report_checks(),
                 },
-                "provider_gates": {"records": []},
-                "audit_trail": {"entries": []},
+                "artifacts": _pre_detonation_artifacts(),
+                "evidence": _pre_detonation_evidence(),
+                "model_inference": {
+                    "schema_version": "fusekit.model-inference-summary.v1",
+                    "provider": "openai",
+                    "model": "gpt-5.5",
+                    "base_url": "https://api.openai.com/v1",
+                    "api_key_env": "OPENAI_API_KEY",
+                    "auth_mode": "auto",
+                    "required": True,
+                    "can_proceed_without_api_key": True,
+                    "default_lane": "api-key",
+                    "status": "api_key_encrypted",
+                    "ready": True,
+                    "lane_count": 2,
+                    "next_action": "FuseKit has an encrypted LLM API key and can continue.",
+                    "statement": (
+                        "The model/inference lane is explicit: API keys are captured "
+                        "into the encrypted vault; raw secrets never appear in the "
+                        "public Run Record."
+                    ),
+                },
+                "audit_trail": _pre_detonation_audit_trail(),
                 "control_room_security": public_control_room_security_surface(),
-                "detonation": {"workspace_detonated": False},
-                "recording_contract": {"recording_ready": False},
+                "acceptance": {},
+                "detonation": {"preflight_safe": True, "workspace_detonated": False},
+                "llm_contract": json.loads(
+                    (remote_fusekit / "llm_contract.json").read_text(encoding="utf-8")
+                ),
+                "recording_contract": _pre_detonation_recording_contract(),
             }
         ),
         encoding="utf-8",
@@ -3867,7 +5485,21 @@ def test_launch_inline_oci_auth_continues_to_remote_setup(tmp_path, monkeypatch)
     detonation = json.loads(
         (app / ".fusekit" / "workspace_detonation.json").read_text(encoding="utf-8")
     )
+    remote_detonation = json.loads(
+        (remote_fusekit / "workspace_detonation.json").read_text(encoding="utf-8")
+    )
+    remote_run_state = json.loads(
+        (remote_fusekit / "run_state.json").read_text(encoding="utf-8")
+    )
+    remote_run_record = json.loads(
+        (remote_fusekit / "run_record.json").read_text(encoding="utf-8")
+    )
     assert detonation["status"] == "complete"
+    assert remote_detonation == detonation
+    assert remote_run_state["workspace_detonated"] is True
+    assert remote_run_record["state"]["workspace_detonated"] is True
+    assert remote_run_record["detonation"]["workspace_detonated"] is True
+    assert remote_run_record["detonation"]["workspace_receipt"] == remote_detonation
     assert detonation["deleted"] == [
         "boot_volume",
         "ephemeral_public_ip",

@@ -9,12 +9,17 @@ import subprocess
 import tarfile
 import tempfile
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from shlex import quote
 from typing import TYPE_CHECKING, Protocol
 from urllib.parse import urlencode
 
 from fusekit.errors import FuseKitError
+from fusekit.runner.remote_survivors import (
+    REMOTE_PRE_DETONATION_FETCH_FILE_SET,
+    REMOTE_PRE_DETONATION_FETCH_FILES,
+    REMOTE_PRE_DETONATION_REQUIRED_SURVIVOR_FILES,
+)
 from fusekit.runner.worker_replacement import (
     WORKER_REPLACEMENT_SOURCE_IDS,
     build_passed_worker_replacement_drill,
@@ -34,10 +39,44 @@ EXCLUDED_APP_PATHS = (
     ".env.preview",
     ".npmrc",
     ".pypirc",
+    ".ssh",
+    ".aws",
+    ".gcloud",
+    ".azure",
+    ".oci",
+    ".cloudflared",
+    ".kube",
+    ".docker",
+    ".terraform",
+    ".pulumi",
+    ".doppler",
+    ".fly",
+    ".railway",
+    ".render",
+    ".sentryclirc",
+    ".netrc",
+    ".envrc",
+    ".npm",
+    ".gradle",
+    ".gem",
     ".vercel",
+    ".netlify",
+    ".wrangler",
+    ".sst",
+    ".serverless",
+    ".firebase",
+    ".supabase",
+    ".stripe",
+    ".openai",
     ".fusekit",
     "node_modules",
     "__pycache__",
+    ".cache",
+    ".turbo",
+    ".parcel-cache",
+    ".vite",
+    ".nyc_output",
+    "coverage",
     ".pytest_cache",
     ".ruff_cache",
     ".mypy_cache",
@@ -75,6 +114,7 @@ WORKER_REPLACEMENT_SOURCE_PATHS = {
     "gates": "gates.json",
     "gate_events": "gate_events.jsonl",
     "provider_strategies": "provider_strategies.json",
+    "llm_contract": "llm_contract.json",
     "runner_readiness": "runner_readiness.json",
 }
 WORKER_REPLACEMENT_OPTIONAL_PATHS = (
@@ -98,12 +138,29 @@ class CommandRunner(Protocol):
 def should_include_app_path(path: Path) -> bool:
     """Return true when a repo path may be uploaded to a remote runner."""
 
-    parts = set(path.parts)
+    parts = {part.lower() for part in path.parts}
     if any(excluded in parts for excluded in EXCLUDED_APP_PATHS):
         return False
     name = path.name
     lower_name = name.lower()
+    if lower_name in {
+        ".yarnrc",
+        ".yarnrc.yml",
+        ".pnpmrc",
+        "auth.json",
+        "pip.conf",
+        "pydistutils.cfg",
+    }:
+        return False
     if lower_name.startswith(".env."):
+        return False
+    if lower_name == ".dev.vars" or lower_name.startswith(".dev.vars."):
+        return False
+    if ".cargo" in parts and lower_name in {"credentials", "credentials.toml"}:
+        return False
+    if ".m2" in parts and lower_name == "settings.xml":
+        return False
+    if lower_name.endswith(".tsbuildinfo"):
         return False
     if lower_name in {"id_rsa", "id_ed25519", "id_ecdsa", "credentials.json"}:
         return False
@@ -592,15 +649,12 @@ def execute_remote_setup(
         _run_checked(run, [*ssh, remote, launch], input_text=passphrase, stream_output=True)
         local_output_dir.mkdir(parents=True, exist_ok=True)
         artifacts = local_output_dir / "fusekit-artifacts.tar.gz"
+        fetch_paths = " ".join(
+            quote(f".fusekit/{filename}") for filename in REMOTE_PRE_DETONATION_FETCH_FILES
+        )
         fetch = (
             "cd /var/lib/fusekit-runner/app && "
-            "set -- .fusekit/fusekit.vault.json .fusekit/audit.jsonl "
-            ".fusekit/setup_receipt.json .fusekit/setup_receipt.md .fusekit/job.json "
-            ".fusekit/checkpoints.json .fusekit/run_state.json .fusekit/run_record.json "
-            ".fusekit/verification_report.json "
-            ".fusekit/rollback_plan.json .fusekit/provider_strategies.json "
-            ".fusekit/gates.json .fusekit/gate_events.jsonl "
-            ".fusekit/runner_readiness.json .fusekit/worker_replacement_drill.json; "
+            f"set -- {fetch_paths}; "
             "existing=''; "
             "for path in \"$@\"; do [ -f \"$path\" ] && existing=\"$existing $path\"; done; "
             "[ -n \"$existing\" ] || exit 44; "
@@ -790,7 +844,11 @@ def _create_worker_replacement_archive(fusekit_dir: Path, archive: Path) -> None
     missing = [
         filename
         for source_id, filename in WORKER_REPLACEMENT_SOURCE_PATHS.items()
-        if source_id in WORKER_REPLACEMENT_SOURCE_IDS and not (fusekit_dir / filename).is_file()
+        if source_id in WORKER_REPLACEMENT_SOURCE_IDS
+        and (
+            not (fusekit_dir / filename).is_file()
+            or (fusekit_dir / filename).is_symlink()
+        )
     ]
     if missing:
         raise FuseKitError(
@@ -803,7 +861,7 @@ def _create_worker_replacement_archive(fusekit_dir: Path, archive: Path) -> None
             tar.add(fusekit_dir / filename, arcname=filename, recursive=False)
         for filename in WORKER_REPLACEMENT_OPTIONAL_PATHS:
             path = fusekit_dir / filename
-            if path.is_file():
+            if path.is_file() and not path.is_symlink():
                 tar.add(path, arcname=filename, recursive=False)
 
 
@@ -924,6 +982,8 @@ def _prepare_remote_visual_session(
 def _create_app_archive(app_path: Path, archive: Path) -> None:
     with tarfile.open(archive, "w:gz") as tar:
         for path in app_path.rglob("*"):
+            if path.is_symlink():
+                continue
             relative = path.relative_to(app_path)
             if not should_include_app_path(relative):
                 continue
@@ -931,13 +991,58 @@ def _create_app_archive(app_path: Path, archive: Path) -> None:
 
 
 def _extract_artifacts(archive: Path, output_dir: Path) -> None:
+    staging_root: Path | None = None
     try:
-        extracted = 0
+        output_dir.mkdir(parents=True, exist_ok=True)
         with tarfile.open(archive, "r:gz") as tar:
-            for member in tar.getmembers():
+            members = tar.getmembers()
+            file_members = []
+            seen_file_members: set[str] = set()
+            output_root = output_dir.resolve()
+            for member in members:
                 target = (output_dir / member.name).resolve()
                 try:
-                    target.relative_to(output_dir.resolve())
+                    target.relative_to(output_root)
+                except ValueError:
+                    raise FuseKitError(
+                        "Remote artifact archive contains unsafe paths."
+                    ) from None
+                survivor_name = _artifact_archive_survivor_name(member.name)
+                if survivor_name is None:
+                    raise FuseKitError(
+                        "Remote artifact archive contains unexpected entries: "
+                        f"{member.name}"
+                    )
+                if survivor_name == ".fusekit":
+                    if not member.isdir():
+                        raise FuseKitError(
+                            "Remote artifact archive contains invalid survivor "
+                            f"entries: {survivor_name}"
+                        )
+                    continue
+                if not member.isfile():
+                    raise FuseKitError(
+                        "Remote artifact archive contains invalid survivor entries: "
+                        f"{survivor_name}"
+                    )
+                if survivor_name in seen_file_members:
+                    raise FuseKitError(
+                        "Remote artifact archive contains duplicate survivor "
+                        f"entries: {survivor_name}"
+                    )
+                seen_file_members.add(survivor_name)
+                file_members.append(member)
+            if not file_members:
+                raise FuseKitError("Remote artifact archive did not contain files.")
+            staging_root = Path(
+                tempfile.mkdtemp(prefix=".fusekit-artifacts.", dir=output_dir)
+            )
+            staging_output_root = staging_root.resolve()
+            extracted = 0
+            for member in members:
+                target = (staging_root / member.name).resolve()
+                try:
+                    target.relative_to(staging_output_root)
                 except ValueError:
                     raise FuseKitError(
                         "Remote artifact archive contains unsafe paths."
@@ -954,35 +1059,131 @@ def _extract_artifacts(archive: Path, output_dir: Path) -> None:
                 with source, target.open("wb") as destination:
                     shutil.copyfileobj(source, destination)
                     extracted += 1
-        if extracted == 0:
-            raise FuseKitError("Remote artifact archive did not contain files.")
+            if extracted == 0:
+                raise FuseKitError("Remote artifact archive did not contain files.")
+            staged_bundle = staging_root / ".fusekit"
+            if not staged_bundle.is_dir():
+                raise FuseKitError(
+                    "Remote artifact archive did not contain a .fusekit bundle."
+                )
+            _validate_artifact_bundle(staging_root)
+            _replace_existing_artifact_bundle(output_dir, staged_bundle)
     except tarfile.TarError as exc:
         raise FuseKitError("Remote artifact archive could not be read.") from exc
+    except OSError as exc:
+        raise FuseKitError("Remote artifact archive could not be extracted.") from exc
+    finally:
+        if staging_root is not None and staging_root.exists():
+            _remove_path(staging_root)
+
+
+def _clear_existing_artifact_bundle(output_dir: Path) -> None:
+    _remove_path(output_dir / ".fusekit")
+
+
+def _artifact_archive_survivor_name(member_name: str) -> str | None:
+    parts = PurePosixPath(member_name).parts
+    if not parts or any(part in {"", ".", ".."} for part in parts):
+        return None
+    if len(parts) == 1 and parts[0] == ".fusekit":
+        return ".fusekit"
+    if len(parts) != 2 or parts[0] != ".fusekit":
+        return None
+    filename = parts[1]
+    if filename not in REMOTE_PRE_DETONATION_FETCH_FILE_SET:
+        return None
+    return f".fusekit/{filename}"
+
+
+def _replace_existing_artifact_bundle(output_dir: Path, staged_bundle: Path) -> None:
+    fusekit_dir = output_dir / ".fusekit"
+    backup_dir = output_dir / ".fusekit.previous"
+    _remove_path(backup_dir)
+    moved_existing = False
+    try:
+        if fusekit_dir.exists() or fusekit_dir.is_symlink():
+            fusekit_dir.rename(backup_dir)
+            moved_existing = True
+        staged_bundle.rename(fusekit_dir)
+    except OSError as exc:
+        _remove_path(fusekit_dir)
+        if moved_existing and backup_dir.exists():
+            backup_dir.rename(fusekit_dir)
+        raise FuseKitError("Remote artifact bundle could not be replaced.") from exc
+    finally:
+        _remove_path(backup_dir)
+
+
+def _remove_path(path: Path) -> None:
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    elif path.is_dir():
+        shutil.rmtree(path)
 
 
 def _validate_artifact_bundle(output_dir: Path) -> str:
-    required = (
-        ".fusekit/fusekit.vault.json",
-        ".fusekit/audit.jsonl",
-        ".fusekit/setup_receipt.json",
-        ".fusekit/job.json",
-        ".fusekit/checkpoints.json",
-        ".fusekit/run_state.json",
-        ".fusekit/run_record.json",
-        ".fusekit/verification_report.json",
-        ".fusekit/rollback_plan.json",
-        ".fusekit/provider_strategies.json",
-        ".fusekit/runner_readiness.json",
-        ".fusekit/worker_replacement_drill.json",
+    required = tuple(
+        f".fusekit/{filename}"
+        for filename in REMOTE_PRE_DETONATION_REQUIRED_SURVIVOR_FILES
     )
-    missing = [path for path in required if not (output_dir / path).is_file()]
+    missing = [
+        path
+        for path in required
+        if not (output_dir / path).exists() and not (output_dir / path).is_symlink()
+    ]
     if missing:
         raise FuseKitError(
             "Remote artifact bundle is incomplete; missing "
             + ", ".join(missing)
             + ". Detonation should not be trusted until artifacts are recovered."
         )
+    invalid = _invalid_artifact_bundle_entries(output_dir)
+    if invalid:
+        raise FuseKitError(
+            "Remote artifact bundle contains invalid survivor entries: "
+            + ", ".join(invalid)
+            + ". Detonation should not be trusted until the clean bundle is recovered."
+        )
+    unexpected = _unexpected_artifact_bundle_entries(output_dir)
+    if unexpected:
+        raise FuseKitError(
+            "Remote artifact bundle contains unexpected survivor entries: "
+            + ", ".join(unexpected)
+            + ". Detonation should not be trusted until the clean bundle is recovered."
+        )
     return "complete"
+
+
+def _unexpected_artifact_bundle_entries(output_dir: Path) -> list[str]:
+    fusekit_dir = output_dir / ".fusekit"
+    try:
+        children = list(fusekit_dir.iterdir())
+    except OSError:
+        return []
+    unexpected: list[str] = []
+    for child in children:
+        if child.name in REMOTE_PRE_DETONATION_FETCH_FILE_SET:
+            continue
+        suffix = "/" if child.is_dir() and not child.is_symlink() else ""
+        unexpected.append(child.name + suffix)
+    return sorted(unexpected)
+
+
+def _invalid_artifact_bundle_entries(output_dir: Path) -> list[str]:
+    fusekit_dir = output_dir / ".fusekit"
+    try:
+        children = list(fusekit_dir.iterdir())
+    except OSError:
+        return []
+    invalid: list[str] = []
+    for child in children:
+        if child.name not in REMOTE_PRE_DETONATION_FETCH_FILE_SET:
+            continue
+        if child.is_symlink():
+            invalid.append(child.name + " (symlink)")
+        elif not child.is_file():
+            invalid.append(child.name + " (non-file)")
+    return sorted(invalid)
 
 
 def _workspace_ssh_private_key(vault: Vault, run_id: str) -> str:

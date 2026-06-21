@@ -1,28 +1,38 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from fusekit.cli import main
+from fusekit.errors import FuseKitError
 from fusekit.harness import run_acceptance
 from fusekit.harness.acceptance import (
+    REMOTE_ALLOWED_SURVIVOR_FILES,
     AcceptanceCheck,
     AcceptanceReport,
     _acceptance_blockers,
+    _check_audit_log,
     _check_detonation,
     _check_runner_readiness,
+    _check_vault,
     _check_visual_state,
     _gate_capture_audit_event_proves_vault_capture,
     _gate_open_audit_event_proves_vm_open,
     _gate_resume_audit_event_proves_finished_click,
     _gate_resume_audit_requirements,
+    _provider_strategy_artifact_shape_failures,
     _provider_strategy_checkpoint_failures,
     _provider_strategy_shape_failures,
     _rollback_provider_names,
+    _run_record_runner_profile_consistency_failures,
     _run_record_shape_failures,
     _unguided_gates,
 )
 from fusekit.harness.ledger import HarnessLedger
+from fusekit.providers.capability_pack import synthesize_provider_pack, write_provider_pack
 from fusekit.runner.control_room.surfaces import public_control_room_security_surface
 from fusekit.runner.gate_guidance import provider_gate_guidance
 from fusekit.runner.gates import GateService
@@ -35,6 +45,7 @@ from fusekit.runner.run_record import (
     VOLATILE_WORKER_SURFACES,
     WORKER_REPLACEMENT_SOURCE_IDS,
 )
+from fusekit.runner.run_state import RUN_STATE_FIELDS
 from fusekit.vault import Vault
 
 
@@ -83,6 +94,27 @@ def _resend_audience_strategy_decision() -> dict[str, object]:
             "conditional": "only_when_app_requires_audience",
         }
     )
+
+
+def _human_gate_strategy_guidance(target: str) -> dict[str, object]:
+    capture_label = f"Capture {target} from VM clipboard"
+    return {
+        "follow_steps": [
+            "Open the provider gate in the shared VM browser.",
+            capture_label,
+            "Click I finished this step after the capture succeeds.",
+        ],
+        "next_action": capture_label,
+        "resume_hint": "FuseKit resumes from gate_events.jsonl after capture.",
+        "success_criteria": [
+            f"{target} is captured into the encrypted vault.",
+            "The worker resumes from the recorded wake event.",
+        ],
+        "avoid_steps": [
+            "Do not paste the token into the host browser.",
+            "Do not send the token to the generated app.",
+        ],
+    }
 
 
 def _provider_playbook() -> dict[str, object]:
@@ -191,6 +223,7 @@ def _run_record_provider_strategies(fusekit_dir: Path | None = None) -> dict[str
                         "recipe": "github-repo-secrets",
                         "strategy": "browser_guided",
                         "status": "needs_human_gate",
+                        **_human_gate_strategy_guidance("GITHUB_TOKEN"),
                         "decision": {
                             "selected": {
                                 "kind": "browser_guided",
@@ -229,6 +262,7 @@ def _run_record_provider_strategies(fusekit_dir: Path | None = None) -> dict[str
                         "recipe": "resend-api-key",
                         "strategy": "browser_guided",
                         "status": "needs_human_gate",
+                        **_human_gate_strategy_guidance("RESEND_API_KEY"),
                         "decision": {
                             "selected": {
                                 "kind": "browser_guided",
@@ -408,6 +442,15 @@ def _durable_state() -> dict[str, object]:
     }
 
 
+def _run_state() -> dict[str, object]:
+    state: dict[str, object] = {field: True for field in RUN_STATE_FIELDS}
+    state["updated_at"] = 2.0
+    state["notes"] = []
+    state["missing_for_detonation"] = []
+    state["ready_to_detonate"] = True
+    return state
+
+
 def _evidence_inventory() -> dict[str, object]:
     return {
         "schema_version": "fusekit.evidence-inventory.v1",
@@ -464,6 +507,30 @@ def _human_action_trace() -> dict[str, object]:
     }
 
 
+def _human_action_trace_for(actions: list[dict[str, object]]) -> dict[str, object]:
+    counts = {
+        "capture_vm_clipboard": 0,
+        "confirm_gate_finished": 0,
+        "open_provider_gate": 0,
+    }
+    for action in actions:
+        name = str(action.get("action", "") or "")
+        if name in counts:
+            counts[name] += 1
+    return {
+        "schema_version": "fusekit.human-action-trace.v1",
+        "total": len(actions),
+        "counts": counts,
+        "actions": actions,
+        "unguided": [],
+        "statement": (
+            "Every recorded human action should map to one visible control-room gate "
+            "and its current follow-me instructions; the trace contains no raw provider "
+            "URLs, clipboard values, passwords, tokens, or screenshots."
+        ),
+    }
+
+
 def _rehearsal_review() -> dict[str, object]:
     return {
         "schema_version": "fusekit.rehearsal-review.v1",
@@ -474,6 +541,44 @@ def _rehearsal_review() -> dict[str, object]:
         "unguided_count": 0,
         "side_channel_count": 0,
         "requires_user_thinking": False,
+        "reviewed_actions": [],
+        "statement": (
+            "Every recorded human action is compared against the visible control-room "
+            "instructions before public recording readiness; no host browser, terminal, "
+            "or side-channel action is required."
+        ),
+    }
+
+
+def _rehearsal_review_for(actions: list[dict[str, object]]) -> dict[str, object]:
+    reviewed_actions: list[dict[str, object]] = []
+    for action in actions:
+        action_name = str(action.get("action", "") or "")
+        proof_source = (
+            "gates.json"
+            if action_name == "open_provider_gate"
+            else "gates.json + gate_events.jsonl"
+        )
+        reviewed_actions.append(
+            {
+                "gate_id": str(action.get("gate_id", "") or ""),
+                "action": action_name,
+                "visible_control": str(action.get("visible_control", "") or ""),
+                "target": str(action.get("target", "") or ""),
+                "matched": True,
+                "proof_source": proof_source,
+            }
+        )
+    return {
+        "schema_version": "fusekit.rehearsal-review.v1",
+        "status": "ready",
+        "action_count": len(actions),
+        "compared_action_count": len(actions),
+        "matched_control_count": len(actions),
+        "unguided_count": 0,
+        "side_channel_count": 0,
+        "requires_user_thinking": False,
+        "reviewed_actions": reviewed_actions,
         "statement": (
             "Every recorded human action is compared against the visible control-room "
             "instructions before public recording readiness; no host browser, terminal, "
@@ -878,12 +983,18 @@ def _recording_contract() -> dict[str, object]:
             "worker_replacement": True,
             "runner_profile": True,
             "provider_playbook": True,
+            "model_inference": True,
+            "timeline": True,
+            "provider_gates": True,
+            "vault": True,
+            "wake_events": True,
             "human_actions": True,
             "rehearsal_review": True,
             "automation_boundary": True,
             "control_room_security": True,
             "verifiers": True,
             "audit_trail": True,
+            "artifacts": True,
             "evidence": True,
             "detonation": True,
             "errors_empty": True,
@@ -892,10 +1003,85 @@ def _recording_contract() -> dict[str, object]:
         "statement": (
             "A public demo is recordable only when durable OCI state, worker "
             "replacement from encrypted/redacted sources, ordered provider "
-            "playbooks, guided human actions, rehearsal review, protected "
+            "playbooks, model inference, guided human actions, rehearsal review, protected "
             "control-room state changes, live provider verifiers, and no-trace "
             "detonation all agree."
         ),
+    }
+
+
+def _model_inference() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.model-inference-summary.v1",
+        "status": "api_key_encrypted",
+        "ready": True,
+        "provider": "openai",
+        "model": "gpt-5.5",
+        "base_url": "https://api.openai.com/v1",
+        "api_key_env": "OPENAI_API_KEY",
+        "auth_mode": "auto",
+        "required": True,
+        "can_proceed_without_api_key": True,
+        "default_lane": "openclaw-openai",
+        "next_action": (
+            "FuseKit has an encrypted LLM API key and can use it internally for "
+            "provider-page reasoning."
+        ),
+        "lane_count": 2,
+        "statement": (
+            "The model/inference lane is explicit: API keys are captured into the "
+            "encrypted vault, OpenClaw/OpenAI auth is a human-gated fallback only "
+            "for the default OpenAI lane, and raw secrets never appear in the "
+            "control room, audit log, or receipt."
+        ),
+    }
+
+
+def _llm_contract() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.llm-contract.v1",
+        "provider": "openai",
+        "model": "gpt-5.5",
+        "base_url": "https://api.openai.com/v1",
+        "api_key_env": "OPENAI_API_KEY",
+        "record_id": "llm.openai.api_key",
+        "auth_mode": "auto",
+        "required": True,
+        "status": "api_key_encrypted",
+        "can_proceed_without_api_key": True,
+        "default_lane": "openclaw-openai",
+        "next_action": (
+            "FuseKit has an encrypted LLM API key and can use it internally for "
+            "provider-page reasoning."
+        ),
+        "lanes": [
+            {
+                "id": "api-key",
+                "label": "Encrypted API key",
+                "available": True,
+                "requires_user_action": False,
+                "description": (
+                    "FuseKit stores the key only inside the encrypted vault and resolves "
+                    "it in memory when provider-page reasoning is needed."
+                ),
+            },
+            {
+                "id": "openclaw-openai",
+                "label": "OpenClaw OpenAI authorization",
+                "available": True,
+                "requires_user_action": False,
+                "description": (
+                    "Default OpenAI lane only. FuseKit encrypts captured OpenClaw "
+                    "auth-state metadata and detonates plaintext worker state later."
+                ),
+            },
+        ],
+        "security": {
+            "raw_secret_export": "denied",
+            "storage": "encrypted vault only",
+            "public_surfaces": "metadata and redacted status only",
+            "detonation": "plaintext OpenClaw/browser auth state is a worker cleanup target",
+        },
     }
 
 
@@ -1084,7 +1270,9 @@ def _write_minimum_live_artifacts(remote_fusekit: Path) -> None:
         "utf-8",
     )
     (remote_fusekit / "gates.json").write_text(json.dumps({"gates": []}), "utf-8")
+    (remote_fusekit / "llm_contract.json").write_text(json.dumps(_llm_contract()), "utf-8")
     _write_runner_readiness(remote_fusekit)
+    _write_durable_survivor_stubs(remote_fusekit)
     _write_minimum_run_record(remote_fusekit)
 
 
@@ -1172,6 +1360,7 @@ def _write_safe_visual_state(fusekit_dir: Path) -> None:
                 "runner": "novnc",
                 "status": "ready",
                 "interactive": True,
+                "display": ":99",
                 "novnc_url": "http://93.184.216.34:6080/vnc.html?autoconnect=1",
                 "control_room_url": (
                     "http://93.184.216.34:8765/"
@@ -1181,6 +1370,11 @@ def _write_safe_visual_state(fusekit_dir: Path) -> None:
                 "provider_browser_profile": (
                     "/var/lib/fusekit-runner/visual/chrome-provider-profile"
                 ),
+                "notes": [
+                    "The browser is running on the disposable OCI VM.",
+                    "Use the noVNC window to complete human gates in the same session "
+                    "FuseKit observes.",
+                ],
             }
         ),
         "utf-8",
@@ -1340,19 +1534,15 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
                 "schema_version": "fusekit.run-record.v1",
                 "id": "fk-live-test",
                 "status": "done",
-                "app_path": "/var/lib/fusekit-runner/app",
+                "app_path": "app",
                 "runner": "local",
                 "created_at": 1.0,
                 "updated_at": 2.0,
-                "state": {
-                    "app_repo_known": True,
-                    "runner_selected": True,
-                    "vault_created": True,
-                    "detonation_safe": True,
-                    "workspace_detonated": True,
-                },
-                "steps": [],
-                "checkpoints": [],
+                "state": _run_state(),
+                "steps": [{"id": "scan", "label": "Scan app", "status": "passed"}],
+                "checkpoints": [
+                    {"id": "vault", "label": "Vault sealed", "status": "passed"}
+                ],
                 "provider_gates": {
                     "total": 0,
                     "statuses": {},
@@ -1361,6 +1551,7 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
                 },
                 "durable_state": _durable_state(),
                 "provider_playbook": _provider_playbook(),
+                "model_inference": _model_inference(),
                 "runner_profile": _runner_profile_from_readiness_fixture(fusekit_dir),
                 "worker_replacement_drill": _worker_replacement_drill(),
                 "wake_events": _wake_event_summary_fixture(fusekit_dir),
@@ -1373,8 +1564,17 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
                 "vault": {"record_count": 0, "records": []},
                 "audit_trail": _audit_trail_from_gate_events(fusekit_dir),
                 "recording_contract": _recording_contract(),
-                "artifacts": [],
+                "artifacts": [
+                    {"name": "run_record", "path": "run_record.json", "exists": True},
+                    {"name": "audit_log", "path": "audit.jsonl", "exists": True},
+                    {
+                        "name": "setup_receipt",
+                        "path": "setup_receipt.json",
+                        "exists": True,
+                    },
+                ],
                 "evidence": _evidence_inventory(),
+                "llm_contract": _llm_contract(),
                 "verification": {
                     "checks": _verification_report_checks()
                 },
@@ -1390,6 +1590,57 @@ def _write_minimum_run_record(fusekit_dir: Path) -> None:
         ),
         "utf-8",
     )
+
+
+def _write_durable_survivor_stubs(fusekit_dir: Path) -> None:
+    if not (fusekit_dir / "job.json").exists():
+        (fusekit_dir / "job.json").write_text(
+            json.dumps(
+                {
+                    "id": "fk-live-test",
+                    "app_path": "app",
+                    "status": "done",
+                    "runner": "oci-free",
+                    "steps": [],
+                    "checkpoints": [],
+                    "artifacts": {},
+                    "created_at": 2.0,
+                    "updated_at": 2.0,
+                }
+            ),
+            encoding="utf-8",
+        )
+    if not (fusekit_dir / "run_state.json").exists():
+        (fusekit_dir / "run_state.json").write_text(
+            json.dumps(
+                {
+                    **{field: True for field in RUN_STATE_FIELDS},
+                    "updated_at": 2.0,
+                    "notes": [],
+                    "missing_for_detonation": [],
+                    "ready_to_detonate": True,
+                }
+            ),
+            encoding="utf-8",
+        )
+    if not (fusekit_dir / "checkpoints.json").exists():
+        (fusekit_dir / "checkpoints.json").write_text(
+            json.dumps(
+                {
+                    "job_id": "fk-live-test",
+                    "status": "done",
+                    "updated_at": 2.0,
+                    "checkpoints": [],
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    if not (fusekit_dir / "worker_replacement_drill.json").exists():
+        (fusekit_dir / "worker_replacement_drill.json").write_text(
+            json.dumps(_worker_replacement_drill()),
+            encoding="utf-8",
+        )
 
 
 def _write_minimum_resend_vercel_live_artifacts(remote_fusekit: Path) -> None:
@@ -1458,8 +1709,10 @@ def _write_minimum_resend_vercel_live_artifacts(remote_fusekit: Path) -> None:
         "utf-8",
     )
     (remote_fusekit / "gates.json").write_text(json.dumps({"gates": []}), "utf-8")
+    (remote_fusekit / "llm_contract.json").write_text(json.dumps(_llm_contract()), "utf-8")
     _write_runner_readiness(remote_fusekit)
     _write_safe_visual_state(remote_fusekit)
+    _write_durable_survivor_stubs(remote_fusekit)
     _write_minimum_run_record(remote_fusekit)
 
 
@@ -1510,6 +1763,18 @@ def test_acceptance_rehearsal_writes_ledger_and_report(tmp_path) -> None:
     assert report_json["recording_ready"] is False
     assert report_json["blockers"] == []
     assert any(check["id"] == "manifest.scanned" for check in report_json["checks"])
+    ledger_events = [
+        json.loads(line)
+        for line in (app / ".fusekit" / "acceptance" / "ledger.jsonl").read_text().splitlines()
+    ]
+    finished = next(event for event in ledger_events if event["event"] == "acceptance.finished")
+    assert finished["data"]["recording_proof_ready"] is False
+    assert finished["data"]["recording_ready"] is False
+    assert finished["data"]["recording_contract"] == {
+        "recording_ready": False,
+        "check_count": 0,
+        "blockers": [],
+    }
 
 
 def test_acceptance_report_serializes_public_paths(tmp_path) -> None:
@@ -1522,6 +1787,18 @@ def test_acceptance_report_serializes_public_paths(tmp_path) -> None:
         checks=(AcceptanceCheck("gates.resolved", "failed", "Needs repair.", str(artifact)),),
         ledger_path=str(app / ".fusekit" / "acceptance" / "ledger.jsonl"),
         report_path=str(app / ".fusekit" / "acceptance" / "report.json"),
+        recording_contract={
+            "schema_version": "fusekit.recording-contract.v1",
+            "recording_ready": False,
+            "checks": {
+                "rehearsal_review": False,
+                "detonation": True,
+                "timeline": "true",
+                "provider_gates": 1,
+            },
+            "blockers": ["rehearsal_review"],
+            "statement": "Public demo proof waits on rehearsal review.",
+        },
     )
 
     payload = report.to_dict()
@@ -1532,6 +1809,19 @@ def test_acceptance_report_serializes_public_paths(tmp_path) -> None:
     assert payload["public_launch_ready"] is False
     assert payload["recording_proof_ready"] is False
     assert payload["recording_ready"] is False
+    assert payload["recording_contract"] == {
+        "schema_version": "fusekit.recording-contract.v1",
+        "recording_ready": False,
+        "checks": {
+            "detonation": True,
+            "provider_gates": False,
+            "rehearsal_review": False,
+            "timeline": False,
+        },
+        "blockers": ["rehearsal_review"],
+        "check_count": 4,
+        "statement": "Public demo proof waits on rehearsal review.",
+    }
     assert payload["ledger_path"] == ".fusekit/acceptance/ledger.jsonl"
     assert payload["report_path"] == ".fusekit/acceptance/report.json"
     assert payload["checks"][0]["artifact"] == ".fusekit/acceptance/artifacts/gates.json"
@@ -1539,7 +1829,25 @@ def test_acceptance_report_serializes_public_paths(tmp_path) -> None:
 
 def test_acceptance_report_names_recording_readiness_contract(tmp_path) -> None:
     app = tmp_path / "app"
-    live_report = AcceptanceReport(
+    remote_artifacts_check = AcceptanceCheck(
+        "remote_artifacts.loaded",
+        "ok",
+        "Using retrieved OCI artifacts as live acceptance evidence.",
+    )
+    contracted_live_report = AcceptanceReport(
+        mode="live",
+        app_path=str(app),
+        launch_ready=True,
+        checks=(
+            remote_artifacts_check,
+            AcceptanceCheck("run_record.complete", "ok", "Run Record complete."),
+        ),
+        ledger_path=str(app / ".fusekit" / "acceptance" / "ledger.jsonl"),
+        report_path=str(app / ".fusekit" / "acceptance" / "report.json"),
+        recording_proof_ready=True,
+        recording_contract=_recording_contract(),
+    )
+    local_live_report = AcceptanceReport(
         mode="live",
         app_path=str(app),
         launch_ready=True,
@@ -1547,6 +1855,49 @@ def test_acceptance_report_names_recording_readiness_contract(tmp_path) -> None:
         ledger_path=str(app / ".fusekit" / "acceptance" / "ledger.jsonl"),
         report_path=str(app / ".fusekit" / "acceptance" / "report.json"),
         recording_proof_ready=True,
+        recording_contract=_recording_contract(),
+    )
+    uncontracted_live_report = AcceptanceReport(
+        mode="live",
+        app_path=str(app),
+        launch_ready=True,
+        checks=(
+            remote_artifacts_check,
+            AcceptanceCheck("run_record.complete", "ok", "Run Record complete."),
+        ),
+        ledger_path=str(app / ".fusekit" / "acceptance" / "ledger.jsonl"),
+        report_path=str(app / ".fusekit" / "acceptance" / "report.json"),
+        recording_proof_ready=True,
+    )
+    hollow_contract_report = AcceptanceReport(
+        mode="live",
+        app_path=str(app),
+        launch_ready=True,
+        checks=(AcceptanceCheck("run_record.complete", "ok", "Run Record complete."),),
+        ledger_path=str(app / ".fusekit" / "acceptance" / "ledger.jsonl"),
+        report_path=str(app / ".fusekit" / "acceptance" / "report.json"),
+        recording_proof_ready=True,
+        recording_contract={
+            "schema_version": "fusekit.recording-contract.v1",
+            "recording_ready": True,
+            "checks": {},
+            "blockers": [],
+        },
+    )
+    partial_contract_report = AcceptanceReport(
+        mode="live",
+        app_path=str(app),
+        launch_ready=True,
+        checks=(AcceptanceCheck("run_record.complete", "ok", "Run Record complete."),),
+        ledger_path=str(app / ".fusekit" / "acceptance" / "ledger.jsonl"),
+        report_path=str(app / ".fusekit" / "acceptance" / "report.json"),
+        recording_proof_ready=True,
+        recording_contract={
+            "schema_version": "fusekit.recording-contract.v1",
+            "recording_ready": True,
+            "checks": {"worker_replacement": True},
+            "blockers": [],
+        },
     )
     unproved_live_report = AcceptanceReport(
         mode="live",
@@ -1566,11 +1917,35 @@ def test_acceptance_report_names_recording_readiness_contract(tmp_path) -> None:
         recording_proof_ready=True,
     )
 
-    assert live_report.public_launch_ready is True
-    assert live_report.recording_proof_ready is True
-    assert live_report.recording_ready is True
-    assert live_report.to_dict()["recording_proof_ready"] is True
-    assert live_report.to_dict()["recording_ready"] is True
+    assert contracted_live_report.public_launch_ready is True
+    assert contracted_live_report.remote_artifacts_ready is True
+    assert contracted_live_report.recording_proof_ready is True
+    assert contracted_live_report.effective_recording_proof_ready is True
+    assert contracted_live_report.recording_ready is True
+    assert contracted_live_report.to_dict()["remote_artifacts_ready"] is True
+    assert contracted_live_report.to_dict()["recording_proof_ready"] is True
+    assert contracted_live_report.to_dict()["recording_ready"] is True
+    assert local_live_report.public_launch_ready is True
+    assert local_live_report.remote_artifacts_ready is False
+    assert local_live_report.effective_recording_proof_ready is False
+    assert local_live_report.recording_ready is False
+    assert local_live_report.to_dict()["remote_artifacts_ready"] is False
+    assert local_live_report.to_dict()["recording_proof_ready"] is False
+    assert local_live_report.to_dict()["recording_ready"] is False
+    assert uncontracted_live_report.public_launch_ready is True
+    assert uncontracted_live_report.recording_proof_ready is True
+    assert uncontracted_live_report.effective_recording_proof_ready is False
+    assert uncontracted_live_report.recording_ready is False
+    assert uncontracted_live_report.to_dict()["recording_proof_ready"] is False
+    assert uncontracted_live_report.to_dict()["recording_ready"] is False
+    assert hollow_contract_report.recording_contract_ready is False
+    assert hollow_contract_report.effective_recording_proof_ready is False
+    assert hollow_contract_report.to_dict()["recording_proof_ready"] is False
+    assert hollow_contract_report.to_dict()["recording_ready"] is False
+    assert partial_contract_report.recording_contract_ready is False
+    assert partial_contract_report.effective_recording_proof_ready is False
+    assert partial_contract_report.to_dict()["recording_proof_ready"] is False
+    assert partial_contract_report.to_dict()["recording_ready"] is False
     assert unproved_live_report.public_launch_ready is True
     assert unproved_live_report.recording_proof_ready is False
     assert unproved_live_report.recording_ready is False
@@ -1578,6 +1953,84 @@ def test_acceptance_report_names_recording_readiness_contract(tmp_path) -> None:
     assert rehearsal_report.public_launch_ready is False
     assert rehearsal_report.recording_ready is False
     assert rehearsal_report.to_dict()["recording_ready"] is False
+
+
+def test_live_acceptance_rejects_local_fusekit_as_remote_artifacts(tmp_path) -> None:
+    app = tmp_path / "app"
+    fusekit_dir = app / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+
+    with pytest.raises(FuseKitError, match="retrieved OCI artifact bundle"):
+        run_acceptance(
+            app,
+            mode="live",
+            remote_artifacts_path=fusekit_dir,
+        )
+
+
+def test_live_acceptance_rejects_linked_remote_artifact_root(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    target = tmp_path / "retrieved-artifacts"
+    (target / ".fusekit").mkdir(parents=True)
+    linked_remote = tmp_path / "linked-remote-artifacts"
+    try:
+        linked_remote.symlink_to(target, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlink creation is unavailable")
+
+    with pytest.raises(FuseKitError, match="not a symlink"):
+        run_acceptance(
+            app,
+            mode="live",
+            remote_artifacts_path=linked_remote,
+        )
+
+
+def test_live_acceptance_rejects_linked_remote_fusekit_dir(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    remote = tmp_path / "remote-artifacts"
+    remote.mkdir()
+    target_fusekit = tmp_path / "host-fusekit"
+    target_fusekit.mkdir()
+    try:
+        (remote / ".fusekit").symlink_to(target_fusekit, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlink creation is unavailable")
+
+    with pytest.raises(FuseKitError, match="not a symlink"):
+        run_acceptance(
+            app,
+            mode="live",
+            remote_artifacts_path=remote,
+        )
+
+
+def test_live_acceptance_rejects_unexpected_remote_artifact_entries(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    (remote_fusekit / ".env").write_text("RESEND_API_KEY=re_leftover", "utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    remote_check = next(check for check in report.checks if check.id == "remote_artifacts.loaded")
+    assert report.launch_ready is False
+    assert remote_check.status == "failed"
+    assert "unexpected survivors .env" in remote_check.detail
+    assert report.remote_artifacts_ready is False
 
 
 def test_harness_ledger_records_public_artifact_paths(tmp_path) -> None:
@@ -1836,6 +2289,17 @@ def test_acceptance_rejects_incomplete_runner_readiness(tmp_path) -> None:
     assert "Playwright browser cache path is required" in checks[-1].detail
     assert "installed_binaries must be a JSON object" in checks[-1].detail
     assert "prepared runner readiness proof" in missing
+    blockers = {blocker["item"]: blocker for blocker in _acceptance_blockers(checks, missing)}
+    assert blockers["runner_readiness.prepared"]["category"] == "Runner readiness"
+    assert "x86_64 architecture" in blockers["runner_readiness.prepared"]["next_action"]
+    assert "OpenClaw, Playwright Chromium, noVNC" in blockers[
+        "runner_readiness.prepared"
+    ]["next_action"]
+    assert "shared provider browser profile" in blockers[
+        "runner_readiness.prepared"
+    ]["next_action"]
+    assert "encrypted vault access" in blockers["runner_readiness.prepared"]["next_action"]
+    assert blockers["prepared runner readiness proof"]["category"] == "Runner readiness"
 
 
 def test_acceptance_allows_complete_runner_readiness(tmp_path) -> None:
@@ -1851,7 +2315,81 @@ def test_acceptance_allows_complete_runner_readiness(tmp_path) -> None:
     assert checks[-1].id == "runner_readiness.prepared"
     assert checks[-1].status == "ok"
     assert "Prepared x86_64 browser runner proof is present" in checks[-1].detail
+    snapshot = json.loads(Path(str(checks[-1].artifact)).read_text(encoding="utf-8"))
+    assert snapshot["provider_browser_profile"] == "shared-provider-browser-profile"
+    assert snapshot["playwright_browsers_path"] == "playwright-browser-cache"
+    assert "/var/lib/fusekit-runner" not in json.dumps(snapshot)
+    assert "/opt/fusekit-playwright-browsers" not in json.dumps(snapshot)
     assert missing == []
+
+
+def test_acceptance_rejects_runner_readiness_callback_url_artifact(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    _write_runner_readiness(fusekit_dir)
+    readiness = fusekit_dir / "runner_readiness.json"
+    raw = json.loads(readiness.read_text(encoding="utf-8"))
+    raw["observed"]["recovery_note"] = "provider callback at https://provider.example/callback"
+    readiness.write_text(json.dumps(raw), encoding="utf-8")
+    checks: list[AcceptanceCheck] = []
+    missing: list[str] = []
+    ledger = HarnessLedger.create(fusekit_dir / "acceptance")
+
+    _check_runner_readiness(readiness, "live", checks, missing, ledger)
+
+    assert checks[-1].id == "runner_readiness.prepared"
+    assert checks[-1].status == "failed"
+    assert "runner_readiness.observed.recovery_note contains callback URL" in checks[-1].detail
+    assert "prepared runner readiness proof" in missing
+
+
+def test_acceptance_rejects_loose_runner_readiness_artifact(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    _write_runner_readiness(fusekit_dir)
+    readiness = fusekit_dir / "runner_readiness.json"
+    raw = json.loads(readiness.read_text(encoding="utf-8"))
+    raw["private_note"] = "sidecar readiness note"
+    raw["status"] = " ready "
+    raw["checks"]["openclaw "] = True
+    raw["profile_contract"]["private_note"] = "sidecar profile note"
+    raw["profile_contract"]["browser_stack"]["private_note"] = "sidecar browser note"
+    raw["profile_contract"]["required_health_checks"][0] = (
+        f" {raw['profile_contract']['required_health_checks'][0]} "
+    )
+    raw["observed"]["private_note"] = "sidecar observed note"
+    raw["installed_binaries"]["python"]["private_note"] = "sidecar binary note"
+    raw["installed_binaries"]["python"]["path"] = (
+        f" {raw['installed_binaries']['python']['path']} "
+    )
+    readiness.write_text(json.dumps(raw), encoding="utf-8")
+    checks: list[AcceptanceCheck] = []
+    missing: list[str] = []
+    ledger = HarnessLedger.create(fusekit_dir / "acceptance")
+
+    _check_runner_readiness(readiness, "live", checks, missing, ledger)
+
+    assert checks[-1].id == "runner_readiness.prepared"
+    assert checks[-1].status == "failed"
+    assert "artifact has unexpected fields: private_note" in checks[-1].detail
+    assert "status must be trimmed" in checks[-1].detail
+    assert "checks.openclaw  must be trimmed" in checks[-1].detail
+    assert "runner profile has unexpected fields: private_note" in checks[-1].detail
+    assert (
+        "runner profile browser_stack has unexpected fields: private_note"
+        in checks[-1].detail
+    )
+    assert (
+        "runner profile required_health_checks[0] must be trimmed"
+        in checks[-1].detail
+    )
+    assert "observed has unexpected fields: private_note" in checks[-1].detail
+    assert (
+        "installed_binaries.python has unexpected fields: private_note"
+        in checks[-1].detail
+    )
+    assert "installed_binaries.python.path must be trimmed" in checks[-1].detail
+    assert "prepared runner readiness proof" in missing
 
 
 def test_live_acceptance_requires_visual_session_artifact(tmp_path) -> None:
@@ -1950,6 +2488,11 @@ def test_acceptance_rejects_unsafe_visual_state_survivor(tmp_path) -> None:
     assert "leaked" not in checks[-1].detail
     assert "stolen" not in checks[-1].detail
     assert "safe visual session state" in missing
+    blockers = {blocker["item"]: blocker for blocker in _acceptance_blockers(checks, missing)}
+    assert blockers["visual_state.safe"]["category"] == "Visual session"
+    assert "safe noVNC/control-room URLs" in blockers["visual_state.safe"]["next_action"]
+    assert "safe noVNC password metadata" in blockers["visual_state.safe"]["next_action"]
+    assert blockers["safe visual session state"]["category"] == "Visual session"
 
 
 def test_acceptance_rejects_unexpected_visual_query_values(tmp_path) -> None:
@@ -2001,12 +2544,18 @@ def test_acceptance_allows_sanitized_visual_state_survivor(tmp_path) -> None:
                 "runner": "novnc",
                 "status": "ready",
                 "interactive": True,
+                "display": ":99",
                 "novnc_url": "http://93.184.216.34:6080/vnc.html?autoconnect=1&resize=scale",
                 "control_room_url": f"http://93.184.216.34:8765/?token={control_room_token}",
                 "novnc_password": "viewer-password",
                 "provider_browser_profile": (
                     "/var/lib/fusekit-runner/visual/chrome-provider-profile"
                 ),
+                "notes": [
+                    "The browser is running on the disposable OCI VM.",
+                    "Use the noVNC window to complete human gates in the same session "
+                    "FuseKit observes.",
+                ],
             }
         ),
         encoding="utf-8",
@@ -2025,6 +2574,109 @@ def test_acceptance_allows_sanitized_visual_state_survivor(tmp_path) -> None:
     assert "viewer-password" not in snapshot
     assert control_room_token not in snapshot
     assert "[REDACTED sha256:" in snapshot
+
+
+def test_acceptance_rejects_loose_visual_state_survivor(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    _write_safe_visual_state(fusekit_dir)
+    visual_path = fusekit_dir / "visual.json"
+    raw = json.loads(visual_path.read_text(encoding="utf-8"))
+    raw["private_note"] = "sidecar visual metadata"
+    raw["status"] = " ready "
+    raw["display"] = ":44"
+    raw["notes"] = [
+        "The browser is running on the disposable OCI VM.",
+        " The browser is running on the disposable OCI VM. ",
+    ]
+    visual_path.write_text(json.dumps(raw), encoding="utf-8")
+    checks: list[AcceptanceCheck] = []
+    missing: list[str] = []
+    ledger = HarnessLedger.create(fusekit_dir / "acceptance")
+
+    _check_visual_state(visual_path, "live", checks, missing, ledger)
+
+    assert checks[-1].id == "visual_state.safe"
+    assert checks[-1].status == "failed"
+    assert "does not match generated launch proof" in checks[-1].detail
+    assert "artifact has unexpected fields: private_note" in checks[-1].detail
+    assert "status must be trimmed" in checks[-1].detail
+    assert "display must be :99" in checks[-1].detail
+    assert "notes contains duplicate" in checks[-1].detail
+    assert "notes must match generated visual-session guidance" in checks[-1].detail
+    assert "notes[1] must be trimmed" in checks[-1].detail
+    assert "safe visual session state" in missing
+
+
+def test_acceptance_rejects_visual_state_callback_url_artifact(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    visual_path = fusekit_dir / "visual.json"
+    control_room_token = "viewer_token_abcdefghijklmnopqrstuvwxyz0123456789"
+    visual_path.write_text(
+        json.dumps(
+            {
+                "runner": "novnc",
+                "status": "ready",
+                "interactive": True,
+                "novnc_url": "http://93.184.216.34:6080/vnc.html?autoconnect=1",
+                "control_room_url": f"http://93.184.216.34:8765/?token={control_room_token}",
+                "novnc_password": "viewer-password",
+                "provider_browser_profile": (
+                    "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+                ),
+                "recovery_note": "provider returned https://provider.example/callback",
+            }
+        ),
+        encoding="utf-8",
+    )
+    checks: list[AcceptanceCheck] = []
+    missing: list[str] = []
+    ledger = HarnessLedger.create(fusekit_dir / "acceptance")
+
+    _check_visual_state(visual_path, "live", checks, missing, ledger)
+
+    assert checks[-1].id == "visual_state.safe"
+    assert checks[-1].status == "failed"
+    assert "visual_state.recovery_note contains callback URL" in checks[-1].detail
+    assert control_room_token not in checks[-1].detail
+    assert "safe visual session state" in missing
+
+
+def test_acceptance_rejects_visual_control_room_callback_url(tmp_path) -> None:
+    fusekit_dir = tmp_path / "app" / ".fusekit"
+    fusekit_dir.mkdir(parents=True)
+    visual_path = fusekit_dir / "visual.json"
+    visual_path.write_text(
+        json.dumps(
+            {
+                "runner": "novnc",
+                "status": "ready",
+                "interactive": True,
+                "novnc_url": "http://93.184.216.34:6080/vnc.html?autoconnect=1",
+                "control_room_url": (
+                    "http://93.184.216.34:8765/callback"
+                    "?token=viewer_token_abcdefghijklmnopqrstuvwxyz0123456789"
+                ),
+                "novnc_password": "viewer-password",
+                "provider_browser_profile": (
+                    "/var/lib/fusekit-runner/visual/chrome-provider-profile"
+                ),
+            }
+        ),
+        encoding="utf-8",
+    )
+    checks: list[AcceptanceCheck] = []
+    missing: list[str] = []
+    ledger = HarnessLedger.create(fusekit_dir / "acceptance")
+
+    _check_visual_state(visual_path, "live", checks, missing, ledger)
+
+    assert checks[-1].id == "visual_state.safe"
+    assert checks[-1].status == "failed"
+    assert "visual_state.control_room_url contains callback URL" in checks[-1].detail
+    assert "viewer_token_" not in checks[-1].detail
+    assert "safe visual session state" in missing
 
 
 def test_acceptance_live_visual_state_requires_ready_interactive_novnc_session(
@@ -2059,12 +2711,18 @@ def test_acceptance_live_visual_state_requires_ready_interactive_novnc_session(
             "runner": "novnc",
             "status": "ready",
             "interactive": True,
+            "display": ":99",
             "novnc_url": "http://93.184.216.34:6080/vnc.html?autoconnect=1",
             "control_room_url": (
                 "http://93.184.216.34:8765/?token=viewer_token_abcdefghijklmnopqrstuvwxyz0123456789"
             ),
             "novnc_password": "viewer-password",
             "provider_browser_profile": ("/var/lib/fusekit-runner/visual/chrome-provider-profile"),
+            "notes": [
+                "The browser is running on the disposable OCI VM.",
+                "Use the noVNC window to complete human gates in the same session "
+                "FuseKit observes.",
+            ],
         }
         visual.update(patch)
         visual_path.write_text(json.dumps(visual), encoding="utf-8")
@@ -2887,7 +3545,7 @@ def test_acceptance_human_strategy_guidance_must_be_launcher_actionable() -> Non
                                 "implemented": False,
                                 "reason": "Missing provider token.",
                             },
-                            "candidates": [{"kind": "browser_guided"}],
+                            "candidates": [{"kind": "browser_guided", "status": "available"}],
                         },
                     }
                 ],
@@ -2898,6 +3556,66 @@ def test_acceptance_human_strategy_guidance_must_be_launcher_actionable() -> Non
     assert any("non-launcher wording" in item for item in failures)
     assert any("VM browser path" in item for item in failures)
     assert any("Capture from VM clipboard" in item for item in failures)
+
+
+def test_acceptance_provider_strategy_artifact_rejects_loose_public_proof() -> None:
+    strategies = _run_record_provider_strategies()
+    strategies["private_note"] = "sidecar"
+    providers = strategies["providers"]
+    assert isinstance(providers, list)
+    first_provider = providers[0]
+    assert isinstance(first_provider, dict)
+    first_provider["private_note"] = "sidecar"
+    strategy_rows = first_provider["strategies"]
+    assert isinstance(strategy_rows, list)
+    first_strategy = strategy_rows[0]
+    assert isinstance(first_strategy, dict)
+    first_strategy["private_note"] = "sidecar"
+    first_strategy["recipe"] = f" {first_strategy['recipe']} "
+    decision = first_strategy["decision"]
+    assert isinstance(decision, dict)
+    decision["private_note"] = "sidecar"
+    selected = decision["selected"]
+    assert isinstance(selected, dict)
+    selected["private_note"] = "sidecar"
+    candidates = decision["candidates"]
+    assert isinstance(candidates, list)
+    first_candidate = candidates[0]
+    assert isinstance(first_candidate, dict)
+    first_candidate["private_note"] = "sidecar"
+
+    failures = _provider_strategy_artifact_shape_failures(strategies)
+
+    assert "provider_strategies has unexpected fields: private_note" in failures
+    assert (
+        "provider_strategies.providers[0] has unexpected fields: private_note"
+        in failures
+    )
+    assert (
+        "provider_strategies.providers[0].strategies[0] has unexpected fields: "
+        "private_note"
+        in failures
+    )
+    assert (
+        "provider_strategies.providers[0].strategies[0].recipe must not have "
+        "surrounding whitespace"
+        in failures
+    )
+    assert (
+        "provider_strategies.providers[0].strategies[0].decision has unexpected "
+        "fields: private_note"
+        in failures
+    )
+    assert (
+        "provider_strategies.providers[0].strategies[0].decision.selected has "
+        "unexpected fields: private_note"
+        in failures
+    )
+    assert (
+        "provider_strategies.providers[0].strategies[0].decision.candidates[0] "
+        "has unexpected fields: private_note"
+        in failures
+    )
 
 
 def test_acceptance_human_strategy_accepts_success_and_avoid_panels() -> None:
@@ -2930,7 +3648,7 @@ def test_acceptance_human_strategy_accepts_success_and_avoid_panels() -> None:
                                 "implemented": False,
                                 "reason": "Missing provider token.",
                             },
-                            "candidates": [{"kind": "browser_guided"}],
+                            "candidates": [{"kind": "browser_guided", "status": "available"}],
                         },
                     }
                 ],
@@ -2966,7 +3684,7 @@ def test_acceptance_human_strategy_rejects_local_browser_side_channel() -> None:
                                 "implemented": False,
                                 "reason": "Missing provider token.",
                             },
-                            "candidates": [{"kind": "browser_guided"}],
+                            "candidates": [{"kind": "browser_guided", "status": "available"}],
                         },
                     }
                 ],
@@ -3002,7 +3720,7 @@ def test_acceptance_human_strategy_rejects_host_browser_side_channel() -> None:
                                 "implemented": False,
                                 "reason": "Missing provider token.",
                             },
-                            "candidates": [{"kind": "browser_guided"}],
+                            "candidates": [{"kind": "browser_guided", "status": "available"}],
                         },
                     }
                 ],
@@ -3038,7 +3756,7 @@ def test_acceptance_human_strategy_requires_exact_capture_control_label() -> Non
                                 "implemented": False,
                                 "reason": "Missing provider token.",
                             },
-                            "candidates": [{"kind": "browser_guided"}],
+                            "candidates": [{"kind": "browser_guided", "status": "available"}],
                         },
                     }
                 ],
@@ -3078,7 +3796,7 @@ def test_acceptance_human_strategy_rejects_placeholder_capture_label() -> None:
                                 "implemented": False,
                                 "reason": "Missing provider token.",
                             },
-                            "candidates": [{"kind": "browser_guided"}],
+                            "candidates": [{"kind": "browser_guided", "status": "available"}],
                         },
                     }
                 ],
@@ -3118,7 +3836,7 @@ def test_acceptance_human_strategy_rejects_bad_success_or_avoid_panels() -> None
                                 "implemented": False,
                                 "reason": "Missing provider token.",
                             },
-                            "candidates": [{"kind": "browser_guided"}],
+                            "candidates": [{"kind": "browser_guided", "status": "available"}],
                         },
                     }
                 ],
@@ -3345,6 +4063,152 @@ def test_acceptance_live_requires_real_provider_evidence(tmp_path) -> None:
     assert "setup worker record" in blockers["provider strategy decisions"]["next_action"]
 
 
+def test_live_acceptance_rejects_unredacted_setup_receipt_artifact(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    receipt_path = remote_fusekit / "setup_receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["actions"] = [
+        {
+            "action": "github.secret.upsert",
+            "status": "ok api_key=ghp_abcdefghijklmnopqrstuvwxyz1234567890",
+        }
+    ]
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    receipt_check = next(check for check in report.checks if check.id == "receipt.redacted")
+    assert report.launch_ready is False
+    assert receipt_check.status == "failed"
+    assert "setup_receipt.actions[0].status contains credential-looking text" in (
+        receipt_check.detail
+    )
+    assert "redacted receipt" in report.missing
+
+
+def test_live_acceptance_rejects_setup_receipt_callback_url_artifact(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    receipt_path = remote_fusekit / "setup_receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["actions"] = [
+        {
+            "action": "github.oauth.callback",
+            "status": "reviewed https://provider.example/callback",
+        }
+    ]
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    receipt_check = next(check for check in report.checks if check.id == "receipt.redacted")
+    assert report.launch_ready is False
+    assert receipt_check.status == "failed"
+    assert "setup_receipt.actions[0].status contains callback URL" in receipt_check.detail
+    assert "redacted receipt" in report.missing
+
+
+def test_live_acceptance_rejects_loose_setup_receipt_shape(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    receipt_path = remote_fusekit / "setup_receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["private_note"] = "sidecar"
+    receipt["actions"] = [
+        {
+            "action": " github.secret.upsert ",
+            "status": "ok",
+            "details": {"provider": "github"},
+            "private_note": "sidecar",
+        }
+    ]
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    receipt_check = next(check for check in report.checks if check.id == "receipt.redacted")
+    assert report.launch_ready is False
+    assert receipt_check.status == "failed"
+    assert "setup_receipt has unexpected fields: private_note" in receipt_check.detail
+    assert (
+        "setup_receipt.actions[0] has unexpected fields: private_note"
+        in receipt_check.detail
+    )
+    assert "setup_receipt.actions[0].action must be trimmed" in receipt_check.detail
+    assert "redacted receipt" in report.missing
+
+
+def test_live_acceptance_rejects_malformed_raw_secret_exposure_count(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    for index, malformed_count in enumerate((0.1, "0")):
+        remote = tmp_path / f"remote-artifacts-{index}"
+        remote_fusekit = remote / ".fusekit"
+        remote_fusekit.mkdir(parents=True)
+        vault = Vault.empty()
+        vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+        _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+        receipt_path = remote_fusekit / "setup_receipt.json"
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt["raw_secrets_exposed"] = malformed_count
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+        report = run_acceptance(
+            app,
+            mode="live",
+            passphrase="passphrase",
+            remote_artifacts_path=remote,
+        )
+
+        receipt_check = next(
+            check for check in report.checks if check.id == "receipt.redacted"
+        )
+        assert report.launch_ready is False
+        assert receipt_check.status == "failed"
+        assert "raw secret exposure count must be literal zero" in receipt_check.detail
+        assert "redacted receipt" in report.missing
+
+
 def test_acceptance_vault_check_blocker_is_launcher_actionable() -> None:
     blockers = {
         blocker["item"]: blocker
@@ -3366,6 +4230,84 @@ def test_acceptance_vault_check_blocker_is_launcher_actionable() -> None:
     assert "VM clipboard Capture controls" in next_action
     assert "encrypted vault proof" in next_action
     assert "Regenerate or unlock" not in next_action
+
+
+def test_acceptance_model_inference_blocker_is_launcher_actionable() -> None:
+    blockers = {
+        blocker["item"]: blocker
+        for blocker in _acceptance_blockers(
+            [
+                AcceptanceCheck(
+                    "run_record.complete",
+                    "failed",
+                    "model_inference.status must prove encrypted API key; "
+                    "llm_contract.json is missing.",
+                )
+            ],
+            ["model inference contract"],
+        )
+    }
+
+    missing_action = blockers["model inference contract"]["next_action"]
+    check_action = blockers["run_record.complete"]["next_action"]
+    assert blockers["model inference contract"]["category"] == "Model inference"
+    assert "llm_contract.json" in missing_action
+    assert "encrypted API-key lane" in missing_action
+    assert blockers["run_record.complete"]["category"] == "Model inference"
+    assert "model/inference card" in check_action
+    assert "Capture OPENAI_API_KEY from VM clipboard" in check_action
+    assert "OpenClaw authorization gate" in check_action
+    assert "non-secret llm_contract.json proof" in check_action
+    assert "Run acceptance again" not in check_action
+
+
+def test_acceptance_rehearsal_review_blocker_is_launcher_actionable() -> None:
+    blockers = {
+        blocker["item"]: blocker
+        for blocker in _acceptance_blockers(
+            [
+                AcceptanceCheck(
+                    "run_record.complete",
+                    "failed",
+                    "rehearsal_review.status must be ready; "
+                    "rehearsal_review.requires_user_thinking must be false.",
+                )
+            ],
+            [],
+        )
+    }
+
+    next_action = blockers["run_record.complete"]["next_action"]
+    assert blockers["run_record.complete"]["category"] == "Rehearsal review"
+    assert "clean rehearsal review" in next_action
+    assert "visible control-room instructions" in next_action
+    assert "no host browser, terminal, side channel, or user interpretation" in next_action
+    assert "Run acceptance again" not in next_action
+
+
+def test_acceptance_worker_replacement_blocker_is_launcher_actionable() -> None:
+    blockers = {
+        blocker["item"]: blocker
+        for blocker in _acceptance_blockers(
+            [
+                AcceptanceCheck(
+                    "run_record.complete",
+                    "failed",
+                    "recording_contract.checks.worker_replacement must be true; "
+                    "worker_replacement_drill.status must be passed.",
+                )
+            ],
+            [],
+        )
+    }
+
+    next_action = blockers["run_record.complete"]["next_action"]
+    assert blockers["run_record.complete"]["category"] == "Worker replacement"
+    assert "worker replacement drill" in next_action
+    assert "destroy the original OCI worker" in next_action
+    assert "encrypted/redacted durable sources" in next_action
+    assert "resume a gate or verifier without host-machine state" in next_action
+    assert "Run acceptance again" not in next_action
 
 
 def test_acceptance_unknown_blocker_stays_in_current_control_room() -> None:
@@ -3464,6 +4406,36 @@ def test_acceptance_blockers_use_launcher_actionable_check_guidance() -> None:
             "failed",
             "Waiting provider gate still exists: provider.cloudflare.authorization",
         ),
+        AcceptanceCheck(
+            "provider_packs.validated",
+            "missing",
+            "Live launch needs at least one validated provider capability pack.",
+        ),
+        AcceptanceCheck(
+            "provider_pack.resend",
+            "failed",
+            "Provider capability pack could not be snapshotted.",
+        ),
+        AcceptanceCheck(
+            "manifest.snapshotted",
+            "failed",
+            "Manifest snapshot could not be recorded.",
+        ),
+        AcceptanceCheck(
+            "plan.generated",
+            "failed",
+            "Setup plan could not be generated.",
+        ),
+        AcceptanceCheck(
+            "rollback_metadata.coverage",
+            "failed",
+            "Rollback metadata is missing manifest providers: cloudflare",
+        ),
+        AcceptanceCheck(
+            "audit.exists",
+            "missing",
+            "Audit log not found: .fusekit/audit.jsonl",
+        ),
     ]
 
     blockers = {blocker["item"]: blocker for blocker in _acceptance_blockers(checks, [])}
@@ -3495,8 +4467,201 @@ def test_acceptance_blockers_use_launcher_actionable_check_guidance() -> None:
         "remote worker cleanup were destroyed"
         in blockers["detonation.workspace_receipt"]["next_action"]
     )
+    assert blockers["detonation.workspace_receipt"]["category"] == "Workspace detonation"
+    assert blockers["provider_packs.validated"]["category"] == "Provider packs"
+    assert "validates provider capability packs" in blockers[
+        "provider_packs.validated"
+    ]["next_action"]
+    assert "route planning, or verification continues" in blockers[
+        "provider_packs.validated"
+    ]["next_action"]
+    assert blockers["provider_pack.resend"]["category"] == "Provider packs"
+    assert "validates provider capability packs" in blockers["provider_pack.resend"][
+        "next_action"
+    ]
+    assert blockers["manifest.snapshotted"]["category"] == "Manifest"
+    assert "snapshots the setup manifest" in blockers["manifest.snapshotted"]["next_action"]
+    assert blockers["plan.generated"]["category"] == "Setup plan"
+    assert "visible Approve setup plan control" in blockers["plan.generated"]["next_action"]
+    assert blockers["rollback_metadata.coverage"]["category"] == "Rollback"
+    assert "provider rollback actions for every provider declared by the manifest" in blockers[
+        "rollback_metadata.coverage"
+    ]["next_action"]
+    assert "before launch" in blockers["rollback_metadata.coverage"]["next_action"]
+    assert blockers["audit.exists"]["category"] == "Audit log"
+    assert "redacted JSONL audit log" in blockers["audit.exists"]["next_action"]
+    assert "without raw secrets" in blockers["audit.exists"]["next_action"]
     assert "I finished this step button" in blockers["gates.resolved"]["next_action"]
     assert "resume button" not in blockers["gates.resolved"]["next_action"]
+
+
+def test_acceptance_rejects_audit_log_callback_url_survivor(tmp_path) -> None:
+    audit_log = tmp_path / "audit.jsonl"
+    audit_log.write_text(
+        json.dumps(
+            {
+                "event": "provider.callback",
+                "detail": "Provider returned https://provider.example/callback",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    checks: list[AcceptanceCheck] = []
+    missing: list[str] = []
+
+    _check_audit_log(audit_log, "live", checks, missing)
+
+    assert checks[-1].id == "audit.exists"
+    assert checks[-1].status == "failed"
+    assert "audit[1].detail contains callback URL" in checks[-1].detail
+    assert "redacted audit log" in missing
+
+
+def test_acceptance_rejects_malformed_audit_log_survivor(tmp_path) -> None:
+    audit_log = tmp_path / "audit.jsonl"
+    audit_log.write_text('{"event":"ok"}\nnot-json\n[]\n', encoding="utf-8")
+    checks: list[AcceptanceCheck] = []
+    missing: list[str] = []
+
+    _check_audit_log(audit_log, "live", checks, missing)
+
+    assert checks[-1].id == "audit.exists"
+    assert checks[-1].status == "failed"
+    assert "audit.jsonl line 2 is malformed JSON" in checks[-1].detail
+    assert "audit.jsonl line 3 is not an object" in checks[-1].detail
+    assert "redacted audit log" in missing
+
+
+def test_acceptance_rejects_empty_audit_log_survivor(tmp_path) -> None:
+    audit_log = tmp_path / "audit.jsonl"
+    audit_log.write_text("\n\n", encoding="utf-8")
+    checks: list[AcceptanceCheck] = []
+    missing: list[str] = []
+
+    _check_audit_log(audit_log, "live", checks, missing)
+
+    assert checks[-1].id == "audit.exists"
+    assert checks[-1].status == "failed"
+    assert "audit.jsonl has no JSON object rows" in checks[-1].detail
+    assert "redacted audit log" in missing
+
+
+def test_acceptance_rejects_loose_audit_log_survivor_rows(tmp_path) -> None:
+    audit_log = tmp_path / "audit.jsonl"
+    audit_log.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "event": " provider.verify ",
+                        "data": "not-object",
+                        "ts": 2.0,
+                        "private_note": "sidecar audit note",
+                    },
+                    sort_keys=True,
+                ),
+                json.dumps({"data": {}, "event": "", "ts": " 2026-06-19T00:00:00Z "}),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    checks: list[AcceptanceCheck] = []
+    missing: list[str] = []
+
+    _check_audit_log(audit_log, "live", checks, missing)
+
+    assert checks[-1].id == "audit.exists"
+    assert checks[-1].status == "failed"
+    assert "audit.jsonl[1] has unexpected fields: private_note" in checks[-1].detail
+    assert "audit.jsonl[1].event must be trimmed" in checks[-1].detail
+    assert "audit.jsonl[1].data must be an object" in checks[-1].detail
+    assert "audit.jsonl[1].ts must be a string" in checks[-1].detail
+    assert "audit.jsonl[2].event is missing" in checks[-1].detail
+    assert "audit.jsonl[2].ts must be trimmed" in checks[-1].detail
+    assert "redacted audit log" in missing
+
+
+def test_acceptance_rejects_credential_text_in_vault_bundle(tmp_path) -> None:
+    vault_path = tmp_path / "fusekit.vault.json"
+    vault_path.write_text(
+        "provider token=ghp_abcdefghijklmnopqrstuvwxyz1234567890\n",
+        encoding="utf-8",
+    )
+    ledger = HarnessLedger.create(tmp_path / "acceptance")
+    checks: list[AcceptanceCheck] = []
+    missing: list[str] = []
+
+    _check_vault(vault_path, "passphrase", "live", checks, missing, ledger)
+
+    assert checks[-1].id == "vault.ciphertext_only"
+    assert checks[-1].status == "failed"
+    assert "plaintext or credential-looking markers" in checks[-1].detail
+    assert "ciphertext-only vault" in missing
+
+
+def test_acceptance_records_failed_vault_unlock_without_crashing(tmp_path) -> None:
+    vault_path = tmp_path / "fusekit.vault.json"
+    vault_path.write_text('{"version":1,"ciphertext":"not-a-valid-bundle"}\n', encoding="utf-8")
+    ledger = HarnessLedger.create(tmp_path / "acceptance")
+    checks: list[AcceptanceCheck] = []
+    missing: list[str] = []
+
+    _check_vault(vault_path, "passphrase", "live", checks, missing, ledger)
+
+    assert [check.id for check in checks] == ["vault.ciphertext_only", "vault.unlock"]
+    assert checks[0].status == "ok"
+    assert checks[1].status == "failed"
+    assert "could not be unlocked" in checks[1].detail
+    assert "vault unlock proof" in missing
+
+
+def test_live_acceptance_rejects_provider_pack_callback_url_artifact(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "fusekit.yaml").write_text(
+        """
+app_name: app
+app_path: .
+required_env:
+  - OPENAI_API_KEY
+webhooks: []
+approvals: []
+services:
+  - provider: openai
+    kind: ai
+    name: ai
+    capabilities: []
+    secrets: []
+    settings: {}
+domains: []
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    pack = synthesize_provider_pack("openai", app)
+    pack = replace(
+        pack,
+        handoff=replace(
+            pack.handoff,
+            token_url="https://provider.example/callback",
+        ),
+    )
+    write_provider_pack(pack, app / ".fusekit" / "provider-packs" / "openai.json")
+
+    report = run_acceptance(app, mode="live")
+
+    pack_check = next(check for check in report.checks if check.id == "provider_pack.openai")
+    aggregate_check = next(
+        check for check in report.checks if check.id == "provider_packs.validated"
+    )
+    assert report.launch_ready is False
+    assert pack_check.status == "failed"
+    assert "provider_pack.openai.handoff.token_url contains callback URL" in pack_check.detail
+    assert aggregate_check.status == "failed"
+    assert "Provider capability packs did not all validate" in aggregate_check.detail
+    assert "validated provider capability packs" in report.missing
 
 
 def test_acceptance_resolved_blocker_names_exact_capture_control() -> None:
@@ -3987,7 +5152,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
     )
     vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
     openai_capture_wake_id = "wake-openai-capture"
-    callback_resume_wake_id = "wake-callback-resume"
+    provider_review_wake_id = "wake-provider-review-resume"
     (remote_fusekit / "audit.jsonl").write_text(
         "\n".join(
             [
@@ -4028,7 +5193,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                     {
                         "event": "control_room.gate_open",
                         "data": {
-                            "gate_id": "provider.callback.review",
+                            "gate_id": "provider.review",
                             "provider": "provider",
                             "protected_action": True,
                             "has_last_opened_url": True,
@@ -4043,11 +5208,11 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                     {
                         "event": "control_room.gate_resume_requested",
                         "data": {
-                            "gate_id": "provider.callback.review",
+                            "gate_id": "provider.review",
                             "provider": "provider",
                             "protected_action": True,
                             "status": "resume_requested",
-                            "wake_event_id": callback_resume_wake_id,
+                            "wake_event_id": provider_review_wake_id,
                         },
                     },
                     sort_keys=True,
@@ -4075,9 +5240,9 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                 ),
                 json.dumps(
                     _gate_wake_event(
-                        callback_resume_wake_id,
+                        provider_review_wake_id,
                         "resume_requested",
-                        "provider.callback.review",
+                        "provider.review",
                         provider="provider",
                         classification="provider-verification",
                     ),
@@ -4090,14 +5255,20 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
     )
     (remote_fusekit / "setup_receipt.json").write_text(
         json.dumps(
-            {
-                "live_url": "https://moonlite.example",
-                "raw_secrets_exposed": 0,
-                "actions": [{"provider": "github", "action": "secret.upsert"}],
-            }
-        ),
-        "utf-8",
-    )
+                {
+                    "live_url": "https://moonlite.example",
+                    "raw_secrets_exposed": 0,
+                    "actions": [
+                        {
+                            "action": "github.secret.upsert",
+                            "status": "ok",
+                            "details": {"provider": "github"},
+                        }
+                    ],
+                }
+            ),
+            "utf-8",
+        )
     (remote_fusekit / "verification_report.json").write_text(
         json.dumps({"checks": _verification_report_checks()}),
         "utf-8",
@@ -4258,27 +5429,21 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                         "next_action": "No action needed.",
                         "resume_hint": "FuseKit verified this gate as passed.",
                         "captured_targets": ["OPENAI_API_KEY"],
-                        "resume_url": "http://localhost:1455/auth/callback?code=secret-code",
-                        "last_opened_url": "https://provider.example/?token=secret-token",
+                        "resume_url": "https://platform.openai.com/api-keys",
+                        "last_opened_url": "https://platform.openai.com/api-keys",
                         **_gate_guidance_fields("openai"),
                     },
                     {
-                        "id": "provider.callback.review",
+                        "id": "provider.review",
                         "provider": "provider",
-                        "reason": "Provider callback reviewed",
+                        "reason": "Provider review completed",
                         "status": "passed",
                         "classification": "provider-verification",
-                        "target": (
-                            "https://provider.example/callback?"
-                            "code=abcdefghijklmnopqrstuvwxyz1234567890abcdef&state=ok"
-                        ),
+                        "target": "provider review confirmation",
                         "attempts": 1,
                         "follow_steps": [
-                            (
-                                "Click Open provider gate in VM so the provider callback "
-                                "opens in the VM browser."
-                            ),
-                            "Review the highlighted callback.",
+                            "Click Open provider gate in VM so the provider review opens.",
+                            "Review the highlighted provider confirmation.",
                         ],
                         "next_action": "No action needed.",
                         "resume_hint": "FuseKit verified this gate as passed.",
@@ -4292,11 +5457,67 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
     )
     _write_runner_readiness(remote_fusekit)
     _write_safe_visual_state(remote_fusekit)
+    (remote_fusekit / "llm_contract.json").write_text(json.dumps(_llm_contract()), "utf-8")
     (remote_fusekit / "workspace_detonation.json").write_text(
         json.dumps(_workspace_detonation_receipt()),
         encoding="utf-8",
     )
+    _write_durable_survivor_stubs(remote_fusekit)
     _write_minimum_run_record(remote_fusekit)
+    run_record_path = remote_fusekit / "run_record.json"
+    run_record = json.loads(run_record_path.read_text(encoding="utf-8"))
+    run_record["provider_gates"] = {
+        "total": 2,
+        "statuses": {"passed": 2},
+        "providers": ["openai", "provider"],
+        "records": [
+            {
+                "id": "provider.openai.authorization",
+                "provider": "openai",
+                "status": "passed",
+                "target": "OPENAI_API_KEY",
+                "captured_targets": ["OPENAI_API_KEY"],
+                "last_wake_event_id": openai_capture_wake_id,
+                "last_wake_event": "clipboard_captured",
+                "last_wake_event_at": 1.0,
+            },
+            {
+                "id": "provider.review",
+                "provider": "provider",
+                "status": "passed",
+                "target": "provider review confirmation",
+                "captured_targets": [],
+                "last_wake_event_id": provider_review_wake_id,
+                "last_wake_event": "resume_requested",
+                "last_wake_event_at": 2.0,
+            },
+        ],
+    }
+    run_record_actions = [
+        {
+            "gate_id": "provider.openai.authorization",
+            "provider": "openai",
+            "classification": "provider-authorization",
+            "action": "capture_vm_clipboard",
+            "visible_control": "Capture OPENAI_API_KEY from VM clipboard",
+            "target": "OPENAI_API_KEY",
+            "guided": True,
+            "created_at": 1.0,
+        },
+        {
+            "gate_id": "provider.review",
+            "provider": "provider",
+            "classification": "provider-verification",
+            "action": "confirm_gate_finished",
+            "visible_control": "I finished this step",
+            "target": "",
+            "guided": True,
+            "created_at": 2.0,
+        },
+    ]
+    run_record["human_actions"] = _human_action_trace_for(run_record_actions)
+    run_record["rehearsal_review"] = _rehearsal_review_for(run_record_actions)
+    run_record_path.write_text(json.dumps(run_record), encoding="utf-8")
 
     report = run_acceptance(
         app,
@@ -4318,13 +5539,20 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
     assert "gates.resolved" in check_ids
     assert "gates.audited" in check_ids
     assert report.missing == ()
+    remote_check = next(check for check in report.checks if check.id == "remote_artifacts.loaded")
+    remote_inventory = json.loads(Path(remote_check.artifact).read_text(encoding="utf-8"))
+    assert remote_inventory["files"]["llm_contract.json"]["present"] is True
+    for _, path, _, _ in DURABLE_STATE_SOURCES:
+        assert remote_inventory["files"][path]["present"] is True
+    assert remote_inventory["files"]["audit.jsonl"]["present"] is True
     gates_check = next(check for check in report.checks if check.id == "gates.resolved")
     gates_artifact = gates_check.artifact
     gates_text = Path(gates_artifact).read_text(encoding="utf-8")
     assert "secret-code" not in gates_text
     assert "secret-token" not in gates_text
     assert "abcdefghijklmnopqrstuvwxyz1234567890abcdef" not in gates_text
-    assert "code=[redacted]" in gates_text
+    assert "platform.openai.com" not in gates_text
+    assert "provider.example/review" not in gates_text
     assert "has_resume_url" in gates_text
     assert "captured_count" in gates_text
     audit_check = next(check for check in report.checks if check.id == "gates.audited")
@@ -4337,8 +5565,30 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
     assert report_json["public_launch_ready"] is True
     assert report_json["recording_proof_ready"] is True
     assert report_json["recording_ready"] is True
+    assert report_json["recording_contract"]["schema_version"] == (
+        "fusekit.recording-contract.v1"
+    )
+    assert report_json["recording_contract"]["recording_ready"] is True
+    assert report_json["recording_contract"]["checks"]["rehearsal_review"] is True
+    assert report_json["recording_contract"]["checks"]["worker_replacement"] is True
+    assert report_json["recording_contract"]["checks"]["model_inference"] is True
+    assert report_json["recording_contract"]["blockers"] == []
+    assert report_json["recording_contract"]["check_count"] >= 14
+    assert "public demo" in report_json["recording_contract"]["statement"]
     assert report_json["blockers"] == []
     assert any(check["id"] == "remote_artifacts.loaded" for check in report_json["checks"])
+    ledger_events = [
+        json.loads(line)
+        for line in (app / ".fusekit" / "acceptance" / "ledger.jsonl").read_text().splitlines()
+    ]
+    finished = next(event for event in ledger_events if event["event"] == "acceptance.finished")
+    assert finished["data"]["recording_proof_ready"] is True
+    assert finished["data"]["recording_ready"] is True
+    assert finished["data"]["recording_contract"] == {
+        "recording_ready": True,
+        "check_count": report_json["recording_contract"]["check_count"],
+        "blockers": [],
+    }
 
 
 def test_live_acceptance_requires_provider_route_recovery_checkpoints(tmp_path) -> None:
@@ -4365,7 +5615,7 @@ def test_live_acceptance_requires_provider_route_recovery_checkpoints(tmp_path) 
         "utf-8",
     )
     (remote_fusekit / "verification_report.json").write_text(
-        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        json.dumps({"checks": [{"provider": "live_app", "check": "health", "status": "passed"}]}),
         "utf-8",
     )
     (remote_fusekit / "rollback_plan.json").write_text(
@@ -4477,7 +5727,7 @@ def test_live_acceptance_requires_provider_playbook(tmp_path) -> None:
         "utf-8",
     )
     (remote_fusekit / "verification_report.json").write_text(
-        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        json.dumps({"checks": [{"provider": "live_app", "check": "health", "status": "passed"}]}),
         "utf-8",
     )
     (remote_fusekit / "rollback_plan.json").write_text(
@@ -4601,6 +5851,41 @@ def test_acceptance_run_record_requires_provider_playbook_public_order(
     assert "provider_playbook.steps must place vercel.env_api before dns.approval" in failures
 
 
+def test_acceptance_run_record_rejects_duplicate_provider_playbook_step_ids(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+
+    record["provider_playbook"] = _provider_playbook()
+    duplicate = dict(record["provider_playbook"]["steps"][2])
+    duplicate["instruction"] = "Conflicting duplicate Resend domain proof row."
+    record["provider_playbook"]["steps"].insert(4, duplicate)
+
+    failures = _run_record_shape_failures(record)
+
+    assert "provider_playbook.steps has duplicate id resend.domain_api" in failures
+
+
+def test_acceptance_run_record_rejects_duplicate_verifier_identities(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+
+    duplicate = dict(record["verifiers"]["checks"][1])
+    record["verifiers"]["checks"].append(duplicate)
+    record["verifiers"]["counts"]["passed"] += 1
+
+    failures = _run_record_shape_failures(record)
+
+    assert "verifiers.checks[5] duplicates verifier identity resend.domain_verified" in failures
+
+
 def test_acceptance_run_record_requires_provider_playbook_route_controls(
     tmp_path,
 ) -> None:
@@ -4614,10 +5899,11 @@ def test_acceptance_run_record_requires_provider_playbook_route_controls(
             "id": "resend.capture_key",
             "provider": "resend",
             "route": "browser_guided",
-            "actor": "FuseKit",
+            "actor": " FuseKit ",
             "human_action_required": False,
             "control": "I finished this step",
             "instruction": "Capture RESEND_API_KEY from VM clipboard.",
+            "private_note": "sidecar route-plan note",
         },
         {
             "id": "resend.domain_api",
@@ -4641,6 +5927,8 @@ def test_acceptance_run_record_requires_provider_playbook_route_controls(
 
     failures = _run_record_shape_failures(record)
 
+    assert "provider_playbook.steps[0].actor must not have surrounding whitespace" in failures
+    assert "provider_playbook.steps[0] has unexpected fields: private_note" in failures
     assert "provider_playbook.steps[0].actor must be You for browser_guided routes" in failures
     assert (
         "provider_playbook.steps[0].human_action_required must be true "
@@ -4695,6 +5983,32 @@ def test_acceptance_run_record_rejects_unsafe_provider_playbook_safety_notes(
     failures = _run_record_shape_failures(record)
 
     assert not any("provider_playbook.safety_notes[3]" in failure for failure in failures)
+
+
+def test_acceptance_run_record_rejects_loose_provider_playbook_safety_notes(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["provider_playbook"] = _provider_playbook()
+    safety_notes = record["provider_playbook"]["safety_notes"]
+    assert isinstance(safety_notes, list)
+    safety_notes[0] = f" {safety_notes[0]} "
+    safety_notes.append(safety_notes[1])
+    safety_notes.append("")
+    safety_notes.append({"text": "sidecar safety note"})
+
+    failures = _run_record_shape_failures(record)
+
+    assert "provider_playbook.safety_notes[0] must not have surrounding whitespace" in failures
+    assert (
+        "provider_playbook.safety_notes[3] duplicates generated safety guidance"
+        in failures
+    )
+    assert "provider_playbook.safety_notes[4] must not be empty" in failures
+    assert "provider_playbook.safety_notes[5] must be text" in failures
 
 
 def test_live_acceptance_requires_central_run_record(tmp_path) -> None:
@@ -4792,6 +6106,43 @@ def test_live_acceptance_requires_run_record_provider_strategies_to_match_artifa
     assert "central run record" in report.missing
 
 
+def test_live_acceptance_rejects_run_record_provider_strategy_reason_drift(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    record_path = remote_fusekit / "run_record.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    selected = record["provider_strategies"]["providers"][0]["strategies"][0]["decision"][
+        "selected"
+    ]
+    selected["reason"] = "stale route rationale"
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    run_record_check = next(check for check in report.checks if check.id == "run_record.complete")
+    assert report.launch_ready is False
+    assert run_record_check.status == "failed"
+    assert (
+        "provider_strategies in Run Record must match provider_strategies.json"
+        in run_record_check.detail
+    )
+    assert "central run record" in report.missing
+
+
 def test_live_acceptance_requires_run_record_provider_playbook_to_match_artifact(
     tmp_path,
 ) -> None:
@@ -4828,6 +6179,672 @@ def test_live_acceptance_requires_run_record_provider_playbook_to_match_artifact
     assert "central run record" in report.missing
 
 
+def test_live_acceptance_rejects_provider_strategies_callback_url_artifact(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    artifact_path = remote_fusekit / "provider_strategies.json"
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    artifact["playbook"]["safety_notes"].append(
+        "Provider callback reviewed at https://provider.example/callback"
+    )
+    artifact_path.write_text(json.dumps(artifact), encoding="utf-8")
+    record_path = remote_fusekit / "run_record.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    record["provider_playbook"]["safety_notes"].append(
+        "Provider callback reviewed at https://provider.example/callback"
+    )
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    strategies_check = next(
+        check for check in report.checks if check.id == "provider_strategies.recorded"
+    )
+    assert report.launch_ready is False
+    assert strategies_check.status == "failed"
+    assert "provider_strategies.playbook.safety_notes[" in strategies_check.detail
+    assert "contains callback URL" in strategies_check.detail
+    assert "provider strategy decisions" in report.missing
+
+
+def test_live_acceptance_requires_llm_contract_artifact(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    (remote_fusekit / "llm_contract.json").unlink()
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    run_record_check = next(check for check in report.checks if check.id == "run_record.complete")
+    assert report.launch_ready is False
+    assert run_record_check.status == "failed"
+    assert "llm_contract.json artifact is missing" in run_record_check.detail
+    assert "central run record" in report.missing
+
+
+def test_live_acceptance_fails_remote_artifact_inventory_when_survivor_missing(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    (remote_fusekit / "llm_contract.json").unlink()
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    remote_check = next(check for check in report.checks if check.id == "remote_artifacts.loaded")
+    assert report.launch_ready is False
+    assert remote_check.status == "failed"
+    assert "missing llm_contract.json" in remote_check.detail
+    remote_inventory = json.loads(Path(remote_check.artifact).read_text(encoding="utf-8"))
+    assert remote_inventory["files"]["llm_contract.json"]["present"] is False
+    blockers = {blocker["item"]: blocker for blocker in report.blockers}
+    assert blockers["remote_artifacts.loaded"]["category"] == "Remote artifacts"
+    assert "complete OCI artifact bundle" in blockers["remote_artifacts.loaded"]["next_action"]
+
+
+def test_live_acceptance_inventory_tracks_all_durable_survivors(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    (remote_fusekit / "run_state.json").unlink()
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    remote_check = next(check for check in report.checks if check.id == "remote_artifacts.loaded")
+    assert report.launch_ready is False
+    assert remote_check.status == "failed"
+    assert "missing run_state.json" in remote_check.detail
+    remote_inventory = json.loads(Path(remote_check.artifact).read_text(encoding="utf-8"))
+    assert sorted(remote_inventory["files"]) == sorted(REMOTE_ALLOWED_SURVIVOR_FILES)
+    assert remote_inventory["files"]["run_state.json"]["present"] is False
+
+
+def test_live_acceptance_fails_remote_artifact_inventory_when_survivor_is_not_file(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    (remote_fusekit / "run_state.json").unlink()
+    (remote_fusekit / "run_state.json").mkdir()
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    remote_check = next(check for check in report.checks if check.id == "remote_artifacts.loaded")
+    assert report.launch_ready is False
+    assert remote_check.status == "failed"
+    assert "non-file survivors run_state.json" in remote_check.detail
+    remote_inventory = json.loads(Path(remote_check.artifact).read_text(encoding="utf-8"))
+    assert remote_inventory["files"]["run_state.json"]["exists"] is True
+    assert remote_inventory["files"]["run_state.json"]["present"] is False
+    assert remote_inventory["files"]["run_state.json"]["bytes"] == 0
+
+
+def test_live_acceptance_fails_remote_artifact_inventory_when_survivor_is_linked(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    host_run_state = tmp_path / "host-run-state.json"
+    host_run_state.write_text('{"host":"state"}', encoding="utf-8")
+    (remote_fusekit / "run_state.json").unlink()
+    try:
+        (remote_fusekit / "run_state.json").symlink_to(host_run_state)
+    except OSError:
+        pytest.skip("symlink creation is unavailable")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    remote_check = next(check for check in report.checks if check.id == "remote_artifacts.loaded")
+    assert report.launch_ready is False
+    assert remote_check.status == "failed"
+    assert "linked survivors run_state.json" in remote_check.detail
+    remote_inventory = json.loads(Path(remote_check.artifact).read_text(encoding="utf-8"))
+    assert remote_inventory["files"]["run_state.json"]["exists"] is True
+    assert remote_inventory["files"]["run_state.json"]["present"] is False
+    assert remote_inventory["files"]["run_state.json"]["linked"] is True
+    assert remote_inventory["files"]["run_state.json"]["bytes"] == 0
+
+
+def test_live_acceptance_fails_remote_artifact_inventory_when_survivor_is_empty(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    (remote_fusekit / "run_state.json").write_text("", encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    remote_check = next(check for check in report.checks if check.id == "remote_artifacts.loaded")
+    assert report.launch_ready is False
+    assert remote_check.status == "failed"
+    assert "empty survivors run_state.json" in remote_check.detail
+    remote_inventory = json.loads(Path(remote_check.artifact).read_text(encoding="utf-8"))
+    assert remote_inventory["files"]["run_state.json"]["exists"] is True
+    assert remote_inventory["files"]["run_state.json"]["present"] is True
+    assert remote_inventory["files"]["run_state.json"]["bytes"] == 0
+    assert remote_inventory["files"]["run_state.json"]["empty"] is True
+
+
+def test_live_acceptance_inventory_allows_empty_gate_events_for_no_gate_runs(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    (remote_fusekit / "run_state.json").unlink()
+    (remote_fusekit / "gate_events.jsonl").write_text("", encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    remote_check = next(check for check in report.checks if check.id == "remote_artifacts.loaded")
+    assert report.launch_ready is False
+    assert remote_check.status == "failed"
+    assert "missing run_state.json" in remote_check.detail
+    assert "empty survivors gate_events.jsonl" not in remote_check.detail
+    remote_inventory = json.loads(Path(remote_check.artifact).read_text(encoding="utf-8"))
+    assert remote_inventory["files"]["gate_events.jsonl"]["present"] is True
+    assert remote_inventory["files"]["gate_events.jsonl"]["empty"] is True
+
+
+def test_live_acceptance_rejects_run_state_callback_url_survivor(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    run_state_path = remote_fusekit / "run_state.json"
+    run_state = json.loads(run_state_path.read_text(encoding="utf-8"))
+    run_state["recovery_note"] = "Provider callback returned https://provider.example/callback"
+    run_state_path.write_text(json.dumps(run_state), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    remote_check = next(check for check in report.checks if check.id == "remote_artifacts.loaded")
+    assert report.launch_ready is False
+    assert remote_check.status == "failed"
+    assert "unsafe public survivor text" in remote_check.detail
+    assert "run_state.recovery_note contains callback URL" in remote_check.detail
+
+
+def test_live_acceptance_rejects_loose_run_state_survivor(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    run_state_path = remote_fusekit / "run_state.json"
+    run_state = json.loads(run_state_path.read_text(encoding="utf-8"))
+    run_state["private_note"] = "sidecar run-state note"
+    run_state["detonation_safe"] = "true"
+    run_state["ready_to_detonate"] = 1
+    run_state["notes"] = [" recovery note "]
+    run_state["missing_for_detonation"] = [" vault_created ", "unknown_field"]
+    run_state_path.write_text(json.dumps(run_state), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    remote_check = next(check for check in report.checks if check.id == "remote_artifacts.loaded")
+    assert report.launch_ready is False
+    assert remote_check.status == "failed"
+    assert "run_state has unexpected fields: private_note" in remote_check.detail
+    assert "run_state.detonation_safe must be boolean" in remote_check.detail
+    assert "run_state.ready_to_detonate must be boolean" in remote_check.detail
+    assert "run_state.notes[0] must be trimmed" in remote_check.detail
+    assert "run_state.missing_for_detonation[0] must be trimmed" in remote_check.detail
+    assert (
+        "run_state.missing_for_detonation has unknown fields: unknown_field"
+        in remote_check.detail
+    )
+
+
+def test_acceptance_run_record_rejects_loose_embedded_run_state(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["state"]["private_note"] = "sidecar state proof"
+    record["state"]["detonation_safe"] = "true"
+    record["state"]["ready_to_detonate"] = 1
+    record["state"]["notes"] = [" recovery note "]
+    record["state"]["missing_for_detonation"] = [" vault_created ", "unknown_field"]
+
+    failures = _run_record_shape_failures(record)
+
+    assert "state has unexpected fields: private_note" in failures
+    assert "state.detonation_safe must be boolean" in failures
+    assert "state.detonation_safe must be true" in failures
+    assert "state.ready_to_detonate must be boolean" in failures
+    assert "state.notes[0] must be trimmed" in failures
+    assert "state.missing_for_detonation[0] must be trimmed" in failures
+    assert "state.missing_for_detonation has unknown fields: unknown_field" in failures
+
+
+def test_acceptance_run_record_rejects_loose_top_level_envelope(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["private_note"] = "sidecar run record proof"
+    record["created_at"] = True
+    record["updated_at"] = -1
+
+    failures = _run_record_shape_failures(record)
+
+    assert "run_record has unexpected fields: private_note" in failures
+    assert "created_at must be a number" in failures
+    assert "updated_at must be a non-negative number" in failures
+
+
+def test_live_acceptance_rejects_checkpoint_callback_url_survivor(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    (remote_fusekit / "checkpoints.json").write_text(
+        json.dumps(
+            [
+                {
+                    "phase": "provider_strategy",
+                    "detail": "Resume after https://provider.example/callback",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    remote_check = next(check for check in report.checks if check.id == "remote_artifacts.loaded")
+    assert report.launch_ready is False
+    assert remote_check.status == "failed"
+    assert "unsafe public survivor text" in remote_check.detail
+    assert "checkpoints[0].detail contains callback URL" in remote_check.detail
+
+
+def test_live_acceptance_rejects_loose_remote_job_and_checkpoint_survivors(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    job_path = remote_fusekit / "job.json"
+    job = json.loads(job_path.read_text(encoding="utf-8"))
+    job["private_note"] = "sidecar job note"
+    job["status"] = " done "
+    job["steps"] = [
+        {
+            "id": " setup.execute ",
+            "label": "Setup worker",
+            "status": "done",
+            "detail": "Ready",
+            "updated_at": 2.0,
+            "private_note": "sidecar step note",
+        }
+    ]
+    job["checkpoints"] = [
+        {
+            "id": "setup.execute",
+            "label": " Setup worker ",
+            "status": "done",
+            "detail": "Ready",
+            "next_action": "No action.",
+            "resume_hint": "Done.",
+            "mascot_state": "verify",
+            "updated_at": 2.0,
+            "private_note": "sidecar checkpoint note",
+        }
+    ]
+    job_path.write_text(json.dumps(job), encoding="utf-8")
+    checkpoints_path = remote_fusekit / "checkpoints.json"
+    checkpoints = json.loads(checkpoints_path.read_text(encoding="utf-8"))
+    checkpoints["private_note"] = "sidecar checkpoint file note"
+    checkpoints["status"] = " done "
+    checkpoints["checkpoints"] = [
+        {
+            "id": "setup.execute",
+            "label": " Setup worker ",
+            "status": "done",
+            "detail": "Ready",
+            "next_action": "No action.",
+            "resume_hint": "Done.",
+            "mascot_state": "verify",
+            "updated_at": 2.0,
+            "private_note": "sidecar checkpoint note",
+        }
+    ]
+    checkpoints_path.write_text(json.dumps(checkpoints), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    remote_check = next(check for check in report.checks if check.id == "remote_artifacts.loaded")
+    assert report.launch_ready is False
+    assert remote_check.status == "failed"
+    assert "job has unexpected fields: private_note" in remote_check.detail
+    assert "job.status must be trimmed" in remote_check.detail
+    assert "job.steps[0] has unexpected fields: private_note" in remote_check.detail
+    assert "job.steps[0].id must be trimmed" in remote_check.detail
+    assert "job.checkpoints[0] has unexpected fields: private_note" in remote_check.detail
+    assert "job.checkpoints[0].label must be trimmed" in remote_check.detail
+    assert "checkpoints has unexpected fields: private_note" in remote_check.detail
+    assert "checkpoints.status must be trimmed" in remote_check.detail
+    assert (
+        "checkpoints.checkpoints[0] has unexpected fields: private_note"
+        in remote_check.detail
+    )
+    assert "checkpoints.checkpoints[0].label must be trimmed" in remote_check.detail
+
+
+def test_live_acceptance_rejects_loose_worker_replacement_drill_survivor(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    drill_path = remote_fusekit / "worker_replacement_drill.json"
+    drill = json.loads(drill_path.read_text(encoding="utf-8"))
+    drill["private_note"] = "sidecar drill note"
+    drill["status"] = " passed "
+    drill["worker_destroyed"] = "true"
+    drill["replacement_runner_profile_ready"] = 1
+    drill["host_machine_state_required"] = True
+    drill["volatile_state_reused"] = "false"
+    drill["restored_from"] = [
+        *WORKER_REPLACEMENT_SOURCE_IDS,
+        f" {WORKER_REPLACEMENT_SOURCE_IDS[0]} ",
+        WORKER_REPLACEMENT_SOURCE_IDS[0],
+        "browser-profile",
+    ]
+    drill["pending_reason"] = " already passed "
+    drill["statement"] = "Worker replacement reused local state."
+    drill_path.write_text(json.dumps(drill), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    remote_check = next(check for check in report.checks if check.id == "remote_artifacts.loaded")
+    assert report.launch_ready is False
+    assert remote_check.status == "failed"
+    assert "worker_replacement_drill has unexpected fields: private_note" in (
+        remote_check.detail
+    )
+    assert "worker_replacement_drill.status must be passed" in remote_check.detail
+    assert "worker_replacement_drill.status must be trimmed" in remote_check.detail
+    assert "worker_replacement_drill.worker_destroyed must be true" in remote_check.detail
+    assert (
+        "worker_replacement_drill.replacement_runner_profile_ready must be true"
+        in remote_check.detail
+    )
+    assert (
+        "worker_replacement_drill.host_machine_state_required must be false"
+        in remote_check.detail
+    )
+    assert "worker_replacement_drill.volatile_state_reused must be false" in (
+        remote_check.detail
+    )
+    assert "worker_replacement_drill.restored_from[9] must be trimmed" in (
+        remote_check.detail
+    )
+    assert (
+        "worker_replacement_drill.restored_from must match durable replacement source ids"
+        in remote_check.detail
+    )
+    assert "worker_replacement_drill.restored_from contains duplicate encrypted_vault" in (
+        remote_check.detail
+    )
+    assert "worker_replacement_drill.pending_reason must be trimmed" in remote_check.detail
+    assert "worker_replacement_drill.statement is incomplete" in remote_check.detail
+
+
+def test_live_acceptance_requires_llm_contract_artifact_to_match_run_record(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    artifact_path = remote_fusekit / "llm_contract.json"
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    artifact["model"] = "stale-model"
+    artifact_path.write_text(json.dumps(artifact), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    run_record_check = next(check for check in report.checks if check.id == "run_record.complete")
+    assert report.launch_ready is False
+    assert run_record_check.status == "failed"
+    assert (
+        "llm_contract in Run Record must match llm_contract.json artifact"
+        in run_record_check.detail
+    )
+    assert "central run record" in report.missing
+
+
+def test_live_acceptance_rejects_unredacted_llm_contract_artifact(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    artifact_path = remote_fusekit / "llm_contract.json"
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    artifact["next_action"] = "capture api_key=sk-abcdefghijklmnopqrstuvwxyz1234567890"
+    artifact_path.write_text(json.dumps(artifact), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    run_record_check = next(check for check in report.checks if check.id == "run_record.complete")
+    assert report.launch_ready is False
+    assert run_record_check.status == "failed"
+    assert "llm_contract.next_action contains credential-looking text" in (
+        run_record_check.detail
+    )
+    assert "central run record" in report.missing
+
+
+def test_live_acceptance_rejects_llm_contract_callback_url_artifact(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    artifact_path = remote_fusekit / "llm_contract.json"
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    artifact["lanes"][0]["description"] = "Continue at https://provider.example/callback"
+    artifact_path.write_text(json.dumps(artifact), encoding="utf-8")
+    record_path = remote_fusekit / "run_record.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    record["llm_contract"]["lanes"][0]["description"] = (
+        "Continue at https://provider.example/callback"
+    )
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    run_record_check = next(check for check in report.checks if check.id == "run_record.complete")
+    assert report.launch_ready is False
+    assert run_record_check.status == "failed"
+    assert "llm_contract.lanes[0].description contains callback URL" in (
+        run_record_check.detail
+    )
+    assert "central run record" in report.missing
+
+
 def test_live_acceptance_requires_run_record_verifiers_to_match_report(
     tmp_path,
 ) -> None:
@@ -4857,6 +6874,142 @@ def test_live_acceptance_requires_run_record_verifiers_to_match_report(
     assert run_record_check.status == "failed"
     assert "verifiers in Run Record must match verification_report.json" in run_record_check.detail
     assert "central run record" in report.missing
+
+
+def test_live_acceptance_requires_embedded_verification_to_match_report(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    record_path = remote_fusekit / "run_record.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    record["verification"]["checks"][0]["status"] = "skipped"
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    run_record_check = next(check for check in report.checks if check.id == "run_record.complete")
+    assert report.launch_ready is False
+    assert run_record_check.status == "failed"
+    assert "verification in Run Record must match verification_report.json" in (
+        run_record_check.detail
+    )
+    assert "central run record" in report.missing
+
+
+def test_live_acceptance_run_record_rejects_non_file_verification_artifact(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    artifact_path = remote_fusekit / "verification_report.json"
+    artifact_path.unlink()
+    artifact_path.mkdir()
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    run_record_check = next(check for check in report.checks if check.id == "run_record.complete")
+    remote_check = next(check for check in report.checks if check.id == "remote_artifacts.loaded")
+    assert report.launch_ready is False
+    assert run_record_check.status == "failed"
+    assert "verification_report.json artifact is not a file" in run_record_check.detail
+    assert remote_check.status == "failed"
+    assert "non-file survivors verification_report.json" in remote_check.detail
+    assert "central run record" in report.missing
+
+
+def test_live_acceptance_rejects_unshaped_embedded_verification(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    record_path = remote_fusekit / "run_record.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    record["verification"]["checks"].append("not-a-check")
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    run_record_check = next(check for check in report.checks if check.id == "run_record.complete")
+    assert report.launch_ready is False
+    assert run_record_check.status == "failed"
+    assert "verification contains an invalid check" in run_record_check.detail
+    assert "central run record" in report.missing
+
+
+def test_live_acceptance_rejects_verification_report_callback_url_artifact(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    report_path = remote_fusekit / "verification_report.json"
+    artifact = json.loads(report_path.read_text(encoding="utf-8"))
+    artifact["checks"][0]["details"] = {
+        "callback": "https://provider.example/callback",
+        "pending_safe": False,
+    }
+    report_path.write_text(json.dumps(artifact), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    verification_check = next(
+        check for check in report.checks if check.id == "verification_report.safe"
+    )
+    assert report.launch_ready is False
+    assert verification_check.status == "failed"
+    assert (
+        "verification_report.checks[0].details.callback contains callback URL"
+        in verification_check.detail
+    )
+    assert "safe verification report" in report.missing
 
 
 def test_live_acceptance_requires_run_record_detonation_to_match_receipt(
@@ -4891,6 +7044,131 @@ def test_live_acceptance_requires_run_record_detonation_to_match_receipt(
         in run_record_check.detail
     )
     assert "central run record" in report.missing
+
+
+def test_live_acceptance_rejects_unredacted_workspace_detonation_artifact(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    artifact_path = remote_fusekit / "workspace_detonation.json"
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    artifact["reason"] = "cleanup api_key=ghp_abcdefghijklmnopqrstuvwxyz1234567890"
+    artifact_path.write_text(json.dumps(artifact), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    run_record_check = next(check for check in report.checks if check.id == "run_record.complete")
+    assert report.launch_ready is False
+    assert run_record_check.status == "failed"
+    assert (
+        "workspace_detonation.reason contains credential-looking text"
+        in run_record_check.detail
+    )
+    assert "central run record" in report.missing
+
+
+def test_live_acceptance_rejects_workspace_detonation_callback_url_artifact(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    artifact_path = remote_fusekit / "workspace_detonation.json"
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    artifact["reason"] = "cleanup after https://provider.example/callback"
+    artifact_path.write_text(json.dumps(artifact), encoding="utf-8")
+    record_path = remote_fusekit / "run_record.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    record["detonation"]["workspace_receipt"]["reason"] = (
+        "cleanup after https://provider.example/callback"
+    )
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    run_record_check = next(check for check in report.checks if check.id == "run_record.complete")
+    assert report.launch_ready is False
+    assert run_record_check.status == "failed"
+    assert "workspace_detonation.reason contains callback URL" in run_record_check.detail
+    assert "central run record" in report.missing
+
+
+def test_live_acceptance_rejects_loose_workspace_detonation_artifact(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    artifact_path = remote_fusekit / "workspace_detonation.json"
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    artifact["private_note"] = "sidecar workspace cleanup note"
+    artifact["status"] = " complete "
+    artifact["resource_summary"]["private_note"] = "sidecar resource note"
+    artifact["resource_summary"]["remote_worker_cleanup"]["private_note"] = (
+        "sidecar cleanup note"
+    )
+    artifact["resource_summary"]["remote_worker_cleanup"]["paths"][0] = (
+        f" {artifact['resource_summary']['remote_worker_cleanup']['paths'][0]} "
+    )
+    artifact_path.write_text(json.dumps(artifact), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    receipt_check = next(
+        check for check in report.checks if check.id == "detonation.workspace_receipt"
+    )
+    assert report.launch_ready is False
+    assert receipt_check.status == "failed"
+    assert "workspace_detonation has unexpected fields: private_note" in receipt_check.detail
+    assert "workspace_detonation.status must be trimmed" in receipt_check.detail
+    assert (
+        "workspace_detonation.resource_summary has unexpected fields: private_note"
+        in receipt_check.detail
+    )
+    assert (
+        "workspace_detonation.remote_worker_cleanup has unexpected fields: private_note"
+        in receipt_check.detail
+    )
+    assert (
+        "workspace_detonation.remote_worker_cleanup.paths[0] must be trimmed"
+        in receipt_check.detail
+    )
+    assert "OCI workspace detonation receipt" in report.missing
 
 
 def test_live_acceptance_requires_run_record_evidence_inventory_to_match_files(
@@ -4928,6 +7206,39 @@ def test_live_acceptance_requires_run_record_evidence_inventory_to_match_files(
     assert "central run record" in report.missing
 
 
+def test_live_acceptance_requires_run_record_artifacts_to_match_files(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    record_path = remote_fusekit / "run_record.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    record["artifacts"] = [
+        {"name": "phantom_artifact", "path": "phantom.json", "exists": True}
+    ]
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    run_record_check = next(check for check in report.checks if check.id == "run_record.complete")
+    assert report.launch_ready is False
+    assert run_record_check.status == "failed"
+    assert "artifacts[0].path must exist in retrieved artifacts" in run_record_check.detail
+    assert "central run record" in report.missing
+
+
 def test_live_acceptance_requires_run_record_wake_events_to_match_gate_events(
     tmp_path,
 ) -> None:
@@ -4956,6 +7267,197 @@ def test_live_acceptance_requires_run_record_wake_events_to_match_gate_events(
     assert report.launch_ready is False
     assert run_record_check.status == "failed"
     assert "wake_events in Run Record must match gate_events.jsonl" in run_record_check.detail
+    assert "central run record" in report.missing
+
+
+def test_live_acceptance_rejects_gates_callback_url_artifact(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    gates_path = remote_fusekit / "gates.json"
+    gates = json.loads(gates_path.read_text(encoding="utf-8"))
+    gates["gates"] = [
+        {
+            "id": "provider.github.authorization",
+            "provider": "github",
+            "reason": "GitHub token captured",
+            "status": "passed",
+            "classification": "provider-authorization",
+            "target": "GITHUB_TOKEN",
+            "follow_steps": [
+                "Click Open provider gate in VM so GitHub opens in the VM browser.",
+                "Capture GITHUB_TOKEN from VM clipboard.",
+            ],
+            "next_action": "No action needed.",
+            "resume_hint": "FuseKit verified this gate as passed.",
+            "captured_targets": ["GITHUB_TOKEN"],
+            "resume_url": "https://provider.example/callback",
+            **_gate_guidance_fields("github"),
+        }
+    ]
+    gates_path.write_text(json.dumps(gates), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    gates_check = next(check for check in report.checks if check.id == "gates.resolved")
+    assert report.launch_ready is False
+    assert gates_check.status == "failed"
+    assert "gates.gates[0].resume_url contains callback URL" in gates_check.detail
+    assert "safe gate state" in report.missing
+
+
+def test_live_acceptance_rejects_loose_gates_artifact_shape(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    gates_path = remote_fusekit / "gates.json"
+    gates = json.loads(gates_path.read_text(encoding="utf-8"))
+    gates["sidecar"] = "loose provider gate proof"
+    gates["gates"] = [
+        {
+            "id": "provider.resend.authorization",
+            "provider": "resend",
+            "reason": "Resend token captured",
+            "status": "passed",
+            "classification": "provider-authorization",
+            "target": "RESEND_API_KEY",
+            "follow_steps": [
+                "Click Open provider gate in VM so Resend opens in the VM browser.",
+                "Capture RESEND_API_KEY from VM clipboard.",
+            ],
+            "next_action": "No action needed.",
+            "resume_hint": "FuseKit verified this gate as passed.",
+            "captured_targets": ["RESEND_API_KEY"],
+            "resume_url": "https://resend.com/api-keys",
+            "sidecar": "loose provider gate proof",
+            **_gate_guidance_fields("resend"),
+        }
+    ]
+    gates_path.write_text(json.dumps(gates), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    gates_check = next(check for check in report.checks if check.id == "gates.resolved")
+    assert report.launch_ready is False
+    assert gates_check.status == "failed"
+    assert "gates has unexpected fields: sidecar" in gates_check.detail
+    assert "gates.gates[0] has unexpected fields: sidecar" in gates_check.detail
+    assert "safe gate state" in report.missing
+
+
+def test_live_acceptance_rejects_gate_events_callback_url_artifact(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    gates_path = remote_fusekit / "gates.json"
+    gates = json.loads(gates_path.read_text(encoding="utf-8"))
+    gates["gates"] = [
+        {
+            "id": "provider.resend.authorization",
+            "provider": "resend",
+            "reason": "Resend token captured",
+            "status": "passed",
+            "classification": "provider-authorization",
+            "target": "RESEND_API_KEY",
+            "follow_steps": [
+                "Click Open provider gate in VM so Resend opens in the VM browser.",
+                "Capture RESEND_API_KEY from VM clipboard.",
+            ],
+            "next_action": "No action needed.",
+            "resume_hint": "FuseKit verified this gate as passed.",
+            "captured_targets": ["RESEND_API_KEY"],
+            "resume_url": "https://resend.com/api-keys",
+            **_gate_guidance_fields("resend"),
+        }
+    ]
+    gates_path.write_text(json.dumps(gates), encoding="utf-8")
+    gate_events_path = remote_fusekit / "gate_events.jsonl"
+    events = _read_gate_events_fixture(remote_fusekit)
+    events[0]["target"] = "https://provider.example/callback"
+    gate_events_path.write_text(
+        "\n".join(json.dumps(event, sort_keys=True) for event in events) + "\n",
+        encoding="utf-8",
+    )
+    record_path = remote_fusekit / "run_record.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    record["wake_events"] = _wake_event_summary_fixture(remote_fusekit)
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    run_record_check = next(check for check in report.checks if check.id == "run_record.complete")
+    audit_check = next(check for check in report.checks if check.id == "gates.audited")
+    assert report.launch_ready is False
+    assert run_record_check.status == "failed"
+    assert "gate_events[1].target contains callback URL" in run_record_check.detail
+    assert audit_check.status == "failed"
+    assert "gate_events[1].target contains callback URL" in audit_check.detail
+    assert "central run record" in report.missing
+    assert "audited human gate interventions" in report.missing
+
+
+def test_live_acceptance_rejects_loose_gate_events_artifact_shape(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    gate_events_path = remote_fusekit / "gate_events.jsonl"
+    events = _read_gate_events_fixture(remote_fusekit)
+    events[0]["sidecar"] = "loose wake proof"
+    gate_events_path.write_text(
+        "\n".join(json.dumps(event, sort_keys=True) for event in events) + "\n",
+        encoding="utf-8",
+    )
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    run_record_check = next(check for check in report.checks if check.id == "run_record.complete")
+    assert report.launch_ready is False
+    assert run_record_check.status == "failed"
+    assert "gate_events[1] has unexpected fields: sidecar" in run_record_check.detail
     assert "central run record" in report.missing
 
 
@@ -4992,6 +7494,42 @@ def test_live_acceptance_requires_run_record_runner_profile_to_match_readiness(
     assert "central run record" in report.missing
 
 
+def test_run_record_public_runner_profile_matches_raw_readiness(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_runner_readiness(fusekit_dir)
+    record = {
+        "runner_profile": _runner_profile_from_readiness_fixture(fusekit_dir),
+    }
+    record["runner_profile"]["profile_contract"]["browser_stack"][
+        "shared_provider_profile"
+    ] = "shared-provider-browser-profile"
+    record["runner_profile"]["provider_browser_profile"] = "shared-provider-browser-profile"
+    record["runner_profile"]["playwright_browsers_path"] = "playwright-browser-cache"
+    for binary in record["runner_profile"]["installed_binaries"].values():
+        if isinstance(binary, dict):
+            binary["path"] = Path(str(binary["path"])).name
+
+    failures = _run_record_runner_profile_consistency_failures(
+        record,
+        fusekit_dir / "runner_readiness.json",
+    )
+
+    assert failures == []
+
+
+def test_acceptance_run_record_rejects_absolute_app_path(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["app_path"] = "/var/lib/fusekit-runner/app"
+
+    failures = _run_record_shape_failures(record)
+
+    assert "app_path must be a public path label" in failures
+
+
 def test_acceptance_run_record_requires_complete_workspace_detonation_receipt(
     tmp_path,
 ) -> None:
@@ -5005,6 +7543,7 @@ def test_acceptance_run_record_requires_complete_workspace_detonation_receipt(
     record["detonation"] = {
         "preflight_safe": False,
         "workspace_detonated": False,
+        "private_note": "sidecar detonation proof",
         "workspace_receipt": {
             "status": "incomplete",
             "deleted": ["subnet"],
@@ -5016,6 +7555,7 @@ def test_acceptance_run_record_requires_complete_workspace_detonation_receipt(
 
     assert "state.detonation_safe must be true" in failures
     assert "state.workspace_detonated must be true" in failures
+    assert "detonation has unexpected fields: private_note" in failures
     assert "detonation.preflight_safe must be true" in failures
     assert "detonation.workspace_detonated must be true" in failures
     assert "detonation.workspace_receipt.status must be complete" in failures
@@ -5077,6 +7617,96 @@ def test_acceptance_run_record_requires_detonation_survivor_set(tmp_path) -> Non
         "detonation.workspace_receipt.resource_summary.survivors must not include "
         "volatile worker state: browser-profile"
     ) in failures
+
+
+def test_acceptance_run_record_rejects_duplicate_detonation_receipt_rows(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    receipt = record["detonation"]["workspace_receipt"]
+    resource_summary = receipt["resource_summary"]
+    cleanup = resource_summary["remote_worker_cleanup"]
+
+    receipt["deleted"].append("instance")
+    resource_summary["network_resources"].append("vcn")
+    resource_summary["survivors"].append("run_record")
+    cleanup["process_patterns"].append(cleanup["process_patterns"][0])
+    cleanup["paths"].append(cleanup["paths"][0])
+
+    failures = _run_record_shape_failures(record)
+
+    assert "detonation.workspace_receipt.deleted contains duplicate instance" in failures
+    assert (
+        "detonation.workspace_receipt.resource_summary.network_resources "
+        "contains duplicate vcn" in failures
+    )
+    assert (
+        "detonation.workspace_receipt.resource_summary.survivors "
+        "contains duplicate run_record" in failures
+    )
+    assert (
+        "detonation.workspace_receipt.remote_worker_cleanup.process_patterns "
+        f"contains duplicate {cleanup['process_patterns'][0]}" in failures
+    )
+    assert (
+        "detonation.workspace_receipt.remote_worker_cleanup.paths "
+        f"contains duplicate {cleanup['paths'][0]}" in failures
+    )
+
+
+def test_acceptance_run_record_rejects_loose_workspace_detonation_receipt(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    receipt = record["detonation"]["workspace_receipt"]
+    resource_summary = receipt["resource_summary"]
+    cleanup = resource_summary["remote_worker_cleanup"]
+
+    receipt["private_note"] = "sidecar workspace cleanup note"
+    receipt["status"] = " complete "
+    receipt["deleted"][0] = f" {receipt['deleted'][0]} "
+    resource_summary["private_note"] = "sidecar resource note"
+    resource_summary["compartment_scope"] = " preserved "
+    resource_summary["network_resources"][0] = f" {resource_summary['network_resources'][0]} "
+    cleanup["private_note"] = "sidecar cleanup note"
+    cleanup["status"] = " detonated "
+    cleanup["paths"][0] = f" {cleanup['paths'][0]} "
+
+    failures = _run_record_shape_failures(record)
+
+    assert "detonation.workspace_receipt has unexpected fields: private_note" in failures
+    assert "detonation.workspace_receipt.status must be trimmed" in failures
+    assert "detonation.workspace_receipt.deleted[0] must be trimmed" in failures
+    assert (
+        "detonation.workspace_receipt.resource_summary has unexpected fields: private_note"
+        in failures
+    )
+    assert (
+        "detonation.workspace_receipt.resource_summary.compartment_scope must be trimmed"
+        in failures
+    )
+    assert (
+        "detonation.workspace_receipt.resource_summary.network_resources[0] "
+        "must be trimmed" in failures
+    )
+    assert (
+        "detonation.workspace_receipt.remote_worker_cleanup has unexpected fields: "
+        "private_note" in failures
+    )
+    assert (
+        "detonation.workspace_receipt.remote_worker_cleanup.status must be trimmed"
+        in failures
+    )
+    assert (
+        "detonation.workspace_receipt.remote_worker_cleanup.paths[0] must be trimmed"
+        in failures
+    )
 
 
 def test_acceptance_run_record_requires_no_trace_detonation_scope(tmp_path) -> None:
@@ -5177,6 +7807,25 @@ def test_acceptance_run_record_requires_runner_profile_for_worker_replacement(
     assert "durable_state.worker_replacement_contract.statement is incomplete" in failures
 
 
+def test_acceptance_run_record_requires_canonical_durable_source_paths(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    run_state_source = next(
+        source
+        for source in record["durable_state"]["sources"]
+        if source.get("id") == "run_state"
+    )
+    run_state_source["path"] = "survivors/run_state.json"
+
+    failures = _run_record_shape_failures(record)
+
+    assert "durable_state.sources[2].path must be run_state.json" in failures
+
+
 def test_acceptance_run_record_requires_worker_replacement_drill(
     tmp_path,
 ) -> None:
@@ -5218,8 +7867,77 @@ def test_acceptance_run_record_requires_worker_replacement_drill(
         in failures
     )
     assert "worker_replacement_drill.volatile_state_reused must be false" in failures
-    assert "worker_replacement_drill.restored_from is incomplete" in failures
+    assert (
+        "worker_replacement_drill.restored_from must match durable replacement source ids"
+        in failures
+    )
     assert "worker_replacement_drill.statement is incomplete" in failures
+
+
+def test_acceptance_run_record_rejects_loose_worker_replacement_drill(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    drill = record["worker_replacement_drill"]
+    drill["private_note"] = "sidecar drill note"
+    drill["schema_version"] = " fusekit.worker-replacement-drill.v1 "
+    drill["status"] = " passed "
+    drill["restored_from"][0] = f" {drill['restored_from'][0]} "
+    drill["pending_reason"] = " already passed "
+    drill["statement"] = f" {drill['statement']} "
+
+    failures = _run_record_shape_failures(record)
+
+    assert "worker_replacement_drill has unexpected fields: private_note" in failures
+    assert (
+        "worker_replacement_drill.schema_version must not have surrounding whitespace"
+        in failures
+    )
+    assert "worker_replacement_drill.schema_version is unsupported" in failures
+    assert (
+        "worker_replacement_drill.status must not have surrounding whitespace"
+        in failures
+    )
+    assert "worker_replacement_drill.status must be passed" in failures
+    assert (
+        "worker_replacement_drill.restored_from[0] must not have surrounding whitespace"
+        in failures
+    )
+    assert (
+        "worker_replacement_drill.restored_from must match durable replacement source ids"
+        in failures
+    )
+    assert (
+        "worker_replacement_drill.pending_reason must not have surrounding whitespace"
+        in failures
+    )
+    assert (
+        "worker_replacement_drill.statement must not have surrounding whitespace"
+        in failures
+    )
+
+
+def test_acceptance_run_record_rejects_extra_worker_replacement_sources(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["worker_replacement_drill"]["restored_from"] = [
+        *WORKER_REPLACEMENT_SOURCE_IDS,
+        "extra_durable_state",
+    ]
+
+    failures = _run_record_shape_failures(record)
+
+    assert (
+        "worker_replacement_drill.restored_from must match durable replacement source ids"
+        in failures
+    )
 
 
 def test_acceptance_run_record_requires_coherent_worker_replacement_contract(
@@ -5252,6 +7970,50 @@ def test_acceptance_run_record_requires_coherent_worker_replacement_contract(
     )
     assert (
         "durable_state.detonation_scope.must_preserve must match detonation_preserves" in failures
+    )
+
+
+def test_acceptance_run_record_rejects_duplicate_durable_state_proof(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    durable_state = record["durable_state"]
+    replacement = durable_state["worker_replacement_contract"]
+
+    durable_state["sources"].append(dict(durable_state["sources"][0]))
+    durable_state["volatile_worker_surfaces"].append("worker")
+    durable_state["detonation_preserves"].append("run_record")
+    durable_state["detonation_scope"]["must_delete"].append("worker")
+    durable_state["detonation_scope"]["must_preserve"].append("run_record")
+    replacement["resume_sources"].append(WORKER_REPLACEMENT_SOURCE_IDS[0])
+    replacement["volatile_surfaces"].append("worker")
+    record["worker_replacement_drill"]["restored_from"].append(WORKER_REPLACEMENT_SOURCE_IDS[0])
+
+    failures = _run_record_shape_failures(record)
+
+    duplicate_source = durable_state["sources"][0]["id"]
+    assert any(
+        failure.endswith(f".id duplicates durable source {duplicate_source}")
+        for failure in failures
+    )
+    assert "durable_state.volatile_worker_surfaces contains duplicate worker" in failures
+    assert "durable_state.detonation_preserves contains duplicate run_record" in failures
+    assert "durable_state.detonation_scope.must_delete contains duplicate worker" in failures
+    assert "durable_state.detonation_scope.must_preserve contains duplicate run_record" in failures
+    assert (
+        "durable_state.worker_replacement_contract.resume_sources contains duplicate "
+        f"{WORKER_REPLACEMENT_SOURCE_IDS[0]}" in failures
+    )
+    assert (
+        "durable_state.worker_replacement_contract.volatile_surfaces contains duplicate worker"
+        in failures
+    )
+    assert (
+        "worker_replacement_drill.restored_from contains duplicate "
+        f"{WORKER_REPLACEMENT_SOURCE_IDS[0]}" in failures
     )
 
 
@@ -5324,9 +8086,276 @@ def test_acceptance_run_record_requires_non_secret_evidence_inventory(tmp_path) 
     assert "evidence.screenshots is missing" in failures
     assert "evidence.visual[0].path is missing" in failures
     assert "evidence.visual[0].exists must be true" in failures
-    assert "evidence.receipts[0].kind is unsupported" in failures
+    assert "evidence.receipts[0].kind must be receipt" in failures
     assert "evidence.counts.screenshots is missing" in failures
     assert "evidence.statement is missing non-secret inventory guidance" in failures
+
+
+def test_acceptance_run_record_rejects_duplicate_evidence_rows(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    duplicate = dict(record["evidence"]["logs"][0])
+    record["evidence"]["logs"].append(duplicate)
+    record["evidence"]["counts"]["logs"] = 2
+    record["evidence"]["counts"]["receipts"] = 99
+
+    failures = _run_record_shape_failures(record)
+
+    assert "evidence.logs[1].path duplicates evidence path audit.jsonl" in failures
+    assert "evidence.counts.receipts must match evidence.receipts" in failures
+
+
+def test_acceptance_run_record_requires_public_artifact_records(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["artifacts"] = [
+        "bad",
+        {"name": "", "path": "", "exists": "yes"},
+        {
+            "name": "debug token=leaked-value",
+            "path": "/var/lib/fusekit-runner/app/.fusekit/debug.log?token=leaked-value",
+            "exists": True,
+        },
+        {"name": "outside", "path": "../worker.log", "exists": True},
+        {"name": "audit_log", "path": "audit.jsonl", "exists": True},
+        {"name": "audit_log", "path": "gate_events.jsonl", "exists": True},
+        {"name": "gate_events", "path": "audit.jsonl", "exists": True},
+    ]
+
+    failures = _run_record_shape_failures(record)
+
+    assert "artifacts[0] is not an object" in failures
+    assert "artifacts[1].name is missing" in failures
+    assert "artifacts[1].path is missing" in failures
+    assert "artifacts[1].exists must be boolean" in failures
+    assert "artifacts[2].name contains credential-looking text" in failures
+    assert "artifacts[2].path must be a public path label" in failures
+    assert "artifacts[2].path contains credential query text" in failures
+    assert "artifacts[2].path contains credential-looking text" in failures
+    assert "artifacts[3].path must stay inside the artifact bundle" in failures
+    assert "artifacts[5].name duplicates artifact audit_log" in failures
+    assert "artifacts[6].path duplicates artifact path audit.jsonl" in failures
+
+
+def test_acceptance_run_record_rejects_loose_artifact_and_evidence_rows(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+
+    artifact = record["artifacts"][0]
+    artifact["private_note"] = "sidecar artifact note"
+    artifact["name"] = " run_record "
+    artifact["path"] = " run_record.json "
+    artifact["exists"] = 1
+
+    evidence = record["evidence"]
+    evidence["private_note"] = "sidecar evidence note"
+    evidence["schema_version"] = " fusekit.evidence-inventory.v1 "
+    evidence["statement"] = f" {evidence['statement']} "
+    evidence["counts"]["private_note"] = 1
+    evidence["counts"]["logs"] = True
+    log = evidence["logs"][0]
+    log["private_note"] = "sidecar log note"
+    log["path"] = " audit.jsonl "
+    log["kind"] = " log "
+    log["source"] = " known-proof "
+
+    failures = _run_record_shape_failures(record)
+
+    assert "artifacts[0] has unexpected fields: private_note" in failures
+    assert "artifacts[0].name must not have surrounding whitespace" in failures
+    assert "artifacts[0].path must not have surrounding whitespace" in failures
+    assert "artifacts[0].exists must be boolean" in failures
+    assert "evidence has unexpected fields: private_note" in failures
+    assert "evidence.schema_version must not have surrounding whitespace" in failures
+    assert "evidence.schema_version is unsupported" in failures
+    assert "evidence.statement must not have surrounding whitespace" in failures
+    assert "evidence.counts has unexpected fields: private_note" in failures
+    assert "evidence.counts.logs is missing" in failures
+    assert "evidence.logs[0] has unexpected fields: private_note" in failures
+    assert "evidence.logs[0].path must not have surrounding whitespace" in failures
+    assert "evidence.logs[0].kind must not have surrounding whitespace" in failures
+    assert "evidence.logs[0].source must not have surrounding whitespace" in failures
+
+
+def test_acceptance_run_record_rejects_boolean_numeric_proof_counts(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["provider_gates"]["total"] = True
+    record["wake_events"]["total"] = True
+    record["wake_events"]["event_counts"]["clipboard_captured"] = True
+    record["evidence"]["counts"]["logs"] = True
+    record["human_actions"]["total"] = False
+    record["rehearsal_review"]["side_channel_count"] = False
+    record["automation_boundary"]["counts"]["blocked"] = False
+    record["verifiers"]["counts"]["pending"] = False
+    record["audit_trail"]["entry_count"] = True
+    record["audit_trail"]["counts"]["credential_capture"] = True
+
+    failures = _run_record_shape_failures(record)
+
+    assert "provider_gates.total is missing" in failures
+    assert "wake_events.total is missing" in failures
+    assert "wake_events.total must match wake_events.events" in failures
+    assert "wake_events.event_counts.clipboard_captured must match events" in failures
+    assert "evidence.counts.logs is missing" in failures
+    assert "human_actions.total must match human_actions.actions" in failures
+    assert "rehearsal_review.side_channel_count must be zero" in failures
+    assert "automation_boundary.counts.blocked must be 0" in failures
+    assert "verifiers.counts.pending is missing" in failures
+    assert "verifiers.counts.pending must be 0" in failures
+    assert "audit_trail.entry_count must match entries" in failures
+    assert "audit_trail.counts.credential_capture must match entries" in failures
+
+
+def test_acceptance_run_record_rejects_float_numeric_proof_counts(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["provider_gates"]["total"] = 0.1
+    record["wake_events"]["total"] = 2.1
+    record["wake_events"]["event_counts"]["clipboard_captured"] = 1.1
+    record["model_inference"]["lane_count"] = 2.1
+    record["human_actions"]["total"] = 3.1
+    record["rehearsal_review"]["side_channel_count"] = 0.1
+    record["automation_boundary"]["counts"]["blocked"] = 0.1
+    record["automation_boundary"]["counts"]["fusekit_owned"] = 3.1
+    record["verifiers"]["counts"]["pending"] = 0.1
+    record["audit_trail"]["entry_count"] = 5.1
+    record["audit_trail"]["counts"]["credential_capture"] = 1.1
+
+    failures = _run_record_shape_failures(record)
+
+    assert "provider_gates.total is missing" in failures
+    assert "wake_events.total is missing" in failures
+    assert "wake_events.total must match wake_events.events" in failures
+    assert "wake_events.event_counts.clipboard_captured must match events" in failures
+    assert "model_inference.lane_count must match llm_contract.lanes" in failures
+    assert "human_actions.total must match human_actions.actions" in failures
+    assert "rehearsal_review.side_channel_count must be zero" in failures
+    assert "automation_boundary.counts.blocked must be 0" in failures
+    assert "automation_boundary.counts.fusekit_owned must match routes" in failures
+    assert "verifiers.counts.pending is missing" in failures
+    assert "verifiers.counts.pending must be 0" in failures
+    assert "audit_trail.entry_count must match entries" in failures
+    assert "audit_trail.counts.credential_capture must match entries" in failures
+
+
+def test_acceptance_run_record_rejects_duplicate_wake_event_proof(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    duplicate_event = dict(record["wake_events"]["events"][0])
+    record["wake_events"]["events"].append(duplicate_event)
+    record["wake_events"]["total"] = 3
+    record["wake_events"]["event_counts"] = {
+        "clipboard_captured": 2,
+        "resume_requested": 1,
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert "wake_events.events[2].id duplicates wake event wake-resend-capture" in failures
+    assert "wake_events.events[2] duplicates wake event proof" in failures
+
+
+def test_acceptance_run_record_rejects_loose_wake_event_proof(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["wake_events"]["sidecar"] = "loose wake proof"
+    record["wake_events"]["events"][0]["sidecar"] = "ignored by signature"
+    record["wake_events"]["events"][0]["event"] = " clipboard_captured "
+
+    failures = _run_record_shape_failures(record)
+
+    assert "wake_events has unexpected fields: sidecar" in failures
+    assert "wake_events.events[0] has unexpected fields: sidecar" in failures
+    assert "wake_events.events[0].event must be trimmed" in failures
+
+
+def test_acceptance_run_record_rejects_duplicate_provider_gate_records(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    gate = {
+        "id": "provider.resend.authorization",
+        "provider": "resend",
+        "status": "waiting",
+    }
+    record["provider_gates"] = {
+        "total": 2,
+        "statuses": {"waiting": 1},
+        "providers": [],
+        "records": [dict(gate), dict(gate)],
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert (
+        "provider_gates.records[1].id duplicates provider gate "
+        "provider.resend.authorization"
+    ) in failures
+    assert "provider_gates.statuses.waiting must match records" in failures
+    assert "provider_gates.providers must match records" in failures
+
+
+def test_acceptance_run_record_rejects_loose_provider_gate_shape(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["provider_gates"] = {
+        "total": 1,
+        "statuses": {" captured ": 1},
+        "providers": [" github "],
+        "private_note": "sidecar provider gate summary",
+        "records": [
+            {
+                "id": " provider.github.authorization",
+                "provider": "github",
+                "status": "captured",
+                "target": " GITHUB_TOKEN ",
+                "captured_targets": [" GITHUB_TOKEN "],
+                "follow_steps": ["Open provider gate in VM "],
+                "private_note": "sidecar provider gate",
+                "attempts": True,
+                "updated_at": -1,
+            }
+        ],
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert "provider_gates has unexpected fields: private_note" in failures
+    assert (
+        "provider_gates.records[0] has unexpected fields: private_note"
+        in failures
+    )
+    assert "provider_gates.records[0].id must be trimmed" in failures
+    assert "provider_gates.records[0].target must be trimmed" in failures
+    assert "provider_gates.records[0].captured_targets[0] must be trimmed" in failures
+    assert "provider_gates.records[0].follow_steps[0] must be trimmed" in failures
+    assert (
+        "provider_gates.records[0].attempts must be a non-negative literal integer"
+        in failures
+    )
+    assert "provider_gates.records[0].updated_at must be a non-negative number" in failures
+    assert "provider_gates.statuses. captured  must match records" in failures
+    assert "provider_gates.providers must match records" in failures
 
 
 def test_acceptance_run_record_requires_vault_count_to_match_records(tmp_path) -> None:
@@ -5351,6 +8380,62 @@ def test_acceptance_run_record_requires_vault_count_to_match_records(tmp_path) -
     assert "vault.record_count must match vault.records" in failures
 
 
+def test_acceptance_run_record_rejects_loose_vault_summary_shape(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["vault"] = {
+        "record_count": "1",
+        "note": "sidecar vault proof",
+        "records": [
+            {
+                "id": " provider.resend.token",
+                "kind": "provider_token",
+                "provider": "resend",
+                "label": "Resend API key ",
+                "note": "sidecar vault proof",
+            },
+            {
+                "id": "provider.resend.webhook",
+                "kind": "provider_token",
+                "provider": "resend",
+                "label": "token=ghp_abcdefghijklmnopqrstuvwxyz1234567890",
+            },
+        ],
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert "vault.record_count must be a literal integer" in failures
+    assert "vault has unexpected fields: note" in failures
+    assert "vault.records[0] has unexpected fields: note" in failures
+    assert "vault.records[0].id must be trimmed" in failures
+    assert "vault.records[0].label must be trimmed" in failures
+    assert "vault.records[1].label contains credential-looking text" in failures
+
+
+def test_acceptance_run_record_rejects_duplicate_vault_records(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    vault_record = {
+        "id": "provider.resend.token",
+        "kind": "provider_token",
+        "provider": "resend",
+        "label": "Resend API key",
+    }
+    record["vault"] = {
+        "record_count": 2,
+        "records": [dict(vault_record), dict(vault_record)],
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert "vault.records[1].id duplicates vault record provider.resend.token" in failures
+
+
 def test_acceptance_run_record_requires_shaped_vault_metadata(tmp_path) -> None:
     fusekit_dir = tmp_path / ".fusekit"
     fusekit_dir.mkdir()
@@ -5371,11 +8456,48 @@ def test_acceptance_run_record_requires_shaped_vault_metadata(tmp_path) -> None:
 
     failures = _run_record_shape_failures(record)
 
+    assert "vault.records[0] has unexpected fields: value" in failures
     assert "vault.records[0].id is missing" in failures
     assert "vault.records[0].kind is missing" in failures
     assert "vault.records[0].provider is missing" in failures
     assert "vault.records[0].label is missing" in failures
     assert "vault.records[0] exposes a raw value" in failures
+
+
+def test_acceptance_run_record_rejects_vault_secret_metadata_fields(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["vault"] = {
+        "record_count": 1,
+        "records": [
+            {
+                "id": "provider.resend.token",
+                "kind": "provider_token",
+                "provider": "resend",
+                "label": "Resend API key",
+                "private_key": "not-secret-looking",
+                "metadata": {
+                    "password": "plain-word",
+                    "nested": [{"raw_value": "short"}],
+                },
+            }
+        ],
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert (
+        "vault.records[0] has unexpected fields: metadata, private_key"
+        in failures
+    )
+    assert "vault.records[0].private_key exposes raw secret metadata" in failures
+    assert "vault.records[0].metadata.password exposes raw secret metadata" in failures
+    assert (
+        "vault.records[0].metadata.nested[0].raw_value exposes raw secret metadata"
+        in failures
+    )
 
 
 def test_acceptance_run_record_requires_guided_human_action_trace(tmp_path) -> None:
@@ -5390,7 +8512,7 @@ def test_acceptance_run_record_requires_guided_human_action_trace(tmp_path) -> N
         "counts": {"capture_vm_clipboard": 1},
         "actions": [
             {
-                "gate_id": "provider.resend.authorization",
+                "gate_id": " provider.resend.authorization ",
                 "provider": "resend",
                 "classification": "authorization",
                 "action": "capture_vm_clipboard",
@@ -5398,6 +8520,7 @@ def test_acceptance_run_record_requires_guided_human_action_trace(tmp_path) -> N
                 "target": "RESEND_API_KEY",
                 "guided": True,
                 "created_at": 1.0,
+                "private_note": "sidecar human-action note",
             },
             {
                 "gate_id": "",
@@ -5422,6 +8545,8 @@ def test_acceptance_run_record_requires_guided_human_action_trace(tmp_path) -> N
     failures = _run_record_shape_failures(record)
 
     assert "human_actions.total must match human_actions.actions" not in failures
+    assert "human_actions.actions[0].gate_id must not have surrounding whitespace" in failures
+    assert "human_actions.actions[0] has unexpected fields: private_note" in failures
     assert "human_actions.actions[0].visible_control must match the captured target" in failures
     assert "human_actions.actions[1].gate_id is missing" in failures
     assert "human_actions.actions[1].visible_control is missing" in failures
@@ -5490,6 +8615,44 @@ def test_acceptance_run_record_requires_exact_human_action_controls(tmp_path) ->
         in failures
     )
     assert "human_actions.counts.open_provider_gate must match actions" not in failures
+
+
+def test_acceptance_run_record_rejects_duplicate_human_action_proof(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+
+    action = {
+        "gate_id": "provider.resend.authorization",
+        "provider": "resend",
+        "classification": "authorization",
+        "action": "capture_vm_clipboard",
+        "visible_control": "Capture RESEND_API_KEY from VM clipboard",
+        "target": "RESEND_API_KEY",
+        "guided": True,
+        "created_at": 1.0,
+    }
+    record["human_actions"] = {
+        "schema_version": "fusekit.human-action-trace.v1",
+        "total": 2,
+        "counts": {
+            "open_provider_gate": 0,
+            "capture_vm_clipboard": 2,
+            "confirm_gate_finished": 0,
+        },
+        "actions": [dict(action), dict(action)],
+        "unguided": [],
+        "statement": (
+            "Every recorded human action should map to one visible control-room gate "
+            "and its current follow-me instructions; the trace contains no raw provider "
+            "URLs, clipboard values, passwords, tokens, or screenshots."
+        ),
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert "human_actions.actions[1] duplicates human action proof" in failures
 
 
 def test_acceptance_run_record_requires_human_actions_to_match_provider_gates(
@@ -5593,6 +8756,17 @@ def test_acceptance_run_record_requires_rehearsal_review_to_match_human_actions(
         "unguided_count": 0,
         "side_channel_count": 1,
         "requires_user_thinking": True,
+        "reviewed_actions": [
+            {
+                "gate_id": "provider.other.authorization",
+                "action": "capture_vm_clipboard",
+                "visible_control": " Capture OTHER_TOKEN from VM clipboard ",
+                "target": "OTHER_TOKEN",
+                "matched": False,
+                "proof_source": "gates.json",
+                "private_note": "sidecar review note",
+            }
+        ],
         "statement": "human figured it out",
     }
 
@@ -5610,7 +8784,94 @@ def test_acceptance_run_record_requires_rehearsal_review_to_match_human_actions(
     )
     assert "rehearsal_review.side_channel_count must be zero" in failures
     assert "rehearsal_review.requires_user_thinking must be false" in failures
+    assert (
+        "rehearsal_review.reviewed_actions[0].gate_id must match human_actions.actions"
+        in failures
+    )
+    assert (
+        "rehearsal_review.reviewed_actions[0].visible_control must match human_actions.actions"
+        in failures
+    )
+    assert (
+        "rehearsal_review.reviewed_actions[0].visible_control must not have "
+        "surrounding whitespace"
+        in failures
+    )
+    assert (
+        "rehearsal_review.reviewed_actions[0].target must match human_actions.actions"
+        in failures
+    )
+    assert (
+        "rehearsal_review.reviewed_actions[0] has unexpected fields: private_note"
+        in failures
+    )
+    assert "rehearsal_review.reviewed_actions[0].matched must be true" in failures
+    assert (
+        "rehearsal_review.reviewed_actions[0].proof_source must be "
+        "gates.json + gate_events.jsonl"
+    ) in failures
     assert "rehearsal_review.statement is missing rehearsal guidance" in failures
+
+
+def test_acceptance_run_record_requires_human_actions_when_gates_exist(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["provider_gates"] = {
+        "total": 1,
+        "statuses": {"captured": 1},
+        "providers": ["resend"],
+        "records": [
+            {
+                "id": "provider.resend.authorization",
+                "provider": "resend",
+                "status": "captured",
+                "target": "RESEND_API_KEY",
+                "captured_targets": ["RESEND_API_KEY"],
+            }
+        ],
+    }
+    record["human_actions"] = {
+        "schema_version": "fusekit.human-action-trace.v1",
+        "total": 0,
+        "counts": {},
+        "actions": [],
+        "unguided": [],
+        "statement": (
+            "Every recorded human action maps to one visible control-room gate "
+            "with no raw provider secret details."
+        ),
+    }
+    record["rehearsal_review"] = {
+        "schema_version": "fusekit.rehearsal-review.v1",
+        "status": "ready",
+        "action_count": 0,
+        "compared_action_count": 0,
+        "matched_control_count": 0,
+        "unguided_count": 0,
+        "side_channel_count": 0,
+        "requires_user_thinking": False,
+        "reviewed_actions": [],
+        "statement": (
+            "Every recorded human action is compared against the visible "
+            "control-room instructions before public recording readiness."
+        ),
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert (
+        "human_actions.actions are required when provider gates or wake events exist"
+        in failures
+    )
+    assert (
+        "rehearsal_review.reviewed_actions must include guided human actions "
+        "when provider gates or wake events exist"
+        in failures
+    )
 
 
 def test_acceptance_run_record_requires_automation_boundary(tmp_path) -> None:
@@ -5693,6 +8954,107 @@ def test_acceptance_run_record_requires_post_gate_routes_to_match_boundary(
     ) in failures
 
 
+def test_acceptance_run_record_rejects_duplicate_automation_boundary_routes(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["automation_boundary"] = _automation_boundary()
+    boundary = record["automation_boundary"]
+
+    boundary["vnc_allowed_for"].append("login")
+    boundary["routes"].append(dict(boundary["routes"][0]))
+    boundary["counts"]["fusekit_owned"] = 2
+    boundary["post_gate_automation"]["api_or_cli_routes"].append("resend:resend-domain")
+    boundary["post_gate_automation"]["human_gate_routes"].append("resend:resend-api-key")
+
+    failures = _run_record_shape_failures(record)
+
+    assert "automation_boundary.vnc_allowed_for contains duplicate login" in failures
+    assert (
+        "automation_boundary.routes[2] duplicates automation route resend:resend-domain"
+        in failures
+    )
+    assert (
+        "automation_boundary.post_gate_automation.api_or_cli_routes "
+        "contains duplicate resend:resend-domain" in failures
+    )
+    assert (
+        "automation_boundary.post_gate_automation.human_gate_routes "
+        "contains duplicate resend:resend-api-key" in failures
+    )
+
+
+def test_acceptance_run_record_rejects_loose_automation_boundary_rows(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["automation_boundary"] = _automation_boundary()
+    boundary = record["automation_boundary"]
+
+    boundary["private_note"] = "sidecar boundary note"
+    boundary["status"] = " ready "
+    boundary["statement"] = f" {boundary['statement']} "
+    boundary["vnc_allowed_for"][0] = " login "
+    boundary["routes"][0]["private_note"] = "sidecar route note"
+    boundary["routes"][0]["provider"] = " resend "
+    boundary["routes"][0]["route"] = " api "
+    boundary["routes"][0]["owner"] = " fusekit "
+    boundary["counts"]["private_note"] = 1
+    boundary["counts"]["blocked"] = False
+    boundary["post_gate_automation"]["private_note"] = "sidecar post-gate note"
+    boundary["post_gate_automation"]["api_or_cli_routes"][0] = " resend:resend-domain "
+    boundary["post_gate_automation"]["human_gate_routes"][0] = (
+        " resend:resend-api-key "
+    )
+
+    failures = _run_record_shape_failures(record)
+
+    assert "automation_boundary has unexpected fields: private_note" in failures
+    assert "automation_boundary.status must not have surrounding whitespace" in failures
+    assert "automation_boundary.status must be ready" in failures
+    assert "automation_boundary.statement must not have surrounding whitespace" in failures
+    assert (
+        "automation_boundary.vnc_allowed_for[0] must not have surrounding whitespace"
+        in failures
+    )
+    assert "automation_boundary.routes[0] has unexpected fields: private_note" in failures
+    assert (
+        "automation_boundary.routes[0].provider must not have surrounding whitespace"
+        in failures
+    )
+    assert (
+        "automation_boundary.routes[0].route must not have surrounding whitespace"
+        in failures
+    )
+    assert (
+        "automation_boundary.routes[0].owner must not have surrounding whitespace"
+        in failures
+    )
+    assert "automation_boundary.counts has unexpected fields: private_note" in failures
+    assert "automation_boundary.counts.blocked must be an integer" in failures
+    assert "automation_boundary.counts.blocked must be 0" in failures
+    assert (
+        "automation_boundary.post_gate_automation has unexpected fields: private_note"
+        in failures
+    )
+    assert (
+        "automation_boundary.post_gate_automation.api_or_cli_routes[0] "
+        "must not have surrounding whitespace"
+        in failures
+    )
+    assert (
+        "automation_boundary.post_gate_automation.human_gate_routes[0] "
+        "must not have surrounding whitespace"
+        in failures
+    )
+
+
 def test_acceptance_run_record_requires_provider_strategy_summary(tmp_path) -> None:
     fusekit_dir = tmp_path / ".fusekit"
     fusekit_dir.mkdir()
@@ -5723,7 +9085,31 @@ def test_acceptance_run_record_requires_provider_strategy_summary(tmp_path) -> N
         in failures
     )
     assert (
+        "provider_strategies.providers[0].strategies[0].decision.selected.deterministic "
+        "must be boolean"
+        in failures
+    )
+    assert (
+        "provider_strategies.providers[0].strategies[0].decision.selected.implemented "
+        "must be boolean"
+        in failures
+    )
+    assert (
+        "provider_strategies.providers[0].strategies[0].decision.selected.reason is missing"
+        in failures
+    )
+    assert (
         "provider_strategies.providers[0].strategies[0].decision.candidates is missing" in failures
+    )
+    assert (
+        "provider_strategies.providers[0].strategies[0].selected.evidence.api_owns "
+        "must be domain"
+        in failures
+    )
+    assert (
+        "provider_strategies.providers[0].strategies[0].selected.evidence.downstream_order "
+        "must be before_dns_apply"
+        in failures
     )
 
     record["provider_strategies"] = {"providers": []}
@@ -5901,6 +9287,30 @@ def test_acceptance_run_record_requires_verifier_counts_to_match_checks(tmp_path
     assert "verifiers.counts.pending_safe must match verifiers.checks: 1" in failures
 
 
+def test_acceptance_run_record_rejects_loose_verifier_summary_rows(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    checks = record["verifiers"]["checks"]
+    assert isinstance(checks, list)
+    first = checks[0]
+    assert isinstance(first, dict)
+    first["provider"] = " github "
+    first["check"] = " repo_access "
+    first["status"] = " passed "
+    first["pending_safe"] = "false"
+    first["private_note"] = "sidecar verifier note"
+
+    failures = _run_record_shape_failures(record)
+
+    assert "verifiers.checks[0].provider must not have surrounding whitespace" in failures
+    assert "verifiers.checks[0].check must not have surrounding whitespace" in failures
+    assert "verifiers.checks[0].status must not have surrounding whitespace" in failures
+    assert "verifiers.checks[0].pending_safe must be boolean" in failures
+    assert "verifiers.checks[0] has unexpected fields: private_note" in failures
+
+
 def test_acceptance_run_record_requires_verifiers_to_cover_playbook_providers(
     tmp_path,
 ) -> None:
@@ -5956,6 +9366,31 @@ def test_acceptance_run_record_requires_verifiers_to_cover_playbook_providers(
     )
 
 
+def test_acceptance_run_record_does_not_count_skipped_verifier_coverage(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    vercel = next(
+        check
+        for check in record["verifiers"]["checks"]
+        if check["provider"] == "vercel"
+    )
+    vercel["status"] = "skipped"
+    record["verifiers"]["counts"]["passed"] = 3
+    record["verifiers"]["counts"]["skipped"] = 1
+
+    failures = _run_record_shape_failures(record)
+
+    assert "verifiers.checks missing public demo provider coverage: Vercel" in failures
+    assert (
+        "verifiers.statement must explain skipped verifier rows do not count as proof"
+        in failures
+    )
+
+
 def test_acceptance_run_record_requires_redacted_audit_trail(tmp_path) -> None:
     fusekit_dir = tmp_path / ".fusekit"
     fusekit_dir.mkdir()
@@ -5992,54 +9427,62 @@ def test_acceptance_run_record_requires_redacted_audit_trail(tmp_path) -> None:
         ],
     }
     record["detonation"]["workspace_detonated"] = True
-    record["verification"] = {"checks": [{"provider": "resend", "status": "passed"}]}
+    record["verification"] = {
+        "checks": [{"provider": "resend", "check": "domain_verified", "status": "passed"}]
+    }
     record["audit_trail"] = {
         "schema_version": "fusekit.audit-trail.v1",
         "entry_count": 3,
-        "counts": {"credential_capture": 1, "provider_action": 2},
-        "entries": [
-            {
-                "category": "credential_capture",
-                "action": "control_room.capture_vm_clipboard",
-                "provider": "resend",
-                "target": "RESEND_API_KEY",
-                "status": "captured",
-                "source": "gate_events.jsonl",
-                "summary": "token=leaked-value",
-            },
-            {
-                "category": "provider_action",
-                "action": "resend.domain",
-                "provider": "resend",
-                "status": "passed",
-                "source": "setup_receipt.json",
-                "summary": "FuseKit recorded provider action resend.domain.",
-            },
-            {
-                "category": "provider_action",
-                "action": "provider.retry",
-                "provider": "",
-                "status": "recorded",
-                "source": "audit.jsonl",
-                "summary": (
-                    "FuseKit recorded audit event provider.retry with secret values redacted."
-                ),
-            },
-            {
-                "category": "detonation",
-                "action": "oci.workspace.resource_delete_failed",
-                "provider": "oci",
-                "resource": "ghp_abcdefghijklmnopqrstuvwxyz1234567890",
-                "status": "failed",
-                "source": "workspace_detonation.json",
-                "summary": "FuseKit recorded a cleanup failure.",
-            },
-        ],
-        "statement": "Audit happened.",
-    }
+            "counts": {"credential_capture": 1, "provider_action": 2},
+            "entries": [
+                {
+                    "category": "credential_capture",
+                    "action": "control_room.capture_vm_clipboard",
+                    "provider": "resend",
+                    "target": "RESEND_API_KEY",
+                    "status": " captured ",
+                    "source": "gate_events.jsonl",
+                    "summary": " token=leaked-value ",
+                    "private_note": "sidecar audit note",
+                },
+                {
+                    "category": "provider_action",
+                    "action": " resend.domain ",
+                    "provider": " resend ",
+                    "status": "passed",
+                    "source": "setup_receipt.json",
+                    "summary": "FuseKit recorded provider action resend.domain.",
+                },
+                {
+                    "category": "provider_action",
+                    "action": "provider.retry",
+                    "provider": "",
+                    "status": "recorded",
+                    "source": "audit.jsonl",
+                    "summary": (
+                        "FuseKit recorded audit event provider.retry with secret values redacted."
+                    ),
+                },
+                {
+                    "category": "detonation",
+                    "action": "oci.workspace.resource_delete_failed",
+                    "provider": "oci",
+                    "resource": "ghp_abcdefghijklmnopqrstuvwxyz1234567890",
+                    "status": "failed",
+                    "source": "workspace_detonation.json",
+                    "summary": "FuseKit recorded a cleanup failure.",
+                },
+            ],
+            "statement": "Audit happened.",
+        }
 
     failures = _run_record_shape_failures(record)
 
+    assert "audit_trail.entries[0] has unexpected fields: private_note" in failures
+    assert "audit_trail.entries[1].action must not have surrounding whitespace" in failures
+    assert "audit_trail.entries[0].status must not have surrounding whitespace" in failures
+    assert "audit_trail.entries[0].summary must not have surrounding whitespace" in failures
+    assert "audit_trail.entries[1].provider must not have surrounding whitespace" in failures
     assert "audit_trail.entries[0].summary contains credential-looking text" in failures
     assert "audit_trail.entries[0].wake_event_id is missing" in failures
     assert "audit_trail.entries[1].receipt_action_index is missing" in failures
@@ -6051,6 +9494,22 @@ def test_acceptance_run_record_requires_redacted_audit_trail(tmp_path) -> None:
     assert "audit_trail.human_approval must include source gate_events.jsonl" in failures
     assert "audit_trail.counts.detonation must match entries" in failures
     assert "audit_trail.statement is missing audit-first guidance" in failures
+
+
+def test_acceptance_run_record_rejects_duplicate_audit_trail_entries(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["audit_trail"] = _audit_trail()
+    duplicate = dict(record["audit_trail"]["entries"][0])
+    record["audit_trail"]["entries"].append(duplicate)
+    record["audit_trail"]["entry_count"] += 1
+    record["audit_trail"]["counts"]["credential_capture"] += 1
+
+    failures = _run_record_shape_failures(record)
+
+    assert "audit_trail.entries[5] duplicates audit trail proof" in failures
 
 
 def test_acceptance_run_record_requires_receipt_indexed_provider_actions(tmp_path) -> None:
@@ -6079,6 +9538,7 @@ def test_acceptance_run_record_requires_recording_contract(tmp_path) -> None:
     record["recording_contract"] = {
         "schema_version": "fusekit.recording-contract.v0",
         "recording_ready": False,
+        "private_note": "sidecar recording proof",
         "checks": {
             "durable_state": True,
             "worker_replacement": True,
@@ -6093,19 +9553,513 @@ def test_acceptance_run_record_requires_recording_contract(tmp_path) -> None:
             "evidence": True,
             "detonation": True,
             "errors_empty": True,
+            "private_check": True,
         },
-        "blockers": ["human_actions"],
+        "blockers": [" human_actions", "human_actions", "", 7],
         "statement": "ready",
     }
 
     failures = _run_record_shape_failures(record)
 
+    assert "recording_contract has unexpected fields: private_note" in failures
+    assert (
+        "recording_contract.checks has unexpected fields: private_check"
+        in failures
+    )
     assert "recording_contract.schema_version is unsupported" in failures
     assert "recording_contract.recording_ready must be true" in failures
     assert "recording_contract.checks.human_actions must be true" in failures
     assert "recording_contract.checks.rehearsal_review must be true" in failures
-    assert "recording_contract.blockers must be empty: human_actions" in failures
+    assert (
+        "recording_contract.checks missing artifacts, model_inference, provider_gates, "
+        "timeline, vault, wake_events"
+        in failures
+    )
+    assert (
+        "recording_contract.blockers[0] must not have surrounding whitespace"
+        in failures
+    )
+    assert (
+        "recording_contract.blockers[1] duplicates recording contract blocker human_actions"
+        in failures
+    )
+    assert "recording_contract.blockers[2] must be non-empty" in failures
+    assert "recording_contract.blockers[3] must be a string" in failures
+    assert (
+        "recording_contract.blockers must be empty:  human_actions, human_actions, , 7"
+        in failures
+    )
     assert "recording_contract.statement is missing public demo guidance" in failures
+
+
+def test_acceptance_run_record_rejects_recording_contract_section_drift(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["steps"] = []
+    record["artifacts"] = []
+
+    failures = _run_record_shape_failures(record)
+
+    assert "recording_contract.checks.timeline has no steps proof" in failures
+    assert "recording_contract.checks.artifacts has no artifacts proof" in failures
+
+
+def test_acceptance_run_record_rejects_unshaped_acceptance_summary(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["acceptance"] = {
+        "mode": "sideways",
+        "launch_ready": "true",
+        "public_launch_ready": 1,
+        "remote_artifacts_ready": "yes",
+        "recording_proof_ready": "yes",
+        "recording_ready": True,
+        "missing": "none",
+        "blockers": "none",
+        "error": {"detail": "bad"},
+        "private_note": "stale sidecar field",
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert "acceptance has unexpected fields: private_note" in failures
+    assert "acceptance.mode must be live or rehearsal" in failures
+    assert "acceptance.launch_ready must be boolean" in failures
+    assert "acceptance.public_launch_ready must be boolean" in failures
+    assert "acceptance.remote_artifacts_ready must be boolean" in failures
+    assert "acceptance.recording_proof_ready must be boolean" in failures
+    assert "acceptance.missing must be a list" in failures
+    assert "acceptance.blockers must be a list" in failures
+    assert "acceptance.error must be a string" in failures
+
+
+def test_acceptance_run_record_rejects_stale_acceptance_summary(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["acceptance"] = {
+        "mode": " rehearsal ",
+        "launch_ready": False,
+        "public_launch_ready": True,
+        "remote_artifacts_ready": True,
+        "recording_proof_ready": True,
+        "recording_ready": True,
+        "missing": ["verified live URL"],
+        "blockers": ["detonation"],
+        "error": "Acceptance still has a live verifier error.",
+    }
+    record["errors"] = [
+        {
+            "source": "verification",
+            "id": "live_url_healthy",
+            "detail": "Live URL verification is not ready.",
+        }
+    ]
+
+    failures = _run_record_shape_failures(record)
+
+    assert "acceptance.mode must be live or rehearsal" in failures
+    assert "acceptance.public_launch_ready must equal live launch_ready" in failures
+    assert "acceptance.public_launch_ready must require launch_ready" in failures
+    assert "acceptance.public_launch_ready must require live mode" in failures
+    assert "acceptance.recording_ready must require live mode" in failures
+    assert "acceptance.blockers[0] must be an object" in failures
+    assert "acceptance.blockers must be empty when readiness is true" in failures
+    assert "acceptance.missing must be empty when readiness is true" in failures
+    assert "acceptance.error must be empty when readiness is true" in failures
+    assert "acceptance readiness must be false when errors are present" in failures
+    assert "acceptance.recording_ready must be false when errors are present" in failures
+
+    record["acceptance"] = {
+        "mode": "live",
+        "launch_ready": True,
+        "public_launch_ready": False,
+        "remote_artifacts_ready": True,
+        "recording_proof_ready": True,
+        "recording_ready": False,
+        "missing": [],
+        "blockers": [],
+        "error": "",
+    }
+    record["errors"] = []
+
+    failures = _run_record_shape_failures(record)
+
+    assert "acceptance.public_launch_ready must equal live launch_ready" in failures
+
+    record["acceptance"] = {
+        "mode": "rehearsal",
+        "launch_ready": False,
+        "public_launch_ready": False,
+        "remote_artifacts_ready": False,
+        "recording_proof_ready": False,
+        "recording_ready": False,
+        "missing": [],
+        "blockers": [],
+        "error": " unresolved verifier failure ",
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert "acceptance.error must not have surrounding whitespace" in failures
+
+    record["acceptance"]["error"] = "   "
+
+    failures = _run_record_shape_failures(record)
+
+    assert "acceptance.error must be empty or non-empty text" in failures
+
+    record["acceptance"] = {
+        "mode": "rehearsal",
+        "launch_ready": True,
+        "public_launch_ready": False,
+        "remote_artifacts_ready": False,
+        "recording_proof_ready": False,
+        "recording_ready": False,
+        "missing": [],
+        "blockers": [],
+        "error": "",
+    }
+    record["errors"] = [
+        {
+            "source": "verification",
+            "id": "live_app",
+            "detail": "Live app verification is unresolved.",
+        }
+    ]
+
+    failures = _run_record_shape_failures(record)
+
+    assert "acceptance readiness must be false when errors are present" in failures
+    assert "acceptance.recording_ready must be false when errors are present" not in failures
+
+    record["acceptance"] = {
+        "mode": "rehearsal",
+        "launch_ready": False,
+        "public_launch_ready": False,
+        "remote_artifacts_ready": False,
+        "recording_proof_ready": False,
+        "recording_ready": False,
+        "missing": [" verified live URL ", " ", "verified live URL"],
+        "blockers": [],
+        "error": "",
+    }
+    record["errors"] = []
+
+    failures = _run_record_shape_failures(record)
+
+    assert "acceptance.missing[0] must not have surrounding whitespace" in failures
+    assert "acceptance.missing[1] must be non-empty" in failures
+    assert (
+        "acceptance.missing[0] has no matching blocker item verified live URL"
+        in failures
+    )
+    assert (
+        "acceptance.missing[2] duplicates acceptance missing proof verified live URL"
+        in failures
+    )
+
+    record["acceptance"] = {
+        "mode": "rehearsal",
+        "launch_ready": False,
+        "public_launch_ready": False,
+        "remote_artifacts_ready": False,
+        "recording_proof_ready": False,
+        "recording_ready": False,
+        "missing": ["vault"],
+        "blockers": [
+            {"item": "vault", "category": "", "next_action": "Open Capture."},
+            {
+                "item": " vault ",
+                "category": "Vault",
+                "next_action": "Open Capture.",
+                "private_note": "stale sidecar field",
+            },
+            {
+                "item": "verifier",
+                "category": "Verification",
+                "next_action": 7,
+                "detail": {"bad": "shape"},
+            },
+            {
+                "item": "empty-detail",
+                "category": "Verification",
+                "next_action": "Review verifier proof.",
+                "detail": "",
+            },
+        ],
+        "error": "",
+    }
+    record["errors"] = []
+
+    failures = _run_record_shape_failures(record)
+
+    assert "acceptance.blockers[0].category is missing" in failures
+    assert "acceptance.blockers[1].item must not have surrounding whitespace" in failures
+    assert "acceptance.blockers[1].item duplicates acceptance blocker vault" in failures
+    assert "acceptance.blockers[1] has unexpected fields: private_note" in failures
+    assert "acceptance.blockers[2].next_action is missing" in failures
+    assert "acceptance.blockers[2].detail must be a string" in failures
+    assert "acceptance.blockers[3].detail must be non-empty when present" in failures
+
+    record["acceptance"] = {
+        "mode": "live",
+        "launch_ready": True,
+        "public_launch_ready": True,
+        "remote_artifacts_ready": True,
+        "recording_proof_ready": False,
+        "recording_ready": True,
+        "missing": [],
+        "blockers": [],
+        "error": "",
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert (
+        "acceptance.recording_ready must equal public_launch_ready "
+        "and remote_artifacts_ready and recording_proof_ready"
+        in failures
+    )
+
+    record["acceptance"] = {
+        "mode": "live",
+        "launch_ready": True,
+        "public_launch_ready": True,
+        "remote_artifacts_ready": False,
+        "recording_proof_ready": True,
+        "recording_ready": True,
+        "missing": [],
+        "blockers": [],
+        "error": "",
+    }
+
+    failures = _run_record_shape_failures(record)
+
+    assert (
+        "acceptance.recording_ready must equal public_launch_ready "
+        "and remote_artifacts_ready and recording_proof_ready"
+        in failures
+    )
+    assert "acceptance.recording_ready must require remote_artifacts_ready" in failures
+
+    record["acceptance"] = {
+        "mode": "live",
+        "launch_ready": True,
+        "public_launch_ready": True,
+        "remote_artifacts_ready": True,
+        "recording_proof_ready": False,
+        "recording_ready": False,
+        "missing": [],
+        "blockers": [],
+        "error": "",
+    }
+    record["errors"] = []
+
+    failures = _run_record_shape_failures(record)
+
+    assert (
+        "acceptance.recording_proof_ready must match "
+        "recording_contract.recording_ready"
+        in failures
+    )
+
+
+def test_acceptance_run_record_requires_ready_model_inference(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["model_inference"] = {
+        **_model_inference(),
+        "status": "needs_openclaw_or_api_key",
+        "ready": False,
+        "next_action": "Use the OpenClaw/OpenAI human-gated authorization step.",
+    }
+    record["llm_contract"] = {
+        **_llm_contract(),
+        "status": "needs_openclaw_or_api_key",
+        "next_action": "Use the OpenClaw/OpenAI human-gated authorization step.",
+    }
+    record["recording_contract"]["recording_ready"] = False
+    record["recording_contract"]["checks"]["model_inference"] = False
+    record["recording_contract"]["blockers"] = ["model_inference"]
+
+    failures = _run_record_shape_failures(record)
+
+    assert "model_inference.status must prove encrypted API key or OpenClaw auth" in failures
+    assert "model_inference.ready must be true" in failures
+    assert "model_inference.next_action must explain the ready auth lane" in failures
+    assert "recording_contract.checks.model_inference must be true" in failures
+    assert "recording_contract.blockers must be empty: model_inference" in failures
+
+
+def test_acceptance_run_record_requires_llm_contract_for_model_inference(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record.pop("llm_contract")
+
+    failures = _run_record_shape_failures(record)
+
+    assert "llm_contract is missing" in failures
+    assert "Run Record must include llm_contract for model_inference proof" in failures
+
+
+def test_acceptance_run_record_requires_llm_contract_to_match_model_inference(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["llm_contract"]["status"] = "needs_openclaw_or_api_key"
+    record["llm_contract"]["base_url"] = "https://llm.example/v1"
+    record["llm_contract"]["required"] = False
+    record["llm_contract"]["can_proceed_without_api_key"] = False
+    record["llm_contract"]["default_lane"] = "api-key"
+    record["llm_contract"]["security"]["raw_secret_export"] = "allowed"
+
+    failures = _run_record_shape_failures(record)
+
+    assert "llm_contract.status must prove encrypted API key or OpenClaw auth" in failures
+    assert "llm_contract.security.raw_secret_export must be denied" in failures
+    assert (
+        "model_inference must match llm_contract fields: "
+        "base_url, can_proceed_without_api_key, default_lane, required, status"
+        in failures
+    )
+
+
+def test_acceptance_run_record_requires_shaped_llm_contract_lanes(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["model_inference"]["provider"] = " openai "
+    record["model_inference"]["next_action"] = "Continue at https://provider.example/callback"
+    record["model_inference"]["required"] = "true"
+    record["model_inference"]["can_proceed_without_api_key"] = 1
+    record["model_inference"]["lane_count"] = True
+    record["model_inference"]["private_note"] = "sidecar model proof"
+    record["llm_contract"]["provider"] = " openai "
+    record["llm_contract"]["record_id"] = " llm.openai.api_key "
+    record["llm_contract"]["required"] = "true"
+    record["llm_contract"]["can_proceed_without_api_key"] = 1
+    record["llm_contract"]["default_lane"] = "missing-lane"
+    record["llm_contract"]["private_note"] = "sidecar LLM contract proof"
+    record["llm_contract"]["security"]["storage"] = " encrypted vault only "
+    record["llm_contract"]["security"]["public_surfaces"] = (
+        "Review https://provider.example/callback"
+    )
+    record["llm_contract"]["security"]["private_note"] = "sidecar security proof"
+    record["llm_contract"]["lanes"] = [
+        "bad",
+        {
+            "id": "",
+            "label": "",
+            "available": "yes",
+            "requires_user_action": "no",
+            "description": "",
+        },
+        {
+            "id": "openclaw-openai",
+            "label": "OpenClaw OpenAI authorization",
+            "available": True,
+            "requires_user_action": False,
+            "description": "capture api_key=sk-abcdefghijklmnopqrstuvwxyz1234567890",
+            "private_note": "sidecar lane proof",
+        },
+        {
+            "id": " openclaw-openai ",
+            "label": " Duplicate OpenClaw lane ",
+            "available": True,
+            "requires_user_action": False,
+            "description": " Duplicate model auth lane. ",
+        },
+    ]
+
+    failures = _run_record_shape_failures(record)
+
+    assert "model_inference has unexpected fields: private_note" in failures
+    assert "model_inference.provider must not have surrounding whitespace" in failures
+    assert "model_inference.next_action contains callback URL" in failures
+    assert "model_inference.required must be boolean" in failures
+    assert "model_inference.can_proceed_without_api_key must be boolean" in failures
+    assert "model_inference.lane_count must be integer" in failures
+    assert "llm_contract has unexpected fields: private_note" in failures
+    assert "llm_contract.provider must not have surrounding whitespace" in failures
+    assert "llm_contract.record_id must not have surrounding whitespace" in failures
+    assert "llm_contract.required must be boolean" in failures
+    assert "llm_contract.can_proceed_without_api_key must be boolean" in failures
+    assert "llm_contract.security has unexpected fields: private_note" in failures
+    assert "llm_contract.security.storage must not have surrounding whitespace" in failures
+    assert "llm_contract.security.public_surfaces contains callback URL" in failures
+    assert "llm_contract.lanes[0] is not an object" in failures
+    assert "llm_contract.lanes[1].id is missing" in failures
+    assert "llm_contract.lanes[1].label is missing" in failures
+    assert "llm_contract.lanes[1].available must be boolean" in failures
+    assert "llm_contract.lanes[1].requires_user_action must be boolean" in failures
+    assert "llm_contract.lanes[1].description is missing" in failures
+    assert "llm_contract.lanes[2] has unexpected fields: private_note" in failures
+    assert "llm_contract.lanes[2].description contains credential-looking text" in failures
+    assert "llm_contract.lanes[3].id must not have surrounding whitespace" in failures
+    assert "llm_contract.lanes[3].id duplicates LLM contract lane openclaw-openai" in (
+        failures
+    )
+    assert "llm_contract.lanes[3].label must not have surrounding whitespace" in failures
+    assert (
+        "llm_contract.lanes[3].description must not have surrounding whitespace"
+        in failures
+    )
+    assert "llm_contract.default_lane must match llm_contract.lanes" in failures
+    assert "llm_contract.lanes must include api-key" in failures
+
+
+def test_acceptance_run_record_requires_ready_default_and_status_llm_lanes(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    model = record["model_inference"]
+    assert isinstance(model, dict)
+    model["default_lane"] = "api-key"
+    contract = record["llm_contract"]
+    assert isinstance(contract, dict)
+    contract["default_lane"] = "api-key"
+    lanes = contract["lanes"]
+    assert isinstance(lanes, list)
+    api_key_lane = lanes[0]
+    assert isinstance(api_key_lane, dict)
+    api_key_lane["available"] = False
+    api_key_lane["requires_user_action"] = True
+
+    failures = _run_record_shape_failures(record)
+
+    assert "llm_contract.default_lane must be available" in failures
+    assert (
+        "llm_contract.default_lane must not require user action when ready" in failures
+    )
+    assert "llm_contract.lanes must mark api-key available" in failures
+    assert (
+        "llm_contract.lanes must mark api-key ready without user action" in failures
+    )
 
 
 def test_acceptance_run_record_requires_recording_worker_replacement_check(
@@ -6163,6 +10117,87 @@ def test_acceptance_run_record_requires_control_room_security_proof(tmp_path) ->
     )
 
 
+def test_acceptance_run_record_rejects_duplicate_control_room_security_routes(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    security = record["control_room_security"]
+    duplicate_route = dict(
+        next(route for route in security["routes"] if route.get("state_change") is True)
+    )
+    security["routes"].append(duplicate_route)
+    security["state_changing_routes"].append(duplicate_route["route"])
+    security["route_count"] = len(security["routes"])
+    security["state_changing_route_count"] = sum(
+        1 for route in security["routes"] if route.get("state_change") is True
+    )
+
+    failures = _run_record_shape_failures(record)
+
+    assert any(
+        failure.endswith(
+            "duplicates control-room route " f"{duplicate_route['route']}"
+        )
+        for failure in failures
+    )
+    assert any(
+        failure.endswith(
+            "duplicates state-changing route " f"{duplicate_route['route']}"
+        )
+        for failure in failures
+    )
+
+
+def test_acceptance_run_record_rejects_loose_control_room_security_rows(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    security = record["control_room_security"]
+    route_index, route = next(
+        (index, route)
+        for index, route in enumerate(security["routes"])
+        if route.get("state_change") is True
+    )
+    route["private_note"] = "sidecar route note"
+    route["route"] = f" {route['route']} "
+    route["methods"][0] = f" {route['methods'][0]} "
+    route["protection"] = f" {route['protection']} "
+    security["private_note"] = "sidecar security note"
+    security["state_changing_routes"][0] = f" {security['state_changing_routes'][0]} "
+
+    failures = _run_record_shape_failures(record)
+
+    assert "control_room_security has unexpected fields: private_note" in failures
+    assert (
+        f"control_room_security.routes[{route_index}] has unexpected fields: private_note"
+        in failures
+    )
+    assert (
+        f"control_room_security.routes[{route_index}].route must not have surrounding whitespace"
+        in failures
+    )
+    assert (
+        f"control_room_security.routes[{route_index}].methods[0] "
+        "must not have surrounding whitespace"
+        in failures
+    )
+    assert (
+        f"control_room_security.routes[{route_index}].protection "
+        "must not have surrounding whitespace"
+        in failures
+    )
+    assert (
+        "control_room_security.state_changing_routes[0] must not have surrounding whitespace"
+        in failures
+    )
+
+
 def test_acceptance_run_record_recording_contract_errors_empty_matches_errors(
     tmp_path,
 ) -> None:
@@ -6194,6 +10229,17 @@ def test_acceptance_run_record_rejects_unredacted_errors(tmp_path) -> None:
             "id": "https://provider.example/callback?code=secret-code",
             "detail": "token=abcdefghijklmnopqrstuvwxyz1234567890",
         },
+        {
+            "source": " verification ",
+            "id": "resend.domain",
+            "detail": "Resend domain verification still needs repair.",
+            "private_note": "stale sidecar error detail",
+        },
+        {
+            "source": "verification",
+            "id": "resend.domain",
+            "detail": "Duplicate unresolved error identity.",
+        },
         "not-an-object",
     ]
 
@@ -6201,7 +10247,28 @@ def test_acceptance_run_record_rejects_unredacted_errors(tmp_path) -> None:
 
     assert "errors[0].id contains credential-looking text" in failures
     assert "errors[0].detail contains credential-looking text" in failures
-    assert "errors[1] is not an object" in failures
+    assert "errors[1] has unexpected fields: private_note" in failures
+    assert "errors[1].source must not have surrounding whitespace" in failures
+    assert "errors[2] duplicates error verification:resend.domain" in failures
+    assert "errors[3] is not an object" in failures
+
+
+def test_acceptance_run_record_rejects_bare_callback_url(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["errors"] = [
+        {
+            "source": "verification",
+            "id": "provider.callback",
+            "detail": "Provider returned https://provider.example/callback",
+        }
+    ]
+
+    failures = _run_record_shape_failures(record)
+
+    assert "run_record.errors[0].detail contains callback URL" in failures
 
 
 def test_acceptance_run_record_rejects_unredacted_timeline_entries(tmp_path) -> None:
@@ -6211,25 +10278,53 @@ def test_acceptance_run_record_rejects_unredacted_timeline_entries(tmp_path) -> 
     record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
     record["steps"] = [
         {
-            "id": "setup.execute",
-            "label": "Run setup worker",
+            "id": " setup.execute ",
+            "label": " Run setup worker ",
             "status": "failed",
-            "detail": "Callback failed at https://provider.example/callback?code=secret",
-        }
+            "detail": " Callback failed at https://provider.example/callback?code=secret ",
+            "updated_at": True,
+            "private_note": "sidecar timeline note",
+        },
+        {
+            "id": "setup.execute",
+            "label": "Duplicate setup worker",
+            "status": "failed",
+        },
     ]
     record["checkpoints"] = [
         {
             "id": "setup.execute",
             "label": "Run setup worker",
             "status": "failed",
-            "detail": "Bearer abcdefghijklmnopqrstuvwxyz1234567890",
-        }
+            "detail": " Bearer abcdefghijklmnopqrstuvwxyz1234567890 ",
+            "mascot_state": " gate ",
+            "resume_hint": " Stay in the control room. ",
+            "updated_at": -1,
+            "private_note": "sidecar checkpoint note",
+        },
+        {
+            "id": "setup.execute",
+            "label": "Duplicate setup worker",
+            "status": "failed",
+        },
     ]
 
     failures = _run_record_shape_failures(record)
 
+    assert "steps[0] has unexpected fields: private_note" in failures
+    assert "steps[0].id must not have surrounding whitespace" in failures
+    assert "steps[0].label must not have surrounding whitespace" in failures
+    assert "steps[0].detail must not have surrounding whitespace" in failures
     assert "steps[0].detail contains credential-looking text" in failures
+    assert "steps[0].updated_at must be a non-negative number" in failures
+    assert "steps[1].id duplicates steps entry setup.execute" in failures
+    assert "checkpoints[0] has unexpected fields: private_note" in failures
+    assert "checkpoints[0].detail must not have surrounding whitespace" in failures
+    assert "checkpoints[0].mascot_state must not have surrounding whitespace" in failures
+    assert "checkpoints[0].resume_hint must not have surrounding whitespace" in failures
     assert "checkpoints[0].detail contains credential-looking text" in failures
+    assert "checkpoints[0].updated_at must be a non-negative number" in failures
+    assert "checkpoints[1].id duplicates checkpoints entry setup.execute" in failures
 
 
 def test_acceptance_run_record_rejects_nested_unredacted_survivor_values(
@@ -6273,6 +10368,32 @@ def test_acceptance_run_record_rejects_nested_unredacted_survivor_values(
     assert (
         "run_record.detonation.workspace_receipt.failures.cleanup contains credential-looking text"
     ) in failures
+
+
+def test_acceptance_run_record_rejects_loose_embedded_verification_rows(
+    tmp_path,
+) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    check = record["verification"]["checks"][0]
+    assert isinstance(check, dict)
+    check["provider"] = " github "
+    check["check"] = " repo_access "
+    check["status"] = " passed "
+    check["summary"] = " Repo access passed. "
+    check["details"] = "ok"
+    check["private_note"] = "sidecar verifier detail"
+
+    failures = _run_record_shape_failures(record)
+
+    assert "verification checks[0] has unexpected fields: private_note" in failures
+    assert "verification checks[0].provider must not have surrounding whitespace" in failures
+    assert "verification checks[0].check must not have surrounding whitespace" in failures
+    assert "verification checks[0].status must not have surrounding whitespace" in failures
+    assert "verification checks[0].summary must not have surrounding whitespace" in failures
+    assert "verification checks[0].details must be an object" in failures
 
 
 def test_acceptance_run_record_requires_evented_gate_wake_proof(tmp_path) -> None:
@@ -6403,8 +10524,109 @@ def test_acceptance_run_record_requires_evented_gate_wake_proof(tmp_path) -> Non
             "and detonation events are summarized without storing raw secrets."
         ),
     }
+    actions = [
+        {
+            "gate_id": "provider.cloudflare.authorization",
+            "provider": "cloudflare",
+            "classification": "authorization",
+            "action": "capture_vm_clipboard",
+            "visible_control": "Capture CLOUDFLARE_API_TOKEN from VM clipboard",
+            "target": "CLOUDFLARE_API_TOKEN",
+            "guided": True,
+            "created_at": 1.0,
+        },
+        {
+            "gate_id": "provider.cloudflare.authorization",
+            "provider": "cloudflare",
+            "classification": "authorization",
+            "action": "confirm_gate_finished",
+            "visible_control": "I finished this step",
+            "target": "",
+            "guided": True,
+            "created_at": 2.0,
+        },
+    ]
+    record["human_actions"] = _human_action_trace_for(actions)
+    record["rehearsal_review"] = _rehearsal_review_for(actions)
 
     assert _run_record_shape_failures(record) == []
+
+
+def test_acceptance_run_record_requires_shaped_approval_summary(tmp_path) -> None:
+    fusekit_dir = tmp_path / ".fusekit"
+    fusekit_dir.mkdir()
+    _write_minimum_run_record(fusekit_dir)
+    record = json.loads((fusekit_dir / "run_record.json").read_text(encoding="utf-8"))
+    record["provider_gates"] = {
+        "total": 1,
+        "statuses": {"resume_requested": 1},
+        "providers": ["dns"],
+        "records": [
+            {
+                "id": "dns.moonlite.rsvp.approval",
+                "provider": "dns",
+                "status": "resume_requested",
+            }
+        ],
+    }
+    record["wake_events"] = {
+        "total": 1,
+        "event_counts": {"resume_requested": 1},
+        "events": [
+            {
+                "schema_version": "fusekit.gate-wake.v1",
+                "id": "wake-other",
+                "event": "resume_requested",
+                "gate_id": "dns.other.approval",
+                "provider": "dns",
+                "status": "resume_requested",
+                "created_at": 2.0,
+            }
+        ],
+    }
+    record["approvals"] = [
+        {
+            "id": " dns.stale.approval ",
+            "provider": "",
+            "status": " passed ",
+            "reason": " approved with token=leaked-value ",
+            "updated_at": True,
+            "private_note": "sidecar approval note",
+        },
+        {
+            "id": "dns.moonlite.rsvp.approval",
+            "provider": "dns",
+            "status": "resume_requested",
+            "reason": "explicit DNS apply approval",
+            "updated_at": 2.0,
+        },
+        {
+            "id": "dns.moonlite.rsvp.approval",
+            "provider": "dns",
+            "status": "resume_requested",
+            "reason": "duplicate DNS apply approval",
+            "updated_at": -1,
+        },
+    ]
+
+    failures = _run_record_shape_failures(record)
+
+    assert "approvals[0] has unexpected fields: private_note" in failures
+    assert "approvals[0].id must not have surrounding whitespace" in failures
+    assert "approvals[0].provider is missing" in failures
+    assert "approvals[0].status must not have surrounding whitespace" in failures
+    assert "approvals[0].status is unsupported" in failures
+    assert "approvals[0].reason must not have surrounding whitespace" in failures
+    assert "approvals[0].reason contains credential-looking text" in failures
+    assert "approvals[0].updated_at must be a non-negative number" in failures
+    assert "approvals[0].id must match provider_gates.records" in failures
+    assert "approvals[1].id must match a resume_requested wake event" in failures
+    assert (
+        "approvals[2].id duplicates approval summary for dns.moonlite.rsvp.approval"
+        in failures
+    )
+    assert "approvals[2].updated_at must be a non-negative number" in failures
+    assert "approvals[2].id must match a resume_requested wake event" in failures
 
 
 def test_acceptance_cli_checks_vault_without_leaking_secret(tmp_path, capsys) -> None:
@@ -6486,7 +10708,7 @@ domains:
     )
     (remote_fusekit / "audit.jsonl").write_text("{}", encoding="utf-8")
     (remote_fusekit / "verification_report.json").write_text(
-        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        json.dumps({"checks": [{"provider": "live_app", "check": "health", "status": "passed"}]}),
         encoding="utf-8",
     )
     (remote_fusekit / "rollback_plan.json").write_text(
@@ -7681,7 +11903,7 @@ def test_live_acceptance_requires_complete_provider_strategy_evidence(tmp_path) 
         "utf-8",
     )
     (remote_fusekit / "verification_report.json").write_text(
-        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        json.dumps({"checks": [{"provider": "live_app", "check": "health", "status": "passed"}]}),
         "utf-8",
     )
     (remote_fusekit / "rollback_plan.json").write_text(
@@ -7733,6 +11955,80 @@ def test_live_acceptance_requires_complete_provider_strategy_evidence(tmp_path) 
     assert "Record selected-route" not in next_action
 
 
+def test_live_acceptance_rejects_loose_provider_strategy_artifact_shape(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "package.json").write_text(
+        json.dumps({"name": "moonlite-rsvp", "dependencies": {"next": "latest"}}),
+        encoding="utf-8",
+    )
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    (remote_fusekit / "audit.jsonl").write_text('{"event":"provider.verify"}\n', "utf-8")
+    (remote_fusekit / "setup_receipt.json").write_text(
+        json.dumps(
+            {
+                "live_url": "https://moonlite.example",
+                "raw_secrets_exposed": 0,
+                "actions": [],
+            }
+        ),
+        "utf-8",
+    )
+    (remote_fusekit / "verification_report.json").write_text(
+        json.dumps({"checks": [{"provider": "live_app", "check": "health", "status": "passed"}]}),
+        "utf-8",
+    )
+    (remote_fusekit / "rollback_plan.json").write_text(
+        json.dumps({"rollback": [{"action": "rollback.github.secret", "status": "planned"}]}),
+        "utf-8",
+    )
+    strategies = _run_record_provider_strategies()
+    strategies["private_note"] = "sidecar"
+    providers = strategies["providers"]
+    assert isinstance(providers, list)
+    first_provider = providers[0]
+    assert isinstance(first_provider, dict)
+    first_provider["private_note"] = "sidecar"
+    strategy_rows = first_provider["strategies"]
+    assert isinstance(strategy_rows, list)
+    first_strategy = strategy_rows[0]
+    assert isinstance(first_strategy, dict)
+    first_strategy["private_note"] = "sidecar"
+    first_strategy["recipe"] = f" {first_strategy['recipe']} "
+    decision = first_strategy["decision"]
+    assert isinstance(decision, dict)
+    decision["private_note"] = "sidecar"
+    (remote_fusekit / "provider_strategies.json").write_text(
+        json.dumps(strategies),
+        "utf-8",
+    )
+    (remote_fusekit / "gates.json").write_text(json.dumps({"gates": []}), "utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    strategy_check = next(
+        check for check in report.checks if check.id == "provider_strategies.complete"
+    )
+    assert report.launch_ready is False
+    assert strategy_check.status == "failed"
+    assert "provider_strategies has unexpected fields: private_note" in strategy_check.detail
+    assert (
+        "provider_strategies.providers[0].strategies[0].recipe must not have "
+        "surrounding whitespace"
+        in strategy_check.detail
+    )
+    assert "complete provider strategy evidence" in report.missing
+
+
 def test_live_acceptance_requires_guided_human_provider_strategy(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()
@@ -7757,7 +12053,7 @@ def test_live_acceptance_requires_guided_human_provider_strategy(tmp_path) -> No
         "utf-8",
     )
     (remote_fusekit / "verification_report.json").write_text(
-        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        json.dumps({"checks": [{"provider": "live_app", "check": "health", "status": "passed"}]}),
         "utf-8",
     )
     (remote_fusekit / "rollback_plan.json").write_text(
@@ -7868,7 +12164,7 @@ domains:
         "utf-8",
     )
     (remote_fusekit / "verification_report.json").write_text(
-        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        json.dumps({"checks": [{"provider": "live_app", "check": "health", "status": "passed"}]}),
         "utf-8",
     )
     (remote_fusekit / "rollback_plan.json").write_text(
@@ -8034,6 +12330,129 @@ domains:
     assert "Record verification checks" not in next_action
 
 
+def test_live_acceptance_does_not_count_skipped_verification_coverage(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    report_path = remote_fusekit / "verification_report.json"
+    report_payload = json.loads(report_path.read_text(encoding="utf-8"))
+    vercel = next(
+        check
+        for check in report_payload["checks"]
+        if check["provider"] == "vercel"
+    )
+    vercel["status"] = "skipped"
+    report_path.write_text(json.dumps(report_payload), "utf-8")
+    _write_minimum_run_record(remote_fusekit)
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    coverage_check = next(
+        check for check in report.checks if check.id == "verification_report.coverage"
+    )
+    assert report.launch_ready is False
+    assert coverage_check.status == "failed"
+    assert "vercel" in coverage_check.detail
+    assert "complete provider verification coverage" in report.missing
+
+
+def test_live_acceptance_rejects_job_checkpoint_run_record_timeline_drift(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+
+    run_record_path = remote_fusekit / "run_record.json"
+    run_record = json.loads(run_record_path.read_text(encoding="utf-8"))
+    run_record["steps"].append(
+        {
+            "id": "detonate.workspace",
+            "label": "Detonate runner workspace",
+            "status": "pending",
+        }
+    )
+    run_record["checkpoints"].append(
+        {
+            "id": "detonate.workspace",
+            "label": "Detonate runner workspace",
+            "status": "pending",
+        }
+    )
+    run_record_path.write_text(json.dumps(run_record), encoding="utf-8")
+
+    job_path = remote_fusekit / "job.json"
+    job = json.loads(job_path.read_text(encoding="utf-8"))
+    final_step = {
+        "id": "detonate.workspace",
+        "label": "Detonate runner workspace",
+        "status": "done",
+        "detail": "remote worker and OCI workspace detonated",
+        "updated_at": 3.0,
+    }
+    final_checkpoint = {
+        "id": "detonate.workspace",
+        "label": "Detonate runner workspace",
+        "status": "done",
+        "detail": "remote worker and OCI workspace detonated",
+        "next_action": "Review the redacted survivor bundle.",
+        "resume_hint": "The disposable worker is gone.",
+        "mascot_state": "complete",
+        "updated_at": 3.0,
+    }
+    job["steps"] = [final_step]
+    job["checkpoints"] = [final_checkpoint]
+    job_path.write_text(json.dumps(job), encoding="utf-8")
+    (remote_fusekit / "checkpoints.json").write_text(
+        json.dumps(
+            {
+                "job_id": "fk-live-test",
+                "status": "done",
+                "updated_at": 3.0,
+                "checkpoints": [final_checkpoint],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    run_record_check = next(
+        check for check in report.checks if check.id == "run_record.complete"
+    )
+    assert report.launch_ready is False
+    assert run_record_check.status == "failed"
+    assert "job.json steps.detonate.workspace status must match Run Record" in (
+        run_record_check.detail
+    )
+    assert (
+        "checkpoints.json checkpoints.detonate.workspace status must match Run Record"
+        in run_record_check.detail
+    )
+
+
 def test_live_acceptance_requires_rollback_coverage_for_manifest_providers(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()
@@ -8156,6 +12575,122 @@ domains:
     assert "Record rollback metadata" not in next_action
 
 
+def test_live_acceptance_does_not_count_skipped_rollback_coverage(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    rollback_path = remote_fusekit / "rollback_plan.json"
+    rollback = json.loads(rollback_path.read_text(encoding="utf-8"))
+    vercel = next(
+        action
+        for action in rollback["rollback"]
+        if action["action"] == "rollback.vercel.env"
+    )
+    vercel["status"] = "skipped"
+    vercel["detail"] = "missing project or env"
+    rollback_path.write_text(json.dumps(rollback), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    coverage_check = next(
+        check for check in report.checks if check.id == "rollback_metadata.coverage"
+    )
+    assert report.launch_ready is False
+    assert coverage_check.status == "failed"
+    assert "vercel" in coverage_check.detail
+    assert "complete rollback coverage" in report.missing
+
+
+def test_live_acceptance_rejects_rollback_callback_url_artifact(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    rollback_path = remote_fusekit / "rollback_plan.json"
+    rollback = json.loads(rollback_path.read_text(encoding="utf-8"))
+    rollback["rollback"].append(
+        {
+            "action": "rollback.github.oauth",
+            "status": "planned after https://provider.example/callback",
+        }
+    )
+    rollback_path.write_text(json.dumps(rollback), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    rollback_check = next(
+        check for check in report.checks if check.id == "rollback_metadata.actionable"
+    )
+    assert report.launch_ready is False
+    assert rollback_check.status == "failed"
+    assert "rollback_metadata.rollback[2].status contains callback URL" in rollback_check.detail
+    assert "rollback metadata" in report.missing
+
+
+def test_live_acceptance_rejects_loose_rollback_metadata_shape(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    rollback_path = remote_fusekit / "rollback_plan.json"
+    rollback = json.loads(rollback_path.read_text(encoding="utf-8"))
+    rollback["private_note"] = "sidecar"
+    first = rollback["rollback"][0]
+    assert isinstance(first, dict)
+    first["private_note"] = "sidecar"
+    first["action"] = f" {first['action']} "
+    rollback_path.write_text(json.dumps(rollback), encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    rollback_check = next(
+        check for check in report.checks if check.id == "rollback_metadata.actionable"
+    )
+    assert report.launch_ready is False
+    assert rollback_check.status == "failed"
+    assert "rollback_metadata has unexpected fields: private_note" in rollback_check.detail
+    assert (
+        "rollback_metadata.rollback[0] has unexpected fields: private_note"
+        in rollback_check.detail
+    )
+    assert (
+        "rollback_metadata.rollback[0].action must not have surrounding whitespace"
+        in rollback_check.detail
+    )
+    assert "rollback metadata" in report.missing
+
+
 def test_live_acceptance_requires_guided_control_room_gates(tmp_path) -> None:
     app = tmp_path / "app"
     app.mkdir()
@@ -8180,7 +12715,7 @@ def test_live_acceptance_requires_guided_control_room_gates(tmp_path) -> None:
         "utf-8",
     )
     (remote_fusekit / "verification_report.json").write_text(
-        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        json.dumps({"checks": [{"provider": "live_app", "check": "health", "status": "passed"}]}),
         "utf-8",
     )
     (remote_fusekit / "rollback_plan.json").write_text(
@@ -8270,7 +12805,7 @@ def test_live_acceptance_requires_audited_control_room_gates(tmp_path) -> None:
         "utf-8",
     )
     (remote_fusekit / "verification_report.json").write_text(
-        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        json.dumps({"checks": [{"provider": "live_app", "check": "health", "status": "passed"}]}),
         "utf-8",
     )
     (remote_fusekit / "rollback_plan.json").write_text(
@@ -8400,7 +12935,7 @@ def test_live_acceptance_requires_clipboard_capture_for_secret_gates(tmp_path) -
         "utf-8",
     )
     (remote_fusekit / "verification_report.json").write_text(
-        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        json.dumps({"checks": [{"provider": "live_app", "check": "health", "status": "passed"}]}),
         "utf-8",
     )
     (remote_fusekit / "rollback_plan.json").write_text(
@@ -8522,7 +13057,7 @@ def test_live_acceptance_requires_all_multi_value_gate_captures(tmp_path) -> Non
         "utf-8",
     )
     (remote_fusekit / "verification_report.json").write_text(
-        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        json.dumps({"checks": [{"provider": "live_app", "check": "health", "status": "passed"}]}),
         "utf-8",
     )
     (remote_fusekit / "rollback_plan.json").write_text(
@@ -8641,7 +13176,7 @@ def test_live_acceptance_requires_provider_gate_open_audit(tmp_path) -> None:
         "utf-8",
     )
     (remote_fusekit / "verification_report.json").write_text(
-        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        json.dumps({"checks": [{"provider": "live_app", "check": "health", "status": "passed"}]}),
         "utf-8",
     )
     (remote_fusekit / "rollback_plan.json").write_text(
@@ -8753,7 +13288,7 @@ def test_live_acceptance_requires_concrete_finished_click_audit(tmp_path) -> Non
         "utf-8",
     )
     (remote_fusekit / "verification_report.json").write_text(
-        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        json.dumps({"checks": [{"provider": "live_app", "check": "health", "status": "passed"}]}),
         "utf-8",
     )
     (remote_fusekit / "rollback_plan.json").write_text(
@@ -8859,7 +13394,7 @@ def test_live_acceptance_rejects_malformed_gate_audit_event(tmp_path) -> None:
         "utf-8",
     )
     (remote_fusekit / "verification_report.json").write_text(
-        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        json.dumps({"checks": [{"provider": "live_app", "check": "health", "status": "passed"}]}),
         "utf-8",
     )
     (remote_fusekit / "rollback_plan.json").write_text(
@@ -8934,7 +13469,7 @@ def test_live_acceptance_requires_resolved_control_room_gates(tmp_path) -> None:
         "utf-8",
     )
     (remote_fusekit / "verification_report.json").write_text(
-        json.dumps({"checks": [{"provider": "live_app", "status": "passed"}]}),
+        json.dumps({"checks": [{"provider": "live_app", "check": "health", "status": "passed"}]}),
         "utf-8",
     )
     (remote_fusekit / "rollback_plan.json").write_text(

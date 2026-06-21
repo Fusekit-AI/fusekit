@@ -36,7 +36,13 @@ from fusekit.detonation.preflight import (
 )
 from fusekit.errors import ApprovalRequired, FuseKitError, ProviderError
 from fusekit.harness import run_acceptance
-from fusekit.llm import LlmConfig, authorize_openclaw_llm, capture_llm_config
+from fusekit.llm import (
+    LlmConfig,
+    authorize_openclaw_llm,
+    build_llm_contract,
+    capture_llm_config,
+    write_llm_contract,
+)
 from fusekit.manifest import (
     DnsRecord,
     ServiceRequirement,
@@ -96,6 +102,7 @@ from fusekit.runner.oci_live import (
     latest_workspace_from_vault,
     load_oci_auth_from_vault_or_config,
 )
+from fusekit.runner.provider_strategy import PROVIDER_STRATEGIES_SCHEMA_VERSION
 from fusekit.runner.remote import (
     REMOTE_WORKER_CLEANUP_SCHEMA_VERSION,
     REMOTE_WORKER_PATH_TARGETS,
@@ -103,6 +110,13 @@ from fusekit.runner.remote import (
     detonate_remote_worker,
     execute_remote_setup,
     execute_worker_replacement_drill,
+    remote_worker_cleanup_proof,
+)
+from fusekit.runner.remote_survivors import (
+    REMOTE_CHECKPOINTS_CHECKPOINTS_FIELD,
+    REMOTE_CHECKPOINTS_JOB_ID_FIELD,
+    REMOTE_CHECKPOINTS_STATUS_FIELD,
+    REMOTE_CHECKPOINTS_UPDATED_AT_FIELD,
 )
 from fusekit.runner.run_record import DETONATION_PRESERVES, write_run_record
 from fusekit.runner.run_state import LaunchRunState, update_run_state
@@ -337,6 +351,11 @@ def _parser() -> argparse.ArgumentParser:
         help="retrieved OCI artifact directory to use as live acceptance evidence",
     )
     acceptance_run.add_argument("--output-dir", type=Path, default=None)
+    acceptance_run.add_argument(
+        "--require-recording",
+        action="store_true",
+        help="exit nonzero unless live public/demo recording proof is ready",
+    )
     acceptance_run.add_argument("--json", action="store_true", dest="as_json")
     acceptance_run.set_defaults(handler=_cmd_acceptance_run)
 
@@ -1043,6 +1062,7 @@ def _github_source_auth_goal(source: str, auth_mode: str) -> str:
 
 
 def _cmd_acceptance_run(args: argparse.Namespace) -> int:
+    _validate_acceptance_recording_gate_args(args)
     report = run_acceptance(
         args.path,
         mode=args.mode,
@@ -1060,6 +1080,11 @@ def _cmd_acceptance_run(args: argparse.Namespace) -> int:
         print(f"Acceptance mode: {report.mode}")
         print(f"Launch ready: {str(report.launch_ready).lower()}")
         print(f"Public launch ready: {str(report.public_launch_ready).lower()}")
+        print(
+            "Recording proof ready: "
+            f"{str(report.effective_recording_proof_ready).lower()}"
+        )
+        print(f"Recording ready: {str(report.recording_ready).lower()}")
         print(f"Report: {report.report_path}")
         print(f"Ledger: {report.ledger_path}")
         for check in report.checks:
@@ -1068,7 +1093,23 @@ def _cmd_acceptance_run(args: argparse.Namespace) -> int:
             print("Missing:")
             for item in report.missing:
                 print(f"- {item}")
+    if getattr(args, "require_recording", False):
+        return 0 if report.recording_ready else 1
     return 0 if report.launch_ready else 1
+
+
+def _validate_acceptance_recording_gate_args(args: argparse.Namespace) -> None:
+    """Keep the public recording gate tied to live OCI survivor evidence."""
+
+    if not getattr(args, "require_recording", False):
+        return
+    if getattr(args, "mode", "") != "live":
+        raise FuseKitError("--require-recording requires --mode live.")
+    if getattr(args, "remote_artifacts", None) is None:
+        raise FuseKitError(
+            "--require-recording requires --remote-artifacts so public recording "
+            "readiness is proven from the retrieved disposable worker bundle."
+        )
 
 
 def _cmd_install(args: argparse.Namespace) -> int:
@@ -1345,6 +1386,7 @@ def _cmd_setup(args: argparse.Namespace) -> int:
                     args.receipt_md,
                     args.verification_report,
                     args.rollback_json,
+                    args.job_state.with_name("llm_contract.json"),
                 ],
                 workspace_root=app_path,
             )
@@ -1520,6 +1562,7 @@ def _attach_local_survivor_artifacts(args: argparse.Namespace, job: JobState) ->
         ("verification_report", args.verification_report),
         ("rollback_plan", args.rollback_json),
         ("provider_strategies", _provider_strategy_artifact_path(Path(args.vault))),
+        ("llm_contract", args.job_state.with_name("llm_contract.json")),
     ):
         if Path(path).exists():
             job.add_artifact(name, Path(path))
@@ -1572,8 +1615,10 @@ def _run_local_detonation_preflight(args: argparse.Namespace, app_path: Path) ->
         audit=args.audit_log,
         receipt=args.receipt_json,
         verification_report=args.verification_report,
+        provider_strategies=_provider_strategy_artifact_path(Path(args.vault)),
         rollback_metadata=args.rollback_json,
         run_record=args.job_state.with_name("run_record.json"),
+        llm_contract=args.job_state.with_name("llm_contract.json"),
     )
     if not result.ok:
         raise FuseKitError("Detonation preflight failed: " + "; ".join(result.failures))
@@ -1833,19 +1878,33 @@ def _cmd_runner_receipt(args: argparse.Namespace) -> int:
 def _cmd_runner_detonate(args: argparse.Namespace) -> int:
     job = JobState.load(args.job_state) if args.job_state.exists() else None
     remote_deleted: dict[str, Any] = {}
-    if args.runner == "oci" and args.vault.exists():
-        passphrase = _passphrase(args)
-        vault = open_or_create(args.vault, passphrase)
-        try:
-            workspace = latest_workspace_from_vault(vault)
-            remote_deleted["remote_worker"] = detonate_remote_worker(
-                workspace=workspace,
-                vault=vault,
-            )
-            auth = load_oci_auth_from_vault_or_config(vault, config_file=None)
-            remote_deleted.update(OciProvisioner(auth).detonate(workspace))
-        except FuseKitError as exc:
-            remote_deleted = {"failed.workspace": str(exc)}
+    if args.runner == "oci":
+        vault: Vault | None = None
+        workspace: OciWorkspace | None = None
+        if args.vault.exists():
+            passphrase = _passphrase(args)
+            vault = open_or_create(args.vault, passphrase)
+            try:
+                workspace = latest_workspace_from_vault(vault)
+                remote_deleted["remote_worker"] = detonate_remote_worker(
+                    workspace=workspace,
+                    vault=vault,
+                )
+            except FuseKitError as exc:
+                remote_deleted["failed.remote_worker"] = str(exc)
+        if workspace is None:
+            try:
+                workspace = _workspace_from_job_artifact(job, args.job_state)
+            except FuseKitError as exc:
+                remote_deleted["failed.workspace"] = str(exc)
+        if workspace is not None:
+            try:
+                auth_vault = vault or Vault.empty()
+                auth = load_oci_auth_from_vault_or_config(auth_vault, config_file=None)
+                remote_deleted.update(OciProvisioner(auth).detonate(workspace))
+                _mark_remote_worker_detonated_by_workspace_teardown(remote_deleted)
+            except FuseKitError as exc:
+                remote_deleted["failed.workspace"] = str(exc)
     removed = detonate_paths(
         [Path(".fusekit/worker"), Path(".fusekit/tmp")],
         preserve=[Path(".fusekit/fusekit.vault.json"), args.job_state],
@@ -1877,6 +1936,35 @@ def _cmd_runner_detonate(args: argparse.Namespace) -> int:
         )
     )
     return 0 if _workspace_detonation_complete(remote_deleted) else 1
+
+
+def _workspace_from_job_artifact(
+    job: JobState | None,
+    job_state: Path,
+) -> OciWorkspace:
+    """Load the recorded OCI workspace when the encrypted vault is unavailable."""
+
+    candidates: list[Path] = []
+    if job is not None:
+        artifact = job.artifacts.get("oci_workspace")
+        if artifact:
+            candidates.append(Path(artifact))
+    candidates.append(job_state.with_name("oci_workspace.json"))
+    for candidate in candidates:
+        try:
+            raw = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(raw, dict):
+            continue
+        try:
+            return OciWorkspace.from_dict(raw)
+        except (KeyError, TypeError, ValueError):
+            continue
+    raise FuseKitError(
+        "No OCI workspace exists in the encrypted vault or job artifacts. "
+        "Provision the runner first, or restore .fusekit/oci_workspace.json."
+    )
 
 
 def _resolve_launch_runner(args: argparse.Namespace) -> RunnerResolution:
@@ -2096,6 +2184,18 @@ def _save_launch_job(
     run_record_path = args.job_state.with_name("run_record.json")
     if job.artifacts.get("run_record") != str(run_record_path):
         job.add_artifact("run_record", run_record_path)
+    llm_contract_path = _llm_contract_path(args)
+    if llm_contract_path is not None:
+        if not llm_contract_path.exists():
+            _write_current_llm_contract(
+                args,
+                required=not bool(getattr(args, "allow_incomplete", False)),
+            )
+        if (
+            llm_contract_path.exists()
+            and job.artifacts.get("llm_contract") != str(llm_contract_path)
+        ):
+            job.add_artifact("llm_contract", llm_contract_path)
     worker_replacement_drill_path = args.job_state.with_name("worker_replacement_drill.json")
     ensure_pending_worker_replacement_drill(worker_replacement_drill_path)
     if job.artifacts.get("worker_replacement_drill") != str(worker_replacement_drill_path):
@@ -2129,12 +2229,24 @@ def _load_or_create_launch_job(
         except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
             job = JobState.create(f"fk-{uuid.uuid4().hex[:12]}", app_path, runner_name)
         else:
-            if job.app_path == str(app_path) and job.runner == runner_name and job.status != "done":
+            if (
+                job.app_path == str(app_path)
+                and job.runner == runner_name
+                and _launch_job_can_resume(job)
+            ):
                 job.mark("runner.resolve", "done", f"{runner_name} selected; resumed from state")
                 return job
     job = JobState.create(f"fk-{uuid.uuid4().hex[:12]}", app_path, runner_name)
     job.mark("runner.resolve", "done", f"{runner_name} selected")
     return job
+
+
+def _launch_job_can_resume(job: JobState) -> bool:
+    """Return whether a saved launch job is still an active resumable attempt."""
+
+    if job.status not in {"created", "running", "waiting"}:
+        return False
+    return not any(step.status == "failed" for step in job.steps)
 
 
 def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_name: str) -> int:
@@ -2252,6 +2364,11 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
                 success_detail="workspace detonated after failed verification",
                 failure_detail="workspace detonation incomplete after failed verification",
             )
+            _copy_workspace_detonation_to_remote_artifacts(
+                args,
+                Path(artifacts["output_dir"]),
+                vault_index=vault.public_index(),
+            )
         else:
             job.mark("detonate.workspace", "skipped", "workspace retained by --no-detonate")
         _save_launch_job(args, job, vault_index=vault.public_index())
@@ -2295,6 +2412,11 @@ def _cmd_cloud_runner_launch(args: argparse.Namespace, app_path: Path, runner_na
             reason="successful launch",
             success_detail="remote worker and OCI workspace detonated",
             failure_detail="OCI workspace detonation incomplete after successful launch",
+        )
+        _copy_workspace_detonation_to_remote_artifacts(
+            args,
+            artifacts_dir,
+            vault_index=vault.public_index(),
         )
         if not detonation_complete:
             _save_launch_job(args, job, vault_index=vault.public_index())
@@ -2350,9 +2472,37 @@ def _detonate_oci_workspace(
                 load_oci_auth_from_vault_or_config(vault, config_file=args.oci_config_file)
             ).detonate(workspace)
         )
+        _mark_remote_worker_detonated_by_workspace_teardown(remote_deleted)
     except FuseKitError as exc:
         remote_deleted["failed.workspace"] = str(exc)
     return remote_deleted
+
+
+def _mark_remote_worker_detonated_by_workspace_teardown(
+    remote_deleted: dict[str, Any],
+) -> None:
+    """Treat verified VM destruction as remote-worker destruction proof."""
+
+    if "remote_worker" in remote_deleted:
+        return
+    if not _workspace_cloud_resources_deleted(remote_deleted):
+        return
+    remote_deleted.pop("failed.remote_worker", None)
+    remote_deleted["remote_worker"] = remote_worker_cleanup_proof()
+
+
+def _workspace_cloud_resources_deleted(remote_deleted: dict[str, Any]) -> bool:
+    """Return whether OCI reports every cloud-side worker surface deleted."""
+
+    if any(key.startswith("failed.") and key != "failed.remote_worker" for key in remote_deleted):
+        return False
+    deleted = {key for key in remote_deleted if not key.startswith("failed.")}
+    return (
+        "instance" in deleted
+        and "boot_volume" in deleted
+        and "ephemeral_public_ip" in deleted
+        and not (WORKSPACE_NETWORK_RESOURCE_KEYS - deleted)
+    )
 
 
 def _run_oci_worker_replacement_drill(
@@ -2449,6 +2599,145 @@ def _record_workspace_detonation(
     else:
         job.mark("detonate.workspace", "failed", failure_detail)
     return complete
+
+
+def _copy_workspace_detonation_to_remote_artifacts(
+    args: argparse.Namespace,
+    artifacts_dir: Path,
+    *,
+    vault_index: list[dict[str, Any]] | None = None,
+) -> Path | None:
+    """Attach final OCI detonation proof to the retrieved remote artifact bundle."""
+
+    source = Path(args.job_state).parent / "workspace_detonation.json"
+    target = artifacts_dir / ".fusekit" / "workspace_detonation.json"
+    if source.is_symlink():
+        raise FuseKitError(
+            "Workspace detonation proof must be a regular local receipt file."
+        )
+    if source.exists() and not source.is_file():
+        raise FuseKitError(
+            "Workspace detonation proof must be a regular local receipt file."
+        )
+    if not source.is_file():
+        return None
+    if target.parent.is_symlink() or not target.parent.is_dir():
+        raise FuseKitError(
+            "Cannot attach workspace detonation proof; retrieved OCI artifact "
+            "bundle is missing."
+        )
+    if target.is_symlink() or (target.exists() and not target.is_file()):
+        raise FuseKitError(
+            "Cannot attach workspace detonation proof to an invalid survivor path."
+        )
+    _copy_file_atomically(source, target, label="Workspace detonation proof")
+    _refresh_remote_detonation_run_record(
+        args,
+        artifacts_dir,
+        vault_index=vault_index,
+    )
+    return target
+
+
+def _refresh_remote_detonation_run_record(
+    args: argparse.Namespace,
+    artifacts_dir: Path,
+    *,
+    vault_index: list[dict[str, Any]] | None = None,
+) -> None:
+    remote_fusekit = artifacts_dir / ".fusekit"
+    local_run_state = _run_state_path(args)
+    remote_run_state = remote_fusekit / "run_state.json"
+    if local_run_state.is_symlink() or not local_run_state.is_file():
+        raise FuseKitError("Final run state proof must be a regular local file.")
+    if remote_run_state.is_symlink() or (
+        remote_run_state.exists() and not remote_run_state.is_file()
+    ):
+        raise FuseKitError("Cannot refresh final run state proof at invalid survivor path.")
+    _copy_file_atomically(local_run_state, remote_run_state, label="Final run state proof")
+    remote_job_path = remote_fusekit / "job.json"
+    if remote_job_path.is_symlink() or not remote_job_path.is_file():
+        raise FuseKitError("Cannot refresh Run Record; retrieved job state is missing.")
+    run_record_path = remote_fusekit / "run_record.json"
+    if run_record_path.is_symlink() or (
+        run_record_path.exists() and not run_record_path.is_file()
+    ):
+        raise FuseKitError("Cannot refresh Run Record at invalid survivor path.")
+    remote_job = JobState.load(remote_job_path)
+    remote_job.mark(
+        "detonate.workspace",
+        "done",
+        "remote worker and OCI workspace detonated",
+    )
+    checkpoints_path = remote_fusekit / "checkpoints.json"
+    if checkpoints_path.is_symlink() or (
+        checkpoints_path.exists() and not checkpoints_path.is_file()
+    ):
+        raise FuseKitError("Cannot refresh checkpoints at invalid survivor path.")
+    job_temp = remote_job_path.with_name(f".{remote_job_path.name}.tmp")
+    checkpoints_temp = checkpoints_path.with_name(f".{checkpoints_path.name}.tmp")
+    run_record_temp = run_record_path.with_name(f".{run_record_path.name}.tmp")
+    try:
+        _clear_receipt_temp(job_temp, label="Final job state proof")
+        _clear_receipt_temp(checkpoints_temp, label="Final checkpoints proof")
+        _clear_receipt_temp(run_record_temp, label="Final Run Record proof")
+        _write_json_file(
+            job_temp,
+            remote_job.to_dict(),
+            label="Final job state proof",
+        )
+        _write_json_file(
+            checkpoints_temp,
+            _job_checkpoints_payload(remote_job),
+            label="Final checkpoints proof",
+        )
+        write_run_record(remote_job, path=run_record_temp, vault_index=vault_index)
+        job_temp.replace(remote_job_path)
+        checkpoints_temp.replace(checkpoints_path)
+        run_record_temp.replace(run_record_path)
+    except OSError as exc:
+        for temp in (job_temp, checkpoints_temp, run_record_temp):
+            if temp.exists() or temp.is_symlink():
+                temp.unlink()
+        raise FuseKitError("Final Run Record proof could not be attached.") from exc
+
+
+def _write_json_file(path: Path, payload: dict[str, Any], *, label: str) -> None:
+    del label
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", "utf-8")
+
+
+def _job_checkpoints_payload(job: JobState) -> dict[str, Any]:
+    return {
+        REMOTE_CHECKPOINTS_JOB_ID_FIELD: job.id,
+        REMOTE_CHECKPOINTS_STATUS_FIELD: job.status,
+        REMOTE_CHECKPOINTS_UPDATED_AT_FIELD: job.updated_at,
+        REMOTE_CHECKPOINTS_CHECKPOINTS_FIELD: [
+            checkpoint.to_dict() for checkpoint in job.checkpoints
+        ],
+    }
+
+
+def _copy_file_atomically(source: Path, target: Path, *, label: str) -> None:
+    temp = target.with_name(f".{target.name}.tmp")
+    try:
+        _clear_receipt_temp(temp, label=label)
+        with source.open("rb") as source_file, temp.open("xb") as temp_file:
+            shutil.copyfileobj(source_file, temp_file)
+        temp.replace(target)
+    except OSError as exc:
+        if temp.exists() or temp.is_symlink():
+            temp.unlink()
+        raise FuseKitError(f"{label} could not be attached.") from exc
+
+
+def _clear_receipt_temp(temp: Path, *, label: str) -> None:
+    if temp.is_symlink() or temp.is_file():
+        temp.unlink()
+    elif temp.exists():
+        raise FuseKitError(
+            f"{label} temporary path must be a regular file."
+        )
 
 
 def _workspace_detonation_complete(remote_deleted: dict[str, Any]) -> bool:
@@ -2562,14 +2851,16 @@ def _remote_worker_cleanup_summary(value: object) -> dict[str, Any]:
 def _remote_worker_cleanup_complete(value: object) -> bool:
     if not isinstance(value, dict):
         return False
-    process_patterns = set(_string_list(value.get("process_patterns")))
-    paths = set(_string_list(value.get("paths")))
+    process_patterns = _string_list(value.get("process_patterns"))
+    paths = _string_list(value.get("paths"))
     return (
         str(value.get("schema_version", "") or "") == REMOTE_WORKER_CLEANUP_SCHEMA_VERSION
         and str(value.get("status", "") or "") == "detonated"
         and value.get("host_machine_state_required") is False
-        and set(REMOTE_WORKER_PROCESS_PATTERNS).issubset(process_patterns)
-        and set(REMOTE_WORKER_PATH_TARGETS).issubset(paths)
+        and not _has_duplicate_strings(process_patterns)
+        and not _has_duplicate_strings(paths)
+        and set(REMOTE_WORKER_PROCESS_PATTERNS).issubset(set(process_patterns))
+        and set(REMOTE_WORKER_PATH_TARGETS).issubset(set(paths))
     )
 
 
@@ -2577,6 +2868,18 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value]
+
+
+def _has_duplicate_strings(values: list[str]) -> bool:
+    seen: set[str] = set()
+    for value in values:
+        text = value.strip()
+        if not text:
+            continue
+        if text in seen:
+            return True
+        seen.add(text)
+    return False
 
 
 def _run_remote_detonation_preflight(args: argparse.Namespace, output_dir: Path) -> None:
@@ -2587,8 +2890,10 @@ def _run_remote_detonation_preflight(args: argparse.Namespace, output_dir: Path)
         audit=fusekit_dir / "audit.jsonl",
         receipt=fusekit_dir / "setup_receipt.json",
         verification_report=fusekit_dir / "verification_report.json",
+        provider_strategies=fusekit_dir / "provider_strategies.json",
         rollback_metadata=fusekit_dir / "rollback_plan.json",
         run_record=fusekit_dir / "run_record.json",
+        llm_contract=fusekit_dir / "llm_contract.json",
         worker_replacement_drill=fusekit_dir / "worker_replacement_drill.json",
     )
     if not result.ok:
@@ -4114,7 +4419,7 @@ def _write_provider_strategy_artifact(
     path = _provider_strategy_artifact_path(Path(args.vault))
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "schema_version": "fusekit.provider-strategies.v1",
+        "schema_version": PROVIDER_STRATEGIES_SCHEMA_VERSION,
         "playbook": _provider_playbook(strategy_runs),
         "providers": strategy_runs,
     }
@@ -5733,11 +6038,13 @@ def _capture_manifest_provider_env(vault: Vault, manifest: SetupManifest) -> Non
 
 def _capture_llm(args: argparse.Namespace, vault: Vault, require: bool) -> None:
     config = _llm_config_from_args(args)
+    _write_current_llm_contract(args, vault=vault, required=require)
     api_key = None
     if not os.environ.get(config.api_key_env) and args.capture_llm_key:
         api_key = getpass.getpass(f"Paste {config.provider} LLM API key: ").strip()
     captured = capture_llm_config(vault, config, api_key=api_key)
     if captured:
+        _write_current_llm_contract(args, vault=vault, required=require)
         return
     mode = getattr(args, "llm_auth_mode", "auto")
     if (
@@ -5751,6 +6058,7 @@ def _capture_llm(args: argparse.Namespace, vault: Vault, require: bool) -> None:
         return
     if mode in {"auto", "openclaw"} and require:
         _await_openclaw_llm_authorization(args, vault, config)
+        _write_current_llm_contract(args, vault=vault, required=require)
         return
     if require:
         raise FuseKitError(
@@ -5760,6 +6068,40 @@ def _capture_llm(args: argparse.Namespace, vault: Vault, require: bool) -> None:
             "but --llm-provider, --llm-model, --llm-base-url, and --llm-api-key-env "
             "can target another LLM."
         )
+
+
+def _llm_contract_path(args: argparse.Namespace) -> Path | None:
+    if not all(
+        hasattr(args, attr)
+        for attr in ("llm_provider", "llm_model", "llm_base_url", "llm_api_key_env")
+    ):
+        return None
+    job_state = getattr(args, "job_state", None)
+    if isinstance(job_state, Path):
+        return job_state.parent / "llm_contract.json"
+    vault = getattr(args, "vault", None)
+    if isinstance(vault, Path):
+        return vault.parent / "llm_contract.json"
+    return Path(".fusekit/llm_contract.json")
+
+
+def _write_current_llm_contract(
+    args: argparse.Namespace,
+    *,
+    vault: Vault | None = None,
+    required: bool,
+) -> Path | None:
+    path = _llm_contract_path(args)
+    if path is None:
+        return None
+    contract = build_llm_contract(
+        _llm_config_from_args(args),
+        auth_mode=str(getattr(args, "llm_auth_mode", "auto") or "auto"),
+        required=required,
+        vault=vault,
+    )
+    write_llm_contract(path, contract)
+    return path
 
 
 def _llm_config_from_args(args: argparse.Namespace) -> LlmConfig:

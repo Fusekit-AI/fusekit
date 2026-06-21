@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Set as AbstractSet
 from typing import Any
 
+RUNNER_READINESS_SCHEMA_VERSION = "fusekit.runner-readiness.v1"
+RUNNER_PROFILE_SCHEMA_VERSION = "fusekit.runner-profile.v1"
+RUNNER_READINESS_READY_STATUS = "ready"
 EXPECTED_PROVIDER_BROWSER_PROFILE = (
     "/var/lib/fusekit-runner/visual/chrome-provider-profile"
 )
@@ -38,15 +42,55 @@ REQUIRED_RUNNER_BINARIES = (
     "novnc_gateway",
     "playwright_chromium",
 )
+RUNNER_READINESS_KEYS = frozenset(
+    {
+        "architecture",
+        "checks",
+        "installed_binaries",
+        "observed",
+        "playwright_browsers_path",
+        "profile_contract",
+        "provider_browser_profile",
+        "schema_version",
+        "status",
+    }
+)
+RUNNER_PROFILE_CONTRACT_KEYS = frozenset(
+    {
+        "architecture",
+        "browser_stack",
+        "min_memory_mib",
+        "name",
+        "os_family",
+        "ports",
+        "required_binaries",
+        "required_health_checks",
+        "schema_version",
+        "supported_os_ids",
+    }
+)
+RUNNER_BROWSER_STACK_KEYS = frozenset(
+    {
+        "automation",
+        "browser",
+        "shared_provider_profile",
+        "spine",
+    }
+)
+RUNNER_OBSERVED_KEYS = frozenset({"memory_mib", "os_id", "os_version", "python"})
+RUNNER_BINARY_RECORD_KEYS = frozenset({"path", "present", "version"})
 
 
 def runner_readiness_failures(readiness: dict[str, Any]) -> list[str]:
     """Return contract failures for a prepared disposable OCI browser runner."""
 
     failures: list[str] = []
-    if str(readiness.get("schema_version", "")).strip() != "fusekit.runner-readiness.v1":
-        failures.append("schema_version must be fusekit.runner-readiness.v1")
-    if str(readiness.get("status", "")).strip() != "ready":
+    failures.extend(_runner_readiness_shape_failures(readiness))
+    if str(readiness.get("schema_version", "")).strip() != (
+        RUNNER_READINESS_SCHEMA_VERSION
+    ):
+        failures.append(f"schema_version must be {RUNNER_READINESS_SCHEMA_VERSION}")
+    if str(readiness.get("status", "")).strip() != RUNNER_READINESS_READY_STATUS:
         failures.append("status must be ready")
     if str(readiness.get("architecture", "")).strip().lower() not in {"x86_64", "amd64"}:
         failures.append("architecture must be x86_64")
@@ -85,8 +129,11 @@ def runner_profile_contract_failures(profile: dict[str, Any]) -> list[str]:
     """Return contract failures for the runner profile embedded in readiness proof."""
 
     failures: list[str] = []
-    if str(profile.get("schema_version", "")).strip() != "fusekit.runner-profile.v1":
-        failures.append("runner profile schema_version must be fusekit.runner-profile.v1")
+    failures.extend(_runner_profile_shape_failures(profile))
+    if str(profile.get("schema_version", "")).strip() != RUNNER_PROFILE_SCHEMA_VERSION:
+        failures.append(
+            f"runner profile schema_version must be {RUNNER_PROFILE_SCHEMA_VERSION}"
+        )
     if str(profile.get("name", "")).strip() != EXPECTED_RUNNER_PROFILE:
         failures.append(f"runner profile name must be {EXPECTED_RUNNER_PROFILE}")
     if str(profile.get("architecture", "")).strip().lower() not in {"x86_64", "amd64"}:
@@ -153,16 +200,183 @@ def _installed_binaries_failures(installed: object) -> list[str]:
     failures: list[str] = []
     if not isinstance(installed, dict):
         return ["installed_binaries must be a JSON object"]
+    unexpected_binaries = sorted(set(installed) - set(REQUIRED_RUNNER_BINARIES))
+    if unexpected_binaries:
+        failures.append(
+            "installed_binaries has unexpected fields: "
+            + ", ".join(unexpected_binaries)
+        )
     for name in REQUIRED_RUNNER_BINARIES:
         raw = installed.get(name)
         if not isinstance(raw, dict):
             failures.append(f"installed_binaries.{name} must be a JSON object")
             continue
+        unexpected = sorted(set(raw) - RUNNER_BINARY_RECORD_KEYS)
+        if unexpected:
+            failures.append(
+                f"installed_binaries.{name} has unexpected fields: " + ", ".join(unexpected)
+            )
         if raw.get("present") is not True:
             failures.append(f"installed_binaries.{name}.present must be true")
-        if not str(raw.get("path", "") or "").strip():
+        path = raw.get("path", "")
+        if not isinstance(path, str) or not path.strip():
             failures.append(f"installed_binaries.{name}.path is required")
+        elif path != path.strip():
+            failures.append(f"installed_binaries.{name}.path must be trimmed")
+        version = raw.get("version", "")
+        if version is not None:
+            if not isinstance(version, str):
+                failures.append(f"installed_binaries.{name}.version must be a string")
+            elif version != version.strip():
+                failures.append(f"installed_binaries.{name}.version must be trimmed")
     return failures
+
+
+def _runner_readiness_shape_failures(readiness: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    unexpected = sorted(set(readiness) - RUNNER_READINESS_KEYS)
+    if unexpected:
+        failures.append("artifact has unexpected fields: " + ", ".join(unexpected))
+    for key in (
+        "schema_version",
+        "status",
+        "architecture",
+        "provider_browser_profile",
+        "playwright_browsers_path",
+    ):
+        _append_trimmed_string_failure(failures, readiness.get(key), key)
+    _append_boolean_map_shape_failures(
+        failures,
+        readiness.get("checks"),
+        "checks",
+        set(REQUIRED_RUNNER_READINESS_CHECKS),
+    )
+    observed = readiness.get("observed")
+    if isinstance(observed, dict):
+        unexpected_observed = sorted(set(observed) - RUNNER_OBSERVED_KEYS)
+        if unexpected_observed:
+            failures.append(
+                "observed has unexpected fields: " + ", ".join(unexpected_observed)
+            )
+        for key in ("os_id", "os_version", "python"):
+            _append_trimmed_string_failure(failures, observed.get(key), f"observed.{key}")
+        _append_plain_int_failure(
+            failures,
+            observed.get("memory_mib"),
+            "observed.memory_mib",
+        )
+    return failures
+
+
+def _runner_profile_shape_failures(profile: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    unexpected = sorted(set(profile) - RUNNER_PROFILE_CONTRACT_KEYS)
+    if unexpected:
+        failures.append("runner profile has unexpected fields: " + ", ".join(unexpected))
+    for key in ("schema_version", "name", "architecture", "os_family"):
+        _append_trimmed_string_failure(failures, profile.get(key), f"runner profile {key}")
+    _append_plain_int_failure(
+        failures,
+        profile.get("min_memory_mib"),
+        "runner profile min_memory_mib",
+    )
+    _append_string_list_shape_failures(
+        failures,
+        profile.get("supported_os_ids"),
+        "runner profile supported_os_ids",
+    )
+    ports = profile.get("ports")
+    if isinstance(ports, dict):
+        unexpected_ports = sorted(set(ports) - set(EXPECTED_RUNNER_PORTS))
+        if unexpected_ports:
+            failures.append(
+                "runner profile ports has unexpected fields: "
+                + ", ".join(unexpected_ports)
+            )
+        for key in EXPECTED_RUNNER_PORTS:
+            _append_plain_int_failure(
+                failures,
+                ports.get(key),
+                f"runner profile ports.{key}",
+            )
+    browser_stack = profile.get("browser_stack")
+    if isinstance(browser_stack, dict):
+        unexpected_browser = sorted(set(browser_stack) - RUNNER_BROWSER_STACK_KEYS)
+        if unexpected_browser:
+            failures.append(
+                "runner profile browser_stack has unexpected fields: "
+                + ", ".join(unexpected_browser)
+            )
+        for key in RUNNER_BROWSER_STACK_KEYS:
+            _append_trimmed_string_failure(
+                failures,
+                browser_stack.get(key),
+                f"runner profile browser_stack.{key}",
+            )
+    _append_string_list_shape_failures(
+        failures,
+        profile.get("required_health_checks"),
+        "runner profile required_health_checks",
+    )
+    _append_string_list_shape_failures(
+        failures,
+        profile.get("required_binaries"),
+        "runner profile required_binaries",
+    )
+    return failures
+
+
+def _append_boolean_map_shape_failures(
+    failures: list[str],
+    raw: object,
+    label: str,
+    allowed: AbstractSet[str],
+) -> None:
+    if not isinstance(raw, dict):
+        return
+    unexpected = sorted(set(raw) - allowed)
+    if unexpected:
+        failures.append(f"{label} has unexpected fields: " + ", ".join(unexpected))
+    for key, value in raw.items():
+        if key != str(key).strip():
+            failures.append(f"{label}.{key} must be trimmed")
+        if not isinstance(value, bool):
+            failures.append(f"{label}.{key} must be boolean")
+
+
+def _append_string_list_shape_failures(
+    failures: list[str],
+    raw: object,
+    label: str,
+) -> None:
+    if not isinstance(raw, list):
+        return
+    for index, item in enumerate(raw):
+        item_label = f"{label}[{index}]"
+        if not isinstance(item, str):
+            failures.append(f"{item_label} must be a string")
+        elif item != item.strip():
+            failures.append(f"{item_label} must be trimmed")
+
+
+def _append_trimmed_string_failure(
+    failures: list[str],
+    value: object,
+    label: str,
+) -> None:
+    if value is None:
+        return
+    if not isinstance(value, str):
+        failures.append(f"{label} must be a string")
+    elif value != value.strip():
+        failures.append(f"{label} must be trimmed")
+
+
+def _append_plain_int_failure(failures: list[str], value: object, label: str) -> None:
+    if value is None:
+        return
+    if not isinstance(value, int) or isinstance(value, bool):
+        failures.append(f"{label} must be an integer")
 
 
 def _int_field(value: object, default: int) -> int:

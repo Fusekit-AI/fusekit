@@ -1,0 +1,45 @@
+"""Shared provider-strategy proof shape for launch gates."""
+
+from __future__ import annotations
+
+PROVIDER_STRATEGIES_SCHEMA_VERSION = "fusekit.provider-strategies.v1"
+PROVIDER_STRATEGIES_ARTIFACT_FIELDS = ("schema_version", "providers", "playbook")
+PROVIDER_STRATEGIES_ARTIFACT_KEYS = frozenset(PROVIDER_STRATEGIES_ARTIFACT_FIELDS)
+PROVIDER_STRATEGY_PROVIDER_FIELDS = ("provider", "strategies")
+PROVIDER_STRATEGY_PROVIDER_KEYS = frozenset(PROVIDER_STRATEGY_PROVIDER_FIELDS)
+PROVIDER_STRATEGY_RECORD_REQUIRED_FIELDS = ("recipe", "strategy", "status")
+PROVIDER_STRATEGY_RECORD_OPTIONAL_TEXT_FIELDS = (
+    "resume_url",
+    "target",
+    "next_action",
+    "resume_hint",
+)
+PROVIDER_STRATEGY_RECORD_LIST_FIELDS = (
+    "follow_steps",
+    "success_criteria",
+    "avoid_steps",
+)
+PROVIDER_STRATEGY_RECORD_FIELDS = (
+    *PROVIDER_STRATEGY_RECORD_REQUIRED_FIELDS,
+    "decision",
+    *PROVIDER_STRATEGY_RECORD_OPTIONAL_TEXT_FIELDS,
+    *PROVIDER_STRATEGY_RECORD_LIST_FIELDS,
+)
+PROVIDER_STRATEGY_RECORD_KEYS = frozenset(PROVIDER_STRATEGY_RECORD_FIELDS)
+PROVIDER_STRATEGY_DECISION_FIELDS = ("provider", "recipe_kind", "selected", "candidates")
+PROVIDER_STRATEGY_DECISION_KEYS = frozenset(PROVIDER_STRATEGY_DECISION_FIELDS)
+PROVIDER_STRATEGY_ROUTE_REQUIRED_FIELDS = ("kind", "status", "reason")
+PROVIDER_STRATEGY_ROUTE_CANDIDATE_REQUIRED_FIELDS = ("kind", "status")
+PROVIDER_STRATEGY_ROUTE_FIELDS = (
+    "kind",
+    "label",
+    "priority",
+    "status",
+    "deterministic",
+    "implemented",
+    "reason",
+    "evidence",
+)
+PROVIDER_STRATEGY_ROUTE_KEYS = frozenset(PROVIDER_STRATEGY_ROUTE_FIELDS)
+PROVIDER_STRATEGY_SELECTED_KEYS = PROVIDER_STRATEGY_ROUTE_KEYS
+PROVIDER_STRATEGY_CANDIDATE_KEYS = PROVIDER_STRATEGY_ROUTE_KEYS

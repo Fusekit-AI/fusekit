@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Literal
 
 from fusekit.runner.gate_guidance import provider_gate_guidance
+from fusekit.runner.gate_proof import PROVIDER_GATES_ARTIFACT_GATES_FIELD
 
 GateStatus = Literal["waiting", "resurfaced", "resume_requested", "passed", "failed"]
 
@@ -367,7 +368,11 @@ class GateService:
         _atomic_write_private(
             self.path,
             json.dumps(
-                {"gates": [record.to_dict() for record in self.records.values()]},
+                {
+                    PROVIDER_GATES_ARTIFACT_GATES_FIELD: [
+                        record.to_dict() for record in self.records.values()
+                    ]
+                },
                 indent=2,
                 sort_keys=True,
             )

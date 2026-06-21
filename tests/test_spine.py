@@ -71,6 +71,21 @@ def test_openclaw_browser_availability_requires_runnable_command(tmp_path) -> No
     ]
 
 
+def test_openclaw_browser_availability_treats_doctor_timeout_as_unavailable(
+    tmp_path,
+) -> None:
+    openclaw = tmp_path / "openclaw"
+    openclaw.write_text("#!/bin/sh\n", encoding="utf-8")
+    openclaw.chmod(0o700)
+
+    def runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+        raise subprocess.TimeoutExpired(command, 60)
+
+    spine = OpenClawBrowserSpine(profile="work", binary=str(openclaw), runner=runner)
+
+    assert spine.browser_command_available() is False
+
+
 def test_openclaw_spine_can_use_default_openclaw_home(monkeypatch) -> None:
     calls: list[list[str]] = []
     monkeypatch.setenv("FUSEKIT_OPENCLAW_HOME_MODE", "default")

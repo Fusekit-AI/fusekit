@@ -2,7 +2,15 @@ from __future__ import annotations
 
 import subprocess
 
-from fusekit.llm import LlmConfig, capture_llm_config
+from fusekit.llm import (
+    LLM_CONTRACT_KEYS,
+    LLM_CONTRACT_LANE_KEYS,
+    LLM_CONTRACT_SECURITY_KEYS,
+    MODEL_INFERENCE_KEYS,
+    LlmConfig,
+    build_llm_contract,
+    capture_llm_config,
+)
 from fusekit.llm.openclaw_auth import authorize_openclaw_llm
 from fusekit.runtime.bootstrap import openclaw_state_home
 from fusekit.vault import Vault
@@ -19,6 +27,121 @@ def test_capture_llm_config_stores_key_in_vault_without_public_value(monkeypatch
     assert record.value == "fake-openai-test-key"
     assert record.metadata["model"] == "gpt-5.5"
     assert "fake-openai-test-key" not in str(vault.public_index())
+
+
+def test_llm_contract_explains_default_openclaw_fallback_without_secret() -> None:
+    contract = build_llm_contract(
+        LlmConfig(),
+        auth_mode="auto",
+        required=True,
+        environ={},
+    )
+
+    assert contract["schema_version"] == "fusekit.llm-contract.v1"
+    assert contract["provider"] == "openai"
+    assert contract["model"] == "gpt-5.5"
+    assert contract["api_key_env"] == "OPENAI_API_KEY"
+    assert contract["status"] == "needs_openclaw_or_api_key"
+    assert contract["can_proceed_without_api_key"] is True
+    assert contract["default_lane"] == "openclaw-openai"
+    lanes = {str(lane["id"]): lane for lane in contract["lanes"]}
+    assert lanes["api-key"]["requires_user_action"] is True
+    assert lanes["openclaw-openai"]["requires_user_action"] is True
+    assert "OpenClaw/OpenAI" in str(contract["next_action"])
+    assert "raw_secret_export" in contract["security"]
+    assert "sk-" not in str(contract)
+
+
+def test_llm_contract_defaults_to_ready_api_key_lane_when_key_is_encrypted() -> None:
+    vault = Vault.empty()
+    vault.put(
+        "llm.openai.api_key",
+        "llm_api_key",
+        "openai",
+        "OpenAI API key",
+        "sk-test-secret-value",
+    )
+
+    contract = build_llm_contract(
+        LlmConfig(),
+        auth_mode="auto",
+        required=True,
+        vault=vault,
+        environ={},
+    )
+
+    assert contract["status"] == "api_key_encrypted"
+    assert contract["default_lane"] == "api-key"
+    lanes = {str(lane["id"]): lane for lane in contract["lanes"]}
+    assert lanes["api-key"]["available"] is True
+    assert lanes["api-key"]["requires_user_action"] is False
+    assert lanes["openclaw-openai"]["available"] is True
+    assert lanes["openclaw-openai"]["requires_user_action"] is True
+
+
+def test_llm_contract_defaults_to_ready_openclaw_lane_when_profile_is_encrypted() -> None:
+    vault = Vault.empty()
+    vault.put(
+        "llm.openai.openclaw_profile",
+        "llm_openclaw_profile",
+        "openai",
+        "OpenClaw OpenAI profile",
+        '{"profile":"encrypted"}',
+    )
+
+    contract = build_llm_contract(
+        LlmConfig(),
+        auth_mode="auto",
+        required=True,
+        vault=vault,
+        environ={},
+    )
+
+    assert contract["status"] == "openclaw_profile_encrypted"
+    assert contract["default_lane"] == "openclaw-openai"
+    lanes = {str(lane["id"]): lane for lane in contract["lanes"]}
+    assert lanes["api-key"]["available"] is True
+    assert lanes["api-key"]["requires_user_action"] is True
+    assert lanes["openclaw-openai"]["available"] is True
+    assert lanes["openclaw-openai"]["requires_user_action"] is False
+
+
+def test_llm_contract_requires_api_key_for_custom_provider() -> None:
+    contract = build_llm_contract(
+        LlmConfig(
+            provider="runpod",
+            model="custom-model",
+            base_url="https://api.runpod.ai/v2/openai/v1",
+            api_key_env="RUNPOD_API_KEY",
+        ),
+        auth_mode="auto",
+        required=True,
+        environ={},
+    )
+
+    assert contract["status"] == "needs_api_key"
+    assert contract["can_proceed_without_api_key"] is False
+    assert "RUNPOD_API_KEY" in str(contract["next_action"])
+    assert "default OpenAI API lane" in str(contract["next_action"])
+
+
+def test_llm_contract_gate_surfaces_share_canonical_shape() -> None:
+    from fusekit.detonation import preflight
+    from fusekit.harness import acceptance
+    from fusekit.runner import run_record
+
+    assert run_record.MODEL_INFERENCE_KEYS is MODEL_INFERENCE_KEYS
+    assert run_record.LLM_CONTRACT_KEYS is LLM_CONTRACT_KEYS
+    assert run_record.LLM_CONTRACT_SECURITY_KEYS is LLM_CONTRACT_SECURITY_KEYS
+    assert run_record.LLM_CONTRACT_LANE_KEYS is LLM_CONTRACT_LANE_KEYS
+    assert acceptance._MODEL_INFERENCE_KEYS is MODEL_INFERENCE_KEYS
+    assert acceptance._LLM_CONTRACT_KEYS is LLM_CONTRACT_KEYS
+    assert acceptance._LLM_CONTRACT_SECURITY_KEYS is LLM_CONTRACT_SECURITY_KEYS
+    assert acceptance._LLM_CONTRACT_LANE_KEYS is LLM_CONTRACT_LANE_KEYS
+    assert preflight.MODEL_INFERENCE_KEYS is MODEL_INFERENCE_KEYS
+    assert preflight.LLM_CONTRACT_KEYS is LLM_CONTRACT_KEYS
+    assert preflight.LLM_CONTRACT_SECURITY_KEYS is LLM_CONTRACT_SECURITY_KEYS
+    assert preflight.LLM_CONTRACT_LANE_KEYS is LLM_CONTRACT_LANE_KEYS
 
 
 def test_openclaw_llm_auth_captures_auth_state_in_vault(monkeypatch, tmp_path) -> None:

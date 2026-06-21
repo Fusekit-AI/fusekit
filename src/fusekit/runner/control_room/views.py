@@ -28,6 +28,7 @@ from fusekit.runner.control_room.snowman import (
 from fusekit.runner.control_room.state import control_room_payload
 from fusekit.runner.gate_guidance import GateGuidance, infer_gate_provider, provider_gate_guidance
 from fusekit.runner.job import JobState, JobStep
+from fusekit.security import redact_public_path, redact_public_text
 
 
 def render_control_room(
@@ -68,6 +69,7 @@ def render_control_room(
     {_render_run_state(control_payload.get("run_state", {}))}
     {_render_durable_state(control_payload.get("run_record", {}))}
     {_render_runtime_resume_contract(control_payload.get("run_record", {}))}
+    {_render_model_inference(control_payload)}
     {_render_security_surface(control_payload.get("security_surface", {}))}
     {_render_human_actions(control_payload.get("run_record", {}))}
     {_render_automation_boundary(control_payload.get("run_record", {}))}
@@ -99,6 +101,7 @@ def write_control_room(job: JobState, path: Path) -> None:
 
 
 def _render_header(job: JobState) -> str:
+    app_path = redact_public_path(redact_public_text(job.app_path))
     return f"""
     <header class="hero">
       <div>
@@ -106,7 +109,7 @@ def _render_header(job: JobState) -> str:
         <h1>{html.escape(_headline(job))}</h1>
         <p>
           Job <code>{html.escape(job.id)}</code> is wiring
-          <code>{html.escape(job.app_path)}</code> through the
+          <code>{html.escape(app_path)}</code> through the
           <code>{html.escape(job.runner)}</code> lane.
         </p>
       </div>
@@ -239,7 +242,7 @@ def _public_copy(value: Any, capture_targets: Iterable[str] = ()) -> str:
     )
     for old, new in replacements:
         text = text.replace(old, new)
-    return text
+    return redact_public_text(text)
 
 
 def _public_capture_instruction(capture_targets: Iterable[str]) -> str:
@@ -270,12 +273,14 @@ def _public_payload(value: Any) -> Any:
         return [_public_payload(item) for item in value]
     if isinstance(value, tuple):
         return [_public_payload(item) for item in value]
-    if isinstance(value, str):
-        return _public_copy(value)
     return value
 
 
 def _render_artifacts(job: JobState) -> str:
+    artifacts = {
+        name: redact_public_path(redact_public_text(path))
+        for name, path in sorted(job.artifacts.items())
+    }
     rows = "\n".join(
         f"""
           <li>
@@ -288,7 +293,7 @@ def _render_artifacts(job: JobState) -> str:
             </button>
           </li>
 """
-        for name, path in sorted(job.artifacts.items())
+        for name, path in artifacts.items()
     )
     if not rows:
         rows = (
@@ -475,12 +480,12 @@ def _render_acceptance_blockers(report: Any) -> str:
           <div>
             <span>Passed</span>
             <strong>Acceptance blockers are clear</strong>
-            <p>The live run has the required proof to be launch-ready.</p>
+            <p>The live run has the required public and recording proof.</p>
             <em>Record the demo from this clean state.</em>
           </div>
         </article>
-"""
-        summary = "launch-ready proof is clear"
+""" + _render_acceptance_recording_contract_cards(report, passed_only=True)
+        summary = "recording-ready proof is clear"
     elif public_ready:
         cards = """
         <article class="trust-card pending">
@@ -491,11 +496,19 @@ def _render_acceptance_blockers(report: Any) -> str:
             <p>The live run has public launch proof, but the report has not
             explicitly proven demo recording readiness.</p>
             <em>Keep the live launcher/control room open while FuseKit finishes
-            recording-readiness proof for the current provider run.</em>
+            recording-readiness proof for the current provider run, then rerun
+            live acceptance with --remote-artifacts and --require-recording.</em>
           </div>
         </article>
-"""
+""" + _render_acceptance_recording_contract_cards(report, passed_only=False)
         summary = "recording proof still required"
+    elif blockers:
+        cards = "\n".join(
+            _render_acceptance_blocker_card(blocker)
+            for blocker in blockers[:8]
+            if isinstance(blocker, dict)
+        )
+        summary = f"{len(blockers)} launch blocker{'s' if len(blockers) != 1 else ''}"
     elif ready and mode == "rehearsal":
         cards = """
         <article class="trust-card pending">
@@ -505,7 +518,8 @@ def _render_acceptance_blockers(report: Any) -> str:
             <strong>Live acceptance is still required</strong>
             <p>Local rehearsal proof is clear, but it is not live provider evidence.</p>
             <em>Keep using the live launcher/control room for the provider run;
-            FuseKit must collect live provider evidence before recording.</em>
+            FuseKit must collect live provider evidence before recording, then
+            pass live acceptance with --remote-artifacts and --require-recording.</em>
           </div>
         </article>
 """
@@ -519,18 +533,12 @@ def _render_acceptance_blockers(report: Any) -> str:
             <strong>Public launch proof is still required</strong>
             <p>The acceptance report has not explicitly proven public/demo readiness.</p>
             <em>Keep the live launcher/control room open while FuseKit rebuilds
-            launch-readiness proof from the current provider run.</em>
+            launch-readiness proof from the current provider run, then rerun
+            live acceptance with --remote-artifacts and --require-recording.</em>
           </div>
         </article>
 """
         summary = "public launch proof still required"
-    elif blockers:
-        cards = "\n".join(
-            _render_acceptance_blocker_card(blocker)
-            for blocker in blockers[:8]
-            if isinstance(blocker, dict)
-        )
-        summary = f"{len(blockers)} launch blocker{'s' if len(blockers) != 1 else ''}"
     else:
         cards = """
         <article class="trust-card pending">
@@ -562,11 +570,120 @@ def _render_acceptance_blockers(report: Any) -> str:
 
 
 def _acceptance_public_ready(report: dict[str, Any], ready: bool, mode: str) -> bool:
-    return report.get("public_launch_ready") is True and ready and mode == "live"
+    return (
+        report.get("public_launch_ready") is True
+        and ready
+        and mode == "live"
+        and not _acceptance_has_unresolved_evidence(report)
+    )
 
 
 def _acceptance_recording_ready(report: dict[str, Any], public_ready: bool) -> bool:
-    return report.get("recording_ready") is True and public_ready
+    contract = report.get("recording_contract", {})
+    contract_ready = (
+        isinstance(contract, dict) and contract.get("recording_ready") is True
+    )
+    return (
+        report.get("recording_ready") is True
+        and report.get("recording_proof_ready") is True
+        and _acceptance_remote_artifacts_ready(report)
+        and public_ready
+        and contract_ready
+    )
+
+
+def _acceptance_remote_artifacts_ready(report: dict[str, Any]) -> bool:
+    if report.get("remote_artifacts_ready") is True:
+        return True
+    checks = report.get("checks", [])
+    return isinstance(checks, list) and any(
+        isinstance(check, dict)
+        and check.get("id") == "remote_artifacts.loaded"
+        and check.get("status") == "ok"
+        for check in checks
+    )
+
+
+def _acceptance_has_unresolved_evidence(report: dict[str, Any]) -> bool:
+    return bool(str(report.get("error", "") or "").strip()) or bool(
+        _acceptance_blockers(report)
+    )
+
+
+def _render_acceptance_recording_contract_cards(
+    report: dict[str, Any],
+    *,
+    passed_only: bool,
+) -> str:
+    contract = report.get("recording_contract", {})
+    contract = contract if isinstance(contract, dict) else {}
+    checks = contract.get("checks", {})
+    checks = checks if isinstance(checks, dict) else {}
+    if not checks:
+        return ""
+    cards: list[str] = []
+    for name, ready in sorted(
+        checks.items(),
+        key=lambda item: _recording_contract_sort_key(item[0]),
+    ):
+        if not isinstance(name, str):
+            continue
+        passed = ready is True
+        if passed_only and not passed:
+            continue
+        if not passed_only and passed:
+            continue
+        status = "passed" if passed else "pending"
+        snow = "passed" if passed else "checking"
+        title = "recording contract: " + name.replace("_", " ")
+        detail = _recording_contract_detail(name, passed)
+        cards.append(
+            f"""
+        <article class="trust-card {status}" data-acceptance-recording-check="{html.escape(name)}">
+          <div class="trust-snow state-{snow}" aria-hidden="true"></div>
+          <div>
+            <span>{html.escape(status_label(status))}</span>
+            <strong>{html.escape(title)}</strong>
+            <p>{html.escape(detail)}</p>
+            <em>from acceptance report recording_contract</em>
+          </div>
+        </article>
+"""
+        )
+        if len(cards) >= 6:
+            break
+    return "\n".join(cards)
+
+
+_RECORDING_CONTRACT_CARD_ORDER = (
+    "worker_replacement",
+    "rehearsal_review",
+    "model_inference",
+    "provider_playbook",
+    "verifiers",
+    "detonation",
+    "control_room_security",
+    "automation_boundary",
+    "durable_state",
+    "runner_profile",
+    "provider_gates",
+    "human_actions",
+    "audit_trail",
+    "evidence",
+    "artifacts",
+    "vault",
+    "wake_events",
+    "timeline",
+    "errors_empty",
+)
+
+
+def _recording_contract_sort_key(value: object) -> tuple[int, str]:
+    name = str(value)
+    try:
+        return (_RECORDING_CONTRACT_CARD_ORDER.index(name), name)
+    except ValueError:
+        return (len(_RECORDING_CONTRACT_CARD_ORDER), name)
 
 
 def _acceptance_blockers(report: dict[str, Any]) -> list[dict[str, Any]]:
@@ -576,9 +693,241 @@ def _acceptance_blockers(report: dict[str, Any]) -> list[dict[str, Any]]:
         if normalized:
             return normalized
     missing = report.get("missing", [])
-    if not isinstance(missing, list):
+    if isinstance(missing, list):
+        missing_blockers = [
+            _missing_acceptance_blocker(str(item)) for item in missing if str(item).strip()
+        ]
+        if missing_blockers:
+            return missing_blockers
+    checks = report.get("checks", [])
+    if not isinstance(checks, list):
         return []
-    return [_missing_acceptance_blocker(str(item)) for item in missing if str(item).strip()]
+    return [
+        _acceptance_check_blocker(check)
+        for check in checks
+        if _is_failed_acceptance_check(check)
+    ]
+
+
+def _is_failed_acceptance_check(check: Any) -> bool:
+    if not isinstance(check, dict):
+        return False
+    status = str(check.get("status", "") or "").strip().lower()
+    return bool(status and status not in {"ok", "passed", "skipped"})
+
+
+def _acceptance_check_blocker(check: dict[str, Any]) -> dict[str, str]:
+    item = str(check.get("id", "") or check.get("item", "") or "Acceptance check").strip()
+    detail = str(check.get("detail", "") or "").strip()
+    category, next_action = _acceptance_check_guidance(item, detail)
+    blocker = {
+        "category": category,
+        "item": item,
+        "next_action": next_action,
+    }
+    if detail:
+        blocker["detail"] = detail
+    return blocker
+
+
+def _acceptance_check_guidance(item: str, detail: str = "") -> tuple[str, str]:
+    if item == "remote_artifacts.loaded":
+        return (
+            "Remote artifacts",
+            (
+                "Keep the live launcher/control room open while FuseKit retrieves the "
+                "complete OCI artifact bundle before detonation; missing survivor files "
+                "mean the run cannot be recorded or trusted for public launch."
+            ),
+        )
+    if item == "detonation.workspace_receipt":
+        return (
+            "Workspace detonation",
+            (
+                "Keep the launcher/control room open until FuseKit writes the OCI "
+                "workspace detonation receipt proving the VM, boot volume, ephemeral "
+                "public IP, network resources, and remote worker cleanup were destroyed."
+            ),
+        )
+    if item == "runner_readiness.prepared":
+        return (
+            "Runner readiness",
+            (
+                "Keep the live launcher/control room open while FuseKit verifies the OCI "
+                "visual runner: x86_64 architecture, OpenClaw, Playwright Chromium, noVNC, "
+                "shared provider browser profile, helper binaries, and encrypted vault "
+                "access must be proven before provider gates continue."
+            ),
+        )
+    if item == "visual_state.safe":
+        return (
+            "Visual session",
+            (
+                "Keep the live launcher/control room open while FuseKit refreshes visual "
+                "session metadata with only safe noVNC/control-room URLs and safe noVNC "
+                "password metadata."
+            ),
+        )
+    if item == "provider_packs.validated" or item.startswith("provider_pack."):
+        return (
+            "Provider packs",
+            (
+                "Keep the live launcher/control room open while FuseKit loads and "
+                "validates provider capability packs for the services in the manifest "
+                "before provider setup, route planning, or verification continues."
+            ),
+        )
+    if item.startswith("manifest."):
+        return (
+            "Manifest",
+            (
+                "Keep the launcher/control room open while FuseKit rescans the app, "
+                "loads `fusekit.yaml`, and snapshots the setup manifest before "
+                "provider planning continues."
+            ),
+        )
+    if item == "plan.generated":
+        return (
+            "Setup plan",
+            (
+                "Keep the launcher/control room open while FuseKit rebuilds the setup "
+                "plan from the current manifest and waits for the visible Approve setup "
+                "plan control before provider mutations continue."
+            ),
+        )
+    if item.startswith("verification_report."):
+        return (
+            "Verification",
+            (
+                "Keep the live launcher/control room open while FuseKit verifies every "
+                "provider, resolves visible VM-browser gates, and keeps only safe pending "
+                "DNS/deploy waits."
+            ),
+        )
+    if item.startswith("rollback_metadata."):
+        return (
+            "Rollback",
+            (
+                "Keep the live launcher/control room open after the redacted receipt is "
+                "saved so FuseKit writes provider rollback actions for every provider "
+                "declared by the manifest before launch."
+            ),
+        )
+    if item.startswith("audit."):
+        return (
+            "Audit log",
+            (
+                "Keep the live launcher/control room open while FuseKit writes the "
+                "redacted JSONL audit log for vault captures, provider actions, "
+                "approvals, verifier checks, and detonation without raw secrets."
+            ),
+        )
+    if item.startswith("gates."):
+        return (
+            "Human gates",
+            (
+                "Keep the live launcher/control room open while FuseKit rebuilds the "
+                "gate so it shows Open provider gate in VM, an exact env-named Capture "
+                "button for copy-once values, or the I finished this step control as the next "
+                "visible action."
+            ),
+        )
+    if item == "provider_strategies.order":
+        return (
+            "Provider order",
+            (
+                "Capture RESEND_API_KEY first, then let FuseKit create or reuse the "
+                "Resend domain by API before you approve DNS apply."
+            ),
+        )
+    if item == "provider_strategies.playbook":
+        return (
+            "Provider playbook",
+            (
+                "Keep the live launcher/control room open until the Provider playbook "
+                "shows the ordered VM-browser actions, exact Capture controls, DNS "
+                "approval, and Resend no-manual-setup safety notes."
+            ),
+        )
+    if item.startswith("provider_strategies."):
+        return (
+            "Provider routes",
+            (
+                "Keep the live launcher/control room open and let the setup worker "
+                "record provider route decisions in the correct order."
+            ),
+        )
+    if item.startswith("vault."):
+        return (
+            "Vault",
+            (
+                "Keep the live launcher/control room open with vault capture enabled; "
+                "use the visible VM clipboard Capture controls for provider secrets so "
+                "FuseKit can save and unlock encrypted vault proof."
+            ),
+        )
+    if item.startswith("receipt."):
+        return (
+            "Receipt",
+            (
+                "Keep the live launcher/control room open and let the setup worker finish "
+                "provider setup so FuseKit can save a redacted receipt with no raw secrets."
+            ),
+        )
+    if item == "detonation.worker_state":
+        return (
+            "Detonation",
+            (
+                "Keep the launcher/control room open while FuseKit detonates plaintext "
+                "worker, browser, visual, provider-auth, control-room, and gateway "
+                "scratch state after encrypted artifacts are preserved."
+            ),
+        )
+    if item == "leak_scan.clean":
+        return (
+            "Security",
+            (
+                "Keep the launcher/control room open while FuseKit runs the leak scan; "
+                "if it flags plaintext setup secrets, move them out of app files and "
+                "back into vault Capture/provider secret storage."
+            ),
+        )
+    if item == "run_record.complete":
+        lower_detail = detail.lower()
+        if "rehearsal_review" in lower_detail:
+            return (
+                "Rehearsal review",
+                (
+                    "Keep the live launcher/control room open while FuseKit writes a "
+                    "clean rehearsal review: every human action must match visible "
+                    "control-room instructions, with no host browser, terminal, side "
+                    "channel, or user interpretation."
+                ),
+            )
+        if "model_inference" in lower_detail or "llm_contract" in lower_detail:
+            return (
+                "Model inference",
+                (
+                    "Keep the live launcher/control room open until the model/inference "
+                    "card shows an encrypted API-key lane or encrypted OpenClaw OpenAI "
+                    "authorization. Use Capture OPENAI_API_KEY from VM clipboard when "
+                    "the API-key lane is required, or complete the visible OpenClaw "
+                    "authorization gate; FuseKit writes only the non-secret "
+                    "llm_contract.json proof."
+                ),
+            )
+        if "worker_replacement" in lower_detail:
+            return (
+                "Worker replacement",
+                (
+                    "Keep the live launcher/control room open while FuseKit runs the "
+                    "worker replacement drill: destroy the original OCI worker, restore "
+                    "only encrypted/redacted durable sources onto a replacement runner, "
+                    "reopen the control room, and resume a gate or verifier without "
+                    "host-machine state."
+                ),
+            )
+    return "Launch evidence", _unknown_acceptance_blocker_action(item)
 
 
 def _missing_acceptance_blocker(item: str) -> dict[str, str]:
@@ -651,6 +1000,12 @@ def _missing_acceptance_guidance(item: str) -> tuple[str, str]:
             "Human gates",
             "Keep the live launcher/control room open while FuseKit rebuilds each "
             "gate card with follow-me steps, next action, and resume hint.",
+        ),
+        "safe gate state": (
+            "Human gates",
+            "Keep the live launcher/control room open while FuseKit rewrites durable "
+            "gate and wake proof without callback URLs, token-shaped text, or raw "
+            "provider return data.",
         ),
         "provider strategy decisions": (
             "Provider routes",
@@ -751,6 +1106,15 @@ def _missing_acceptance_guidance(item: str) -> tuple[str, str]:
                 "password metadata."
             ),
         ),
+        "prepared runner readiness proof": (
+            "Runner readiness",
+            (
+                "Keep the live launcher/control room open while FuseKit verifies the OCI "
+                "visual runner: x86_64 architecture, OpenClaw, Playwright Chromium, noVNC, "
+                "shared provider browser profile, helper binaries, and encrypted vault "
+                "access must be proven before provider gates continue."
+            ),
+        ),
         "verified live URL": (
             "Deployment",
             "Let FuseKit verify the deployed live URL and write it into the setup receipt.",
@@ -779,6 +1143,7 @@ def _missing_acceptance_guidance(item: str) -> tuple[str, str]:
                 "public IP, network resources, and remote worker cleanup were destroyed."
             ),
         ),
+        "remote_artifacts.loaded": _acceptance_check_guidance("remote_artifacts.loaded"),
     }
     return guidance.get(
         item,
@@ -1564,6 +1929,104 @@ def _render_security_surface(surface: Any) -> str:
 """
 
 
+def _render_model_inference(payload: dict[str, Any]) -> str:
+    run_record = payload.get("run_record", {})
+    run_record = run_record if isinstance(run_record, dict) else {}
+    summary = run_record.get("model_inference", {})
+    summary = summary if isinstance(summary, dict) else {}
+    contract = payload.get("llm_contract", {})
+    contract = contract if isinstance(contract, dict) else {}
+    if not summary and contract:
+        summary = {
+            "status": str(contract.get("status", "") or "pending"),
+            "ready": str(contract.get("status", "") or "")
+            in {
+                "api_key_encrypted",
+                "openclaw_profile_encrypted",
+                "optional_for_rehearsal",
+            },
+            "provider": str(contract.get("provider", "") or "openai"),
+            "model": str(contract.get("model", "") or "gpt-5.5"),
+            "api_key_env": str(contract.get("api_key_env", "") or "OPENAI_API_KEY"),
+            "auth_mode": str(contract.get("auth_mode", "") or "auto"),
+            "next_action": str(contract.get("next_action", "") or ""),
+            "can_proceed_without_api_key": contract.get("can_proceed_without_api_key") is True,
+        }
+    lanes = contract.get("lanes", [])
+    lanes = lanes if isinstance(lanes, list) else []
+    cards = "".join(
+        _render_model_inference_lane(lane) for lane in lanes if isinstance(lane, dict)
+    )
+    if not cards:
+        cards = """
+        <article class="trust-card pending">
+          <div class="trust-snow state-checking" aria-hidden="true"></div>
+          <div>
+            <span>Pending</span>
+            <strong>Model lane contract</strong>
+            <p>Waiting for FuseKit to write the non-secret model/inference contract.</p>
+            <em>OPENAI_API_KEY or OpenClaw auth</em>
+          </div>
+        </article>
+"""
+    status = str(summary.get("status", "") or "pending")
+    ready = summary.get("ready") is True
+    provider = str(summary.get("provider", "") or "openai")
+    model = str(summary.get("model", "") or "gpt-5.5")
+    env_name = str(summary.get("api_key_env", "") or "OPENAI_API_KEY")
+    auth_mode = str(summary.get("auth_mode", "") or "auto")
+    next_action = str(
+        summary.get("next_action", "")
+        or "Provide an LLM key or complete the supported OpenClaw authorization gate."
+    )
+    without_key = (
+        "OpenClaw can authorize the default OpenAI lane if no API key is available."
+        if summary.get("can_proceed_without_api_key") is True
+        else "This lane needs an API key; OpenClaw fallback is unavailable for this provider."
+    )
+    summary_label = "model lane ready" if ready else status.replace("_", " ")
+    return f"""
+    <section class="run-state-panel" aria-label="Model and inference contract">
+      <div class="section-head compact">
+        <div>
+          <span class="section-kicker">Model lane</span>
+          <h2>Inference requirement is explicit</h2>
+        </div>
+        <span class="live-pill" data-model-inference-overall>{html.escape(summary_label)}</span>
+      </div>
+      <p class="muted" data-model-inference-copy>
+        FuseKit uses {html.escape(provider)} / {html.escape(model)} for provider-page
+        reasoning. API-key lane: capture {html.escape(env_name)} into the encrypted
+        vault. Auth mode: {html.escape(auth_mode)}. {html.escape(without_key)}
+        Next: {html.escape(next_action)}
+      </p>
+      <div class="run-state-grid" data-model-inference-checks>{cards}</div>
+    </section>
+"""
+
+
+def _render_model_inference_lane(lane: dict[str, Any]) -> str:
+    available = lane.get("available") is True
+    needs_action = lane.get("requires_user_action") is True
+    status = "pending" if available and needs_action else "passed" if available else "skipped"
+    snow = "checking" if status == "pending" else "passed" if status == "passed" else "checking"
+    title = str(lane.get("label", "") or lane.get("id", "") or "model lane")
+    detail = str(lane.get("description", "") or "")
+    meta = "needs human action" if needs_action else "available" if available else "unavailable"
+    lane_id = html.escape(str(lane.get("id", "")))
+    return f"""
+        <article class="trust-card {status}" data-model-lane="{lane_id}">
+          <div class="trust-snow state-{snow}" aria-hidden="true"></div>
+          <div>
+            <span>{html.escape(status_label(status))}</span>
+            <strong>{html.escape(title)}</strong>
+            <p>{html.escape(detail)}</p>
+            <em>{html.escape(meta)}</em>
+          </div>
+        </article>
+"""
+
+
 def _render_security_surface_card(route: dict[str, Any]) -> str:
     state_change = route.get("state_change") is True
     title = str(route.get("route", "") or "route")
@@ -1609,8 +2072,15 @@ def _render_human_actions(run_record: Any) -> str:
     rehearsal_review = rehearsal_review if isinstance(rehearsal_review, dict) else {}
     actions = human_actions.get("actions", [])
     actions = actions if isinstance(actions, list) else []
+    reviewed_actions = rehearsal_review.get("reviewed_actions", [])
+    reviewed_actions = reviewed_actions if isinstance(reviewed_actions, list) else []
     cards = "\n".join(
-        _render_human_action_card(action) for action in actions[:6] if isinstance(action, dict)
+        _render_human_action_card(
+            action,
+            reviewed_actions[index] if index < len(reviewed_actions) else None,
+        )
+        for index, action in enumerate(actions[:6])
+        if isinstance(action, dict)
     )
     if not cards:
         cards = """
@@ -1653,15 +2123,21 @@ def _render_human_actions(run_record: Any) -> str:
 """
 
 
-def _render_human_action_card(action: dict[str, Any]) -> str:
+def _render_human_action_card(action: dict[str, Any], reviewed: Any = None) -> str:
     guided = action.get("guided") is True
+    reviewed = reviewed if isinstance(reviewed, dict) else {}
+    proof_source = str(reviewed.get("proof_source", "") or "")
+    matched = reviewed.get("matched") is True
     status = "passed" if guided else "failed"
     snow = "passed" if guided else "failed"
     title = str(action.get("visible_control", "") or action.get("action", "") or "human action")
     provider = str(action.get("provider", "") or "provider")
     gate_id = str(action.get("gate_id", "") or "gate")
     detail = (
-        "Matched to the current control-room gate instructions."
+        (
+            "Matched to the current control-room gate instructions"
+            + (f"; proof: {proof_source}." if matched and proof_source else ".")
+        )
         if guided
         else str(action.get("guidance_gap", "") or "Missing guided control-room proof.")
     )
@@ -1786,8 +2262,18 @@ def _render_run_record_verifiers(run_record: Any) -> str:
           </div>
         </article>
 """
+    counts = verifiers.get("counts", {})
+    counts = counts if isinstance(counts, dict) else {}
+    skipped_count = counts.get("skipped", 0)
+    skipped_count = (
+        skipped_count
+        if isinstance(skipped_count, int) and not isinstance(skipped_count, bool)
+        else 0
+    )
     summary = (
-        "all verifiers green or pending-safe"
+        "verifiers green/pending-safe; skipped optional checks do not count"
+        if verifiers.get("all_passed_or_pending_safe") is True and skipped_count > 0
+        else "all verifiers green or pending-safe"
         if verifiers.get("all_passed_or_pending_safe") is True
         else "verifiers still running"
     )
@@ -1811,7 +2297,7 @@ def _render_run_record_verifiers(run_record: Any) -> str:
 
 def _render_run_record_verifier_card(check: dict[str, Any]) -> str:
     status = str(check.get("status", "") or "pending")
-    passed = status in {"passed", "pending_safe", "skipped"}
+    passed = status in {"passed", "pending_safe"}
     card_status = "passed" if passed else "pending"
     snow = "passed" if passed else "checking"
     provider = str(check.get("provider", "") or "provider")
@@ -1953,11 +2439,7 @@ def _render_recording_contract_card(name: str, ready: Any) -> str:
     status = "passed" if passed else "pending"
     snow = "passed" if passed else "checking"
     title = name.replace("_", " ")
-    detail = (
-        "This proof input is present and agrees with the Run Record."
-        if passed
-        else "Waiting for this proof before the public demo can be recorded."
-    )
+    detail = _recording_contract_detail(name, passed)
     return f"""
         <article class="trust-card {status}" data-recording-contract-check="{html.escape(name)}">
           <div class="trust-snow state-{snow}" aria-hidden="true"></div>
@@ -1969,6 +2451,64 @@ def _render_recording_contract_card(name: str, ready: Any) -> str:
           </div>
         </article>
 """
+
+
+def _recording_contract_detail(name: str, passed: bool) -> str:
+    ready_details = {
+        "durable_state": "Encrypted/redacted survivor state is present outside the OCI worker.",
+        "worker_replacement": (
+            "The worker replacement drill proved the run can resume without host-machine state."
+        ),
+        "runner_profile": "The disposable VM/browser runner profile matches the launch contract.",
+        "model_inference": "The encrypted model/inference lane is proven and matches the contract.",
+        "provider_playbook": "Provider steps have ordered You/FuseKit ownership proof.",
+        "human_actions": "Human actions are tied to exact visible launcher controls.",
+        "rehearsal_review": (
+            "Every recorded human action matched visible control-room instructions."
+        ),
+        "automation_boundary": "Post-gate automation and human-gate routes agree.",
+        "control_room_security": "State-changing routes are bounded by action-token proof.",
+        "verifiers": "Provider and live-app checks are green or explicitly pending-safe.",
+        "audit_trail": (
+            "Required credential, provider, approval, and detonation events are redacted."
+        ),
+        "evidence": "Evidence inventory paths and counts match durable survivor files.",
+        "detonation": "OCI worker, browser, auth, visual, and workspace cleanup proof agrees.",
+        "errors_empty": "The Run Record has no unresolved launch errors.",
+    }
+    pending_details = {
+        "durable_state": "Waiting for encrypted/redacted survivor state outside the OCI worker.",
+        "worker_replacement": (
+            "Waiting for a passed kill/recreate drill that restores only durable sources."
+        ),
+        "runner_profile": "Waiting for the verified x86 visual/browser runner profile.",
+        "model_inference": (
+            "Waiting for encrypted API-key or encrypted OpenClaw model-lane proof."
+        ),
+        "provider_playbook": (
+            "Waiting for ordered provider steps with explicit You/FuseKit ownership."
+        ),
+        "human_actions": "Waiting for each provider open, Capture, or approval to name a gate.",
+        "rehearsal_review": (
+            "Waiting for a clean rehearsal review proving every human action matched "
+            "visible launcher/VNC instructions with no host browser, terminal, side "
+            "channel, or user interpretation."
+        ),
+        "automation_boundary": "Waiting for proof that FuseKit owns all post-gate automation.",
+        "control_room_security": "Waiting for protected route inventory and no-CORS proof.",
+        "verifiers": "Waiting for provider and live-app checks to pass or become pending-safe.",
+        "audit_trail": "Waiting for required redacted audit categories and source proof.",
+        "evidence": "Waiting for evidence inventory paths and counts to match survivor files.",
+        "detonation": "Waiting for complete no-trace OCI workspace and worker cleanup proof.",
+        "errors_empty": "Waiting for unresolved Run Record errors to be cleared.",
+    }
+    details = ready_details if passed else pending_details
+    return details.get(
+        name,
+        "This proof input is present and agrees with the Run Record."
+        if passed
+        else "Waiting for this proof before the public demo can be recorded.",
+    )
 
 
 def _render_detonation_receipt(run_record: Any) -> str:

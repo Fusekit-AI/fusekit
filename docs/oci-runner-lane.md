@@ -134,7 +134,7 @@ ports, loopback VNC/OpenClaw gateway ports, OpenClaw plus Playwright Chromium
 browser stack, shared provider profile path, observed OS/memory facts, and the
 health checks that passed before setup continued.
 
-The app repo should be uploaded as a tarball over SSH, excluding `.git`, `.env`, existing `.fusekit`, caches, dependency folders, and known secret artifacts. Provider credentials must come from the encrypted vault or supervised handoff, not app files.
+The app repo should enter the clean room through `fusekit source fetch` or SSH upload with the same hygiene boundary: exclude `.git`, `.env`, existing `.fusekit`, caches, dependency folders, build-info files, vault/key material, and credential-looking sidecars. Provider credentials must come from the encrypted vault or supervised handoff, not app files.
 
 The Cloud Shell bootstrap must preserve the user's actual launch intent. Provider targets, DNS scope, live URL checks, LLM settings, UI-inference flags, and the selected FuseKit package are forwarded from the launcher into Cloud Shell and again into the disposable VM when the Cloud Shell lane provisions a nested runner. This avoids the bad magic trick where the clean room starts successfully but forgets which services it was supposed to connect.
 
@@ -226,6 +226,15 @@ and network security group. The only survivors are the
 encrypted vault and redacted proof artifacts such as job state, checkpoints,
 gate events, provider strategies, worker-replacement drill proof, verification,
 rollback, detonation receipt, and the Run Record itself.
+
+If a failed run was intentionally retained or the encrypted SSH cleanup record
+is unavailable, `fusekit runner detonate --runner oci --scope workspace` may
+recover from the recorded `.fusekit/oci_workspace.json` artifact and use OCI
+auth to delete the VM, boot volume, ephemeral public IP, and FuseKit-created
+network resources. Verified instance plus boot-volume deletion counts as
+remote-worker state destruction because the disposable VM-local worker/browser
+surface no longer exists. Partial cloud deletion still fails the detonation
+receipt and must be retried before the run can be considered clean.
 
 The worker-replacement drill is part of the public OCI contract, not an
 operator-only exercise. At any supervised gate, FuseKit must be able to stop or

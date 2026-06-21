@@ -88,8 +88,10 @@ The launch-readiness gate is `fusekit acceptance run`. It is intentionally split
 fusekit acceptance run /path/to/generated-app --mode rehearsal
 fusekit acceptance run /path/to/generated-app \
   --mode live \
+  --remote-artifacts /path/to/generated-app/.fusekit/remote-artifacts \
   --vault /path/to/generated-app/.fusekit/fusekit.vault.json \
-  --passphrase-file /path/to/pass.txt
+  --passphrase-file /path/to/pass.txt \
+  --require-recording
 ```
 
 Rehearsal mode proves the local product invariants without pretending a provider setup happened. It scans or loads the manifest, generates the setup plan, validates/snapshots provider packs, checks detonation state, runs a plaintext leak scan, and writes:
@@ -102,7 +104,7 @@ In rehearsal mode, `launch_ready: true` means the local harness passed; the
 same report keeps `public_launch_ready: false` and `recording_ready: false`.
 Only live mode can set those public/demo readiness fields to true.
 
-Live mode will not mark the run ready unless it has an encrypted vault, a passphrase unlock proof, redacted receipt, redacted audit log, verified live URL in the receipt, a redacted verification report whose checks are passed or explicitly pending-safe, actionable rollback metadata, validated provider packs, clean leak scan, and detonated worker state. The harness creates public proof artifacts without raw secrets.
+Live mode will not mark the run ready unless it has an encrypted vault, a passphrase unlock proof, redacted receipt, redacted audit log, verified live URL in the receipt, a redacted verification report whose checks are passed or explicitly pending-safe, actionable rollback metadata, validated provider packs, a central Run Record with matching `model_inference` and `llm_contract` proof, clean leak scan, and detonated worker state. The harness creates public proof artifacts without raw secrets.
 
 After an OCI launch, point live acceptance at the retrieved remote artifact bundle so the harness reads the worker's encrypted/redacted evidence directly:
 
@@ -110,8 +112,14 @@ After an OCI launch, point live acceptance at the retrieved remote artifact bund
 fusekit acceptance run /path/to/generated-app \
   --mode live \
   --remote-artifacts /path/to/generated-app/.fusekit/remote-artifacts \
-  --passphrase-file /path/to/pass.txt
+  --passphrase-file /path/to/pass.txt \
+  --require-recording
 ```
+
+Use `--require-recording` for the public walkthrough gate; it is accepted only
+with `--mode live` and `--remote-artifacts`, and exits nonzero unless the live
+report proves `recording_ready: true` from the retrieved disposable worker
+bundle.
 
 ## Real Provider Acceptance Run
 
@@ -239,10 +247,13 @@ for local CLI work, omit `--capture-stdin` and set `GITHUB_TOKEN`,
 Private GitHub app repos do not require SSH keys or local Git setup. In the OCI
 lane, the bootstrap asks for the vault passphrase first, then runs
 `fusekit source fetch` to retrieve the app source. Public repos download
-immediately through GitHub HTTPS archives. Private repos trigger a GitHub service
-gate: the user signs in, approves a scoped GitHub App installation when
-`FUSEKIT_GITHUB_APP_INSTALL_URL` is configured, or creates a fine-grained token as
-the fallback. FuseKit runs OpenClaw inference for this step by default, gives
+immediately through GitHub HTTPS archives. Fetched archives drop checked-in
+local state and credential-looking files such as `.env`, `.fusekit`,
+dependency/cache folders, vaults, keys, and build-info output. Private repos
+trigger a GitHub service gate: the user signs in, approves a scoped GitHub App
+installation when `FUSEKIT_GITHUB_APP_INSTALL_URL` is configured, or creates a
+fine-grained token as the fallback. FuseKit runs OpenClaw inference for this
+step by default, gives
 GitHub-specific "follow the highlighted control" guidance, and asks OpenClaw to
 spotlight provider-screen areas that need human attention. Public launcher runs
 capture the approved token through the exact env-named VM browser Capture button,
@@ -295,7 +306,25 @@ Real-provider acceptance status: implementation is ready for a supervised run, b
 
 ## Supervised Real Acceptance Run
 
-Status as of this checkout: documented and ready, but not yet executed against live provider accounts in this workspace. The blocker is supervised human authorization for GitHub, Vercel, Cloudflare, and a disposable domain. FuseKit must not bypass those service gates.
+Status as of this checkout: documented and ready, but not yet executed against live provider accounts in this workspace. The blocker is supervised human authorization for GitHub, Vercel, Cloudflare, Resend, OpenAI/LLM, OCI, billing/MFA/consent screens, and a disposable domain. FuseKit must not bypass those service gates.
+
+Attempted live proof gate on 2026-06-20:
+
+```zsh
+fusekit acceptance run /Users/ileanaphoenix/Developer/fusekit/examples/moonlite-rsvp \
+  --mode live \
+  --remote-artifacts /Users/ileanaphoenix/Developer/fusekit/examples/moonlite-rsvp/.fusekit/remote-artifacts \
+  --require-recording \
+  --json
+```
+
+Result:
+
+```text
+fusekit: Remote artifact path does not exist: /Users/ileanaphoenix/Developer/fusekit/examples/moonlite-rsvp/.fusekit/remote-artifacts
+```
+
+This is the expected fail-closed result until the supervised OCI/provider run retrieves the encrypted/redacted survivor bundle.
 
 Acceptance target:
 
@@ -324,9 +353,9 @@ Acceptance evidence to preserve after a live run:
 - `.fusekit/fusekit.vault.json` opens only with the passphrase; wrong passphrase fails.
 - `.fusekit/setup_receipt.json` and `.fusekit/setup_receipt.md` contain no raw secrets.
 - `.fusekit/audit.jsonl` contains only redacted provider actions.
-- `.fusekit/acceptance/report.json` has `"launch_ready": true`, `"public_launch_ready": true`, and `"recording_ready": true` from `fusekit acceptance run --mode live`.
-- `.fusekit/acceptance/ledger.jsonl` records scan, plan, pack, vault, receipt, leak-scan, and detonation proof events.
-- For OCI launches, `fusekit acceptance run --mode live --remote-artifacts .fusekit/remote-artifacts` ingests the remote worker's vault, receipt, audit log, verification report, and rollback metadata directly.
+- `.fusekit/acceptance/report.json` has `"launch_ready": true`, `"public_launch_ready": true`, `"remote_artifacts_ready": true`, `"recording_proof_ready": true`, and `"recording_ready": true` from `fusekit acceptance run --mode live --remote-artifacts .fusekit/remote-artifacts --require-recording`, plus a redacted `"recording_contract"` checklist whose section checks are all true and whose blockers list is empty.
+- `.fusekit/acceptance/ledger.jsonl` records scan, plan, pack, vault, receipt, leak-scan, detonation, and final recording-proof summary events.
+- For OCI launches, `fusekit acceptance run --mode live --remote-artifacts .fusekit/remote-artifacts --require-recording` ingests the remote worker's vault, receipt, audit log, verification report, and rollback metadata directly.
 - `fusekit leak-scan /path/to/generated-app` reports no plaintext setup secrets.
 - `fusekit provider verify ... --verify-attempts 10` confirms provider/API/live checks or reports pending rather than pretending success.
 - `fusekit rollback --execute --receipt .fusekit/setup_receipt.json` can remove GitHub repo secrets/deploy keys, Vercel env/project resources created by FuseKit, and Cloudflare DNS records described by rollback metadata.

@@ -22,8 +22,11 @@ def test_contains_durable_secret_text_rejects_raw_credentials(value: str) -> Non
     "value",
     [
         "Authorization: Bearer [redacted]",
+        '{"header": "Authorization: Bearer [redacted]"}',
         "Callback failed at https://provider.example/callback?code=[redacted]",
+        '{"resume_url": "https://provider.example/callback?token=[redacted]&code=[redacted]"}',
         "api_key = [redacted]",
+        '{"next_action": "capture api_key=[redacted]"}',
         "This proof records only provider names and non-secret wake ids.",
     ],
 )

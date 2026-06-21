@@ -8,6 +8,35 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from fusekit.runner.remote_survivors import (
+    REMOTE_CHECKPOINTS_CHECKPOINTS_FIELD,
+    REMOTE_CHECKPOINTS_JOB_ID_FIELD,
+    REMOTE_CHECKPOINTS_STATUS_FIELD,
+    REMOTE_CHECKPOINTS_UPDATED_AT_FIELD,
+    REMOTE_JOB_APP_PATH_FIELD,
+    REMOTE_JOB_ARTIFACTS_FIELD,
+    REMOTE_JOB_CHECKPOINT_DETAIL_FIELD,
+    REMOTE_JOB_CHECKPOINT_ID_FIELD,
+    REMOTE_JOB_CHECKPOINT_LABEL_FIELD,
+    REMOTE_JOB_CHECKPOINT_MASCOT_STATE_FIELD,
+    REMOTE_JOB_CHECKPOINT_NEXT_ACTION_FIELD,
+    REMOTE_JOB_CHECKPOINT_RESUME_HINT_FIELD,
+    REMOTE_JOB_CHECKPOINT_STATUS_FIELD,
+    REMOTE_JOB_CHECKPOINT_UPDATED_AT_FIELD,
+    REMOTE_JOB_CHECKPOINTS_FIELD,
+    REMOTE_JOB_CREATED_AT_FIELD,
+    REMOTE_JOB_ID_FIELD,
+    REMOTE_JOB_RUNNER_FIELD,
+    REMOTE_JOB_STATUS_FIELD,
+    REMOTE_JOB_STEP_DETAIL_FIELD,
+    REMOTE_JOB_STEP_ID_FIELD,
+    REMOTE_JOB_STEP_LABEL_FIELD,
+    REMOTE_JOB_STEP_STATUS_FIELD,
+    REMOTE_JOB_STEP_UPDATED_AT_FIELD,
+    REMOTE_JOB_STEPS_FIELD,
+    REMOTE_JOB_UPDATED_AT_FIELD,
+)
+
 
 @dataclass(frozen=True)
 class JobStep:
@@ -23,11 +52,11 @@ class JobStep:
         """Serialize the step."""
 
         return {
-            "id": self.id,
-            "label": self.label,
-            "status": self.status,
-            "detail": self.detail,
-            "updated_at": self.updated_at,
+            REMOTE_JOB_STEP_ID_FIELD: self.id,
+            REMOTE_JOB_STEP_LABEL_FIELD: self.label,
+            REMOTE_JOB_STEP_STATUS_FIELD: self.status,
+            REMOTE_JOB_STEP_DETAIL_FIELD: self.detail,
+            REMOTE_JOB_STEP_UPDATED_AT_FIELD: self.updated_at,
         }
 
 
@@ -48,14 +77,14 @@ class JobCheckpoint:
         """Serialize the checkpoint."""
 
         return {
-            "id": self.id,
-            "label": self.label,
-            "status": self.status,
-            "detail": self.detail,
-            "next_action": self.next_action,
-            "resume_hint": self.resume_hint,
-            "mascot_state": self.mascot_state,
-            "updated_at": self.updated_at,
+            REMOTE_JOB_CHECKPOINT_ID_FIELD: self.id,
+            REMOTE_JOB_CHECKPOINT_LABEL_FIELD: self.label,
+            REMOTE_JOB_CHECKPOINT_STATUS_FIELD: self.status,
+            REMOTE_JOB_CHECKPOINT_DETAIL_FIELD: self.detail,
+            REMOTE_JOB_CHECKPOINT_NEXT_ACTION_FIELD: self.next_action,
+            REMOTE_JOB_CHECKPOINT_RESUME_HINT_FIELD: self.resume_hint,
+            REMOTE_JOB_CHECKPOINT_MASCOT_STATE_FIELD: self.mascot_state,
+            REMOTE_JOB_CHECKPOINT_UPDATED_AT_FIELD: self.updated_at,
         }
 
 
@@ -235,15 +264,17 @@ class JobState:
         """Serialize the job state."""
 
         return {
-            "id": self.id,
-            "app_path": self.app_path,
-            "runner": self.runner,
-            "status": self.status,
-            "steps": [step.to_dict() for step in self.steps],
-            "checkpoints": [checkpoint.to_dict() for checkpoint in self.checkpoints],
-            "artifacts": self.artifacts,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
+            REMOTE_JOB_ID_FIELD: self.id,
+            REMOTE_JOB_APP_PATH_FIELD: self.app_path,
+            REMOTE_JOB_RUNNER_FIELD: self.runner,
+            REMOTE_JOB_STATUS_FIELD: self.status,
+            REMOTE_JOB_STEPS_FIELD: [step.to_dict() for step in self.steps],
+            REMOTE_JOB_CHECKPOINTS_FIELD: [
+                checkpoint.to_dict() for checkpoint in self.checkpoints
+            ],
+            REMOTE_JOB_ARTIFACTS_FIELD: self.artifacts,
+            REMOTE_JOB_CREATED_AT_FIELD: self.created_at,
+            REMOTE_JOB_UPDATED_AT_FIELD: self.updated_at,
         }
 
     def save(self, path: Path) -> None:
@@ -253,10 +284,12 @@ class JobState:
         path.write_text(json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n", "utf-8")
         checkpoint_path = path.with_name("checkpoints.json")
         checkpoint_payload = {
-            "job_id": self.id,
-            "status": self.status,
-            "updated_at": self.updated_at,
-            "checkpoints": [checkpoint.to_dict() for checkpoint in self.checkpoints],
+            REMOTE_CHECKPOINTS_JOB_ID_FIELD: self.id,
+            REMOTE_CHECKPOINTS_STATUS_FIELD: self.status,
+            REMOTE_CHECKPOINTS_UPDATED_AT_FIELD: self.updated_at,
+            REMOTE_CHECKPOINTS_CHECKPOINTS_FIELD: [
+                checkpoint.to_dict() for checkpoint in self.checkpoints
+            ],
         }
         checkpoint_path.write_text(
             json.dumps(checkpoint_payload, indent=2, sort_keys=True) + "\n",
