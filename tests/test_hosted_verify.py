@@ -968,7 +968,12 @@ def _home_html(
 ) -> str:
     github_intake = _github_intake_contract() if github_intake is None else github_intake
     readiness = (
-        {"schema_version": "fusekit.hosted-readiness.v1", "ready": True}
+        {
+            "schema_version": "fusekit.hosted-readiness.v1",
+            "ready": True,
+            "blocking_checks": [],
+            "next_actions": [],
+        }
         if readiness is None
         else readiness
     )
@@ -1002,6 +1007,7 @@ def _home_html(
         <section>For someone who just wants to click</section>
         <section>Open fusekit.snowmanai.org in a browser.</section>
         <section>Complete only the provider-owned screens FuseKit highlights.</section>
+        <section>Launch readiness</section>
         <section>Completion requires</section>
         <section>Live URL verification</section>
         <section>Provider verifier results</section>

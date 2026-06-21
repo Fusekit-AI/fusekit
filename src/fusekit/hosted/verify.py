@@ -702,6 +702,7 @@ def _hosted_home_failures(
         ),
         "hosted_home_plain_language_open_step_missing": HOSTED_PLAIN_LANGUAGE_JOURNEY[0],
         "hosted_home_plain_language_provider_step_missing": HOSTED_PLAIN_LANGUAGE_JOURNEY[5],
+        "hosted_home_launch_readiness_missing": "Launch readiness",
         "hosted_home_completion_requirements_missing": "Completion requires",
         "hosted_home_live_url_proof_missing": "Live URL verification",
         "hosted_home_provider_verifier_proof_missing": "Provider verifier results",
@@ -791,6 +792,11 @@ def _hosted_home_readiness_failures(payload: dict[str, Any]) -> list[str]:
         failures.append("schema_mismatch")
     if payload.get("ready") is not True:
         failures.append("ready_field_not_true")
+    if payload.get("ready") is True:
+        if payload.get("blocking_checks") != []:
+            failures.append("blocking_checks_not_empty")
+        if payload.get("next_actions") != []:
+            failures.append("next_actions_not_empty")
     return failures
 
 

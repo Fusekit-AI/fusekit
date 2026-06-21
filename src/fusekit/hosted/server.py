@@ -234,6 +234,36 @@ REQUIRED_HOSTED_ENV = (
     "FUSEKIT_HOSTED_WORKER_DISPATCH_URL",
 )
 OPTIONAL_HOSTED_ENV: tuple[str, ...] = ()
+HOSTED_READINESS_NEXT_ACTIONS: dict[str, str] = {
+    "FUSEKIT_HOSTED_ORIGIN": "Set FUSEKIT_HOSTED_ORIGIN to https://fusekit.snowmanai.org.",
+    "FUSEKIT_GITHUB_APP_ID": "Set the GitHub App id for the FuseKit hosted launcher.",
+    "FUSEKIT_GITHUB_APP_SLUG": "Set the GitHub App slug for the FuseKit hosted launcher.",
+    "FUSEKIT_GITHUB_APP_PRIVATE_KEY": (
+        "Set the GitHub App RSA private key in the hosted runtime secret store."
+    ),
+    "FUSEKIT_HOSTED_STATE_SECRET": (
+        "Set a long random hosted state secret for GitHub redirects and control tokens."
+    ),
+    "FUSEKIT_HOSTED_WORKER_SECRET": (
+        "Set a long random worker secret shared only with the hosted worker dispatch receiver."
+    ),
+    "FUSEKIT_HOSTED_WORKER_DISPATCH_URL": (
+        "Deploy the hosted worker dispatch receiver and set its HTTPS dispatch URL."
+    ),
+    "hosted_origin_must_be_https_origin": (
+        "Use an HTTPS origin with no path, query, credentials, or fragment."
+    ),
+    "hosted_worker_dispatch_url_must_be_https": (
+        "Use an HTTPS worker dispatch URL with no credentials in the URL."
+    ),
+    "github_app_id_must_be_positive_integer": "Use a positive numeric GitHub App id.",
+    "github_app_slug_is_invalid": "Use the GitHub App slug exactly as GitHub provides it.",
+    "github_app_private_key_must_be_rsa_pem": (
+        "Store a valid RSA PEM private key for the GitHub App."
+    ),
+    "hosted_state_secret_too_short": "Use at least 16 characters for the hosted state secret.",
+    "hosted_worker_secret_too_short": "Use at least 16 characters for the worker secret.",
+}
 
 
 @dataclass(frozen=True)
@@ -288,6 +318,7 @@ class HostedSettings:
         }
         missing = tuple(key for key in REQUIRED_HOSTED_ENV if not configured[key])
         invalid = _hosted_config_errors(self) if not missing else ()
+        blocking_checks = _hosted_readiness_blocking_checks(missing, invalid)
         return {
             "schema_version": HOSTED_READINESS_SCHEMA_VERSION,
             "ready": not missing and not invalid,
@@ -296,6 +327,8 @@ class HostedSettings:
             "configured": configured,
             "missing": list(missing),
             "invalid": list(invalid),
+            "blocking_checks": blocking_checks,
+            "next_actions": _hosted_readiness_next_actions(missing, invalid),
             "optional_runtime_env": list(OPTIONAL_HOSTED_ENV),
             "secret_boundary": (
                 "Readiness reports only configuration presence. Raw GitHub App private keys, "
@@ -517,6 +550,7 @@ def render_hosted_home(settings: HostedSettings) -> str:
         else "Hosted GitHub intake is waiting for operator configuration."
     )
     issues = _list_config_issues(readiness)
+    readiness_summary = _readiness_summary_section(readiness)
     start_control = (
         f'<a class="button" href="{install_url}">Start hosted launch</a>'
         if setup_ready
@@ -633,6 +667,7 @@ def render_hosted_home(settings: HostedSettings) -> str:
       <p>{html.escape(status)}</p>
       {issues}
     </header>
+    {readiness_summary}
     <section aria-label="Trust contract">
       <h2>Before FuseKit runs</h2>
       <ul>
@@ -1387,6 +1422,54 @@ def _list_config_issues(readiness: dict[str, object]) -> str:
         <ul>{items}</ul>
       </section>
 """
+
+
+def _readiness_summary_section(readiness: dict[str, object]) -> str:
+    ready = readiness.get("ready") is True
+    blocking_checks = _string_list(readiness.get("blocking_checks"))
+    next_actions = _string_list(readiness.get("next_actions"))
+    if ready:
+        body = "<li>All hosted readiness checks passed.</li>"
+    else:
+        body = "\n".join(f"<li>{html.escape(item)}</li>" for item in next_actions)
+        if not body:
+            body = "\n".join(f"<li>{html.escape(item)}</li>" for item in blocking_checks)
+    status = "ready" if ready else "blocked"
+    return f"""
+    <section aria-label="Launch readiness">
+      <h2>Launch readiness</h2>
+      <p>
+        Hosted launch is {status}. FuseKit exposes only public readiness codes
+        and next actions here; secret values stay out of the page and JSON.
+      </p>
+      <ul>{body}</ul>
+    </section>
+"""
+
+
+def _hosted_readiness_blocking_checks(
+    missing: tuple[str, ...],
+    invalid: tuple[str, ...],
+) -> list[str]:
+    return [f"missing:{item}" for item in missing] + [f"invalid:{item}" for item in invalid]
+
+
+def _hosted_readiness_next_actions(
+    missing: tuple[str, ...],
+    invalid: tuple[str, ...],
+) -> list[str]:
+    actions: list[str] = []
+    for item in (*missing, *invalid):
+        action = HOSTED_READINESS_NEXT_ACTIONS.get(item, f"Resolve hosted readiness check {item}.")
+        if action not in actions:
+            actions.append(action)
+    return actions
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if isinstance(item, str)]
 
 
 def _hosted_config_errors(settings: HostedSettings) -> tuple[str, ...]:

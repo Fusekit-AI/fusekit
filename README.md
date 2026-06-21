@@ -305,6 +305,10 @@ hosted readiness endpoint reports only configuration presence and shape errors,
 and keeps the homepage launch button disabled until the GitHub App id, slug, RSA
 private key, origin, state secret, worker secret, and worker dispatch URL are
 configured and valid.
+The same readiness contract now publishes redacted `blocking_checks` and
+deduplicated `next_actions`, and the homepage renders that launch-readiness
+summary so an operator can see what to fix without exposing private keys,
+worker secrets, or provider credentials.
 Direct GitHub intake routes also fail closed with the same redacted readiness
 object until those checks pass. The
 remaining slices are running the approved setup actions inside the hosted worker,

@@ -174,6 +174,8 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
     assert "https://fusekit.snowmanai.org" in html
     assert "Launch any GitHub app without touching a terminal." in html
     assert "Start hosted launch" in html
+    assert "Launch readiness" in html
+    assert "All hosted readiness checks passed." in html
     assert "open-core setup worker" in html
     assert "Open core" in html
     assert "https://github.com/xpxpxp-coder/fusekit" in html
@@ -257,9 +259,12 @@ def test_hosted_home_waits_for_complete_operator_configuration() -> None:
 
     assert "Hosted GitHub intake is waiting for operator configuration." in html
     assert "Operator setup pending" in html
+    assert "Launch readiness" in html
     assert "FUSEKIT_GITHUB_APP_ID" in html
     assert "FUSEKIT_GITHUB_APP_PRIVATE_KEY" in html
     assert "FUSEKIT_HOSTED_WORKER_DISPATCH_URL" in html
+    assert "Set the GitHub App id for the FuseKit hosted launcher." in html
+    assert "Deploy the hosted worker dispatch receiver and set its HTTPS dispatch URL." in html
     assert '<span class="button disabled" aria-disabled="true">Start hosted launch</span>' in html
     assert 'href="#"' not in html
     assert "state=" not in html
@@ -281,12 +286,15 @@ def test_hosted_home_shows_invalid_operator_configuration_codes_only() -> None:
     )
 
     assert "Hosted GitHub intake is waiting for operator configuration." in html
+    assert "Launch readiness" in html
     assert "invalid:hosted_origin_must_be_https_origin" in html
     assert "invalid:github_app_id_must_be_positive_integer" in html
     assert "invalid:github_app_slug_is_invalid" in html
     assert "invalid:github_app_private_key_must_be_rsa_pem" in html
     assert "invalid:hosted_state_secret_too_short" in html
     assert "invalid:hosted_worker_secret_too_short" in html
+    assert "Use an HTTPS origin with no path, query, credentials, or fragment." in html
+    assert "Use a positive numeric GitHub App id." in html
     assert '<span class="button disabled" aria-disabled="true">Start hosted launch</span>' in html
     assert 'href="#"' not in html
     assert "state=" not in html
@@ -348,6 +356,10 @@ def test_hosted_readiness_endpoint_reports_presence_without_secret_values() -> N
     assert payload["configured"]["FUSEKIT_GITHUB_APP_PRIVATE_KEY"] is True
     assert payload["configured"]["FUSEKIT_GITHUB_APP_ID"] is False
     assert payload["missing"] == ["FUSEKIT_GITHUB_APP_ID"]
+    assert payload["blocking_checks"] == ["missing:FUSEKIT_GITHUB_APP_ID"]
+    assert payload["next_actions"] == [
+        "Set the GitHub App id for the FuseKit hosted launcher."
+    ]
     assert payload["configured"]["FUSEKIT_HOSTED_WORKER_SECRET"] is True
     assert "PRIVATE KEY" not in serialized
     assert "super-sensitive-material" not in serialized
@@ -363,6 +375,8 @@ def test_hosted_readiness_endpoint_reports_ready_when_configured() -> None:
     assert payload["ready"] is True
     assert payload["missing"] == []
     assert payload["invalid"] == []
+    assert payload["blocking_checks"] == []
+    assert payload["next_actions"] == []
     assert payload["public_origin"] == "https://fusekit.snowmanai.org"
     assert payload["github_app_slug"] == "fusekit-launcher"
 
@@ -566,6 +580,24 @@ def test_hosted_readiness_endpoint_rejects_invalid_config_shape_without_values()
         "github_app_private_key_must_be_rsa_pem",
         "hosted_state_secret_too_short",
         "hosted_worker_secret_too_short",
+    ]
+    assert payload["blocking_checks"] == [
+        "invalid:hosted_origin_must_be_https_origin",
+        "invalid:hosted_worker_dispatch_url_must_be_https",
+        "invalid:github_app_id_must_be_positive_integer",
+        "invalid:github_app_slug_is_invalid",
+        "invalid:github_app_private_key_must_be_rsa_pem",
+        "invalid:hosted_state_secret_too_short",
+        "invalid:hosted_worker_secret_too_short",
+    ]
+    assert payload["next_actions"] == [
+        "Use an HTTPS origin with no path, query, credentials, or fragment.",
+        "Use an HTTPS worker dispatch URL with no credentials in the URL.",
+        "Use a positive numeric GitHub App id.",
+        "Use the GitHub App slug exactly as GitHub provides it.",
+        "Store a valid RSA PEM private key for the GitHub App.",
+        "Use at least 16 characters for the hosted state secret.",
+        "Use at least 16 characters for the worker secret.",
     ]
     assert "not-a-number" not in serialized
     assert "bad/slug" not in serialized
