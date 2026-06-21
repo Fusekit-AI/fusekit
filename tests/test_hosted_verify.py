@@ -79,7 +79,6 @@ def test_verify_hosted_deployment_passes_launcher_and_dispatch_checks() -> None:
 
     report = verify_hosted_deployment(
         origin="https://fusekit.snowmanai.org",
-        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
         opener=opener,
         dns_resolver=_public_dns_resolver,
     )
@@ -133,7 +132,6 @@ def test_verify_hosted_deployment_requires_durable_worker_dispatch_idempotency()
 
     report = verify_hosted_deployment(
         origin="https://fusekit.snowmanai.org",
-        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
         opener=opener,
         dns_resolver=_public_dns_resolver,
     )

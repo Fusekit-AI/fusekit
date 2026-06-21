@@ -67,7 +67,7 @@ def verify_hosted_deployment(
     opener: UrlOpener | None = None,
     dns_resolver: DnsResolver | None = None,
 ) -> dict[str, object]:
-    """Verify hosted launcher and optional worker dispatch endpoints without secrets."""
+    """Verify hosted launcher and production worker dispatch endpoints without secrets."""
 
     public_origin = _valid_public_origin(origin)
     public_host = urllib.parse.urlparse(public_origin).hostname or ""
@@ -101,16 +101,15 @@ def verify_hosted_deployment(
         expect_ready_field=True,
     )
     checks.append(hosted_readiness)
-    checks.append(
-        _json_check(
-            "hosted.deployment",
-            f"{public_origin}/api/hosted/deployment",
-            opener=opener,
-            expect_schema=HOSTED_DEPLOYMENT_SCHEMA_VERSION,
-            expect_hosted_runtime_contract=True,
-            expected_public_origin=public_origin,
-        )
+    hosted_deployment, deployment_payload = _json_check_with_payload(
+        "hosted.deployment",
+        f"{public_origin}/api/hosted/deployment",
+        opener=opener,
+        expect_schema=HOSTED_DEPLOYMENT_SCHEMA_VERSION,
+        expect_hosted_runtime_contract=True,
+        expected_public_origin=public_origin,
     )
+    checks.append(hosted_deployment)
     checks.append(
         _json_check(
             "hosted.github_intake",
@@ -119,6 +118,8 @@ def verify_hosted_deployment(
             expect_github_intake_contract=True,
         )
     )
+    if not dispatch_public_url and all(check["status"] == "ok" for check in checks):
+        dispatch_public_url = _worker_dispatch_url_from_deployment(deployment_payload)
     if dispatch_public_url:
         dispatch_base = _worker_dispatch_receiver_base_url(dispatch_public_url)
         checks.append(
@@ -223,12 +224,40 @@ def _json_check(
     expect_worker_dispatch_readiness: bool = False,
     expected_public_origin: str = "",
 ) -> dict[str, object]:
+    check, _payload = _json_check_with_payload(
+        check_id,
+        url,
+        opener=opener,
+        expect_schema=expect_schema,
+        expect_ok_field=expect_ok_field,
+        expect_ready_field=expect_ready_field,
+        expect_hosted_runtime_contract=expect_hosted_runtime_contract,
+        expect_github_intake_contract=expect_github_intake_contract,
+        expect_worker_dispatch_readiness=expect_worker_dispatch_readiness,
+        expected_public_origin=expected_public_origin,
+    )
+    return check
+
+
+def _json_check_with_payload(
+    check_id: str,
+    url: str,
+    *,
+    opener: UrlOpener | None,
+    expect_schema: str = "",
+    expect_ok_field: bool = False,
+    expect_ready_field: bool = False,
+    expect_hosted_runtime_contract: bool = False,
+    expect_github_intake_contract: bool = False,
+    expect_worker_dispatch_readiness: bool = False,
+    expected_public_origin: str = "",
+) -> tuple[dict[str, object], dict[str, Any]]:
     try:
         status, payload = _fetch_json(url, opener=opener)
     except urllib.error.HTTPError as exc:
-        return _http_error_check(check_id, url, exc)
+        return _http_error_check(check_id, url, exc), {}
     except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
-        return _failed_check(check_id, url, exc.__class__.__name__)
+        return _failed_check(check_id, url, exc.__class__.__name__), {}
     failures: list[str] = []
     if status >= 400:
         failures.append("http_error")
@@ -251,14 +280,33 @@ def _json_check(
         failures.extend(_github_intake_contract_failures(payload))
     if expect_worker_dispatch_readiness:
         failures.extend(_worker_dispatch_readiness_failures(payload))
-    return {
-        "id": check_id,
-        "url": _public_url(url),
-        "status": "failed" if failures else "ok",
-        "http_status": status,
-        "schema_version": schema if isinstance(schema, str) else "",
-        "failures": failures,
-    }
+    return (
+        {
+            "id": check_id,
+            "url": _public_url(url),
+            "status": "failed" if failures else "ok",
+            "http_status": status,
+            "schema_version": schema if isinstance(schema, str) else "",
+            "failures": failures,
+        },
+        payload,
+    )
+
+
+def _worker_dispatch_url_from_deployment(payload: dict[str, Any]) -> str:
+    worker_dispatch = payload.get("worker_dispatch")
+    if not isinstance(worker_dispatch, dict):
+        return ""
+    checks = worker_dispatch.get("checks")
+    if not isinstance(checks, dict):
+        return ""
+    dispatch_url = checks.get("dispatch")
+    if not isinstance(dispatch_url, str) or not dispatch_url:
+        return ""
+    try:
+        return _valid_https_url(dispatch_url)
+    except FuseKitError:
+        return ""
 
 
 def _worker_dispatch_readiness_failures(payload: dict[str, Any]) -> list[str]:

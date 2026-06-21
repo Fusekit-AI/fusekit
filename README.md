@@ -321,9 +321,11 @@ names without exposing secret values.
 `fusekit-hosted-verify --origin https://fusekit.snowmanai.org`
 performs the outside-in deployment check against public DNS propagation, the
 hosted homepage, `/healthz`, `/api/hosted/readiness`, and
-`/api/hosted/deployment`; add
-`--worker-dispatch-url` to verify the worker receiver `/healthz` and
-`/readiness` too, including durable worker-dispatch idempotency for production.
+`/api/hosted/deployment`. When the deployment contract publishes a worker
+dispatch URL, the same command automatically verifies the worker receiver
+`/healthz` and `/readiness` too, including durable worker-dispatch idempotency
+for production. `--worker-dispatch-url` remains available for checking an
+explicit receiver URL before it is published in the hosted contract.
 The verifier reports Cloudflare/Vercel HTTP failures,
 readiness mismatches, public DNS failures, homepage trust drift, hosted
 runtime/open-core/DNS drift, deployment trust-story drift, homepage completion
