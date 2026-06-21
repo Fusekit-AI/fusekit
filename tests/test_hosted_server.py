@@ -713,6 +713,7 @@ def test_hosted_github_control_room_fetches_source_and_renders_job() -> None:
     assert "vercel.deploy_verify" in text
     assert "Provider gates" in text
     assert "human-owned" in text
+    assert "Stop launch" in text
     assert "Request rollback" in text
     assert "GitHub App installation" in text
     assert "View proof receipt" in text
@@ -795,6 +796,61 @@ def test_hosted_job_api_returns_redacted_status_and_accepts_protected_action() -
     assert payload["status"] == "rollback_requested"
     assert payload["action_receipt"]["action"] == "rollback"
     assert "rollback_execution_receipt" in payload["action_receipt"]["next_required_proof"]
+    assert "ghs_fake" not in json.dumps(payload)
+
+
+def test_hosted_job_api_can_stop_before_worker_start() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    settings = _settings_with_github(opener)
+
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=f"installation_id=42&repo=example/one&state={state}",
+        settings=settings,
+    )
+    assert status == "200 OK"
+    text = body.decode("utf-8")
+    job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    control = _match(text, r"control=([A-Za-z0-9_.-]+)")
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/stop",
+        method="POST",
+        query_string=f"control={control}",
+        settings=settings,
+    )
+    payload = json.loads(body.decode("utf-8"))
+    steps = {step["id"]: step for step in payload["steps"]}
+
+    assert status == "200 OK"
+    assert payload["status"] == "stopped"
+    assert payload["action_receipt"]["action"] == "stop"
+    assert "no_worker_claim_after_stop" in payload["action_receipt"]["next_required_proof"]
+    assert "stopped before hosted worker start" in steps["worker.prepare"]["proof"]
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/worker-request",
+        settings=settings,
+    )
+    assert status == "409 Conflict"
+    assert json.loads(body.decode("utf-8")) == {"error": "worker_not_started"}
     assert "ghs_fake" not in json.dumps(payload)
 
 

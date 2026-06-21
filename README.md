@@ -152,7 +152,7 @@ the visible plan, and tell the user that action drift requires fresh approval.
 The provider-gate checklist is rendered as human-owned checkpoints so MFA,
 CAPTCHA, billing, fraud, consent, and domain ownership reviews are visible
 instead of hidden in logs. It exposes a redacted job status API and
-protected start, rollback, and detonation request controls. Those controls carry
+protected start, pre-worker stop, rollback, and detonation request controls. Those controls carry
 a signed redacted job token so a stateless hosted function can recover the public
 control-room state without a database or raw provider token. Browser form
 actions return the updated control room instead of raw JSON, while API clients

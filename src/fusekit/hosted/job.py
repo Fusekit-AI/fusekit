@@ -390,6 +390,27 @@ def advance_hosted_launch_job(
                 },
             ),
         )
+    if action == "stop":
+        if job.status != "waiting_for_worker":
+            raise ValueError("Hosted launch can only be stopped before worker start.")
+        return _replace_job(
+            job,
+            status="stopped",
+            created_at=job.created_at,
+            steps=_update_steps(
+                job.steps,
+                {
+                    "worker.prepare": (
+                        "waiting",
+                        "Launch stopped before hosted worker start; no worker claim is allowed.",
+                    ),
+                    "provider.gates": (
+                        "waiting",
+                        "Launch stopped before provider mutation; no provider gate is pending.",
+                    ),
+                },
+            ),
+        )
     if action == "rollback":
         return _replace_job(
             job,
@@ -437,7 +458,7 @@ def claim_hosted_launch_job(
     current = int(time.time() if now is None else now)
     if job.status == "waiting_for_worker":
         raise ValueError("Hosted worker request has not been started.")
-    if job.status in {"rollback_requested", "detonation_requested", "complete"}:
+    if job.status in {"stopped", "rollback_requested", "detonation_requested", "complete"}:
         raise ValueError("Hosted worker request cannot be claimed in its current state.")
     worker_label = _public_worker_id(worker_id)
     return _replace_job(
@@ -1123,12 +1144,21 @@ def _control_forms(
         else ""
     )
     start_action = f"/api/hosted/jobs/{job_id}/actions/start?control={token}{job_param}"
+    stop_action = f"/api/hosted/jobs/{job_id}/actions/stop?control={token}{job_param}"
     rollback_action = f"/api/hosted/jobs/{job_id}/actions/rollback?control={token}{job_param}"
     detonate_action = f"/api/hosted/jobs/{job_id}/actions/detonate?control={token}{job_param}"
-    return f"""
+    if job.status == "waiting_for_worker":
+        return f"""
         <form method="post" action="{start_action}">
           <button type="submit">Start worker</button>
         </form>
+        <form method="post" action="{stop_action}">
+          <button type="submit">Stop launch</button>
+        </form>
+"""
+    if job.status == "stopped":
+        return ""
+    return f"""
         <form method="post" action="{rollback_action}">
           <button type="submit">Request rollback</button>
         </form>
@@ -1390,7 +1420,7 @@ def _public_worker_id(value: str) -> str:
 
 
 def _public_action(action: str) -> str:
-    if action in {"start", "rollback", "detonate"}:
+    if action in {"start", "stop", "rollback", "detonate"}:
         return action
     return "unsupported"
 
@@ -1398,6 +1428,8 @@ def _public_action(action: str) -> str:
 def _action_receipt_statement(action: str) -> str:
     if action == "start":
         return "Hosted worker start was requested; public proof is still pending."
+    if action == "stop":
+        return "Hosted launch was stopped before worker start; no provider mutation is approved."
     if action == "rollback":
         return "Rollback was requested; FuseKit must use rollback metadata before provider cleanup."
     if action == "detonate":
@@ -1417,6 +1449,13 @@ def _action_next_required_proof(action: str) -> list[str]:
             "retrieved_remote_artifacts",
             "rollback_metadata",
             "detonation_receipt",
+        ]
+    if action == "stop":
+        return [
+            "stop_receipt",
+            "no_worker_claim_after_stop",
+            "no_provider_mutation_after_stop",
+            "redacted_public_proof_preserved",
         ]
     if action == "rollback":
         return [

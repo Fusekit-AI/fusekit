@@ -807,7 +807,7 @@ def _hosted_worker_request_response(
     start_response: StartResponse,
     job: HostedLaunchJob,
 ) -> Iterable[bytes]:
-    if job.status == "waiting_for_worker":
+    if job.status in {"waiting_for_worker", "stopped"}:
         return _response(start_response, HTTPStatus.CONFLICT, {"error": "worker_not_started"})
     return _response(start_response, HTTPStatus.OK, hosted_worker_request(job))
 

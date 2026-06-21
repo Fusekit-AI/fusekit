@@ -194,6 +194,9 @@ def test_hosted_worker_claim_rejects_unstarted_or_terminal_jobs() -> None:
     rollback = advance_hosted_launch_job(started, "rollback", now=1_700_000_002)
     with pytest.raises(ValueError):
         claim_hosted_launch_job(rollback, worker_id="worker-01")
+    stopped = advance_hosted_launch_job(job, "stop", now=1_700_000_003)
+    with pytest.raises(ValueError):
+        claim_hosted_launch_job(stopped, worker_id="worker-01")
 
 
 def _proof_payload(
@@ -381,15 +384,24 @@ def test_hosted_launch_job_actions_record_truthful_waiting_states() -> None:
     assert steps["detonate.worker"]["status"] == "waiting"
     assert "waiting" in steps["detonate.worker"]["proof"].lower()
     assert detonation.worker_contract == job.worker_contract
+    stopped = advance_hosted_launch_job(job, "stop", now=1_700_000_004)
+    stopped_steps = {step["id"]: step for step in stopped.to_dict()["steps"]}
+    assert stopped.status == "stopped"
+    assert stopped_steps["worker.prepare"]["status"] == "waiting"
+    assert "stopped before hosted worker start" in stopped_steps["worker.prepare"]["proof"]
+    with pytest.raises(ValueError, match="only be stopped before worker start"):
+        advance_hosted_launch_job(started, "stop", now=1_700_000_005)
 
 
 def test_hosted_job_action_receipts_are_redacted_and_proof_oriented() -> None:
     job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
     started = advance_hosted_launch_job(job, "start", now=1_700_000_001)
+    stopped = advance_hosted_launch_job(job, "stop", now=1_700_000_001)
     rollback = advance_hosted_launch_job(started, "rollback", now=1_700_000_002)
     detonation = advance_hosted_launch_job(rollback, "detonate", now=1_700_000_003)
 
     start_receipt = hosted_job_action_receipt(started, action="start", now=1_700_000_004)
+    stop_receipt = hosted_job_action_receipt(stopped, action="stop", now=1_700_000_004)
     rollback_receipt = hosted_job_action_receipt(
         rollback,
         action="rollback",
@@ -402,6 +414,7 @@ def test_hosted_job_action_receipts_are_redacted_and_proof_oriented() -> None:
     )
     serialized = (
         json.dumps(start_receipt)
+        + json.dumps(stop_receipt)
         + json.dumps(rollback_receipt)
         + json.dumps(detonation_receipt)
     )
@@ -414,6 +427,13 @@ def test_hosted_job_action_receipts_are_redacted_and_proof_oriented() -> None:
         "retrieved_remote_artifacts",
         "rollback_metadata",
         "detonation_receipt",
+    ]
+    assert stop_receipt["status"] == "stopped"
+    assert stop_receipt["next_required_proof"] == [
+        "stop_receipt",
+        "no_worker_claim_after_stop",
+        "no_provider_mutation_after_stop",
+        "redacted_public_proof_preserved",
     ]
     assert rollback_receipt["status"] == "rollback_requested"
     assert "rollback_execution_receipt" in rollback_receipt["next_required_proof"]
