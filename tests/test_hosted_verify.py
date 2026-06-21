@@ -13,6 +13,7 @@ from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY, HOSTED_PROHIB
 from fusekit.hosted.server import (
     HOSTED_SECURITY_HEADERS_CONTRACT,
     HOSTED_SOURCE_INTEGRITY_CONTRACT,
+    HOSTED_SOURCE_PROVENANCE_ENV,
 )
 from fusekit.hosted.verify import (
     HOSTED_DEPLOYMENT_VERIFICATION_SCHEMA_VERSION,
@@ -20,6 +21,7 @@ from fusekit.hosted.verify import (
 )
 
 PUBLIC_DNS_ADDRESSES = ["2606:4700::6810:84e5", "76.76.21.21"]
+VERCEL_COMMIT_SHA = "0123456789abcdef0123456789abcdef01234567"
 SAFE_RESPONSE_HEADERS = {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
@@ -666,6 +668,52 @@ def test_verify_hosted_deployment_requires_source_integrity_contract() -> None:
     ]
 
 
+def test_verify_hosted_deployment_requires_source_provenance_contract() -> None:
+    contract = _deployment_contract()
+    provenance = contract["source_provenance"]
+    assert isinstance(provenance, dict)
+    provenance["verified"] = False
+    provenance["required_env"] = ["VERCEL_ENV"]
+    provenance["secret_boundary"] = "Source proof."
+    actual = provenance["actual"]
+    assert isinstance(actual, dict)
+    actual["deployment_environment"] = "preview"
+    actual["git_provider"] = "gitlab"
+    actual["repo_owner"] = "example"
+    actual["repo_slug"] = "private"
+    actual["commit_ref"] = ""
+    actual["commit_sha"] = "not-a-sha"
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            contract,
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    failures = {
+        check["id"]: check for check in report["checks"]
+    }["hosted.deployment"]["failures"]
+
+    assert report["ready"] is False
+    assert "source_provenance_actual_environment_mismatch" in failures
+    assert "source_provenance_actual_git_provider_mismatch" in failures
+    assert "source_provenance_actual_repo_owner_mismatch" in failures
+    assert "source_provenance_actual_repo_slug_mismatch" in failures
+    assert "source_provenance_commit_ref_missing" in failures
+    assert "source_provenance_commit_sha_invalid" in failures
+    assert "source_provenance_not_verified" in failures
+    assert "source_provenance_required_env_mismatch" in failures
+    assert "source_provenance_secret_boundary_missing" in failures
+
+
 def test_verify_hosted_deployment_requires_one_click_contract() -> None:
     contract = _deployment_contract()
     one_click = contract["one_click_launch"]
@@ -839,6 +887,12 @@ def test_verify_hosted_deployment_requires_trustworthy_homepage() -> None:
     assert "hosted_home_narrow_permissions_missing" in checks["hosted.home"]["failures"]
     assert "hosted_home_visible_plan_missing" in checks["hosted.home"]["failures"]
     assert "hosted_home_redacted_proof_missing" in checks["hosted.home"]["failures"]
+    assert "hosted_home_deployment_provenance_missing" in checks["hosted.home"][
+        "failures"
+    ]
+    assert "hosted_home_deployment_provenance_commit_missing" in checks["hosted.home"][
+        "failures"
+    ]
     assert "hosted_home_completion_requirements_missing" in checks["hosted.home"][
         "failures"
     ]
@@ -1010,6 +1064,8 @@ def _home_html(
         <section>Reviewable hosted files</section>
         <section>app.py vercel.json src/fusekit/hosted/server.py</section>
         <section>No private generated artifact is required for the hosted click flow.</section>
+        <section>Deployment provenance</section>
+        <section>Commit SHA {VERCEL_COMMIT_SHA}</section>
         <section>Capability vault boundary</section>
         <section>Raw secrets must never leave the vault runtime.</section>
         <section>
@@ -1180,6 +1236,33 @@ def _deployment_contract() -> dict[str, object]:
         },
         "security_headers": dict(HOSTED_SECURITY_HEADERS_CONTRACT),
         "source_integrity": dict(HOSTED_SOURCE_INTEGRITY_CONTRACT),
+        "source_provenance": {
+            "provider": "vercel",
+            "source": "vercel_system_environment_variables",
+            "expected": {
+                "deployment_environment": "production",
+                "git_provider": "github",
+                "repo_owner": "xpxpxp-coder",
+                "repo_slug": "fusekit",
+                "source_repository": "https://github.com/xpxpxp-coder/fusekit",
+            },
+            "actual": {
+                "deployment_environment": "production",
+                "deployment_url": "fusekit-snowmanai-org.vercel.app",
+                "git_provider": "github",
+                "repo_owner": "xpxpxp-coder",
+                "repo_slug": "fusekit",
+                "commit_ref": "main",
+                "commit_sha": VERCEL_COMMIT_SHA,
+            },
+            "verified": True,
+            "required_env": list(HOSTED_SOURCE_PROVENANCE_ENV),
+            "secret_boundary": (
+                "Source provenance publishes only Vercel/Git metadata. It does not "
+                "publish Vercel tokens, project IDs, OIDC tokens, deploy hooks, GitHub "
+                "installation tokens, provider credentials, or vault material."
+            ),
+        },
         "open_core": {
             "source_repository": "https://github.com/xpxpxp-coder/fusekit",
             "license": "MIT",
@@ -1190,8 +1273,14 @@ def _deployment_contract() -> dict[str, object]:
             "steps": [
                 {
                     "id": "connect_vercel_project",
-                    "label": "Connect the Vercel project to the open-source FuseKit repository.",
-                    "proof": "Vercel deployment serves app.py from the public repository.",
+                    "label": (
+                        "Connect the Vercel project to the open-source FuseKit repository "
+                        "and expose Vercel system environment variables."
+                    ),
+                    "proof": (
+                        "Vercel deployment provenance reports the expected GitHub repo, "
+                        "branch, commit SHA, and production environment."
+                    ),
                 },
                 {
                     "id": "deploy_worker_dispatch_receiver",
@@ -1265,6 +1354,7 @@ def _deployment_contract() -> dict[str, object]:
             "FUSEKIT_HOSTED_WORKER_DISPATCH_URL",
         ],
         "optional_runtime_env": [],
+        "required_source_provenance_env": list(HOSTED_SOURCE_PROVENANCE_ENV),
         "worker_dispatch": {
             "schema_version": "fusekit.hosted-worker-dispatch.v1",
             "receiver_command": "fusekit-hosted-worker-dispatch",

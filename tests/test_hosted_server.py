@@ -18,6 +18,7 @@ from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY, HOSTED_PROHIB
 from fusekit.hosted.server import (
     HOSTED_SECURITY_HEADERS_CONTRACT,
     HOSTED_SOURCE_INTEGRITY_CONTRACT,
+    HOSTED_SOURCE_PROVENANCE_ENV,
     HostedSettings,
     hosted_application,
     render_hosted_home,
@@ -27,6 +28,19 @@ from fusekit.hosted.session import create_hosted_state_token
 FAKE_PRIVATE_KEY = "-----BEGIN PRIVATE KEY-----\nnot-real\n-----END PRIVATE KEY-----"
 STATE_SECRET = "hosted-state-secret"
 WORKER_SECRET = "hosted-worker-secret"
+VERCEL_COMMIT_SHA = "0123456789abcdef0123456789abcdef01234567"
+
+
+def _vercel_provenance_kwargs() -> dict[str, str]:
+    return {
+        "vercel_env": "production",
+        "vercel_url": "fusekit-snowmanai-org.vercel.app",
+        "vercel_git_provider": "github",
+        "vercel_git_repo_owner": "xpxpxp-coder",
+        "vercel_git_repo_slug": "fusekit",
+        "vercel_git_commit_ref": "main",
+        "vercel_git_commit_sha": VERCEL_COMMIT_SHA,
+    }
 
 
 def _call(
@@ -48,6 +62,7 @@ def _call(
             state_secret=STATE_SECRET,
             worker_secret=WORKER_SECRET,
             worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+            **_vercel_provenance_kwargs(),
         )
     )
     captured: dict[str, object] = {}
@@ -135,6 +150,7 @@ def _settings_with_github(opener: SequenceOpener) -> HostedSettings:
         worker_dispatch_url="https://worker.snowmanai.org/dispatch",
         github_opener=opener,
         worker_dispatch_opener=SequenceOpener([{} for _ in range(8)]),
+        **_vercel_provenance_kwargs(),
     )
 
 
@@ -162,6 +178,7 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
             state_secret=STATE_SECRET,
             worker_secret=WORKER_SECRET,
             worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+            **_vercel_provenance_kwargs(),
         )
     )
     payload = json.loads(
@@ -184,6 +201,9 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
     assert "vercel.json" in html
     assert "src/fusekit/hosted/server.py" in html
     assert "No private generated artifact is required for the hosted click flow." in html
+    assert "Deployment provenance" in html
+    assert "xpxpxp-coder/fusekit" in html
+    assert VERCEL_COMMIT_SHA in html
     assert "MIT" in html
     assert "narrow permissions" in html
     assert "selected repository only" in html
@@ -484,6 +504,28 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     assert payload["source_integrity"]["private_generated_artifact_required"] is False
     assert "vercel.json" in payload["source_integrity"]["reviewable_files"]
     assert "build tokens" in payload["source_integrity"]["secret_boundary"]
+    provenance = payload["source_provenance"]
+    assert provenance["provider"] == "vercel"
+    assert provenance["source"] == "vercel_system_environment_variables"
+    assert provenance["verified"] is True
+    assert provenance["expected"] == {
+        "deployment_environment": "production",
+        "git_provider": "github",
+        "repo_owner": "xpxpxp-coder",
+        "repo_slug": "fusekit",
+        "source_repository": "https://github.com/xpxpxp-coder/fusekit",
+    }
+    assert provenance["actual"] == {
+        "deployment_environment": "production",
+        "deployment_url": "fusekit-snowmanai-org.vercel.app",
+        "git_provider": "github",
+        "repo_owner": "xpxpxp-coder",
+        "repo_slug": "fusekit",
+        "commit_ref": "main",
+        "commit_sha": VERCEL_COMMIT_SHA,
+    }
+    assert provenance["required_env"] == list(HOSTED_SOURCE_PROVENANCE_ENV)
+    assert "Vercel tokens" in provenance["secret_boundary"]
     assert payload["operator_setup"]["target_subdomain"] == "fusekit.snowmanai.org"
     assert [step["id"] for step in payload["operator_setup"]["steps"]] == [
         "connect_vercel_project",
@@ -523,6 +565,7 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     assert "FUSEKIT_HOSTED_WORKER_SECRET" in payload["required_runtime_env"]
     assert "FUSEKIT_HOSTED_WORKER_DISPATCH_URL" in payload["required_runtime_env"]
     assert payload["optional_runtime_env"] == []
+    assert payload["required_source_provenance_env"] == list(HOSTED_SOURCE_PROVENANCE_ENV)
     assert payload["worker_dispatch"]["schema_version"] == "fusekit.hosted-worker-dispatch.v1"
     assert payload["worker_dispatch"]["receiver_command"] == "fusekit-hosted-worker-dispatch"
     assert payload["worker_dispatch"]["production_required"] is True
@@ -556,6 +599,30 @@ def test_hosted_deployment_contract_normalizes_worker_dispatch_receiver_checks()
         "dispatch": "https://worker.snowmanai.org/dispatch",
         "health": "https://worker.snowmanai.org/healthz",
         "readiness": "https://worker.snowmanai.org/readiness",
+    }
+
+
+def test_hosted_source_provenance_requires_expected_production_git_metadata() -> None:
+    settings = HostedSettings(
+        vercel_env="preview",
+        vercel_git_provider="github",
+        vercel_git_repo_owner="xpxpxp-coder",
+        vercel_git_repo_slug="fusekit",
+        vercel_git_commit_ref="main",
+        vercel_git_commit_sha="not-a-sha",
+    )
+
+    provenance = settings.source_provenance()
+
+    assert provenance["verified"] is False
+    assert provenance["actual"] == {
+        "deployment_environment": "preview",
+        "deployment_url": "",
+        "git_provider": "github",
+        "repo_owner": "xpxpxp-coder",
+        "repo_slug": "fusekit",
+        "commit_ref": "main",
+        "commit_sha": "not-a-sha",
     }
 
 

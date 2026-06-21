@@ -136,7 +136,11 @@ universal GitHub intake preview, provider summary, narrow-permission contract,
 visible setup plan, proof list, and rollback promise without asking the user to
 run commands. The homepage and deployment contract now expose the open-core
 source repository, MIT license, and reviewable hosted entrypoint (`app.py`)
-before the user installs the GitHub App. The public GitHub intake contract also
+before the user installs the GitHub App. They also publish deployment
+provenance from Vercel system environment variables, including the Git provider,
+repository owner/name, branch/ref, commit SHA, and production environment, so
+the public launcher can be matched back to the reviewed open-source commit.
+The public GitHub intake contract also
 embeds the same trust story, no-terminal launch path, required proof list,
 reversal path, and open-core metadata before the install click. It
 publishes the capability vault boundary as a user-facing and machine-checkable
@@ -387,7 +391,12 @@ that service, `fusekit.snowmanai.org` added as the custom domain, the Cloudflare
 runtime environment variables set in Vercel: `FUSEKIT_HOSTED_ORIGIN`,
 `FUSEKIT_GITHUB_APP_ID`, `FUSEKIT_GITHUB_APP_SLUG`,
 `FUSEKIT_GITHUB_APP_PRIVATE_KEY`, `FUSEKIT_HOSTED_STATE_SECRET`, and
-`FUSEKIT_HOSTED_WORKER_SECRET`. Production one-click worker wakeup also needs
+`FUSEKIT_HOSTED_WORKER_SECRET`. The Vercel project must also expose system
+environment variables including `VERCEL_ENV`, `VERCEL_URL`,
+`VERCEL_GIT_PROVIDER`, `VERCEL_GIT_REPO_OWNER`, `VERCEL_GIT_REPO_SLUG`,
+`VERCEL_GIT_COMMIT_REF`, and `VERCEL_GIT_COMMIT_SHA`; the hosted verifier
+rejects the deployment if those public source-provenance fields are missing or
+point at a different repository. Production one-click worker wakeup also needs
 `FUSEKIT_HOSTED_WORKER_DISPATCH_URL` pointed at an HTTPS worker dispatch
 service running `fusekit-hosted-worker-dispatch` with
 `FUSEKIT_HOSTED_WORKER_SECRET` and worker runtime environment configured. Set

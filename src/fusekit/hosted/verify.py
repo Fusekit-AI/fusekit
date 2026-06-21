@@ -6,6 +6,7 @@ import argparse
 import html
 import ipaddress
 import json
+import re
 import socket
 import urllib.error
 import urllib.parse
@@ -38,6 +39,10 @@ from fusekit.hosted.server import (
     HOSTED_READINESS_SCHEMA_VERSION,
     HOSTED_SECURITY_HEADERS_CONTRACT,
     HOSTED_SOURCE_INTEGRITY_CONTRACT,
+    HOSTED_SOURCE_PROVENANCE_ENV,
+    HOSTED_SOURCE_REPOSITORY,
+    HOSTED_SOURCE_REPOSITORY_NAME,
+    HOSTED_SOURCE_REPOSITORY_OWNER,
     HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
 )
 from fusekit.hosted.worker_dispatch import HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION
@@ -464,6 +469,7 @@ def _hosted_runtime_contract_failures(
     )
     failures.extend(_security_headers_contract_failures(payload.get("security_headers")))
     failures.extend(_source_integrity_contract_failures(payload.get("source_integrity")))
+    failures.extend(_source_provenance_failures(payload.get("source_provenance")))
     failures.extend(_one_click_launch_contract_failures(payload.get("one_click_launch")))
     expected_runtime = {
         "provider": "vercel",
@@ -529,6 +535,8 @@ def _hosted_runtime_contract_failures(
     optional_runtime_env = payload.get("optional_runtime_env")
     if optional_runtime_env != []:
         failures.append("optional_runtime_env_mismatch")
+    if payload.get("required_source_provenance_env") != list(HOSTED_SOURCE_PROVENANCE_ENV):
+        failures.append("required_source_provenance_env_mismatch")
     failures.extend(_worker_dispatch_contract_failures(payload.get("worker_dispatch")))
     return failures
 
@@ -620,6 +628,56 @@ def _source_integrity_contract_failures(payload: object) -> list[str]:
     return failures
 
 
+def _source_provenance_failures(payload: object) -> list[str]:
+    failures: list[str] = []
+    if not isinstance(payload, dict):
+        return ["source_provenance_contract_missing"]
+    if payload.get("provider") != "vercel":
+        failures.append("source_provenance_provider_mismatch")
+    if payload.get("source") != "vercel_system_environment_variables":
+        failures.append("source_provenance_source_mismatch")
+    expected = payload.get("expected")
+    if not isinstance(expected, dict):
+        failures.append("source_provenance_expected_missing")
+    else:
+        if expected.get("deployment_environment") != "production":
+            failures.append("source_provenance_expected_environment_mismatch")
+        if expected.get("git_provider") != "github":
+            failures.append("source_provenance_expected_git_provider_mismatch")
+        if expected.get("repo_owner") != HOSTED_SOURCE_REPOSITORY_OWNER:
+            failures.append("source_provenance_expected_repo_owner_mismatch")
+        if expected.get("repo_slug") != HOSTED_SOURCE_REPOSITORY_NAME:
+            failures.append("source_provenance_expected_repo_slug_mismatch")
+        if expected.get("source_repository") != HOSTED_SOURCE_REPOSITORY:
+            failures.append("source_provenance_expected_source_repository_mismatch")
+    actual = payload.get("actual")
+    if not isinstance(actual, dict):
+        failures.append("source_provenance_actual_missing")
+    else:
+        if actual.get("deployment_environment") != "production":
+            failures.append("source_provenance_actual_environment_mismatch")
+        if actual.get("git_provider") != "github":
+            failures.append("source_provenance_actual_git_provider_mismatch")
+        if actual.get("repo_owner") != HOSTED_SOURCE_REPOSITORY_OWNER:
+            failures.append("source_provenance_actual_repo_owner_mismatch")
+        if actual.get("repo_slug") != HOSTED_SOURCE_REPOSITORY_NAME:
+            failures.append("source_provenance_actual_repo_slug_mismatch")
+        commit_ref = actual.get("commit_ref")
+        if not isinstance(commit_ref, str) or not commit_ref:
+            failures.append("source_provenance_commit_ref_missing")
+        commit_sha = actual.get("commit_sha")
+        if not isinstance(commit_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", commit_sha):
+            failures.append("source_provenance_commit_sha_invalid")
+    if payload.get("verified") is not True:
+        failures.append("source_provenance_not_verified")
+    if payload.get("required_env") != list(HOSTED_SOURCE_PROVENANCE_ENV):
+        failures.append("source_provenance_required_env_mismatch")
+    boundary = payload.get("secret_boundary")
+    if not isinstance(boundary, str) or "does not publish Vercel tokens" not in boundary:
+        failures.append("source_provenance_secret_boundary_missing")
+    return failures
+
+
 def _one_click_launch_contract_failures(payload: object) -> list[str]:
     failures: list[str] = []
     if not isinstance(payload, dict):
@@ -687,6 +745,8 @@ def _hosted_home_failures(
         "hosted_home_no_private_generated_artifact_missing": (
             "No private generated artifact is required for the hosted click flow."
         ),
+        "hosted_home_deployment_provenance_missing": "Deployment provenance",
+        "hosted_home_deployment_provenance_commit_missing": "Commit SHA",
         "hosted_home_narrow_permissions_missing": "narrow permissions",
         "hosted_home_visible_plan_missing": "visible plan",
         "hosted_home_redacted_proof_missing": "redacted proof",

@@ -71,11 +71,28 @@ StartResponse = Callable[[str, list[tuple[str, str]]], object]
 
 HOSTED_CANONICAL_ORIGIN = "https://fusekit.snowmanai.org"
 HOSTED_SOURCE_REPOSITORY = "https://github.com/xpxpxp-coder/fusekit"
+HOSTED_SOURCE_REPOSITORY_OWNER = "xpxpxp-coder"
+HOSTED_SOURCE_REPOSITORY_NAME = "fusekit"
+HOSTED_SOURCE_PROVENANCE_ENV = (
+    "VERCEL_ENV",
+    "VERCEL_URL",
+    "VERCEL_GIT_PROVIDER",
+    "VERCEL_GIT_REPO_OWNER",
+    "VERCEL_GIT_REPO_SLUG",
+    "VERCEL_GIT_COMMIT_REF",
+    "VERCEL_GIT_COMMIT_SHA",
+)
 HOSTED_OPERATOR_SETUP_STEPS: tuple[dict[str, str], ...] = (
     {
         "id": "connect_vercel_project",
-        "label": "Connect the Vercel project to the open-source FuseKit repository.",
-        "proof": "Vercel deployment serves app.py from the public repository.",
+        "label": (
+            "Connect the Vercel project to the open-source FuseKit repository "
+            "and expose Vercel system environment variables."
+        ),
+        "proof": (
+            "Vercel deployment provenance reports the expected GitHub repo, branch, "
+            "commit SHA, and production environment."
+        ),
     },
     {
         "id": "deploy_worker_dispatch_receiver",
@@ -278,6 +295,13 @@ class HostedSettings:
     state_secret: str = ""
     worker_secret: str = ""
     worker_dispatch_url: str = ""
+    vercel_env: str = ""
+    vercel_url: str = ""
+    vercel_git_provider: str = ""
+    vercel_git_repo_owner: str = ""
+    vercel_git_repo_slug: str = ""
+    vercel_git_commit_ref: str = ""
+    vercel_git_commit_sha: str = ""
     github_opener: UrlOpener | None = None
     worker_dispatch_opener: UrlOpener | None = None
     hosted_jobs: MutableMapping[str, HostedLaunchJob] = field(default_factory=dict)
@@ -294,6 +318,13 @@ class HostedSettings:
             state_secret=os.environ.get("FUSEKIT_HOSTED_STATE_SECRET", ""),
             worker_secret=os.environ.get("FUSEKIT_HOSTED_WORKER_SECRET", ""),
             worker_dispatch_url=os.environ.get("FUSEKIT_HOSTED_WORKER_DISPATCH_URL", ""),
+            vercel_env=os.environ.get("VERCEL_ENV", ""),
+            vercel_url=os.environ.get("VERCEL_URL", ""),
+            vercel_git_provider=os.environ.get("VERCEL_GIT_PROVIDER", ""),
+            vercel_git_repo_owner=os.environ.get("VERCEL_GIT_REPO_OWNER", ""),
+            vercel_git_repo_slug=os.environ.get("VERCEL_GIT_REPO_SLUG", ""),
+            vercel_git_commit_ref=os.environ.get("VERCEL_GIT_COMMIT_REF", ""),
+            vercel_git_commit_sha=os.environ.get("VERCEL_GIT_COMMIT_SHA", ""),
         )
 
     def github_config(self) -> GitHubAppConfig:
@@ -353,6 +384,7 @@ class HostedSettings:
             "capability_vault_boundary": dict(HOSTED_CAPABILITY_VAULT_BOUNDARY),
             "security_headers": dict(HOSTED_SECURITY_HEADERS_CONTRACT),
             "source_integrity": dict(HOSTED_SOURCE_INTEGRITY_CONTRACT),
+            "source_provenance": self.source_provenance(),
             "one_click_launch": {
                 "public_url": HOSTED_CANONICAL_ORIGIN,
                 "start_control": "Start hosted launch",
@@ -424,6 +456,7 @@ class HostedSettings:
             },
             "required_runtime_env": list(REQUIRED_HOSTED_ENV),
             "optional_runtime_env": list(OPTIONAL_HOSTED_ENV),
+            "required_source_provenance_env": list(HOSTED_SOURCE_PROVENANCE_ENV),
             "worker_dispatch": {
                 "env_var": "FUSEKIT_HOSTED_WORKER_DISPATCH_URL",
                 "receiver_command": "fusekit-hosted-worker-dispatch",
@@ -453,6 +486,47 @@ class HostedSettings:
                 "This contract is public. It contains URLs, record names, and env var names only; "
                 "it never includes private keys, state secrets, installation tokens, or provider "
                 "credentials."
+            ),
+        }
+
+    def source_provenance(self) -> dict[str, object]:
+        """Return public Git/Vercel provenance for the hosted deployment."""
+
+        actual = {
+            "deployment_environment": self.vercel_env,
+            "deployment_url": self.vercel_url,
+            "git_provider": self.vercel_git_provider,
+            "repo_owner": self.vercel_git_repo_owner,
+            "repo_slug": self.vercel_git_repo_slug,
+            "commit_ref": self.vercel_git_commit_ref,
+            "commit_sha": self.vercel_git_commit_sha,
+        }
+        verified = (
+            actual["deployment_environment"] == "production"
+            and actual["git_provider"] == "github"
+            and actual["repo_owner"] == HOSTED_SOURCE_REPOSITORY_OWNER
+            and actual["repo_slug"] == HOSTED_SOURCE_REPOSITORY_NAME
+            and bool(actual["commit_ref"])
+            and _looks_like_git_commit_sha(actual["commit_sha"])
+        )
+        return {
+            "provider": "vercel",
+            "source": "vercel_system_environment_variables",
+            "expected": {
+                "deployment_environment": "production",
+                "git_provider": "github",
+                "repo_owner": HOSTED_SOURCE_REPOSITORY_OWNER,
+                "repo_slug": HOSTED_SOURCE_REPOSITORY_NAME,
+                "source_repository": HOSTED_SOURCE_REPOSITORY,
+            },
+            "actual": actual,
+            "verified": verified,
+            "required_env": list(HOSTED_SOURCE_PROVENANCE_ENV),
+            "secret_boundary": (
+                "Source provenance publishes only Vercel/Git metadata: environment, "
+                "deployment URL, provider, repository owner/name, branch/ref, and commit "
+                "SHA. It does not publish Vercel tokens, project IDs, OIDC tokens, deploy "
+                "hooks, GitHub installation tokens, provider credentials, or vault material."
             ),
         }
 
@@ -556,6 +630,9 @@ def render_hosted_home(settings: HostedSettings) -> str:
     )
     issues = _list_config_issues(readiness)
     readiness_summary = _readiness_summary_section(readiness)
+    source_provenance_section = _source_provenance_section(
+        cast(dict[str, object], deployment_contract["source_provenance"])
+    )
     start_control = (
         f'<a class="button" href="{install_url}">Start hosted launch</a>'
         if setup_ready
@@ -743,6 +820,7 @@ def render_hosted_home(settings: HostedSettings) -> str:
       <h3>Reviewable hosted files</h3>
       <ul>{reviewable_files}</ul>
     </section>
+    {source_provenance_section}
     <section aria-label="Provider gates">
       <h2>What you may need to approve</h2>
       <ul>
@@ -776,6 +854,41 @@ def render_hosted_home(settings: HostedSettings) -> str:
   </main>
 </body>
 </html>
+"""
+
+
+def _looks_like_git_commit_sha(value: object) -> bool:
+    if not isinstance(value, str) or len(value) != 40:
+        return False
+    return all(character in "0123456789abcdef" for character in value)
+
+
+def _source_provenance_section(provenance: dict[str, object]) -> str:
+    actual = provenance.get("actual")
+    actual = actual if isinstance(actual, dict) else {}
+    status = "verified" if provenance.get("verified") is True else "waiting for Vercel metadata"
+    repo = (
+        f"{actual.get('repo_owner', '')}/{actual.get('repo_slug', '')}".strip("/")
+        or "not reported"
+    )
+    commit_ref = str(actual.get("commit_ref") or "not reported")
+    commit_sha = str(actual.get("commit_sha") or "not reported")
+    environment = str(actual.get("deployment_environment") or "not reported")
+    return f"""
+    <section aria-label="Deployment provenance">
+      <h2>Deployment provenance</h2>
+      <p>
+        FuseKit publishes the Vercel/Git metadata for this deployment so the
+        hosted page can be matched back to the public source repository.
+      </p>
+      <ul>
+        <li>Status: <span class="origin">{html.escape(status)}</span></li>
+        <li>Repository: <span class="origin">{html.escape(repo)}</span></li>
+        <li>Branch/ref: <span class="origin">{html.escape(commit_ref)}</span></li>
+        <li>Commit SHA: <span class="origin">{html.escape(commit_sha)}</span></li>
+        <li>Environment: <span class="origin">{html.escape(environment)}</span></li>
+      </ul>
+    </section>
 """
 
 
