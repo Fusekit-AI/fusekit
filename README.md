@@ -324,7 +324,8 @@ operator setup checklist for attaching `fusekit.snowmanai.org` to Vercel and
 Cloudflare, worker dispatch receiver setup/verification steps, a structured
 one-click launch contract proving the hosted path needs no terminal or download,
 production-required worker dispatch wiring, the machine-readable security header
-policy, and required environment variable
+policy, public source-integrity review files for the hosted launcher, and
+required environment variable
 names without exposing secret values.
 `fusekit-hosted-verify --origin https://fusekit.snowmanai.org`
 performs the outside-in deployment check against public DNS propagation, the
@@ -340,7 +341,8 @@ readiness mismatches, public DNS failures, homepage trust drift, hosted
 runtime/open-core/DNS drift, deployment trust-story drift, homepage completion
 proof checklist drift, homepage reversible-setup drift, one-click launch
 contract drift, embedded homepage contract drift, capability-vault boundary
-drift, pre-install GitHub intake trust drift, and operator-setup contract drift
+drift, hosted source-integrity drift, pre-install GitHub intake trust drift,
+and operator-setup contract drift
 as redacted JSON instead of claiming launch readiness. It also publishes
 top-level `blocking_checks` and deduplicated `next_actions` so an operator can
 see the remaining public setup work without searching every check row. Every

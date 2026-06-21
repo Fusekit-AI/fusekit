@@ -10,7 +10,10 @@ import pytest
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY
-from fusekit.hosted.server import HOSTED_SECURITY_HEADERS_CONTRACT
+from fusekit.hosted.server import (
+    HOSTED_SECURITY_HEADERS_CONTRACT,
+    HOSTED_SOURCE_INTEGRITY_CONTRACT,
+)
 from fusekit.hosted.verify import (
     HOSTED_DEPLOYMENT_VERIFICATION_SCHEMA_VERSION,
     verify_hosted_deployment,
@@ -622,6 +625,47 @@ def test_verify_hosted_deployment_requires_security_header_contract() -> None:
     ]
 
 
+def test_verify_hosted_deployment_requires_source_integrity_contract() -> None:
+    contract = _deployment_contract()
+    source_integrity = contract["source_integrity"]
+    assert isinstance(source_integrity, dict)
+    source_integrity["source_repository"] = "https://github.com/example/private"
+    source_integrity["reviewable_files"] = ["app.py"]
+    source_integrity["private_generated_artifact_required"] = True
+    source_integrity["secret_boundary"] = "Source proof."
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            contract,
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["hosted.deployment"]["status"] == "failed"
+    assert "source_integrity_source_repository_mismatch" in checks["hosted.deployment"][
+        "failures"
+    ]
+    assert "source_integrity_reviewable_files_mismatch" in checks["hosted.deployment"][
+        "failures"
+    ]
+    assert "source_integrity_private_generated_artifact_required_mismatch" in checks[
+        "hosted.deployment"
+    ]["failures"]
+    assert "source_integrity_secret_boundary_missing" in checks["hosted.deployment"][
+        "failures"
+    ]
+
+
 def test_verify_hosted_deployment_requires_one_click_contract() -> None:
     contract = _deployment_contract()
     one_click = contract["one_click_launch"]
@@ -944,6 +988,9 @@ def _home_html(
           open core / narrow permissions / visible plan / redacted proof / reversible setup
         </section>
         <section>Open core https://github.com/xpxpxp-coder/fusekit</section>
+        <section>Reviewable hosted files</section>
+        <section>app.py vercel.json src/fusekit/hosted/server.py</section>
+        <section>No private generated artifact is required for the hosted click flow.</section>
         <section>Capability vault boundary</section>
         <section>Raw secrets must never leave the vault runtime.</section>
         <section>
@@ -1109,6 +1156,7 @@ def _deployment_contract() -> dict[str, object]:
             "record_type": "CNAME",
         },
         "security_headers": dict(HOSTED_SECURITY_HEADERS_CONTRACT),
+        "source_integrity": dict(HOSTED_SOURCE_INTEGRITY_CONTRACT),
         "open_core": {
             "source_repository": "https://github.com/xpxpxp-coder/fusekit",
             "license": "MIT",

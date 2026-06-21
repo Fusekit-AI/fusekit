@@ -195,6 +195,31 @@ HOSTED_SECURITY_HEADERS_CONTRACT: dict[str, object] = {
         "They do not include tokens, cookies, signatures, provider credentials, or vault material."
     ),
 }
+HOSTED_SOURCE_INTEGRITY_CONTRACT: dict[str, object] = {
+    "source_repository": HOSTED_SOURCE_REPOSITORY,
+    "license": "MIT",
+    "deployment_model": "Vercel serves the hosted launcher from public repository files.",
+    "reviewable_files": [
+        "app.py",
+        "vercel.json",
+        ".python-version",
+        "requirements.txt",
+        "src/fusekit/hosted/server.py",
+        "src/fusekit/hosted/launcher.py",
+        "src/fusekit/hosted/verify.py",
+    ],
+    "public_contract_endpoints": [
+        "/api/hosted/readiness",
+        "/api/hosted/deployment",
+        "/api/github/intake",
+    ],
+    "private_generated_artifact_required": False,
+    "secret_boundary": (
+        "Source integrity proof lists public repository paths, public endpoint paths, "
+        "and license metadata only. It does not include build tokens, deploy hooks, "
+        "provider credentials, vault material, or generated private artifacts."
+    ),
+}
 HOSTED_READINESS_SCHEMA_VERSION = "fusekit.hosted-readiness.v1"
 HOSTED_DEPLOYMENT_SCHEMA_VERSION = "fusekit.hosted-deployment.v1"
 HOSTED_WORKER_DISPATCH_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch.v1"
@@ -293,6 +318,7 @@ class HostedSettings:
             "trust_contract": dict(HOSTED_PUBLIC_TRUST_CONTRACT),
             "capability_vault_boundary": dict(HOSTED_CAPABILITY_VAULT_BOUNDARY),
             "security_headers": dict(HOSTED_SECURITY_HEADERS_CONTRACT),
+            "source_integrity": dict(HOSTED_SOURCE_INTEGRITY_CONTRACT),
             "one_click_launch": {
                 "public_url": HOSTED_CANONICAL_ORIGIN,
                 "start_control": "Start hosted launch",
@@ -480,6 +506,10 @@ def render_hosted_home(settings: HostedSettings) -> str:
     allowed_material = "\n".join(
         f"<li>{html.escape(item)}</li>" for item in HOSTED_ALLOWED_PUBLIC_MATERIAL
     )
+    reviewable_files = "\n".join(
+        f"<li>{html.escape(item)}</li>"
+        for item in cast(list[str], HOSTED_SOURCE_INTEGRITY_CONTRACT["reviewable_files"])
+    )
     source_repository = html.escape(HOSTED_SOURCE_REPOSITORY, quote=True)
     status = (
         "Hosted GitHub intake is ready."
@@ -664,7 +694,10 @@ def render_hosted_home(settings: HostedSettings) -> str:
         </li>
         <li>The hosted entrypoint is <span class="origin">app.py</span>.</li>
         <li>The public package license is MIT.</li>
+        <li>No private generated artifact is required for the hosted click flow.</li>
       </ul>
+      <h3>Reviewable hosted files</h3>
+      <ul>{reviewable_files}</ul>
     </section>
     <section aria-label="Provider gates">
       <h2>What you may need to approve</h2>

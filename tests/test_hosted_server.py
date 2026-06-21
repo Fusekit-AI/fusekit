@@ -17,6 +17,7 @@ from fusekit.hosted.github_app import GitHubAppConfig
 from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY
 from fusekit.hosted.server import (
     HOSTED_SECURITY_HEADERS_CONTRACT,
+    HOSTED_SOURCE_INTEGRITY_CONTRACT,
     HostedSettings,
     hosted_application,
     render_hosted_home,
@@ -177,6 +178,10 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
     assert "Open core" in html
     assert "https://github.com/xpxpxp-coder/fusekit" in html
     assert "app.py" in html
+    assert "Reviewable hosted files" in html
+    assert "vercel.json" in html
+    assert "src/fusekit/hosted/server.py" in html
+    assert "No private generated artifact is required for the hosted click flow." in html
     assert "MIT" in html
     assert "narrow permissions" in html
     assert "selected repository only" in html
@@ -453,6 +458,13 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     assert payload["security_headers"] == HOSTED_SECURITY_HEADERS_CONTRACT
     assert "Cache-Control" in payload["security_headers"]["required_headers"]
     assert "tokens" in payload["security_headers"]["secret_boundary"]
+    assert payload["source_integrity"] == HOSTED_SOURCE_INTEGRITY_CONTRACT
+    assert payload["source_integrity"]["source_repository"] == (
+        "https://github.com/xpxpxp-coder/fusekit"
+    )
+    assert payload["source_integrity"]["private_generated_artifact_required"] is False
+    assert "vercel.json" in payload["source_integrity"]["reviewable_files"]
+    assert "build tokens" in payload["source_integrity"]["secret_boundary"]
     assert payload["operator_setup"]["target_subdomain"] == "fusekit.snowmanai.org"
     assert [step["id"] for step in payload["operator_setup"]["steps"]] == [
         "connect_vercel_project",

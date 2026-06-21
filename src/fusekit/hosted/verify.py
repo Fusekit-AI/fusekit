@@ -36,6 +36,7 @@ from fusekit.hosted.server import (
     HOSTED_PUBLIC_TRUST_CONTRACT,
     HOSTED_READINESS_SCHEMA_VERSION,
     HOSTED_SECURITY_HEADERS_CONTRACT,
+    HOSTED_SOURCE_INTEGRITY_CONTRACT,
     HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
 )
 from fusekit.hosted.worker_dispatch import HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION
@@ -461,6 +462,7 @@ def _hosted_runtime_contract_failures(
         _capability_vault_boundary_failures(payload.get("capability_vault_boundary"))
     )
     failures.extend(_security_headers_contract_failures(payload.get("security_headers")))
+    failures.extend(_source_integrity_contract_failures(payload.get("source_integrity")))
     failures.extend(_one_click_launch_contract_failures(payload.get("one_click_launch")))
     expected_runtime = {
         "provider": "vercel",
@@ -596,6 +598,27 @@ def _security_headers_contract_failures(payload: object) -> list[str]:
     return failures
 
 
+def _source_integrity_contract_failures(payload: object) -> list[str]:
+    failures: list[str] = []
+    if not isinstance(payload, dict):
+        return ["source_integrity_contract_missing"]
+    expected = HOSTED_SOURCE_INTEGRITY_CONTRACT
+    for key in (
+        "source_repository",
+        "license",
+        "deployment_model",
+        "reviewable_files",
+        "public_contract_endpoints",
+        "private_generated_artifact_required",
+    ):
+        if payload.get(key) != expected[key]:
+            failures.append(f"source_integrity_{key}_mismatch")
+    boundary = payload.get("secret_boundary")
+    if not isinstance(boundary, str) or "does not include build tokens" not in boundary:
+        failures.append("source_integrity_secret_boundary_missing")
+    return failures
+
+
 def _one_click_launch_contract_failures(payload: object) -> list[str]:
     failures: list[str] = []
     if not isinstance(payload, dict):
@@ -656,6 +679,11 @@ def _hosted_home_failures(
         "hosted_home_headline_missing": "Launch any GitHub app without touching a terminal.",
         "hosted_home_start_control_missing": "Start hosted launch",
         "hosted_home_open_core_missing": "Open core",
+        "hosted_home_reviewable_files_missing": "Reviewable hosted files",
+        "hosted_home_source_integrity_entrypoint_missing": "app.py",
+        "hosted_home_no_private_generated_artifact_missing": (
+            "No private generated artifact is required for the hosted click flow."
+        ),
         "hosted_home_narrow_permissions_missing": "narrow permissions",
         "hosted_home_visible_plan_missing": "visible plan",
         "hosted_home_redacted_proof_missing": "redacted proof",
