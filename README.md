@@ -147,9 +147,11 @@ acceptance report, and workspace detonation receipt that must exist before the
 hosted path can claim completion. The same pages render a permission-boundary
 checklist for the selected-repository GitHub App, `contents:read` source
 permission, backend-only token exchange, vault/provider-native credential
-storage, and HMAC worker dispatch. They also render the provider-gate checklist
-as human-owned checkpoints so MFA, CAPTCHA, billing, fraud, consent, and domain
-ownership reviews are visible instead of hidden in logs. It exposes a redacted job status API and
+storage, and HMAC worker dispatch. They also render the approved action ids from
+the visible plan, and tell the user that action drift requires fresh approval.
+The provider-gate checklist is rendered as human-owned checkpoints so MFA,
+CAPTCHA, billing, fraud, consent, and domain ownership reviews are visible
+instead of hidden in logs. It exposes a redacted job status API and
 protected start, rollback, and detonation request controls. Those controls carry
 a signed redacted job token so a stateless hosted function can recover the public
 control-room state without a database or raw provider token. Browser form

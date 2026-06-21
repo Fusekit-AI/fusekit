@@ -682,6 +682,7 @@ def hosted_proof_receipt(job: HostedLaunchJob) -> dict[str, object]:
         "detonation": list(job.detonation),
         "provider_gates": list(job.worker_contract.gates),
         "permission_boundary": list(job.worker_contract.permission_boundary),
+        "approved_actions": list(job.worker_contract.approved_actions),
         "required_artifacts": list(job.worker_contract.required_artifacts),
         "steps": [step.to_dict() for step in job.steps],
     }
@@ -877,6 +878,7 @@ def render_hosted_proof_receipt(job: HostedLaunchJob, *, job_token: str = "") ->
     artifacts = _list(job.worker_contract.required_artifacts)
     gates = _list(job.worker_contract.gates)
     permissions = _list(job.worker_contract.permission_boundary)
+    actions = _list(job.worker_contract.approved_actions)
     back = _control_room_link(job, job_token=job_token)
     return f"""<!doctype html>
 <html lang="en">
@@ -973,6 +975,14 @@ def render_hosted_proof_receipt(job: HostedLaunchJob, *, job_token: str = "") ->
     <section aria-label="Required artifacts">
       <h2>Required artifacts</h2>
       {artifacts}
+    </section>
+    <section aria-label="Approved actions">
+      <h2>Approved actions</h2>
+      <p>
+        FuseKit workers may run only these plan actions. New or drifted actions
+        require a fresh visible plan before execution.
+      </p>
+      {actions}
     </section>
     <section aria-label="Provider gates">
       <h2>Provider gates</h2>
@@ -1161,6 +1171,7 @@ def _list(items: tuple[str, ...]) -> str:
 def _worker_contract_section(contract: HostedWorkerContract) -> str:
     providers = _list(contract.providers or ("No providers detected yet",))
     permissions = _list(contract.permission_boundary)
+    actions = _list(contract.approved_actions)
     gates = _list(contract.gates)
     artifacts = _list(contract.required_artifacts)
     guarantees = _list(contract.guarantees)
@@ -1174,6 +1185,11 @@ def _worker_contract_section(contract: HostedWorkerContract) -> str:
         {providers}
         <h3>Permission boundary</h3>
         {permissions}
+        <h3>Approved actions</h3>
+        <p>
+          Workers may run only these visible plan actions; drift requires a fresh approval.
+        </p>
+        {actions}
         <h3>Provider gates</h3>
         <p>
           These checkpoints remain human-owned; FuseKit must not bypass MFA,

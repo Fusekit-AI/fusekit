@@ -87,9 +87,13 @@ def test_hosted_proof_receipt_is_redacted_and_not_prematurely_complete() -> None
     assert ".fusekit/workspace_detonation.json" in receipt["required_artifacts"]
     assert any("MFA" in gate for gate in receipt["provider_gates"])
     assert any("contents:read" in item for item in receipt["permission_boundary"])
+    assert "github.authorize" in receipt["approved_actions"]
     assert "Proof receipt." in html
     assert "Permission boundary" in html
     assert "contents:read" in html
+    assert "Approved actions" in html
+    assert "vercel.deploy_verify" in html
+    assert "fresh visible plan" in html
     assert "Provider gates" in html
     assert "These gates stay provider-owned and human-approved" in html
     assert "MFA" in html
@@ -315,6 +319,9 @@ def test_hosted_control_room_embeds_redacted_job_json() -> None:
     assert "Reversible setup" in html
     assert "Permission boundary" in html
     assert "backend worker" in html
+    assert "Approved actions" in html
+    assert "github.authorize" in html
+    assert "drift requires a fresh approval" in html
     assert "Provider gates" in html
     assert "human-owned" in html
     assert ".fusekit/run_record.json" in html
@@ -332,6 +339,7 @@ def test_hosted_control_room_embeds_redacted_job_json() -> None:
         "selected repository" in item
         for item in payload["worker_contract"]["permission_boundary"]
     )
+    assert "vercel.deploy_verify" in payload["worker_contract"]["approved_actions"]
     assert any("MFA" in gate for gate in payload["worker_contract"]["gates"])
     assert payload["worker_contract"]["schema_version"] == "fusekit.hosted-worker-contract.v1"
     assert "ghs_" not in json.dumps(payload)
