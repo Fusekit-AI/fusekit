@@ -59,6 +59,7 @@ from fusekit.source import (
 StartResponse = Callable[[str, list[tuple[str, str]]], object]
 
 HOSTED_CANONICAL_ORIGIN = "https://fusekit.snowmanai.org"
+HOSTED_SOURCE_REPOSITORY = "https://github.com/xpxpxp-coder/fusekit"
 HOSTED_READINESS_SCHEMA_VERSION = "fusekit.hosted-readiness.v1"
 HOSTED_DEPLOYMENT_SCHEMA_VERSION = "fusekit.hosted-deployment.v1"
 HOSTED_WORKER_DISPATCH_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch.v1"
@@ -156,6 +157,15 @@ class HostedSettings:
                 "entrypoint": "app.py",
                 "application_export": "app",
                 "mode": "python-wsgi",
+            },
+            "open_core": {
+                "source_repository": HOSTED_SOURCE_REPOSITORY,
+                "license": "MIT",
+                "reviewable_entrypoint": "app.py",
+                "public_contracts": [
+                    f"{public_origin}/api/hosted/readiness",
+                    f"{public_origin}/api/hosted/deployment",
+                ],
             },
             "cloudflare_dns": {
                 "zone": "snowmanai.org",
@@ -271,7 +281,9 @@ def render_hosted_home(settings: HostedSettings) -> str:
     public_origin = html.escape(str(readiness["public_origin"]))
     payload = html.escape(json.dumps(contract, sort_keys=True))
     readiness_payload = html.escape(json.dumps(readiness, sort_keys=True))
-    deployment_payload = html.escape(json.dumps(settings.deployment_contract(), sort_keys=True))
+    deployment_contract = settings.deployment_contract()
+    deployment_payload = html.escape(json.dumps(deployment_contract, sort_keys=True))
+    source_repository = html.escape(HOSTED_SOURCE_REPOSITORY, quote=True)
     status = (
         "Hosted GitHub intake is ready."
         if setup_ready
@@ -381,6 +393,17 @@ def render_hosted_home(settings: HostedSettings) -> str:
         <li>Provider credentials stay server-side or inside the encrypted vault.</li>
         <li>Receipts, logs, proof, and generated apps do not expose raw secrets.</li>
         <li>You can stop, revoke access, roll back, and review the detonation receipt.</li>
+      </ul>
+    </section>
+    <section aria-label="Open core">
+      <h2>Open core</h2>
+      <ul>
+        <li>
+          Source code is reviewable at
+          <a href="{source_repository}">{source_repository}</a>.
+        </li>
+        <li>The hosted entrypoint is <span class="origin">app.py</span>.</li>
+        <li>The public package license is MIT.</li>
       </ul>
     </section>
     <section aria-label="Provider gates">

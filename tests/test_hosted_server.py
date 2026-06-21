@@ -158,6 +158,10 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
     assert "Launch any GitHub app without touching a terminal." in html
     assert "Start hosted launch" in html
     assert "open-core setup worker" in html
+    assert "Open core" in html
+    assert "https://github.com/xpxpxp-coder/fusekit" in html
+    assert "app.py" in html
+    assert "MIT" in html
     assert "narrow permissions" in html
     assert "visible" in html
     assert "redacted proof" in html
@@ -304,6 +308,15 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
         "entrypoint": "app.py",
         "application_export": "app",
         "mode": "python-wsgi",
+    }
+    assert payload["open_core"] == {
+        "source_repository": "https://github.com/xpxpxp-coder/fusekit",
+        "license": "MIT",
+        "reviewable_entrypoint": "app.py",
+        "public_contracts": [
+            "https://fusekit.snowmanai.org/api/hosted/readiness",
+            "https://fusekit.snowmanai.org/api/hosted/deployment",
+        ],
     }
     assert payload["cloudflare_dns"]["zone"] == "snowmanai.org"
     assert payload["cloudflare_dns"]["record_name"] == "fusekit"

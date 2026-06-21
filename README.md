@@ -134,7 +134,9 @@ The open-source core now includes the hosted launch contract and trust-first
 renderer in `fusekit.hosted`. This first slice is non-mutating: it can render a
 universal GitHub intake preview, provider summary, narrow-permission contract,
 visible setup plan, proof list, and rollback promise without asking the user to
-run commands. It also includes the GitHub App install URL, app JWT, installation
+run commands. The homepage and deployment contract now expose the open-core
+source repository, MIT license, and reviewable hosted entrypoint (`app.py`)
+before the user installs the GitHub App. It also includes the GitHub App install URL, app JWT, installation
 token exchange, signed callback state, selected-repository listing page, and
 server-side source fetch/scan into a visible hosted launch plan. It also has a
 public-safe hosted job/control-room shell that tracks proof, rollback, and
