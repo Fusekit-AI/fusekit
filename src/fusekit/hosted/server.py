@@ -579,7 +579,7 @@ def _github_control_room_response(
         )
     except FuseKitError:
         return _response(start_response, HTTPStatus.BAD_GATEWAY, {"error": "github_job_failed"})
-    job = build_hosted_launch_job(plan)
+    job = build_hosted_launch_job(plan, github_installation_id=int(installation_id))
     settings.hosted_jobs[job.job_id] = job
     job_token = create_hosted_job_token(settings.state_secret, job)
     control_token = create_hosted_state_token(

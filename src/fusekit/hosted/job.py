@@ -46,6 +46,7 @@ class HostedWorkerContract:
 
     lane: str
     github_source: str
+    github_installation_id: int | None
     providers: tuple[str, ...]
     required_env: tuple[str, ...]
     approved_actions: tuple[str, ...]
@@ -60,6 +61,12 @@ class HostedWorkerContract:
             "schema_version": HOSTED_WORKER_CONTRACT_SCHEMA_VERSION,
             "lane": self.lane,
             "github_source": self.github_source,
+            "github_installation_id": self.github_installation_id,
+            "source_token_policy": (
+                "Exchange GitHub App installation tokens inside the FuseKit backend worker only. "
+                "Installation tokens are never embedded in browser pages, job tokens, receipts, "
+                "or public proof."
+            ),
             "providers": list(self.providers),
             "required_env": list(self.required_env),
             "approved_actions": list(self.approved_actions),
@@ -127,12 +134,16 @@ class HostedLaunchJob:
 def build_hosted_launch_job(
     plan: HostedLaunchPlan,
     *,
+    github_installation_id: int | None = None,
     job_id: str | None = None,
     now: int | None = None,
 ) -> HostedLaunchJob:
     """Create the public control-room job contract for an approved hosted plan."""
 
-    worker_contract = build_hosted_worker_contract(plan)
+    worker_contract = build_hosted_worker_contract(
+        plan,
+        github_installation_id=github_installation_id,
+    )
     return HostedLaunchJob(
         job_id=job_id or f"hosted-{secrets.token_urlsafe(12)}",
         app_name=plan.app_name,
@@ -289,12 +300,17 @@ def hosted_launch_job_from_dict(payload: dict[str, Any]) -> HostedLaunchJob:
     )
 
 
-def build_hosted_worker_contract(plan: HostedLaunchPlan) -> HostedWorkerContract:
+def build_hosted_worker_contract(
+    plan: HostedLaunchPlan,
+    *,
+    github_installation_id: int | None = None,
+) -> HostedWorkerContract:
     """Build the redacted execution contract for the hosted setup worker."""
 
     return HostedWorkerContract(
         lane="hosted-fusekit-worker",
         github_source=plan.github_source,
+        github_installation_id=github_installation_id,
         providers=plan.providers,
         required_env=plan.required_env,
         approved_actions=tuple(action.id for action in plan.actions),
@@ -659,6 +675,7 @@ def hosted_worker_request(job: HostedLaunchJob, *, now: int | None = None) -> di
         "claim_policy": {
             "runner": job.worker_contract.lane,
             "source_intake": "github-app-selected-repository-archive",
+            "github_installation_id": job.worker_contract.github_installation_id,
             "mode": "live",
             "remote_artifacts_required": True,
             "recording_required": True,
@@ -1168,9 +1185,13 @@ def _public_worker_id(value: str) -> str:
 def _worker_contract_from_dict(payload: dict[str, Any]) -> HostedWorkerContract:
     if payload.get("schema_version") != HOSTED_WORKER_CONTRACT_SCHEMA_VERSION:
         raise FuseKitError("Hosted worker contract schema is unsupported.")
+    github_installation_id = payload.get("github_installation_id")
+    if github_installation_id is not None and not isinstance(github_installation_id, int):
+        raise FuseKitError("Hosted worker contract github_installation_id is invalid.")
     return HostedWorkerContract(
         lane=_required_str(payload, "lane"),
         github_source=_required_str(payload, "github_source"),
+        github_installation_id=github_installation_id,
         providers=_str_tuple(payload.get("providers"), "providers"),
         required_env=_str_tuple(payload.get("required_env"), "required_env"),
         approved_actions=_str_tuple(payload.get("approved_actions"), "approved_actions"),

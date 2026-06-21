@@ -695,6 +695,7 @@ def test_hosted_job_api_returns_redacted_status_and_accepts_protected_action() -
     assert status == "200 OK"
     assert payload["status"] == "waiting_for_worker"
     assert payload["worker_contract"]["required_artifacts"]
+    assert payload["worker_contract"]["github_installation_id"] == 42
     assert ".fusekit/run_record.json" in payload["worker_contract"]["required_artifacts"]
     assert "ghs_fake" not in json.dumps(payload)
 
@@ -902,6 +903,7 @@ def test_hosted_worker_request_requires_start_and_supports_stateless_job_token()
     assert request["schema_version"] == "fusekit.hosted-worker-request.v1"
     assert request["job_id"] == job_id
     assert request["claim_policy"]["mode"] == "live"
+    assert request["claim_policy"]["github_installation_id"] == 42
     assert request["claim_policy"]["remote_artifacts_required"] is True
     assert request["acceptance_gate"]["require_recording"] is True
     assert ".fusekit/run_record.json" in request["required_artifacts"]

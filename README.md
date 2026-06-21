@@ -154,8 +154,10 @@ protected `Start worker` action, `/api/hosted/jobs/<job>/worker-request` exposes
 a signed-job-token-compatible, redacted machine handoff for the eventual hosted
 worker. That request binds the selected GitHub source, approved plan actions,
 provider gates, required remote artifacts, live acceptance mode, recording
-requirement, rollback metadata, Run Record, and detonation receipt without
-turning the user path into a terminal workflow. A backend-only
+requirement, non-secret GitHub App installation id for backend source fetch,
+rollback metadata, Run Record, and detonation receipt without turning the user
+path into a terminal workflow. GitHub installation tokens remain backend-only
+and are never embedded in hosted pages, job tokens, receipts, or public proof. A backend-only
 `/api/hosted/jobs/<job>/worker-claims` endpoint lets a configured hosted worker
 claim that request with `FUSEKIT_HOSTED_WORKER_SECRET`, updates the public job
 state, and returns a redacted claim receipt without rendering the worker secret,

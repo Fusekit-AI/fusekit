@@ -63,6 +63,7 @@ def test_hosted_launch_job_is_public_safe_and_trust_complete() -> None:
     assert "Write detonation receipt before launch is considered complete." in payload["detonation"]
     assert payload["worker_contract"]["schema_version"] == "fusekit.hosted-worker-contract.v1"
     assert payload["worker_contract"]["lane"] == "hosted-fusekit-worker"
+    assert payload["worker_contract"]["github_installation_id"] is None
     assert ".fusekit/run_record.json" in payload["worker_contract"]["required_artifacts"]
     assert ".fusekit/workspace_detonation.json" in payload["worker_contract"]["required_artifacts"]
     assert any(step["id"] == "provider.gates" for step in payload["steps"])
@@ -90,7 +91,12 @@ def test_hosted_proof_receipt_is_redacted_and_not_prematurely_complete() -> None
 
 
 def test_hosted_worker_request_binds_live_acceptance_and_no_secret_policy() -> None:
-    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    job = build_hosted_launch_job(
+        _plan(),
+        github_installation_id=42,
+        job_id="hosted-test",
+        now=1_700_000_000,
+    )
     started = advance_hosted_launch_job(job, "start", now=1_700_000_001)
     request = hosted_worker_request(started, now=1_700_000_002)
     serialized = json.dumps(request)
@@ -99,6 +105,7 @@ def test_hosted_worker_request_binds_live_acceptance_and_no_secret_policy() -> N
     assert request["job_id"] == "hosted-test"
     assert request["github_source"] == "https://github.com/example/job-demo"
     assert request["claim_policy"]["runner"] == "hosted-fusekit-worker"
+    assert request["claim_policy"]["github_installation_id"] == 42
     assert request["claim_policy"]["mode"] == "live"
     assert request["claim_policy"]["remote_artifacts_required"] is True
     assert request["claim_policy"]["recording_required"] is True
@@ -315,12 +322,14 @@ def test_hosted_launch_job_actions_record_truthful_waiting_states() -> None:
 
 
 def test_hosted_worker_contract_is_public_and_binds_approved_plan() -> None:
-    contract = build_hosted_worker_contract(_plan())
+    contract = build_hosted_worker_contract(_plan(), github_installation_id=42)
     payload = contract.to_dict()
     serialized = json.dumps(payload)
 
     assert payload["schema_version"] == "fusekit.hosted-worker-contract.v1"
     assert payload["github_source"] == "https://github.com/example/job-demo"
+    assert payload["github_installation_id"] == 42
+    assert "Installation tokens are never embedded" in payload["source_token_policy"]
     assert payload["providers"] == ["github", "vercel"]
     assert payload["required_env"] == ["RESEND_API_KEY"]
     assert payload["approved_actions"]
