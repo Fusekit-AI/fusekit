@@ -241,12 +241,12 @@ compilation for the public launcher. The hosted app also serves
 origin, Vercel WSGI entrypoint/routing files, GitHub callback URL, Cloudflare DNS record name,
 health/readiness URLs, and required environment variable names without exposing
 secret values. `fusekit-hosted-verify --origin https://fusekit.snowmanai.org`
-performs the outside-in deployment check against `/healthz`,
+performs the outside-in deployment check against public DNS propagation, `/healthz`,
 `/api/hosted/readiness`, and `/api/hosted/deployment`; add
 `--worker-dispatch-url` to verify the worker receiver `/healthz` and
 `/readiness` too. The verifier reports Cloudflare/Vercel HTTP failures,
-readiness mismatches, and hosted runtime/open-core/DNS contract drift as redacted
-JSON instead of claiming launch readiness. It
+readiness mismatches, public DNS failures, and hosted runtime/open-core/DNS
+contract drift as redacted JSON instead of claiming launch readiness. It
 also recognizes Cloudflare Error 1000 (`DNS points to prohibited IP`) and
 reports the non-secret next action: attach `fusekit.snowmanai.org` to the
 Vercel project and route the Cloudflare `fusekit` CNAME to the exact
@@ -266,7 +266,7 @@ service running `fusekit-hosted-worker-dispatch` with
 `FUSEKIT_HOSTED_WORKER_SECRET` and worker runtime environment configured. Verify
 that service with `/healthz` and `/readiness` before setting
 `FUSEKIT_HOSTED_WORKER_DISPATCH_URL`. As of the latest local check,
-`https://fusekit.snowmanai.org` resolves through Cloudflare but returns
+`https://fusekit.snowmanai.org` has public DNS answers through Cloudflare but returns
 Cloudflare's "DNS points to prohibited IP" page instead of the FuseKit hosted
 app, so DNS/custom-domain attachment is not complete yet.
 

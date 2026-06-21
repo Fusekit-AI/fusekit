@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
+import socket
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -30,16 +32,28 @@ class UrlOpener(Protocol):
     ) -> Any: ...
 
 
+class DnsResolver(Protocol):
+    """Subset of DNS resolution used by hosted deployment verification."""
+
+    def __call__(self, hostname: str) -> list[str]: ...
+
+
 def verify_hosted_deployment(
     *,
     origin: str,
     worker_dispatch_url: str = "",
     opener: UrlOpener | None = None,
+    dns_resolver: DnsResolver | None = None,
 ) -> dict[str, object]:
     """Verify hosted launcher and optional worker dispatch endpoints without secrets."""
 
     public_origin = _valid_public_origin(origin)
+    public_host = urllib.parse.urlparse(public_origin).hostname or ""
+    dispatch_public_url = ""
+    if worker_dispatch_url:
+        dispatch_public_url = _valid_https_url(worker_dispatch_url)
     checks: list[dict[str, object]] = []
+    checks.append(_dns_check("hosted.dns", public_host, resolver=dns_resolver))
     checks.append(
         _json_check(
             "hosted.health",
@@ -65,9 +79,7 @@ def verify_hosted_deployment(
             expect_hosted_runtime_contract=True,
         )
     )
-    dispatch_public_url = ""
-    if worker_dispatch_url:
-        dispatch_public_url = _valid_https_url(worker_dispatch_url)
+    if dispatch_public_url:
         dispatch_base = _worker_dispatch_receiver_base_url(dispatch_public_url)
         checks.append(
             _json_check(
@@ -158,6 +170,65 @@ def _json_check(
         "schema_version": schema if isinstance(schema, str) else "",
         "failures": failures,
     }
+
+
+def _dns_check(
+    check_id: str,
+    hostname: str,
+    *,
+    resolver: DnsResolver | None,
+) -> dict[str, object]:
+    failures: list[str] = []
+    addresses: list[str] = []
+    try:
+        addresses = _resolve_public_addresses(hostname, resolver=resolver)
+    except OSError:
+        failures.append("dns_resolution_failed")
+    if not addresses and not failures:
+        failures.append("dns_no_addresses")
+    if any(_is_non_public_address(address) for address in addresses):
+        failures.append("dns_non_public_address")
+    check: dict[str, object] = {
+        "id": check_id,
+        "url": f"dns://{hostname}",
+        "status": "failed" if failures else "ok",
+        "http_status": 0,
+        "schema_version": "",
+        "failures": failures,
+        "hostname": hostname,
+        "addresses": addresses,
+    }
+    if failures:
+        check["next_action"] = (
+            "Attach fusekit.snowmanai.org to the Vercel project, then set the "
+            "Cloudflare fusekit CNAME to the exact Vercel-provided target and wait "
+            "for public DNS to resolve to internet-routable addresses."
+        )
+    return check
+
+
+def _resolve_public_addresses(
+    hostname: str,
+    *,
+    resolver: DnsResolver | None,
+) -> list[str]:
+    if resolver is not None:
+        return sorted(set(resolver(hostname)))
+    rows = socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+    addresses: list[str] = []
+    for row in rows:
+        sockaddr = row[4]
+        if sockaddr:
+            addresses.append(str(sockaddr[0]))
+    return sorted(set(addresses))
+
+
+def _is_non_public_address(value: str) -> bool:
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError:
+        return True
+    return not address.is_global
 
 
 def _hosted_runtime_contract_failures(payload: dict[str, Any]) -> list[str]:
