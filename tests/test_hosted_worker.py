@@ -19,7 +19,10 @@ from fusekit.hosted.job import (
     claim_hosted_launch_job,
 )
 from fusekit.hosted.launcher import build_hosted_launch_plan
-from fusekit.hosted.worker import prepare_hosted_worker_execution
+from fusekit.hosted.worker import (
+    build_hosted_worker_launch_invocation,
+    prepare_hosted_worker_execution,
+)
 from fusekit.scanner import scan_repo
 
 
@@ -129,6 +132,69 @@ def test_prepare_hosted_worker_execution_fetches_source_without_leaking_tokens(
     assert str(tmp_path) not in serialized
 
 
+def test_hosted_worker_launch_invocation_is_private_but_public_redacted(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+
+    invocation = build_hosted_worker_launch_invocation(execution)
+    payload = invocation.to_dict()
+    serialized = json.dumps(payload)
+
+    assert invocation.launch_args[:3] == (
+        "fusekit",
+        "launch",
+        str(execution.source_dir),
+    )
+    assert "--runner" in invocation.launch_args
+    assert "local" in invocation.launch_args
+    assert "--yes" in invocation.launch_args
+    assert "--control-room" in invocation.launch_args
+    assert "--no-open-launcher" in invocation.launch_args
+    assert "--app-source" in invocation.launch_args
+    assert "https://github.com/example/hosted-demo" in invocation.launch_args
+    assert "--visual-runner" in invocation.launch_args
+    assert "novnc" in invocation.launch_args
+    assert invocation.artifact_paths["job_state"] == execution.source_dir / ".fusekit/job.json"
+    assert invocation.acceptance_args[:4] == (
+        "fusekit",
+        "acceptance",
+        "run",
+        str(execution.source_dir),
+    )
+    assert "--mode" in invocation.acceptance_args
+    assert "live" in invocation.acceptance_args
+    assert "--remote-artifacts" in invocation.acceptance_args
+    assert "--require-recording" in invocation.acceptance_args
+    assert payload["schema_version"] == "fusekit.hosted-worker-invocation.v1"
+    assert payload["source_workspace"] == "<hosted-worker-source>"
+    assert payload["artifact_labels"]["setup_receipt"] == ".fusekit/setup_receipt.json"
+    assert payload["launch_args"][2] == "<hosted-worker-source>"
+    assert "<hosted-worker-source>/.fusekit/job.json" in payload["launch_args"]
+    assert "<hosted-worker-source>/.fusekit/remote-artifacts" in payload["acceptance_args"]
+    assert "FUSEKIT_PASSPHRASE" in payload["env_contract"]
+    assert payload["completion_gate"] == {
+        "worker_proof_endpoint": "/api/hosted/jobs/<job>/worker-proof",
+        "proof_schema_version": "fusekit.hosted-worker-proof.v1",
+        "requires_live_acceptance": True,
+        "requires_recording": True,
+    }
+    assert str(tmp_path) not in serialized
+    assert "ghs_fake_installation_token" not in serialized
+    assert "PRIVATE KEY" not in serialized
+
+
+def test_hosted_worker_launch_invocation_rejects_invalid_retry_settings(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+
+    with pytest.raises(FuseKitError, match="verify attempts"):
+        build_hosted_worker_launch_invocation(execution, verify_attempts=0)
+    with pytest.raises(FuseKitError, match="retry settings"):
+        build_hosted_worker_launch_invocation(execution, gate_retry_seconds=-1)
+
+
 def test_prepare_hosted_worker_execution_requires_claimed_job(tmp_path: Path) -> None:
     source = tmp_path / "approved"
     _write_demo_app(source, dependency='"resend": "latest"')
@@ -215,6 +281,45 @@ def test_prepare_hosted_worker_execution_rejects_plan_drift(tmp_path: Path) -> N
             workspace=tmp_path / "worker",
             opener=opener,
         )
+
+
+def _prepared_execution(tmp_path: Path):
+    source = tmp_path / "approved"
+    _write_demo_app(source, dependency='"resend": "latest"')
+    plan = build_hosted_launch_plan(
+        scan_repo(source),
+        github_source="https://github.com/example/hosted-demo",
+    )
+    job = claim_hosted_launch_job(
+        advance_hosted_launch_job(
+            build_hosted_launch_job(
+                plan,
+                github_installation_id=42,
+                job_id="hosted-test",
+                now=1_700_000_000,
+            ),
+            "start",
+        ),
+        worker_id="worker-01",
+    )
+    opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token",
+                "expires_at": "2026-06-21T06:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"default_branch": "main"},
+            _github_zip(dependency='"resend": "latest"'),
+        ]
+    )
+    return prepare_hosted_worker_execution(
+        job,
+        github_config=_github_config(),
+        workspace=tmp_path / "worker",
+        opener=opener,
+    )
 
 
 def _write_demo_app(path: Path, *, dependency: str) -> None:

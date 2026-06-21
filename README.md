@@ -167,7 +167,11 @@ token inside FuseKit, fetch the approved source into worker scratch space,
 re-scan it, and reject execution if the providers, required env vars, approved
 actions, gates, or required artifacts differ from the visible plan the user
 approved. Its execution-plan output uses public labels only; it does not include
-the token, private key, provider credentials, or host filesystem paths. The backend-only
+the token, private key, provider credentials, or host filesystem paths. It also
+builds a private backend launch invocation for `fusekit launch` plus the live
+`fusekit acceptance run --mode live --remote-artifacts ... --require-recording`
+gate, while its public serialization redacts worker-local paths to
+`<hosted-worker-source>` labels. The backend-only
 `/api/hosted/jobs/<job>/worker-proof` endpoint accepts redacted worker proof
 snapshots, rejects credential-looking public notes or unsupported artifact
 labels, updates public job steps, and only marks hosted completion when live URL,
@@ -179,7 +183,7 @@ private key, origin, state secret, and worker secret are configured and valid.
 Direct GitHub intake routes also fail closed with the same redacted readiness
 object until those checks pass. The
 remaining slices are running the approved setup actions inside the hosted worker,
-final proof artifact production, rollback/detonation execution, and production
+submitting final proof artifacts, rollback/detonation execution, and production
 DNS/deployment.
 
 The repository includes a minimal Vercel-compatible WSGI entrypoint at `app.py`

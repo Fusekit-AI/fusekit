@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -24,6 +25,20 @@ from fusekit.source import (
 )
 
 HOSTED_WORKER_EXECUTION_SCHEMA_VERSION = "fusekit.hosted-worker-execution.v1"
+HOSTED_WORKER_INVOCATION_SCHEMA_VERSION = "fusekit.hosted-worker-invocation.v1"
+
+HOSTED_WORKER_ARTIFACTS = {
+    "job_state": ".fusekit/job.json",
+    "vault": ".fusekit/fusekit.vault.json",
+    "audit_log": ".fusekit/audit.jsonl",
+    "setup_plan": ".fusekit/setup_plan.json",
+    "setup_receipt": ".fusekit/setup_receipt.json",
+    "setup_receipt_markdown": ".fusekit/setup_receipt.md",
+    "verification_report": ".fusekit/verification_report.json",
+    "rollback_plan": ".fusekit/rollback_plan.json",
+    "remote_artifacts": ".fusekit/remote-artifacts",
+    "acceptance_output": ".fusekit/acceptance",
+}
 
 
 @dataclass(frozen=True)
@@ -82,6 +97,46 @@ class HostedWorkerExecutionPlan:
         }
 
 
+@dataclass(frozen=True)
+class HostedWorkerLaunchInvocation:
+    """Private worker commands plus public-safe labels for hosted execution."""
+
+    execution: HostedWorkerExecutionPlan
+    artifact_paths: Mapping[str, Path]
+    launch_args: tuple[str, ...]
+    acceptance_args: tuple[str, ...]
+    env_contract: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        """Serialize the invocation without host paths or secret values."""
+
+        return {
+            "schema_version": HOSTED_WORKER_INVOCATION_SCHEMA_VERSION,
+            "job_id": self.execution.job_id,
+            "app_name": self.execution.app_name,
+            "github_source": self.execution.github_source,
+            "source_workspace": "<hosted-worker-source>",
+            "artifact_labels": dict(HOSTED_WORKER_ARTIFACTS),
+            "launch_args": _redacted_args(self.launch_args, self.execution.source_dir),
+            "acceptance_args": _redacted_args(
+                self.acceptance_args,
+                self.execution.source_dir,
+            ),
+            "env_contract": list(self.env_contract),
+            "secret_boundary": (
+                "The real argv contains worker-local paths and reads passphrases/provider "
+                "credentials from the backend worker environment or vault only. Public "
+                "serialization redacts paths and never includes secret values."
+            ),
+            "completion_gate": {
+                "worker_proof_endpoint": "/api/hosted/jobs/<job>/worker-proof",
+                "proof_schema_version": "fusekit.hosted-worker-proof.v1",
+                "requires_live_acceptance": True,
+                "requires_recording": True,
+            },
+        }
+
+
 def prepare_hosted_worker_execution(
     job: HostedLaunchJob,
     *,
@@ -102,7 +157,7 @@ def prepare_hosted_worker_execution(
         permissions={"contents": "read"},
         opener=opener,
     )
-    source_dir = workspace / job.job_id / "source"
+    source_dir = (workspace / job.job_id / "source").resolve()
     source_result = fetch_github_source_archive(
         job.github_source,
         source_dir,
@@ -130,6 +185,99 @@ def prepare_hosted_worker_execution(
     )
 
 
+def build_hosted_worker_launch_invocation(
+    execution: HostedWorkerExecutionPlan,
+    *,
+    verify_attempts: int = 10,
+    verify_retry_seconds: float = 30.0,
+    gate_retry_seconds: float = 300.0,
+    gate_max_attempts: int = 0,
+) -> HostedWorkerLaunchInvocation:
+    """Build private launch and live-acceptance commands for the hosted worker."""
+
+    if verify_attempts <= 0:
+        raise FuseKitError("Hosted worker verify attempts must be positive.")
+    if verify_retry_seconds < 0 or gate_retry_seconds < 0 or gate_max_attempts < 0:
+        raise FuseKitError("Hosted worker retry settings must be non-negative.")
+    source_dir = execution.source_dir.resolve()
+    artifacts = _artifact_paths(source_dir)
+    launch_args = (
+        "fusekit",
+        "launch",
+        str(source_dir),
+        "--runner",
+        "local",
+        "--yes",
+        "--control-room",
+        "--no-open-launcher",
+        "--app-source",
+        execution.github_source,
+        "--job-state",
+        str(artifacts["job_state"]),
+        "--vault",
+        str(artifacts["vault"]),
+        "--audit-log",
+        str(artifacts["audit_log"]),
+        "--plan-json",
+        str(artifacts["setup_plan"]),
+        "--receipt-json",
+        str(artifacts["setup_receipt"]),
+        "--receipt-md",
+        str(artifacts["setup_receipt_markdown"]),
+        "--rollback-json",
+        str(artifacts["rollback_plan"]),
+        "--verification-report",
+        str(artifacts["verification_report"]),
+        "--verify-attempts",
+        str(verify_attempts),
+        "--verify-retry-seconds",
+        _number_arg(verify_retry_seconds),
+        "--gate-retry-seconds",
+        _number_arg(gate_retry_seconds),
+        "--gate-max-attempts",
+        str(gate_max_attempts),
+        "--visual-runner",
+        "novnc",
+        "--llm-provider",
+        "openai",
+        "--llm-model",
+        "gpt-5.5",
+        "--llm-auth-mode",
+        "auto",
+    )
+    acceptance_args = (
+        "fusekit",
+        "acceptance",
+        "run",
+        str(source_dir),
+        "--mode",
+        "live",
+        "--vault",
+        str(artifacts["vault"]),
+        "--receipt",
+        str(artifacts["setup_receipt"]),
+        "--audit-log",
+        str(artifacts["audit_log"]),
+        "--remote-artifacts",
+        str(artifacts["remote_artifacts"]),
+        "--output-dir",
+        str(artifacts["acceptance_output"]),
+        "--require-recording",
+        "--json",
+    )
+    return HostedWorkerLaunchInvocation(
+        execution=execution,
+        artifact_paths=artifacts,
+        launch_args=launch_args,
+        acceptance_args=acceptance_args,
+        env_contract=(
+            "FUSEKIT_PASSPHRASE",
+            "provider credentials captured into the encrypted FuseKit vault",
+            "provider-owned human gates through visible hosted/worker controls",
+        ),
+    )
+
+
 def _require_approved_contract(
     job: HostedLaunchJob,
     refreshed_contract: HostedWorkerContract,
@@ -145,3 +293,35 @@ def _require_approved_contract(
         or expected.guarantees != refreshed_contract.guarantees
     ):
         raise FuseKitError("Hosted source plan changed after approval; restart hosted launch.")
+
+
+def _artifact_paths(source_dir: Path) -> dict[str, Path]:
+    return {key: source_dir / label for key, label in HOSTED_WORKER_ARTIFACTS.items()}
+
+
+def _redacted_args(args: tuple[str, ...], source_dir: Path) -> list[str]:
+    source = source_dir.resolve()
+    redacted: list[str] = []
+    for arg in args:
+        redacted.append(_redacted_arg(arg, source))
+    return redacted
+
+
+def _redacted_arg(arg: str, source_dir: Path) -> str:
+    if "://" in arg or not arg.startswith(("/", ".", "~")):
+        return arg
+    try:
+        path = Path(arg).resolve()
+    except OSError:
+        return arg
+    if path == source_dir:
+        return "<hosted-worker-source>"
+    try:
+        relative = path.relative_to(source_dir)
+    except ValueError:
+        return arg
+    return f"<hosted-worker-source>/{relative.as_posix()}"
+
+
+def _number_arg(value: float) -> str:
+    return str(int(value)) if value.is_integer() else str(value)
