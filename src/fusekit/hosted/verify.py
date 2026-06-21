@@ -12,10 +12,12 @@ import urllib.request
 from typing import Any, Protocol
 
 from fusekit.errors import FuseKitError
+from fusekit.hosted.launcher import TRUST_STORY
 from fusekit.hosted.server import (
     HOSTED_CANONICAL_ORIGIN,
     HOSTED_DEPLOYMENT_SCHEMA_VERSION,
     HOSTED_OPERATOR_SETUP_STEPS,
+    HOSTED_PUBLIC_TRUST_CONTRACT,
     HOSTED_READINESS_SCHEMA_VERSION,
 )
 from fusekit.hosted.worker_dispatch import HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION
@@ -238,6 +240,20 @@ def _hosted_runtime_contract_failures(payload: dict[str, Any]) -> list[str]:
     runtime = payload.get("runtime")
     if not isinstance(runtime, dict):
         return ["runtime_contract_missing"]
+    trust_story = payload.get("trust_story")
+    if trust_story != list(TRUST_STORY):
+        failures.append("trust_story_mismatch")
+    trust_contract = payload.get("trust_contract")
+    if not isinstance(trust_contract, dict):
+        failures.append("trust_contract_missing")
+    else:
+        expected_trust_keys = sorted(HOSTED_PUBLIC_TRUST_CONTRACT)
+        actual_trust_keys = sorted(str(key) for key in trust_contract)
+        if actual_trust_keys != expected_trust_keys:
+            failures.append("trust_contract_keys_mismatch")
+        for key in expected_trust_keys:
+            if not isinstance(trust_contract.get(key), str) or not trust_contract.get(key):
+                failures.append(f"trust_contract_{key}_missing")
     expected_runtime = {
         "provider": "vercel",
         "entrypoint": "app.py",

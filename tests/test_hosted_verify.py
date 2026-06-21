@@ -234,6 +234,35 @@ def test_verify_hosted_deployment_requires_operator_setup_contract() -> None:
     assert "operator_setup_steps_mismatch" in checks["hosted.deployment"]["failures"]
 
 
+def test_verify_hosted_deployment_requires_public_trust_contract() -> None:
+    contract = _deployment_contract()
+    contract["trust_story"] = ["open core", "redacted proof"]
+    trust_contract = contract["trust_contract"]
+    assert isinstance(trust_contract, dict)
+    trust_contract.pop("reversible_setup")
+    opener = SequenceOpener(
+        [
+            {"ok": True},
+            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            contract,
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert "trust_story_mismatch" in checks["hosted.deployment"]["failures"]
+    assert "trust_contract_keys_mismatch" in checks["hosted.deployment"]["failures"]
+    assert "trust_contract_reversible_setup_missing" in checks["hosted.deployment"][
+        "failures"
+    ]
+
+
 def test_verify_hosted_deployment_reports_dns_resolution_failure() -> None:
     opener = SequenceOpener(
         [
@@ -285,6 +314,20 @@ def _public_dns_resolver(hostname: str) -> list[str]:
 def _deployment_contract() -> dict[str, object]:
     return {
         "schema_version": "fusekit.hosted-deployment.v1",
+        "trust_story": [
+            "open core",
+            "narrow permissions",
+            "visible plan",
+            "redacted proof",
+            "reversible setup",
+        ],
+        "trust_contract": {
+            "open_core": "Source repository, MIT license, and app.py entrypoint are public.",
+            "narrow_permissions": "GitHub App intake starts with contents:read.",
+            "visible_plan": "Providers, approved action ids, gates, and artifacts are shown.",
+            "redacted_proof": "Public receipts use redacted notes only.",
+            "reversible_setup": "Stop, revoke, rollback, and detonation controls exist.",
+        },
         "runtime": {
             "provider": "vercel",
             "entrypoint": "app.py",

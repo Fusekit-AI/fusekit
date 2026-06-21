@@ -44,6 +44,7 @@ from fusekit.hosted.job import (
 )
 from fusekit.hosted.launcher import (
     HOSTED_LAUNCH_PATH,
+    TRUST_STORY,
     HostedLaunchPlan,
     build_hosted_launch_plan,
     render_hosted_launcher,
@@ -90,6 +91,18 @@ HOSTED_OPERATOR_SETUP_STEPS: tuple[dict[str, str], ...] = (
         "proof": "fusekit-hosted-verify reports DNS, health, readiness, and deployment ok.",
     },
 )
+HOSTED_PUBLIC_TRUST_CONTRACT: dict[str, str] = {
+    "open_core": "Source repository, MIT license, and app.py entrypoint are public before install.",
+    "narrow_permissions": (
+        "GitHub App intake starts with contents:read on one selected repository; "
+        "provider mutations require visible approval."
+    ),
+    "visible_plan": "Providers, approved action ids, human gates, and artifacts are shown first.",
+    "redacted_proof": (
+        "Public receipts use URLs, statuses, artifact labels, and redacted notes only."
+    ),
+    "reversible_setup": "Stop, revoke, rollback, and detonation controls preserve public proof.",
+}
 HOSTED_READINESS_SCHEMA_VERSION = "fusekit.hosted-readiness.v1"
 HOSTED_DEPLOYMENT_SCHEMA_VERSION = "fusekit.hosted-deployment.v1"
 HOSTED_WORKER_DISPATCH_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch.v1"
@@ -182,6 +195,8 @@ class HostedSettings:
             "canonical_origin": HOSTED_CANONICAL_ORIGIN,
             "public_origin": public_origin,
             "domain": "fusekit.snowmanai.org",
+            "trust_story": list(TRUST_STORY),
+            "trust_contract": dict(HOSTED_PUBLIC_TRUST_CONTRACT),
             "runtime": {
                 "provider": "vercel",
                 "entrypoint": "app.py",

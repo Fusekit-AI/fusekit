@@ -327,6 +327,22 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     assert payload["schema_version"] == "fusekit.hosted-deployment.v1"
     assert payload["canonical_origin"] == "https://fusekit.snowmanai.org"
     assert payload["domain"] == "fusekit.snowmanai.org"
+    assert payload["trust_story"] == [
+        "open core",
+        "narrow permissions",
+        "visible plan",
+        "redacted proof",
+        "reversible setup",
+    ]
+    assert set(payload["trust_contract"]) == {
+        "open_core",
+        "narrow_permissions",
+        "visible_plan",
+        "redacted_proof",
+        "reversible_setup",
+    }
+    assert "contents:read" in payload["trust_contract"]["narrow_permissions"]
+    assert "redacted" in payload["trust_contract"]["redacted_proof"]
     assert payload["runtime"] == {
         "provider": "vercel",
         "entrypoint": "app.py",

@@ -248,17 +248,19 @@ also pins Python 3.12 with `.python-version` and uses a wheel-backed
 `cryptography==42.0.8` requirement so Vercel does not need native OpenSSL
 compilation for the public launcher. The hosted app also serves
 `/api/hosted/deployment`, a public deployment contract that lists the canonical
-origin, Vercel WSGI entrypoint/routing files, GitHub callback URL, Cloudflare DNS record name,
-health/readiness URLs, the operator setup checklist for attaching
-`fusekit.snowmanai.org` to Vercel and Cloudflare, and required environment
-variable names without exposing secret values.
+origin, machine-readable trust story, Vercel WSGI entrypoint/routing files,
+GitHub callback URL, Cloudflare DNS record name, health/readiness URLs, the
+operator setup checklist for attaching `fusekit.snowmanai.org` to Vercel and
+Cloudflare, and required environment variable names without exposing secret
+values.
 `fusekit-hosted-verify --origin https://fusekit.snowmanai.org`
 performs the outside-in deployment check against public DNS propagation, `/healthz`,
 `/api/hosted/readiness`, and `/api/hosted/deployment`; add
 `--worker-dispatch-url` to verify the worker receiver `/healthz` and
 `/readiness` too. The verifier reports Cloudflare/Vercel HTTP failures,
-readiness mismatches, public DNS failures, and hosted runtime/open-core/DNS
-operator-setup contract drift as redacted JSON instead of claiming launch readiness. It
+readiness mismatches, public DNS failures, hosted runtime/open-core/DNS drift,
+trust-story drift, and operator-setup contract drift as redacted JSON instead
+of claiming launch readiness. It
 also recognizes Cloudflare Error 1000 (`DNS points to prohibited IP`) and
 reports the non-secret next action: attach `fusekit.snowmanai.org` to the
 Vercel project and route the Cloudflare `fusekit` CNAME to the exact
