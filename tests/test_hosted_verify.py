@@ -17,7 +17,7 @@ PUBLIC_DNS_ADDRESSES = ["2606:4700::6810:84e5", "76.76.21.21"]
 
 
 class FakeResponse:
-    def __init__(self, payload: dict[str, object], *, status: int = 200) -> None:
+    def __init__(self, payload: dict[str, object] | str, *, status: int = 200) -> None:
         self.status = status
         self.payload = payload
 
@@ -28,11 +28,16 @@ class FakeResponse:
         return None
 
     def read(self) -> bytes:
+        if isinstance(self.payload, str):
+            return self.payload.encode("utf-8")
         return json.dumps(self.payload).encode("utf-8")
 
 
 class SequenceOpener:
-    def __init__(self, payloads: list[dict[str, object] | urllib.error.HTTPError]) -> None:
+    def __init__(
+        self,
+        payloads: list[dict[str, object] | str | urllib.error.HTTPError],
+    ) -> None:
         self.payloads = payloads
         self.requests: list[urllib.request.Request] = []
 
@@ -53,6 +58,7 @@ class SequenceOpener:
 def test_verify_hosted_deployment_passes_launcher_and_dispatch_checks() -> None:
     opener = SequenceOpener(
         [
+            _home_html(),
             {"ok": True},
             {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
             _deployment_contract(),
@@ -77,6 +83,7 @@ def test_verify_hosted_deployment_passes_launcher_and_dispatch_checks() -> None:
     assert report["ready"] is True
     assert [check["id"] for check in report["checks"]] == [
         "hosted.dns",
+        "hosted.home",
         "hosted.health",
         "hosted.readiness",
         "hosted.deployment",
@@ -88,10 +95,11 @@ def test_verify_hosted_deployment_passes_launcher_and_dispatch_checks() -> None:
     assert checks["hosted.dns"]["hostname"] == "fusekit.snowmanai.org"
     assert checks["hosted.dns"]["addresses"] == PUBLIC_DNS_ADDRESSES
     assert report["worker_dispatch_url"] == "https://worker.snowmanai.org/dispatch"
-    assert opener.requests[0].full_url == "https://fusekit.snowmanai.org/healthz"
-    assert opener.requests[3].full_url == "https://fusekit.snowmanai.org/api/github/intake"
-    assert opener.requests[4].full_url == "https://worker.snowmanai.org/healthz"
-    assert opener.requests[5].full_url == "https://worker.snowmanai.org/readiness"
+    assert opener.requests[0].full_url == "https://fusekit.snowmanai.org/"
+    assert opener.requests[1].full_url == "https://fusekit.snowmanai.org/healthz"
+    assert opener.requests[4].full_url == "https://fusekit.snowmanai.org/api/github/intake"
+    assert opener.requests[5].full_url == "https://worker.snowmanai.org/healthz"
+    assert opener.requests[6].full_url == "https://worker.snowmanai.org/readiness"
     assert "WORKER_SECRET" not in serialized
     assert "signed-public-job-token" not in serialized
 
@@ -100,7 +108,7 @@ def test_verify_hosted_deployment_reports_cloudflare_error_without_claiming_read
     opener = SequenceOpener(
         [
             urllib.error.HTTPError(
-                "https://fusekit.snowmanai.org/healthz",
+                "https://fusekit.snowmanai.org/",
                 403,
                 "Forbidden",
                 {},
@@ -112,6 +120,7 @@ def test_verify_hosted_deployment_reports_cloudflare_error_without_claiming_read
                     """
                 ),
             ),
+            {"ok": True},
             {"schema_version": "fusekit.hosted-readiness.v1", "ready": False},
             _deployment_contract(),
             _github_intake_contract(),
@@ -127,13 +136,13 @@ def test_verify_hosted_deployment_reports_cloudflare_error_without_claiming_read
 
     assert report["ready"] is False
     assert checks["hosted.dns"]["status"] == "ok"
-    assert checks["hosted.health"]["status"] == "failed"
-    assert checks["hosted.health"]["http_status"] == 403
-    assert checks["hosted.health"]["failures"] == ["http_error"]
-    assert checks["hosted.health"]["diagnosis"] == (
+    assert checks["hosted.home"]["status"] == "failed"
+    assert checks["hosted.home"]["http_status"] == 403
+    assert checks["hosted.home"]["failures"] == ["http_error"]
+    assert checks["hosted.home"]["diagnosis"] == (
         "cloudflare_error_1000_dns_points_to_prohibited_ip"
     )
-    assert "Vercel-provided target" in checks["hosted.health"]["next_action"]
+    assert "Vercel-provided target" in checks["hosted.home"]["next_action"]
     assert checks["hosted.readiness"]["failures"] == ["ready_field_not_true"]
     assert "test-ray-id" not in json.dumps(report)
 
@@ -154,12 +163,13 @@ def test_verify_hosted_deployment_diagnoses_compact_cloudflare_1000_body() -> No
     opener = SequenceOpener(
         [
             urllib.error.HTTPError(
-                "https://fusekit.snowmanai.org/healthz",
+                "https://fusekit.snowmanai.org/",
                 403,
                 "Forbidden",
                 {},
                 io.BytesIO(b"error code: 1000\n"),
             ),
+            {"ok": True},
             {"schema_version": "fusekit.hosted-readiness.v1", "ready": False},
             _deployment_contract(),
             _github_intake_contract(),
@@ -173,10 +183,10 @@ def test_verify_hosted_deployment_diagnoses_compact_cloudflare_1000_body() -> No
     )
     checks = {check["id"]: check for check in report["checks"]}
 
-    assert checks["hosted.health"]["diagnosis"] == (
+    assert checks["hosted.home"]["diagnosis"] == (
         "cloudflare_error_1000_dns_points_to_prohibited_ip"
     )
-    assert "Cloudflare fusekit CNAME" in checks["hosted.health"]["next_action"]
+    assert "Cloudflare fusekit CNAME" in checks["hosted.home"]["next_action"]
 
 
 def test_verify_hosted_deployment_requires_runtime_and_dns_contract() -> None:
@@ -189,6 +199,7 @@ def test_verify_hosted_deployment_requires_runtime_and_dns_contract() -> None:
     cloudflare_dns["record_type"] = "A"
     opener = SequenceOpener(
         [
+            _home_html(),
             {"ok": True},
             {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
             contract,
@@ -219,6 +230,7 @@ def test_verify_hosted_deployment_requires_operator_setup_contract() -> None:
     steps.pop()
     opener = SequenceOpener(
         [
+            _home_html(),
             {"ok": True},
             {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
             contract,
@@ -249,6 +261,7 @@ def test_verify_hosted_deployment_requires_public_trust_contract() -> None:
     trust_contract.pop("reversible_setup")
     opener = SequenceOpener(
         [
+            _home_html(),
             {"ok": True},
             {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
             contract,
@@ -280,6 +293,7 @@ def test_verify_hosted_deployment_requires_github_intake_contract() -> None:
     open_core["reviewable_entrypoint"] = "server.py"
     opener = SequenceOpener(
         [
+            _home_html(),
             {"ok": True},
             {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
             _deployment_contract(),
@@ -308,6 +322,7 @@ def test_verify_hosted_deployment_requires_github_intake_contract() -> None:
 def test_verify_hosted_deployment_rejects_credential_text_in_public_json() -> None:
     opener = SequenceOpener(
         [
+            _home_html(),
             {"ok": True},
             {
                 "schema_version": "fusekit.hosted-readiness.v1",
@@ -335,9 +350,40 @@ def test_verify_hosted_deployment_rejects_credential_text_in_public_json() -> No
     assert "Authorization" not in serialized
 
 
+def test_verify_hosted_deployment_requires_trustworthy_homepage() -> None:
+    opener = SequenceOpener(
+        [
+            (
+                "<html><body>Download the CLI. token: "
+                "github_pat_1234567890abcdefghijklmnop</body></html>"
+            ),
+            {"ok": True},
+            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            _deployment_contract(),
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+    serialized = json.dumps(report)
+
+    assert report["ready"] is False
+    assert checks["hosted.home"]["status"] == "failed"
+    assert "public_text_contains_credential_text" in checks["hosted.home"]["failures"]
+    assert "hosted_home_headline_missing" in checks["hosted.home"]["failures"]
+    assert "hosted_home_open_core_missing" in checks["hosted.home"]["failures"]
+    assert "github_pat_" not in serialized
+
+
 def test_verify_hosted_deployment_reports_dns_resolution_failure() -> None:
     opener = SequenceOpener(
         [
+            _home_html(),
             {"ok": True},
             {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
             _deployment_contract(),
@@ -361,6 +407,7 @@ def test_verify_hosted_deployment_reports_dns_resolution_failure() -> None:
 def test_verify_hosted_deployment_rejects_private_dns_addresses() -> None:
     opener = SequenceOpener(
         [
+            _home_html(),
             {"ok": True},
             {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
             _deployment_contract(),
@@ -383,6 +430,21 @@ def test_verify_hosted_deployment_rejects_private_dns_addresses() -> None:
 def _public_dns_resolver(hostname: str) -> list[str]:
     assert hostname == "fusekit.snowmanai.org"
     return PUBLIC_DNS_ADDRESSES
+
+
+def _home_html() -> str:
+    return """
+    <html>
+      <body>
+        <h1>Launch any GitHub app without touching a terminal.</h1>
+        <a>Start hosted launch</a>
+        <section>Open core https://github.com/xpxpxp-coder/fusekit</section>
+        <section>What happens after the click</section>
+        <section>What you may need to approve</section>
+        <section>Hosted deployment contract</section>
+      </body>
+    </html>
+    """
 
 
 def _deployment_contract() -> dict[str, object]:

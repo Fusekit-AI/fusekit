@@ -66,6 +66,14 @@ def verify_hosted_deployment(
     checks: list[dict[str, object]] = []
     checks.append(_dns_check("hosted.dns", public_host, resolver=dns_resolver))
     checks.append(
+        _text_check(
+            "hosted.home",
+            f"{public_origin}/",
+            opener=opener,
+            expect_hosted_home=True,
+        )
+    )
+    checks.append(
         _json_check(
             "hosted.health",
             f"{public_origin}/healthz",
@@ -124,7 +132,7 @@ def verify_hosted_deployment(
         "ready": all(check["status"] == "ok" for check in checks),
         "checks": checks,
         "secret_boundary": (
-            "Hosted deployment verification fetches public JSON endpoints only. It never "
+            "Hosted deployment verification fetches public HTML/JSON endpoints only. It never "
             "requires or returns GitHub private keys, worker secrets, HMAC signatures, "
             "provider credentials, signed job tokens, or vault material."
         ),
@@ -151,6 +159,35 @@ def main(argv: list[str] | None = None) -> int:
         }
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0 if report.get("ready") is True else 1
+
+
+def _text_check(
+    check_id: str,
+    url: str,
+    *,
+    opener: UrlOpener | None,
+    expect_hosted_home: bool = False,
+) -> dict[str, object]:
+    try:
+        status, text = _fetch_text(url, opener=opener)
+    except urllib.error.HTTPError as exc:
+        return _http_error_check(check_id, url, exc)
+    except (urllib.error.URLError, TimeoutError, OSError, UnicodeDecodeError) as exc:
+        return _failed_check(check_id, url, exc.__class__.__name__)
+    failures: list[str] = []
+    if status >= 400:
+        failures.append("http_error")
+    failures.extend(_public_text_secret_failures(text))
+    if expect_hosted_home:
+        failures.extend(_hosted_home_failures(text))
+    return {
+        "id": check_id,
+        "url": _public_url(url),
+        "status": "failed" if failures else "ok",
+        "http_status": status,
+        "schema_version": "",
+        "failures": failures,
+    }
 
 
 def _json_check(
@@ -335,6 +372,25 @@ def _public_payload_secret_failures(payload: dict[str, Any]) -> list[str]:
     return []
 
 
+def _public_text_secret_failures(text: str) -> list[str]:
+    if contains_durable_secret_text(text):
+        return ["public_text_contains_credential_text"]
+    return []
+
+
+def _hosted_home_failures(text: str) -> list[str]:
+    expected = {
+        "hosted_home_headline_missing": "Launch any GitHub app without touching a terminal.",
+        "hosted_home_start_control_missing": "Start hosted launch",
+        "hosted_home_open_core_missing": "Open core",
+        "hosted_home_launch_path_missing": "What happens after the click",
+        "hosted_home_provider_gates_missing": "What you may need to approve",
+        "hosted_home_deployment_contract_missing": "Hosted deployment contract",
+        "hosted_home_source_repository_missing": "https://github.com/xpxpxp-coder/fusekit",
+    }
+    return [failure for failure, marker in expected.items() if marker not in text]
+
+
 def _github_intake_contract_failures(payload: dict[str, Any]) -> list[str]:
     failures: list[str] = []
     if payload.get("provider") != "github":
@@ -367,6 +423,19 @@ def _github_intake_contract_failures(payload: dict[str, Any]) -> list[str]:
         if open_core.get("reviewable_entrypoint") != "app.py":
             failures.append("github_intake_open_core_entrypoint_mismatch")
     return failures
+
+
+def _fetch_text(
+    url: str,
+    *,
+    opener: UrlOpener | None,
+) -> tuple[int, str]:
+    request = urllib.request.Request(url, method="GET", headers={"User-Agent": "FuseKit"})
+    actual_opener = opener or urllib.request.urlopen
+    with actual_opener(request, timeout=20.0) as response:
+        status = int(getattr(response, "status", 200))
+        raw = response.read()
+    return status, raw.decode("utf-8")
 
 
 def _fetch_json(
