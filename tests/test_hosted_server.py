@@ -153,6 +153,12 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
             worker_secret=WORKER_SECRET,
         )
     )
+    payload = json.loads(
+        _match(
+            html,
+            r'<script id="fusekit-github-intake" type="application/json">(.*?)</script>',
+        ).replace("&quot;", '"')
+    )
 
     assert "https://fusekit.snowmanai.org" in html
     assert "Launch any GitHub app without touching a terminal." in html
@@ -176,6 +182,15 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
     assert "source .venv" not in html
     assert "pip install" not in html
     assert "PRIVATE KEY" not in html
+    assert payload["trust_story"] == [
+        "open core",
+        "narrow permissions",
+        "visible plan",
+        "redacted proof",
+        "reversible setup",
+    ]
+    assert payload["open_core"]["source_repository"] == "https://github.com/xpxpxp-coder/fusekit"
+    assert payload["open_core"]["reviewable_entrypoint"] == "app.py"
 
 
 def test_hosted_home_waits_for_complete_operator_configuration() -> None:
@@ -488,6 +503,18 @@ def test_hosted_github_intake_endpoint_is_public_safe() -> None:
     assert payload["install_url"] == (
         "https://github.com/apps/fusekit-launcher/installations/new"
     )
+    assert payload["trust_story"] == [
+        "open core",
+        "narrow permissions",
+        "visible plan",
+        "redacted proof",
+        "reversible setup",
+    ]
+    assert payload["open_core"] == {
+        "source_repository": "https://github.com/xpxpxp-coder/fusekit",
+        "license": "MIT",
+        "reviewable_entrypoint": "app.py",
+    }
     serialized = json.dumps(payload)
     assert "PRIVATE KEY" not in serialized
     assert "not-real" not in serialized

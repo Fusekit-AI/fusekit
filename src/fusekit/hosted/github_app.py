@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from fusekit.errors import FuseKitError
+from fusekit.hosted.launcher import TRUST_STORY
 
 GITHUB_APP_JWT_ALGORITHM = "RS256"
 GITHUB_APP_JWT_MAX_TTL_SECONDS = 600
@@ -197,6 +198,9 @@ def hosted_github_intake_contract(
     config: GitHubAppConfig,
     *,
     state: str = "",
+    source_repository: str = "https://github.com/xpxpxp-coder/fusekit",
+    license_name: str = "MIT",
+    reviewable_entrypoint: str = "app.py",
 ) -> dict[str, object]:
     """Return public GitHub intake text for the hosted launcher."""
 
@@ -204,6 +208,12 @@ def hosted_github_intake_contract(
         "provider": "github",
         "route": "github-app",
         "install_url": github_app_install_url(config, state=state),
+        "trust_story": list(TRUST_STORY),
+        "open_core": {
+            "source_repository": source_repository,
+            "license": license_name,
+            "reviewable_entrypoint": reviewable_entrypoint,
+        },
         "permissions": [
             "Install the FuseKit GitHub App on one selected repository.",
             "Read repository source for scan and setup planning.",

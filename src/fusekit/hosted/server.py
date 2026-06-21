@@ -258,7 +258,7 @@ def hosted_application(
             return _response(
                 start_response,
                 HTTPStatus.OK,
-                hosted_github_intake_contract(settings.github_config()),
+                _github_intake_contract(settings.github_config()),
             )
         if path == "/github/callback":
             return _github_callback_response(settings, environ, start_response)
@@ -281,7 +281,7 @@ def render_hosted_home(settings: HostedSettings) -> str:
     setup_ready = readiness["ready"] is True
     if setup_ready:
         state = create_hosted_state_token(settings.state_secret, return_path="/")
-    contract = hosted_github_intake_contract(settings.github_config(), state=state)
+    contract = _github_intake_contract(settings.github_config(), state=state)
     install_url = html.escape(str(contract["install_url"]), quote=True)
     public_origin = html.escape(str(readiness["public_origin"]))
     payload = html.escape(json.dumps(contract, sort_keys=True))
@@ -460,6 +460,16 @@ def render_hosted_home(settings: HostedSettings) -> str:
 </body>
 </html>
 """
+
+
+def _github_intake_contract(config: GitHubAppConfig, *, state: str = "") -> dict[str, object]:
+    return hosted_github_intake_contract(
+        config,
+        state=state,
+        source_repository=HOSTED_SOURCE_REPOSITORY,
+        license_name="MIT",
+        reviewable_entrypoint="app.py",
+    )
 
 
 def _github_callback_response(

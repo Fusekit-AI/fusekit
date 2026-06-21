@@ -172,6 +172,18 @@ def test_hosted_github_intake_contract_has_no_secret_material() -> None:
     serialized = json.dumps(contract)
 
     assert contract["route"] == "github-app"
+    assert contract["trust_story"] == [
+        "open core",
+        "narrow permissions",
+        "visible plan",
+        "redacted proof",
+        "reversible setup",
+    ]
+    assert contract["open_core"] == {
+        "source_repository": "https://github.com/xpxpxp-coder/fusekit",
+        "license": "MIT",
+        "reviewable_entrypoint": "app.py",
+    }
     assert "Install the FuseKit GitHub App on one selected repository." in contract["permissions"]
     assert "GitHub sign-in" in contract["human_gates"]
     assert "PRIVATE KEY" not in serialized
