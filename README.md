@@ -175,7 +175,10 @@ gate, while its public serialization redacts worker-local paths to
 can derive the `/worker-proof` payload from the real required artifact labels,
 retrieved remote-artifacts directory, and acceptance report; it stays partial
 unless live acceptance is recording-ready and every required public artifact
-exists. The backend-only
+exists. A `fusekit-hosted-worker` entrypoint now ties those pieces together for
+one queued job: claim with the worker bearer secret, prepare source, run the
+private launch/acceptance invocations, and submit redacted proof back to the
+hosted API. The backend-only
 `/api/hosted/jobs/<job>/worker-proof` endpoint accepts redacted worker proof
 snapshots, rejects credential-looking public notes or unsupported artifact
 labels, updates public job steps, and only marks hosted completion when live URL,
@@ -187,8 +190,8 @@ private key, origin, state secret, and worker secret are configured and valid.
 Direct GitHub intake routes also fail closed with the same redacted readiness
 object until those checks pass. The
 remaining slices are running the approved setup actions inside the hosted worker,
-submitting final proof artifacts, rollback/detonation execution, and production
-DNS/deployment.
+operating the worker service in production, rollback/detonation execution, and
+production DNS/deployment.
 
 The repository includes a minimal Vercel-compatible WSGI entrypoint at `app.py`
 for the hosted subdomain. The hosted app also serves
