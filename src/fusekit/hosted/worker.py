@@ -296,6 +296,16 @@ def build_hosted_worker_workspace_proof_payload(
             maintenance_returncode == 0 and evidence["rollback_metadata"] is True
         )
         evidence["post_rollback_verification"] = checks.get("rollback.post_verification") == "ok"
+    if maintenance_action == "detonate":
+        detonation_verified = maintenance_returncode == 0 and evidence["detonation_receipt"] is True
+        evidence["workspace_detonation_receipt"] = detonation_verified
+        evidence["scratch_state_destroyed"] = detonation_verified
+        evidence["provider_auth_session_closed"] = detonation_verified
+        evidence["redacted_public_proof_preserved"] = detonation_verified and (
+            evidence["run_record"] is True
+            and evidence["retrieved_remote_artifacts"] is True
+            and evidence["live_acceptance_report"] is True
+        )
     payload: dict[str, object] = {
         "schema_version": HOSTED_WORKER_PROOF_SCHEMA_VERSION,
         "evidence": evidence,

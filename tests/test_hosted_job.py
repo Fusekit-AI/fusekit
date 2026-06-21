@@ -231,6 +231,10 @@ def _proof_payload(
     completed_artifacts: list[str] | None = None,
     rollback_execution_receipt: bool | None = None,
     post_rollback_verification: bool | None = None,
+    workspace_detonation_receipt: bool | None = None,
+    scratch_state_destroyed: bool | None = None,
+    provider_auth_session_closed: bool | None = None,
+    redacted_public_proof_preserved: bool | None = None,
 ) -> dict[str, object]:
     evidence = {
         "live_url": complete,
@@ -247,6 +251,14 @@ def _proof_payload(
         evidence["rollback_execution_receipt"] = rollback_execution_receipt
     if post_rollback_verification is not None:
         evidence["post_rollback_verification"] = post_rollback_verification
+    if workspace_detonation_receipt is not None:
+        evidence["workspace_detonation_receipt"] = workspace_detonation_receipt
+    if scratch_state_destroyed is not None:
+        evidence["scratch_state_destroyed"] = scratch_state_destroyed
+    if provider_auth_session_closed is not None:
+        evidence["provider_auth_session_closed"] = provider_auth_session_closed
+    if redacted_public_proof_preserved is not None:
+        evidence["redacted_public_proof_preserved"] = redacted_public_proof_preserved
     return {
         "schema_version": "fusekit.hosted-worker-proof.v1",
         "evidence": evidence,
@@ -371,6 +383,71 @@ def test_hosted_worker_proof_marks_rollback_request_complete_with_execution_proo
     assert receipt["evidence"]["rollback_execution_receipt"] is True
     assert receipt["evidence"]["post_rollback_verification"] is True
     assert steps["rollback.ready"]["status"] == "done"
+
+
+def test_hosted_worker_proof_requires_detonation_action_proof_after_request() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    started = advance_hosted_launch_job(job, "start", now=1_700_000_001)
+    detonation = advance_hosted_launch_job(started, "detonate", now=1_700_000_002)
+
+    updated, receipt = apply_hosted_worker_proof(
+        detonation,
+        _proof_payload(
+            complete=True,
+            completed_artifacts=list(detonation.worker_contract.required_artifacts),
+            note="Detonation receipt exists; action proof is still pending.",
+        ),
+        worker_id="worker-01",
+        now=1_700_000_003,
+    )
+    steps = {step["id"]: step for step in updated.to_dict()["steps"]}
+
+    assert updated.status == "proof_submitted"
+    assert receipt["completion_ready"] is False
+    assert receipt["maintenance_ready"] is False
+    assert receipt["maintenance_required_proof"] == [
+        "workspace_detonation_receipt",
+        "scratch_state_destroyed",
+        "provider_auth_session_closed",
+        "redacted_public_proof_preserved",
+    ]
+    assert receipt["evidence"]["workspace_detonation_receipt"] is False
+    assert receipt["evidence"]["scratch_state_destroyed"] is False
+    assert receipt["evidence"]["provider_auth_session_closed"] is False
+    assert receipt["evidence"]["redacted_public_proof_preserved"] is False
+    assert steps["detonate.worker"]["status"] == "waiting"
+    assert "scratch cleanup" in steps["detonate.worker"]["proof"]
+
+
+def test_hosted_worker_proof_marks_detonation_request_complete_with_action_proof() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    started = advance_hosted_launch_job(job, "start", now=1_700_000_001)
+    detonation = advance_hosted_launch_job(started, "detonate", now=1_700_000_002)
+
+    updated, receipt = apply_hosted_worker_proof(
+        detonation,
+        _proof_payload(
+            complete=True,
+            completed_artifacts=list(detonation.worker_contract.required_artifacts),
+            workspace_detonation_receipt=True,
+            scratch_state_destroyed=True,
+            provider_auth_session_closed=True,
+            redacted_public_proof_preserved=True,
+            note="Detonation action proof passed.",
+        ),
+        worker_id="worker-01",
+        now=1_700_000_003,
+    )
+    steps = {step["id"]: step for step in updated.to_dict()["steps"]}
+
+    assert updated.status == "complete"
+    assert receipt["completion_ready"] is True
+    assert receipt["maintenance_ready"] is True
+    assert receipt["evidence"]["workspace_detonation_receipt"] is True
+    assert receipt["evidence"]["scratch_state_destroyed"] is True
+    assert receipt["evidence"]["provider_auth_session_closed"] is True
+    assert receipt["evidence"]["redacted_public_proof_preserved"] is True
+    assert steps["detonate.worker"]["status"] == "done"
 
 
 def test_hosted_worker_proof_rejects_unknown_artifact_and_secret_text() -> None:

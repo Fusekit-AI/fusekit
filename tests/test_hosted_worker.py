@@ -362,6 +362,52 @@ def test_hosted_worker_rollback_proof_marks_post_rollback_verification(
     assert evidence["post_rollback_verification"] is True
 
 
+def test_hosted_worker_detonation_proof_requires_successful_maintenance(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True)
+
+    bundle = build_hosted_worker_workspace_proof_payload(
+        source_dir=invocation.execution.source_dir,
+        artifact_paths=invocation.artifact_paths,
+        required_artifacts=invocation.execution.required_artifacts,
+        maintenance_action="detonate",
+        maintenance_returncode=7,
+    )
+    evidence = bundle.payload["evidence"]
+
+    assert evidence["workspace_detonation_receipt"] is False
+    assert evidence["scratch_state_destroyed"] is False
+    assert evidence["provider_auth_session_closed"] is False
+    assert evidence["redacted_public_proof_preserved"] is False
+
+
+def test_hosted_worker_detonation_proof_marks_preserved_public_proof(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True)
+
+    bundle = build_hosted_worker_workspace_proof_payload(
+        source_dir=invocation.execution.source_dir,
+        artifact_paths=invocation.artifact_paths,
+        required_artifacts=invocation.execution.required_artifacts,
+        maintenance_action="detonate",
+        maintenance_returncode=0,
+    )
+    evidence = bundle.payload["evidence"]
+
+    assert evidence["workspace_detonation_receipt"] is True
+    assert evidence["scratch_state_destroyed"] is True
+    assert evidence["provider_auth_session_closed"] is True
+    assert evidence["redacted_public_proof_preserved"] is True
+
+
 def test_prepare_hosted_worker_execution_requires_claimed_job(tmp_path: Path) -> None:
     source = tmp_path / "approved"
     _write_demo_app(source, dependency='"resend": "latest"')

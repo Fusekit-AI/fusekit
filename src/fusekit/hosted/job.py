@@ -42,6 +42,10 @@ HOSTED_WORKER_PROOF_KEYS = (
 HOSTED_WORKER_MAINTENANCE_PROOF_KEYS = (
     "rollback_execution_receipt",
     "post_rollback_verification",
+    "workspace_detonation_receipt",
+    "scratch_state_destroyed",
+    "provider_auth_session_closed",
+    "redacted_public_proof_preserved",
 )
 
 
@@ -531,6 +535,7 @@ def apply_hosted_worker_proof(
         raise ValueError("Hosted worker proof evidence is invalid.")
     completion_ready = receipt["completion_ready"] is True
     rollback_execution_required = job.status == "rollback_requested"
+    detonation_execution_required = job.status == "detonation_requested"
     updated = _replace_job(
         job,
         status="complete" if completion_ready else "proof_submitted",
@@ -545,7 +550,10 @@ def apply_hosted_worker_proof(
                     evidence,
                     execution_required=rollback_execution_required,
                 ),
-                "detonate.worker": _detonation_step(evidence),
+                "detonate.worker": _detonation_step(
+                    evidence,
+                    execution_required=detonation_execution_required,
+                ),
             },
         ),
     )
@@ -1385,6 +1393,13 @@ def _maintenance_ready(job: HostedLaunchJob, evidence: dict[str, bool]) -> bool:
             evidence["rollback_execution_receipt"]
             and evidence["post_rollback_verification"]
         )
+    if job.status == "detonation_requested":
+        return (
+            evidence["workspace_detonation_receipt"]
+            and evidence["scratch_state_destroyed"]
+            and evidence["provider_auth_session_closed"]
+            and evidence["redacted_public_proof_preserved"]
+        )
     return True
 
 
@@ -1398,6 +1413,7 @@ def _maintenance_required_proof(job: HostedLaunchJob) -> list[str]:
         return [
             "workspace_detonation_receipt",
             "scratch_state_destroyed",
+            "provider_auth_session_closed",
             "redacted_public_proof_preserved",
         ]
     return []
@@ -1493,7 +1509,22 @@ def _rollback_step(
     return ("waiting", "Waiting for rollback metadata before completion can be claimed.")
 
 
-def _detonation_step(evidence: dict[str, bool]) -> tuple[str, str]:
+def _detonation_step(
+    evidence: dict[str, bool],
+    *,
+    execution_required: bool = False,
+) -> tuple[str, str]:
+    if execution_required and (
+        not evidence["workspace_detonation_receipt"]
+        or not evidence["scratch_state_destroyed"]
+        or not evidence["provider_auth_session_closed"]
+        or not evidence["redacted_public_proof_preserved"]
+    ):
+        return (
+            "waiting",
+            "Waiting for workspace detonation receipt, scratch cleanup, "
+            "auth-session closure, and preserved public proof.",
+        )
     if evidence["detonation_receipt"]:
         return ("done", "Hosted worker detonation receipt is present.")
     return ("waiting", "Waiting for hosted worker detonation receipt.")
