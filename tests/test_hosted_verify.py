@@ -598,6 +598,15 @@ def test_verify_hosted_deployment_requires_trustworthy_homepage() -> None:
         "failures"
     ]
     assert "hosted_home_reversible_setup_missing" in checks["hosted.home"]["failures"]
+    assert "hosted_home_reversal_path_step_1_missing" in checks["hosted.home"][
+        "failures"
+    ]
+    assert "hosted_home_reversal_path_step_2_missing" in checks["hosted.home"][
+        "failures"
+    ]
+    assert "hosted_home_reversal_path_step_3_missing" in checks["hosted.home"][
+        "failures"
+    ]
     assert "hosted_home_embedded_intake_contract_missing" in checks["hosted.home"][
         "failures"
     ]
@@ -746,6 +755,7 @@ def _home_html(
         <section>Recording proof</section>
         <section>Reversible setup</section>
         <section>Show rollback metadata before risky changes.</section>
+        <section>Preserve rollback actions for provider resources FuseKit creates.</section>
         <section>Offer stop, revoke access, rollback, and download redacted proof actions.</section>
         <section>What you may need to approve</section>
         <section>Hosted deployment contract</section>
