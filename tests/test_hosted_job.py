@@ -13,6 +13,7 @@ from fusekit.hosted import (
     build_hosted_worker_contract,
     claim_hosted_launch_job,
     create_hosted_job_token,
+    hosted_job_action_receipt,
     hosted_launch_job_from_dict,
     hosted_proof_receipt,
     hosted_worker_claim_receipt,
@@ -319,6 +320,48 @@ def test_hosted_launch_job_actions_record_truthful_waiting_states() -> None:
     assert steps["detonate.worker"]["status"] == "waiting"
     assert "waiting" in steps["detonate.worker"]["proof"].lower()
     assert detonation.worker_contract == job.worker_contract
+
+
+def test_hosted_job_action_receipts_are_redacted_and_proof_oriented() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    started = advance_hosted_launch_job(job, "start", now=1_700_000_001)
+    rollback = advance_hosted_launch_job(started, "rollback", now=1_700_000_002)
+    detonation = advance_hosted_launch_job(rollback, "detonate", now=1_700_000_003)
+
+    start_receipt = hosted_job_action_receipt(started, action="start", now=1_700_000_004)
+    rollback_receipt = hosted_job_action_receipt(
+        rollback,
+        action="rollback",
+        now=1_700_000_005,
+    )
+    detonation_receipt = hosted_job_action_receipt(
+        detonation,
+        action="detonate",
+        now=1_700_000_006,
+    )
+    serialized = (
+        json.dumps(start_receipt)
+        + json.dumps(rollback_receipt)
+        + json.dumps(detonation_receipt)
+    )
+
+    assert start_receipt["schema_version"] == "fusekit.hosted-job-action-receipt.v1"
+    assert start_receipt["next_required_proof"] == [
+        "worker_claim",
+        "provider_gate_events",
+        "live_acceptance_report",
+        "retrieved_remote_artifacts",
+        "rollback_metadata",
+        "detonation_receipt",
+    ]
+    assert rollback_receipt["status"] == "rollback_requested"
+    assert "rollback_execution_receipt" in rollback_receipt["next_required_proof"]
+    assert detonation_receipt["status"] == "detonation_requested"
+    assert "scratch_state_destroyed" in detonation_receipt["next_required_proof"]
+    assert "MFA" in rollback_receipt["safeguards"][0]
+    assert "ghs_" not in serialized
+    assert "PRIVATE KEY" not in serialized
+    assert "VERCEL_TOKEN" not in serialized
 
 
 def test_hosted_worker_contract_is_public_and_binds_approved_plan() -> None:

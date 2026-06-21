@@ -34,6 +34,7 @@ from fusekit.hosted.job import (
     build_hosted_launch_job,
     claim_hosted_launch_job,
     create_hosted_job_token,
+    hosted_job_action_receipt,
     hosted_worker_claim_receipt,
     hosted_worker_request,
     render_hosted_control_room,
@@ -694,6 +695,7 @@ def _hosted_job_action_response(
         return _hosted_job_html_response(settings, start_response, updated)
     payload = updated.to_dict()
     payload["job_token"] = job_token
+    payload["action_receipt"] = hosted_job_action_receipt(updated, action=action)
     if dispatch_receipt is not None:
         payload["worker_dispatch"] = dispatch_receipt
     return _response(start_response, HTTPStatus.OK, payload)

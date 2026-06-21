@@ -714,7 +714,24 @@ def test_hosted_job_api_returns_redacted_status_and_accepts_protected_action() -
     assert status == "200 OK"
     assert payload["status"] == "waiting_for_provider_gates"
     assert payload["worker_contract"]["schema_version"] == "fusekit.hosted-worker-contract.v1"
+    assert payload["action_receipt"]["schema_version"] == "fusekit.hosted-job-action-receipt.v1"
+    assert payload["action_receipt"]["action"] == "start"
+    assert "worker_claim" in payload["action_receipt"]["next_required_proof"]
+    assert "detonation_receipt" in payload["action_receipt"]["next_required_proof"]
     assert steps["provider.gates"]["status"] == "waiting"
+    assert "ghs_fake" not in json.dumps(payload)
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/rollback",
+        method="POST",
+        query_string=f"control={control}",
+        settings=settings,
+    )
+    payload = json.loads(body.decode("utf-8"))
+    assert status == "200 OK"
+    assert payload["status"] == "rollback_requested"
+    assert payload["action_receipt"]["action"] == "rollback"
+    assert "rollback_execution_receipt" in payload["action_receipt"]["next_required_proof"]
     assert "ghs_fake" not in json.dumps(payload)
 
 

@@ -23,6 +23,7 @@ HOSTED_JOB_TOKEN_TTL_SECONDS = 86_400
 HOSTED_PROOF_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-proof-receipt.v1"
 HOSTED_WORKER_CONTRACT_SCHEMA_VERSION = "fusekit.hosted-worker-contract.v1"
 HOSTED_WORKER_REQUEST_SCHEMA_VERSION = "fusekit.hosted-worker-request.v1"
+HOSTED_JOB_ACTION_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-job-action-receipt.v1"
 HOSTED_WORKER_CLAIM_SCHEMA_VERSION = "fusekit.hosted-worker-claim.v1"
 HOSTED_WORKER_PROOF_SCHEMA_VERSION = "fusekit.hosted-worker-proof.v1"
 HOSTED_WORKER_PROOF_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-worker-proof-receipt.v1"
@@ -715,6 +716,42 @@ def hosted_worker_request(job: HostedLaunchJob, *, now: int | None = None) -> di
     }
 
 
+def hosted_job_action_receipt(
+    job: HostedLaunchJob,
+    *,
+    action: str,
+    now: int | None = None,
+) -> dict[str, object]:
+    """Build a public redacted receipt for a protected hosted job action."""
+
+    action_id = _public_action(action)
+    return {
+        "schema_version": HOSTED_JOB_ACTION_RECEIPT_SCHEMA_VERSION,
+        "job_id": job.job_id,
+        "action": action_id,
+        "status": job.status,
+        "requested_at": int(time.time() if now is None else now),
+        "receipt_statement": _action_receipt_statement(action_id),
+        "next_required_proof": _action_next_required_proof(action_id),
+        "safeguards": [
+            (
+                "Provider-owned MFA, CAPTCHA, billing, fraud, consent, and "
+                "passkey gates remain human-owned."
+            ),
+            "Rollback and detonation requests do not erase public proof requirements.",
+            (
+                "Completion still requires live acceptance, retrieved remote "
+                "artifacts, rollback metadata, and detonation receipt."
+            ),
+        ],
+        "secret_boundary": (
+            "Hosted action receipts contain action names, job status, and public proof "
+            "requirements only. They never include worker secrets, provider tokens, "
+            "GitHub installation tokens, vault material, or copy-once credentials."
+        ),
+    }
+
+
 def hosted_worker_claim_receipt(
     job: HostedLaunchJob,
     *,
@@ -1180,6 +1217,52 @@ def _public_worker_id(value: str) -> str:
         character for character in value.strip()[:80] if character.isalnum() or character in "-_"
     )
     return sanitized or "hosted-worker"
+
+
+def _public_action(action: str) -> str:
+    if action in {"start", "rollback", "detonate"}:
+        return action
+    return "unsupported"
+
+
+def _action_receipt_statement(action: str) -> str:
+    if action == "start":
+        return "Hosted worker start was requested; public proof is still pending."
+    if action == "rollback":
+        return "Rollback was requested; FuseKit must use rollback metadata before provider cleanup."
+    if action == "detonate":
+        return (
+            "Detonation was requested; FuseKit must preserve redacted proof and "
+            "destroy plaintext worker state."
+        )
+    return "Unsupported hosted action was rejected."
+
+
+def _action_next_required_proof(action: str) -> list[str]:
+    if action == "start":
+        return [
+            "worker_claim",
+            "provider_gate_events",
+            "live_acceptance_report",
+            "retrieved_remote_artifacts",
+            "rollback_metadata",
+            "detonation_receipt",
+        ]
+    if action == "rollback":
+        return [
+            "rollback_plan",
+            "provider_resource_inventory",
+            "rollback_execution_receipt",
+            "post_rollback_verification",
+        ]
+    if action == "detonate":
+        return [
+            "workspace_detonation_receipt",
+            "scratch_state_destroyed",
+            "provider_auth_session_closed",
+            "redacted_public_proof_preserved",
+        ]
+    return []
 
 
 def _worker_contract_from_dict(payload: dict[str, Any]) -> HostedWorkerContract:

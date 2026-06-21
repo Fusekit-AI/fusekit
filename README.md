@@ -147,7 +147,9 @@ protected start, rollback, and detonation request controls. Those controls carry
 a signed redacted job token so a stateless hosted function can recover the public
 control-room state without a database or raw provider token. Browser form
 actions return the updated control room instead of raw JSON, while API clients
-can still request the redacted job object. A browser-facing proof receipt page
+can still request the redacted job object plus a redacted action receipt naming
+the next proof required for worker start, rollback, or detonation. A
+browser-facing proof receipt page
 shows redacted proof, required artifacts, rollback metadata, and detonation
 requirements without claiming completion before live evidence exists. After the
 protected `Start worker` action, `/api/hosted/jobs/<job>/worker-request` exposes
