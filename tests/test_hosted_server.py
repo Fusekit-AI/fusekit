@@ -191,6 +191,7 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
     assert "Run Record" in html
     assert "Detonation receipt" in html
     assert "Live acceptance report" in html
+    assert "Recording proof" in html
     assert "Reversible setup" in html
     assert "Show rollback metadata before risky changes." in html
     assert "Preserve rollback actions for provider resources FuseKit creates." in html
@@ -392,6 +393,7 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     )
     assert "Run Record" in payload["one_click_launch"]["completion_requires"]
     assert "Detonation receipt" in payload["one_click_launch"]["completion_requires"]
+    assert "Recording proof" in payload["one_click_launch"]["completion_requires"]
     assert payload["one_click_launch"]["completion_evidence_keys"] == [
         "live_url",
         "provider_verifiers",

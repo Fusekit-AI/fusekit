@@ -171,6 +171,7 @@ def test_hosted_launcher_embeds_redacted_public_plan_json() -> None:
         "Run Record",
         "Detonation receipt",
         "Live acceptance report",
+        "Recording proof",
     ]
     assert payload["trust"]["proof_evidence_keys"] == [
         "live_url",

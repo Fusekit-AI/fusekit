@@ -41,6 +41,7 @@ HOSTED_PROOF_REQUIREMENTS = (
     "Run Record",
     "Detonation receipt",
     "Live acceptance report",
+    "Recording proof",
 )
 HOSTED_COMPLETION_EVIDENCE_KEYS = (
     "live_url",

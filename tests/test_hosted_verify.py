@@ -835,6 +835,7 @@ def _deployment_contract() -> dict[str, object]:
                 "Run Record",
                 "Detonation receipt",
                 "Live acceptance report",
+                "Recording proof",
             ],
             "completion_evidence_keys": [
                 "live_url",
@@ -934,6 +935,7 @@ def _github_intake_contract() -> dict[str, object]:
             "Run Record",
             "Detonation receipt",
             "Live acceptance report",
+            "Recording proof",
         ],
         "proof_evidence_keys": [
             "live_url",
