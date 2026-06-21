@@ -725,6 +725,35 @@ def test_hosted_github_repositories_rejects_bad_state_before_github_call() -> No
     assert opener.requests == []
 
 
+def test_hosted_github_repositories_rejects_broad_installation_token() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read", "secrets": "write"},
+                "repository_selection": "selected",
+            },
+        ]
+    )
+
+    status, _headers, body = _call(
+        "/github/repositories",
+        query_string=f"installation_id=42&state={state}",
+        settings=_settings_with_github(opener),
+    )
+
+    assert status == "502 Bad Gateway"
+    assert json.loads(body.decode("utf-8")) == {"error": "github_repository_intake_failed"}
+    assert len(opener.requests) == 1
+    assert "ghs_fake" not in body.decode("utf-8")
+
+
 def test_hosted_github_plan_fetches_source_and_renders_visible_plan() -> None:
     state = create_hosted_state_token(
         STATE_SECRET,

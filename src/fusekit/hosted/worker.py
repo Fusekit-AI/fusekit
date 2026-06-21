@@ -9,7 +9,12 @@ from pathlib import Path
 from typing import Any, cast
 
 from fusekit.errors import FuseKitError
-from fusekit.hosted.github_app import GitHubAppConfig, UrlOpener, exchange_installation_token
+from fusekit.hosted.github_app import (
+    GitHubAppConfig,
+    UrlOpener,
+    exchange_installation_token,
+    require_hosted_installation_token_boundary,
+)
 from fusekit.hosted.job import (
     HOSTED_WORKER_PROOF_KEYS,
     HOSTED_WORKER_PROOF_SCHEMA_VERSION,
@@ -220,6 +225,7 @@ def prepare_hosted_worker_execution(
         permissions={"contents": "read"},
         opener=opener,
     )
+    require_hosted_installation_token_boundary(token)
     source_dir = (workspace / job.job_id / "source").resolve()
     source_result = fetch_github_source_archive(
         job.github_source,

@@ -26,6 +26,7 @@ from fusekit.hosted.github_app import (
     exchange_installation_token,
     hosted_github_intake_contract,
     list_installation_repositories,
+    require_hosted_installation_token_boundary,
 )
 from fusekit.hosted.job import (
     HostedLaunchJob,
@@ -703,6 +704,7 @@ def _github_repositories_response(
             permissions={"contents": "read"},
             opener=settings.github_opener,
         )
+        require_hosted_installation_token_boundary(token)
         repositories = list_installation_repositories(
             settings.github_config(),
             token=token.token,
@@ -753,6 +755,7 @@ def _github_plan_response(
             permissions={"contents": "read"},
             opener=settings.github_opener,
         )
+        require_hosted_installation_token_boundary(token)
         repositories = list_installation_repositories(
             settings.github_config(),
             token=token.token,
@@ -812,6 +815,7 @@ def _github_control_room_response(
             permissions={"contents": "read"},
             opener=settings.github_opener,
         )
+        require_hosted_installation_token_boundary(token)
         repositories = list_installation_repositories(
             settings.github_config(),
             token=token.token,

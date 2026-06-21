@@ -144,7 +144,9 @@ promise: generated apps may request capabilities, only FuseKit may use secrets
 internally, and raw secrets must never leave the vault runtime. It also makes
 the GitHub permission boundary explicit: pre-install intake grants
 `contents:read` on one selected repository, while any GitHub write capability
-requires a separate visible approval/provider route before mutation. It also
+requires a separate visible approval/provider route before mutation. Hosted
+GitHub token exchanges now fail closed if GitHub returns all-repository access
+or broader permissions than selected-repository `contents:read`. It also
 includes the GitHub App install URL, app JWT, installation
 token exchange, signed callback state, selected-repository listing page, and
 server-side source fetch/scan into a visible hosted launch plan. It also has a

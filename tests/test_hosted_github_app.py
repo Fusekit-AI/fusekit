@@ -6,16 +6,20 @@ import urllib.request
 from collections.abc import Mapping
 from typing import Any
 
+import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+from fusekit.errors import FuseKitError
 from fusekit.hosted.github_app import (
     GitHubAppConfig,
+    InstallationToken,
     build_github_app_jwt,
     exchange_installation_token,
     github_app_install_url,
     hosted_github_intake_contract,
     list_installation_repositories,
+    require_hosted_installation_token_boundary,
 )
 
 
@@ -140,6 +144,49 @@ def test_exchange_installation_token_uses_scoped_request_body() -> None:
         "token_captured": True,
     }
     assert "ghs_fake" not in json.dumps(token.public_dict())
+
+
+def test_hosted_installation_token_boundary_allows_selected_contents_read() -> None:
+    token = InstallationToken(
+        token="ghs_fake_installation_token_for_test",
+        expires_at="2026-06-21T01:00:00Z",
+        permissions={"contents": "read", "metadata": "read"},
+        repository_selection="selected",
+    )
+
+    require_hosted_installation_token_boundary(token)
+
+
+def test_hosted_installation_token_boundary_rejects_broader_scope() -> None:
+    with pytest.raises(FuseKitError, match="selected repositories"):
+        require_hosted_installation_token_boundary(
+            InstallationToken(
+                token="ghs_fake_installation_token_for_test",
+                expires_at="2026-06-21T01:00:00Z",
+                permissions={"contents": "read"},
+                repository_selection="all",
+            )
+        )
+
+    with pytest.raises(FuseKitError, match="contents:read"):
+        require_hosted_installation_token_boundary(
+            InstallationToken(
+                token="ghs_fake_installation_token_for_test",
+                expires_at="2026-06-21T01:00:00Z",
+                permissions={"contents": "write"},
+                repository_selection="selected",
+            )
+        )
+
+    with pytest.raises(FuseKitError, match="unsupported permissions"):
+        require_hosted_installation_token_boundary(
+            InstallationToken(
+                token="ghs_fake_installation_token_for_test",
+                expires_at="2026-06-21T01:00:00Z",
+                permissions={"contents": "read", "secrets": "write"},
+                repository_selection="selected",
+            )
+        )
 
 
 def test_list_installation_repositories_returns_public_repo_rows() -> None:

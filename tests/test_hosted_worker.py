@@ -577,6 +577,46 @@ def test_prepare_hosted_worker_execution_requires_installation_id(tmp_path: Path
         )
 
 
+def test_prepare_hosted_worker_execution_rejects_broad_github_token(tmp_path: Path) -> None:
+    source = tmp_path / "approved"
+    _write_demo_app(source, dependency='"resend": "latest"')
+    plan = build_hosted_launch_plan(
+        scan_repo(source),
+        github_source="https://github.com/example/hosted-demo",
+    )
+    job = claim_hosted_launch_job(
+        advance_hosted_launch_job(
+            build_hosted_launch_job(
+                plan,
+                github_installation_id=42,
+                job_id="hosted-test",
+                now=1_700_000_000,
+            ),
+            "start",
+        ),
+        worker_id="worker-01",
+    )
+    opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token",
+                "expires_at": "2026-06-21T06:00:00Z",
+                "permissions": {"contents": "read", "secrets": "write"},
+                "repository_selection": "selected",
+            },
+        ]
+    )
+
+    with pytest.raises(FuseKitError, match="unsupported permissions"):
+        prepare_hosted_worker_execution(
+            job,
+            github_config=_github_config(),
+            workspace=tmp_path / "worker",
+            opener=opener,
+        )
+    assert len(opener.requests) == 1
+
+
 def test_prepare_hosted_worker_execution_rejects_plan_drift(tmp_path: Path) -> None:
     source = tmp_path / "approved"
     _write_demo_app(source, dependency='"resend": "latest"')

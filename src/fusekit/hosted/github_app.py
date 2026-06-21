@@ -34,6 +34,10 @@ HOSTED_GITHUB_INTAKE_PERMISSIONS = (
         "before FuseKit mutates repository settings."
     ),
 )
+HOSTED_GITHUB_ALLOWED_TOKEN_PERMISSIONS = {
+    "contents": "read",
+    "metadata": "read",
+}
 
 
 class UrlOpener(Protocol):
@@ -86,6 +90,19 @@ class InstallationToken:
             "repository_selection": self.repository_selection,
             "token_captured": bool(self.token),
         }
+
+
+def require_hosted_installation_token_boundary(token: InstallationToken) -> None:
+    """Fail closed unless a GitHub installation token matches hosted intake scope."""
+
+    if token.repository_selection != "selected":
+        raise FuseKitError("Hosted GitHub token must be scoped to selected repositories.")
+    permissions = {str(key): str(value) for key, value in token.permissions.items()}
+    if permissions.get("contents") != "read":
+        raise FuseKitError("Hosted GitHub token must grant contents:read.")
+    for key, value in permissions.items():
+        if HOSTED_GITHUB_ALLOWED_TOKEN_PERMISSIONS.get(key) != value:
+            raise FuseKitError("Hosted GitHub token includes unsupported permissions.")
 
 
 def github_app_install_url(config: GitHubAppConfig, *, state: str) -> str:
