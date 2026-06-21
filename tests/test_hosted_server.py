@@ -1397,6 +1397,9 @@ def test_hosted_proof_receipt_page_uses_signed_job_token_without_process_memory(
 
     assert status == "200 OK"
     assert headers["Content-Type"] == "application/json; charset=utf-8"
+    assert headers["Content-Disposition"] == (
+        f'attachment; filename="{job_id}-proof-receipt.json"'
+    )
     assert json_payload["schema_version"] == "fusekit.hosted-proof-receipt.v1"
     assert json_payload["completion_ready"] is False
     assert ".fusekit/run_record.json" in json_payload["required_artifacts"]

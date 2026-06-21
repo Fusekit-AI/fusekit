@@ -785,7 +785,17 @@ def _hosted_proof_receipt_response(
     query: dict[str, list[str]],
 ) -> Iterable[bytes]:
     if _first_query_value(query, "format") == "json" or not _wants_html(environ):
-        return _response(start_response, HTTPStatus.OK, hosted_proof_receipt(job))
+        return _response(
+            start_response,
+            HTTPStatus.OK,
+            hosted_proof_receipt(job),
+            extra_headers=[
+                (
+                    "Content-Disposition",
+                    f'attachment; filename="{job.job_id}-proof-receipt.json"',
+                )
+            ],
+        )
     job_token = create_hosted_job_token(settings.state_secret, job)
     return _html_response(
         start_response,
@@ -1400,11 +1410,16 @@ def _response(
     start_response: StartResponse,
     status: HTTPStatus,
     body: dict[str, object],
+    *,
+    extra_headers: list[tuple[str, str]] | None = None,
 ) -> Iterable[bytes]:
     payload = json.dumps(body, sort_keys=True).encode("utf-8")
+    headers = _headers("application/json; charset=utf-8", len(payload))
+    if extra_headers:
+        headers.extend(extra_headers)
     start_response(
         f"{status.value} {status.phrase}",
-        _headers("application/json; charset=utf-8", len(payload)),
+        headers,
     )
     return [payload]
 
