@@ -169,6 +169,11 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
     assert "app.py" in html
     assert "MIT" in html
     assert "narrow permissions" in html
+    assert "selected repository only" in html
+    assert "contents:read" in html
+    assert "metadata:read" in html
+    assert "all-repository" in html
+    assert "contents:write" in html
     assert "visible" in html
     assert "redacted proof" in html
     assert "reversible setup" in html

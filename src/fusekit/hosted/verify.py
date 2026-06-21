@@ -504,6 +504,11 @@ def _hosted_home_failures(
         "hosted_home_raw_secret_policy_missing": (
             "Raw secrets must never leave the vault runtime."
         ),
+        "hosted_home_selected_repository_boundary_missing": "selected repository only",
+        "hosted_home_contents_read_boundary_missing": "contents:read",
+        "hosted_home_metadata_read_boundary_missing": "metadata:read",
+        "hosted_home_all_repository_rejection_missing": "all-repository",
+        "hosted_home_contents_write_rejection_missing": "contents:write",
         "hosted_home_launch_path_missing": "What happens after the click",
         "hosted_home_completion_requirements_missing": "Completion requires",
         "hosted_home_live_url_proof_missing": "Live URL verification",

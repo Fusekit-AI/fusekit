@@ -574,6 +574,15 @@ def test_verify_hosted_deployment_requires_trustworthy_homepage() -> None:
     assert "hosted_home_completion_requirements_missing" in checks["hosted.home"][
         "failures"
     ]
+    assert "hosted_home_selected_repository_boundary_missing" in checks["hosted.home"][
+        "failures"
+    ]
+    assert "hosted_home_contents_read_boundary_missing" in checks["hosted.home"][
+        "failures"
+    ]
+    assert "hosted_home_all_repository_rejection_missing" in checks["hosted.home"][
+        "failures"
+    ]
     assert "hosted_home_reversible_setup_missing" in checks["hosted.home"]["failures"]
     assert "hosted_home_embedded_intake_contract_missing" in checks["hosted.home"][
         "failures"
@@ -702,6 +711,11 @@ def _home_html(
         <section>Open core https://github.com/xpxpxp-coder/fusekit</section>
         <section>Capability vault boundary</section>
         <section>Raw secrets must never leave the vault runtime.</section>
+        <section>
+          GitHub access is selected repository only, requests contents:read,
+          accepts metadata:read, and rejects all-repository or contents:write
+          installation tokens.
+        </section>
         <section>What happens after the click</section>
         <section>Completion requires</section>
         <section>Live URL verification</section>

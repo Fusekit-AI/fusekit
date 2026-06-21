@@ -545,6 +545,12 @@ def render_hosted_home(settings: HostedSettings) -> str:
       <h2>Before FuseKit runs</h2>
       <ul>
         <li>You choose exactly which GitHub repository FuseKit may read.</li>
+        <li>
+          GitHub access is selected repository only, requests
+          <span class="origin">contents:read</span>, accepts GitHub
+          <span class="origin">metadata:read</span>, and rejects all-repository
+          or <span class="origin">contents:write</span> installation tokens.
+        </li>
         <li>FuseKit shows the detected providers and setup plan before changes.</li>
         <li>Provider credentials stay server-side or inside the encrypted vault.</li>
         <li>Receipts, logs, proof, and generated apps do not expose raw secrets.</li>
