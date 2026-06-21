@@ -414,8 +414,14 @@ def test_hosted_launch_job_actions_record_truthful_waiting_states() -> None:
     assert stopped.status == "stopped"
     assert stopped_steps["worker.prepare"]["status"] == "waiting"
     assert "stopped before hosted worker start" in stopped_steps["worker.prepare"]["proof"]
+    with pytest.raises(ValueError, match="can only start once"):
+        advance_hosted_launch_job(started, "start", now=1_700_000_005)
     with pytest.raises(ValueError, match="only be stopped before worker start"):
-        advance_hosted_launch_job(started, "stop", now=1_700_000_005)
+        advance_hosted_launch_job(started, "stop", now=1_700_000_006)
+    with pytest.raises(ValueError, match="rollback requires"):
+        advance_hosted_launch_job(job, "rollback", now=1_700_000_007)
+    with pytest.raises(ValueError, match="detonation requires"):
+        advance_hosted_launch_job(job, "detonate", now=1_700_000_008)
 
 
 def test_hosted_job_action_receipts_are_redacted_and_proof_oriented() -> None:

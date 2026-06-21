@@ -366,6 +366,8 @@ def advance_hosted_launch_job(
 
     current = int(time.time() if now is None else now)
     if action == "start":
+        if job.status != "waiting_for_worker":
+            raise ValueError("Hosted launch can only start once before worker handoff.")
         return _replace_job(
             job,
             status="waiting_for_provider_gates",
@@ -412,6 +414,13 @@ def advance_hosted_launch_job(
             ),
         )
     if action == "rollback":
+        if job.status not in {
+            "waiting_for_provider_gates",
+            "worker_claimed",
+            "proof_submitted",
+            "complete",
+        }:
+            raise ValueError("Hosted rollback requires a started worker or submitted proof.")
         return _replace_job(
             job,
             status="rollback_requested",
@@ -430,6 +439,14 @@ def advance_hosted_launch_job(
             ),
         )
     if action == "detonate":
+        if job.status not in {
+            "waiting_for_provider_gates",
+            "worker_claimed",
+            "proof_submitted",
+            "complete",
+            "rollback_requested",
+        }:
+            raise ValueError("Hosted detonation requires a started worker or rollback request.")
         return _replace_job(
             job,
             status="detonation_requested",

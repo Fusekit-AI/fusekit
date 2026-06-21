@@ -443,6 +443,10 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
         "FUSEKIT_HOSTED_WORKER_SECRET",
         "FUSEKIT_HOSTED_WORKER_ID",
     ]
+    assert payload["worker_dispatch"]["optional_runtime_env"] == [
+        "FUSEKIT_HOSTED_WORKER_WORKSPACE",
+        "FUSEKIT_HOSTED_WORKER_DISPATCH_STATE_DIR",
+    ]
     assert "PRIVATE KEY" not in serialized
     assert STATE_SECRET not in serialized
     assert WORKER_SECRET not in serialized
@@ -1211,6 +1215,118 @@ def test_hosted_job_start_dispatches_signed_worker_envelope_when_configured() ->
     assert WORKER_SECRET not in serialized
     assert "ghs_fake" not in serialized
     assert "PRIVATE KEY" not in serialized
+
+
+def test_hosted_job_actions_reject_duplicate_start_without_second_dispatch() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    github_opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    dispatch_opener = SequenceOpener([{}, {}])
+    config = GitHubAppConfig(
+        app_id="12345",
+        app_slug="fusekit-launcher",
+        private_key_pem=_private_key_pem(),
+    )
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id=config.app_id,
+        github_app_slug=config.app_slug,
+        github_private_key_pem=config.private_key_pem,
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        github_opener=github_opener,
+        worker_dispatch_opener=dispatch_opener,
+    )
+
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=f"installation_id=42&repo=example/one&state={state}",
+        settings=settings,
+    )
+    assert status == "200 OK"
+    text = body.decode("utf-8")
+    job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    control = _match(text, r"control=([A-Za-z0-9_.-]+)")
+    job_token = _match(text, r"job=([A-Za-z0-9_.-]+)")
+
+    status, _headers, _body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/start",
+        method="POST",
+        query_string=f"control={control}&job={job_token}",
+        settings=settings,
+    )
+    assert status == "200 OK"
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/start",
+        method="POST",
+        query_string=f"control={control}&job={job_token}",
+        settings=settings,
+    )
+
+    assert status == "400 Bad Request"
+    assert json.loads(body.decode("utf-8")) == {"error": "invalid_action"}
+    assert len(dispatch_opener.requests) == 1
+
+
+def test_hosted_job_actions_reject_rollback_and_detonation_before_start() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    settings = _settings_with_github(opener)
+
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=f"installation_id=42&repo=example/one&state={state}",
+        settings=settings,
+    )
+    assert status == "200 OK"
+    text = body.decode("utf-8")
+    job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    control = _match(text, r"control=([A-Za-z0-9_.-]+)")
+
+    for action in ("rollback", "detonate"):
+        status, _headers, body = _call(
+            f"/api/hosted/jobs/{job_id}/actions/{action}",
+            method="POST",
+            query_string=f"control={control}",
+            settings=settings,
+        )
+        assert status == "400 Bad Request"
+        assert json.loads(body.decode("utf-8")) == {"error": "invalid_action"}
+
+    assert settings.hosted_jobs[job_id].status == "waiting_for_worker"
 
 
 def test_hosted_worker_request_requires_start_and_supports_stateless_job_token() -> None:

@@ -201,18 +201,24 @@ def test_hosted_worker_maintenance_invocation_uses_existing_cli_surfaces(
     tmp_path: Path,
 ) -> None:
     execution = _prepared_execution(tmp_path)
-    rollback_job = advance_hosted_launch_job(
-        build_hosted_launch_job(
-            build_hosted_launch_plan(
-                scan_repo(execution.source_dir),
-                github_source="https://github.com/example/hosted-demo",
-            ),
-            github_installation_id=42,
-            job_id="hosted-test",
-            now=1_700_000_000,
+    job = build_hosted_launch_job(
+        build_hosted_launch_plan(
+            scan_repo(execution.source_dir),
+            github_source="https://github.com/example/hosted-demo",
         ),
-        "rollback",
+        github_installation_id=42,
+        job_id="hosted-test",
+        now=1_700_000_000,
+    )
+    started = advance_hosted_launch_job(
+        job,
+        "start",
         now=1_700_000_001,
+    )
+    rollback_job = advance_hosted_launch_job(
+        started,
+        "rollback",
+        now=1_700_000_002,
     )
 
     invocation = build_hosted_worker_maintenance_invocation(

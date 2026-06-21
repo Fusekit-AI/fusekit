@@ -8,6 +8,7 @@ import hmac
 import json
 import os
 import subprocess
+import threading
 import urllib.parse
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -30,6 +31,10 @@ class WorkerSpawner(Protocol):
     def __call__(self, args: tuple[str, ...], env: dict[str, str]) -> object: ...
 
 
+_DISPATCH_LOCK = threading.Lock()
+_ACCEPTED_DISPATCHES: set[tuple[str, str, str]] = set()
+
+
 @dataclass(frozen=True)
 class HostedWorkerDispatchSettings:
     """Settings for the hosted worker dispatch receiver."""
@@ -37,6 +42,7 @@ class HostedWorkerDispatchSettings:
     worker_secret: str = ""
     worker_id: str = "hosted-worker-dispatch"
     workspace: Path | None = None
+    dispatch_state_dir: Path | None = None
     spawner: WorkerSpawner | None = None
 
     @classmethod
@@ -44,10 +50,12 @@ class HostedWorkerDispatchSettings:
         """Load dispatch receiver settings from environment variables."""
 
         workspace = os.environ.get("FUSEKIT_HOSTED_WORKER_WORKSPACE", "")
+        state_dir = os.environ.get("FUSEKIT_HOSTED_WORKER_DISPATCH_STATE_DIR", "")
         return cls(
             worker_secret=os.environ.get("FUSEKIT_HOSTED_WORKER_SECRET", ""),
             worker_id=os.environ.get("FUSEKIT_HOSTED_WORKER_ID", "hosted-worker-dispatch"),
             workspace=Path(workspace) if workspace else None,
+            dispatch_state_dir=Path(state_dir) if state_dir else None,
         )
 
     def readiness(self) -> dict[str, object]:
@@ -57,6 +65,7 @@ class HostedWorkerDispatchSettings:
             "FUSEKIT_HOSTED_WORKER_SECRET": bool(self.worker_secret),
             "FUSEKIT_HOSTED_WORKER_ID": bool(self.worker_id),
             "FUSEKIT_HOSTED_WORKER_WORKSPACE": self.workspace is not None,
+            "FUSEKIT_HOSTED_WORKER_DISPATCH_STATE_DIR": self.dispatch_state_dir is not None,
         }
         invalid = []
         if self.worker_secret and len(self.worker_secret) < 16:
@@ -68,7 +77,10 @@ class HostedWorkerDispatchSettings:
             "ready": bool(self.worker_secret) and bool(self.worker_id) and not invalid,
             "configured": configured,
             "invalid": invalid,
-            "optional_runtime_env": ["FUSEKIT_HOSTED_WORKER_WORKSPACE"],
+            "optional_runtime_env": [
+                "FUSEKIT_HOSTED_WORKER_WORKSPACE",
+                "FUSEKIT_HOSTED_WORKER_DISPATCH_STATE_DIR",
+            ],
             "required_runtime_env": [
                 "FUSEKIT_HOSTED_WORKER_SECRET",
                 "FUSEKIT_HOSTED_WORKER_ID",
@@ -171,6 +183,23 @@ def accept_hosted_worker_dispatch(
 
     if len(settings.worker_secret) < 16:
         raise FuseKitError("hosted_worker_secret_required")
+    reservation = _reserve_dispatch(dispatch, settings=settings)
+    if reservation["duplicate"]:
+        return {
+            "schema_version": HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION,
+            "accepted": True,
+            "duplicate": True,
+            "action": dispatch.action,
+            "job_id": dispatch.job_id,
+            "worker_id": settings.worker_id,
+            "worker_command": dispatch.public_command(settings),
+            "spawned": {"pid": None},
+            "idempotency": reservation,
+            "secret_boundary": (
+                "Dispatch receipts omit job tokens, worker secrets, HMAC signatures, "
+                "provider credentials, GitHub installation tokens, and vault material."
+            ),
+        }
     args = dispatch.command(settings)
     env = dict(os.environ)
     env["FUSEKIT_HOSTED_WORKER_SECRET"] = settings.worker_secret
@@ -180,11 +209,13 @@ def accept_hosted_worker_dispatch(
     return {
         "schema_version": HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION,
         "accepted": True,
+        "duplicate": False,
         "action": dispatch.action,
         "job_id": dispatch.job_id,
         "worker_id": settings.worker_id,
         "worker_command": dispatch.public_command(settings),
         "spawned": _public_spawn_label(spawned),
+        "idempotency": reservation,
         "secret_boundary": (
             "Dispatch receipts omit job tokens, worker secrets, HMAC signatures, "
             "provider credentials, GitHub installation tokens, and vault material."
@@ -232,6 +263,58 @@ def verify_hosted_worker_dispatch(
         job_id=job_id,
         job_token=job_token,
     )
+
+
+def _reserve_dispatch(
+    dispatch: HostedWorkerDispatch,
+    *,
+    settings: HostedWorkerDispatchSettings,
+) -> dict[str, object]:
+    key = (dispatch.origin, dispatch.job_id, dispatch.action)
+    state_dir = settings.dispatch_state_dir or (
+        settings.workspace / ".fusekit/hosted-worker-dispatches"
+        if settings.workspace is not None
+        else None
+    )
+    if state_dir is None:
+        with _DISPATCH_LOCK:
+            duplicate = key in _ACCEPTED_DISPATCHES
+            if not duplicate:
+                _ACCEPTED_DISPATCHES.add(key)
+        return {
+            "scope": "process",
+            "duplicate": duplicate,
+            "proof": "in-process dispatch guard accepted this job/action once.",
+        }
+    digest = hashlib.sha256(
+        f"{dispatch.origin}:{dispatch.job_id}:{dispatch.action}".encode()
+    ).hexdigest()
+    path = state_dir / f"{digest}.json"
+    try:
+        state_dir.mkdir(parents=True, exist_ok=True)
+        with path.open("x", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "schema_version": HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION,
+                    "job_id": dispatch.job_id,
+                    "action": dispatch.action,
+                    "worker_id": settings.worker_id,
+                },
+                handle,
+                sort_keys=True,
+            )
+            handle.write("\n")
+    except FileExistsError:
+        duplicate = True
+    except OSError as exc:
+        raise FuseKitError("hosted_worker_dispatch_state_unavailable") from exc
+    else:
+        duplicate = False
+    return {
+        "scope": "workspace",
+        "duplicate": duplicate,
+        "proof": "non-secret worker dispatch marker recorded for this job/action.",
+    }
 
 
 def _verified_dispatch_from_wsgi(

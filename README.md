@@ -240,9 +240,13 @@ browser-facing receipt. The dispatch envelope names the requested action
 job token. The open-core `fusekit-hosted-worker-dispatch` receiver verifies the
 HMAC envelope with `FUSEKIT_HOSTED_WORKER_SECRET`, starts
 `fusekit-hosted-worker` with the signed job token in environment rather than on
-the process command line, and returns only a redacted accepted receipt. Its
+the process command line, and returns only a redacted accepted receipt. It also
+records a non-secret per-job/action dispatch marker in the worker workspace or
+configured dispatch state directory, so duplicate protected clicks do not spawn
+duplicate setup, rollback, or detonation workers. Its
 `/readiness` endpoint reports only configuration presence and shape errors for
-the worker secret, worker id, and optional workspace root. The
+the worker secret, worker id, optional workspace root, and optional dispatch
+state directory. The
 backend-only
 `/api/hosted/jobs/<job>/worker-proof` endpoint accepts redacted worker proof
 snapshots, rejects credential-looking public notes or unsupported artifact
@@ -302,7 +306,9 @@ environment variables set in Vercel: `FUSEKIT_HOSTED_ORIGIN`,
 `FUSEKIT_HOSTED_WORKER_SECRET`. Production one-click worker wakeup also needs
 `FUSEKIT_HOSTED_WORKER_DISPATCH_URL` pointed at an HTTPS worker dispatch
 service running `fusekit-hosted-worker-dispatch` with
-`FUSEKIT_HOSTED_WORKER_SECRET` and worker runtime environment configured. Verify
+`FUSEKIT_HOSTED_WORKER_SECRET` and worker runtime environment configured. Set
+`FUSEKIT_HOSTED_WORKER_DISPATCH_STATE_DIR` or a persistent
+`FUSEKIT_HOSTED_WORKER_WORKSPACE` for durable duplicate-click protection. Verify
 that service with `/healthz` and `/readiness` before setting
 `FUSEKIT_HOSTED_WORKER_DISPATCH_URL`. As of the latest local check,
 `https://fusekit.snowmanai.org` has public DNS answers through Cloudflare but returns

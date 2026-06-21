@@ -316,7 +316,10 @@ class HostedSettings:
                     "FUSEKIT_HOSTED_WORKER_SECRET",
                     "FUSEKIT_HOSTED_WORKER_ID",
                 ],
-                "optional_runtime_env": ["FUSEKIT_HOSTED_WORKER_WORKSPACE"],
+                "optional_runtime_env": [
+                    "FUSEKIT_HOSTED_WORKER_WORKSPACE",
+                    "FUSEKIT_HOSTED_WORKER_DISPATCH_STATE_DIR",
+                ],
                 "secret_boundary": (
                     "Dispatch sends a signed public job token and never sends the worker secret, "
                     "GitHub installation token, provider credentials, or vault material."

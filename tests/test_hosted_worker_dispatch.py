@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import io
 import json
+from pathlib import Path
 
 import pytest
 
@@ -63,6 +64,7 @@ def test_hosted_worker_dispatch_readiness_reports_presence_without_secrets() -> 
         "FUSEKIT_HOSTED_WORKER_SECRET": True,
         "FUSEKIT_HOSTED_WORKER_ID": True,
         "FUSEKIT_HOSTED_WORKER_WORKSPACE": False,
+        "FUSEKIT_HOSTED_WORKER_DISPATCH_STATE_DIR": False,
     }
     assert readiness["required_runtime_env"] == [
         "FUSEKIT_HOSTED_WORKER_SECRET",
@@ -117,6 +119,7 @@ def test_accept_hosted_worker_dispatch_spawns_env_backed_worker_and_redacts_rece
 
     assert receipt["schema_version"] == HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION
     assert receipt["accepted"] is True
+    assert receipt["duplicate"] is False
     assert receipt["action"] == "detonate"
     assert receipt["worker_command"] == [
         "<fusekit-hosted-worker>",
@@ -145,6 +148,40 @@ def test_accept_hosted_worker_dispatch_spawns_env_backed_worker_and_redacts_rece
     assert WORKER_SECRET not in serialized
     assert "signed-public-job-token" not in serialized
     assert "sha256=" not in serialized
+
+
+def test_accept_hosted_worker_dispatch_is_idempotent_per_job_action(tmp_path: Path) -> None:
+    body = _dispatch_body(action="start")
+    dispatch = verify_hosted_worker_dispatch(
+        body,
+        signature=_signature(body),
+        schema=HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+        secret=WORKER_SECRET,
+    )
+    spawner = FakeSpawner()
+    settings = HostedWorkerDispatchSettings(
+        worker_secret=WORKER_SECRET,
+        worker_id="worker-01",
+        dispatch_state_dir=tmp_path / "dispatch-state",
+        spawner=spawner,
+    )
+
+    first = accept_hosted_worker_dispatch(dispatch, settings=settings)
+    second = accept_hosted_worker_dispatch(dispatch, settings=settings)
+    serialized = json.dumps(second)
+
+    assert first["duplicate"] is False
+    assert second["accepted"] is True
+    assert second["duplicate"] is True
+    assert second["spawned"] == {"pid": None}
+    assert second["idempotency"] == {
+        "scope": "workspace",
+        "duplicate": True,
+        "proof": "non-secret worker dispatch marker recorded for this job/action.",
+    }
+    assert len(spawner.calls) == 1
+    assert WORKER_SECRET not in serialized
+    assert "signed-public-job-token" not in serialized
 
 
 def test_hosted_worker_dispatch_wsgi_accepts_signed_post() -> None:
