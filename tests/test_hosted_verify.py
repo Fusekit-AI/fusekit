@@ -300,6 +300,8 @@ def test_verify_hosted_deployment_requires_operator_setup_contract() -> None:
     operator_setup["target_subdomain"] = "www.snowmanai.org"
     steps = operator_setup["steps"]
     assert isinstance(steps, list)
+    assert isinstance(steps[1], dict)
+    steps[1]["label"] = "Add www.snowmanai.org as the Vercel custom domain."
     steps.pop()
     opener = SequenceOpener(
         [
@@ -891,10 +893,38 @@ def _deployment_contract() -> dict[str, object]:
         "operator_setup": {
             "target_subdomain": "fusekit.snowmanai.org",
             "steps": [
-                {"id": "connect_vercel_project"},
-                {"id": "attach_custom_domain"},
-                {"id": "route_cloudflare_cname"},
-                {"id": "verify_public_contracts"},
+                {
+                    "id": "connect_vercel_project",
+                    "label": "Connect the Vercel project to the open-source FuseKit repository.",
+                    "proof": "Vercel deployment serves app.py from the public repository.",
+                },
+                {
+                    "id": "attach_custom_domain",
+                    "label": "Add fusekit.snowmanai.org as the Vercel custom domain.",
+                    "proof": "Vercel reports the domain as assigned to this project.",
+                },
+                {
+                    "id": "route_cloudflare_cname",
+                    "label": (
+                        "In Cloudflare DNS, set the fusekit record to the exact "
+                        "Vercel-provided CNAME target."
+                    ),
+                    "proof": (
+                        "The subdomain serves FuseKit instead of a Cloudflare error page."
+                    ),
+                },
+                {
+                    "id": "verify_public_contracts",
+                    "label": (
+                        "Verify https://fusekit.snowmanai.org/healthz, "
+                        "/api/hosted/readiness, and /api/hosted/deployment from "
+                        "outside the deployment."
+                    ),
+                    "proof": (
+                        "fusekit-hosted-verify reports DNS, health, readiness, "
+                        "and deployment ok."
+                    ),
+                },
             ],
         },
         "github_app": {

@@ -420,13 +420,9 @@ def _hosted_runtime_contract_failures(
         if not isinstance(steps, list):
             failures.append("operator_setup_steps_missing")
         else:
-            expected_step_ids = [step["id"] for step in HOSTED_OPERATOR_SETUP_STEPS]
-            actual_step_ids = [
-                step.get("id")
-                for step in steps
-                if isinstance(step, dict) and isinstance(step.get("id"), str)
-            ]
-            if actual_step_ids != expected_step_ids:
+            expected_steps = [dict(step) for step in HOSTED_OPERATOR_SETUP_STEPS]
+            actual_steps = [step for step in steps if isinstance(step, dict)]
+            if actual_steps != expected_steps:
                 failures.append("operator_setup_steps_mismatch")
     return failures
 

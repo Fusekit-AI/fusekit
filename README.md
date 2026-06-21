@@ -289,7 +289,9 @@ remaining recording or remote-artifact proof. The outside-in hosted verifier
 checks every friendly completion-proof label on the homepage, not just the
 embedded JSON contracts, and also checks the visible homepage text for all five
 trust-story labels: open core, narrow permissions, visible plan, redacted proof,
-and reversible setup. A redacted
+and reversible setup. The verifier also compares the full operator setup
+checklist, including the Vercel custom-domain and Cloudflare CNAME label/proof
+text, so the subdomain instructions cannot quietly drift. A redacted
 hosted readiness endpoint reports only configuration presence and shape errors,
 and keeps the homepage launch button disabled until the GitHub App id, slug, RSA
 private key, origin, state secret, and worker secret are configured and valid.
