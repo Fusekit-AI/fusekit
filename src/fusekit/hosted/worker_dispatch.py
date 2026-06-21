@@ -452,13 +452,24 @@ def _response(
     }.get(status, "OK")
     start_response(
         f"{status} {reason}",
-        [
-            ("Content-Type", "application/json; charset=utf-8"),
-            ("Cache-Control", "no-store"),
-            ("Content-Length", str(len(raw))),
-        ],
+        _headers(len(raw)),
     )
     return [raw]
+
+
+def _headers(content_length: int) -> list[tuple[str, str]]:
+    return [
+        ("Content-Type", "application/json; charset=utf-8"),
+        ("Cache-Control", "no-store"),
+        ("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'"),
+        ("Cross-Origin-Opener-Policy", "same-origin"),
+        ("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()"),
+        ("Referrer-Policy", "no-referrer"),
+        ("Strict-Transport-Security", "max-age=31536000; includeSubDomains"),
+        ("X-Content-Type-Options", "nosniff"),
+        ("X-Frame-Options", "DENY"),
+        ("Content-Length", str(content_length)),
+    ]
 
 
 def main(argv: list[str] | None = None) -> int:

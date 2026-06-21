@@ -351,7 +351,10 @@ reports the non-secret next action: attach `fusekit.snowmanai.org` to the
 Vercel project and route the Cloudflare `fusekit` CNAME to the exact
 Vercel-provided target.
 Hosted responses include no-store caching and browser security headers so the
-launcher behaves like a hardened control surface from first deploy.
+launcher behaves like a hardened control surface from first deploy. The worker
+dispatch receiver returns the same no-store, no-framing, no-referrer,
+nosniff, HSTS, and disabled-permissions headers on its JSON readiness and
+dispatch receipt endpoints.
 
 Production still needs the Vercel project connected to this repository, an
 HTTPS worker dispatch service running `fusekit-hosted-worker-dispatch` with

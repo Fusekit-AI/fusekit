@@ -291,8 +291,10 @@ def test_hosted_worker_dispatch_wsgi_accepts_signed_post() -> None:
         )
     )
     payload = json.loads(response.decode("utf-8"))
+    headers = dict(status_headers["headers"])
 
     assert status_headers["status"] == "202 Accepted"
+    _assert_dispatch_security_headers(headers)
     assert payload["schema_version"] == HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION
     assert payload["accepted"] is True
     assert payload["action"] == "start"
@@ -319,11 +321,27 @@ def test_hosted_worker_dispatch_wsgi_serves_readiness_without_secret_values() ->
         )
     )
     payload = json.loads(response.decode("utf-8"))
+    headers = dict(status_headers["headers"])
 
     assert status_headers["status"] == "200 OK"
+    _assert_dispatch_security_headers(headers)
     assert payload["schema_version"] == HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION
     assert payload["ready"] is True
     assert WORKER_SECRET not in response.decode("utf-8")
+
+
+def _assert_dispatch_security_headers(headers: dict[str, str]) -> None:
+    assert headers["Content-Type"] == "application/json; charset=utf-8"
+    assert headers["Cache-Control"] == "no-store"
+    assert headers["Content-Security-Policy"] == "default-src 'none'; frame-ancestors 'none'"
+    assert headers["Cross-Origin-Opener-Policy"] == "same-origin"
+    assert headers["Permissions-Policy"] == (
+        "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+    )
+    assert headers["Referrer-Policy"] == "no-referrer"
+    assert headers["Strict-Transport-Security"] == "max-age=31536000; includeSubDomains"
+    assert headers["X-Content-Type-Options"] == "nosniff"
+    assert headers["X-Frame-Options"] == "DENY"
 
 
 def _dispatch_body(*, action: str) -> bytes:
