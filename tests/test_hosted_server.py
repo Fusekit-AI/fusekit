@@ -308,6 +308,7 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
         "entrypoint": "app.py",
         "routing_config": "vercel.json",
         "requirements": "requirements.txt",
+        "python_version": ".python-version",
         "application_export": "app",
         "mode": "python-wsgi",
     }
@@ -460,10 +461,12 @@ def test_vercel_deployment_files_route_all_paths_to_wsgi_entrypoint() -> None:
     root = Path(__file__).parents[1]
     vercel = json.loads((root / "vercel.json").read_text(encoding="utf-8"))
     requirements = (root / "requirements.txt").read_text(encoding="utf-8").splitlines()
+    python_version = (root / ".python-version").read_text(encoding="utf-8").strip()
 
     assert vercel["builds"] == [{"src": "app.py", "use": "@vercel/python"}]
     assert vercel["routes"] == [{"src": "/(.*)", "dest": "app.py"}]
-    assert "cryptography>=42" in requirements
+    assert python_version == "3.12"
+    assert "cryptography==42.0.8" in requirements
     assert "PyYAML>=6" in requirements
     assert not any("playwright" in line.lower() for line in requirements)
     assert not any(line.startswith("oci") for line in requirements)

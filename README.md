@@ -231,7 +231,10 @@ production DNS/deployment.
 
 The repository includes a minimal Vercel-compatible WSGI entrypoint at `app.py`,
 a root `vercel.json` that routes all hosted paths to that entrypoint, and a
-minimal `requirements.txt` for the browser launcher runtime. The hosted app also serves
+minimal `requirements.txt` for the browser launcher runtime. The hosted deploy
+also pins Python 3.12 with `.python-version` and uses a wheel-backed
+`cryptography==42.0.8` requirement so Vercel does not need native OpenSSL
+compilation for the public launcher. The hosted app also serves
 `/api/hosted/deployment`, a public deployment contract that lists the canonical
 origin, Vercel WSGI entrypoint/routing files, GitHub callback URL, Cloudflare DNS record name,
 health/readiness URLs, and required environment variable names without exposing

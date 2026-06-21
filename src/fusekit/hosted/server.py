@@ -157,6 +157,7 @@ class HostedSettings:
                 "entrypoint": "app.py",
                 "routing_config": "vercel.json",
                 "requirements": "requirements.txt",
+                "python_version": ".python-version",
                 "application_export": "app",
                 "mode": "python-wsgi",
             },
