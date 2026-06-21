@@ -25,6 +25,7 @@ from fusekit.hosted.github_app import (
     UrlOpener,
     exchange_installation_token,
     hosted_github_intake_contract,
+    hosted_github_public_token_boundary,
     list_installation_repositories,
     require_hosted_installation_token_boundary,
 )
@@ -296,6 +297,7 @@ class HostedSettings:
                 "callback_url": f"{public_origin}/github/callback",
                 "intake_url": f"{public_origin}/api/github/intake",
                 "repository_permission": "contents:read",
+                "token_boundary": hosted_github_public_token_boundary(),
             },
             "checks": {
                 "health": f"{public_origin}/healthz",

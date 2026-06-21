@@ -429,6 +429,16 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
         "https://fusekit.snowmanai.org/github/callback"
     )
     assert payload["github_app"]["repository_permission"] == "contents:read"
+    assert payload["github_app"]["token_boundary"] == {
+        "repository_selection": "selected",
+        "requested_token_permissions": {"contents": "read"},
+        "accepted_token_permissions": {"contents": "read", "metadata": "read"},
+        "rejects": [
+            "all-repository installation tokens",
+            "contents:write installation tokens",
+            "unexpected GitHub write permissions",
+        ],
+    }
     assert "FUSEKIT_GITHUB_APP_PRIVATE_KEY" in payload["required_runtime_env"]
     assert "FUSEKIT_HOSTED_WORKER_SECRET" in payload["required_runtime_env"]
     assert payload["optional_runtime_env"] == ["FUSEKIT_HOSTED_WORKER_DISPATCH_URL"]

@@ -146,7 +146,9 @@ the GitHub permission boundary explicit: pre-install intake grants
 `contents:read` on one selected repository, while any GitHub write capability
 requires a separate visible approval/provider route before mutation. Hosted
 GitHub token exchanges now fail closed if GitHub returns all-repository access
-or broader permissions than selected-repository `contents:read`. It also
+or broader permissions than selected-repository `contents:read` plus GitHub
+metadata read, and the public deployment/intake contracts expose that exact
+token boundary for verifier drift checks. It also
 includes the GitHub App install URL, app JWT, installation
 token exchange, signed callback state, selected-repository listing page, and
 server-side source fetch/scan into a visible hosted launch plan. It also has a

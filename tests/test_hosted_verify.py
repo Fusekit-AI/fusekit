@@ -325,6 +325,42 @@ def test_verify_hosted_deployment_requires_operator_setup_contract() -> None:
     assert "operator_setup_steps_mismatch" in checks["hosted.deployment"]["failures"]
 
 
+def test_verify_hosted_deployment_requires_github_app_token_boundary() -> None:
+    contract = _deployment_contract()
+    github_app = contract["github_app"]
+    assert isinstance(github_app, dict)
+    github_app["repository_permission"] = "contents:write"
+    github_app["token_boundary"] = {
+        "repository_selection": "all",
+        "requested_token_permissions": {"contents": "write"},
+        "accepted_token_permissions": {"contents": "write", "secrets": "write"},
+    }
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            contract,
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert "github_app_repository_permission_mismatch" in checks["hosted.deployment"][
+        "failures"
+    ]
+    assert "github_app_token_boundary_mismatch" in checks["hosted.deployment"][
+        "failures"
+    ]
+
+
 def test_verify_hosted_deployment_requires_public_trust_contract() -> None:
     contract = _deployment_contract()
     contract["trust_story"] = ["open core", "redacted proof"]
@@ -435,6 +471,10 @@ def test_verify_hosted_deployment_requires_github_intake_contract() -> None:
     intake["route"] = "oauth-app"
     intake["launch_path"] = ["Download a CLI."]
     intake["permissions"] = ["Install on every repository."]
+    intake["token_boundary"] = {
+        "repository_selection": "all",
+        "requested_token_permissions": {"contents": "write"},
+    }
     open_core = intake["open_core"]
     assert isinstance(open_core, dict)
     open_core["reviewable_entrypoint"] = "server.py"
@@ -462,6 +502,9 @@ def test_verify_hosted_deployment_requires_github_intake_contract() -> None:
         "failures"
     ]
     assert "github_intake_permissions_mismatch" in checks["hosted.github_intake"][
+        "failures"
+    ]
+    assert "github_intake_token_boundary_mismatch" in checks["hosted.github_intake"][
         "failures"
     ]
     assert "github_intake_open_core_entrypoint_mismatch" in checks["hosted.github_intake"][
@@ -742,6 +785,19 @@ def _deployment_contract() -> dict[str, object]:
                 {"id": "verify_public_contracts"},
             ],
         },
+        "github_app": {
+            "repository_permission": "contents:read",
+            "token_boundary": {
+                "repository_selection": "selected",
+                "requested_token_permissions": {"contents": "read"},
+                "accepted_token_permissions": {"contents": "read", "metadata": "read"},
+                "rejects": [
+                    "all-repository installation tokens",
+                    "contents:write installation tokens",
+                    "unexpected GitHub write permissions",
+                ],
+            },
+        },
     }
 
 
@@ -794,6 +850,16 @@ def _github_intake_contract() -> dict[str, object]:
                 "before FuseKit mutates repository settings."
             ),
         ],
+        "token_boundary": {
+            "repository_selection": "selected",
+            "requested_token_permissions": {"contents": "read"},
+            "accepted_token_permissions": {"contents": "read", "metadata": "read"},
+            "rejects": [
+                "all-repository installation tokens",
+                "contents:write installation tokens",
+                "unexpected GitHub write permissions",
+            ],
+        },
         "open_core": {
             "source_repository": "https://github.com/xpxpxp-coder/fusekit",
             "license": "MIT",

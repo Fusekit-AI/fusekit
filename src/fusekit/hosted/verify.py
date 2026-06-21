@@ -12,7 +12,10 @@ import urllib.request
 from typing import Any, Protocol
 
 from fusekit.errors import FuseKitError
-from fusekit.hosted.github_app import HOSTED_GITHUB_INTAKE_PERMISSIONS
+from fusekit.hosted.github_app import (
+    HOSTED_GITHUB_INTAKE_PERMISSIONS,
+    hosted_github_public_token_boundary,
+)
 from fusekit.hosted.launcher import (
     HOSTED_LAUNCH_PATH,
     HOSTED_PROOF_REQUIREMENTS,
@@ -385,6 +388,14 @@ def _hosted_runtime_contract_failures(
             failures.append("open_core_license_mismatch")
         if open_core.get("reviewable_entrypoint") != "app.py":
             failures.append("open_core_entrypoint_mismatch")
+    github_app = payload.get("github_app")
+    if not isinstance(github_app, dict):
+        failures.append("github_app_contract_missing")
+    else:
+        if github_app.get("repository_permission") != "contents:read":
+            failures.append("github_app_repository_permission_mismatch")
+        if github_app.get("token_boundary") != hosted_github_public_token_boundary():
+            failures.append("github_app_token_boundary_mismatch")
     operator_setup = payload.get("operator_setup")
     if not isinstance(operator_setup, dict):
         failures.append("operator_setup_contract_missing")
@@ -521,6 +532,8 @@ def _github_intake_contract_failures(payload: dict[str, Any]) -> list[str]:
         failures.append("github_intake_reversal_mismatch")
     if payload.get("permissions") != list(HOSTED_GITHUB_INTAKE_PERMISSIONS):
         failures.append("github_intake_permissions_mismatch")
+    if payload.get("token_boundary") != hosted_github_public_token_boundary():
+        failures.append("github_intake_token_boundary_mismatch")
     open_core = payload.get("open_core")
     if not isinstance(open_core, dict):
         failures.append("github_intake_open_core_missing")

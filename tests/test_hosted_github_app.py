@@ -250,6 +250,16 @@ def test_hosted_github_intake_contract_has_no_secret_material() -> None:
             "before FuseKit mutates repository settings."
         ),
     ]
+    assert contract["token_boundary"] == {
+        "repository_selection": "selected",
+        "requested_token_permissions": {"contents": "read"},
+        "accepted_token_permissions": {"contents": "read", "metadata": "read"},
+        "rejects": [
+            "all-repository installation tokens",
+            "contents:write installation tokens",
+            "unexpected GitHub write permissions",
+        ],
+    }
     assert "GitHub sign-in" in contract["human_gates"]
     assert "PRIVATE KEY" not in serialized
     assert "ghs_" not in serialized

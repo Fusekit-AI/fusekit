@@ -105,6 +105,21 @@ def require_hosted_installation_token_boundary(token: InstallationToken) -> None
             raise FuseKitError("Hosted GitHub token includes unsupported permissions.")
 
 
+def hosted_github_public_token_boundary() -> dict[str, object]:
+    """Return browser-safe GitHub installation-token boundary metadata."""
+
+    return {
+        "repository_selection": "selected",
+        "requested_token_permissions": {"contents": "read"},
+        "accepted_token_permissions": dict(HOSTED_GITHUB_ALLOWED_TOKEN_PERMISSIONS),
+        "rejects": [
+            "all-repository installation tokens",
+            "contents:write installation tokens",
+            "unexpected GitHub write permissions",
+        ],
+    }
+
+
 def github_app_install_url(config: GitHubAppConfig, *, state: str) -> str:
     """Return the hosted GitHub App installation URL."""
 
@@ -250,6 +265,7 @@ def hosted_github_intake_contract(
             "reviewable_entrypoint": reviewable_entrypoint,
         },
         "permissions": list(HOSTED_GITHUB_INTAKE_PERMISSIONS),
+        "token_boundary": hosted_github_public_token_boundary(),
         "human_gates": [
             "GitHub sign-in",
             "MFA, passkey, CAPTCHA, SSO, or consent screens GitHub requires",
