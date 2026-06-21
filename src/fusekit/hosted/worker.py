@@ -280,7 +280,7 @@ def build_hosted_worker_workspace_proof_payload(
         "dns_propagation": _dns_evidence_ready(checks, acceptance),
         "rollback_metadata": ".fusekit/rollback_plan.json" in completed,
         "retrieved_remote_artifacts": acceptance.get("remote_artifacts_ready") is True
-        and artifact_paths["remote_artifacts"].exists(),
+        and _remote_artifacts_bundle_present(artifact_paths["remote_artifacts"]),
         "run_record": ".fusekit/run_record.json" in completed,
         "detonation_receipt": ".fusekit/workspace_detonation.json" in completed,
         "live_acceptance_report": (
@@ -541,6 +541,19 @@ def _required_artifact_present(label: str, path: Path) -> bool:
         return False
 
 
+def _remote_artifacts_bundle_present(path: Path) -> bool:
+    if path.is_symlink() or not path.is_dir():
+        return False
+    try:
+        rows = path.rglob("*")
+        return any(
+            item.is_file() and not item.is_symlink() and item.stat().st_size > 0
+            for item in rows
+        )
+    except OSError:
+        return False
+
+
 def _check_statuses(acceptance: dict[str, Any]) -> dict[str, str]:
     checks = acceptance.get("checks", [])
     if not isinstance(checks, list):
@@ -582,6 +595,8 @@ def _proof_note(
         return "Hosted worker proof is partial; acceptance blockers remain."
     if missing:
         return "Hosted worker proof is partial; required artifact labels are still missing."
+    if not evidence["retrieved_remote_artifacts"]:
+        return "Hosted worker proof is partial; retrieved remote artifact bundle is not ready."
     return "Hosted worker proof is partial; live acceptance is not recording-ready yet."
 
 

@@ -16,7 +16,7 @@
   Hosted worker dispatch now rejects duplicate protected starts, rollbacks, or detonations for the same origin/job/action with a non-secret workspace/process idempotency marker before spawning the worker, and the public verifier requires durable dispatch idempotency before production worker dispatch can be marked ready.
   Hosted rollback maintenance proof is now action-aware and fail-closed: rollback metadata alone cannot complete a rollback request without a rollback execution receipt and explicit post-rollback verification flag in the redacted worker proof.
   Hosted detonation maintenance proof is now action-aware and fail-closed: a detonation request cannot complete from a generic detonation artifact unless the worker also proves workspace detonation receipt, scratch-state destruction, provider-auth session closure, and preserved redacted public proof.
-  Hosted worker proof assembly now rejects directory or empty-file placeholders for required public artifacts, while preserving empty gate-event streams for launches with no gate wake events.
+  Hosted worker proof assembly now rejects directory or empty-file placeholders for required public artifacts, requires the retrieved remote-artifacts bundle to be a real non-empty directory, and preserves empty gate-event streams for launches with no gate wake events.
   Root Vercel deployment wiring is now explicit with `vercel.json` routing every hosted path to `app.py`, `.python-version` pinning Python 3.12, and a minimal launcher `requirements.txt`.
 - [x] Security invariants are enforced by tests.
 - [x] CLI defaults to real-provider execution; incomplete local rehearsals require explicit opt-in.

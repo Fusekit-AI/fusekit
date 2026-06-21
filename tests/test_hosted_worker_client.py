@@ -373,8 +373,9 @@ def _write_acceptance_report(source: Path, *, recording_ready: bool) -> None:
         "missing": [],
         "blockers": [],
     }
-    remote = source / ".fusekit/remote-artifacts"
+    remote = source / ".fusekit/remote-artifacts/.fusekit"
     remote.mkdir(parents=True, exist_ok=True)
+    (remote / "run_record.json").write_text('{"ok":true}\n', encoding="utf-8")
     output = source / ".fusekit/acceptance"
     output.mkdir(parents=True, exist_ok=True)
     (output / "report.json").write_text(json.dumps(report), encoding="utf-8")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import shutil
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -343,6 +344,42 @@ def test_hosted_worker_proof_payload_allows_empty_gate_event_stream(
     assert bundle.payload["evidence"]["live_acceptance_report"] is True
 
 
+def test_hosted_worker_proof_payload_rejects_empty_remote_artifact_bundle(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True)
+    remote_artifacts = invocation.artifact_paths["remote_artifacts"]
+    shutil.rmtree(remote_artifacts)
+    remote_artifacts.mkdir()
+
+    bundle = build_hosted_worker_proof_payload(invocation)
+
+    assert bundle.payload["evidence"]["retrieved_remote_artifacts"] is False
+    assert bundle.payload["evidence"]["live_acceptance_report"] is True
+    assert bundle.payload["note"] == (
+        "Hosted worker proof is partial; retrieved remote artifact bundle is not ready."
+    )
+
+
+def test_hosted_worker_proof_payload_rejects_remote_artifact_file_placeholder(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True)
+    remote_artifacts = invocation.artifact_paths["remote_artifacts"]
+    shutil.rmtree(remote_artifacts)
+    remote_artifacts.write_text('{"ok":true}\n', encoding="utf-8")
+
+    bundle = build_hosted_worker_proof_payload(invocation)
+
+    assert bundle.payload["evidence"]["retrieved_remote_artifacts"] is False
+
+
 def test_hosted_worker_proof_payload_marks_complete_only_from_live_artifacts(
     tmp_path: Path,
 ) -> None:
@@ -628,6 +665,9 @@ def _write_acceptance_report(
         report["checks"].append(
             {"id": "rollback.post_verification", "status": "ok", "detail": "redacted"}
         )
+    remote_fusekit = invocation.artifact_paths["remote_artifacts"] / ".fusekit"
+    remote_fusekit.mkdir(parents=True, exist_ok=True)
+    (remote_fusekit / "run_record.json").write_text('{"ok":true}\n', encoding="utf-8")
     output = invocation.artifact_paths["acceptance_output"]
     output.mkdir(parents=True, exist_ok=True)
     (output / "report.json").write_text(json.dumps(report), encoding="utf-8")
