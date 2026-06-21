@@ -210,7 +210,8 @@ protected start, pre-worker stop, rollback, and detonation request controls.
 Those controls carry a signed redacted job token so a stateless hosted function
 can recover the public control-room state without a database or raw provider
 token, plus distinct short-lived action-bound control tokens for protected
-start, stop, rollback, and detonation clicks.
+start, stop, rollback, and detonation clicks; browser forms submit those
+control tokens in POST fields instead of capability-bearing URLs.
 If those control tokens are missing or expired, the control room shows disabled
 start/stop/rollback/detonation controls with a plain-language explanation
 instead of hiding the controls or rendering unsafe forms.

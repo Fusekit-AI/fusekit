@@ -50,6 +50,7 @@ def _call(
     query_string: str = "",
     headers: dict[str, str] | None = None,
     json_body: dict[str, object] | None = None,
+    form_body: dict[str, str] | None = None,
     settings: HostedSettings | None = None,
 ) -> tuple[str, dict[str, str], bytes]:
     app = hosted_application(
@@ -71,7 +72,14 @@ def _call(
         captured["status"] = status
         captured["headers"] = dict(headers)
 
-    body = json.dumps(json_body).encode("utf-8") if json_body is not None else b""
+    body = b""
+    content_type = ""
+    if json_body is not None:
+        body = json.dumps(json_body).encode("utf-8")
+        content_type = "application/json"
+    if form_body is not None:
+        body = urllib.parse.urlencode(form_body).encode("utf-8")
+        content_type = "application/x-www-form-urlencoded"
     environ: dict[str, object] = {
         "REQUEST_METHOD": method,
         "PATH_INFO": path,
@@ -79,6 +87,8 @@ def _call(
         "CONTENT_LENGTH": str(len(body)),
         "wsgi.input": io.BytesIO(body),
     }
+    if content_type:
+        environ["CONTENT_TYPE"] = content_type
     for key, value in (headers or {}).items():
         environ[f"HTTP_{key.upper().replace('-', '_')}"] = value
     chunks = app(environ, start_response)
@@ -1169,7 +1179,7 @@ def test_hosted_job_api_returns_redacted_status_and_accepts_protected_action() -
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
-        query_string=f"control={control}",
+        form_body={"control": control},
         settings=settings,
     )
     payload = json.loads(body.decode("utf-8"))
@@ -1254,7 +1264,7 @@ def test_hosted_job_api_can_stop_before_worker_start() -> None:
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/stop",
         method="POST",
-        query_string=f"control={control}",
+        form_body={"control": control},
         settings=settings,
     )
     payload = json.loads(body.decode("utf-8"))
@@ -1373,7 +1383,8 @@ def test_hosted_job_action_from_browser_returns_updated_control_room_html() -> N
     status, headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
-        query_string=f"control={control}&job={job_token}",
+        query_string=f"job={job_token}",
+        form_body={"control": control},
         headers={"Accept": "text/html,application/xhtml+xml"},
         settings=settings,
     )
@@ -2196,7 +2207,7 @@ def test_hosted_job_api_rejects_expired_control_token(monkeypatch) -> None:
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
-        query_string=f"control={control}",
+        form_body={"control": control},
         settings=settings,
     )
 
@@ -2314,5 +2325,7 @@ def _match(text: str, pattern: str) -> str:
 def _control_for_action(text: str, action: str) -> str:
     return _match(
         text,
-        rf"/api/hosted/jobs/[^\"<>]+/actions/{action}\?control=([A-Za-z0-9_.-]+)",
+        rf'<form method="post" action="/api/hosted/jobs/[^"]+/actions/{action}'
+        rf'(?:\?job=[^"]+)?">\s*'
+        rf'<input type="hidden" name="control" value="([A-Za-z0-9_.-]+)">',
     )

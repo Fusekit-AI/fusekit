@@ -1279,9 +1279,11 @@ def _control_forms(
     if job.status == "waiting_for_worker":
         return f"""
         <form method="post" action="{start_action}">
+          <input type="hidden" name="control" value="{_control_value(control_tokens, "start")}">
           <button type="submit">Start worker</button>
         </form>
         <form method="post" action="{stop_action}">
+          <input type="hidden" name="control" value="{_control_value(control_tokens, "stop")}">
           <button type="submit">Stop launch</button>
         </form>
 """
@@ -1289,9 +1291,11 @@ def _control_forms(
         return ""
     return f"""
         <form method="post" action="{rollback_action}">
+          <input type="hidden" name="control" value="{_control_value(control_tokens, "rollback")}">
           <button type="submit">Request rollback</button>
         </form>
         <form method="post" action="{detonate_action}">
+          <input type="hidden" name="control" value="{_control_value(control_tokens, "detonate")}">
           <button type="submit">Request detonation</button>
         </form>
 """
@@ -1307,8 +1311,12 @@ def _protected_action_url(
     control_token = control_tokens.get(action)
     if not control_token:
         return ""
-    token = html.escape(control_token, quote=True)
-    return f"/api/hosted/jobs/{job_id}/actions/{action}?control={token}{job_param}"
+    suffix = f"?{job_param.removeprefix('&amp;')}" if job_param else ""
+    return f"/api/hosted/jobs/{job_id}/actions/{action}{suffix}"
+
+
+def _control_value(control_tokens: dict[str, str], action: str) -> str:
+    return html.escape(control_tokens[action], quote=True)
 
 
 def _proof_link(job: HostedLaunchJob, *, job_token: str) -> str:

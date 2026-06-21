@@ -1173,7 +1173,11 @@ def _hosted_job_action_response(
     action: str,
 ) -> Iterable[bytes]:
     query = urllib.parse.parse_qs(str(environ.get("QUERY_STRING", "")), keep_blank_values=True)
-    control_token = _first_query_value(query, "control")
+    try:
+        form = _form_request_body(environ)
+    except FuseKitError:
+        return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "missing_control"})
+    control_token = _first_query_value(form, "control") or _first_query_value(query, "control")
     if not control_token:
         return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "missing_control"})
     try:
@@ -1737,6 +1741,20 @@ def _json_request_body(environ: dict[str, object]) -> dict[str, object]:
     if not isinstance(decoded, dict):
         raise FuseKitError("JSON request body must be an object.")
     return decoded
+
+
+def _form_request_body(environ: dict[str, object]) -> dict[str, list[str]]:
+    try:
+        length = int(str(environ.get("CONTENT_LENGTH", "0") or "0"))
+    except ValueError as exc:
+        raise FuseKitError("Invalid content length.") from exc
+    if length <= 0:
+        return {}
+    body = environ.get("wsgi.input")
+    if not hasattr(body, "read"):
+        raise FuseKitError("Missing request body.")
+    raw = cast(Any, body).read(length)
+    return urllib.parse.parse_qs(raw.decode("utf-8"), keep_blank_values=True)
 
 
 def _public_origin_label(value: str) -> str:

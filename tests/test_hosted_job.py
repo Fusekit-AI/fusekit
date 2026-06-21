@@ -582,16 +582,21 @@ def test_hosted_control_room_renders_real_controls_only_with_control_token() -> 
     )
 
     assert "Protected controls unavailable" not in html
-    assert "/api/hosted/jobs/hosted-test/actions/start?control=signed-start-control-token" in html
-    assert "/api/hosted/jobs/hosted-test/actions/stop?control=signed-stop-control-token" in html
+    assert 'action="/api/hosted/jobs/hosted-test/actions/start?job=signed-public-job"' in html
+    assert 'action="/api/hosted/jobs/hosted-test/actions/stop?job=signed-public-job"' in html
+    assert 'name="control" value="signed-start-control-token"' in html
+    assert 'name="control" value="signed-stop-control-token"' in html
+    assert "?control=" not in html
     assert (
-        "/api/hosted/jobs/hosted-test/actions/rollback?control=signed-rollback-control-token"
+        'action="/api/hosted/jobs/hosted-test/actions/rollback?job=signed-public-job"'
         not in html
     )
     assert (
-        "/api/hosted/jobs/hosted-test/actions/detonate?control=signed-detonate-control-token"
+        'action="/api/hosted/jobs/hosted-test/actions/detonate?job=signed-public-job"'
         not in html
     )
+    assert 'name="control" value="signed-rollback-control-token"' not in html
+    assert 'name="control" value="signed-detonate-control-token"' not in html
     assert "job=signed-public-job" in html
     assert 'disabled aria-disabled="true">Start worker</button>' not in html
     assert '<button type="submit">Start worker</button>' in html
