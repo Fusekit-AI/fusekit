@@ -137,7 +137,8 @@ visible setup plan, proof list, and rollback promise without asking the user to
 run commands. The homepage and deployment contract now expose the open-core
 source repository, MIT license, and reviewable hosted entrypoint (`app.py`)
 before the user installs the GitHub App. The public GitHub intake contract also
-embeds the same trust story and open-core metadata before the install click. It
+embeds the same trust story, no-terminal launch path, required proof list,
+reversal path, and open-core metadata before the install click. It
 also includes the GitHub App install URL, app JWT, installation
 token exchange, signed callback state, selected-repository listing page, and
 server-side source fetch/scan into a visible hosted launch plan. It also has a

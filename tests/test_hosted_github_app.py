@@ -179,6 +179,17 @@ def test_hosted_github_intake_contract_has_no_secret_material() -> None:
         "redacted proof",
         "reversible setup",
     ]
+    assert contract["no_terminal_promise"].startswith("No terminal")
+    assert contract["launch_path"] == [
+        "Visit the hosted FuseKit URL.",
+        "Install the FuseKit GitHub App on one selected repository.",
+        "Review the visible plan and approved action ids before worker start.",
+        "Click Start hosted launch and pass only provider-owned human gates.",
+        "Receive the live URL, redacted proof receipt, rollback metadata, and detonation receipt.",
+    ]
+    assert "Run Record" in contract["proof"]
+    assert "Detonation receipt" in contract["proof"]
+    assert any("rollback" in item for item in contract["reversal"])
     assert contract["open_core"] == {
         "source_repository": "https://github.com/xpxpxp-coder/fusekit",
         "license": "MIT",

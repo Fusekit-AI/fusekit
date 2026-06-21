@@ -32,6 +32,21 @@ HOSTED_LAUNCH_PATH = (
     "Click Start hosted launch and pass only provider-owned human gates.",
     "Receive the live URL, redacted proof receipt, rollback metadata, and detonation receipt.",
 )
+HOSTED_PROOF_REQUIREMENTS = (
+    "Live URL verification",
+    "Provider verifier results",
+    "DNS propagation status",
+    "Redacted setup receipt",
+    "Redacted audit log",
+    "Run Record",
+    "Detonation receipt",
+    "Live acceptance report",
+)
+HOSTED_REVERSAL_PATH = (
+    "Show rollback metadata before risky changes.",
+    "Preserve rollback actions for provider resources FuseKit creates.",
+    "Offer stop, revoke access, rollback, and download redacted proof actions.",
+)
 
 
 @dataclass(frozen=True)
@@ -122,21 +137,8 @@ def build_hosted_launch_plan(
             "or generated apps except for app-scoped runtime values the provider requires."
         ),
         launch_path=HOSTED_LAUNCH_PATH,
-        proof=(
-            "Live URL verification",
-            "Provider verifier results",
-            "DNS propagation status",
-            "Redacted setup receipt",
-            "Redacted audit log",
-            "Run Record",
-            "Detonation receipt",
-            "Live acceptance report",
-        ),
-        rollback=(
-            "Show rollback metadata before risky changes.",
-            "Preserve rollback actions for provider resources FuseKit creates.",
-            "Offer stop, revoke access, rollback, and download redacted proof actions.",
-        ),
+        proof=HOSTED_PROOF_REQUIREMENTS,
+        rollback=HOSTED_REVERSAL_PATH,
         user_gates=tuple(
             f"{provider}: login, MFA, CAPTCHA, billing, consent, or copy-once secret screens"
             for provider in user_gate_providers

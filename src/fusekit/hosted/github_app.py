@@ -15,7 +15,13 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from fusekit.errors import FuseKitError
-from fusekit.hosted.launcher import TRUST_STORY
+from fusekit.hosted.launcher import (
+    HOSTED_LAUNCH_PATH,
+    HOSTED_PROOF_REQUIREMENTS,
+    HOSTED_REVERSAL_PATH,
+    NO_TERMINAL_PROMISE,
+    TRUST_STORY,
+)
 
 GITHUB_APP_JWT_ALGORITHM = "RS256"
 GITHUB_APP_JWT_MAX_TTL_SECONDS = 600
@@ -209,6 +215,10 @@ def hosted_github_intake_contract(
         "route": "github-app",
         "install_url": github_app_install_url(config, state=state),
         "trust_story": list(TRUST_STORY),
+        "no_terminal_promise": NO_TERMINAL_PROMISE,
+        "launch_path": list(HOSTED_LAUNCH_PATH),
+        "proof": list(HOSTED_PROOF_REQUIREMENTS),
+        "reversal": list(HOSTED_REVERSAL_PATH),
         "open_core": {
             "source_repository": source_repository,
             "license": license_name,

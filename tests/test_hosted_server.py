@@ -544,6 +544,14 @@ def test_hosted_github_intake_endpoint_is_public_safe() -> None:
         "redacted proof",
         "reversible setup",
     ]
+    assert payload["no_terminal_promise"].startswith("No terminal")
+    assert payload["launch_path"][0] == "Visit the hosted FuseKit URL."
+    assert payload["launch_path"][-1] == (
+        "Receive the live URL, redacted proof receipt, rollback metadata, and detonation receipt."
+    )
+    assert "Run Record" in payload["proof"]
+    assert "Detonation receipt" in payload["proof"]
+    assert any("revoke access" in item for item in payload["reversal"])
     assert payload["open_core"] == {
         "source_repository": "https://github.com/xpxpxp-coder/fusekit",
         "license": "MIT",
