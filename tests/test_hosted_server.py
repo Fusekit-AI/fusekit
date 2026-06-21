@@ -172,6 +172,12 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
     assert "visible" in html
     assert "redacted proof" in html
     assert "reversible setup" in html
+    assert "Capability vault boundary" in html
+    assert "Raw secrets must never leave" in html
+    assert "Generated apps may request capabilities" in html
+    assert "GitHub installation tokens" in html
+    assert "copy-once secret values" in html
+    assert "approved action ids" in html
     assert "What happens after the click" in html
     assert "Install the FuseKit GitHub App on one selected repository." in html
     assert "Click Start hosted launch and pass only provider-owned human gates." in html
@@ -343,6 +349,17 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     }
     assert "contents:read" in payload["trust_contract"]["narrow_permissions"]
     assert "redacted" in payload["trust_contract"]["redacted_proof"]
+    boundary = payload["capability_vault_boundary"]
+    assert boundary["raw_secret_policy"] == (
+        "Only FuseKit may use secrets internally. Raw secrets must never leave the "
+        "vault runtime."
+    )
+    assert boundary["generated_app_policy"].startswith("Generated apps may request capabilities")
+    assert "provider credentials" in boundary["forbidden_public_material"]
+    assert "GitHub installation tokens" in boundary["forbidden_public_material"]
+    assert "vault material" in boundary["forbidden_public_material"]
+    assert "approved action ids" in boundary["allowed_public_material"]
+    assert "detonation receipt status" in boundary["allowed_public_material"]
     assert payload["one_click_launch"]["public_url"] == "https://fusekit.snowmanai.org"
     assert payload["one_click_launch"]["start_control"] == "Start hosted launch"
     assert payload["one_click_launch"]["terminal_required"] is False

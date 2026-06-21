@@ -139,6 +139,9 @@ source repository, MIT license, and reviewable hosted entrypoint (`app.py`)
 before the user installs the GitHub App. The public GitHub intake contract also
 embeds the same trust story, no-terminal launch path, required proof list,
 reversal path, and open-core metadata before the install click. It
+publishes the capability vault boundary as a user-facing and machine-checkable
+promise: generated apps may request capabilities, only FuseKit may use secrets
+internally, and raw secrets must never leave the vault runtime.
 also includes the GitHub App install URL, app JWT, installation
 token exchange, signed callback state, selected-repository listing page, and
 server-side source fetch/scan into a visible hosted launch plan. It also has a
@@ -263,9 +266,9 @@ hosted homepage, `/healthz`, `/api/hosted/readiness`, and
 `/readiness` too. The verifier reports Cloudflare/Vercel HTTP failures,
 readiness mismatches, public DNS failures, homepage trust drift, hosted
 runtime/open-core/DNS drift, deployment trust-story drift, one-click launch
-contract drift, pre-install GitHub intake trust drift, and operator-setup
-contract drift as redacted JSON instead of claiming launch readiness. Every
-public HTML/JSON payload it fetches is also
+contract drift, capability-vault boundary drift, pre-install GitHub intake
+trust drift, and operator-setup contract drift as redacted JSON instead of
+claiming launch readiness. Every public HTML/JSON payload it fetches is also
 checked with FuseKit's credential-text detector, and any failure is reported
 only as a redacted failure code. It
 also recognizes Cloudflare Error 1000 (`DNS points to prohibited IP`) and

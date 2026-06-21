@@ -21,6 +21,7 @@ from fusekit.hosted.launcher import (
 )
 from fusekit.hosted.server import (
     HOSTED_CANONICAL_ORIGIN,
+    HOSTED_CAPABILITY_VAULT_BOUNDARY,
     HOSTED_DEPLOYMENT_SCHEMA_VERSION,
     HOSTED_OPERATOR_SETUP_STEPS,
     HOSTED_PUBLIC_TRUST_CONTRACT,
@@ -310,6 +311,9 @@ def _hosted_runtime_contract_failures(payload: dict[str, Any]) -> list[str]:
         for key in expected_trust_keys:
             if not isinstance(trust_contract.get(key), str) or not trust_contract.get(key):
                 failures.append(f"trust_contract_{key}_missing")
+    failures.extend(
+        _capability_vault_boundary_failures(payload.get("capability_vault_boundary"))
+    )
     failures.extend(_one_click_launch_contract_failures(payload.get("one_click_launch")))
     expected_runtime = {
         "provider": "vercel",
@@ -366,6 +370,20 @@ def _hosted_runtime_contract_failures(payload: dict[str, Any]) -> list[str]:
     return failures
 
 
+def _capability_vault_boundary_failures(payload: object) -> list[str]:
+    failures: list[str] = []
+    if not isinstance(payload, dict):
+        return ["capability_vault_boundary_missing"]
+    expected = HOSTED_CAPABILITY_VAULT_BOUNDARY
+    for key in ("raw_secret_policy", "generated_app_policy", "public_surface_policy"):
+        if payload.get(key) != expected[key]:
+            failures.append(f"capability_vault_boundary_{key}_mismatch")
+    for key in ("forbidden_public_material", "allowed_public_material"):
+        if payload.get(key) != expected[key]:
+            failures.append(f"capability_vault_boundary_{key}_mismatch")
+    return failures
+
+
 def _one_click_launch_contract_failures(payload: object) -> list[str]:
     failures: list[str] = []
     if not isinstance(payload, dict):
@@ -418,6 +436,10 @@ def _hosted_home_failures(text: str) -> list[str]:
         "hosted_home_headline_missing": "Launch any GitHub app without touching a terminal.",
         "hosted_home_start_control_missing": "Start hosted launch",
         "hosted_home_open_core_missing": "Open core",
+        "hosted_home_capability_vault_boundary_missing": "Capability vault boundary",
+        "hosted_home_raw_secret_policy_missing": (
+            "Raw secrets must never leave the vault runtime."
+        ),
         "hosted_home_launch_path_missing": "What happens after the click",
         "hosted_home_provider_gates_missing": "What you may need to approve",
         "hosted_home_deployment_contract_missing": "Hosted deployment contract",

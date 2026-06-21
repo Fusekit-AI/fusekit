@@ -106,6 +106,40 @@ HOSTED_PUBLIC_TRUST_CONTRACT: dict[str, str] = {
     ),
     "reversible_setup": "Stop, revoke, rollback, and detonation controls preserve public proof.",
 }
+HOSTED_FORBIDDEN_PUBLIC_MATERIAL = (
+    "provider credentials",
+    "GitHub installation tokens",
+    "GitHub App private keys",
+    "worker secrets",
+    "HMAC signatures",
+    "vault material",
+    "copy-once secret values",
+)
+HOSTED_ALLOWED_PUBLIC_MATERIAL = (
+    "provider names",
+    "approved action ids",
+    "artifact labels",
+    "redacted statuses",
+    "public URLs",
+    "rollback action summaries",
+    "detonation receipt status",
+)
+HOSTED_CAPABILITY_VAULT_BOUNDARY: dict[str, object] = {
+    "raw_secret_policy": (
+        "Only FuseKit may use secrets internally. Raw secrets must never leave the "
+        "vault runtime."
+    ),
+    "generated_app_policy": (
+        "Generated apps may request capabilities; they must not receive provider "
+        "credentials, GitHub installation tokens, worker secrets, or vault material."
+    ),
+    "public_surface_policy": (
+        "Hosted pages, job tokens, receipts, logs, proof, and deployment contracts "
+        "use redacted labels, statuses, URLs, and artifact names only."
+    ),
+    "forbidden_public_material": list(HOSTED_FORBIDDEN_PUBLIC_MATERIAL),
+    "allowed_public_material": list(HOSTED_ALLOWED_PUBLIC_MATERIAL),
+}
 HOSTED_READINESS_SCHEMA_VERSION = "fusekit.hosted-readiness.v1"
 HOSTED_DEPLOYMENT_SCHEMA_VERSION = "fusekit.hosted-deployment.v1"
 HOSTED_WORKER_DISPATCH_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch.v1"
@@ -200,6 +234,7 @@ class HostedSettings:
             "domain": "fusekit.snowmanai.org",
             "trust_story": list(TRUST_STORY),
             "trust_contract": dict(HOSTED_PUBLIC_TRUST_CONTRACT),
+            "capability_vault_boundary": dict(HOSTED_CAPABILITY_VAULT_BOUNDARY),
             "one_click_launch": {
                 "public_url": HOSTED_CANONICAL_ORIGIN,
                 "start_control": "Start hosted launch",
@@ -373,6 +408,12 @@ def render_hosted_home(settings: HostedSettings) -> str:
         )
         for step in HOSTED_OPERATOR_SETUP_STEPS
     )
+    forbidden_material = "\n".join(
+        f"<li>{html.escape(item)}</li>" for item in HOSTED_FORBIDDEN_PUBLIC_MATERIAL
+    )
+    allowed_material = "\n".join(
+        f"<li>{html.escape(item)}</li>" for item in HOSTED_ALLOWED_PUBLIC_MATERIAL
+    )
     source_repository = html.escape(HOSTED_SOURCE_REPOSITORY, quote=True)
     status = (
         "Hosted GitHub intake is ready."
@@ -496,6 +537,18 @@ def render_hosted_home(settings: HostedSettings) -> str:
         <li>Receipts, logs, proof, and generated apps do not expose raw secrets.</li>
         <li>You can stop, revoke access, roll back, and review the detonation receipt.</li>
       </ul>
+    </section>
+    <section aria-label="Capability vault boundary">
+      <h2>Capability vault boundary</h2>
+      <p>
+        Only FuseKit may use secrets internally. Raw secrets must never leave
+        the vault runtime. Generated apps may request capabilities, not raw
+        provider credentials.
+      </p>
+      <h3>Never public</h3>
+      <ul>{forbidden_material}</ul>
+      <h3>Safe public proof</h3>
+      <ul>{allowed_material}</ul>
     </section>
     <section aria-label="Launch path">
       <h2>What happens after the click</h2>

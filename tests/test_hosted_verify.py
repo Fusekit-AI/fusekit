@@ -284,6 +284,38 @@ def test_verify_hosted_deployment_requires_public_trust_contract() -> None:
     ]
 
 
+def test_verify_hosted_deployment_requires_capability_vault_boundary() -> None:
+    contract = _deployment_contract()
+    boundary = contract["capability_vault_boundary"]
+    assert isinstance(boundary, dict)
+    boundary["raw_secret_policy"] = "Secrets may be copied into generated apps."
+    boundary["forbidden_public_material"] = ["debug logs"]
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            {"schema_version": "fusekit.hosted-readiness.v1", "ready": True},
+            contract,
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert "capability_vault_boundary_raw_secret_policy_mismatch" in checks[
+        "hosted.deployment"
+    ]["failures"]
+    assert "capability_vault_boundary_forbidden_public_material_mismatch" in checks[
+        "hosted.deployment"
+    ]["failures"]
+
+
 def test_verify_hosted_deployment_requires_one_click_contract() -> None:
     contract = _deployment_contract()
     one_click = contract["one_click_launch"]
@@ -481,6 +513,8 @@ def _home_html() -> str:
         <h1>Launch any GitHub app without touching a terminal.</h1>
         <a>Start hosted launch</a>
         <section>Open core https://github.com/xpxpxp-coder/fusekit</section>
+        <section>Capability vault boundary</section>
+        <section>Raw secrets must never leave the vault runtime.</section>
         <section>What happens after the click</section>
         <section>What you may need to approve</section>
         <section>Hosted deployment contract</section>
@@ -505,6 +539,38 @@ def _deployment_contract() -> dict[str, object]:
             "visible_plan": "Providers, approved action ids, gates, and artifacts are shown.",
             "redacted_proof": "Public receipts use redacted notes only.",
             "reversible_setup": "Stop, revoke, rollback, and detonation controls exist.",
+        },
+        "capability_vault_boundary": {
+            "raw_secret_policy": (
+                "Only FuseKit may use secrets internally. Raw secrets must never leave the "
+                "vault runtime."
+            ),
+            "generated_app_policy": (
+                "Generated apps may request capabilities; they must not receive provider "
+                "credentials, GitHub installation tokens, worker secrets, or vault material."
+            ),
+            "public_surface_policy": (
+                "Hosted pages, job tokens, receipts, logs, proof, and deployment contracts "
+                "use redacted labels, statuses, URLs, and artifact names only."
+            ),
+            "forbidden_public_material": [
+                "provider credentials",
+                "GitHub installation tokens",
+                "GitHub App private keys",
+                "worker secrets",
+                "HMAC signatures",
+                "vault material",
+                "copy-once secret values",
+            ],
+            "allowed_public_material": [
+                "provider names",
+                "approved action ids",
+                "artifact labels",
+                "redacted statuses",
+                "public URLs",
+                "rollback action summaries",
+                "detonation receipt status",
+            ],
         },
         "one_click_launch": {
             "public_url": "https://fusekit.snowmanai.org",
