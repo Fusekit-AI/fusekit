@@ -523,11 +523,22 @@ def _artifact_completion(
     missing: list[str] = []
     for label in labels:
         path = source_dir / label
-        if path.exists():
+        if _required_artifact_present(label, path):
             completed.append(label)
         else:
             missing.append(label)
     return tuple(completed), tuple(missing)
+
+
+def _required_artifact_present(label: str, path: Path) -> bool:
+    if not path.is_file():
+        return False
+    if label.endswith("gate_events.jsonl"):
+        return True
+    try:
+        return path.stat().st_size > 0
+    except OSError:
+        return False
 
 
 def _check_statuses(acceptance: dict[str, Any]) -> dict[str, str]:

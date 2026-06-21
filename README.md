@@ -222,7 +222,8 @@ gate, while its public serialization redacts worker-local paths to
 can derive the `/worker-proof` payload from the real required artifact labels,
 retrieved remote-artifacts directory, and acceptance report; it stays partial
 unless live acceptance is recording-ready and every required public artifact
-exists. A `fusekit-hosted-worker` entrypoint now ties those pieces together for
+is a real proof file rather than a directory or empty placeholder. A
+`fusekit-hosted-worker` entrypoint now ties those pieces together for
 one queued job: claim with the worker bearer secret, prepare source, run the
 private launch/acceptance invocations, and submit redacted proof back to the
 hosted API. The same entrypoint now accepts a protected action mode, so a hosted

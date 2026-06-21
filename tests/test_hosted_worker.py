@@ -289,6 +289,60 @@ def test_hosted_worker_proof_payload_requires_real_recording_ready_report(
     )
 
 
+def test_hosted_worker_proof_payload_rejects_artifact_directory_placeholder(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True)
+    run_record = invocation.execution.source_dir / ".fusekit/run_record.json"
+    run_record.unlink()
+    run_record.mkdir()
+
+    bundle = build_hosted_worker_proof_payload(invocation)
+    evidence = bundle.payload["evidence"]
+
+    assert ".fusekit/run_record.json" in bundle.missing_artifacts
+    assert ".fusekit/run_record.json" not in bundle.completed_artifacts
+    assert evidence["run_record"] is False
+    assert evidence["live_acceptance_report"] is False
+
+
+def test_hosted_worker_proof_payload_rejects_empty_artifact_placeholder(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True)
+    receipt = invocation.execution.source_dir / ".fusekit/setup_receipt.json"
+    receipt.write_text("", encoding="utf-8")
+
+    bundle = build_hosted_worker_proof_payload(invocation)
+
+    assert ".fusekit/setup_receipt.json" in bundle.missing_artifacts
+    assert ".fusekit/setup_receipt.json" not in bundle.completed_artifacts
+    assert bundle.payload["evidence"]["live_acceptance_report"] is False
+
+
+def test_hosted_worker_proof_payload_allows_empty_gate_event_stream(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True)
+    gate_events = invocation.execution.source_dir / ".fusekit/gate_events.jsonl"
+    gate_events.write_text("", encoding="utf-8")
+
+    bundle = build_hosted_worker_proof_payload(invocation)
+
+    assert ".fusekit/gate_events.jsonl" in bundle.completed_artifacts
+    assert ".fusekit/gate_events.jsonl" not in bundle.missing_artifacts
+    assert bundle.payload["evidence"]["live_acceptance_report"] is True
+
+
 def test_hosted_worker_proof_payload_marks_complete_only_from_live_artifacts(
     tmp_path: Path,
 ) -> None:
