@@ -177,12 +177,13 @@ controls jump to the relevant trust section instead of pretending to run.
 The provider-gate checklist is rendered as human-owned checkpoints so MFA,
 CAPTCHA, billing, fraud, consent, and domain ownership reviews are visible
 instead of hidden in logs. It exposes a redacted job status API and
-protected start, pre-worker stop, rollback, and detonation request controls. Those controls carry
-a signed redacted job token so a stateless hosted function can recover the public
-control-room state without a database or raw provider token. Browser form
-actions return the updated control room instead of raw JSON, while API clients
-can still request the redacted job object plus a redacted action receipt naming
-the next proof required for worker start, rollback, or detonation. Browser
+protected start, pre-worker stop, rollback, and detonation request controls.
+Those controls carry a signed redacted job token so a stateless hosted function
+can recover the public control-room state without a database or raw provider
+token, plus a short-lived route-bound control token for protected button clicks.
+Browser form actions return the updated control room instead of raw JSON, while
+API clients can still request the redacted job object plus a redacted action
+receipt naming the next proof required for worker start, rollback, or detonation. Browser
 clicks now show that same latest protected-action receipt in the control room,
 including public worker-dispatch status, so a nontechnical user sees what the
 button requested and what proof remains without seeing any token. The control

@@ -143,6 +143,7 @@ HOSTED_CAPABILITY_VAULT_BOUNDARY: dict[str, object] = {
 HOSTED_READINESS_SCHEMA_VERSION = "fusekit.hosted-readiness.v1"
 HOSTED_DEPLOYMENT_SCHEMA_VERSION = "fusekit.hosted-deployment.v1"
 HOSTED_WORKER_DISPATCH_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch.v1"
+HOSTED_CONTROL_TOKEN_TTL_SECONDS = 300
 REQUIRED_HOSTED_ENV = (
     "FUSEKIT_HOSTED_ORIGIN",
     "FUSEKIT_GITHUB_APP_ID",
@@ -901,10 +902,8 @@ def _hosted_job_action_response(
     if not control_token:
         return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "missing_control"})
     try:
-        control = verify_hosted_state_token(settings.state_secret, control_token)
+        _verify_hosted_control_token(settings, control_token, job=job)
     except FuseKitError:
-        return _response(start_response, HTTPStatus.FORBIDDEN, {"error": "invalid_control"})
-    if control.return_path != f"/api/hosted/jobs/{job.job_id}":
         return _response(start_response, HTTPStatus.FORBIDDEN, {"error": "invalid_control"})
     try:
         updated = advance_hosted_launch_job(job, action)
@@ -1092,6 +1091,21 @@ def _job_from_query_token(
     if job.job_id != job_id:
         raise FuseKitError("Hosted job token does not match route.")
     return job
+
+
+def _verify_hosted_control_token(
+    settings: HostedSettings,
+    token: str,
+    *,
+    job: HostedLaunchJob,
+) -> None:
+    control = verify_hosted_state_token(
+        settings.state_secret,
+        token,
+        ttl_seconds=HOSTED_CONTROL_TOKEN_TTL_SECONDS,
+    )
+    if control.return_path != f"/api/hosted/jobs/{job.job_id}":
+        raise FuseKitError("Hosted control token does not match route.")
 
 
 def _build_plan_from_selected_repo(

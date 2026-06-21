@@ -1848,6 +1848,98 @@ def test_hosted_job_api_rejects_bad_control_token() -> None:
     assert settings.hosted_jobs[job_id].status == "waiting_for_worker"
 
 
+def test_hosted_job_api_rejects_expired_control_token(monkeypatch) -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    settings = _settings_with_github(opener)
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=f"installation_id=42&repo=example/one&state={state}",
+        settings=settings,
+    )
+    assert status == "200 OK"
+    job_id = _match(body.decode("utf-8"), r"hosted-[A-Za-z0-9_-]+")
+    control = create_hosted_state_token(
+        STATE_SECRET,
+        return_path=f"/api/hosted/jobs/{job_id}",
+        now=1_700_000_000,
+        nonce="nonce-for-control-token",
+    )
+    monkeypatch.setattr("fusekit.hosted.session.time.time", lambda: 1_700_000_301)
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/start",
+        method="POST",
+        query_string=f"control={control}",
+        settings=settings,
+    )
+
+    assert status == "403 Forbidden"
+    assert json.loads(body.decode("utf-8")) == {"error": "invalid_control"}
+    assert settings.hosted_jobs[job_id].status == "waiting_for_worker"
+
+
+def test_hosted_job_api_rejects_control_token_for_different_job() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    settings = _settings_with_github(opener)
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=f"installation_id=42&repo=example/one&state={state}",
+        settings=settings,
+    )
+    assert status == "200 OK"
+    job_id = _match(body.decode("utf-8"), r"hosted-[A-Za-z0-9_-]+")
+    control = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/api/hosted/jobs/hosted-other",
+        nonce="nonce-for-control-token",
+    )
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/start",
+        method="POST",
+        query_string=f"control={control}",
+        settings=settings,
+    )
+
+    assert status == "403 Forbidden"
+    assert json.loads(body.decode("utf-8")) == {"error": "invalid_control"}
+    assert settings.hosted_jobs[job_id].status == "waiting_for_worker"
+
+
 def test_hosted_wsgi_rejects_unknown_or_mutating_routes() -> None:
     status, _headers, body = _call("/missing")
     assert status == "404 Not Found"
