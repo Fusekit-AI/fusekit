@@ -362,8 +362,9 @@ The verifier reports Cloudflare/Vercel HTTP failures,
 readiness mismatches, public DNS failures, homepage trust drift, hosted
 runtime/open-core/DNS drift, deployment trust-story drift, homepage completion
 proof checklist drift, homepage reversible-setup drift, one-click launch
-contract drift, protected-control transport drift, embedded homepage contract
-drift, capability-vault boundary drift, hosted source-integrity drift,
+contract drift, protected-control transport/browser-origin drift, embedded
+homepage contract drift, capability-vault boundary drift,
+hosted source-integrity drift,
 pre-install GitHub intake trust drift, and operator-setup contract drift
 as redacted JSON instead of claiming launch readiness. It also publishes
 top-level `blocking_checks` and deduplicated `next_actions` so an operator can

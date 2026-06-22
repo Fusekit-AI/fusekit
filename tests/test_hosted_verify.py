@@ -809,6 +809,7 @@ def test_verify_hosted_deployment_requires_protected_controls_contract() -> None
     protected["control_token_transport"] = "query_parameter"
     protected["content_type"] = "application/json"
     protected["query_control_behavior"] = "accepted"
+    protected["browser_origin_policy"] = "not_checked"
     protected["binding"] = "job_id"
     protected["public_url_policy"] = "control tokens may appear in action URLs"
     protected["secret_boundary"] = "Protected controls are public links."
@@ -835,6 +836,7 @@ def test_verify_hosted_deployment_requires_protected_controls_contract() -> None
     assert "protected_controls_control_token_transport_mismatch" in failures
     assert "protected_controls_content_type_mismatch" in failures
     assert "protected_controls_query_control_behavior_mismatch" in failures
+    assert "protected_controls_browser_origin_policy_mismatch" in failures
     assert "protected_controls_binding_mismatch" in failures
     assert "protected_controls_public_url_policy_mismatch" in failures
     assert "protected_controls_secret_boundary_missing" in failures
@@ -1344,6 +1346,7 @@ def _deployment_contract() -> dict[str, object]:
             "control_token_transport": "hidden_form_field",
             "content_type": "application/x-www-form-urlencoded",
             "query_control_behavior": "rejected_as_missing_control",
+            "browser_origin_policy": "reject_cross_origin_when_origin_or_referer_present",
             "job_token_transport": "signed_public_query_parameter",
             "binding": "job_id_and_action",
             "token_lifetime": "short-lived",

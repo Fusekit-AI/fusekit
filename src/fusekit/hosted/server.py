@@ -422,6 +422,7 @@ class HostedSettings:
                 "control_token_transport": "hidden_form_field",
                 "content_type": "application/x-www-form-urlencoded",
                 "query_control_behavior": "rejected_as_missing_control",
+                "browser_origin_policy": "reject_cross_origin_when_origin_or_referer_present",
                 "job_token_transport": "signed_public_query_parameter",
                 "binding": "job_id_and_action",
                 "token_lifetime": "short-lived",
@@ -1190,6 +1191,8 @@ def _hosted_job_action_response(
     job: HostedLaunchJob,
     action: str,
 ) -> Iterable[bytes]:
+    if not _hosted_action_origin_allowed(settings, environ):
+        return _response(start_response, HTTPStatus.FORBIDDEN, {"error": "invalid_control"})
     try:
         form = _form_request_body(environ)
     except FuseKitError:
@@ -1775,6 +1778,27 @@ def _form_request_body(environ: dict[str, object]) -> dict[str, list[str]]:
         raise FuseKitError("Missing request body.")
     raw = cast(Any, body).read(length)
     return urllib.parse.parse_qs(raw.decode("utf-8"), keep_blank_values=True)
+
+
+def _hosted_action_origin_allowed(settings: HostedSettings, environ: dict[str, object]) -> bool:
+    allowed = {
+        _origin_label(HOSTED_CANONICAL_ORIGIN),
+        _origin_label(_public_origin_label(settings.public_origin)),
+    }
+    origin = str(environ.get("HTTP_ORIGIN", "") or "").strip()
+    if origin:
+        return _origin_label(origin) in allowed
+    referer = str(environ.get("HTTP_REFERER", "") or "").strip()
+    if referer:
+        return _origin_label(referer) in allowed
+    return True
+
+
+def _origin_label(value: str) -> str:
+    parsed = urllib.parse.urlsplit(value.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
 
 
 def _public_origin_label(value: str) -> str:
