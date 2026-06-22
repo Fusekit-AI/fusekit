@@ -31,6 +31,8 @@ from fusekit.hosted.launcher import (
     TRUST_STORY,
 )
 from fusekit.hosted.server import (
+    HOSTED_AWS_OPERATOR_SETUP_STEPS,
+    HOSTED_AWS_SOURCE_PROVENANCE_ENV,
     HOSTED_CANONICAL_ORIGIN,
     HOSTED_CAPABILITY_VAULT_BOUNDARY,
     HOSTED_DEPLOYMENT_SCHEMA_VERSION,
@@ -477,18 +479,13 @@ def _hosted_runtime_contract_failures(
     failures.extend(_source_provenance_failures(payload.get("source_provenance")))
     failures.extend(_one_click_launch_contract_failures(payload.get("one_click_launch")))
     failures.extend(_protected_controls_contract_failures(payload.get("protected_controls")))
-    expected_runtime = {
-        "provider": "vercel",
-        "entrypoint": "app.py",
-        "routing_config": "vercel.json",
-        "requirements": "requirements.txt",
-        "python_version": ".python-version",
-        "application_export": "app",
-        "mode": "python-wsgi",
-    }
+    provider = str(runtime.get("provider") or "")
+    expected_runtime = _expected_runtime_contract(provider)
     for key, expected in expected_runtime.items():
         if runtime.get(key) != expected:
             failures.append(f"runtime_{key}_mismatch")
+    if not expected_runtime:
+        failures.append("runtime_provider_mismatch")
     cloudflare_dns = payload.get("cloudflare_dns")
     if not isinstance(cloudflare_dns, dict):
         failures.append("cloudflare_dns_contract_missing")
@@ -529,7 +526,7 @@ def _hosted_runtime_contract_failures(
         if not isinstance(steps, list):
             failures.append("operator_setup_steps_missing")
         else:
-            expected_steps = [dict(step) for step in HOSTED_OPERATOR_SETUP_STEPS]
+            expected_steps = [dict(step) for step in _expected_operator_setup_steps(provider)]
             actual_steps = [step for step in steps if isinstance(step, dict)]
             if actual_steps != expected_steps:
                 failures.append("operator_setup_steps_mismatch")
@@ -541,10 +538,47 @@ def _hosted_runtime_contract_failures(
     optional_runtime_env = payload.get("optional_runtime_env")
     if optional_runtime_env != []:
         failures.append("optional_runtime_env_mismatch")
-    if payload.get("required_source_provenance_env") != list(HOSTED_SOURCE_PROVENANCE_ENV):
+    expected_source_env = _expected_source_provenance_env(provider)
+    if payload.get("required_source_provenance_env") != list(expected_source_env):
         failures.append("required_source_provenance_env_mismatch")
     failures.extend(_worker_dispatch_contract_failures(payload.get("worker_dispatch")))
     return failures
+
+
+def _expected_runtime_contract(provider: str) -> dict[str, object]:
+    if provider == "aws-elastic-beanstalk":
+        return {
+            "provider": "aws-elastic-beanstalk",
+            "entrypoint": "app.py",
+            "process_config": "Procfile",
+            "requirements": "requirements.txt",
+            "python_version": ".python-version",
+            "application_export": "app",
+            "mode": "python-wsgi",
+        }
+    if provider == "vercel":
+        return {
+            "provider": "vercel",
+            "entrypoint": "app.py",
+            "routing_config": "vercel.json",
+            "requirements": "requirements.txt",
+            "python_version": ".python-version",
+            "application_export": "app",
+            "mode": "python-wsgi",
+        }
+    return {}
+
+
+def _expected_operator_setup_steps(provider: str) -> tuple[dict[str, str], ...]:
+    if provider == "aws-elastic-beanstalk":
+        return HOSTED_AWS_OPERATOR_SETUP_STEPS
+    return HOSTED_OPERATOR_SETUP_STEPS
+
+
+def _expected_source_provenance_env(provider: str) -> tuple[str, ...]:
+    if provider == "aws-elastic-beanstalk":
+        return HOSTED_AWS_SOURCE_PROVENANCE_ENV
+    return HOSTED_SOURCE_PROVENANCE_ENV
 
 
 def _worker_dispatch_contract_failures(payload: object) -> list[str]:
@@ -638,9 +672,15 @@ def _source_provenance_failures(payload: object) -> list[str]:
     failures: list[str] = []
     if not isinstance(payload, dict):
         return ["source_provenance_contract_missing"]
-    if payload.get("provider") != "vercel":
+    provider = str(payload.get("provider") or "")
+    if provider not in {"vercel", "aws-elastic-beanstalk"}:
         failures.append("source_provenance_provider_mismatch")
-    if payload.get("source") != "vercel_system_environment_variables":
+    expected_source = (
+        "fusekit_hosted_environment_variables"
+        if provider == "aws-elastic-beanstalk"
+        else "vercel_system_environment_variables"
+    )
+    if payload.get("source") != expected_source:
         failures.append("source_provenance_source_mismatch")
     expected = payload.get("expected")
     if not isinstance(expected, dict):
@@ -676,10 +716,16 @@ def _source_provenance_failures(payload: object) -> list[str]:
             failures.append("source_provenance_commit_sha_invalid")
     if payload.get("verified") is not True:
         failures.append("source_provenance_not_verified")
-    if payload.get("required_env") != list(HOSTED_SOURCE_PROVENANCE_ENV):
+    expected_env = _expected_source_provenance_env(provider)
+    if payload.get("required_env") != list(expected_env):
         failures.append("source_provenance_required_env_mismatch")
     boundary = payload.get("secret_boundary")
-    if not isinstance(boundary, str) or "does not publish Vercel tokens" not in boundary:
+    required_boundary = (
+        "does not publish AWS credentials"
+        if provider == "aws-elastic-beanstalk"
+        else "does not publish Vercel tokens"
+    )
+    if not isinstance(boundary, str) or required_boundary not in boundary:
         failures.append("source_provenance_secret_boundary_missing")
     return failures
 
@@ -899,9 +945,14 @@ def _hosted_home_readiness_failures(payload: dict[str, Any]) -> list[str]:
             failures.append("blocking_checks_not_empty")
         if payload.get("next_actions") != []:
             failures.append("next_actions_not_empty")
-        if payload.get("required_source_provenance_env") != list(HOSTED_SOURCE_PROVENANCE_ENV):
+        provenance = payload.get("source_provenance")
+        provider = (
+            str(provenance.get("provider") or "") if isinstance(provenance, dict) else ""
+        )
+        expected_env = _expected_source_provenance_env(provider)
+        if payload.get("required_source_provenance_env") != list(expected_env):
             failures.append("required_source_provenance_env_mismatch")
-        for failure in _source_provenance_failures(payload.get("source_provenance")):
+        for failure in _source_provenance_failures(provenance):
             failures.append(f"readiness_{failure}")
     return failures
 

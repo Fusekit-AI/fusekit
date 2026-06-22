@@ -82,7 +82,17 @@ HOSTED_SOURCE_PROVENANCE_ENV = (
     "VERCEL_GIT_COMMIT_REF",
     "VERCEL_GIT_COMMIT_SHA",
 )
-HOSTED_OPERATOR_SETUP_STEPS: tuple[dict[str, str], ...] = (
+HOSTED_AWS_SOURCE_PROVENANCE_ENV = (
+    "FUSEKIT_HOSTED_DEPLOYMENT_PROVIDER",
+    "FUSEKIT_HOSTED_DEPLOYMENT_ENV",
+    "FUSEKIT_HOSTED_DEPLOYMENT_URL",
+    "FUSEKIT_HOSTED_GIT_PROVIDER",
+    "FUSEKIT_HOSTED_GIT_REPO_OWNER",
+    "FUSEKIT_HOSTED_GIT_REPO_SLUG",
+    "FUSEKIT_HOSTED_GIT_COMMIT_REF",
+    "FUSEKIT_HOSTED_GIT_COMMIT_SHA",
+)
+HOSTED_VERCEL_OPERATOR_SETUP_STEPS: tuple[dict[str, str], ...] = (
     {
         "id": "connect_vercel_project",
         "label": (
@@ -136,6 +146,61 @@ HOSTED_OPERATOR_SETUP_STEPS: tuple[dict[str, str], ...] = (
         ),
     },
 )
+HOSTED_AWS_OPERATOR_SETUP_STEPS: tuple[dict[str, str], ...] = (
+    {
+        "id": "deploy_aws_python_wsgi_origin",
+        "label": (
+            "Deploy the hosted FuseKit Python WSGI app to an AWS origin such as "
+            "Elastic Beanstalk using Procfile."
+        ),
+        "proof": (
+            "AWS hosted provenance reports the expected GitHub repo, branch, commit SHA, "
+            "production environment, and public AWS origin URL."
+        ),
+    },
+    {
+        "id": "deploy_worker_dispatch_receiver",
+        "label": (
+            "Deploy an HTTPS worker dispatch service running "
+            "fusekit-hosted-worker-dispatch with durable dispatch state."
+        ),
+        "proof": "Its /healthz and /readiness endpoints pass with production readiness.",
+    },
+    {
+        "id": "configure_worker_dispatch_url",
+        "label": (
+            "Set FUSEKIT_HOSTED_WORKER_DISPATCH_URL in the hosted AWS environment "
+            "to that HTTPS dispatch endpoint."
+        ),
+        "proof": "Hosted readiness reports the dispatch URL is configured before launch.",
+    },
+    {
+        "id": "attach_aws_https_origin",
+        "label": "Attach fusekit.snowmanai.org to the AWS HTTPS origin.",
+        "proof": "AWS and Cloudflare report a valid TLS-backed origin for this subdomain.",
+    },
+    {
+        "id": "route_cloudflare_cname",
+        "label": (
+            "In Cloudflare DNS, set the fusekit record to the exact AWS-provided "
+            "CNAME target."
+        ),
+        "proof": "The subdomain serves FuseKit instead of a Cloudflare error page.",
+    },
+    {
+        "id": "verify_public_contracts",
+        "label": (
+            "Verify https://fusekit.snowmanai.org/healthz, /api/hosted/readiness, "
+            "/api/hosted/deployment, and the worker dispatch receiver from outside "
+            "the deployment."
+        ),
+        "proof": (
+            "fusekit-hosted-verify reports DNS, health, readiness, deployment, "
+            "and --worker-dispatch-url checks ok."
+        ),
+    },
+)
+HOSTED_OPERATOR_SETUP_STEPS = HOSTED_VERCEL_OPERATOR_SETUP_STEPS
 HOSTED_PUBLIC_TRUST_CONTRACT: dict[str, str] = {
     "open_core": "Source repository, MIT license, and app.py entrypoint are public before install.",
     "narrow_permissions": (
@@ -216,10 +281,13 @@ HOSTED_SECURITY_HEADERS_CONTRACT: dict[str, object] = {
 HOSTED_SOURCE_INTEGRITY_CONTRACT: dict[str, object] = {
     "source_repository": HOSTED_SOURCE_REPOSITORY,
     "license": "MIT",
-    "deployment_model": "Vercel serves the hosted launcher from public repository files.",
+    "deployment_model": (
+        "A supported hosted runtime serves the launcher from public repository files."
+    ),
     "reviewable_files": [
         "app.py",
         "vercel.json",
+        "Procfile",
         ".python-version",
         "requirements.txt",
         "src/fusekit/hosted/server.py",
@@ -282,8 +350,8 @@ HOSTED_READINESS_NEXT_ACTIONS: dict[str, str] = {
     "hosted_state_secret_too_short": "Use at least 16 characters for the hosted state secret.",
     "hosted_worker_secret_too_short": "Use at least 16 characters for the worker secret.",
     "source_provenance_not_verified": (
-        "Enable Vercel system environment variables and deploy from "
-        "xpxpxp-coder/fusekit so the public source provenance verifies."
+        "Publish hosted source provenance for xpxpxp-coder/fusekit from the deployment "
+        "runtime so the public source provenance verifies."
     ),
 }
 
@@ -299,6 +367,7 @@ class HostedSettings:
     state_secret: str = ""
     worker_secret: str = ""
     worker_dispatch_url: str = ""
+    deployment_provider: str = ""
     vercel_env: str = ""
     vercel_url: str = ""
     vercel_git_provider: str = ""
@@ -306,6 +375,13 @@ class HostedSettings:
     vercel_git_repo_slug: str = ""
     vercel_git_commit_ref: str = ""
     vercel_git_commit_sha: str = ""
+    aws_deployment_env: str = ""
+    aws_deployment_url: str = ""
+    aws_git_provider: str = ""
+    aws_git_repo_owner: str = ""
+    aws_git_repo_slug: str = ""
+    aws_git_commit_ref: str = ""
+    aws_git_commit_sha: str = ""
     github_opener: UrlOpener | None = None
     worker_dispatch_opener: UrlOpener | None = None
     hosted_jobs: MutableMapping[str, HostedLaunchJob] = field(default_factory=dict)
@@ -322,6 +398,7 @@ class HostedSettings:
             state_secret=os.environ.get("FUSEKIT_HOSTED_STATE_SECRET", ""),
             worker_secret=os.environ.get("FUSEKIT_HOSTED_WORKER_SECRET", ""),
             worker_dispatch_url=os.environ.get("FUSEKIT_HOSTED_WORKER_DISPATCH_URL", ""),
+            deployment_provider=os.environ.get("FUSEKIT_HOSTED_DEPLOYMENT_PROVIDER", ""),
             vercel_env=os.environ.get("VERCEL_ENV", ""),
             vercel_url=os.environ.get("VERCEL_URL", ""),
             vercel_git_provider=os.environ.get("VERCEL_GIT_PROVIDER", ""),
@@ -329,6 +406,13 @@ class HostedSettings:
             vercel_git_repo_slug=os.environ.get("VERCEL_GIT_REPO_SLUG", ""),
             vercel_git_commit_ref=os.environ.get("VERCEL_GIT_COMMIT_REF", ""),
             vercel_git_commit_sha=os.environ.get("VERCEL_GIT_COMMIT_SHA", ""),
+            aws_deployment_env=os.environ.get("FUSEKIT_HOSTED_DEPLOYMENT_ENV", ""),
+            aws_deployment_url=os.environ.get("FUSEKIT_HOSTED_DEPLOYMENT_URL", ""),
+            aws_git_provider=os.environ.get("FUSEKIT_HOSTED_GIT_PROVIDER", ""),
+            aws_git_repo_owner=os.environ.get("FUSEKIT_HOSTED_GIT_REPO_OWNER", ""),
+            aws_git_repo_slug=os.environ.get("FUSEKIT_HOSTED_GIT_REPO_SLUG", ""),
+            aws_git_commit_ref=os.environ.get("FUSEKIT_HOSTED_GIT_COMMIT_REF", ""),
+            aws_git_commit_sha=os.environ.get("FUSEKIT_HOSTED_GIT_COMMIT_SHA", ""),
         )
 
     def github_config(self) -> GitHubAppConfig:
@@ -356,6 +440,7 @@ class HostedSettings:
         missing = tuple(key for key in REQUIRED_HOSTED_ENV if not configured[key])
         invalid = _hosted_config_errors(self) if not missing else ()
         blocking_checks = _hosted_readiness_blocking_checks(missing, invalid)
+        required_source_env = self.required_source_provenance_env()
         return {
             "schema_version": HOSTED_READINESS_SCHEMA_VERSION,
             "ready": not missing and not invalid,
@@ -367,7 +452,7 @@ class HostedSettings:
             "blocking_checks": blocking_checks,
             "next_actions": _hosted_readiness_next_actions(missing, invalid),
             "optional_runtime_env": list(OPTIONAL_HOSTED_ENV),
-            "required_source_provenance_env": list(HOSTED_SOURCE_PROVENANCE_ENV),
+            "required_source_provenance_env": list(required_source_env),
             "source_provenance": source_provenance,
             "secret_boundary": (
                 "Readiness reports only configuration presence. Raw GitHub App private keys, "
@@ -381,6 +466,7 @@ class HostedSettings:
         public_origin = _public_origin_label(self.public_origin)
         dispatch_url = _public_url_label(self.worker_dispatch_url)
         dispatch_receiver_base = _worker_dispatch_receiver_base_url(self.worker_dispatch_url)
+        deployment_provider = self.hosted_deployment_provider()
         return {
             "schema_version": HOSTED_DEPLOYMENT_SCHEMA_VERSION,
             "canonical_origin": HOSTED_CANONICAL_ORIGIN,
@@ -435,15 +521,7 @@ class HostedSettings:
                     "logs."
                 ),
             },
-            "runtime": {
-                "provider": "vercel",
-                "entrypoint": "app.py",
-                "routing_config": "vercel.json",
-                "requirements": "requirements.txt",
-                "python_version": ".python-version",
-                "application_export": "app",
-                "mode": "python-wsgi",
-            },
+            "runtime": self.runtime_contract(),
             "open_core": {
                 "source_repository": HOSTED_SOURCE_REPOSITORY,
                 "license": "MIT",
@@ -457,16 +535,20 @@ class HostedSettings:
                 "zone": "snowmanai.org",
                 "record_name": "fusekit",
                 "record_type": "CNAME",
-                "record_value": "Use the exact Vercel-provided CNAME target for this project.",
+                "record_value": (
+                    "Use the exact AWS-provided CNAME target for this environment."
+                    if deployment_provider == "aws-elastic-beanstalk"
+                    else "Use the exact Vercel-provided CNAME target for this project."
+                ),
                 "verification": "The subdomain must serve this app, not a Cloudflare error page.",
             },
             "operator_setup": {
                 "target_subdomain": "fusekit.snowmanai.org",
-                "steps": [dict(step) for step in HOSTED_OPERATOR_SETUP_STEPS],
+                "steps": [dict(step) for step in self.operator_setup_steps()],
                 "secret_boundary": (
                     "Operator setup names provider surfaces and expected public proof only. "
-                    "It does not include Vercel tokens, Cloudflare API tokens, GitHub private "
-                    "keys, HMAC secrets, or vault material."
+                    "It does not include AWS credentials, Vercel tokens, Cloudflare API tokens, "
+                    "GitHub private keys, HMAC secrets, or vault material."
                 ),
             },
             "github_app": {
@@ -482,7 +564,7 @@ class HostedSettings:
             },
             "required_runtime_env": list(REQUIRED_HOSTED_ENV),
             "optional_runtime_env": list(OPTIONAL_HOSTED_ENV),
-            "required_source_provenance_env": list(HOSTED_SOURCE_PROVENANCE_ENV),
+            "required_source_provenance_env": list(self.required_source_provenance_env()),
             "worker_dispatch": {
                 "env_var": "FUSEKIT_HOSTED_WORKER_DISPATCH_URL",
                 "receiver_command": "fusekit-hosted-worker-dispatch",
@@ -515,7 +597,60 @@ class HostedSettings:
             ),
         }
 
+    def hosted_deployment_provider(self) -> str:
+        """Return the selected public hosted deployment provider."""
+
+        provider = self.deployment_provider.strip().lower()
+        if provider in {"aws", "aws-elastic-beanstalk", "elastic-beanstalk"}:
+            return "aws-elastic-beanstalk"
+        return "vercel"
+
+    def required_source_provenance_env(self) -> tuple[str, ...]:
+        """Return provider-specific non-secret provenance environment names."""
+
+        if self.hosted_deployment_provider() == "aws-elastic-beanstalk":
+            return HOSTED_AWS_SOURCE_PROVENANCE_ENV
+        return HOSTED_SOURCE_PROVENANCE_ENV
+
+    def runtime_contract(self) -> dict[str, object]:
+        """Return provider-specific hosted runtime metadata."""
+
+        if self.hosted_deployment_provider() == "aws-elastic-beanstalk":
+            return {
+                "provider": "aws-elastic-beanstalk",
+                "entrypoint": "app.py",
+                "process_config": "Procfile",
+                "requirements": "requirements.txt",
+                "python_version": ".python-version",
+                "application_export": "app",
+                "mode": "python-wsgi",
+            }
+        return {
+            "provider": "vercel",
+            "entrypoint": "app.py",
+            "routing_config": "vercel.json",
+            "requirements": "requirements.txt",
+            "python_version": ".python-version",
+            "application_export": "app",
+            "mode": "python-wsgi",
+        }
+
+    def operator_setup_steps(self) -> tuple[dict[str, str], ...]:
+        """Return provider-specific public operator setup steps."""
+
+        if self.hosted_deployment_provider() == "aws-elastic-beanstalk":
+            return HOSTED_AWS_OPERATOR_SETUP_STEPS
+        return HOSTED_VERCEL_OPERATOR_SETUP_STEPS
+
     def source_provenance(self) -> dict[str, object]:
+        """Return public Git/deployment provenance for the hosted deployment."""
+
+        if self.hosted_deployment_provider() == "aws-elastic-beanstalk":
+            return self._aws_source_provenance()
+
+        return self._vercel_source_provenance()
+
+    def _vercel_source_provenance(self) -> dict[str, object]:
         """Return public Git/Vercel provenance for the hosted deployment."""
 
         actual = {
@@ -553,6 +688,49 @@ class HostedSettings:
                 "deployment URL, provider, repository owner/name, branch/ref, and commit "
                 "SHA. It does not publish Vercel tokens, project IDs, OIDC tokens, deploy "
                 "hooks, GitHub installation tokens, provider credentials, or vault material."
+            ),
+        }
+
+    def _aws_source_provenance(self) -> dict[str, object]:
+        """Return public Git/AWS provenance for the hosted deployment."""
+
+        actual = {
+            "deployment_environment": self.aws_deployment_env,
+            "deployment_url": self.aws_deployment_url,
+            "git_provider": self.aws_git_provider,
+            "repo_owner": self.aws_git_repo_owner,
+            "repo_slug": self.aws_git_repo_slug,
+            "commit_ref": self.aws_git_commit_ref,
+            "commit_sha": self.aws_git_commit_sha,
+        }
+        verified = (
+            actual["deployment_environment"] == "production"
+            and _valid_public_origin(actual["deployment_url"])
+            and actual["git_provider"] == "github"
+            and actual["repo_owner"] == HOSTED_SOURCE_REPOSITORY_OWNER
+            and actual["repo_slug"] == HOSTED_SOURCE_REPOSITORY_NAME
+            and bool(actual["commit_ref"])
+            and _looks_like_git_commit_sha(actual["commit_sha"])
+        )
+        return {
+            "provider": "aws-elastic-beanstalk",
+            "source": "fusekit_hosted_environment_variables",
+            "expected": {
+                "deployment_environment": "production",
+                "git_provider": "github",
+                "repo_owner": HOSTED_SOURCE_REPOSITORY_OWNER,
+                "repo_slug": HOSTED_SOURCE_REPOSITORY_NAME,
+                "source_repository": HOSTED_SOURCE_REPOSITORY,
+            },
+            "actual": actual,
+            "verified": verified,
+            "required_env": list(HOSTED_AWS_SOURCE_PROVENANCE_ENV),
+            "secret_boundary": (
+                "Source provenance publishes only AWS/Git metadata: environment, "
+                "deployment URL, provider, repository owner/name, branch/ref, and commit "
+                "SHA. It does not publish AWS credentials, CloudFormation outputs, access "
+                "keys, deploy hooks, GitHub installation tokens, provider credentials, or "
+                "vault material."
             ),
         }
 

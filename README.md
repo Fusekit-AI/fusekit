@@ -137,9 +137,12 @@ visible setup plan, proof list, and rollback promise without asking the user to
 run commands. The homepage and deployment contract now expose the open-core
 source repository, MIT license, and reviewable hosted entrypoint (`app.py`)
 before the user installs the GitHub App. They also publish deployment
-provenance from Vercel system environment variables, including the Git provider,
-repository owner/name, branch/ref, commit SHA, and production environment, so
-the public launcher can be matched back to the reviewed open-source commit.
+provenance from hosted runtime metadata, including the deployment provider, Git
+provider, repository owner/name, branch/ref, commit SHA, and production
+environment, so the public launcher can be matched back to the reviewed
+open-source commit. Vercel deployments can use Vercel system environment
+variables; AWS deployments use explicit non-secret `FUSEKIT_HOSTED_GIT_*`
+provenance variables.
 Hosted readiness now keeps the start button disabled until that source
 provenance verifies, preventing a public launch from starting from an
 unreviewable or miswired deployment. The outside-in hosted verifier checks the
@@ -333,17 +336,19 @@ remaining slices are running the approved setup actions inside the hosted worker
 operating the worker service in production, rollback/detonation execution, and
 production DNS/deployment.
 
-The repository includes a minimal Vercel-compatible WSGI entrypoint at `app.py`,
-a root `vercel.json` that routes all hosted paths to that entrypoint, and a
-minimal `requirements.txt` for the browser launcher runtime. The hosted deploy
-also pins Python 3.12 with `.python-version` and uses a wheel-backed
-`cryptography==42.0.8` requirement so Vercel does not need native OpenSSL
-compilation for the public launcher. The hosted app also serves
+The repository includes a minimal WSGI entrypoint at `app.py`, a root
+`vercel.json` that routes all hosted paths to that entrypoint for Vercel, a
+`Procfile` that starts `gunicorn app:app` for AWS Python WSGI runtimes such as
+Elastic Beanstalk, and a minimal `requirements.txt` for the browser launcher
+runtime. The hosted deploy also pins Python 3.12 with `.python-version` and
+uses a wheel-backed `cryptography==42.0.8` requirement so hosted Python
+runtimes do not need native OpenSSL compilation for the public launcher. The
+hosted app also serves
 `/api/hosted/deployment`, a public deployment contract that lists the canonical
-origin, machine-readable trust story, Vercel WSGI entrypoint/routing files,
+origin, machine-readable trust story, WSGI entrypoint/routing files,
 GitHub callback URL, Cloudflare DNS record name, health/readiness URLs, the
-operator setup checklist for attaching `fusekit.snowmanai.org` to Vercel and
-Cloudflare, worker dispatch receiver setup/verification steps, a structured
+operator setup checklist for attaching `fusekit.snowmanai.org` to a supported
+hosted origin and Cloudflare, worker dispatch receiver setup/verification steps, a structured
 one-click launch contract proving the hosted path needs no terminal or download,
 production-required worker dispatch wiring, the machine-readable security header
 policy, public source-integrity review files for the hosted launcher, and
@@ -358,7 +363,7 @@ dispatch URL, the same command automatically verifies the worker receiver
 mode, scope, and reservation-before-spawn proof for production.
 `--worker-dispatch-url` remains available for checking an
 explicit receiver URL before it is published in the hosted contract.
-The verifier reports Cloudflare/Vercel HTTP failures,
+The verifier reports Cloudflare/hosted-origin HTTP failures,
 readiness mismatches, public DNS failures, homepage trust drift, hosted
 runtime/open-core/DNS drift, deployment trust-story drift, homepage completion
 proof checklist drift, homepage reversible-setup drift, one-click launch
@@ -377,8 +382,8 @@ disabled-permissions, and same-origin opener headers before the verifier marks
 them ready. It
 also recognizes Cloudflare Error 1000 (`DNS points to prohibited IP`) and
 reports the non-secret next action: attach `fusekit.snowmanai.org` to the
-Vercel project and route the Cloudflare `fusekit` CNAME to the exact
-Vercel-provided target.
+hosted origin and route the Cloudflare `fusekit` CNAME to the exact
+provider-provided target.
 Hosted responses include no-store caching and browser security headers so the
 launcher behaves like a hardened control surface from first deploy. The worker
 dispatch receiver returns the same no-store, no-framing, no-referrer,
@@ -392,20 +397,27 @@ approved action ids, required artifact labels, provider gate labels, and worker
 guarantees, so provider/action/gate/artifact/source drift requires a fresh
 visible plan before execution.
 
-Production still needs the Vercel project connected to this repository, an
-HTTPS worker dispatch service running `fusekit-hosted-worker-dispatch` with
-durable dispatch state, `FUSEKIT_HOSTED_WORKER_DISPATCH_URL` set in Vercel to
-that service, `fusekit.snowmanai.org` added as the custom domain, the Cloudflare
-`fusekit` subdomain routed to the exact Vercel-provided CNAME target, and these
-runtime environment variables set in Vercel: `FUSEKIT_HOSTED_ORIGIN`,
+Production still needs a supported hosted origin connected to this repository
+or deployed from this checkout, an HTTPS worker dispatch service running
+`fusekit-hosted-worker-dispatch` with durable dispatch state,
+`FUSEKIT_HOSTED_WORKER_DISPATCH_URL` set in the hosted environment to that
+service, `fusekit.snowmanai.org` attached to the hosted origin, the Cloudflare
+`fusekit` subdomain routed to the exact provider-provided CNAME target, and
+these runtime environment variables set in the hosted environment:
+`FUSEKIT_HOSTED_ORIGIN`,
 `FUSEKIT_GITHUB_APP_ID`, `FUSEKIT_GITHUB_APP_SLUG`,
 `FUSEKIT_GITHUB_APP_PRIVATE_KEY`, `FUSEKIT_HOSTED_STATE_SECRET`, and
-`FUSEKIT_HOSTED_WORKER_SECRET`. The Vercel project must also expose system
+`FUSEKIT_HOSTED_WORKER_SECRET`. A Vercel project must also expose system
 environment variables including `VERCEL_ENV`, `VERCEL_URL`,
 `VERCEL_GIT_PROVIDER`, `VERCEL_GIT_REPO_OWNER`, `VERCEL_GIT_REPO_SLUG`,
-`VERCEL_GIT_COMMIT_REF`, and `VERCEL_GIT_COMMIT_SHA`; the hosted verifier
-rejects the deployment if those public source-provenance fields are missing or
-point at a different repository. Production one-click worker wakeup also needs
+`VERCEL_GIT_COMMIT_REF`, and `VERCEL_GIT_COMMIT_SHA`. An AWS deployment must
+set `FUSEKIT_HOSTED_DEPLOYMENT_PROVIDER=aws-elastic-beanstalk`,
+`FUSEKIT_HOSTED_DEPLOYMENT_ENV=production`,
+`FUSEKIT_HOSTED_DEPLOYMENT_URL`, `FUSEKIT_HOSTED_GIT_PROVIDER`,
+`FUSEKIT_HOSTED_GIT_REPO_OWNER`, `FUSEKIT_HOSTED_GIT_REPO_SLUG`,
+`FUSEKIT_HOSTED_GIT_COMMIT_REF`, and `FUSEKIT_HOSTED_GIT_COMMIT_SHA`. The
+hosted verifier rejects the deployment if those public source-provenance fields
+are missing or point at a different repository. Production one-click worker wakeup also needs
 `FUSEKIT_HOSTED_WORKER_DISPATCH_URL` pointed at an HTTPS worker dispatch
 service running `fusekit-hosted-worker-dispatch` with
 `FUSEKIT_HOSTED_WORKER_SECRET` and worker runtime environment configured. Set

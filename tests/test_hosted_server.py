@@ -16,6 +16,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from fusekit.hosted.github_app import GitHubAppConfig
 from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY, HOSTED_PROHIBITED_ACTIONS
 from fusekit.hosted.server import (
+    HOSTED_AWS_SOURCE_PROVENANCE_ENV,
     HOSTED_SECURITY_HEADERS_CONTRACT,
     HOSTED_SOURCE_INTEGRITY_CONTRACT,
     HOSTED_SOURCE_PROVENANCE_ENV,
@@ -40,6 +41,19 @@ def _vercel_provenance_kwargs() -> dict[str, str]:
         "vercel_git_repo_slug": "fusekit",
         "vercel_git_commit_ref": "main",
         "vercel_git_commit_sha": VERCEL_COMMIT_SHA,
+    }
+
+
+def _aws_provenance_kwargs() -> dict[str, str]:
+    return {
+        "deployment_provider": "aws-elastic-beanstalk",
+        "aws_deployment_env": "production",
+        "aws_deployment_url": "https://fusekit-prod.us-east-1.elasticbeanstalk.com",
+        "aws_git_provider": "github",
+        "aws_git_repo_owner": "xpxpxp-coder",
+        "aws_git_repo_slug": "fusekit",
+        "aws_git_commit_ref": "main",
+        "aws_git_commit_sha": VERCEL_COMMIT_SHA,
     }
 
 
@@ -445,8 +459,8 @@ def test_hosted_readiness_blocks_launch_without_verified_source_provenance() -> 
     assert payload["blocking_checks"] == ["invalid:source_provenance_not_verified"]
     assert payload["next_actions"] == [
         (
-            "Enable Vercel system environment variables and deploy from "
-            "xpxpxp-coder/fusekit so the public source provenance verifies."
+            "Publish hosted source provenance for xpxpxp-coder/fusekit from the "
+            "deployment runtime so the public source provenance verifies."
         )
     ]
     assert payload["source_provenance"]["verified"] is False
@@ -657,6 +671,63 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     assert WORKER_SECRET not in serialized
 
 
+def test_hosted_deployment_endpoint_supports_aws_wsgi_origin_without_secrets() -> None:
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=_private_key_pem(),
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        **_aws_provenance_kwargs(),
+    )
+
+    status, _headers, body = _call("/api/hosted/deployment", settings=settings)
+    payload = json.loads(body.decode("utf-8"))
+    serialized = json.dumps(payload)
+
+    assert status == "200 OK"
+    assert payload["runtime"] == {
+        "provider": "aws-elastic-beanstalk",
+        "entrypoint": "app.py",
+        "process_config": "Procfile",
+        "requirements": "requirements.txt",
+        "python_version": ".python-version",
+        "application_export": "app",
+        "mode": "python-wsgi",
+    }
+    assert "AWS-provided CNAME target" in payload["cloudflare_dns"]["record_value"]
+    assert [step["id"] for step in payload["operator_setup"]["steps"]] == [
+        "deploy_aws_python_wsgi_origin",
+        "deploy_worker_dispatch_receiver",
+        "configure_worker_dispatch_url",
+        "attach_aws_https_origin",
+        "route_cloudflare_cname",
+        "verify_public_contracts",
+    ]
+    provenance = payload["source_provenance"]
+    assert provenance["provider"] == "aws-elastic-beanstalk"
+    assert provenance["source"] == "fusekit_hosted_environment_variables"
+    assert provenance["verified"] is True
+    assert provenance["actual"] == {
+        "deployment_environment": "production",
+        "deployment_url": "https://fusekit-prod.us-east-1.elasticbeanstalk.com",
+        "git_provider": "github",
+        "repo_owner": "xpxpxp-coder",
+        "repo_slug": "fusekit",
+        "commit_ref": "main",
+        "commit_sha": VERCEL_COMMIT_SHA,
+    }
+    assert provenance["required_env"] == list(HOSTED_AWS_SOURCE_PROVENANCE_ENV)
+    assert payload["required_source_provenance_env"] == list(HOSTED_AWS_SOURCE_PROVENANCE_ENV)
+    assert "AWS credentials" in provenance["secret_boundary"]
+    assert "AWS credentials" in payload["operator_setup"]["secret_boundary"]
+    assert "PRIVATE KEY" not in serialized
+    assert STATE_SECRET not in serialized
+    assert WORKER_SECRET not in serialized
+
+
 def test_hosted_deployment_contract_normalizes_worker_dispatch_receiver_checks() -> None:
     settings = HostedSettings(worker_dispatch_url="https://worker.snowmanai.org/dispatch")
 
@@ -687,6 +758,33 @@ def test_hosted_source_provenance_requires_expected_production_git_metadata() ->
     assert provenance["actual"] == {
         "deployment_environment": "preview",
         "deployment_url": "",
+        "git_provider": "github",
+        "repo_owner": "xpxpxp-coder",
+        "repo_slug": "fusekit",
+        "commit_ref": "main",
+        "commit_sha": "not-a-sha",
+    }
+
+
+def test_hosted_aws_source_provenance_requires_expected_public_git_metadata() -> None:
+    settings = HostedSettings(
+        deployment_provider="aws-elastic-beanstalk",
+        aws_deployment_env="staging",
+        aws_deployment_url="not-a-url",
+        aws_git_provider="github",
+        aws_git_repo_owner="xpxpxp-coder",
+        aws_git_repo_slug="fusekit",
+        aws_git_commit_ref="main",
+        aws_git_commit_sha="not-a-sha",
+    )
+
+    provenance = settings.source_provenance()
+
+    assert provenance["provider"] == "aws-elastic-beanstalk"
+    assert provenance["verified"] is False
+    assert provenance["actual"] == {
+        "deployment_environment": "staging",
+        "deployment_url": "not-a-url",
         "git_provider": "github",
         "repo_owner": "xpxpxp-coder",
         "repo_slug": "fusekit",
@@ -742,8 +840,8 @@ def test_hosted_readiness_endpoint_rejects_invalid_config_shape_without_values()
         "Use at least 16 characters for the hosted state secret.",
         "Use at least 16 characters for the worker secret.",
         (
-            "Enable Vercel system environment variables and deploy from "
-            "xpxpxp-coder/fusekit so the public source provenance verifies."
+            "Publish hosted source provenance for xpxpxp-coder/fusekit from the "
+            "deployment runtime so the public source provenance verifies."
         ),
     ]
     assert "not-a-number" not in serialized
@@ -815,16 +913,19 @@ def test_vercel_wsgi_entrypoint_serves_healthz(monkeypatch) -> None:
     assert json.loads(body.decode("utf-8")) == {"ok": True}
 
 
-def test_vercel_deployment_files_route_all_paths_to_wsgi_entrypoint() -> None:
+def test_hosted_deployment_files_route_all_paths_to_wsgi_entrypoint() -> None:
     root = Path(__file__).parents[1]
     vercel = json.loads((root / "vercel.json").read_text(encoding="utf-8"))
+    procfile = (root / "Procfile").read_text(encoding="utf-8").strip()
     requirements = (root / "requirements.txt").read_text(encoding="utf-8").splitlines()
     python_version = (root / ".python-version").read_text(encoding="utf-8").strip()
 
     assert vercel["builds"] == [{"src": "app.py", "use": "@vercel/python"}]
     assert vercel["routes"] == [{"src": "/(.*)", "dest": "app.py"}]
+    assert procfile == "web: gunicorn app:app --bind 0.0.0.0:$PORT"
     assert python_version == "3.12"
     assert "cryptography==42.0.8" in requirements
+    assert "gunicorn>=23" in requirements
     assert "PyYAML>=6" in requirements
     assert not any("playwright" in line.lower() for line in requirements)
     assert not any(line.startswith("oci") for line in requirements)

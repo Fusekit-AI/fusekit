@@ -1,4 +1,4 @@
-"""Vercel WSGI entrypoint for the hosted FuseKit launcher."""
+"""WSGI entrypoint for the hosted FuseKit launcher."""
 
 from __future__ import annotations
 
