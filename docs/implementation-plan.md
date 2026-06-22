@@ -364,6 +364,7 @@
 - [x] Allow the inferred UI navigation loop to run through OpenClaw by default, with Playwright as a fallback adapter.
 - [x] Make inferred UI service gates durable waits that retry/resnapshot instead of terminal stops.
 - [x] Add action-plane evidence around inferred navigation: observation snapshots, trace hooks, after-action snapshots, safe-key/HTTPS validation, and redacted blocked-action recovery.
+- [x] Harden OpenClaw browser action failures so subprocess stderr follows the same browser-output redaction path as structured spine results before reaching ProviderError messages.
 - [x] Feed provider verification failures back into the inferred UI loop for targeted repair before final failure.
 - [x] Use browser highlight primitives to guide the human at service-created gates without bypassing provider controls.
 - [x] Detect Resend email dependency and add Resend provider handoff metadata.

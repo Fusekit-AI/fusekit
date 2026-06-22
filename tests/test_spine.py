@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 import subprocess
 
+import pytest
+
 import fusekit.runtime.bootstrap as bootstrap
+from fusekit.errors import ProviderError
 from fusekit.llm import LlmConfig
 from fusekit.spine import (
     InferredUiAction,
@@ -208,6 +211,25 @@ def test_openclaw_spine_public_serialization_redacts_browser_output_and_typed_te
     assert typed["command"][-1] == "[REDACTED]"
     assert "secret-token-value" not in str(snapshot)
     assert str(snapshot["stdout"]).startswith("[REDACTED_BROWSER_OUTPUT")
+
+
+def test_openclaw_spine_failure_redacts_browser_output() -> None:
+    def runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            command,
+            1,
+            stdout="",
+            stderr="failed with token=secret-token-value",
+        )
+
+    spine = OpenClawBrowserSpine(profile="work", runner=runner)
+
+    with pytest.raises(ProviderError) as exc:
+        spine.snapshot()
+
+    message = str(exc.value)
+    assert "secret-token-value" not in message
+    assert "[REDACTED_BROWSER_OUTPUT" in message
 
 
 def test_provider_playbook_uses_openclaw_spine_without_secrets() -> None:
