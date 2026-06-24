@@ -787,6 +787,19 @@ def hosted_proof_receipt(job: HostedLaunchJob) -> dict[str, object]:
         "detonation": list(job.detonation),
         "completion_requires": list(HOSTED_WORKER_PROOF_KEYS),
         "plan_integrity": job.worker_contract.plan_integrity(),
+        "trust_evidence": {
+            "open_core": "Hosted source and public contracts remain reviewable before launch.",
+            "narrow_permissions": list(job.worker_contract.permission_boundary),
+            "visible_plan_fingerprint": job.worker_contract.plan_fingerprint,
+            "approved_actions": list(job.worker_contract.approved_actions),
+            "redacted_proof": "Receipt exposes proof labels, statuses, and public artifacts only.",
+            "reversible_setup": (
+                "Rollback metadata is required before completion; rollback requests require "
+                "execution receipt and post-rollback verification."
+            ),
+            "not_proven_until": list(HOSTED_WORKER_PROOF_KEYS),
+            "fusekit_cannot_do": list(HOSTED_PROHIBITED_ACTIONS),
+        },
         "reversal_playbook": hosted_reversal_playbook(job),
         "provider_gates": list(job.worker_contract.gates),
         "permission_boundary": list(job.worker_contract.permission_boundary),
@@ -1023,6 +1036,7 @@ def render_hosted_proof_receipt(job: HostedLaunchJob, *, job_token: str = "") ->
     gates = _list(job.worker_contract.gates)
     permissions = _list(job.worker_contract.permission_boundary)
     actions = _list(job.worker_contract.approved_actions)
+    trust_evidence = _trust_evidence_section(cast(dict[str, object], receipt["trust_evidence"]))
     plan_integrity = _plan_integrity_section(job.worker_contract)
     back = _control_room_link(job, job_token=job_token)
     proof_json = _proof_json_link(job, job_token=job_token)
@@ -1147,6 +1161,7 @@ def render_hosted_proof_receipt(job: HostedLaunchJob, *, job_token: str = "") ->
       <h2>Permission boundary</h2>
       {permissions}
     </section>
+    {trust_evidence}
     <section aria-label="Reversible setup">
       <h2>Reversible setup</h2>
       {rollback}
@@ -1484,6 +1499,33 @@ def _reversal_playbook_section(playbook: list[dict[str, str]]) -> str:
         )
         items.append(f"<li><strong>{control}:</strong> {proof}{action}</li>")
     return "<ul>" + "".join(items) + "</ul>"
+
+
+def _trust_evidence_section(evidence: dict[str, object]) -> str:
+    rows: list[str] = []
+    for key in (
+        "open_core",
+        "visible_plan_fingerprint",
+        "redacted_proof",
+        "reversible_setup",
+    ):
+        value = evidence.get(key)
+        if isinstance(value, str) and value:
+            rows.append(f"<li><strong>{html.escape(key)}</strong>: {html.escape(value)}</li>")
+    cannot = evidence.get("fusekit_cannot_do")
+    if isinstance(cannot, list):
+        labels = ", ".join(str(item) for item in cannot if isinstance(item, str))
+        if labels:
+            rows.append(
+                "<li><strong>fusekit_cannot_do</strong>: "
+                f"{html.escape(labels)}</li>"
+            )
+    return f"""
+    <section aria-label="Trust evidence">
+      <h2>Trust evidence</h2>
+      <ul>{"".join(rows)}</ul>
+    </section>
+"""
 
 
 def _completion_ready(job: HostedLaunchJob) -> bool:

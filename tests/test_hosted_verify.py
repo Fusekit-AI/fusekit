@@ -13,6 +13,7 @@ from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY, HOSTED_PROHIB
 from fusekit.hosted.server import (
     HOSTED_AWS_OPERATOR_SETUP_STEPS,
     HOSTED_AWS_SOURCE_PROVENANCE_ENV,
+    HOSTED_PROVIDER_PERMISSION_COPY,
     HOSTED_SECURITY_HEADERS_CONTRACT,
     HOSTED_SOURCE_INTEGRITY_CONTRACT,
     HOSTED_SOURCE_PROVENANCE_ENV,
@@ -126,6 +127,16 @@ def test_verify_hosted_deployment_passes_launcher_and_dispatch_checks() -> None:
     assert report["schema_version"] == HOSTED_DEPLOYMENT_VERIFICATION_SCHEMA_VERSION
     assert report["ready"] is True
     assert report["blocking_checks"] == []
+    assert report["readiness_summary"] == {
+        "launchable": True,
+        "blocking_count": 0,
+        "blockers": [],
+        "next_actions": [],
+        "secret_boundary": (
+            "Readiness summary contains public check ids, failure codes, and redacted "
+            "next actions only."
+        ),
+    }
     assert report["next_actions"] == []
     assert [check["id"] for check in report["checks"]] == [
         "hosted.dns",
@@ -293,6 +304,11 @@ def test_verify_hosted_deployment_reports_cloudflare_error_without_claiming_read
         "hosted.home",
         "hosted.readiness",
     ]
+    summary = report["readiness_summary"]
+    assert summary["launchable"] is False
+    assert summary["blocking_count"] == 2
+    assert summary["blockers"][0]["check"] == "hosted.home"
+    assert summary["blockers"][0]["failures"] == ["http_error"]
     assert report["next_actions"] == [
         (
             "Attach fusekit.snowmanai.org to the hosted origin, then set the "
@@ -386,6 +402,7 @@ def test_verify_hosted_deployment_diagnoses_compact_cloudflare_1000_body() -> No
         "cloudflare_error_1000_dns_points_to_prohibited_ip"
     )
     assert "Cloudflare fusekit CNAME" in checks["hosted.home"]["next_action"]
+    assert "Vercel project" not in checks["hosted.home"]["next_action"]
 
 
 def test_verify_hosted_deployment_requires_runtime_and_dns_contract() -> None:
@@ -396,6 +413,7 @@ def test_verify_hosted_deployment_requires_runtime_and_dns_contract() -> None:
     cloudflare_dns = contract["cloudflare_dns"]
     assert isinstance(cloudflare_dns, dict)
     cloudflare_dns["record_type"] = "A"
+    cloudflare_dns["dry_run_policy"] = {"allowed_fqdn": "www.snowmanai.org"}
     opener = SequenceOpener(
         [
             _home_html(),
@@ -417,6 +435,55 @@ def test_verify_hosted_deployment_requires_runtime_and_dns_contract() -> None:
     assert checks["hosted.deployment"]["status"] == "failed"
     assert "runtime_python_version_mismatch" in checks["hosted.deployment"]["failures"]
     assert "cloudflare_record_type_mismatch" in checks["hosted.deployment"]["failures"]
+    assert "cloudflare_dns_dry_run_policy_mismatch" in checks["hosted.deployment"][
+        "failures"
+    ]
+
+
+def test_verify_hosted_deployment_requires_provider_permissions_and_rollback_contract() -> None:
+    contract = _deployment_contract()
+    provider_permissions = contract["provider_permissions"]
+    assert isinstance(provider_permissions, dict)
+    provider_permissions["cloudflare"] = {
+        "visible_label": "Cloudflare",
+        "requested_permissions": ["any DNS record"],
+    }
+    rollback_requirements = contract["rollback_requirements"]
+    assert isinstance(rollback_requirements, dict)
+    rollback_requirements["post_rollback_verification_required"] = False
+    rollback_requirements["secret_boundary"] = "Rollback proof may include provider tokens."
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            _readiness_contract(),
+            contract,
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["hosted.deployment"]["status"] == "failed"
+    failures = checks["hosted.deployment"]["failures"]
+    assert "provider_permissions_mismatch" in failures
+    assert "rollback_requirements_post_rollback_verification_required_mismatch" in failures
+    assert "rollback_requirements_secret_boundary_missing" in failures
+
+
+def test_hosted_deployment_contract_exposes_exact_provider_permission_copy() -> None:
+    contract = _deployment_contract()
+
+    assert contract["provider_permissions"] == HOSTED_PROVIDER_PERMISSION_COPY
+    assert "MailPilot records" in contract["provider_permissions"]["cloudflare"][
+        "forbidden_permissions"
+    ]
 
 
 def test_verify_hosted_deployment_requires_canonical_subdomain_contract() -> None:
@@ -1361,6 +1428,7 @@ def _deployment_contract() -> dict[str, object]:
                 "detonation receipt status",
             ],
         },
+        "provider_permissions": dict(HOSTED_PROVIDER_PERMISSION_COPY),
         "one_click_launch": {
             "public_url": "https://fusekit.snowmanai.org",
             "start_control": "Start hosted launch",
@@ -1453,6 +1521,26 @@ def _deployment_contract() -> dict[str, object]:
             "zone": "snowmanai.org",
             "record_name": "fusekit",
             "record_type": "CNAME",
+            "dry_run_policy": {
+                "allowed_actions": ["create", "update", "upsert", "noop"],
+                "allowed_fqdn": "fusekit.snowmanai.org",
+                "forbidden_records": [
+                    "snowmanai.org",
+                    "www.snowmanai.org",
+                    "*.snowmanai.org",
+                ],
+                "requires_visible_approval": True,
+            },
+        },
+        "rollback_requirements": {
+            "metadata_required_before_completion": True,
+            "execution_receipt_required_for_rollback_request": True,
+            "post_rollback_verification_required": True,
+            "provider_inventory_required": True,
+            "secret_boundary": (
+                "Rollback requirements list provider surfaces and proof labels only. "
+                "They do not include provider credentials, API tokens, or vault material."
+            ),
         },
         "security_headers": dict(HOSTED_SECURITY_HEADERS_CONTRACT),
         "source_integrity": dict(HOSTED_SOURCE_INTEGRITY_CONTRACT),

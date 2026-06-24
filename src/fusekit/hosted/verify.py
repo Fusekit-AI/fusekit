@@ -37,6 +37,7 @@ from fusekit.hosted.server import (
     HOSTED_CAPABILITY_VAULT_BOUNDARY,
     HOSTED_DEPLOYMENT_SCHEMA_VERSION,
     HOSTED_OPERATOR_SETUP_STEPS,
+    HOSTED_PROVIDER_PERMISSION_COPY,
     HOSTED_PUBLIC_TRUST_CONTRACT,
     HOSTED_READINESS_SCHEMA_VERSION,
     HOSTED_SECURITY_HEADERS_CONTRACT,
@@ -169,6 +170,7 @@ def verify_hosted_deployment(
         "worker_dispatch_url": dispatch_public_url,
         "ready": not blocking_checks,
         "blocking_checks": blocking_checks,
+        "readiness_summary": _readiness_summary(checks),
         "next_actions": _next_actions(checks),
         "checks": checks,
         "secret_boundary": (
@@ -216,6 +218,40 @@ def _next_actions(checks: list[dict[str, object]]) -> list[str]:
         if isinstance(action, str) and action and action not in actions:
             actions.append(action)
     return actions
+
+
+def _readiness_summary(checks: list[dict[str, object]]) -> dict[str, object]:
+    blockers: list[dict[str, object]] = []
+    for check in checks:
+        if check.get("status") == "ok":
+            continue
+        check_id = check.get("id")
+        if not isinstance(check_id, str):
+            continue
+        failures = check.get("failures")
+        failure_codes = [
+            str(failure)
+            for failure in failures
+            if isinstance(failure, str)
+        ] if isinstance(failures, list) else []
+        blocker: dict[str, object] = {
+            "check": check_id,
+            "failures": failure_codes,
+        }
+        next_action = check.get("next_action")
+        if isinstance(next_action, str) and next_action:
+            blocker["next_action"] = next_action
+        blockers.append(blocker)
+    return {
+        "launchable": not blockers,
+        "blocking_count": len(blockers),
+        "blockers": blockers,
+        "next_actions": _next_actions(checks),
+        "secret_boundary": (
+            "Readiness summary contains public check ids, failure codes, and redacted "
+            "next actions only."
+        ),
+    }
 
 
 def _text_check(
@@ -412,8 +448,8 @@ def _dns_check(
     }
     if failures:
         check["next_action"] = (
-            "Attach fusekit.snowmanai.org to the Vercel project, then set the "
-            "Cloudflare fusekit CNAME to the exact Vercel-provided target and wait "
+            "Attach fusekit.snowmanai.org to the hosted origin, then set the "
+            "Cloudflare fusekit CNAME to the exact provider-provided target and wait "
             "for public DNS to resolve to internet-routable addresses."
         )
     return check
@@ -475,6 +511,7 @@ def _hosted_runtime_contract_failures(
     failures.extend(
         _capability_vault_boundary_failures(payload.get("capability_vault_boundary"))
     )
+    failures.extend(_provider_permissions_failures(payload.get("provider_permissions")))
     failures.extend(_security_headers_contract_failures(payload.get("security_headers")))
     failures.extend(_source_integrity_contract_failures(payload.get("source_integrity")))
     failures.extend(_source_provenance_failures(payload.get("source_provenance")))
@@ -497,6 +534,31 @@ def _hosted_runtime_contract_failures(
             failures.append("cloudflare_record_name_mismatch")
         if cloudflare_dns.get("record_type") != "CNAME":
             failures.append("cloudflare_record_type_mismatch")
+        dry_run_policy = cloudflare_dns.get("dry_run_policy")
+        expected_dry_run_policy = {
+            "allowed_actions": ["create", "update", "upsert", "noop"],
+            "allowed_fqdn": "fusekit.snowmanai.org",
+            "forbidden_records": ["snowmanai.org", "www.snowmanai.org", "*.snowmanai.org"],
+            "requires_visible_approval": True,
+        }
+        if dry_run_policy != expected_dry_run_policy:
+            failures.append("cloudflare_dns_dry_run_policy_mismatch")
+    rollback_requirements = payload.get("rollback_requirements")
+    if not isinstance(rollback_requirements, dict):
+        failures.append("rollback_requirements_missing")
+    else:
+        expected_rollback_flags = {
+            "metadata_required_before_completion": True,
+            "execution_receipt_required_for_rollback_request": True,
+            "post_rollback_verification_required": True,
+            "provider_inventory_required": True,
+        }
+        for key, expected in expected_rollback_flags.items():
+            if rollback_requirements.get(key) is not expected:
+                failures.append(f"rollback_requirements_{key}_mismatch")
+        boundary = rollback_requirements.get("secret_boundary")
+        if not isinstance(boundary, str) or "do not include provider credentials" not in boundary:
+            failures.append("rollback_requirements_secret_boundary_missing")
     open_core = payload.get("open_core")
     if not isinstance(open_core, dict):
         failures.append("open_core_contract_missing")
@@ -628,6 +690,18 @@ def _capability_vault_boundary_failures(payload: object) -> list[str]:
     for key in ("forbidden_public_material", "allowed_public_material"):
         if payload.get(key) != expected[key]:
             failures.append(f"capability_vault_boundary_{key}_mismatch")
+    return failures
+
+
+def _provider_permissions_failures(payload: object) -> list[str]:
+    failures: list[str] = []
+    if not isinstance(payload, dict):
+        return ["provider_permissions_missing"]
+    if payload != HOSTED_PROVIDER_PERMISSION_COPY:
+        failures.append("provider_permissions_mismatch")
+    boundary = payload.get("secret_boundary")
+    if not isinstance(boundary, str) or "contains no provider tokens" not in boundary:
+        failures.append("provider_permissions_secret_boundary_missing")
     return failures
 
 

@@ -9,6 +9,7 @@ from fusekit.hosted.aws_plan import (
     build_hosted_aws_plan,
     protected_aws_resource_findings,
     validate_cloudflare_fusekit_dns_change,
+    validate_cloudflare_fusekit_dns_dry_run,
 )
 
 
@@ -53,9 +54,13 @@ def test_hosted_aws_plan_clean_account_is_plan_only_and_reversible() -> None:
     assert plan["mutates_aws"] is False
     assert plan["mutates_cloudflare_dns"] is False
     assert plan["account"]["id"] == "<aws-account:1373>"
+    assert plan["account"]["allowed_regions"] == ["us-east-1"]
     assert plan["proof"]["no_mailpilot_resources_touched"] is True
+    assert plan["proof"]["aws_region_allowed"] is True
     assert plan["proof"]["no_dns_apex_or_www_change"] is True
     assert plan["rollback_metadata"]["mailpilot_resources"] == []
+    assert "rollback_execution_receipt" in plan["rollback_metadata"]["completion_requires"]
+    assert plan["cloudflare_dns_dry_run"]["mutates_cloudflare"] is False
     assert "FUSEKIT_HOSTED_DEPLOYMENT_URL" in plan["runtime_env_names"]
     assert plan["cloudflare_dns"] == {
         "zone": "snowmanai.org",
@@ -63,6 +68,45 @@ def test_hosted_aws_plan_clean_account_is_plan_only_and_reversible() -> None:
         "record_type": "CNAME",
         "record_value": "fusekit-prod.us-east-1.elasticbeanstalk.com",
     }
+
+
+def test_hosted_aws_plan_blocks_wrong_account_and_region() -> None:
+    plan = build_hosted_aws_plan(
+        account_id="222795301373",
+        expected_account_id="111111111111",
+        region="us-west-2",
+        allowed_regions=("us-east-1",),
+        resource_tag_mappings=[],
+        origin_cname="fusekit-prod.us-east-1.elasticbeanstalk.com",
+    )
+
+    assert plan["ready_to_apply"] is False
+    assert plan["blockers"] == ["aws_account_id_mismatch", "aws_region_not_allowed"]
+    assert plan["account"]["expected_id"] == "<aws-account:1111>"
+    assert plan["proof"]["aws_account_id_matches_expected"] is False
+    assert plan["proof"]["aws_region_allowed"] is False
+    assert "111111111111" not in json.dumps(plan)
+
+
+def test_cloudflare_dns_dry_run_rejects_multiple_or_destructive_changes() -> None:
+    valid_change = {
+        "action": "upsert",
+        "zone": "snowmanai.org",
+        "record_name": "fusekit",
+        "record_type": "CNAME",
+        "record_value": "fusekit-prod.us-east-1.elasticbeanstalk.com",
+    }
+    dry_run = validate_cloudflare_fusekit_dns_dry_run([valid_change])
+
+    assert dry_run["schema_version"] == "fusekit.cloudflare-dns-dry-run.v1"
+    assert dry_run["changes"][0]["action"] == "upsert"
+    assert dry_run["policy"]["allowed_fqdn"] == "fusekit.snowmanai.org"
+
+    with pytest.raises(FuseKitError, match="cloudflare_dns_dry_run_action_not_allowed"):
+        validate_cloudflare_fusekit_dns_dry_run([{**valid_change, "action": "delete"}])
+
+    with pytest.raises(FuseKitError, match="cloudflare_dns_dry_run_single_record_required"):
+        validate_cloudflare_fusekit_dns_dry_run([valid_change, valid_change])
 
 
 @pytest.mark.parametrize(

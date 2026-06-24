@@ -102,6 +102,14 @@ def test_hosted_proof_receipt_is_redacted_and_not_prematurely_complete() -> None
         "recording",
     ]
     assert receipt["plan_integrity"] == job.worker_contract.plan_integrity()
+    assert receipt["trust_evidence"]["visible_plan_fingerprint"] == (
+        job.worker_contract.plan_fingerprint
+    )
+    assert "contents:read" in " ".join(receipt["trust_evidence"]["narrow_permissions"])
+    assert "github.authorize" in receipt["trust_evidence"]["approved_actions"]
+    assert receipt["trust_evidence"]["not_proven_until"] == receipt["completion_requires"]
+    cannot_do = receipt["trust_evidence"]["fusekit_cannot_do"]
+    assert any("Do not bypass MFA" in item for item in cannot_do)
     assert any("MFA" in gate for gate in receipt["provider_gates"])
     assert any("contents:read" in item for item in receipt["permission_boundary"])
     assert "github.authorize" in receipt["approved_actions"]
@@ -117,6 +125,9 @@ def test_hosted_proof_receipt_is_redacted_and_not_prematurely_complete() -> None
     assert "retrieved_remote_artifacts" in html
     assert "recording" in html
     assert "Permission boundary" in html
+    assert "Trust evidence" in html
+    assert "visible_plan_fingerprint" in html
+    assert "fusekit_cannot_do" in html
     assert "contents:read" in html
     assert "Approved actions" in html
     assert "vercel.deploy_verify" in html

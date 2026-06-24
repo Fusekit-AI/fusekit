@@ -153,10 +153,15 @@ homepage contract.
 For AWS planning, `fusekit-hosted-aws-plan` is deliberately plan-only. It emits
 a redacted proposed account/region/tag/IAM/env/DNS/rollback plan, reports that
 it mutates neither AWS nor Cloudflare, refuses Cloudflare proposals outside the
-`fusekit.snowmanai.org` CNAME, and blocks when a Resource Groups Tagging
+`fusekit.snowmanai.org` CNAME, validates a one-record Cloudflare DNS dry-run
+diff, can block wrong-account or wrong-region plans when an expected account or
+region allowlist is supplied, and blocks when a Resource Groups Tagging
 API-style export shows protected MailPilot/SOC 2 resources such as
 `Application=MailPilot`, `DataBoundary=mailpilot`, Terraform-managed MailPilot
-resources, or MailPilot-named resources.
+resources, or MailPilot-named resources. The public hosted deployment contract
+also exposes provider permission copy, DNS dry-run policy, rollback proof
+requirements, and outside-in readiness summaries so a nontechnical operator can
+see what remains without reading terminal output.
 The public GitHub intake contract also
 embeds the same trust story, no-terminal launch path, required proof list,
 reversal path, and open-core metadata before the install click. It

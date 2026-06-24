@@ -290,6 +290,7 @@ HOSTED_SOURCE_INTEGRITY_CONTRACT: dict[str, object] = {
         "Procfile",
         ".python-version",
         "requirements.txt",
+        "src/fusekit/hosted/aws_plan.py",
         "src/fusekit/hosted/server.py",
         "src/fusekit/hosted/launcher.py",
         "src/fusekit/hosted/verify.py",
@@ -304,6 +305,72 @@ HOSTED_SOURCE_INTEGRITY_CONTRACT: dict[str, object] = {
         "Source integrity proof lists public repository paths, public endpoint paths, "
         "and license metadata only. It does not include build tokens, deploy hooks, "
         "provider credentials, vault material, or generated private artifacts."
+    ),
+}
+HOSTED_PROVIDER_PERMISSION_COPY: dict[str, object] = {
+    "github": {
+        "visible_label": "GitHub",
+        "initial_scope": "one selected repository",
+        "requested_permissions": ["contents:read", "metadata:read"],
+        "forbidden_permissions": ["contents:write", "secrets:write", "all repositories"],
+        "human_gate": (
+            "GitHub sign-in, MFA, passkey, SSO, consent, and repo selection stay human-owned."
+        ),
+    },
+    "aws": {
+        "visible_label": "AWS hosted origin",
+        "initial_scope": "FuseKit hosted launcher account/environment only",
+        "requested_permissions": [
+            "deploy tagged FuseKit hosted origin",
+            "read public deployment provenance",
+        ],
+        "forbidden_permissions": [
+            "MailPilot resources",
+            "client PII stores",
+            "unscoped AdministratorAccess for generated apps",
+        ],
+        "human_gate": (
+            "AWS account, billing, MFA, organization, and service quota gates stay human-owned."
+        ),
+    },
+    "cloudflare": {
+        "visible_label": "Cloudflare DNS",
+        "initial_scope": "snowmanai.org fusekit CNAME only",
+        "requested_permissions": ["create/update fusekit CNAME after visible approval"],
+        "forbidden_permissions": [
+            "apex record",
+            "www record",
+            "wildcard record",
+            "MailPilot records",
+        ],
+        "human_gate": "Cloudflare login, MFA, domain ownership, and DNS approval stay human-owned.",
+    },
+    "resend": {
+        "visible_label": "Resend",
+        "initial_scope": "app email domain/audience requested by visible plan",
+        "requested_permissions": [
+            "domain verification status",
+            "audience/sender setup after approval",
+        ],
+        "forbidden_permissions": ["copy-once API key rendering", "unapproved email domains"],
+        "human_gate": (
+            "Resend signup, domain verification, billing, and copy-once token gates "
+            "stay human-owned."
+        ),
+    },
+    "openai_llm": {
+        "visible_label": "OpenAI/LLM",
+        "initial_scope": "LLM configuration requested by visible plan",
+        "requested_permissions": ["provider/model configuration labels only"],
+        "forbidden_permissions": ["raw API key rendering", "training-data or billing changes"],
+        "human_gate": (
+            "LLM provider login, billing, MFA, consent, and copy-once token gates stay human-owned."
+        ),
+    },
+    "secret_boundary": (
+        "Provider permission copy is public explanatory text only. It contains no provider "
+        "tokens, AWS credentials, Cloudflare API tokens, Resend keys, OpenAI keys, "
+        "GitHub installation tokens, or vault material."
     ),
 }
 HOSTED_READINESS_SCHEMA_VERSION = "fusekit.hosted-readiness.v1"
@@ -475,6 +542,7 @@ class HostedSettings:
             "trust_story": list(TRUST_STORY),
             "trust_contract": dict(HOSTED_PUBLIC_TRUST_CONTRACT),
             "capability_vault_boundary": dict(HOSTED_CAPABILITY_VAULT_BOUNDARY),
+            "provider_permissions": dict(HOSTED_PROVIDER_PERMISSION_COPY),
             "security_headers": dict(HOSTED_SECURITY_HEADERS_CONTRACT),
             "source_integrity": dict(HOSTED_SOURCE_INTEGRITY_CONTRACT),
             "source_provenance": self.source_provenance(),
@@ -541,6 +609,22 @@ class HostedSettings:
                     else "Use the exact Vercel-provided CNAME target for this project."
                 ),
                 "verification": "The subdomain must serve this app, not a Cloudflare error page.",
+                "dry_run_policy": {
+                    "allowed_actions": ["create", "update", "upsert", "noop"],
+                    "allowed_fqdn": "fusekit.snowmanai.org",
+                    "forbidden_records": ["snowmanai.org", "www.snowmanai.org", "*.snowmanai.org"],
+                    "requires_visible_approval": True,
+                },
+            },
+            "rollback_requirements": {
+                "metadata_required_before_completion": True,
+                "execution_receipt_required_for_rollback_request": True,
+                "post_rollback_verification_required": True,
+                "provider_inventory_required": True,
+                "secret_boundary": (
+                    "Rollback requirements list provider surfaces and proof labels only. "
+                    "They do not include provider credentials, API tokens, or vault material."
+                ),
             },
             "operator_setup": {
                 "target_subdomain": "fusekit.snowmanai.org",

@@ -16,9 +16,11 @@ from fusekit.security import contains_durable_secret_text
 
 HOSTED_AWS_PLAN_SCHEMA_VERSION = "fusekit.hosted-aws-plan.v1"
 HOSTED_AWS_DEFAULT_REGION = "us-east-1"
+HOSTED_AWS_ALLOWED_REGIONS = ("us-east-1",)
 HOSTED_AWS_DEFAULT_ZONE = "snowmanai.org"
 HOSTED_AWS_DEFAULT_RECORD_NAME = "fusekit"
 HOSTED_AWS_DEFAULT_RECORD_TYPE = "CNAME"
+HOSTED_CLOUDFLARE_DRY_RUN_SCHEMA_VERSION = "fusekit.cloudflare-dns-dry-run.v1"
 
 MAILPILOT_PROTECTED_TAGS: tuple[tuple[str, str], ...] = (
     ("Application", "MailPilot"),
@@ -115,10 +117,47 @@ def validate_cloudflare_fusekit_dns_change(
     }
 
 
+def validate_cloudflare_fusekit_dns_dry_run(
+    changes: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    """Validate a non-mutating Cloudflare DNS dry-run diff."""
+
+    if not changes:
+        raise FuseKitError("cloudflare_dns_dry_run_changes_missing")
+    validated: list[dict[str, str]] = []
+    for change in changes:
+        action = str(change.get("action") or "").strip().lower()
+        if action not in {"create", "update", "upsert", "noop"}:
+            raise FuseKitError("cloudflare_dns_dry_run_action_not_allowed")
+        record = validate_cloudflare_fusekit_dns_change(
+            zone=str(change.get("zone") or ""),
+            record_name=str(change.get("record_name") or ""),
+            record_type=str(change.get("record_type") or ""),
+            record_value=str(change.get("record_value") or ""),
+        )
+        record["action"] = action
+        validated.append(record)
+    if len(validated) != 1:
+        raise FuseKitError("cloudflare_dns_dry_run_single_record_required")
+    return {
+        "schema_version": HOSTED_CLOUDFLARE_DRY_RUN_SCHEMA_VERSION,
+        "mode": "dry_run",
+        "mutates_cloudflare": False,
+        "changes": validated,
+        "policy": {
+            "allowed_fqdn": "fusekit.snowmanai.org",
+            "forbidden_records": ["snowmanai.org", "www.snowmanai.org", "*.snowmanai.org"],
+            "requires_visible_approval": True,
+        },
+    }
+
+
 def build_hosted_aws_plan(
     *,
     account_id: str,
+    expected_account_id: str = "",
     region: str = HOSTED_AWS_DEFAULT_REGION,
+    allowed_regions: Sequence[str] = HOSTED_AWS_ALLOWED_REGIONS,
     resource_tag_mappings: Sequence[Mapping[str, object]] = (),
     origin_cname: str = "fusekit-prod.us-east-1.elasticbeanstalk.com",
     zone: str = HOSTED_AWS_DEFAULT_ZONE,
@@ -127,12 +166,29 @@ def build_hosted_aws_plan(
     """Build a redacted, non-mutating AWS deployment plan."""
 
     findings = protected_aws_resource_findings(resource_tag_mappings)
-    blockers = ["protected_aws_account_resources_detected"] if findings else []
+    blockers = []
+    if expected_account_id and _account_digits(account_id) != _account_digits(expected_account_id):
+        blockers.append("aws_account_id_mismatch")
+    if region not in allowed_regions:
+        blockers.append("aws_region_not_allowed")
+    if findings:
+        blockers.append("protected_aws_account_resources_detected")
     dns = validate_cloudflare_fusekit_dns_change(
         zone=zone,
         record_name=record_name,
         record_type=HOSTED_AWS_DEFAULT_RECORD_TYPE,
         record_value=origin_cname,
+    )
+    dns_dry_run = validate_cloudflare_fusekit_dns_dry_run(
+        [
+            {
+                "action": "upsert",
+                "zone": dns["zone"],
+                "record_name": dns["record_name"],
+                "record_type": dns["record_type"],
+                "record_value": dns["record_value"],
+            }
+        ]
     )
     plan = {
         "schema_version": HOSTED_AWS_PLAN_SCHEMA_VERSION,
@@ -143,7 +199,11 @@ def build_hosted_aws_plan(
         "blockers": blockers,
         "account": {
             "id": redacted_aws_account_id(account_id),
+            "expected_id": (
+                redacted_aws_account_id(expected_account_id) if expected_account_id else ""
+            ),
             "region": region,
+            "allowed_regions": list(allowed_regions),
             "safety_preflight": {
                 "checked_resource_tag_mappings": len(resource_tag_mappings),
                 "protected_findings": findings,
@@ -162,9 +222,12 @@ def build_hosted_aws_plan(
             "principle": "least_privilege_for_hosted_launcher_only",
             "must_not_reference": ["MailPilot", "mailpilot", "customer-pii", "client-pii"],
             "requires_explicit_apply_approval": True,
+            "account_id_must_match_expected": bool(expected_account_id),
+            "allowed_regions": list(allowed_regions),
         },
         "runtime_env_names": sorted(set(REQUIRED_HOSTED_ENV + HOSTED_AWS_SOURCE_PROVENANCE_ENV)),
         "cloudflare_dns": dns,
+        "cloudflare_dns_dry_run": dns_dry_run,
         "rollback_metadata": {
             "scope": "fusekit_hosted_launcher_only",
             "dns_records": [dns],
@@ -172,10 +235,26 @@ def build_hosted_aws_plan(
                 "Elastic Beanstalk application/environment tagged Application=FuseKit",
                 "launcher runtime environment variables listed in runtime_env_names",
             ],
+            "reversible_operations": [
+                "delete or restore only the fusekit.snowmanai.org Cloudflare CNAME",
+                "terminate only Elastic Beanstalk resources tagged Application=FuseKit",
+                "remove only hosted launcher runtime variables listed in runtime_env_names",
+            ],
+            "completion_requires": [
+                "rollback_plan",
+                "provider_resource_inventory",
+                "rollback_execution_receipt",
+                "post_rollback_verification",
+            ],
             "mailpilot_resources": [],
         },
         "proof": {
             "no_mailpilot_resources_touched": not findings,
+            "aws_account_id_matches_expected": (
+                not expected_account_id
+                or _account_digits(account_id) == _account_digits(expected_account_id)
+            ),
+            "aws_region_allowed": region in allowed_regions,
             "no_dns_apex_or_www_change": True,
             "no_secret_values_in_plan": not contains_durable_secret_text(
                 json.dumps(findings, sort_keys=True)
@@ -193,6 +272,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         description="Build a redacted, non-mutating AWS hosted launcher plan."
     )
     parser.add_argument("--account-id", required=True)
+    parser.add_argument("--expected-account-id", default="")
     parser.add_argument("--region", default=HOSTED_AWS_DEFAULT_REGION)
     parser.add_argument("--resource-tagging-json")
     parser.add_argument("--origin-cname", default="fusekit-prod.us-east-1.elasticbeanstalk.com")
@@ -203,6 +283,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     resource_tag_mappings = _load_resource_tag_mappings(args.resource_tagging_json)
     plan = build_hosted_aws_plan(
         account_id=args.account_id,
+        expected_account_id=args.expected_account_id,
         region=args.region,
         resource_tag_mappings=resource_tag_mappings,
         origin_cname=args.origin_cname,
@@ -227,6 +308,10 @@ def _normalize_tags(value: object) -> dict[str, str]:
         if key:
             tags[str(key)] = str(tag_value)
     return tags
+
+
+def _account_digits(value: str) -> str:
+    return "".join(ch for ch in value if ch.isdigit())
 
 
 def _protected_resource_reasons(*, arn: str, tags: Mapping[str, str]) -> list[str]:
