@@ -33,6 +33,7 @@ dev = [
 [project.scripts]
 fusekit = "fusekit.cli:main"
 fusekit-hosted = "fusekit.hosted.server:main"
+fusekit-hosted-aws-plan = "fusekit.hosted.aws_plan:main"
 fusekit-hosted-verify = "fusekit.hosted.verify:main"
 fusekit-hosted-worker = "fusekit.hosted.worker_client:main"
 fusekit-hosted-worker-dispatch = "fusekit.hosted.worker_dispatch:main"

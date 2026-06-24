@@ -793,6 +793,24 @@ def test_hosted_aws_source_provenance_requires_expected_public_git_metadata() ->
     }
 
 
+def test_hosted_aws_source_provenance_requires_elastic_beanstalk_origin() -> None:
+    settings = HostedSettings(
+        deployment_provider="aws-elastic-beanstalk",
+        aws_deployment_env="production",
+        aws_deployment_url="https://fusekit.snowmanai.org",
+        aws_git_provider="github",
+        aws_git_repo_owner="xpxpxp-coder",
+        aws_git_repo_slug="fusekit",
+        aws_git_commit_ref="main",
+        aws_git_commit_sha=VERCEL_COMMIT_SHA,
+    )
+
+    provenance = settings.source_provenance()
+
+    assert provenance["provider"] == "aws-elastic-beanstalk"
+    assert provenance["verified"] is False
+
+
 def test_hosted_readiness_endpoint_rejects_invalid_config_shape_without_values() -> None:
     settings = HostedSettings(
         public_origin="http://snowmanai.org/path",

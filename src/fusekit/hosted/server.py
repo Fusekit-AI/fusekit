@@ -705,7 +705,7 @@ class HostedSettings:
         }
         verified = (
             actual["deployment_environment"] == "production"
-            and _valid_public_origin(actual["deployment_url"])
+            and valid_hosted_aws_deployment_url(actual["deployment_url"])
             and actual["git_provider"] == "github"
             and actual["repo_owner"] == HOSTED_SOURCE_REPOSITORY_OWNER
             and actual["repo_slug"] == HOSTED_SOURCE_REPOSITORY_NAME
@@ -1999,6 +1999,14 @@ def _valid_public_origin(value: str) -> bool:
         and not parsed.username
         and not parsed.password
     )
+
+
+def valid_hosted_aws_deployment_url(value: object) -> bool:
+    if not isinstance(value, str) or not _valid_public_origin(value):
+        return False
+    parsed = urllib.parse.urlparse(value)
+    hostname = (parsed.hostname or "").lower().rstrip(".")
+    return hostname.endswith(".elasticbeanstalk.com")
 
 
 def _valid_https_url(value: str) -> bool:

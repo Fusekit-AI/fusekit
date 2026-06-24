@@ -295,8 +295,8 @@ def test_verify_hosted_deployment_reports_cloudflare_error_without_claiming_read
     ]
     assert report["next_actions"] == [
         (
-            "Attach fusekit.snowmanai.org to the Vercel project, then set the "
-            "Cloudflare fusekit CNAME to the exact Vercel-provided target. Do not "
+            "Attach fusekit.snowmanai.org to the hosted origin, then set the "
+            "Cloudflare fusekit CNAME to the exact provider-provided target. Do not "
             "point the proxied record at a prohibited IP or Cloudflare-owned address."
         )
     ]
@@ -307,7 +307,8 @@ def test_verify_hosted_deployment_reports_cloudflare_error_without_claiming_read
     assert checks["hosted.home"]["diagnosis"] == (
         "cloudflare_error_1000_dns_points_to_prohibited_ip"
     )
-    assert "Vercel-provided target" in checks["hosted.home"]["next_action"]
+    assert "provider-provided target" in checks["hosted.home"]["next_action"]
+    assert "Vercel project" not in checks["hosted.home"]["next_action"]
     assert checks["hosted.readiness"]["failures"] == ["ready_field_not_true"]
     assert "test-ray-id" not in json.dumps(report)
 
@@ -788,7 +789,43 @@ def test_verify_hosted_deployment_accepts_aws_source_provenance_contract() -> No
 
     assert report["ready"] is True
     assert checks["hosted.readiness"]["status"] == "ok"
-    assert checks["hosted.deployment"]["status"] == "ok"
+
+
+def test_verify_hosted_deployment_rejects_aws_provenance_url_drift() -> None:
+    readiness = _readiness_contract()
+    readiness["required_source_provenance_env"] = list(HOSTED_AWS_SOURCE_PROVENANCE_ENV)
+    provenance = _aws_source_provenance_contract()
+    actual = provenance["actual"]
+    assert isinstance(actual, dict)
+    actual["deployment_url"] = "https://fusekit.snowmanai.org"
+    readiness["source_provenance"] = provenance
+    aws_deployment = _aws_deployment_contract()
+    aws_deployment["source_provenance"] = provenance
+    aws_deployment["required_source_provenance_env"] = list(HOSTED_AWS_SOURCE_PROVENANCE_ENV)
+    opener = SequenceOpener(
+        [
+            _home_html(readiness=readiness, deployment=aws_deployment),
+            {"ok": True},
+            readiness,
+            aws_deployment,
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert (
+        "readiness_source_provenance_deployment_url_invalid"
+        in checks["hosted.readiness"]["failures"]
+    )
+    assert checks["hosted.deployment"]["status"] == "failed"
+    assert "source_provenance_deployment_url_invalid" in checks["hosted.deployment"]["failures"]
 
 
 def test_verify_hosted_deployment_requires_one_click_contract() -> None:

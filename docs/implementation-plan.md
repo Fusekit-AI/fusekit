@@ -29,6 +29,7 @@
   Hosted detonation maintenance proof is now action-aware and fail-closed: a detonation request cannot complete from a generic detonation artifact unless the worker also proves workspace detonation receipt, scratch-state destruction, provider-auth session closure, and preserved redacted public proof.
   Hosted worker proof assembly now rejects directory or empty-file placeholders for required public artifacts, requires the retrieved remote-artifacts bundle to contain the complete expected survivor file set without unexpected entries, and preserves empty gate-event streams for launches with no gate wake events.
   Root hosted deployment wiring is now explicit with `vercel.json` routing every Vercel path to `app.py`, `Procfile` starting `gunicorn app:app` for AWS Python WSGI runtimes, `.python-version` pinning Python 3.12, and a minimal launcher `requirements.txt`.
+  AWS hosted-launch hardening now has a plan-only guard that emits redacted account/region/tag/IAM/env/DNS/rollback metadata, blocks protected MailPilot/SOC 2 tagged resources, validates only the `fusekit.snowmanai.org` Cloudflare CNAME proposal, keeps Cloudflare Error 1000 repair guidance provider-neutral, and requires AWS provenance to publish a clean HTTPS Elastic Beanstalk origin.
 - [x] Security invariants are enforced by tests.
 - [x] CLI defaults to real-provider execution; incomplete local rehearsals require explicit opt-in.
 - [x] FuseKit bootstraps its own runtime components instead of assuming Codex/OpenClaw is preinstalled.

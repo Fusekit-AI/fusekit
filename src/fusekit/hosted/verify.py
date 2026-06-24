@@ -46,6 +46,7 @@ from fusekit.hosted.server import (
     HOSTED_SOURCE_REPOSITORY_NAME,
     HOSTED_SOURCE_REPOSITORY_OWNER,
     HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+    valid_hosted_aws_deployment_url,
 )
 from fusekit.hosted.worker_dispatch import HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION
 from fusekit.security import contains_durable_secret_text
@@ -714,6 +715,10 @@ def _source_provenance_failures(payload: object) -> list[str]:
         commit_sha = actual.get("commit_sha")
         if not isinstance(commit_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", commit_sha):
             failures.append("source_provenance_commit_sha_invalid")
+        if provider == "aws-elastic-beanstalk" and not valid_hosted_aws_deployment_url(
+            actual.get("deployment_url")
+        ):
+            failures.append("source_provenance_deployment_url_invalid")
     if payload.get("verified") is not True:
         failures.append("source_provenance_not_verified")
     expected_env = _expected_source_provenance_env(provider)
@@ -1178,8 +1183,8 @@ def _diagnose_http_error(body: str) -> dict[str, str]:
         return {
             "diagnosis": "cloudflare_error_1000_dns_points_to_prohibited_ip",
             "next_action": (
-                "Attach fusekit.snowmanai.org to the Vercel project, then set the "
-                "Cloudflare fusekit CNAME to the exact Vercel-provided target. Do not "
+                "Attach fusekit.snowmanai.org to the hosted origin, then set the "
+                "Cloudflare fusekit CNAME to the exact provider-provided target. Do not "
                 "point the proxied record at a prohibited IP or Cloudflare-owned address."
             ),
         }

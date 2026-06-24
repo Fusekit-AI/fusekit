@@ -142,12 +142,21 @@ provider, repository owner/name, branch/ref, commit SHA, and production
 environment, so the public launcher can be matched back to the reviewed
 open-source commit. Vercel deployments can use Vercel system environment
 variables; AWS deployments use explicit non-secret `FUSEKIT_HOSTED_GIT_*`
-provenance variables.
+provenance variables, and AWS Elastic Beanstalk provenance must publish a
+clean HTTPS Elastic Beanstalk origin rather than a Cloudflare custom domain or
+URL with credentials, query strings, fragments, or paths.
 Hosted readiness now keeps the start button disabled until that source
 provenance verifies, preventing a public launch from starting from an
 unreviewable or miswired deployment. The outside-in hosted verifier checks the
 readiness endpoint for that same public provenance proof, not just the embedded
 homepage contract.
+For AWS planning, `fusekit-hosted-aws-plan` is deliberately plan-only. It emits
+a redacted proposed account/region/tag/IAM/env/DNS/rollback plan, reports that
+it mutates neither AWS nor Cloudflare, refuses Cloudflare proposals outside the
+`fusekit.snowmanai.org` CNAME, and blocks when a Resource Groups Tagging
+API-style export shows protected MailPilot/SOC 2 resources such as
+`Application=MailPilot`, `DataBoundary=mailpilot`, Terraform-managed MailPilot
+resources, or MailPilot-named resources.
 The public GitHub intake contract also
 embeds the same trust story, no-terminal launch path, required proof list,
 reversal path, and open-core metadata before the install click. It
