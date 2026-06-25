@@ -88,6 +88,28 @@ def test_hosted_aws_plan_blocks_wrong_account_and_region() -> None:
     assert "111111111111" not in json.dumps(plan)
 
 
+def test_hosted_aws_plan_blocks_malformed_account_region_and_origin() -> None:
+    plan = build_hosted_aws_plan(
+        account_id="not-an-account",
+        expected_account_id="also-bad",
+        region="moon-1",
+        allowed_regions=(),
+        resource_tag_mappings=[],
+        origin_cname="fusekit.example.com",
+    )
+
+    assert plan["ready_to_apply"] is False
+    assert plan["blockers"] == [
+        "aws_account_id_invalid",
+        "aws_expected_account_id_invalid",
+        "aws_allowed_regions_invalid",
+        "aws_region_not_allowed",
+        "aws_origin_cname_not_elastic_beanstalk",
+    ]
+    assert plan["proof"]["aws_account_id_valid"] is False
+    assert plan["proof"]["aws_origin_cname_matches_provider"] is False
+
+
 def test_cloudflare_dns_dry_run_rejects_multiple_or_destructive_changes() -> None:
     valid_change = {
         "action": "upsert",
@@ -107,6 +129,48 @@ def test_cloudflare_dns_dry_run_rejects_multiple_or_destructive_changes() -> Non
 
     with pytest.raises(FuseKitError, match="cloudflare_dns_dry_run_single_record_required"):
         validate_cloudflare_fusekit_dns_dry_run([valid_change, valid_change])
+
+
+def test_cloudflare_dns_dry_run_rejects_hidden_fields_and_bad_options() -> None:
+    valid_change = {
+        "action": "upsert",
+        "zone": "snowmanai.org",
+        "record_name": "fusekit",
+        "record_type": "CNAME",
+        "record_value": "fusekit-prod.us-east-1.elasticbeanstalk.com",
+    }
+
+    with pytest.raises(FuseKitError, match="cloudflare_dns_dry_run_unexpected_fields"):
+        validate_cloudflare_fusekit_dns_dry_run([{**valid_change, "delete": True}])
+
+    with pytest.raises(FuseKitError, match="cloudflare_dns_dry_run_proxied_must_be_boolean"):
+        validate_cloudflare_fusekit_dns_dry_run([{**valid_change, "proxied": "yes"}])
+
+    with pytest.raises(FuseKitError, match="cloudflare_dns_dry_run_ttl_invalid"):
+        validate_cloudflare_fusekit_dns_dry_run([{**valid_change, "ttl": "forever"}])
+
+
+def test_protected_aws_resource_findings_detects_pii_tags_without_mailpilot_name() -> None:
+    findings = protected_aws_resource_findings(
+        [
+            {
+                "ResourceARN": "arn:aws:s3:::client-a-private-data",
+                "Tags": [{"Key": "DataClassification", "Value": "pii"}],
+            },
+            {
+                "ResourceARN": "arn:aws:s3:::public-docs",
+                "Tags": [{"Key": "PiiData", "Value": "false"}],
+            },
+        ]
+    )
+
+    assert findings == [
+        {
+            "resource_arn": "arn:aws:s3:::client-a-private-data",
+            "tag_keys": ["DataClassification"],
+            "reasons": ["protected_tag:pii"],
+        }
+    ]
 
 
 @pytest.mark.parametrize(

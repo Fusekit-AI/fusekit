@@ -32,7 +32,18 @@ MAILPILOT_PROTECTED_MARKERS = (
     "databoundary=mailpilot",
     "mailpilot",
     "pii",
+    "customer-pii",
+    "client-pii",
 )
+DNS_DRY_RUN_ALLOWED_KEYS = {
+    "action",
+    "zone",
+    "record_name",
+    "record_type",
+    "record_value",
+    "proxied",
+    "ttl",
+}
 
 
 def redacted_aws_account_id(account_id: str) -> str:
@@ -126,6 +137,15 @@ def validate_cloudflare_fusekit_dns_dry_run(
         raise FuseKitError("cloudflare_dns_dry_run_changes_missing")
     validated: list[dict[str, str]] = []
     for change in changes:
+        unexpected_keys = set(str(key) for key in change) - DNS_DRY_RUN_ALLOWED_KEYS
+        if unexpected_keys:
+            raise FuseKitError("cloudflare_dns_dry_run_unexpected_fields")
+        proxied = change.get("proxied")
+        if proxied is not None and not isinstance(proxied, bool):
+            raise FuseKitError("cloudflare_dns_dry_run_proxied_must_be_boolean")
+        ttl = change.get("ttl")
+        if ttl is not None and not (ttl == "auto" or isinstance(ttl, int)):
+            raise FuseKitError("cloudflare_dns_dry_run_ttl_invalid")
         action = str(change.get("action") or "").strip().lower()
         if action not in {"create", "update", "upsert", "noop"}:
             raise FuseKitError("cloudflare_dns_dry_run_action_not_allowed")
@@ -167,10 +187,20 @@ def build_hosted_aws_plan(
 
     findings = protected_aws_resource_findings(resource_tag_mappings)
     blockers = []
+    if not _valid_aws_account_id(account_id):
+        blockers.append("aws_account_id_invalid")
+    if expected_account_id and not _valid_aws_account_id(expected_account_id):
+        blockers.append("aws_expected_account_id_invalid")
     if expected_account_id and _account_digits(account_id) != _account_digits(expected_account_id):
         blockers.append("aws_account_id_mismatch")
+    if not allowed_regions or not all(
+        _valid_aws_region(region_name) for region_name in allowed_regions
+    ):
+        blockers.append("aws_allowed_regions_invalid")
     if region not in allowed_regions:
         blockers.append("aws_region_not_allowed")
+    if not _valid_elastic_beanstalk_cname(origin_cname):
+        blockers.append("aws_origin_cname_not_elastic_beanstalk")
     if findings:
         blockers.append("protected_aws_account_resources_detected")
     dns = validate_cloudflare_fusekit_dns_change(
@@ -250,11 +280,13 @@ def build_hosted_aws_plan(
         },
         "proof": {
             "no_mailpilot_resources_touched": not findings,
+            "aws_account_id_valid": _valid_aws_account_id(account_id),
             "aws_account_id_matches_expected": (
                 not expected_account_id
                 or _account_digits(account_id) == _account_digits(expected_account_id)
             ),
             "aws_region_allowed": region in allowed_regions,
+            "aws_origin_cname_matches_provider": _valid_elastic_beanstalk_cname(origin_cname),
             "no_dns_apex_or_www_change": True,
             "no_secret_values_in_plan": not contains_durable_secret_text(
                 json.dumps(findings, sort_keys=True)
@@ -314,6 +346,19 @@ def _account_digits(value: str) -> str:
     return "".join(ch for ch in value if ch.isdigit())
 
 
+def _valid_aws_account_id(value: str) -> bool:
+    return bool(re.fullmatch(r"\d{12}", _account_digits(value)))
+
+
+def _valid_aws_region(value: str) -> bool:
+    return bool(re.fullmatch(r"[a-z]{2}-[a-z]+-\d", value))
+
+
+def _valid_elastic_beanstalk_cname(value: str) -> bool:
+    hostname = value.strip().rstrip(".").lower()
+    return _valid_dns_hostname(hostname) and hostname.endswith(".elasticbeanstalk.com")
+
+
 def _protected_resource_reasons(*, arn: str, tags: Mapping[str, str]) -> list[str]:
     reasons: list[str] = []
     lowered_tags = {key.lower(): value.lower() for key, value in tags.items()}
@@ -324,11 +369,28 @@ def _protected_resource_reasons(*, arn: str, tags: Mapping[str, str]) -> list[st
             reasons.append(f"protected_tag:{key}")
     if MAILPILOT_PROTECTED_TOKEN in lowered_arn:
         reasons.append("protected_name:mailpilot")
+    if _contains_pii_tag(lowered_tags):
+        reasons.append("protected_tag:pii")
     if lowered_tags.get("managedby") == "terraform" and any(
         marker in f"{flattened},{lowered_arn}" for marker in MAILPILOT_PROTECTED_MARKERS
     ):
         reasons.append("protected_iac_boundary:terraform_mailpilot")
     return sorted(set(reasons))
+
+
+def _contains_pii_tag(lowered_tags: Mapping[str, str]) -> bool:
+    false_values = {"", "0", "false", "no", "none", "public", "non-pii", "non_pii"}
+    for key, value in lowered_tags.items():
+        normalized = value.strip().lower()
+        if normalized in false_values:
+            continue
+        if "pii" in key or "customer-pii" in normalized or "client-pii" in normalized:
+            return True
+        if key in {"dataclassification", "data_classification", "contains"} and (
+            "pii" in normalized or normalized in {"customer", "client", "sensitive"}
+        ):
+            return True
+    return False
 
 
 def _valid_dns_hostname(value: str) -> bool:

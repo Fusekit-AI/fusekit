@@ -31,6 +31,7 @@
   Root hosted deployment wiring is now explicit with `vercel.json` routing every Vercel path to `app.py`, `Procfile` starting `gunicorn app:app` for AWS Python WSGI runtimes, `.python-version` pinning Python 3.12, and a minimal launcher `requirements.txt`.
   AWS hosted-launch hardening now has a plan-only guard that emits redacted account/region/tag/IAM/env/DNS/rollback metadata, blocks protected MailPilot/SOC 2 tagged resources, validates only the `fusekit.snowmanai.org` Cloudflare CNAME proposal, keeps Cloudflare Error 1000 repair guidance provider-neutral, and requires AWS provenance to publish a clean HTTPS Elastic Beanstalk origin.
   Hosted universal-launch hardening now also checks wrong-account/wrong-region AWS plans, validates one-record Cloudflare DNS dry-run diffs, exposes provider permission copy and rollback proof requirements in the public deployment contract, verifies those contracts outside-in, emits a top-level readiness summary, and renders trust evidence in public proof receipts.
+  Final pre-gate hosted hardening now rejects malformed AWS account ids, invalid allowed-region lists, non-Elastic Beanstalk AWS origin CNAMEs, hidden or malformed Cloudflare DNS dry-run fields, PII-tagged AWS resources, and non-provider Vercel provenance URLs before public readiness can pass.
 - [x] Security invariants are enforced by tests.
 - [x] CLI defaults to real-provider execution; incomplete local rehearsals require explicit opt-in.
 - [x] FuseKit bootstraps its own runtime components instead of assuming Codex/OpenClaw is preinstalled.

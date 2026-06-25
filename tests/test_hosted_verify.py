@@ -895,6 +895,40 @@ def test_verify_hosted_deployment_rejects_aws_provenance_url_drift() -> None:
     assert "source_provenance_deployment_url_invalid" in checks["hosted.deployment"]["failures"]
 
 
+def test_verify_hosted_deployment_rejects_vercel_provenance_url_drift() -> None:
+    readiness = _readiness_contract()
+    provenance = _source_provenance_contract()
+    actual = provenance["actual"]
+    assert isinstance(actual, dict)
+    actual["deployment_url"] = "https://fusekit.snowmanai.org"
+    readiness["source_provenance"] = provenance
+    deployment = _deployment_contract()
+    deployment["source_provenance"] = provenance
+    opener = SequenceOpener(
+        [
+            _home_html(readiness=readiness, deployment=deployment),
+            {"ok": True},
+            readiness,
+            deployment,
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert (
+        "readiness_source_provenance_deployment_url_invalid"
+        in checks["hosted.readiness"]["failures"]
+    )
+    assert "source_provenance_deployment_url_invalid" in checks["hosted.deployment"]["failures"]
+
+
 def test_verify_hosted_deployment_requires_one_click_contract() -> None:
     contract = _deployment_contract()
     one_click = contract["one_click_launch"]

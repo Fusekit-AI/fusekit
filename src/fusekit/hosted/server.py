@@ -748,6 +748,7 @@ class HostedSettings:
         }
         verified = (
             actual["deployment_environment"] == "production"
+            and valid_hosted_vercel_deployment_url(actual["deployment_url"])
             and actual["git_provider"] == "github"
             and actual["repo_owner"] == HOSTED_SOURCE_REPOSITORY_OWNER
             and actual["repo_slug"] == HOSTED_SOURCE_REPOSITORY_NAME
@@ -2091,6 +2092,22 @@ def valid_hosted_aws_deployment_url(value: object) -> bool:
     parsed = urllib.parse.urlparse(value)
     hostname = (parsed.hostname or "").lower().rstrip(".")
     return hostname.endswith(".elasticbeanstalk.com")
+
+
+def valid_hosted_vercel_deployment_url(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    parsed = urllib.parse.urlparse(value)
+    if parsed.scheme:
+        if not _valid_public_origin(value):
+            return False
+        hostname = parsed.hostname or ""
+    else:
+        if any(marker in value for marker in ("/", "?", "#", "@")):
+            return False
+        hostname = value
+    hostname = hostname.lower().rstrip(".")
+    return bool(hostname) and hostname.endswith(".vercel.app")
 
 
 def _valid_https_url(value: str) -> bool:

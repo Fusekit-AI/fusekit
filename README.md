@@ -155,13 +155,18 @@ a redacted proposed account/region/tag/IAM/env/DNS/rollback plan, reports that
 it mutates neither AWS nor Cloudflare, refuses Cloudflare proposals outside the
 `fusekit.snowmanai.org` CNAME, validates a one-record Cloudflare DNS dry-run
 diff, can block wrong-account or wrong-region plans when an expected account or
-region allowlist is supplied, and blocks when a Resource Groups Tagging
+region allowlist is supplied, rejects malformed AWS account ids, requires the
+planned AWS origin CNAME to match the Elastic Beanstalk provider contract,
+rejects hidden or malformed DNS dry-run fields, and blocks when a Resource Groups Tagging
 API-style export shows protected MailPilot/SOC 2 resources such as
 `Application=MailPilot`, `DataBoundary=mailpilot`, Terraform-managed MailPilot
-resources, or MailPilot-named resources. The public hosted deployment contract
-also exposes provider permission copy, DNS dry-run policy, rollback proof
-requirements, and outside-in readiness summaries so a nontechnical operator can
-see what remains without reading terminal output.
+resources, MailPilot-named resources, or PII-tagged resources. Vercel and AWS
+source provenance are provider-bound too, so the public proof cannot claim a
+reviewed hosted provider while publishing an arbitrary custom domain as the
+provider deployment URL. The public hosted deployment contract also exposes
+provider permission copy, DNS dry-run policy, rollback proof requirements, and
+outside-in readiness summaries so a nontechnical operator can see what remains
+without reading terminal output.
 The public GitHub intake contract also
 embeds the same trust story, no-terminal launch path, required proof list,
 reversal path, and open-core metadata before the install click. It

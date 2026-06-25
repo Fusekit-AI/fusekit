@@ -48,6 +48,7 @@ from fusekit.hosted.server import (
     HOSTED_SOURCE_REPOSITORY_OWNER,
     HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
     valid_hosted_aws_deployment_url,
+    valid_hosted_vercel_deployment_url,
 )
 from fusekit.hosted.worker_dispatch import HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION
 from fusekit.security import contains_durable_secret_text
@@ -790,6 +791,10 @@ def _source_provenance_failures(payload: object) -> list[str]:
         if not isinstance(commit_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", commit_sha):
             failures.append("source_provenance_commit_sha_invalid")
         if provider == "aws-elastic-beanstalk" and not valid_hosted_aws_deployment_url(
+            actual.get("deployment_url")
+        ):
+            failures.append("source_provenance_deployment_url_invalid")
+        if provider == "vercel" and not valid_hosted_vercel_deployment_url(
             actual.get("deployment_url")
         ):
             failures.append("source_provenance_deployment_url_invalid")

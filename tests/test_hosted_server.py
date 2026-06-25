@@ -766,6 +766,23 @@ def test_hosted_source_provenance_requires_expected_production_git_metadata() ->
     }
 
 
+def test_hosted_source_provenance_requires_vercel_deployment_url() -> None:
+    settings = HostedSettings(
+        vercel_env="production",
+        vercel_url="fusekit.snowmanai.org",
+        vercel_git_provider="github",
+        vercel_git_repo_owner="xpxpxp-coder",
+        vercel_git_repo_slug="fusekit",
+        vercel_git_commit_ref="main",
+        vercel_git_commit_sha=VERCEL_COMMIT_SHA,
+    )
+
+    provenance = settings.source_provenance()
+
+    assert provenance["provider"] == "vercel"
+    assert provenance["verified"] is False
+
+
 def test_hosted_aws_source_provenance_requires_expected_public_git_metadata() -> None:
     settings = HostedSettings(
         deployment_provider="aws-elastic-beanstalk",
