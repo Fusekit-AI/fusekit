@@ -858,6 +858,41 @@ def test_verify_hosted_deployment_accepts_aws_source_provenance_contract() -> No
     assert checks["hosted.readiness"]["status"] == "ok"
 
 
+def test_verify_hosted_deployment_rejects_provider_copy_drift_on_homepage() -> None:
+    readiness = _readiness_contract()
+    readiness["required_source_provenance_env"] = list(HOSTED_AWS_SOURCE_PROVENANCE_ENV)
+    readiness["source_provenance"] = _aws_source_provenance_contract()
+    aws_deployment = _aws_deployment_contract()
+    home = _home_html(readiness=readiness, deployment=aws_deployment).replace(
+        "<section>Hosted deployment contract</section>",
+        (
+            "<section>Hosted deployment contract</section>"
+            "<section>Vercel must serve app.py.</section>"
+            "<section>Add fusekit.snowmanai.org as the Vercel custom domain.</section>"
+            "<section>Use the exact Vercel-provided CNAME target.</section>"
+        ),
+    )
+    opener = SequenceOpener(
+        [
+            home,
+            {"ok": True},
+            readiness,
+            aws_deployment,
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert checks["hosted.home"]["status"] == "failed"
+    assert "hosted_home_provider_copy_vercel_leak" in checks["hosted.home"]["failures"]
+
+
 def test_verify_hosted_deployment_rejects_aws_provenance_url_drift() -> None:
     readiness = _readiness_contract()
     readiness["required_source_provenance_env"] = list(HOSTED_AWS_SOURCE_PROVENANCE_ENV)

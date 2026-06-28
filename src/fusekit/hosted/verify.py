@@ -1015,6 +1015,41 @@ def _hosted_home_embedded_contract_failures(
             f"hosted_home_embedded_{label}_{failure}"
             for failure in contract_failures
         )
+        if script_id == "fusekit-hosted-deployment":
+            failures.extend(_hosted_home_visible_deployment_failures(text, payload))
+    return failures
+
+
+def _hosted_home_visible_deployment_failures(
+    text: str,
+    payload: dict[str, Any],
+) -> list[str]:
+    runtime = payload.get("runtime")
+    if not isinstance(runtime, dict):
+        return []
+    provider = str(runtime.get("provider") or "")
+    provider_forbidden_markers = {
+        "aws-elastic-beanstalk": {
+            "hosted_home_provider_copy_vercel_leak": (
+                "Vercel must serve",
+                "Vercel custom domain",
+                "Vercel-provided CNAME target",
+                "waiting for Vercel metadata",
+            )
+        },
+        "vercel": {
+            "hosted_home_provider_copy_aws_leak": (
+                "AWS Elastic Beanstalk must serve",
+                "AWS HTTPS origin",
+                "AWS-provided CNAME target",
+                "waiting for AWS/Git metadata",
+            )
+        },
+    }
+    failures: list[str] = []
+    for failure, markers in provider_forbidden_markers.get(provider, {}).items():
+        if any(marker in text for marker in markers):
+            failures.append(failure)
     return failures
 
 

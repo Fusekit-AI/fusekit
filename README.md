@@ -232,7 +232,9 @@ protected start, pre-worker stop, rollback, and detonation request controls.
 Those controls carry a signed redacted job token so a stateless hosted function
 can recover the public control-room state without a database or raw provider
 token, plus distinct short-lived action-bound control tokens for protected
-start, stop, rollback, and detonation clicks; browser forms submit those
+start, stop, rollback, and detonation clicks. Hosted job routes require that
+signed job token even when process memory already has the job, so a known
+`hosted-*` id cannot mint fresh controls by itself. Browser forms submit
 control tokens in URL-encoded POST fields instead of capability-bearing URLs,
 and query or JSON control parameters are rejected.
 If those control tokens are missing or expired, the control room shows disabled
@@ -339,8 +341,9 @@ trust-story labels: open core, narrow permissions, visible plan, redacted proof,
 and reversible setup. It also checks every visible reversible-setup step from the
 public contract, including rollback metadata, provider rollback actions, and
 stop/revoke/rollback/proof controls. The verifier also compares the full operator setup
-checklist, including the Vercel custom-domain and Cloudflare CNAME label/proof
-text, so the subdomain instructions cannot quietly drift. A redacted
+checklist for the selected hosted provider plus the Cloudflare CNAME
+label/proof text, and rejects visible provider-copy drift such as AWS pages
+showing Vercel-only setup steps. A redacted
 hosted readiness endpoint reports only configuration presence and shape errors,
 and keeps the homepage launch button disabled until the GitHub App id, slug, RSA
 private key, origin, state secret, worker secret, and worker dispatch URL are

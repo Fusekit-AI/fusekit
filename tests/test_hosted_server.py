@@ -14,6 +14,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from fusekit.hosted.github_app import GitHubAppConfig
+from fusekit.hosted.job import create_hosted_job_token
 from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY, HOSTED_PROHIBITED_ACTIONS
 from fusekit.hosted.server import (
     HOSTED_AWS_SOURCE_PROVENANCE_ENV,
@@ -296,6 +297,30 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
     assert payload["prohibited"] == list(HOSTED_PROHIBITED_ACTIONS)
     assert payload["open_core"]["source_repository"] == "https://github.com/xpxpxp-coder/fusekit"
     assert payload["open_core"]["reviewable_entrypoint"] == "app.py"
+
+
+def test_hosted_home_uses_selected_provider_contract_copy() -> None:
+    html = render_hosted_home(
+        HostedSettings(
+            public_origin="https://fusekit.snowmanai.org",
+            github_app_id="12345",
+            github_app_slug="fusekit-launcher",
+            github_private_key_pem=_private_key_pem(),
+            state_secret=STATE_SECRET,
+            worker_secret=WORKER_SECRET,
+            worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+            **_aws_provenance_kwargs(),
+        )
+    )
+
+    assert "AWS Elastic Beanstalk must serve the Python WSGI entrypoint" in html
+    assert "AWS/Git metadata" in html
+    assert "Attach fusekit.snowmanai.org to the AWS HTTPS origin." in html
+    assert "Use the exact AWS-provided CNAME target" in html
+    assert "Vercel must serve" not in html
+    assert "Vercel custom domain" not in html
+    assert "Vercel-provided CNAME target" not in html
+    assert "waiting for Vercel metadata" not in html
 
 
 def test_hosted_home_waits_for_complete_operator_configuration() -> None:
@@ -1318,10 +1343,12 @@ def test_hosted_job_api_returns_redacted_status_and_accepts_protected_action() -
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    job_token = _job_token(text)
     control = _control_for_action(text, "start")
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}",
+        query_string=f"job={job_token}",
         settings=settings,
     )
     payload = json.loads(body.decode("utf-8"))
@@ -1339,6 +1366,7 @@ def test_hosted_job_api_returns_redacted_status_and_accepts_protected_action() -
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
+        query_string=f"job={job_token}",
         form_body={"control": control},
         settings=settings,
     )
@@ -1361,6 +1389,7 @@ def test_hosted_job_api_returns_redacted_status_and_accepts_protected_action() -
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/rollback",
         method="POST",
+        query_string=f"job={payload['job_token']}",
         form_body={"control": control},
         settings=settings,
     )
@@ -1376,6 +1405,7 @@ def test_hosted_job_api_returns_redacted_status_and_accepts_protected_action() -
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/rollback",
         method="POST",
+        query_string=f"job={payload['job_token']}",
         form_body={"control": rollback_control},
         settings=settings,
     )
@@ -1388,6 +1418,55 @@ def test_hosted_job_api_returns_redacted_status_and_accepts_protected_action() -
     ]
     assert "rollback_execution_receipt" in payload["action_receipt"]["next_required_proof"]
     assert "ghs_fake" not in json.dumps(payload)
+
+
+def test_hosted_job_api_requires_signed_job_token_even_with_process_memory() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    settings = _settings_with_github(opener)
+
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=f"installation_id=42&repo=example/one&state={state}",
+        settings=settings,
+    )
+    assert status == "200 OK"
+    text = body.decode("utf-8")
+    job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    control = _control_for_action(text, "start")
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}",
+        settings=settings,
+    )
+    assert status == "403 Forbidden"
+    assert json.loads(body.decode("utf-8")) == {"error": "invalid_job"}
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/start",
+        method="POST",
+        form_body={"control": control},
+        settings=settings,
+    )
+    assert status == "403 Forbidden"
+    assert json.loads(body.decode("utf-8")) == {"error": "invalid_job"}
+    assert settings.hosted_jobs[job_id].status == "waiting_for_worker"
 
 
 def test_hosted_job_api_can_stop_before_worker_start() -> None:
@@ -1419,11 +1498,13 @@ def test_hosted_job_api_can_stop_before_worker_start() -> None:
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    job_token = _job_token(text)
     control = _control_for_action(text, "stop")
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/stop",
         method="POST",
+        query_string=f"job={job_token}",
         form_body={"control": control},
         settings=settings,
     )
@@ -1438,6 +1519,7 @@ def test_hosted_job_api_can_stop_before_worker_start() -> None:
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/worker-request",
+        query_string=f"job={payload['job_token']}",
         settings=settings,
     )
     assert status == "409 Conflict"
@@ -1785,6 +1867,7 @@ def test_hosted_job_actions_reject_rollback_and_detonation_before_start() -> Non
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    job_token = _job_token(text)
 
     for action in ("rollback", "detonate"):
         control = create_hosted_state_token(
@@ -1795,6 +1878,7 @@ def test_hosted_job_actions_reject_rollback_and_detonation_before_start() -> Non
         status, _headers, body = _call(
             f"/api/hosted/jobs/{job_id}/actions/{action}",
             method="POST",
+            query_string=f"job={job_token}",
             form_body={"control": control},
             settings=settings,
         )
@@ -2322,11 +2406,14 @@ def test_hosted_job_api_rejects_bad_control_token() -> None:
         settings=settings,
     )
     assert status == "200 OK"
-    job_id = _match(body.decode("utf-8"), r"hosted-[A-Za-z0-9_-]+")
+    text = body.decode("utf-8")
+    job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    job_token = _job_token(text)
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
+        query_string=f"job={job_token}",
         form_body={"control": "bad"},
         settings=settings,
     )
@@ -2364,12 +2451,13 @@ def test_hosted_job_api_rejects_query_control_token() -> None:
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    job_token = _job_token(text)
     control = _control_for_action(text, "start")
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
-        query_string=f"control={control}",
+        query_string=urllib.parse.urlencode({"job": job_token, "control": control}),
         settings=settings,
     )
 
@@ -2406,11 +2494,13 @@ def test_hosted_job_api_accepts_same_origin_control_post() -> None:
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    job_token = _job_token(text)
     control = _control_for_action(text, "stop")
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/stop",
         method="POST",
+        query_string=f"job={job_token}",
         form_body={"control": control},
         headers={"Origin": "https://fusekit.snowmanai.org"},
         settings=settings,
@@ -2451,11 +2541,13 @@ def test_hosted_job_api_rejects_cross_origin_control_post() -> None:
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    job_token = _job_token(text)
     control = _control_for_action(text, "start")
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
+        query_string=f"job={job_token}",
         form_body={"control": control},
         headers={"Origin": "https://example.invalid"},
         settings=settings,
@@ -2494,11 +2586,13 @@ def test_hosted_job_api_rejects_cross_origin_referer_control_post() -> None:
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    job_token = _job_token(text)
     control = _control_for_action(text, "start")
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
+        query_string=f"job={job_token}",
         form_body={"control": control},
         headers={"Referer": "https://example.invalid/launch"},
         settings=settings,
@@ -2537,11 +2631,13 @@ def test_hosted_job_api_rejects_json_control_body() -> None:
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    job_token = _job_token(text)
     control = _control_for_action(text, "start")
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
+        query_string=f"job={job_token}",
         json_body={"control": control},
         settings=settings,
     )
@@ -2579,11 +2675,13 @@ def test_hosted_job_api_rejects_untyped_control_body() -> None:
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    job_token = _job_token(text)
     control = _control_for_action(text, "start")
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
+        query_string=f"job={job_token}",
         raw_body=urllib.parse.urlencode({"control": control}).encode("utf-8"),
         settings=settings,
     )
@@ -2619,7 +2717,13 @@ def test_hosted_job_api_rejects_expired_control_token(monkeypatch) -> None:
         settings=settings,
     )
     assert status == "200 OK"
-    job_id = _match(body.decode("utf-8"), r"hosted-[A-Za-z0-9_-]+")
+    text = body.decode("utf-8")
+    job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    job_token = create_hosted_job_token(
+        STATE_SECRET,
+        settings.hosted_jobs[job_id],
+        now=1_700_000_000,
+    )
     control = create_hosted_state_token(
         STATE_SECRET,
         return_path=f"/api/hosted/jobs/{job_id}/actions/start",
@@ -2631,6 +2735,7 @@ def test_hosted_job_api_rejects_expired_control_token(monkeypatch) -> None:
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
+        query_string=f"job={job_token}",
         form_body={"control": control},
         settings=settings,
     )
@@ -2666,7 +2771,9 @@ def test_hosted_job_api_rejects_control_token_for_different_job() -> None:
         settings=settings,
     )
     assert status == "200 OK"
-    job_id = _match(body.decode("utf-8"), r"hosted-[A-Za-z0-9_-]+")
+    text = body.decode("utf-8")
+    job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    job_token = _job_token(text)
     control = create_hosted_state_token(
         STATE_SECRET,
         return_path="/api/hosted/jobs/hosted-other/actions/start",
@@ -2676,6 +2783,7 @@ def test_hosted_job_api_rejects_control_token_for_different_job() -> None:
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
+        query_string=f"job={job_token}",
         form_body={"control": control},
         settings=settings,
     )
@@ -2711,7 +2819,9 @@ def test_hosted_job_api_rejects_control_token_for_different_action() -> None:
         settings=settings,
     )
     assert status == "200 OK"
-    job_id = _match(body.decode("utf-8"), r"hosted-[A-Za-z0-9_-]+")
+    text = body.decode("utf-8")
+    job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    job_token = _job_token(text)
     control = create_hosted_state_token(
         STATE_SECRET,
         return_path=f"/api/hosted/jobs/{job_id}/actions/rollback",
@@ -2721,6 +2831,7 @@ def test_hosted_job_api_rejects_control_token_for_different_action() -> None:
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
+        query_string=f"job={job_token}",
         form_body={"control": control},
         settings=settings,
     )
@@ -2754,3 +2865,7 @@ def _control_for_action(text: str, action: str) -> str:
         rf'(?:\?job=[^"]+)?">\s*'
         rf'<input type="hidden" name="control" value="([A-Za-z0-9_.-]+)">',
     )
+
+
+def _job_token(text: str) -> str:
+    return _match(text, r"\?job=([A-Za-z0-9_.-]+)")

@@ -889,6 +889,17 @@ def render_hosted_home(settings: HostedSettings) -> str:
     readiness_payload = html.escape(json.dumps(readiness, sort_keys=True))
     deployment_contract = settings.deployment_contract()
     deployment_payload = html.escape(json.dumps(deployment_contract, sort_keys=True))
+    runtime = cast(dict[str, object], deployment_contract["runtime"])
+    provider_label = _deployment_provider_label(str(runtime.get("provider") or ""))
+    provider_runtime_mode = html.escape(str(runtime.get("mode") or "hosted runtime"))
+    provider_dns_target = html.escape(
+        str(
+            cast(dict[str, object], deployment_contract["cloudflare_dns"]).get(
+                "record_value",
+                "Use the exact provider-provided CNAME target.",
+            )
+        )
+    )
     operator_setup = "\n".join(
         (
             "<li>"
@@ -896,7 +907,7 @@ def render_hosted_home(settings: HostedSettings) -> str:
             f"<span class=\"origin\">Proof: {html.escape(step['proof'])}</span>"
             "</li>"
         )
-        for step in HOSTED_OPERATOR_SETUP_STEPS
+        for step in settings.operator_setup_steps()
     )
     forbidden_material = "\n".join(
         f"<li>{html.escape(item)}</li>" for item in HOSTED_FORBIDDEN_PUBLIC_MATERIAL
@@ -1123,12 +1134,14 @@ def render_hosted_home(settings: HostedSettings) -> str:
       <ul>
         <li>This page is intended to run at <span class="origin">{public_origin}</span>.</li>
         <li>
-          Vercel must serve the Python WSGI entrypoint exported from
-          <span class="origin">app.py</span>.
+          {html.escape(provider_label)} must serve the Python WSGI entrypoint
+          exported from <span class="origin">app.py</span> using
+          <span class="origin">{provider_runtime_mode}</span>.
         </li>
         <li>
           Cloudflare should route the <span class="origin">fusekit</span>
-          subdomain to the Vercel-provided CNAME target.
+          subdomain to the deployment target:
+          <span class="origin">{provider_dns_target}</span>
         </li>
         <li>
           The public readiness and deployment endpoints expose configuration
@@ -1155,7 +1168,13 @@ def _looks_like_git_commit_sha(value: object) -> bool:
 def _source_provenance_section(provenance: dict[str, object]) -> str:
     actual = provenance.get("actual")
     actual = actual if isinstance(actual, dict) else {}
-    status = "verified" if provenance.get("verified") is True else "waiting for Vercel metadata"
+    provider = str(provenance.get("provider") or "")
+    metadata_label = _deployment_metadata_label(provider)
+    status = (
+        "verified"
+        if provenance.get("verified") is True
+        else f"waiting for {metadata_label}"
+    )
     repo = (
         f"{actual.get('repo_owner', '')}/{actual.get('repo_slug', '')}".strip("/")
         or "not reported"
@@ -1167,7 +1186,7 @@ def _source_provenance_section(provenance: dict[str, object]) -> str:
     <section aria-label="Deployment provenance">
       <h2>Deployment provenance</h2>
       <p>
-        FuseKit publishes the Vercel/Git metadata for this deployment so the
+        FuseKit publishes the {html.escape(metadata_label)} for this deployment so the
         hosted page can be matched back to the public source repository.
       </p>
       <ul>
@@ -1411,14 +1430,13 @@ def _hosted_job_api_response(
         return _response(start_response, HTTPStatus.NOT_FOUND, {"error": "not_found"})
     job_id = parts[3]
     query = urllib.parse.parse_qs(str(environ.get("QUERY_STRING", "")), keep_blank_values=True)
-    job = settings.hosted_jobs.get(job_id)
-    if job is None:
-        try:
-            job = _job_from_query_token(settings, query, job_id=job_id)
-        except FuseKitError:
-            return _response(start_response, HTTPStatus.FORBIDDEN, {"error": "invalid_job"})
-    if job is None:
-        return _response(start_response, HTTPStatus.NOT_FOUND, {"error": "job_not_found"})
+    try:
+        token_job = _job_from_query_token(settings, query, job_id=job_id)
+    except FuseKitError:
+        return _response(start_response, HTTPStatus.FORBIDDEN, {"error": "invalid_job"})
+    if token_job is None:
+        return _response(start_response, HTTPStatus.FORBIDDEN, {"error": "invalid_job"})
+    job = settings.hosted_jobs.get(job_id) or token_job
     if len(parts) == 4 and method == "GET" and _wants_html(environ):
         return _hosted_job_html_response(settings, start_response, job)
     if len(parts) == 4 and method == "GET":
@@ -1893,6 +1911,22 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value if isinstance(item, str)]
+
+
+def _deployment_provider_label(provider: str) -> str:
+    labels = {
+        "aws-elastic-beanstalk": "AWS Elastic Beanstalk",
+        "vercel": "Vercel",
+    }
+    return labels.get(provider, "the configured hosted runtime")
+
+
+def _deployment_metadata_label(provider: str) -> str:
+    labels = {
+        "aws-elastic-beanstalk": "AWS/Git metadata",
+        "vercel": "Vercel/Git metadata",
+    }
+    return labels.get(provider, "hosted runtime/Git metadata")
 
 
 def _hosted_config_errors(settings: HostedSettings) -> tuple[str, ...]:
