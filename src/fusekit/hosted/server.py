@@ -92,6 +92,7 @@ HOSTED_AWS_SOURCE_PROVENANCE_ENV = (
     "FUSEKIT_HOSTED_GIT_COMMIT_REF",
     "FUSEKIT_HOSTED_GIT_COMMIT_SHA",
 )
+HOSTED_OCI_SOURCE_PROVENANCE_ENV = HOSTED_AWS_SOURCE_PROVENANCE_ENV
 HOSTED_VERCEL_OPERATOR_SETUP_STEPS: tuple[dict[str, str], ...] = (
     {
         "id": "connect_vercel_project",
@@ -184,6 +185,60 @@ HOSTED_AWS_OPERATOR_SETUP_STEPS: tuple[dict[str, str], ...] = (
         "label": (
             "In Cloudflare DNS, set the fusekit record to the exact AWS-provided "
             "CNAME target."
+        ),
+        "proof": "The subdomain serves FuseKit instead of a Cloudflare error page.",
+    },
+    {
+        "id": "verify_public_contracts",
+        "label": (
+            "Verify https://fusekit.snowmanai.org/healthz, /api/hosted/readiness, "
+            "/api/hosted/deployment, and the worker dispatch receiver from outside "
+            "the deployment."
+        ),
+        "proof": (
+            "fusekit-hosted-verify reports DNS, health, readiness, deployment, "
+            "and --worker-dispatch-url checks ok."
+        ),
+    },
+)
+HOSTED_OCI_OPERATOR_SETUP_STEPS: tuple[dict[str, str], ...] = (
+    {
+        "id": "deploy_oci_python_wsgi_origin",
+        "label": (
+            "Deploy the hosted FuseKit Python WSGI app to a tagged OCI Compute origin "
+            "using systemd and gunicorn."
+        ),
+        "proof": (
+            "OCI hosted provenance reports the expected GitHub repo, branch, commit SHA, "
+            "production environment, and public HTTPS launcher URL."
+        ),
+    },
+    {
+        "id": "deploy_worker_dispatch_receiver",
+        "label": (
+            "Deploy an HTTPS worker dispatch service running "
+            "fusekit-hosted-worker-dispatch with durable dispatch state."
+        ),
+        "proof": "Its /healthz and /readiness endpoints pass with production readiness.",
+    },
+    {
+        "id": "configure_worker_dispatch_url",
+        "label": (
+            "Set FUSEKIT_HOSTED_WORKER_DISPATCH_URL in the hosted OCI environment "
+            "to that HTTPS dispatch endpoint."
+        ),
+        "proof": "Hosted readiness reports the dispatch URL is configured before launch.",
+    },
+    {
+        "id": "attach_oci_https_origin",
+        "label": "Attach fusekit.snowmanai.org to the OCI HTTPS origin through Cloudflare.",
+        "proof": "OCI and Cloudflare report a valid TLS-backed origin for this subdomain.",
+    },
+    {
+        "id": "route_cloudflare_a_record",
+        "label": (
+            "In Cloudflare DNS, set the fusekit record to the exact OCI reserved public "
+            "IP address."
         ),
         "proof": "The subdomain serves FuseKit instead of a Cloudflare error page.",
     },
@@ -602,12 +657,8 @@ class HostedSettings:
             "cloudflare_dns": {
                 "zone": "snowmanai.org",
                 "record_name": "fusekit",
-                "record_type": "CNAME",
-                "record_value": (
-                    "Use the exact AWS-provided CNAME target for this environment."
-                    if deployment_provider == "aws-elastic-beanstalk"
-                    else "Use the exact Vercel-provided CNAME target for this project."
-                ),
+                "record_type": _cloudflare_record_type_for_provider(deployment_provider),
+                "record_value": _cloudflare_record_value_label(deployment_provider),
                 "verification": "The subdomain must serve this app, not a Cloudflare error page.",
                 "dry_run_policy": {
                     "allowed_actions": ["create", "update", "upsert", "noop"],
@@ -687,6 +738,8 @@ class HostedSettings:
         provider = self.deployment_provider.strip().lower()
         if provider in {"aws", "aws-elastic-beanstalk", "elastic-beanstalk"}:
             return "aws-elastic-beanstalk"
+        if provider in {"oci", "oci-compute", "oracle-cloud", "oracle-cloud-infrastructure"}:
+            return "oci-compute"
         return "vercel"
 
     def required_source_provenance_env(self) -> tuple[str, ...]:
@@ -694,6 +747,8 @@ class HostedSettings:
 
         if self.hosted_deployment_provider() == "aws-elastic-beanstalk":
             return HOSTED_AWS_SOURCE_PROVENANCE_ENV
+        if self.hosted_deployment_provider() == "oci-compute":
+            return HOSTED_OCI_SOURCE_PROVENANCE_ENV
         return HOSTED_SOURCE_PROVENANCE_ENV
 
     def runtime_contract(self) -> dict[str, object]:
@@ -708,6 +763,16 @@ class HostedSettings:
                 "python_version": ".python-version",
                 "application_export": "app",
                 "mode": "python-wsgi",
+            }
+        if self.hosted_deployment_provider() == "oci-compute":
+            return {
+                "provider": "oci-compute",
+                "entrypoint": "app.py",
+                "process_config": "systemd:fusekit-hosted.service",
+                "requirements": "requirements.txt",
+                "python_version": ".python-version",
+                "application_export": "app",
+                "mode": "python-wsgi-on-oci-compute",
             }
         return {
             "provider": "vercel",
@@ -724,6 +789,8 @@ class HostedSettings:
 
         if self.hosted_deployment_provider() == "aws-elastic-beanstalk":
             return HOSTED_AWS_OPERATOR_SETUP_STEPS
+        if self.hosted_deployment_provider() == "oci-compute":
+            return HOSTED_OCI_OPERATOR_SETUP_STEPS
         return HOSTED_VERCEL_OPERATOR_SETUP_STEPS
 
     def source_provenance(self) -> dict[str, object]:
@@ -731,6 +798,8 @@ class HostedSettings:
 
         if self.hosted_deployment_provider() == "aws-elastic-beanstalk":
             return self._aws_source_provenance()
+        if self.hosted_deployment_provider() == "oci-compute":
+            return self._oci_source_provenance()
 
         return self._vercel_source_provenance()
 
@@ -816,6 +885,48 @@ class HostedSettings:
                 "SHA. It does not publish AWS credentials, CloudFormation outputs, access "
                 "keys, deploy hooks, GitHub installation tokens, provider credentials, or "
                 "vault material."
+            ),
+        }
+
+    def _oci_source_provenance(self) -> dict[str, object]:
+        """Return public Git/OCI provenance for the hosted deployment."""
+
+        actual = {
+            "deployment_environment": self.aws_deployment_env,
+            "deployment_url": self.aws_deployment_url,
+            "git_provider": self.aws_git_provider,
+            "repo_owner": self.aws_git_repo_owner,
+            "repo_slug": self.aws_git_repo_slug,
+            "commit_ref": self.aws_git_commit_ref,
+            "commit_sha": self.aws_git_commit_sha,
+        }
+        verified = (
+            actual["deployment_environment"] == "production"
+            and valid_hosted_oci_deployment_url(actual["deployment_url"])
+            and actual["git_provider"] == "github"
+            and actual["repo_owner"] == HOSTED_SOURCE_REPOSITORY_OWNER
+            and actual["repo_slug"] == HOSTED_SOURCE_REPOSITORY_NAME
+            and bool(actual["commit_ref"])
+            and _looks_like_git_commit_sha(actual["commit_sha"])
+        )
+        return {
+            "provider": "oci-compute",
+            "source": "fusekit_hosted_environment_variables",
+            "expected": {
+                "deployment_environment": "production",
+                "git_provider": "github",
+                "repo_owner": HOSTED_SOURCE_REPOSITORY_OWNER,
+                "repo_slug": HOSTED_SOURCE_REPOSITORY_NAME,
+                "source_repository": HOSTED_SOURCE_REPOSITORY,
+            },
+            "actual": actual,
+            "verified": verified,
+            "required_env": list(HOSTED_OCI_SOURCE_PROVENANCE_ENV),
+            "secret_boundary": (
+                "Source provenance publishes only OCI/Git metadata: environment, "
+                "deployment URL, provider, repository owner/name, branch/ref, and commit "
+                "SHA. It does not publish OCI credentials, access keys, deploy hooks, "
+                "GitHub installation tokens, provider credentials, or vault material."
             ),
         }
 
@@ -1916,6 +2027,7 @@ def _string_list(value: object) -> list[str]:
 def _deployment_provider_label(provider: str) -> str:
     labels = {
         "aws-elastic-beanstalk": "AWS Elastic Beanstalk",
+        "oci-compute": "OCI Compute",
         "vercel": "Vercel",
     }
     return labels.get(provider, "the configured hosted runtime")
@@ -1924,9 +2036,24 @@ def _deployment_provider_label(provider: str) -> str:
 def _deployment_metadata_label(provider: str) -> str:
     labels = {
         "aws-elastic-beanstalk": "AWS/Git metadata",
+        "oci-compute": "OCI/Git metadata",
         "vercel": "Vercel/Git metadata",
     }
     return labels.get(provider, "hosted runtime/Git metadata")
+
+
+def _cloudflare_record_type_for_provider(provider: str) -> str:
+    if provider == "oci-compute":
+        return "A"
+    return "CNAME"
+
+
+def _cloudflare_record_value_label(provider: str) -> str:
+    if provider == "aws-elastic-beanstalk":
+        return "Use the exact AWS-provided CNAME target for this environment."
+    if provider == "oci-compute":
+        return "Use the exact OCI reserved public IP address for this environment."
+    return "Use the exact Vercel-provided CNAME target for this project."
 
 
 def _hosted_config_errors(settings: HostedSettings) -> tuple[str, ...]:
@@ -2126,6 +2253,14 @@ def valid_hosted_aws_deployment_url(value: object) -> bool:
     parsed = urllib.parse.urlparse(value)
     hostname = (parsed.hostname or "").lower().rstrip(".")
     return hostname.endswith(".elasticbeanstalk.com")
+
+
+def valid_hosted_oci_deployment_url(value: object) -> bool:
+    if not isinstance(value, str) or not _valid_public_origin(value):
+        return False
+    parsed = urllib.parse.urlparse(value)
+    hostname = (parsed.hostname or "").lower().rstrip(".")
+    return hostname in {"fusekit.snowmanai.org", "www.fusekit.snowmanai.org"}
 
 
 def valid_hosted_vercel_deployment_url(value: object) -> bool:

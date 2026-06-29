@@ -13,6 +13,8 @@ from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY, HOSTED_PROHIB
 from fusekit.hosted.server import (
     HOSTED_AWS_OPERATOR_SETUP_STEPS,
     HOSTED_AWS_SOURCE_PROVENANCE_ENV,
+    HOSTED_OCI_OPERATOR_SETUP_STEPS,
+    HOSTED_OCI_SOURCE_PROVENANCE_ENV,
     HOSTED_PROVIDER_PERMISSION_COPY,
     HOSTED_SECURITY_HEADERS_CONTRACT,
     HOSTED_SOURCE_INTEGRITY_CONTRACT,
@@ -855,6 +857,48 @@ def test_verify_hosted_deployment_accepts_aws_source_provenance_contract() -> No
     checks = {check["id"]: check for check in report["checks"]}
 
     assert report["ready"] is True
+    assert checks["hosted.readiness"]["status"] == "ok"
+
+
+def test_verify_hosted_deployment_accepts_oci_source_provenance_contract() -> None:
+    readiness = _readiness_contract()
+    readiness["required_source_provenance_env"] = list(HOSTED_OCI_SOURCE_PROVENANCE_ENV)
+    readiness["source_provenance"] = _oci_source_provenance_contract()
+    oci_deployment = _oci_deployment_contract()
+    opener = SequenceOpener(
+        [
+            _home_html(readiness=readiness, deployment=oci_deployment),
+            {"ok": True},
+            readiness,
+            oci_deployment,
+            _github_intake_contract(),
+            {"ok": True},
+            {
+                "schema_version": "fusekit.hosted-worker-dispatch-readiness.v1",
+                "ready": True,
+                "production_ready": True,
+                "idempotency": {
+                    "mode": "dispatch-state-dir",
+                    "durable": True,
+                    "scope": "worker deployment",
+                    "proof": (
+                        "Duplicate job/action dispatches are reserved through a configured "
+                        "non-secret state directory before worker spawn."
+                    ),
+                },
+            },
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is True
+    assert checks["hosted.deployment"]["status"] == "ok"
     assert checks["hosted.readiness"]["status"] == "ok"
 
 
@@ -1780,6 +1824,36 @@ def _aws_source_provenance_contract() -> dict[str, object]:
     }
 
 
+def _oci_source_provenance_contract() -> dict[str, object]:
+    return {
+        "provider": "oci-compute",
+        "source": "fusekit_hosted_environment_variables",
+        "expected": {
+            "deployment_environment": "production",
+            "git_provider": "github",
+            "repo_owner": "xpxpxp-coder",
+            "repo_slug": "fusekit",
+            "source_repository": "https://github.com/xpxpxp-coder/fusekit",
+        },
+        "actual": {
+            "deployment_environment": "production",
+            "deployment_url": "https://fusekit.snowmanai.org",
+            "git_provider": "github",
+            "repo_owner": "xpxpxp-coder",
+            "repo_slug": "fusekit",
+            "commit_ref": "main",
+            "commit_sha": VERCEL_COMMIT_SHA,
+        },
+        "verified": True,
+        "required_env": list(HOSTED_OCI_SOURCE_PROVENANCE_ENV),
+        "secret_boundary": (
+            "Source provenance publishes only OCI/Git metadata. It does not publish "
+            "OCI credentials, access keys, deploy hooks, GitHub installation tokens, "
+            "provider credentials, or vault material."
+        ),
+    }
+
+
 def _aws_deployment_contract() -> dict[str, object]:
     contract = _deployment_contract()
     contract["runtime"] = {
@@ -1799,6 +1873,29 @@ def _aws_deployment_contract() -> dict[str, object]:
     operator_setup = contract["operator_setup"]
     assert isinstance(operator_setup, dict)
     operator_setup["steps"] = [dict(step) for step in HOSTED_AWS_OPERATOR_SETUP_STEPS]
+    return contract
+
+
+def _oci_deployment_contract() -> dict[str, object]:
+    contract = _deployment_contract()
+    contract["runtime"] = {
+        "provider": "oci-compute",
+        "entrypoint": "app.py",
+        "process_config": "systemd:fusekit-hosted.service",
+        "requirements": "requirements.txt",
+        "python_version": ".python-version",
+        "application_export": "app",
+        "mode": "python-wsgi-on-oci-compute",
+    }
+    cloudflare_dns = contract["cloudflare_dns"]
+    assert isinstance(cloudflare_dns, dict)
+    cloudflare_dns["record_type"] = "A"
+    cloudflare_dns["record_value"] = "Use the exact OCI reserved public IP address."
+    contract["source_provenance"] = _oci_source_provenance_contract()
+    contract["required_source_provenance_env"] = list(HOSTED_OCI_SOURCE_PROVENANCE_ENV)
+    operator_setup = contract["operator_setup"]
+    assert isinstance(operator_setup, dict)
+    operator_setup["steps"] = [dict(step) for step in HOSTED_OCI_OPERATOR_SETUP_STEPS]
     return contract
 
 

@@ -36,6 +36,8 @@ from fusekit.hosted.server import (
     HOSTED_CANONICAL_ORIGIN,
     HOSTED_CAPABILITY_VAULT_BOUNDARY,
     HOSTED_DEPLOYMENT_SCHEMA_VERSION,
+    HOSTED_OCI_OPERATOR_SETUP_STEPS,
+    HOSTED_OCI_SOURCE_PROVENANCE_ENV,
     HOSTED_OPERATOR_SETUP_STEPS,
     HOSTED_PROVIDER_PERMISSION_COPY,
     HOSTED_PUBLIC_TRUST_CONTRACT,
@@ -48,6 +50,7 @@ from fusekit.hosted.server import (
     HOSTED_SOURCE_REPOSITORY_OWNER,
     HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
     valid_hosted_aws_deployment_url,
+    valid_hosted_oci_deployment_url,
     valid_hosted_vercel_deployment_url,
 )
 from fusekit.hosted.worker_dispatch import HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION
@@ -533,7 +536,7 @@ def _hosted_runtime_contract_failures(
             failures.append("cloudflare_zone_mismatch")
         if cloudflare_dns.get("record_name") != "fusekit":
             failures.append("cloudflare_record_name_mismatch")
-        if cloudflare_dns.get("record_type") != "CNAME":
+        if cloudflare_dns.get("record_type") != _expected_cloudflare_record_type(provider):
             failures.append("cloudflare_record_type_mismatch")
         dry_run_policy = cloudflare_dns.get("dry_run_policy")
         expected_dry_run_policy = {
@@ -620,6 +623,16 @@ def _expected_runtime_contract(provider: str) -> dict[str, object]:
             "application_export": "app",
             "mode": "python-wsgi",
         }
+    if provider == "oci-compute":
+        return {
+            "provider": "oci-compute",
+            "entrypoint": "app.py",
+            "process_config": "systemd:fusekit-hosted.service",
+            "requirements": "requirements.txt",
+            "python_version": ".python-version",
+            "application_export": "app",
+            "mode": "python-wsgi-on-oci-compute",
+        }
     if provider == "vercel":
         return {
             "provider": "vercel",
@@ -636,13 +649,23 @@ def _expected_runtime_contract(provider: str) -> dict[str, object]:
 def _expected_operator_setup_steps(provider: str) -> tuple[dict[str, str], ...]:
     if provider == "aws-elastic-beanstalk":
         return HOSTED_AWS_OPERATOR_SETUP_STEPS
+    if provider == "oci-compute":
+        return HOSTED_OCI_OPERATOR_SETUP_STEPS
     return HOSTED_OPERATOR_SETUP_STEPS
 
 
 def _expected_source_provenance_env(provider: str) -> tuple[str, ...]:
     if provider == "aws-elastic-beanstalk":
         return HOSTED_AWS_SOURCE_PROVENANCE_ENV
+    if provider == "oci-compute":
+        return HOSTED_OCI_SOURCE_PROVENANCE_ENV
     return HOSTED_SOURCE_PROVENANCE_ENV
+
+
+def _expected_cloudflare_record_type(provider: str) -> str:
+    if provider == "oci-compute":
+        return "A"
+    return "CNAME"
 
 
 def _worker_dispatch_contract_failures(payload: object) -> list[str]:
@@ -749,12 +772,12 @@ def _source_provenance_failures(payload: object) -> list[str]:
     if not isinstance(payload, dict):
         return ["source_provenance_contract_missing"]
     provider = str(payload.get("provider") or "")
-    if provider not in {"vercel", "aws-elastic-beanstalk"}:
+    if provider not in {"vercel", "aws-elastic-beanstalk", "oci-compute"}:
         failures.append("source_provenance_provider_mismatch")
     expected_source = (
-        "fusekit_hosted_environment_variables"
-        if provider == "aws-elastic-beanstalk"
-        else "vercel_system_environment_variables"
+        "vercel_system_environment_variables"
+        if provider == "vercel"
+        else "fusekit_hosted_environment_variables"
     )
     if payload.get("source") != expected_source:
         failures.append("source_provenance_source_mismatch")
@@ -794,6 +817,10 @@ def _source_provenance_failures(payload: object) -> list[str]:
             actual.get("deployment_url")
         ):
             failures.append("source_provenance_deployment_url_invalid")
+        if provider == "oci-compute" and not valid_hosted_oci_deployment_url(
+            actual.get("deployment_url")
+        ):
+            failures.append("source_provenance_deployment_url_invalid")
         if provider == "vercel" and not valid_hosted_vercel_deployment_url(
             actual.get("deployment_url")
         ):
@@ -807,6 +834,8 @@ def _source_provenance_failures(payload: object) -> list[str]:
     required_boundary = (
         "does not publish AWS credentials"
         if provider == "aws-elastic-beanstalk"
+        else "does not publish OCI credentials"
+        if provider == "oci-compute"
         else "does not publish Vercel tokens"
     )
     if not isinstance(boundary, str) or required_boundary not in boundary:
@@ -1036,6 +1065,20 @@ def _hosted_home_visible_deployment_failures(
                 "Vercel-provided CNAME target",
                 "waiting for Vercel metadata",
             )
+        },
+        "oci-compute": {
+            "hosted_home_provider_copy_vercel_leak": (
+                "Vercel must serve",
+                "Vercel custom domain",
+                "Vercel-provided CNAME target",
+                "waiting for Vercel metadata",
+            ),
+            "hosted_home_provider_copy_aws_leak": (
+                "AWS Elastic Beanstalk must serve",
+                "AWS HTTPS origin",
+                "AWS-provided CNAME target",
+                "waiting for AWS/Git metadata",
+            ),
         },
         "vercel": {
             "hosted_home_provider_copy_aws_leak": (

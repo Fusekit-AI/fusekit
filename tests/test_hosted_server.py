@@ -18,6 +18,7 @@ from fusekit.hosted.job import create_hosted_job_token
 from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY, HOSTED_PROHIBITED_ACTIONS
 from fusekit.hosted.server import (
     HOSTED_AWS_SOURCE_PROVENANCE_ENV,
+    HOSTED_OCI_SOURCE_PROVENANCE_ENV,
     HOSTED_SECURITY_HEADERS_CONTRACT,
     HOSTED_SOURCE_INTEGRITY_CONTRACT,
     HOSTED_SOURCE_PROVENANCE_ENV,
@@ -50,6 +51,19 @@ def _aws_provenance_kwargs() -> dict[str, str]:
         "deployment_provider": "aws-elastic-beanstalk",
         "aws_deployment_env": "production",
         "aws_deployment_url": "https://fusekit-prod.us-east-1.elasticbeanstalk.com",
+        "aws_git_provider": "github",
+        "aws_git_repo_owner": "xpxpxp-coder",
+        "aws_git_repo_slug": "fusekit",
+        "aws_git_commit_ref": "main",
+        "aws_git_commit_sha": VERCEL_COMMIT_SHA,
+    }
+
+
+def _oci_provenance_kwargs() -> dict[str, str]:
+    return {
+        "deployment_provider": "oci-compute",
+        "aws_deployment_env": "production",
+        "aws_deployment_url": "https://fusekit.snowmanai.org",
         "aws_git_provider": "github",
         "aws_git_repo_owner": "xpxpxp-coder",
         "aws_git_repo_slug": "fusekit",
@@ -321,6 +335,30 @@ def test_hosted_home_uses_selected_provider_contract_copy() -> None:
     assert "Vercel custom domain" not in html
     assert "Vercel-provided CNAME target" not in html
     assert "waiting for Vercel metadata" not in html
+
+
+def test_hosted_home_uses_oci_provider_contract_copy() -> None:
+    html = render_hosted_home(
+        HostedSettings(
+            public_origin="https://fusekit.snowmanai.org",
+            github_app_id="12345",
+            github_app_slug="fusekit-launcher",
+            github_private_key_pem=_private_key_pem(),
+            state_secret=STATE_SECRET,
+            worker_secret=WORKER_SECRET,
+            worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+            **_oci_provenance_kwargs(),
+        )
+    )
+
+    assert "OCI Compute must serve the Python WSGI entrypoint" in html
+    assert "OCI/Git metadata" in html
+    assert "Attach fusekit.snowmanai.org to the OCI HTTPS origin through Cloudflare." in html
+    assert "Use the exact OCI reserved public IP address" in html
+    assert "AWS Elastic Beanstalk must serve" not in html
+    assert "AWS-provided CNAME target" not in html
+    assert "Vercel must serve" not in html
+    assert "Vercel-provided CNAME target" not in html
 
 
 def test_hosted_home_waits_for_complete_operator_configuration() -> None:
@@ -748,6 +786,55 @@ def test_hosted_deployment_endpoint_supports_aws_wsgi_origin_without_secrets() -
     assert payload["required_source_provenance_env"] == list(HOSTED_AWS_SOURCE_PROVENANCE_ENV)
     assert "AWS credentials" in provenance["secret_boundary"]
     assert "AWS credentials" in payload["operator_setup"]["secret_boundary"]
+    assert "PRIVATE KEY" not in serialized
+    assert STATE_SECRET not in serialized
+    assert WORKER_SECRET not in serialized
+
+
+def test_hosted_deployment_endpoint_supports_oci_compute_origin_without_secrets() -> None:
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=_private_key_pem(),
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        **_oci_provenance_kwargs(),
+    )
+
+    status, _headers, body = _call("/api/hosted/deployment", settings=settings)
+    payload = json.loads(body.decode("utf-8"))
+    serialized = json.dumps(payload)
+
+    assert status == "200 OK"
+    assert payload["runtime"] == {
+        "provider": "oci-compute",
+        "entrypoint": "app.py",
+        "process_config": "systemd:fusekit-hosted.service",
+        "requirements": "requirements.txt",
+        "python_version": ".python-version",
+        "application_export": "app",
+        "mode": "python-wsgi-on-oci-compute",
+    }
+    assert payload["cloudflare_dns"]["record_type"] == "A"
+    assert "OCI reserved public IP address" in payload["cloudflare_dns"]["record_value"]
+    assert [step["id"] for step in payload["operator_setup"]["steps"]] == [
+        "deploy_oci_python_wsgi_origin",
+        "deploy_worker_dispatch_receiver",
+        "configure_worker_dispatch_url",
+        "attach_oci_https_origin",
+        "route_cloudflare_a_record",
+        "verify_public_contracts",
+    ]
+    provenance = payload["source_provenance"]
+    assert provenance["provider"] == "oci-compute"
+    assert provenance["source"] == "fusekit_hosted_environment_variables"
+    assert provenance["verified"] is True
+    assert provenance["actual"]["deployment_url"] == "https://fusekit.snowmanai.org"
+    assert provenance["required_env"] == list(HOSTED_OCI_SOURCE_PROVENANCE_ENV)
+    assert payload["required_source_provenance_env"] == list(HOSTED_OCI_SOURCE_PROVENANCE_ENV)
+    assert "OCI credentials" in provenance["secret_boundary"]
     assert "PRIVATE KEY" not in serialized
     assert STATE_SECRET not in serialized
     assert WORKER_SECRET not in serialized
