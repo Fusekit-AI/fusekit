@@ -1753,7 +1753,33 @@ def test_hosted_byo_oci_lane_starts_without_managed_worker_dispatch() -> None:
     assert bootstrap["lane"] == BYO_OCI_LANE
     assert bootstrap["worker_dispatch"] == "not_applicable_user_owned_oci"
     assert bootstrap["runner_shape_policy"] == "AMD/x86_64 only; ARM images are not allowed."
-    assert "ghs_fake" not in json.dumps(bootstrap)
+    assert bootstrap["open_core_execution"] == {
+        "mode": "user-owned-oci-cloud-shell",
+        "fusekit_package": "fusekit",
+        "app_source": "https://github.com/example/one",
+        "github_source_policy": (
+            "Cloud Shell fetches the selected GitHub source through FuseKit source "
+            "handoff. Private source access is approved by the user inside provider-owned "
+            "GitHub gates, not by exposing hosted GitHub installation tokens."
+        ),
+        "worker_secret_required": False,
+        "hosted_github_private_key_required": False,
+    }
+    cloud_shell = bootstrap["cloud_shell"]
+    command = cloud_shell["bootstrap_command"]
+    assert cloud_shell["deeplink_url"] == "https://cloud.oracle.com/?cloudshell=true"
+    assert "fusekit launch" in command
+    assert "--runner oci-existing" in command
+    assert "--oci-shape VM.Standard.E5.Flex" in command
+    assert "--visual-runner novnc" in command
+    assert "--github-repo example/one" in command
+    assert "--require-recording" not in command
+    assert "fusekit-hosted-worker" not in command
+    assert bootstrap["proof_return"]["mode"] == "user_downloads_or_shares_redacted_artifacts"
+    serialized = json.dumps(bootstrap)
+    assert "ghs_fake" not in serialized
+    assert WORKER_SECRET not in serialized
+    assert "PRIVATE KEY" not in serialized
 
 
 def test_hosted_job_api_returns_redacted_status_and_accepts_protected_action() -> None:

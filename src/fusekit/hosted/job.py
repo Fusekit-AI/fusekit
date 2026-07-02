@@ -25,6 +25,7 @@ from fusekit.hosted.launcher import (
     HOSTED_PROHIBITED_ACTIONS,
     HostedLaunchPlan,
 )
+from fusekit.runner.cloud_shell import build_cloud_shell_launch_plan
 from fusekit.security.redaction import contains_durable_secret_text, redact_public_text
 
 HOSTED_JOB_SCHEMA_VERSION = "fusekit.hosted-job.v1"
@@ -38,6 +39,7 @@ HOSTED_WORKER_CLAIM_SCHEMA_VERSION = "fusekit.hosted-worker-claim.v1"
 HOSTED_WORKER_PROOF_SCHEMA_VERSION = "fusekit.hosted-worker-proof.v1"
 HOSTED_WORKER_PROOF_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-worker-proof-receipt.v1"
 HOSTED_BYO_OCI_BOOTSTRAP_SCHEMA_VERSION = "fusekit.hosted-byo-oci-bootstrap.v1"
+HOSTED_BYO_OCI_FUSEKIT_PACKAGE = "fusekit"
 
 HOSTED_WORKER_PROOF_KEYS = HOSTED_COMPLETION_EVIDENCE_KEYS
 HOSTED_WORKER_MAINTENANCE_PROOF_KEYS = (
@@ -354,31 +356,96 @@ def with_hosted_job_payment_receipt(
 def hosted_byo_oci_bootstrap(job: HostedLaunchJob) -> dict[str, object]:
     """Return a redacted BYO OCI bootstrap contract for a user-owned worker lane."""
 
+    cloud_shell_plan = build_cloud_shell_launch_plan(
+        app_source=job.github_source,
+        fusekit_package=HOSTED_BYO_OCI_FUSEKIT_PACKAGE,
+        runner="oci-existing",
+        launch_args=_byo_oci_launch_args(job),
+    )
     return {
         "schema_version": HOSTED_BYO_OCI_BOOTSTRAP_SCHEMA_VERSION,
         "job_id": job.job_id,
         "lane": BYO_OCI_LANE,
         "worker_dispatch": "not_applicable_user_owned_oci",
         "runner_shape_policy": "AMD/x86_64 only; ARM images are not allowed.",
+        "open_core_execution": {
+            "mode": "user-owned-oci-cloud-shell",
+            "fusekit_package": HOSTED_BYO_OCI_FUSEKIT_PACKAGE,
+            "app_source": job.github_source,
+            "github_source_policy": (
+                "Cloud Shell fetches the selected GitHub source through FuseKit source "
+                "handoff. Private source access is approved by the user inside provider-owned "
+                "GitHub gates, not by exposing hosted GitHub installation tokens."
+            ),
+            "worker_secret_required": False,
+            "hosted_github_private_key_required": False,
+        },
         "cloud_shell": {
             "provider": "oci-cloud-shell",
             "requires_user_oci_account": True,
+            "deeplink_url": cloud_shell_plan.deeplink_url,
+            "bootstrap_command": cloud_shell_plan.bootstrap_command,
+            "fallback_steps": list(cloud_shell_plan.fallback_steps),
             "human_gates": [
                 "Oracle Cloud sign-in, MFA, tenancy selection, and billing gates",
                 "Compartment and region selection",
             ],
             "bootstrap_intent": (
-                "Open Oracle Cloud Shell and start a disposable FuseKit worker inside the "
-                "user's tenancy using the signed public job token."
+                "Open Oracle Cloud Shell and run open-core FuseKit from the selected source "
+                "inside the user's tenancy. Hosted worker secrets and hosted GitHub App "
+                "private keys are not exported to BYO OCI."
             ),
+        },
+        "proof_return": {
+            "mode": "user_downloads_or_shares_redacted_artifacts",
+            "required_artifacts": list(job.worker_contract.required_artifacts),
+            "acceptance_command": (
+                "fusekit acceptance run <app> --mode live "
+                "--remote-artifacts <app>/.fusekit/remote-artifacts --require-recording"
+            ),
+            "not_hosted_complete_until": list(HOSTED_WORKER_PROOF_KEYS),
         },
         "worker_request": hosted_worker_request(job),
         "secret_boundary": (
-            "The BYO OCI bootstrap contains a signed public job token contract and proof "
-            "labels only. It does not contain Oracle credentials, API keys, vault material, "
-            "or provider secrets."
+            "The BYO OCI bootstrap contains open-core launch instructions, public source "
+            "labels, and proof labels only. It does not contain Oracle credentials, GitHub "
+            "installation tokens, hosted worker secrets, hosted GitHub private keys, API keys, "
+            "vault material, or provider secrets."
         ),
     }
+
+
+def _byo_oci_launch_args(job: HostedLaunchJob) -> tuple[str, ...]:
+    args = [
+        "--oci-shape",
+        "VM.Standard.E5.Flex",
+        "--visual-runner",
+        "novnc",
+        "--infer-ui",
+    ]
+    repo = _github_repo_slug_from_url(job.github_source)
+    if repo:
+        args.extend(["--github-repo", repo])
+    return tuple(args)
+
+
+def _github_repo_slug_from_url(value: str) -> str:
+    parsed = urllib.parse.urlparse(value)
+    if parsed.scheme != "https" or parsed.netloc.lower() != "github.com":
+        return ""
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) < 2:
+        return ""
+    owner = parts[0]
+    repo = parts[1].removesuffix(".git")
+    candidate = f"{owner}/{repo}"
+    allowed_slug_chars = {"-", "_", "."}
+    if all(
+        part and all(ch.isalnum() or ch in allowed_slug_chars for ch in part)
+        for part in (owner, repo)
+    ):
+        return candidate
+    return ""
 
 
 def create_hosted_job_token(
