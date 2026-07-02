@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from fusekit.hosted.github_app import GitHubAppConfig
-from fusekit.hosted.job import create_hosted_job_token
+from fusekit.hosted.job import create_hosted_job_token, with_hosted_job_payment_receipt
 from fusekit.hosted.lanes import BYO_OCI_LANE, MANAGED_FUSEKIT_RUN_LANE
 from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY, HOSTED_PROHIBITED_ACTIONS
 from fusekit.hosted.server import (
@@ -216,6 +216,9 @@ def _settings_with_github(opener: SequenceOpener) -> HostedSettings:
         worker_dispatch_url="https://worker.snowmanai.org/dispatch",
         github_opener=opener,
         worker_dispatch_opener=SequenceOpener([{} for _ in range(8)]),
+        managed_runs_enabled=True,
+        stripe_secret_key="sk_test_redacted",
+        stripe_price_id="price_managed_run",
         **_vercel_provenance_kwargs(),
     )
 
@@ -520,6 +523,16 @@ def test_hosted_readiness_endpoint_reports_ready_when_configured() -> None:
     assert payload["required_source_provenance_env"] == list(HOSTED_SOURCE_PROVENANCE_ENV)
     assert payload["source_provenance"]["verified"] is True
     assert payload["source_provenance"]["actual"]["commit_sha"] == VERCEL_COMMIT_SHA
+    lane_readiness = payload["lane_readiness"]["lanes"]
+    assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["launchable"] is False
+    assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["managed_worker_dispatch_allowed"] is False
+    assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["blocking_checks"] == [
+        "managed_runs_not_enabled",
+        "stripe_secret_key_required_for_managed_runs",
+        "stripe_price_id_required_for_managed_runs",
+    ]
+    assert lane_readiness[BYO_OCI_LANE]["launchable"] is True
+    assert lane_readiness[BYO_OCI_LANE]["requires_payment"] is False
 
 
 def test_hosted_readiness_blocks_launch_without_verified_source_provenance() -> None:
@@ -552,6 +565,40 @@ def test_hosted_readiness_blocks_launch_without_verified_source_provenance() -> 
     assert "PRIVATE KEY" not in serialized
     assert STATE_SECRET not in serialized
     assert WORKER_SECRET not in serialized
+
+
+def test_hosted_readiness_reports_paid_managed_lane_when_stripe_is_configured() -> None:
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=_private_key_pem(),
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        managed_runs_enabled=True,
+        stripe_secret_key="sk_test_redacted",
+        stripe_price_id="price_managed_run",
+        **_vercel_provenance_kwargs(),
+    )
+
+    status, _headers, body = _call("/api/hosted/readiness", settings=settings)
+    payload = json.loads(body.decode("utf-8"))
+    serialized = json.dumps(payload)
+    lane_readiness = payload["lane_readiness"]["lanes"]
+
+    assert status == "200 OK"
+    assert payload["ready"] is True
+    assert payload["payment"]["enabled"] is True
+    assert payload["payment"]["managed_runs_enabled"] is True
+    assert payload["payment"]["secret_key_configured"] is True
+    assert payload["payment"]["price_configured"] is True
+    assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["launchable"] is True
+    assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["managed_worker_dispatch_allowed"] is True
+    assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["blocking_checks"] == []
+    assert lane_readiness[BYO_OCI_LANE]["launchable"] is True
+    assert "sk_test" not in serialized
+    assert "price_managed_run" not in serialized
 
 
 def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets() -> None:
@@ -618,6 +665,14 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
             "plan_fingerprint",
         ],
     }
+    lane_readiness = payload["lane_readiness"]["lanes"]
+    assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["launchable"] is False
+    assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["blocking_checks"] == [
+        "managed_runs_not_enabled",
+        "stripe_secret_key_required_for_managed_runs",
+        "stripe_price_id_required_for_managed_runs",
+    ]
+    assert lane_readiness[BYO_OCI_LANE]["launchable"] is True
     assert payload["one_click_launch"]["terminal_required"] is False
     assert payload["one_click_launch"]["download_required"] is False
     assert payload["one_click_launch"]["intake"] == "github-app"
@@ -1484,6 +1539,53 @@ def test_hosted_plan_renders_managed_and_byo_launch_lanes() -> None:
     assert "ghs_fake" not in text
 
 
+def test_hosted_plan_disables_managed_lane_until_payment_is_configured() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=_private_key_pem(),
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        github_opener=opener,
+        **_vercel_provenance_kwargs(),
+    )
+
+    status, _headers, body = _call(
+        "/github/plan",
+        query_string=f"installation_id=42&repo=example/one&state={state}",
+        settings=settings,
+    )
+    text = body.decode("utf-8")
+
+    assert status == "200 OK"
+    assert "Managed FuseKit run" in text
+    assert "Set FUSEKIT_MANAGED_RUNS_ENABLED=1 only after Stripe Checkout is configured." in text
+    assert f"lane={MANAGED_FUSEKIT_RUN_LANE}" not in text
+    assert f"lane={BYO_OCI_LANE}" in text
+    assert "Bring your own OCI" in text
+    assert "ghs_fake" not in text
+
+
 def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() -> None:
     state = create_hosted_state_token(
         STATE_SECRET,
@@ -1713,6 +1815,9 @@ def test_hosted_byo_oci_lane_starts_without_managed_worker_dispatch() -> None:
         worker_dispatch_url="https://worker.snowmanai.org/dispatch",
         github_opener=github_opener,
         worker_dispatch_opener=dispatch_opener,
+        managed_runs_enabled=True,
+        stripe_secret_key="sk_test_redacted",
+        stripe_price_id="price_managed_run",
         **_vercel_provenance_kwargs(),
     )
 
@@ -1811,6 +1916,7 @@ def test_hosted_job_api_returns_redacted_status_and_accepts_protected_action() -
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    text = _paid_control_room_text(settings, job_id)
     job_token = _job_token(text)
     control = _control_for_action(text, "start")
 
@@ -1917,6 +2023,7 @@ def test_hosted_job_api_requires_signed_job_token_even_with_process_memory() -> 
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    text = _paid_control_room_text(settings, job_id)
     control = _control_for_action(text, "start")
 
     status, _headers, body = _call(
@@ -2024,6 +2131,7 @@ def test_hosted_job_api_accepts_signed_job_token_without_process_memory() -> Non
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    text = _paid_control_room_text(settings, job_id)
     control = _control_for_action(text, "start")
     job_token = _match(text, r"job=([A-Za-z0-9_.-]+)")
     stateless_settings = HostedSettings(
@@ -2088,6 +2196,7 @@ def test_hosted_job_action_from_browser_returns_updated_control_room_html() -> N
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    text = _paid_control_room_text(settings, job_id)
     control = _control_for_action(text, "start")
     job_token = _match(text, r"job=([A-Za-z0-9_.-]+)")
 
@@ -2181,6 +2290,7 @@ def test_hosted_job_start_dispatches_signed_worker_envelope_when_configured() ->
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    text = _paid_control_room_text(settings, job_id)
     control = _control_for_action(text, "start")
     job_token = _match(text, r"job=([A-Za-z0-9_.-]+)")
 
@@ -2281,6 +2391,7 @@ def test_hosted_job_actions_reject_duplicate_start_without_second_dispatch() -> 
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    text = _paid_control_room_text(settings, job_id)
     control = _control_for_action(text, "start")
     job_token = _match(text, r"job=([A-Za-z0-9_.-]+)")
 
@@ -2385,6 +2496,7 @@ def test_hosted_worker_request_requires_start_and_supports_stateless_job_token()
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    text = _paid_control_room_text(settings, job_id)
     control = _control_for_action(text, "start")
     job_token = _match(text, r"job=([A-Za-z0-9_.-]+)")
 
@@ -2463,6 +2575,7 @@ def test_hosted_worker_claim_requires_backend_auth_and_returns_redacted_receipt(
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    text = _paid_control_room_text(settings, job_id)
     control = _control_for_action(text, "start")
     job_token = _match(text, r"job=([A-Za-z0-9_.-]+)")
 
@@ -2556,6 +2669,7 @@ def test_hosted_worker_proof_submission_requires_backend_auth_and_redacted_evide
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    text = _paid_control_room_text(settings, job_id)
     control = _control_for_action(text, "start")
     job_token = _match(text, r"job=([A-Za-z0-9_.-]+)")
 
@@ -2683,6 +2797,7 @@ def test_hosted_worker_proof_submission_rejects_oversized_body_before_completion
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    text = _paid_control_room_text(settings, job_id)
     control = _control_for_action(text, "start")
     job_token = _match(text, r"job=([A-Za-z0-9_.-]+)")
 
@@ -2989,6 +3104,7 @@ def test_hosted_job_api_rejects_query_control_token() -> None:
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    text = _paid_control_room_text(settings, job_id)
     job_token = _job_token(text)
     control = _control_for_action(text, "start")
 
@@ -3079,6 +3195,7 @@ def test_hosted_job_api_rejects_cross_origin_control_post() -> None:
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    text = _paid_control_room_text(settings, job_id)
     job_token = _job_token(text)
     control = _control_for_action(text, "start")
 
@@ -3124,6 +3241,7 @@ def test_hosted_job_api_rejects_cross_origin_referer_control_post() -> None:
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    text = _paid_control_room_text(settings, job_id)
     job_token = _job_token(text)
     control = _control_for_action(text, "start")
 
@@ -3169,6 +3287,7 @@ def test_hosted_job_api_rejects_json_control_body() -> None:
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    text = _paid_control_room_text(settings, job_id)
     job_token = _job_token(text)
     control = _control_for_action(text, "start")
 
@@ -3213,6 +3332,7 @@ def test_hosted_job_api_rejects_untyped_control_body() -> None:
     assert status == "200 OK"
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    text = _paid_control_room_text(settings, job_id)
     job_token = _job_token(text)
     control = _control_for_action(text, "start")
 
@@ -3508,6 +3628,38 @@ def _control_for_payment_checkout(text: str) -> str:
         r'(?:\?job=[^"]+)?">\s*'
         r'<input type="hidden" name="control" value="([A-Za-z0-9_.-]+)">',
     )
+
+
+def _paid_control_room_text(settings: HostedSettings, job_id: str) -> str:
+    job = settings.hosted_jobs[job_id]
+    receipt = {
+        "schema_version": "fusekit.hosted-payment.v1",
+        "provider": "stripe-checkout",
+        "checkout_session_id": "cs_test_paid",
+        "status": "complete",
+        "payment_status": "paid",
+        "mode": "payment",
+        "client_reference_id": job_id,
+        "metadata": {
+            "job_id": job_id,
+            "lane": MANAGED_FUSEKIT_RUN_LANE,
+            "plan_fingerprint": job.worker_contract.plan_fingerprint,
+        },
+        "amount_total": 4900,
+        "currency": "usd",
+        "paid": True,
+    }
+    paid_job = with_hosted_job_payment_receipt(job, receipt)
+    settings.hosted_jobs[job_id] = paid_job
+    job_token = create_hosted_job_token(STATE_SECRET, paid_job)
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}",
+        query_string=f"job={job_token}",
+        headers={"Accept": "text/html"},
+        settings=settings,
+    )
+    assert status == "200 OK"
+    return body.decode("utf-8")
 
 
 def _job_token(text: str) -> str:

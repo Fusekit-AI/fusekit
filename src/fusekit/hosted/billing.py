@@ -35,12 +35,16 @@ class HostedPaymentConfig:
     def public_dict(self) -> dict[str, object]:
         """Return redacted hosted payment readiness."""
 
+        secret_key_configured = self.stripe_secret_key.startswith("sk_")
+        price_configured = self.stripe_price_id.startswith("price_")
+        ready = self.enabled and secret_key_configured and price_configured
         return {
             "schema_version": HOSTED_PAYMENT_SCHEMA_VERSION,
             "provider": STRIPE_CHECKOUT_PROVIDER,
-            "enabled": self.enabled,
-            "secret_key_configured": bool(self.stripe_secret_key),
-            "price_configured": bool(self.stripe_price_id),
+            "enabled": ready,
+            "managed_runs_enabled": self.enabled,
+            "secret_key_configured": secret_key_configured,
+            "price_configured": price_configured,
             "required_for_lanes": [MANAGED_FUSEKIT_RUN_LANE],
             "mode": "payment",
             "cost_controls": {

@@ -445,6 +445,7 @@ HOSTED_PROVIDER_PERMISSION_COPY: dict[str, object] = {
 }
 HOSTED_READINESS_SCHEMA_VERSION = "fusekit.hosted-readiness.v1"
 HOSTED_DEPLOYMENT_SCHEMA_VERSION = "fusekit.hosted-deployment.v1"
+HOSTED_LANE_READINESS_SCHEMA_VERSION = "fusekit.hosted-lane-readiness.v1"
 HOSTED_WORKER_DISPATCH_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch.v1"
 HOSTED_CONTROL_TOKEN_TTL_SECONDS = 300
 REQUIRED_HOSTED_ENV = (
@@ -491,6 +492,9 @@ HOSTED_READINESS_NEXT_ACTIONS: dict[str, str] = {
     ),
     "stripe_price_id_required_for_managed_runs": (
         "Set FUSEKIT_STRIPE_PRICE_ID before enabling managed paid runs."
+    ),
+    "managed_runs_not_enabled": (
+        "Set FUSEKIT_MANAGED_RUNS_ENABLED=1 only after Stripe Checkout is configured."
     ),
     "source_provenance_not_verified": (
         "Publish hosted source provenance for Fusekit-AI/fusekit from the deployment "
@@ -609,6 +613,7 @@ class HostedSettings:
             "github_app_slug": _github_app_slug_label(self.github_app_slug),
             "configured": configured,
             "payment": self.payment_config().public_dict(),
+            "lane_readiness": self.lane_readiness(),
             "missing": list(missing),
             "invalid": list(invalid),
             "blocking_checks": blocking_checks,
@@ -638,6 +643,7 @@ class HostedSettings:
             "trust_contract": dict(HOSTED_PUBLIC_TRUST_CONTRACT),
             "launch_lanes": hosted_launch_lane_contract(),
             "payment": self.payment_config().public_dict(),
+            "lane_readiness": self.lane_readiness(),
             "capability_vault_boundary": dict(HOSTED_CAPABILITY_VAULT_BOUNDARY),
             "provider_permissions": dict(HOSTED_PROVIDER_PERMISSION_COPY),
             "security_headers": dict(HOSTED_SECURITY_HEADERS_CONTRACT),
@@ -772,6 +778,42 @@ class HostedSettings:
                 "This contract is public. It contains URLs, record names, and env var names only; "
                 "it never includes private keys, state secrets, installation tokens, or provider "
                 "credentials."
+            ),
+        }
+
+    def lane_readiness(self) -> dict[str, object]:
+        """Return public, redacted per-lane launch readiness."""
+
+        managed_blockers = _managed_lane_blockers(self)
+        byo_blockers = _byo_oci_lane_blockers(self)
+        return {
+            "schema_version": HOSTED_LANE_READINESS_SCHEMA_VERSION,
+            "default_lane": MANAGED_FUSEKIT_RUN_LANE,
+            "lanes": {
+                MANAGED_FUSEKIT_RUN_LANE: {
+                    "launchable": not managed_blockers,
+                    "requires_payment": True,
+                    "managed_worker_dispatch_allowed": not managed_blockers,
+                    "blocking_checks": managed_blockers,
+                    "next_actions": _hosted_readiness_next_actions((), tuple(managed_blockers)),
+                },
+                BYO_OCI_LANE: {
+                    "launchable": not byo_blockers,
+                    "requires_payment": False,
+                    "managed_worker_dispatch_allowed": False,
+                    "blocking_checks": byo_blockers,
+                    "next_actions": _hosted_readiness_next_actions((), tuple(byo_blockers)),
+                },
+            },
+            "cost_policy": (
+                "Managed FuseKit runs are not launchable until server-side Stripe Checkout "
+                "is fully configured and each job has a paid receipt. BYO OCI remains the "
+                "no-FuseKit-managed-infrastructure lane."
+            ),
+            "secret_boundary": (
+                "Lane readiness exposes only booleans, public lane ids, failure codes, and "
+                "next-action labels. It never renders Stripe keys, GitHub tokens, worker "
+                "secrets, OCI credentials, or vault material."
             ),
         }
 
@@ -1517,6 +1559,7 @@ def _github_plan_response(
             )
             for lane in (MANAGED_FUSEKIT_RUN_LANE, BYO_OCI_LANE)
         },
+        lane_readiness=settings.lane_readiness(),
     )
     return _html_response(start_response, body)
 
@@ -1577,7 +1620,7 @@ def _github_control_room_response(
         plan,
         github_installation_id=int(installation_id),
         launch_lane=launch_lane,
-        payment_required=settings.managed_runs_enabled,
+        payment_required=launch_lane == MANAGED_FUSEKIT_RUN_LANE,
     )
     settings.hosted_jobs[job.job_id] = job
     job_token = create_hosted_job_token(settings.state_secret, job)
@@ -1675,7 +1718,7 @@ def _hosted_job_action_response(
         _verify_hosted_control_token(settings, control_token, job=job, action=action)
     except FuseKitError:
         return _response(start_response, HTTPStatus.FORBIDDEN, {"error": "invalid_control"})
-    if action == "start" and _managed_payment_required(settings, job):
+    if action == "start" and _managed_payment_required(job):
         return _response(
             start_response,
             HTTPStatus.PAYMENT_REQUIRED,
@@ -2325,6 +2368,63 @@ def _hosted_config_errors(settings: HostedSettings) -> tuple[str, ...]:
     return tuple(errors)
 
 
+def _managed_lane_blockers(settings: HostedSettings) -> list[str]:
+    blockers: list[str] = []
+    if not settings.managed_runs_enabled:
+        blockers.append("managed_runs_not_enabled")
+    if not settings.stripe_secret_key.startswith("sk_"):
+        blockers.append("stripe_secret_key_required_for_managed_runs")
+    if not settings.stripe_price_id.startswith("price_"):
+        blockers.append("stripe_price_id_required_for_managed_runs")
+    if not settings.worker_secret:
+        blockers.append("FUSEKIT_HOSTED_WORKER_SECRET")
+    elif len(settings.worker_secret) < 16:
+        blockers.append("hosted_worker_secret_too_short")
+    if not settings.worker_dispatch_url:
+        blockers.append("FUSEKIT_HOSTED_WORKER_DISPATCH_URL")
+    elif not _valid_https_url(settings.worker_dispatch_url):
+        blockers.append("hosted_worker_dispatch_url_must_be_https")
+    blockers.extend(_shared_lane_blockers(settings))
+    return _unique_public_failures(blockers)
+
+
+def _byo_oci_lane_blockers(settings: HostedSettings) -> list[str]:
+    return _unique_public_failures(_shared_lane_blockers(settings))
+
+
+def _shared_lane_blockers(settings: HostedSettings) -> list[str]:
+    blockers: list[str] = []
+    configured = {
+        "FUSEKIT_HOSTED_ORIGIN": bool(settings.public_origin),
+        "FUSEKIT_GITHUB_APP_ID": bool(settings.github_app_id),
+        "FUSEKIT_GITHUB_APP_SLUG": bool(settings.github_app_slug),
+        "FUSEKIT_GITHUB_APP_PRIVATE_KEY": bool(settings.github_private_key_pem),
+        "FUSEKIT_HOSTED_STATE_SECRET": bool(settings.state_secret),
+    }
+    blockers.extend(key for key, value in configured.items() if not value)
+    if not _valid_public_origin(settings.public_origin):
+        blockers.append("hosted_origin_must_be_https_origin")
+    if not settings.github_app_id.isdecimal() or int(settings.github_app_id) <= 0:
+        blockers.append("github_app_id_must_be_positive_integer")
+    if not _valid_github_app_slug(settings.github_app_slug):
+        blockers.append("github_app_slug_is_invalid")
+    if not _valid_rsa_private_key(settings.github_private_key_pem):
+        blockers.append("github_app_private_key_must_be_rsa_pem")
+    if len(settings.state_secret) < 16:
+        blockers.append("hosted_state_secret_too_short")
+    if settings.source_provenance().get("verified") is not True:
+        blockers.append("source_provenance_not_verified")
+    return blockers
+
+
+def _unique_public_failures(failures: Iterable[str]) -> list[str]:
+    result: list[str] = []
+    for failure in failures:
+        if failure and failure not in result:
+            result.append(failure)
+    return result
+
+
 def _worker_authorized(settings: HostedSettings, environ: dict[str, object]) -> bool:
     authorization = str(environ.get("HTTP_AUTHORIZATION", ""))
     prefix = "Bearer "
@@ -2339,12 +2439,8 @@ def _worker_id(environ: dict[str, object]) -> str:
     return value or "hosted-worker"
 
 
-def _managed_payment_required(settings: HostedSettings, job: HostedLaunchJob) -> bool:
-    return (
-        settings.managed_runs_enabled
-        and job.launch_lane == MANAGED_FUSEKIT_RUN_LANE
-        and job.payment_status != "paid"
-    )
+def _managed_payment_required(job: HostedLaunchJob) -> bool:
+    return job.launch_lane == MANAGED_FUSEKIT_RUN_LANE and job.payment_status != "paid"
 
 
 def _payment_receipt_matches_job(receipt: dict[str, object], job: HostedLaunchJob) -> bool:

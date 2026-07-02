@@ -200,6 +200,7 @@ def render_hosted_launcher(
     *,
     launch_url: str = "",
     launch_urls: dict[str, str] | None = None,
+    lane_readiness: dict[str, object] | None = None,
 ) -> str:
     """Render a no-terminal hosted launcher page for a universal GitHub app."""
 
@@ -220,7 +221,11 @@ def render_hosted_launcher(
     title = html.escape(f"Launch {plan.app_name} with FuseKit")
     source = html.escape(plan.github_source)
     app_name = html.escape(plan.app_name)
-    start_control = _lane_controls(launch_url=launch_url, launch_urls=launch_urls or {})
+    start_control = _lane_controls(
+        launch_url=launch_url,
+        launch_urls=launch_urls or {},
+        lane_readiness=lane_readiness or {},
+    )
     secret_boundary = html.escape(trust.secret_boundary)
     no_terminal = html.escape(NO_TERMINAL_PROMISE)
     return f"""<!doctype html>
@@ -474,10 +479,19 @@ def render_hosted_launcher(
 """
 
 
-def _lane_controls(*, launch_url: str, launch_urls: dict[str, str]) -> str:
+def _lane_controls(
+    *,
+    launch_url: str,
+    launch_urls: dict[str, str],
+    lane_readiness: dict[str, object],
+) -> str:
     if launch_urls:
         rows = "\n".join(
-            _lane_control(lane.lane_id, launch_urls.get(lane.lane_id, ""))
+            _lane_control(
+                lane.lane_id,
+                launch_urls.get(lane.lane_id, ""),
+                lane_readiness=lane_readiness,
+            )
             for lane in hosted_launch_lanes()
         )
         return f"""
@@ -493,24 +507,58 @@ def _lane_controls(*, launch_url: str, launch_urls: dict[str, str]) -> str:
     return '<span class="button disabled" aria-disabled="true">Start hosted launch</span>'
 
 
-def _lane_control(lane_id: str, launch_url: str) -> str:
+def _lane_control(
+    lane_id: str,
+    launch_url: str,
+    *,
+    lane_readiness: dict[str, object],
+) -> str:
     lane = next(lane for lane in hosted_launch_lanes() if lane.lane_id == lane_id)
     label = html.escape(lane.label)
     summary = html.escape(lane.summary)
-    if launch_url:
+    ready = _lane_is_launchable(lane_readiness, lane_id)
+    next_actions = _lane_next_actions(lane_readiness, lane_id)
+    if launch_url and ready:
         button = (
             f'<a class="button" href="{html.escape(launch_url, quote=True)}">'
             f"{label}</a>"
         )
     else:
         button = '<span class="button disabled" aria-disabled="true">Unavailable</span>'
+    details = ""
+    if next_actions:
+        details = f"<p>{html.escape(next_actions[0])}</p>"
     return f"""
           <article class="lane">
             <h3>{label}</h3>
             <p>{summary}</p>
+            {details}
             {button}
           </article>
 """
+
+
+def _lane_is_launchable(lane_readiness: dict[str, object], lane_id: str) -> bool:
+    if not lane_readiness:
+        return True
+    lanes = lane_readiness.get("lanes")
+    if not isinstance(lanes, dict):
+        return False
+    lane = lanes.get(lane_id)
+    return isinstance(lane, dict) and lane.get("launchable") is True
+
+
+def _lane_next_actions(lane_readiness: dict[str, object], lane_id: str) -> list[str]:
+    lanes = lane_readiness.get("lanes")
+    if not isinstance(lanes, dict):
+        return []
+    lane = lanes.get(lane_id)
+    if not isinstance(lane, dict):
+        return []
+    actions = lane.get("next_actions")
+    if not isinstance(actions, list):
+        return []
+    return [action for action in actions if isinstance(action, str) and action]
 
 
 def _provider_names(manifest: SetupManifest) -> tuple[str, ...]:
