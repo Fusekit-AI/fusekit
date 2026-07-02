@@ -20,6 +20,7 @@ from fusekit.hosted.github_app import (
     HOSTED_GITHUB_INTAKE_PERMISSIONS,
     hosted_github_public_token_boundary,
 )
+from fusekit.hosted.lanes import BYO_OCI_LANE, MANAGED_FUSEKIT_RUN_LANE
 from fusekit.hosted.launcher import (
     HOSTED_COMPLETION_EVIDENCE_KEYS,
     HOSTED_LAUNCH_PATH,
@@ -1149,6 +1150,86 @@ def _hosted_home_readiness_failures(payload: dict[str, Any]) -> list[str]:
             failures.append("required_source_provenance_env_mismatch")
         for failure in _source_provenance_failures(provenance):
             failures.append(f"readiness_{failure}")
+        failures.extend(_lane_readiness_failures(payload.get("lane_readiness")))
+    return failures
+
+
+def _lane_readiness_failures(value: object) -> list[str]:
+    if not isinstance(value, dict):
+        return ["lane_readiness_missing"]
+    failures: list[str] = []
+    if value.get("default_lane") != MANAGED_FUSEKIT_RUN_LANE:
+        failures.append("lane_readiness_default_lane_mismatch")
+    launchable_lanes = value.get("launchable_lanes")
+    if not isinstance(launchable_lanes, list) or not launchable_lanes:
+        failures.append("lane_readiness_launchable_lanes_missing")
+        launchable_lanes = []
+    elif any(lane not in {MANAGED_FUSEKIT_RUN_LANE, BYO_OCI_LANE} for lane in launchable_lanes):
+        failures.append("lane_readiness_launchable_lanes_invalid")
+    recommended_lane = value.get("recommended_lane")
+    if recommended_lane not in {MANAGED_FUSEKIT_RUN_LANE, BYO_OCI_LANE}:
+        failures.append("lane_readiness_recommended_lane_invalid")
+    elif recommended_lane not in launchable_lanes:
+        failures.append("lane_readiness_recommended_lane_not_launchable")
+    lanes = value.get("lanes")
+    if not isinstance(lanes, dict):
+        return failures + ["lane_readiness_lanes_missing"]
+    managed = lanes.get(MANAGED_FUSEKIT_RUN_LANE)
+    byo = lanes.get(BYO_OCI_LANE)
+    if not isinstance(managed, dict):
+        failures.append("lane_readiness_managed_lane_missing")
+    else:
+        failures.extend(_managed_lane_readiness_failures(managed, launchable_lanes))
+    if not isinstance(byo, dict):
+        failures.append("lane_readiness_byo_oci_lane_missing")
+    else:
+        failures.extend(_byo_lane_readiness_failures(byo, launchable_lanes))
+    return failures
+
+
+def _managed_lane_readiness_failures(
+    lane: dict[str, Any],
+    launchable_lanes: list[object],
+) -> list[str]:
+    failures: list[str] = []
+    launchable = lane.get("launchable")
+    if lane.get("requires_payment") is not True:
+        failures.append("lane_readiness_managed_payment_not_required")
+    if lane.get("managed_worker_dispatch_allowed") is not launchable:
+        failures.append("lane_readiness_managed_dispatch_mismatch")
+    blockers = lane.get("blocking_checks")
+    if not isinstance(blockers, list):
+        failures.append("lane_readiness_managed_blockers_invalid")
+    elif launchable is True and blockers:
+        failures.append("lane_readiness_managed_launchable_with_blockers")
+    elif launchable is False and not blockers:
+        failures.append("lane_readiness_managed_blocked_without_reason")
+    if launchable is True and MANAGED_FUSEKIT_RUN_LANE not in launchable_lanes:
+        failures.append("lane_readiness_managed_missing_from_launchable_lanes")
+    if launchable is False and MANAGED_FUSEKIT_RUN_LANE in launchable_lanes:
+        failures.append("lane_readiness_managed_blocked_but_listed")
+    return failures
+
+
+def _byo_lane_readiness_failures(
+    lane: dict[str, Any],
+    launchable_lanes: list[object],
+) -> list[str]:
+    failures: list[str] = []
+    launchable = lane.get("launchable")
+    if lane.get("requires_payment") is not False:
+        failures.append("lane_readiness_byo_payment_required")
+    if lane.get("managed_worker_dispatch_allowed") is not False:
+        failures.append("lane_readiness_byo_dispatch_allowed")
+    blockers = lane.get("blocking_checks")
+    if not isinstance(blockers, list):
+        failures.append("lane_readiness_byo_blockers_invalid")
+    elif launchable is True and blockers:
+        failures.append("lane_readiness_byo_launchable_with_blockers")
+    if launchable is True and BYO_OCI_LANE not in launchable_lanes:
+        failures.append("lane_readiness_byo_missing_from_launchable_lanes")
+    if launchable is False and BYO_OCI_LANE in launchable_lanes:
+        failures.append("lane_readiness_byo_blocked_but_listed")
     return failures
 
 

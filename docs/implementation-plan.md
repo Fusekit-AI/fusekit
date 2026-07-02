@@ -38,6 +38,7 @@
   Hosted lane readiness is now explicit and fail-closed: public readiness/deployment contracts report managed and BYO lane launchability separately, the plan UI disables the managed lane until Stripe Checkout is fully configured, and managed worker start remains blocked unless the job has a server-verified paid receipt.
   Direct hosted control-room URLs now enforce the same lane readiness gate before exchanging GitHub installation tokens or fetching source, so an unlaunchable managed lane returns a redacted `lane_not_launchable` response instead of creating a job or doing provider work.
   Lane readiness now publishes launchable lane ids and a recommended lane, so live hosted deployments can point users to BYO OCI while paid Managed FuseKit runs are still waiting on Stripe price configuration.
+  The outside-in hosted verifier now validates lane readiness, including the recommended lane and launchable lane list, so public deployments fail verification if the BYO recommendation or paid-lane blocker state drifts.
 - [x] Security invariants are enforced by tests.
 - [x] CLI defaults to real-provider execution; incomplete local rehearsals require explicit opt-in.
 - [x] FuseKit bootstraps its own runtime components instead of assuming Codex/OpenClaw is preinstalled.

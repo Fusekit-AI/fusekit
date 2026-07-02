@@ -9,6 +9,7 @@ import urllib.request
 import pytest
 
 from fusekit.errors import FuseKitError
+from fusekit.hosted.lanes import BYO_OCI_LANE, MANAGED_FUSEKIT_RUN_LANE
 from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY, HOSTED_PROHIBITED_ACTIONS
 from fusekit.hosted.server import (
     HOSTED_AWS_OPERATOR_SETUP_STEPS,
@@ -363,6 +364,61 @@ def test_verify_hosted_deployment_requires_readiness_source_provenance_contract(
         "failures"
     ]
     assert "readiness_source_provenance_not_verified" in checks["hosted.readiness"][
+        "failures"
+    ]
+
+
+def test_verify_hosted_deployment_requires_readiness_lane_contract() -> None:
+    readiness = _readiness_contract()
+    readiness.pop("lane_readiness")
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            readiness,
+            _deployment_contract(),
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["hosted.readiness"]["status"] == "failed"
+    assert "lane_readiness_missing" in checks["hosted.readiness"]["failures"]
+
+
+def test_verify_hosted_deployment_rejects_blocked_recommended_lane() -> None:
+    readiness = _readiness_contract()
+    lane_readiness = readiness["lane_readiness"]
+    assert isinstance(lane_readiness, dict)
+    lane_readiness["recommended_lane"] = MANAGED_FUSEKIT_RUN_LANE
+    lane_readiness["launchable_lanes"] = [BYO_OCI_LANE]
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            readiness,
+            _deployment_contract(),
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["hosted.readiness"]["status"] == "failed"
+    assert "lane_readiness_recommended_lane_not_launchable" in checks["hosted.readiness"][
         "failures"
     ]
 
@@ -1535,6 +1591,33 @@ def _readiness_contract() -> dict[str, object]:
         "next_actions": [],
         "required_source_provenance_env": list(HOSTED_SOURCE_PROVENANCE_ENV),
         "source_provenance": _source_provenance_contract(),
+        "lane_readiness": _lane_readiness_contract(),
+    }
+
+
+def _lane_readiness_contract() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.hosted-lane-readiness.v1",
+        "default_lane": MANAGED_FUSEKIT_RUN_LANE,
+        "recommended_lane": BYO_OCI_LANE,
+        "launchable_lanes": [BYO_OCI_LANE],
+        "lanes": {
+            MANAGED_FUSEKIT_RUN_LANE: {
+                "launchable": False,
+                "requires_payment": True,
+                "managed_worker_dispatch_allowed": False,
+                "blocking_checks": ["stripe_price_id_required_for_managed_runs"],
+                "next_actions": ["Set FUSEKIT_STRIPE_PRICE_ID before enabling managed paid runs."],
+            },
+            BYO_OCI_LANE: {
+                "launchable": True,
+                "requires_payment": False,
+                "managed_worker_dispatch_allowed": False,
+                "blocking_checks": [],
+                "next_actions": [],
+            },
+        },
+        "secret_boundary": "Lane readiness exposes only redacted public status.",
     }
 
 
