@@ -1948,6 +1948,43 @@ def test_hosted_byo_oci_lane_starts_without_managed_worker_dispatch() -> None:
         "worker_secret_required": False,
         "hosted_github_private_key_required": False,
     }
+    assert bootstrap["user_owned_cost_boundary"] == {
+        "spend_owner": "user_oci_tenancy",
+        "fusekit_managed_infrastructure_spend": False,
+        "payment_required_by_fusekit": False,
+        "billing_gate_owner": "oracle_cloud",
+        "review_before_run": [
+            "Oracle Cloud account billing status",
+            "selected region capacity",
+            "AMD/x86_64 disposable worker shape",
+            "resources created by the user's Cloud Shell session",
+        ],
+        "statement": (
+            "BYO OCI launches run in the user's Oracle Cloud tenancy. FuseKit does not "
+            "charge a managed-run fee and does not dispatch FuseKit-owned workers for "
+            "this lane."
+        ),
+    }
+    assert bootstrap["byo_security_contract"] == {
+        "managed_worker_dispatch_allowed": False,
+        "hosted_worker_secret_exported": False,
+        "hosted_github_private_key_exported": False,
+        "hosted_github_installation_token_exported": False,
+        "raw_provider_secrets_exported": False,
+        "runner_architecture": "amd_x86_64_only",
+        "human_gate_bypass_allowed": False,
+        "completion_claim_requires": [
+            "live_url",
+            "provider_verifiers",
+            "dns_propagation",
+            "rollback_metadata",
+            "retrieved_remote_artifacts",
+            "run_record",
+            "detonation_receipt",
+            "live_acceptance_report",
+            "recording",
+        ],
+    }
     cloud_shell = bootstrap["cloud_shell"]
     command = cloud_shell["bootstrap_command"]
     assert cloud_shell["deeplink_url"] == "https://cloud.oracle.com/?cloudshell=true"

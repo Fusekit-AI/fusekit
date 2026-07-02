@@ -384,6 +384,33 @@ def hosted_byo_oci_bootstrap(job: HostedLaunchJob) -> dict[str, object]:
             "worker_secret_required": False,
             "hosted_github_private_key_required": False,
         },
+        "user_owned_cost_boundary": {
+            "spend_owner": "user_oci_tenancy",
+            "fusekit_managed_infrastructure_spend": False,
+            "payment_required_by_fusekit": False,
+            "billing_gate_owner": "oracle_cloud",
+            "review_before_run": [
+                "Oracle Cloud account billing status",
+                "selected region capacity",
+                "AMD/x86_64 disposable worker shape",
+                "resources created by the user's Cloud Shell session",
+            ],
+            "statement": (
+                "BYO OCI launches run in the user's Oracle Cloud tenancy. FuseKit does not "
+                "charge a managed-run fee and does not dispatch FuseKit-owned workers for "
+                "this lane."
+            ),
+        },
+        "byo_security_contract": {
+            "managed_worker_dispatch_allowed": False,
+            "hosted_worker_secret_exported": False,
+            "hosted_github_private_key_exported": False,
+            "hosted_github_installation_token_exported": False,
+            "raw_provider_secrets_exported": False,
+            "runner_architecture": "amd_x86_64_only",
+            "human_gate_bypass_allowed": False,
+            "completion_claim_requires": list(HOSTED_WORKER_PROOF_KEYS),
+        },
         "cloud_shell": {
             "provider": "oci-cloud-shell",
             "requires_user_oci_account": True,
