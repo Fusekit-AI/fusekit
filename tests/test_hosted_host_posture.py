@@ -202,6 +202,46 @@ def test_oci_host_posture_blocks_unknown_top_level_evidence_fields() -> None:
     assert shape_check["unexpected_fields"] == ["raw_audit_excerpt"]
 
 
+def test_oci_host_posture_blocks_unknown_nested_secret_metadata_fields() -> None:
+    evidence = _clean_evidence()
+    runtime_secret_file = evidence["runtime_secret_file"]
+    assert isinstance(runtime_secret_file, dict)
+    runtime_secret_file["raw_stat_output"] = "root root 600 /etc/fusekit/hosted-secrets.env"
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["evidence.shape"]
+    shape_check = _check(report, "evidence.shape")
+    assert shape_check["failures"] == [
+        "oci_host_posture_evidence_has_unknown_fields"
+    ]
+    assert shape_check["unexpected_fields"] == ["runtime_secret_file.raw_stat_output"]
+
+
+def test_oci_host_posture_blocks_unknown_nested_systemd_fields() -> None:
+    evidence = _clean_evidence()
+    systemd_units = evidence["systemd_units"]
+    assert isinstance(systemd_units, dict)
+    hosted_unit = systemd_units["fusekit-hosted"]
+    assert isinstance(hosted_unit, dict)
+    hosted_unit["raw_systemctl_show"] = "Environment=FUSEKIT_HOSTED_SECRET=redacted"
+    systemd_units["debug-helper"] = {"user": "fusekit"}
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["evidence.shape"]
+    shape_check = _check(report, "evidence.shape")
+    assert shape_check["failures"] == [
+        "oci_host_posture_evidence_has_unknown_fields"
+    ]
+    assert shape_check["unexpected_fields"] == [
+        "systemd_units.debug-helper",
+        "systemd_units.fusekit-hosted.raw_systemctl_show",
+    ]
+
+
 def test_oci_host_posture_blocks_arm_public_ssh_and_weak_systemd() -> None:
     evidence = _clean_evidence()
     evidence["architecture"] = "aarch64"

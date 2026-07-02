@@ -63,6 +63,46 @@ OCI_HOST_POSTURE_ALLOWED_EVIDENCE_KEYS = frozenset(
         "collection",
     }
 )
+OCI_HOST_POSTURE_SECRET_METADATA_KEYS = frozenset({"path", "owner", "group", "mode"})
+OCI_HOST_POSTURE_PATCH_POSTURE_KEYS = frozenset(
+    {"pending_security_updates", "reboot_required"}
+)
+OCI_HOST_POSTURE_COLLECTION_KEYS = frozenset(
+    {"mode", "mutates_oci", "mutates_host", "secret_boundary"}
+)
+OCI_HOST_POSTURE_SYSTEMD_UNIT_KEYS = frozenset(
+    {
+        "user",
+        "umask",
+        "no_new_privileges",
+        "private_tmp",
+        "protect_system",
+        "protect_home",
+        "private_devices",
+        "restrict_suid_sgid",
+        "lock_personality",
+        "system_call_architectures",
+        "protect_kernel_tunables",
+        "protect_kernel_modules",
+        "protect_kernel_logs",
+        "protect_control_groups",
+        "restrict_namespaces",
+        "restrict_realtime",
+        "memory_deny_write_execute",
+        "capability_bounding_set",
+        "ambient_capabilities",
+        "restrict_address_families",
+        "state_directory",
+        "state_directory_mode",
+        "logs_directory",
+        "logs_directory_mode",
+        "runtime_directory",
+        "runtime_directory_mode",
+        "read_write_paths",
+        "environment",
+        "exec_start",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -610,11 +650,37 @@ def _schema_check(evidence: Mapping[str, object]) -> dict[str, object]:
 
 
 def _evidence_shape_check(evidence: Mapping[str, object]) -> dict[str, object]:
-    unexpected = sorted(
-        str(key)
-        for key in evidence
-        if str(key) not in OCI_HOST_POSTURE_ALLOWED_EVIDENCE_KEYS
+    unexpected = _unexpected_keys(evidence, OCI_HOST_POSTURE_ALLOWED_EVIDENCE_KEYS)
+    unexpected.extend(
+        _unexpected_nested_keys(
+            evidence,
+            "runtime_secret_dir",
+            OCI_HOST_POSTURE_SECRET_METADATA_KEYS,
+        )
     )
+    unexpected.extend(
+        _unexpected_nested_keys(
+            evidence,
+            "runtime_secret_file",
+            OCI_HOST_POSTURE_SECRET_METADATA_KEYS,
+        )
+    )
+    unexpected.extend(
+        _unexpected_nested_keys(
+            evidence,
+            "patch_posture",
+            OCI_HOST_POSTURE_PATCH_POSTURE_KEYS,
+        )
+    )
+    unexpected.extend(
+        _unexpected_nested_keys(
+            evidence,
+            "collection",
+            OCI_HOST_POSTURE_COLLECTION_KEYS,
+        )
+    )
+    unexpected.extend(_unexpected_systemd_unit_keys(evidence))
+    unexpected = sorted(unexpected)
     if unexpected:
         return _fail(
             "evidence.shape",
@@ -624,6 +690,39 @@ def _evidence_shape_check(evidence: Mapping[str, object]) -> dict[str, object]:
             unexpected_fields=unexpected,
         )
     return _ok("evidence.shape")
+
+
+def _unexpected_keys(value: Mapping[str, object], allowed: frozenset[str]) -> list[str]:
+    return sorted(str(key) for key in value if str(key) not in allowed)
+
+
+def _unexpected_nested_keys(
+    evidence: Mapping[str, object],
+    section: str,
+    allowed: frozenset[str],
+) -> list[str]:
+    value = evidence.get(section)
+    if not isinstance(value, Mapping):
+        return []
+    return [f"{section}.{key}" for key in _unexpected_keys(value, allowed)]
+
+
+def _unexpected_systemd_unit_keys(evidence: Mapping[str, object]) -> list[str]:
+    units = evidence.get("systemd_units")
+    if not isinstance(units, Mapping):
+        return []
+    unexpected = [
+        f"systemd_units.{unit}"
+        for unit in _unexpected_keys(units, frozenset(OCI_HOST_POSTURE_SYSTEMD_UNITS))
+    ]
+    for unit in OCI_HOST_POSTURE_SYSTEMD_UNITS:
+        config = units.get(unit)
+        if isinstance(config, Mapping):
+            unexpected.extend(
+                f"systemd_units.{unit}.{key}"
+                for key in _unexpected_keys(config, OCI_HOST_POSTURE_SYSTEMD_UNIT_KEYS)
+            )
+    return unexpected
 
 
 def _architecture_check(evidence: Mapping[str, object]) -> dict[str, object]:
