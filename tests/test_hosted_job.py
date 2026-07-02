@@ -23,6 +23,7 @@ from fusekit.hosted import (
     render_hosted_proof_receipt,
     verify_hosted_job_token,
 )
+from fusekit.hosted.lanes import MANAGED_FUSEKIT_RUN_LANE
 from fusekit.hosted.launcher import build_hosted_launch_plan
 from fusekit.manifest import ServiceRequirement, SetupManifest
 
@@ -63,7 +64,9 @@ def test_hosted_launch_job_is_public_safe_and_trust_complete() -> None:
     assert "Show rollback metadata before risky changes." in payload["rollback"]
     assert "Write detonation receipt before launch is considered complete." in payload["detonation"]
     assert payload["worker_contract"]["schema_version"] == "fusekit.hosted-worker-contract.v1"
-    assert payload["worker_contract"]["lane"] == "hosted-fusekit-worker"
+    assert payload["launch_lane"] == MANAGED_FUSEKIT_RUN_LANE
+    assert payload["worker_contract"]["lane"] == MANAGED_FUSEKIT_RUN_LANE
+    assert payload["payment"]["status"] == "not_required"
     assert payload["worker_contract"]["github_installation_id"] is None
     assert payload["worker_contract"]["plan_integrity"]["algorithm"] == "sha256"
     assert str(payload["worker_contract"]["plan_integrity"]["fingerprint"]).startswith(
@@ -164,7 +167,7 @@ def test_hosted_worker_request_binds_live_acceptance_and_no_secret_policy() -> N
     assert request["schema_version"] == "fusekit.hosted-worker-request.v1"
     assert request["job_id"] == "hosted-test"
     assert request["github_source"] == "https://github.com/example/job-demo"
-    assert request["claim_policy"]["runner"] == "hosted-fusekit-worker"
+    assert request["claim_policy"]["runner"] == MANAGED_FUSEKIT_RUN_LANE
     assert request["claim_policy"]["github_installation_id"] == 42
     assert request["claim_policy"]["mode"] == "live"
     assert request["claim_policy"]["remote_artifacts_required"] is True

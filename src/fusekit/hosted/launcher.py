@@ -7,6 +7,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from fusekit.hosted.lanes import hosted_launch_lanes
 from fusekit.manifest import SetupManifest
 from fusekit.planner import SetupAction, build_plan
 
@@ -194,7 +195,12 @@ def build_hosted_launch_plan(
     )
 
 
-def render_hosted_launcher(plan: HostedLaunchPlan, *, launch_url: str = "") -> str:
+def render_hosted_launcher(
+    plan: HostedLaunchPlan,
+    *,
+    launch_url: str = "",
+    launch_urls: dict[str, str] | None = None,
+) -> str:
     """Render a no-terminal hosted launcher page for a universal GitHub app."""
 
     payload = json.dumps(plan.to_dict(), sort_keys=True)
@@ -214,11 +220,7 @@ def render_hosted_launcher(plan: HostedLaunchPlan, *, launch_url: str = "") -> s
     title = html.escape(f"Launch {plan.app_name} with FuseKit")
     source = html.escape(plan.github_source)
     app_name = html.escape(plan.app_name)
-    start_control = (
-        f'<a class="button" href="{html.escape(launch_url, quote=True)}">Start hosted launch</a>'
-        if launch_url
-        else '<span class="button disabled" aria-disabled="true">Start hosted launch</span>'
-    )
+    start_control = _lane_controls(launch_url=launch_url, launch_urls=launch_urls or {})
     secret_boundary = html.escape(trust.secret_boundary)
     no_terminal = html.escape(NO_TERMINAL_PROMISE)
     return f"""<!doctype html>
@@ -285,6 +287,24 @@ def render_hosted_launcher(plan: HostedLaunchPlan, *, launch_url: str = "") -> s
       flex-wrap: wrap;
       gap: 10px;
       align-items: center;
+    }}
+    .lanes {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      width: 100%;
+    }}
+    .lane {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+      background: white;
+    }}
+    .lane p {{
+      color: var(--muted);
+      line-height: 1.4;
     }}
     button,
     .button {{
@@ -383,7 +403,7 @@ def render_hosted_launcher(plan: HostedLaunchPlan, *, launch_url: str = "") -> s
     }}
     script[type="application/json"] {{ display: none; }}
     @media (max-width: 880px) {{
-      .grid, .compact-grid {{ grid-template-columns: 1fr; }}
+      .grid, .compact-grid, .lanes {{ grid-template-columns: 1fr; }}
     }}
   </style>
 </head>
@@ -451,6 +471,45 @@ def render_hosted_launcher(plan: HostedLaunchPlan, *, launch_url: str = "") -> s
   </main>
 </body>
 </html>
+"""
+
+
+def _lane_controls(*, launch_url: str, launch_urls: dict[str, str]) -> str:
+    if launch_urls:
+        rows = "\n".join(
+            _lane_control(lane.lane_id, launch_urls.get(lane.lane_id, ""))
+            for lane in hosted_launch_lanes()
+        )
+        return f"""
+        <div class="lanes" aria-label="Launch lanes">
+          {rows}
+        </div>
+"""
+    if launch_url:
+        return (
+            f'<a class="button" href="{html.escape(launch_url, quote=True)}">'
+            "Start hosted launch</a>"
+        )
+    return '<span class="button disabled" aria-disabled="true">Start hosted launch</span>'
+
+
+def _lane_control(lane_id: str, launch_url: str) -> str:
+    lane = next(lane for lane in hosted_launch_lanes() if lane.lane_id == lane_id)
+    label = html.escape(lane.label)
+    summary = html.escape(lane.summary)
+    if launch_url:
+        button = (
+            f'<a class="button" href="{html.escape(launch_url, quote=True)}">'
+            f"{label}</a>"
+        )
+    else:
+        button = '<span class="button disabled" aria-disabled="true">Unavailable</span>'
+    return f"""
+          <article class="lane">
+            <h3>{label}</h3>
+            <p>{summary}</p>
+            {button}
+          </article>
 """
 
 

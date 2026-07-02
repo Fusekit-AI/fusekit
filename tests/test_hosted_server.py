@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 from fusekit.hosted.github_app import GitHubAppConfig
 from fusekit.hosted.job import create_hosted_job_token
+from fusekit.hosted.lanes import BYO_OCI_LANE, MANAGED_FUSEKIT_RUN_LANE
 from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY, HOSTED_PROHIBITED_ACTIONS
 from fusekit.hosted.server import (
     HOSTED_AWS_SOURCE_PROVENANCE_ENV,
@@ -168,6 +169,25 @@ class SequenceOpener:
         self.requests.append(request)
         self.bodies.append(json.loads((request.data or b"{}").decode("utf-8")))
         assert timeout in {30.0, 90.0}
+        return FakeResponse(self.payloads.pop(0))
+
+
+class FormSequenceOpener:
+    def __init__(self, payloads: list[dict[str, object]]) -> None:
+        self.payloads = payloads
+        self.requests: list[urllib.request.Request] = []
+        self.bodies: list[dict[str, list[str]]] = []
+
+    def __call__(
+        self,
+        request: urllib.request.Request,
+        *,
+        timeout: float,
+    ) -> FakeResponse:
+        self.requests.append(request)
+        body = urllib.parse.parse_qs((request.data or b"").decode("utf-8"))
+        self.bodies.append(body)
+        assert timeout == 30.0
         return FakeResponse(self.payloads.pop(0))
 
 
@@ -1401,6 +1421,260 @@ def test_hosted_github_control_room_fetches_source_and_renders_job() -> None:
     assert "Detonation" in text
     assert "ghs_fake" not in text
     assert "PRIVATE KEY" not in text
+
+
+def test_hosted_plan_renders_managed_and_byo_launch_lanes() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+
+    status, _headers, body = _call(
+        "/github/plan",
+        query_string=f"installation_id=42&repo=example/one&state={state}",
+        settings=_settings_with_github(opener),
+    )
+    text = body.decode("utf-8")
+
+    assert status == "200 OK"
+    assert "Managed FuseKit run" in text
+    assert "Bring your own OCI" in text
+    assert f"lane={MANAGED_FUSEKIT_RUN_LANE}" in text
+    assert f"lane={BYO_OCI_LANE}" in text
+    assert "their tenancy" in text
+    assert "ghs_fake" not in text
+
+
+def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    github_opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    dispatch_opener = SequenceOpener([{}])
+    stripe_opener = FormSequenceOpener(
+        [
+            {
+                "id": "cs_test_123",
+                "object": "checkout.session",
+                "url": "https://checkout.stripe.com/c/pay/cs_test_123",
+                "status": "open",
+                "payment_status": "unpaid",
+                "mode": "payment",
+                "client_reference_id": "hosted-payment",
+                "amount_total": 4900,
+                "currency": "usd",
+            },
+            {
+                "id": "cs_test_123",
+                "object": "checkout.session",
+                "status": "complete",
+                "payment_status": "paid",
+                "mode": "payment",
+                "client_reference_id": "hosted-payment",
+                "amount_total": 4900,
+                "currency": "usd",
+            },
+        ]
+    )
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=_private_key_pem(),
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        github_opener=github_opener,
+        worker_dispatch_opener=dispatch_opener,
+        stripe_opener=stripe_opener,
+        managed_runs_enabled=True,
+        stripe_secret_key="sk_test_redacted",
+        stripe_price_id="price_managed_run",
+        **_vercel_provenance_kwargs(),
+    )
+
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=(
+            f"installation_id=42&repo=example/one&state={state}"
+            f"&lane={MANAGED_FUSEKIT_RUN_LANE}"
+        ),
+        settings=settings,
+    )
+    text = body.decode("utf-8")
+    job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    job_token = _job_token(text)
+    checkout_control = _control_for_payment_checkout(text)
+    start_control = create_hosted_state_token(
+        STATE_SECRET,
+        return_path=f"/api/hosted/jobs/{job_id}/actions/start",
+        nonce="nonce-for-blocked-managed-start",
+    )
+
+    assert status == "200 OK"
+    assert "Authorize managed run payment" in text
+    assert "Start worker" not in text
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/start",
+        method="POST",
+        query_string=f"job={job_token}",
+        form_body={"control": start_control},
+        settings=settings,
+    )
+    blocked = json.loads(body.decode("utf-8"))
+    assert status == "402 Payment Required"
+    assert blocked["error"] == "payment_required"
+    assert len(dispatch_opener.requests) == 0
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/payments/checkout",
+        method="POST",
+        query_string=f"job={job_token}",
+        form_body={"control": checkout_control},
+        settings=settings,
+    )
+    checkout = json.loads(body.decode("utf-8"))
+    checkout_job_token = checkout["job_token"]
+    assert status == "200 OK"
+    assert checkout["payment"]["status"] == "checkout_pending"
+    assert checkout["payment"]["receipt"]["checkout_url"] == (
+        "https://checkout.stripe.com/c/pay/cs_test_123"
+    )
+    assert stripe_opener.bodies[0]["mode"] == ["payment"]
+    assert stripe_opener.bodies[0]["line_items[0][price]"] == ["price_managed_run"]
+    assert "sk_test" not in json.dumps(checkout)
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/payments/stripe-return",
+        query_string=f"job={checkout_job_token}&session_id=cs_test_123",
+        headers={"Accept": "text/html"},
+        settings=settings,
+    )
+    paid_text = body.decode("utf-8")
+    paid_job_token = _job_token(paid_text)
+    paid_start_control = _control_for_action(paid_text, "start")
+    assert status == "200 OK"
+    assert "Stripe Checkout authorization verified" in paid_text
+    assert "Start worker" in paid_text
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/start",
+        method="POST",
+        query_string=f"job={paid_job_token}",
+        form_body={"control": paid_start_control},
+        settings=settings,
+    )
+    started = json.loads(body.decode("utf-8"))
+    serialized = json.dumps(started)
+    assert status == "200 OK"
+    assert started["status"] == "waiting_for_provider_gates"
+    assert started["payment"]["status"] == "paid"
+    assert started["worker_dispatch"]["dispatched"] is True
+    assert len(dispatch_opener.requests) == 1
+    assert "sk_test" not in serialized
+    assert "PRIVATE KEY" not in serialized
+
+
+def test_hosted_byo_oci_lane_starts_without_managed_worker_dispatch() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    github_opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    dispatch_opener = SequenceOpener([{}])
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=_private_key_pem(),
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        github_opener=github_opener,
+        worker_dispatch_opener=dispatch_opener,
+        **_vercel_provenance_kwargs(),
+    )
+
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=f"installation_id=42&repo=example/one&state={state}&lane={BYO_OCI_LANE}",
+        settings=settings,
+    )
+    text = body.decode("utf-8")
+    job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    job_token = _job_token(text)
+    control = _control_for_action(text, "start")
+    assert status == "200 OK"
+    assert "Bring your own OCI" in text
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/start",
+        method="POST",
+        query_string=f"job={job_token}",
+        form_body={"control": control},
+        settings=settings,
+    )
+    started = json.loads(body.decode("utf-8"))
+    assert status == "200 OK"
+    assert started["worker_contract"]["lane"] == BYO_OCI_LANE
+    assert started["worker_dispatch"]["dispatched"] is False
+    assert started["worker_dispatch"]["reason"] == "byo_oci_user_owned_worker_lane"
+    assert len(dispatch_opener.requests) == 0
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/byo-oci-bootstrap",
+        query_string=f"job={started['job_token']}",
+        settings=settings,
+    )
+    bootstrap = json.loads(body.decode("utf-8"))
+    assert status == "200 OK"
+    assert bootstrap["schema_version"] == "fusekit.hosted-byo-oci-bootstrap.v1"
+    assert bootstrap["lane"] == BYO_OCI_LANE
+    assert bootstrap["worker_dispatch"] == "not_applicable_user_owned_oci"
+    assert bootstrap["runner_shape_policy"] == "AMD/x86_64 only; ARM images are not allowed."
+    assert "ghs_fake" not in json.dumps(bootstrap)
 
 
 def test_hosted_job_api_returns_redacted_status_and_accepts_protected_action() -> None:
@@ -3118,6 +3392,16 @@ def _control_for_action(text: str, action: str) -> str:
         rf'action="/api/hosted/jobs/[^"]+/actions/{action}'
         rf'(?:\?job=[^"]+)?">\s*'
         rf'<input type="hidden" name="control" value="([A-Za-z0-9_.-]+)">',
+    )
+
+
+def _control_for_payment_checkout(text: str) -> str:
+    return _match(
+        text,
+        r'<form method="post" enctype="application/x-www-form-urlencoded" '
+        r'action="/api/hosted/jobs/[^"]+/payments/checkout'
+        r'(?:\?job=[^"]+)?">\s*'
+        r'<input type="hidden" name="control" value="([A-Za-z0-9_.-]+)">',
     )
 
 

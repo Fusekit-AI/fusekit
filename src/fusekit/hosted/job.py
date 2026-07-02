@@ -14,6 +14,12 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from fusekit.errors import FuseKitError
+from fusekit.hosted.lanes import (
+    BYO_OCI_LANE,
+    MANAGED_FUSEKIT_RUN_LANE,
+    hosted_launch_lane,
+    valid_hosted_launch_lane,
+)
 from fusekit.hosted.launcher import (
     HOSTED_COMPLETION_EVIDENCE_KEYS,
     HOSTED_PROHIBITED_ACTIONS,
@@ -31,6 +37,7 @@ HOSTED_JOB_ACTION_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-job-action-receipt.v1
 HOSTED_WORKER_CLAIM_SCHEMA_VERSION = "fusekit.hosted-worker-claim.v1"
 HOSTED_WORKER_PROOF_SCHEMA_VERSION = "fusekit.hosted-worker-proof.v1"
 HOSTED_WORKER_PROOF_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-worker-proof-receipt.v1"
+HOSTED_BYO_OCI_BOOTSTRAP_SCHEMA_VERSION = "fusekit.hosted-byo-oci-bootstrap.v1"
 
 HOSTED_WORKER_PROOF_KEYS = HOSTED_COMPLETION_EVIDENCE_KEYS
 HOSTED_WORKER_MAINTENANCE_PROOF_KEYS = (
@@ -171,6 +178,9 @@ class HostedLaunchJob:
     rollback: tuple[str, ...]
     detonation: tuple[str, ...]
     worker_contract: HostedWorkerContract
+    launch_lane: str = MANAGED_FUSEKIT_RUN_LANE
+    payment_status: str = "not_required"
+    payment_receipt: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Serialize a browser-safe hosted job."""
@@ -186,6 +196,9 @@ class HostedLaunchJob:
             "proof": list(self.proof),
             "rollback": list(self.rollback),
             "detonation": list(self.detonation),
+            "launch_lane": self.launch_lane,
+            "lane_contract": hosted_launch_lane(self.launch_lane).to_dict(),
+            "payment": hosted_job_payment_status(self),
             "worker_contract": self.worker_contract.to_dict(),
         }
 
@@ -194,14 +207,36 @@ def build_hosted_launch_job(
     plan: HostedLaunchPlan,
     *,
     github_installation_id: int | None = None,
+    launch_lane: str = MANAGED_FUSEKIT_RUN_LANE,
+    payment_required: bool = False,
     job_id: str | None = None,
     now: int | None = None,
 ) -> HostedLaunchJob:
     """Create the public control-room job contract for an approved hosted plan."""
 
+    lane = hosted_launch_lane(launch_lane).lane_id
     worker_contract = build_hosted_worker_contract(
         plan,
         github_installation_id=github_installation_id,
+        launch_lane=lane,
+    )
+    payment_status = (
+        "payment_required"
+        if payment_required and lane == MANAGED_FUSEKIT_RUN_LANE
+        else "not_required"
+    )
+    worker_prepare_proof = (
+        "Stripe Checkout authorization must complete before FuseKit-managed worker dispatch."
+        if payment_status == "payment_required"
+        else "Worker identity, runner, and vault session proof will appear here."
+    )
+    provider_gate_proof = (
+        (
+            "Oracle Cloud login, tenancy, compartment, and billing gates stay in "
+            "the user's OCI account."
+        )
+        if lane == BYO_OCI_LANE
+        else "MFA, billing, consent, CAPTCHA, and copy-once secret screens stay provider-owned."
     )
     return HostedLaunchJob(
         job_id=job_id or f"hosted-{secrets.token_urlsafe(12)}",
@@ -222,14 +257,14 @@ def build_hosted_launch_job(
                 "Prepare hosted setup worker",
                 "fusekit",
                 "pending",
-                "Worker identity, runner, and vault session proof will appear here.",
+                worker_prepare_proof,
             ),
             HostedLaunchJobStep(
                 "provider.gates",
                 "Complete provider-owned gates",
                 "user",
                 "pending",
-                "MFA, billing, consent, CAPTCHA, and copy-once secret screens stay provider-owned.",
+                provider_gate_proof,
             ),
             HostedLaunchJobStep(
                 "setup.execute",
@@ -269,7 +304,81 @@ def build_hosted_launch_job(
             "Write detonation receipt before launch is considered complete.",
         ),
         worker_contract=worker_contract,
+        launch_lane=lane,
+        payment_status=payment_status,
     )
+
+
+def hosted_job_payment_status(job: HostedLaunchJob) -> dict[str, object]:
+    """Return browser-safe payment status for a hosted job."""
+
+    receipt = job.payment_receipt if isinstance(job.payment_receipt, dict) else {}
+    return {
+        "required": job.launch_lane == MANAGED_FUSEKIT_RUN_LANE
+        and job.payment_status != "not_required",
+        "status": job.payment_status,
+        "receipt": dict(receipt),
+        "secret_boundary": (
+            "Payment status contains only public Checkout Session state and never card "
+            "numbers, CVC, payment method ids, billing details, Stripe secret keys, or "
+            "client secrets."
+        ),
+    }
+
+
+def with_hosted_job_payment_receipt(
+    job: HostedLaunchJob,
+    receipt: dict[str, object],
+) -> HostedLaunchJob:
+    """Return a job updated with a redacted payment receipt."""
+
+    status = "paid" if receipt.get("paid") is True else "checkout_pending"
+    return _replace_job(
+        job,
+        status=job.status,
+        created_at=job.created_at,
+        steps=_update_steps(
+            job.steps,
+            {
+                "worker.prepare": (
+                    "pending" if status != "paid" else "waiting",
+                    _payment_step_proof(status),
+                )
+            },
+        ),
+        payment_status=status,
+        payment_receipt=_public_payment_receipt(receipt),
+    )
+
+
+def hosted_byo_oci_bootstrap(job: HostedLaunchJob) -> dict[str, object]:
+    """Return a redacted BYO OCI bootstrap contract for a user-owned worker lane."""
+
+    return {
+        "schema_version": HOSTED_BYO_OCI_BOOTSTRAP_SCHEMA_VERSION,
+        "job_id": job.job_id,
+        "lane": BYO_OCI_LANE,
+        "worker_dispatch": "not_applicable_user_owned_oci",
+        "runner_shape_policy": "AMD/x86_64 only; ARM images are not allowed.",
+        "cloud_shell": {
+            "provider": "oci-cloud-shell",
+            "requires_user_oci_account": True,
+            "human_gates": [
+                "Oracle Cloud sign-in, MFA, tenancy selection, and billing gates",
+                "Compartment and region selection",
+            ],
+            "bootstrap_intent": (
+                "Open Oracle Cloud Shell and start a disposable FuseKit worker inside the "
+                "user's tenancy using the signed public job token."
+            ),
+        },
+        "worker_request": hosted_worker_request(job),
+        "secret_boundary": (
+            "The BYO OCI bootstrap contains a signed public job token contract and proof "
+            "labels only. It does not contain Oracle credentials, API keys, vault material, "
+            "or provider secrets."
+        ),
+    }
 
 
 def create_hosted_job_token(
@@ -343,8 +452,11 @@ def hosted_launch_job_from_dict(payload: dict[str, Any]) -> HostedLaunchJob:
     rollback = payload.get("rollback")
     detonation = payload.get("detonation")
     worker_contract = payload.get("worker_contract")
+    launch_lane = _hosted_lane_from_payload(payload.get("launch_lane"))
+    payment = payload.get("payment")
     if not isinstance(steps, list) or not isinstance(worker_contract, dict):
         raise FuseKitError("Hosted launch job payload is invalid.")
+    payment_status, payment_receipt = _payment_from_payload(payment)
     return HostedLaunchJob(
         job_id=job_id,
         app_name=_required_str(payload, "app_name"),
@@ -356,6 +468,9 @@ def hosted_launch_job_from_dict(payload: dict[str, Any]) -> HostedLaunchJob:
         rollback=_str_tuple(rollback, "rollback"),
         detonation=_str_tuple(detonation, "detonation"),
         worker_contract=_worker_contract_from_dict(worker_contract),
+        launch_lane=launch_lane,
+        payment_status=payment_status,
+        payment_receipt=payment_receipt,
     )
 
 
@@ -363,9 +478,11 @@ def build_hosted_worker_contract(
     plan: HostedLaunchPlan,
     *,
     github_installation_id: int | None = None,
+    launch_lane: str = MANAGED_FUSEKIT_RUN_LANE,
 ) -> HostedWorkerContract:
     """Build the redacted execution contract for the hosted setup worker."""
 
+    lane = hosted_launch_lane(launch_lane).lane_id
     providers = plan.providers
     required_env = plan.required_env
     approved_actions = tuple(action.id for action in plan.actions)
@@ -373,7 +490,7 @@ def build_hosted_worker_contract(
     gates = plan.trust.user_gates
     guarantees = HOSTED_WORKER_GUARANTEES
     return HostedWorkerContract(
-        lane="hosted-fusekit-worker",
+        lane=lane,
         github_source=plan.github_source,
         github_installation_id=github_installation_id,
         plan_fingerprint=_approved_plan_fingerprint(
@@ -394,6 +511,7 @@ def build_hosted_worker_contract(
             "GitHub installation tokens are exchanged only inside the backend worker.",
             "Provider credentials stay inside the FuseKit vault or provider-native secret stores.",
             "Worker dispatch uses an HMAC envelope; worker secrets are never sent to browsers.",
+            _lane_permission_boundary(lane),
         ),
         approved_actions=approved_actions,
         required_artifacts=required_artifacts,
@@ -621,6 +739,7 @@ def render_hosted_control_room(
     action_outcome = _action_receipt_section(action_receipt, dispatch_receipt)
     proof_link = _proof_link(job, job_token=job_token)
     worker_request_link = _worker_request_link(job, job_token=job_token)
+    byo_oci_link = _byo_oci_bootstrap_link(job, job_token=job_token)
     proof = _list(job.proof)
     rollback = _list(job.rollback)
     detonation = _list(job.detonation)
@@ -734,8 +853,9 @@ def render_hosted_control_room(
       <p class="source">{job_id} / {status}</p>
       <h1>Hosted launch control room.</h1>
       <p>
-        {app_name} is queued for FuseKit-owned setup. Human gates stay visible,
-        provider-owned, and reversible; raw secrets stay out of public pages.
+        {app_name} is queued for {html.escape(hosted_launch_lane(job.launch_lane).label)}.
+        Human gates stay visible, provider-owned, and reversible; raw secrets stay out
+        of public pages.
       </p>
       <p class="source">{github_source}</p>
     </header>
@@ -746,6 +866,7 @@ def render_hosted_control_room(
         {controls}
         {proof_link}
         {worker_request_link}
+        {byo_oci_link}
         {rows}
       </section>
       <aside aria-label="Proof and rollback">
@@ -1277,6 +1398,13 @@ def _control_forms(
         control_tokens=control_tokens,
         job_param=job_param,
     )
+    checkout_action = _protected_action_url(
+        job_id=job_id,
+        action="checkout",
+        control_tokens=control_tokens,
+        job_param=job_param,
+        route_group="payments",
+    )
     if not start_action or not stop_action or not rollback_action or not detonate_action:
         return """
         <article class="step" aria-label="Protected controls unavailable">
@@ -1292,6 +1420,30 @@ def _control_forms(
         </article>
 """
     if job.status == "waiting_for_worker":
+        if job.payment_status in {"payment_required", "checkout_pending"}:
+            payment_label = (
+                "Payment authorization is pending"
+                if job.payment_status == "checkout_pending"
+                else "Authorize managed run payment"
+            )
+            if not checkout_action:
+                return """
+        <article class="step" aria-label="Payment authorization unavailable">
+          <h3>Payment authorization unavailable</h3>
+          <p>Managed worker dispatch is blocked until payment authorization is available.</p>
+          <button type="button" disabled aria-disabled="true">Authorize payment</button>
+        </article>
+"""
+            return f"""
+        <form method="post" enctype="application/x-www-form-urlencoded" action="{checkout_action}">
+          <input type="hidden" name="control" value="{_control_value(control_tokens, "checkout")}">
+          <button type="submit">{html.escape(payment_label)}</button>
+        </form>
+        <form method="post" enctype="application/x-www-form-urlencoded" action="{stop_action}">
+          <input type="hidden" name="control" value="{_control_value(control_tokens, "stop")}">
+          <button type="submit">Stop launch</button>
+        </form>
+"""
         return f"""
         <form method="post" enctype="application/x-www-form-urlencoded" action="{start_action}">
           <input type="hidden" name="control" value="{_control_value(control_tokens, "start")}">
@@ -1322,12 +1474,13 @@ def _protected_action_url(
     action: str,
     control_tokens: dict[str, str],
     job_param: str,
+    route_group: str = "actions",
 ) -> str:
     control_token = control_tokens.get(action)
     if not control_token:
         return ""
     suffix = f"?{job_param.removeprefix('&amp;')}" if job_param else ""
-    return f"/api/hosted/jobs/{job_id}/actions/{action}{suffix}"
+    return f"/api/hosted/jobs/{job_id}/{route_group}/{action}{suffix}"
 
 
 def _control_value(control_tokens: dict[str, str], action: str) -> str:
@@ -1367,6 +1520,17 @@ def _worker_request_link(job: HostedLaunchJob, *, job_token: str) -> str:
     return f'<a class="button" href="{href}">View worker request</a>'
 
 
+def _byo_oci_bootstrap_link(job: HostedLaunchJob, *, job_token: str) -> str:
+    if not job_token or job.status == "waiting_for_worker" or job.launch_lane != BYO_OCI_LANE:
+        return ""
+    href = html.escape(
+        f"/api/hosted/jobs/{urllib.parse.quote(job.job_id)}/byo-oci-bootstrap?"
+        + urllib.parse.urlencode({"job": job_token}),
+        quote=True,
+    )
+    return f'<a class="button" href="{href}">Open BYO OCI bootstrap</a>'
+
+
 def _control_room_link(job: HostedLaunchJob, *, job_token: str) -> str:
     if not job_token:
         return ""
@@ -1384,6 +1548,8 @@ def _replace_job(
     status: str,
     created_at: int,
     steps: tuple[HostedLaunchJobStep, ...],
+    payment_status: str | None = None,
+    payment_receipt: dict[str, object] | None = None,
 ) -> HostedLaunchJob:
     return HostedLaunchJob(
         job_id=job.job_id,
@@ -1396,6 +1562,9 @@ def _replace_job(
         rollback=job.rollback,
         detonation=job.detonation,
         worker_contract=job.worker_contract,
+        launch_lane=job.launch_lane,
+        payment_status=payment_status or job.payment_status,
+        payment_receipt=payment_receipt if payment_receipt is not None else job.payment_receipt,
     )
 
 
@@ -1426,6 +1595,7 @@ def _list(items: tuple[str, ...]) -> str:
 
 
 def _worker_contract_section(contract: HostedWorkerContract) -> str:
+    lane = hosted_launch_lane(contract.lane)
     providers = _list(contract.providers or ("No providers detected yet",))
     permissions = _list(contract.permission_boundary)
     actions = _list(contract.approved_actions)
@@ -1436,8 +1606,9 @@ def _worker_contract_section(contract: HostedWorkerContract) -> str:
     return f"""
         <h2>Worker contract</h2>
         <p>
-          FuseKit may not call this launch complete until the hosted worker produces
-          the required redacted artifacts and keeps these guarantees.
+          Lane: {html.escape(lane.label)}. FuseKit may not call this launch
+          complete until the hosted worker produces the required redacted
+          artifacts and keeps these guarantees.
         </p>
         {plan_integrity}
         <h3>Providers</h3>
@@ -1810,6 +1981,83 @@ def _worker_contract_from_dict(payload: dict[str, Any]) -> HostedWorkerContract:
         required_artifacts=_str_tuple(payload.get("required_artifacts"), "required_artifacts"),
         gates=_str_tuple(payload.get("gates"), "gates"),
         guarantees=_str_tuple(payload.get("guarantees"), "guarantees"),
+    )
+
+
+def _hosted_lane_from_payload(value: object) -> str:
+    if value is None:
+        return MANAGED_FUSEKIT_RUN_LANE
+    if not isinstance(value, str) or not valid_hosted_launch_lane(value):
+        raise FuseKitError("Hosted launch lane is invalid.")
+    return hosted_launch_lane(value).lane_id
+
+
+def _payment_from_payload(value: object) -> tuple[str, dict[str, object] | None]:
+    if value is None:
+        return "not_required", None
+    if not isinstance(value, dict):
+        raise FuseKitError("Hosted launch payment payload is invalid.")
+    status = value.get("status")
+    if not isinstance(status, str):
+        raise FuseKitError("Hosted launch payment status is invalid.")
+    if status not in {"not_required", "payment_required", "checkout_pending", "paid"}:
+        raise FuseKitError("Hosted launch payment status is unsupported.")
+    receipt = value.get("receipt")
+    if receipt in (None, {}):
+        return status, None
+    if not isinstance(receipt, dict):
+        raise FuseKitError("Hosted launch payment receipt is invalid.")
+    return status, _public_payment_receipt(receipt)
+
+
+def _public_payment_receipt(receipt: dict[str, object]) -> dict[str, object]:
+    allowed = {
+        "schema_version",
+        "provider",
+        "checkout_session_id",
+        "checkout_url",
+        "status",
+        "payment_status",
+        "mode",
+        "client_reference_id",
+        "amount_total",
+        "currency",
+        "paid",
+        "secret_boundary",
+    }
+    result: dict[str, object] = {}
+    for key in allowed:
+        value = receipt.get(key)
+        if isinstance(value, str):
+            if contains_durable_secret_text(value) or len(value) > 2048:
+                raise FuseKitError("Hosted launch payment receipt contains secret-looking text.")
+            result[key] = value
+        elif isinstance(value, bool) or isinstance(value, int) or value is None:
+            result[key] = value
+    return result
+
+
+def _lane_permission_boundary(lane: str) -> str:
+    if lane == BYO_OCI_LANE:
+        return (
+            "BYO OCI uses user-owned Oracle Cloud infrastructure; FuseKit-managed worker "
+            "dispatch is not allowed for this lane."
+        )
+    return (
+        "Managed FuseKit runs require payment authorization before FuseKit-owned worker "
+        "infrastructure can be dispatched."
+    )
+
+
+def _payment_step_proof(status: str) -> str:
+    if status == "paid":
+        return (
+            "Stripe Checkout authorization receipt is present; managed worker dispatch may "
+            "proceed only within the approved visible plan."
+        )
+    return (
+        "Stripe Checkout session is pending; FuseKit-managed worker dispatch remains blocked "
+        "until payment authorization is confirmed server-side."
     )
 
 

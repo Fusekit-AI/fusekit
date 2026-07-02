@@ -20,6 +20,12 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from fusekit.errors import FuseKitError
+from fusekit.hosted.billing import (
+    HostedPaymentConfig,
+    create_stripe_checkout_session,
+    payment_required_receipt,
+    retrieve_stripe_checkout_session,
+)
 from fusekit.hosted.github_app import (
     GitHubAppConfig,
     UrlOpener,
@@ -36,6 +42,7 @@ from fusekit.hosted.job import (
     build_hosted_launch_job,
     claim_hosted_launch_job,
     create_hosted_job_token,
+    hosted_byo_oci_bootstrap,
     hosted_job_action_receipt,
     hosted_proof_receipt,
     hosted_worker_claim_receipt,
@@ -43,6 +50,13 @@ from fusekit.hosted.job import (
     render_hosted_control_room,
     render_hosted_proof_receipt,
     verify_hosted_job_token,
+    with_hosted_job_payment_receipt,
+)
+from fusekit.hosted.lanes import (
+    BYO_OCI_LANE,
+    MANAGED_FUSEKIT_RUN_LANE,
+    hosted_launch_lane_contract,
+    valid_hosted_launch_lane,
 )
 from fusekit.hosted.launcher import (
     HOSTED_COMPLETION_EVIDENCE_KEYS,
@@ -472,6 +486,12 @@ HOSTED_READINESS_NEXT_ACTIONS: dict[str, str] = {
     ),
     "hosted_state_secret_too_short": "Use at least 16 characters for the hosted state secret.",
     "hosted_worker_secret_too_short": "Use at least 16 characters for the worker secret.",
+    "stripe_secret_key_required_for_managed_runs": (
+        "Set FUSEKIT_STRIPE_SECRET_KEY before enabling managed paid runs."
+    ),
+    "stripe_price_id_required_for_managed_runs": (
+        "Set FUSEKIT_STRIPE_PRICE_ID before enabling managed paid runs."
+    ),
     "source_provenance_not_verified": (
         "Publish hosted source provenance for xpxpxp-coder/fusekit from the deployment "
         "runtime so the public source provenance verifies."
@@ -507,6 +527,10 @@ class HostedSettings:
     aws_git_commit_sha: str = ""
     github_opener: UrlOpener | None = None
     worker_dispatch_opener: UrlOpener | None = None
+    stripe_opener: UrlOpener | None = None
+    managed_runs_enabled: bool = False
+    stripe_secret_key: str = ""
+    stripe_price_id: str = ""
     hosted_jobs: MutableMapping[str, HostedLaunchJob] = field(default_factory=dict)
 
     @classmethod
@@ -536,6 +560,9 @@ class HostedSettings:
             aws_git_repo_slug=os.environ.get("FUSEKIT_HOSTED_GIT_REPO_SLUG", ""),
             aws_git_commit_ref=os.environ.get("FUSEKIT_HOSTED_GIT_COMMIT_REF", ""),
             aws_git_commit_sha=os.environ.get("FUSEKIT_HOSTED_GIT_COMMIT_SHA", ""),
+            managed_runs_enabled=_env_flag("FUSEKIT_MANAGED_RUNS_ENABLED"),
+            stripe_secret_key=os.environ.get("FUSEKIT_STRIPE_SECRET_KEY", ""),
+            stripe_price_id=os.environ.get("FUSEKIT_STRIPE_PRICE_ID", ""),
         )
 
     def github_config(self) -> GitHubAppConfig:
@@ -545,6 +572,17 @@ class HostedSettings:
             app_id=self.github_app_id,
             app_slug=self.github_app_slug,
             private_key_pem=self.github_private_key_pem,
+        )
+
+    def payment_config(self) -> HostedPaymentConfig:
+        """Return backend-only managed-run payment configuration."""
+
+        return HostedPaymentConfig(
+            enabled=self.managed_runs_enabled,
+            stripe_secret_key=self.stripe_secret_key,
+            stripe_price_id=self.stripe_price_id,
+            public_origin=_public_origin_label(self.public_origin),
+            opener=self.stripe_opener,
         )
 
     def readiness(self) -> dict[str, object]:
@@ -570,6 +608,7 @@ class HostedSettings:
             "public_origin": _public_origin_label(self.public_origin),
             "github_app_slug": _github_app_slug_label(self.github_app_slug),
             "configured": configured,
+            "payment": self.payment_config().public_dict(),
             "missing": list(missing),
             "invalid": list(invalid),
             "blocking_checks": blocking_checks,
@@ -597,6 +636,8 @@ class HostedSettings:
             "domain": "fusekit.snowmanai.org",
             "trust_story": list(TRUST_STORY),
             "trust_contract": dict(HOSTED_PUBLIC_TRUST_CONTRACT),
+            "launch_lanes": hosted_launch_lane_contract(),
+            "payment": self.payment_config().public_dict(),
             "capability_vault_boundary": dict(HOSTED_CAPABILITY_VAULT_BOUNDARY),
             "provider_permissions": dict(HOSTED_PROVIDER_PERMISSION_COPY),
             "security_headers": dict(HOSTED_SECURITY_HEADERS_CONTRACT),
@@ -605,6 +646,7 @@ class HostedSettings:
             "one_click_launch": {
                 "public_url": HOSTED_CANONICAL_ORIGIN,
                 "start_control": "Start hosted launch",
+                "lanes": hosted_launch_lane_contract(),
                 "no_terminal_promise": NO_TERMINAL_PROMISE,
                 "intake": "github-app",
                 "repository_scope": "one selected GitHub repository",
@@ -1464,7 +1506,17 @@ def _github_plan_response(
             installation_id=int(installation_id),
             repo=repo,
             state_token=state_token,
+            launch_lane=MANAGED_FUSEKIT_RUN_LANE,
         ),
+        launch_urls={
+            lane: _hosted_control_room_url(
+                installation_id=int(installation_id),
+                repo=repo,
+                state_token=state_token,
+                launch_lane=lane,
+            )
+            for lane in (MANAGED_FUSEKIT_RUN_LANE, BYO_OCI_LANE)
+        },
     )
     return _html_response(start_response, body)
 
@@ -1478,6 +1530,7 @@ def _github_control_room_response(
     state_token = _first_query_value(query, "state")
     installation_id = _first_query_value(query, "installation_id")
     repo = _first_query_value(query, "repo")
+    launch_lane = _first_query_value(query, "lane") or MANAGED_FUSEKIT_RUN_LANE
     if not state_token:
         return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "missing_state"})
     if not installation_id or not installation_id.isdecimal() or int(installation_id) <= 0:
@@ -1488,6 +1541,8 @@ def _github_control_room_response(
         )
     if not _safe_repo_slug(repo):
         return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "invalid_repository"})
+    if not valid_hosted_launch_lane(launch_lane):
+        return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "invalid_launch_lane"})
     try:
         verify_hosted_state_token(settings.state_secret, state_token)
     except FuseKitError:
@@ -1518,7 +1573,12 @@ def _github_control_room_response(
         )
     except FuseKitError:
         return _response(start_response, HTTPStatus.BAD_GATEWAY, {"error": "github_job_failed"})
-    job = build_hosted_launch_job(plan, github_installation_id=int(installation_id))
+    job = build_hosted_launch_job(
+        plan,
+        github_installation_id=int(installation_id),
+        launch_lane=launch_lane,
+        payment_required=settings.managed_runs_enabled,
+    )
     settings.hosted_jobs[job.job_id] = job
     job_token = create_hosted_job_token(settings.state_secret, job)
     body = render_hosted_control_room(
@@ -1561,6 +1621,24 @@ def _hosted_job_api_response(
         return _hosted_worker_claim_response(settings, environ, start_response, job)
     if len(parts) == 5 and parts[4] == "worker-proof" and method == "POST":
         return _hosted_worker_proof_response(settings, environ, start_response, job)
+    if len(parts) == 5 and parts[4] == "byo-oci-bootstrap" and method == "GET":
+        return _hosted_byo_oci_bootstrap_response(start_response, job)
+    if len(parts) == 6 and parts[4] == "payments" and parts[5] == "checkout" and method == "POST":
+        return _hosted_payment_checkout_response(settings, environ, start_response, job=job)
+    if (
+        len(parts) == 6
+        and parts[4] == "payments"
+        and parts[5] == "stripe-return"
+        and method == "GET"
+    ):
+        return _hosted_payment_return_response(settings, environ, start_response, job=job)
+    if (
+        len(parts) == 6
+        and parts[4] == "payments"
+        and parts[5] == "stripe-cancel"
+        and method == "GET"
+    ):
+        return _hosted_payment_cancel_response(settings, start_response, job)
     if len(parts) == 6 and parts[4] == "actions" and method == "POST":
         return _hosted_job_action_response(
             settings,
@@ -1597,6 +1675,19 @@ def _hosted_job_action_response(
         _verify_hosted_control_token(settings, control_token, job=job, action=action)
     except FuseKitError:
         return _response(start_response, HTTPStatus.FORBIDDEN, {"error": "invalid_control"})
+    if action == "start" and _managed_payment_required(settings, job):
+        return _response(
+            start_response,
+            HTTPStatus.PAYMENT_REQUIRED,
+            {
+                "error": "payment_required",
+                "payment": payment_required_receipt(lane=job.launch_lane),
+                "checkout_path": (
+                    f"/api/hosted/jobs/{urllib.parse.quote(job.job_id, safe='')}"
+                    "/payments/checkout"
+                ),
+            },
+        )
     try:
         updated = advance_hosted_launch_job(job, action)
     except ValueError:
@@ -1604,7 +1695,7 @@ def _hosted_job_action_response(
     action_receipt = hosted_job_action_receipt(updated, action=action)
     job_token = create_hosted_job_token(settings.state_secret, updated)
     dispatch_receipt: dict[str, object] | None = None
-    if action in {"start", "rollback", "detonate"}:
+    if action in {"start", "rollback", "detonate"} and job.launch_lane != BYO_OCI_LANE:
         try:
             dispatch_receipt = _dispatch_hosted_worker(
                 settings,
@@ -1618,6 +1709,17 @@ def _hosted_job_action_response(
                 HTTPStatus.BAD_GATEWAY,
                 {"error": "worker_dispatch_failed"},
             )
+    if action == "start" and job.launch_lane == BYO_OCI_LANE:
+        dispatch_receipt = {
+            "schema_version": HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+            "action": action,
+            "dispatched": False,
+            "reason": "byo_oci_user_owned_worker_lane",
+            "secret_boundary": (
+                "BYO OCI does not dispatch FuseKit-managed worker infrastructure. The "
+                "user-owned OCI bootstrap exposes only redacted public job metadata."
+            ),
+        }
     settings.hosted_jobs[job.job_id] = updated
     if _wants_html(environ):
         return _html_response(
@@ -1636,6 +1738,133 @@ def _hosted_job_action_response(
     if dispatch_receipt is not None:
         payload["worker_dispatch"] = dispatch_receipt
     return _response(start_response, HTTPStatus.OK, payload)
+
+
+def _hosted_payment_checkout_response(
+    settings: HostedSettings,
+    environ: dict[str, object],
+    start_response: StartResponse,
+    *,
+    job: HostedLaunchJob,
+) -> Iterable[bytes]:
+    if job.launch_lane != MANAGED_FUSEKIT_RUN_LANE:
+        return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "payment_not_required"})
+    if not _hosted_action_origin_allowed(settings, environ):
+        return _response(start_response, HTTPStatus.FORBIDDEN, {"error": "invalid_control"})
+    try:
+        form = _form_request_body(environ)
+    except FuseKitError:
+        return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "missing_control"})
+    control_token = _first_query_value(form, "control")
+    if not control_token:
+        return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "missing_control"})
+    try:
+        _verify_hosted_control_token(settings, control_token, job=job, action="checkout")
+    except FuseKitError:
+        return _response(start_response, HTTPStatus.FORBIDDEN, {"error": "invalid_control"})
+    job_token = create_hosted_job_token(settings.state_secret, job)
+    try:
+        receipt = create_stripe_checkout_session(
+            settings.payment_config(),
+            job_id=job.job_id,
+            job_token=job_token,
+            lane=job.launch_lane,
+            github_source=job.github_source,
+            plan_fingerprint=job.worker_contract.plan_fingerprint,
+        )
+    except FuseKitError:
+        return _response(
+            start_response,
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            {"error": "payment_not_ready"},
+        )
+    updated = with_hosted_job_payment_receipt(job, receipt)
+    settings.hosted_jobs[job.job_id] = updated
+    updated_token = create_hosted_job_token(settings.state_secret, updated)
+    payload = updated.to_dict()
+    payload["job_token"] = updated_token
+    payload["payment"] = updated.to_dict()["payment"]
+    if _wants_html(environ) and isinstance(receipt.get("checkout_url"), str):
+        return _redirect_response(start_response, str(receipt["checkout_url"]))
+    return _response(start_response, HTTPStatus.OK, payload)
+
+
+def _hosted_payment_return_response(
+    settings: HostedSettings,
+    environ: dict[str, object],
+    start_response: StartResponse,
+    *,
+    job: HostedLaunchJob,
+) -> Iterable[bytes]:
+    query = urllib.parse.parse_qs(str(environ.get("QUERY_STRING", "")), keep_blank_values=True)
+    session_id = _first_query_value(query, "session_id")
+    try:
+        receipt = retrieve_stripe_checkout_session(
+            settings.payment_config(),
+            session_id=session_id,
+        )
+    except FuseKitError:
+        return _response(
+            start_response,
+            HTTPStatus.BAD_GATEWAY,
+            {"error": "payment_verification_failed"},
+        )
+    if receipt.get("paid") is not True:
+        return _response(start_response, HTTPStatus.PAYMENT_REQUIRED, {"error": "payment_not_paid"})
+    updated = with_hosted_job_payment_receipt(job, receipt)
+    settings.hosted_jobs[job.job_id] = updated
+    job_token = create_hosted_job_token(settings.state_secret, updated)
+    return _html_response(
+        start_response,
+        render_hosted_control_room(
+            updated,
+            control_tokens=_hosted_control_tokens(settings, updated),
+            job_token=job_token,
+            action_receipt={
+                "schema_version": "fusekit.hosted-payment-return.v1",
+                "action": "payment",
+                "receipt_statement": (
+                    "Stripe Checkout authorization verified; managed worker start is now enabled."
+                ),
+                "next_required_proof": ["worker_claim", "detonation_receipt", "recording"],
+            },
+        ),
+    )
+
+
+def _hosted_payment_cancel_response(
+    settings: HostedSettings,
+    start_response: StartResponse,
+    job: HostedLaunchJob,
+) -> Iterable[bytes]:
+    job_token = create_hosted_job_token(settings.state_secret, job)
+    return _html_response(
+        start_response,
+        render_hosted_control_room(
+            job,
+            control_tokens=_hosted_control_tokens(settings, job),
+            job_token=job_token,
+            action_receipt={
+                "schema_version": "fusekit.hosted-payment-cancel.v1",
+                "action": "payment_cancelled",
+                "receipt_statement": (
+                    "Payment authorization was cancelled; managed worker dispatch remains blocked."
+                ),
+                "next_required_proof": ["stripe_checkout_authorization"],
+            },
+        ),
+    )
+
+
+def _hosted_byo_oci_bootstrap_response(
+    start_response: StartResponse,
+    job: HostedLaunchJob,
+) -> Iterable[bytes]:
+    if job.launch_lane != BYO_OCI_LANE:
+        return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "byo_oci_not_selected"})
+    if job.status == "waiting_for_worker":
+        return _response(start_response, HTTPStatus.CONFLICT, {"error": "worker_not_started"})
+    return _response(start_response, HTTPStatus.OK, hosted_byo_oci_bootstrap(job))
 
 
 def _hosted_job_html_response(
@@ -1793,7 +2022,7 @@ def _verify_hosted_control_token(
         token,
         ttl_seconds=HOSTED_CONTROL_TOKEN_TTL_SECONDS,
     )
-    if control.return_path != f"/api/hosted/jobs/{job.job_id}/actions/{action}":
+    if control.return_path != _hosted_control_return_path(job.job_id, action):
         raise FuseKitError("Hosted control token does not match route.")
 
 
@@ -1801,10 +2030,16 @@ def _hosted_control_tokens(settings: HostedSettings, job: HostedLaunchJob) -> di
     return {
         action: create_hosted_state_token(
             settings.state_secret,
-            return_path=f"/api/hosted/jobs/{job.job_id}/actions/{action}",
+            return_path=_hosted_control_return_path(job.job_id, action),
         )
-        for action in ("start", "stop", "rollback", "detonate")
+        for action in ("checkout", "start", "stop", "rollback", "detonate")
     }
+
+
+def _hosted_control_return_path(job_id: str, action: str) -> str:
+    if action == "checkout":
+        return f"/api/hosted/jobs/{job_id}/payments/checkout"
+    return f"/api/hosted/jobs/{job_id}/actions/{action}"
 
 
 def _build_plan_from_selected_repo(
@@ -1830,12 +2065,14 @@ def _hosted_control_room_url(
     installation_id: int,
     repo: str,
     state_token: str,
+    launch_lane: str,
 ) -> str:
     return "/github/control-room?" + urllib.parse.urlencode(
         {
             "installation_id": str(installation_id),
             "repo": repo,
             "state": state_token,
+            "lane": launch_lane,
         }
     )
 
@@ -2073,6 +2310,10 @@ def _hosted_config_errors(settings: HostedSettings) -> tuple[str, ...]:
         errors.append("hosted_state_secret_too_short")
     if len(settings.worker_secret) < 16:
         errors.append("hosted_worker_secret_too_short")
+    if settings.managed_runs_enabled and not settings.stripe_secret_key.startswith("sk_"):
+        errors.append("stripe_secret_key_required_for_managed_runs")
+    if settings.managed_runs_enabled and not settings.stripe_price_id.startswith("price_"):
+        errors.append("stripe_price_id_required_for_managed_runs")
     if settings.source_provenance().get("verified") is not True:
         errors.append("source_provenance_not_verified")
     return tuple(errors)
@@ -2090,6 +2331,14 @@ def _worker_authorized(settings: HostedSettings, environ: dict[str, object]) -> 
 def _worker_id(environ: dict[str, object]) -> str:
     value = str(environ.get("HTTP_X_FUSEKIT_WORKER_ID", "")).strip()
     return value or "hosted-worker"
+
+
+def _managed_payment_required(settings: HostedSettings, job: HostedLaunchJob) -> bool:
+    return (
+        settings.managed_runs_enabled
+        and job.launch_lane == MANAGED_FUSEKIT_RUN_LANE
+        and job.payment_status != "paid"
+    )
 
 
 def _dispatch_hosted_worker(
@@ -2470,6 +2719,10 @@ def _first_query_value(query: dict[str, list[str]], key: str) -> str:
     return values[0] if values else ""
 
 
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _response(
     start_response: StartResponse,
     status: HTTPStatus,
@@ -2495,6 +2748,15 @@ def _html_response(start_response: StartResponse, body: str) -> Iterable[bytes]:
         _headers("text/html; charset=utf-8", len(payload)),
     )
     return [payload]
+
+
+def _redirect_response(start_response: StartResponse, location: str) -> Iterable[bytes]:
+    if not location.startswith("https://checkout.stripe.com/"):
+        raise FuseKitError("Hosted redirect target is not allowed.")
+    headers = _headers("text/plain; charset=utf-8", 0)
+    headers.append(("Location", location))
+    start_response("303 See Other", headers)
+    return [b""]
 
 
 def _headers(content_type: str, content_length: int) -> list[tuple[str, str]]:
