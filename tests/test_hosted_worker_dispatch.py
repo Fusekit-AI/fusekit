@@ -10,6 +10,7 @@ import pytest
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.worker_dispatch import (
+    HOSTED_WORKER_DISPATCH_MAX_BODY_BYTES,
     HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION,
     HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION,
     HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
@@ -126,6 +127,18 @@ def test_verify_hosted_worker_dispatch_rejects_tampering() -> None:
     with pytest.raises(FuseKitError, match="invalid_dispatch_signature"):
         verify_hosted_worker_dispatch(
             body.replace(b"rollback", b"detonate"),
+            signature=_signature(body),
+            schema=HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+            secret=WORKER_SECRET,
+        )
+
+
+def test_verify_hosted_worker_dispatch_rejects_oversized_body_before_signature() -> None:
+    body = b"{" + b'"padding":"' + (b"x" * HOSTED_WORKER_DISPATCH_MAX_BODY_BYTES) + b'"}'
+
+    with pytest.raises(FuseKitError, match="dispatch_body_too_large"):
+        verify_hosted_worker_dispatch(
+            body,
             signature=_signature(body),
             schema=HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
             secret=WORKER_SECRET,
@@ -299,6 +312,70 @@ def test_hosted_worker_dispatch_wsgi_accepts_signed_post() -> None:
     assert payload["accepted"] is True
     assert payload["action"] == "start"
     assert len(spawner.calls) == 1
+
+
+def test_hosted_worker_dispatch_wsgi_rejects_oversized_body_without_spawning() -> None:
+    body = b"{}"
+    spawner = FakeSpawner()
+    app = hosted_worker_dispatch_application(
+        HostedWorkerDispatchSettings(
+            worker_secret=WORKER_SECRET,
+            worker_id="worker-01",
+            spawner=spawner,
+        )
+    )
+    status_headers: dict[str, object] = {}
+
+    response = b"".join(
+        app(
+            {
+                "REQUEST_METHOD": "POST",
+                "PATH_INFO": "/dispatch",
+                "CONTENT_LENGTH": str(HOSTED_WORKER_DISPATCH_MAX_BODY_BYTES + 1),
+                "wsgi.input": io.BytesIO(body),
+                "HTTP_X_FUSEKIT_DISPATCH_SIGNATURE": _signature(body),
+                "HTTP_X_FUSEKIT_DISPATCH_SCHEMA": HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+            },
+            lambda status, headers: status_headers.update(status=status, headers=headers),
+        )
+    )
+    payload = json.loads(response.decode("utf-8"))
+
+    assert status_headers["status"] == "400 Bad Request"
+    assert payload == {"error": "dispatch_body_too_large"}
+    assert spawner.calls == []
+
+
+def test_hosted_worker_dispatch_wsgi_rejects_truncated_body_without_spawning() -> None:
+    body = _dispatch_body(action="start")
+    spawner = FakeSpawner()
+    app = hosted_worker_dispatch_application(
+        HostedWorkerDispatchSettings(
+            worker_secret=WORKER_SECRET,
+            worker_id="worker-01",
+            spawner=spawner,
+        )
+    )
+    status_headers: dict[str, object] = {}
+
+    response = b"".join(
+        app(
+            {
+                "REQUEST_METHOD": "POST",
+                "PATH_INFO": "/dispatch",
+                "CONTENT_LENGTH": str(len(body) + 1),
+                "wsgi.input": io.BytesIO(body),
+                "HTTP_X_FUSEKIT_DISPATCH_SIGNATURE": _signature(body),
+                "HTTP_X_FUSEKIT_DISPATCH_SCHEMA": HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+            },
+            lambda status, headers: status_headers.update(status=status, headers=headers),
+        )
+    )
+    payload = json.loads(response.decode("utf-8"))
+
+    assert status_headers["status"] == "400 Bad Request"
+    assert payload == {"error": "incomplete_request_body"}
+    assert spawner.calls == []
 
 
 def test_hosted_worker_dispatch_wsgi_serves_readiness_without_secret_values() -> None:

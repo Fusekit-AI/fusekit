@@ -1,0 +1,14 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Ignore local FuseKit runtime state and development caches."
+paths = [
+  '''^\.fusekit/''',
+  '''^\.venv/''',
+  '''^build/''',
+  '''^dist/''',
+  '''^\.mypy_cache/''',
+  '''^\.pytest_cache/''',
+  '''^\.ruff_cache/''',
+]

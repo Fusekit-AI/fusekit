@@ -294,9 +294,21 @@ def test_run_hosted_worker_once_handles_detonation_request_from_signed_job(
 
 
 def test_run_hosted_worker_once_rejects_missing_inputs(tmp_path: Path) -> None:
-    with pytest.raises(FuseKitError, match="https URL"):
+    with pytest.raises(FuseKitError, match="must use HTTPS"):
         run_hosted_worker_once(
             origin="http://fusekit.snowmanai.org",
+            job_id="hosted-test",
+            job_token="job-token",
+            worker_secret=WORKER_SECRET,
+            github_config=_github_config(),
+            workspace=tmp_path,
+        )
+
+
+def test_run_hosted_worker_once_rejects_private_network_origin(tmp_path: Path) -> None:
+    with pytest.raises(FuseKitError, match="must not target local or private network hosts"):
+        run_hosted_worker_once(
+            origin="https://127.0.0.1",
             job_id="hosted-test",
             job_token="job-token",
             worker_secret=WORKER_SECRET,
@@ -353,6 +365,20 @@ def _write_required_artifacts(source: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         if label.endswith(".jsonl"):
             path.write_text('{"event":"redacted"}\n', encoding="utf-8")
+        elif label.endswith("rollback_plan.json"):
+            path.write_text(
+                json.dumps(
+                    {
+                        "rollback": [
+                            {
+                                "action": "rollback.cloudflare.dns",
+                                "status": "planned",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
         else:
             path.write_text('{"ok":true}\n', encoding="utf-8")
 

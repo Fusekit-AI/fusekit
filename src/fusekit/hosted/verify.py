@@ -102,7 +102,14 @@ def verify_hosted_deployment(
     if worker_dispatch_url:
         dispatch_public_url = _valid_https_url(worker_dispatch_url)
     checks: list[dict[str, object]] = []
-    checks.append(_dns_check("hosted.dns", public_host, resolver=dns_resolver))
+    hosted_dns = _dns_check("hosted.dns", public_host, resolver=dns_resolver)
+    checks.append(hosted_dns)
+    if hosted_dns.get("status") != "ok":
+        return _deployment_verification_report(
+            public_origin=public_origin,
+            worker_dispatch_url=dispatch_public_url,
+            checks=checks,
+        )
     checks.append(
         _text_check(
             "hosted.home",
@@ -149,29 +156,54 @@ def verify_hosted_deployment(
         dispatch_public_url = _worker_dispatch_url_from_deployment(deployment_payload)
     if dispatch_public_url:
         dispatch_base = _worker_dispatch_receiver_base_url(dispatch_public_url)
-        checks.append(
-            _json_check(
-                "worker_dispatch.health",
-                f"{dispatch_base}/healthz",
-                opener=opener,
-                expect_ok_field=True,
-            )
+        dispatch_host = urllib.parse.urlparse(dispatch_base).hostname or ""
+        dispatch_dns = _dns_check(
+            "worker_dispatch.dns",
+            dispatch_host,
+            resolver=dns_resolver,
+            next_action=(
+                "Configure FUSEKIT_HOSTED_WORKER_DISPATCH_URL to an HTTPS worker "
+                "dispatch endpoint that resolves only to internet-routable addresses."
+            ),
         )
-        checks.append(
-            _json_check(
-                "worker_dispatch.readiness",
-                f"{dispatch_base}/readiness",
-                opener=opener,
-                expect_schema=HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION,
-                expect_ready_field=True,
-                expect_worker_dispatch_readiness=True,
+        checks.append(dispatch_dns)
+        if dispatch_dns.get("status") == "ok":
+            checks.append(
+                _json_check(
+                    "worker_dispatch.health",
+                    f"{dispatch_base}/healthz",
+                    opener=opener,
+                    expect_ok_field=True,
+                )
             )
-        )
+            checks.append(
+                _json_check(
+                    "worker_dispatch.readiness",
+                    f"{dispatch_base}/readiness",
+                    opener=opener,
+                    expect_schema=HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION,
+                    expect_ready_field=True,
+                    expect_worker_dispatch_readiness=True,
+                )
+            )
+    return _deployment_verification_report(
+        public_origin=public_origin,
+        worker_dispatch_url=dispatch_public_url,
+        checks=checks,
+    )
+
+
+def _deployment_verification_report(
+    *,
+    public_origin: str,
+    worker_dispatch_url: str,
+    checks: list[dict[str, object]],
+) -> dict[str, object]:
     blocking_checks = _blocking_check_ids(checks)
     return {
         "schema_version": HOSTED_DEPLOYMENT_VERIFICATION_SCHEMA_VERSION,
         "public_origin": public_origin,
-        "worker_dispatch_url": dispatch_public_url,
+        "worker_dispatch_url": worker_dispatch_url,
         "ready": not blocking_checks,
         "blocking_checks": blocking_checks,
         "readiness_summary": _readiness_summary(checks),
@@ -429,6 +461,7 @@ def _dns_check(
     hostname: str,
     *,
     resolver: DnsResolver | None,
+    next_action: str = "",
 ) -> dict[str, object]:
     failures: list[str] = []
     addresses: list[str] = []
@@ -451,7 +484,7 @@ def _dns_check(
         "addresses": addresses,
     }
     if failures:
-        check["next_action"] = (
+        check["next_action"] = next_action or (
             "Attach fusekit.snowmanai.org to the hosted origin, then set the "
             "Cloudflare fusekit CNAME to the exact provider-provided target and wait "
             "for public DNS to resolve to internet-routable addresses."

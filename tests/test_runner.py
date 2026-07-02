@@ -5580,7 +5580,7 @@ def test_recording_wake_events_reject_duplicate_proof() -> None:
     assert _recording_wake_events_ready(record) is False
 
     record["wake_events"]["events"][0]["created_at"] = 1.0
-    record["wake_events"]["events"][0]["target"] = "token=ghp_12345678901234567890"
+    record["wake_events"]["events"][0]["target"] = "token=ghp_aaaaaaaaaaaaaaaa"
 
     assert _recording_wake_events_ready(record) is False
 
@@ -5684,7 +5684,7 @@ def test_recording_vault_rejects_duplicate_or_secret_metadata() -> None:
     assert _recording_vault_ready(record) is False
 
     del record["vault"]["records"][1]["note"]
-    record["vault"]["records"][1]["label"] = "token=ghp_12345678901234567890"
+    record["vault"]["records"][1]["label"] = "token=ghp_aaaaaaaaaaaaaaaa"
 
     assert _recording_vault_ready(record) is False
 
@@ -10725,12 +10725,12 @@ def test_control_room_clipboard_capture_rejects_wrong_token_clipboard_value(
 @pytest.mark.parametrize(
     ("target", "value"),
     [
-        ("RESEND_API_KEY", "re_1234567890abcdef"),
-        ("GITHUB_TOKEN", "github_pat_1234567890abcdef"),
-        ("GITHUB_TOKEN", "ghp_1234567890abcdef"),
-        ("OPENAI_API_KEY", "sk-proj-1234567890abcdef"),
-        ("CLOUDFLARE_API_TOKEN", "cf_1234567890abcdef"),
-        ("VERCEL_TOKEN", "vercel_1234567890abcdef"),
+        ("RESEND_API_KEY", "re_aaaaaaaaaaaaaaaa"),
+        ("GITHUB_TOKEN", "github_pat_aaaaaaaaaaaaaaaa"),
+        ("GITHUB_TOKEN", "ghp_aaaaaaaaaaaaaaaa"),
+        ("OPENAI_API_KEY", "sk-proj-aaaaaaaaaaaaaaaa"),
+        ("CLOUDFLARE_API_TOKEN", "cf_aaaaaaaaaaaaaaaa"),
+        ("VERCEL_TOKEN", "vercel_aaaaaaaaaaaaaaaa"),
     ],
 )
 def test_control_room_clipboard_capture_accepts_expected_token_shapes(
@@ -10759,31 +10759,31 @@ def test_control_room_clipboard_capture_does_not_require_unguaranteed_prefixes(
     [
         (
             "RESEND_API_KEY",
-            "ghp_1234567890abcdef",
+            "ghp_aaaaaaaaaaaaaaaa",
             "Copy the value that starts with re_ inside the VM browser, then click "
             "Capture RESEND_API_KEY from VM clipboard again.",
         ),
         (
             "GITHUB_TOKEN",
-            "re_1234567890abcdef",
+            "re_aaaaaaaaaaaaaaaa",
             "Copy the value that starts with",
         ),
         (
             "OPENAI_API_KEY",
-            "re_1234567890abcdef",
+            "re_aaaaaaaaaaaaaaaa",
             "Copy the value that starts with sk- inside the VM browser, then click "
             "Capture OPENAI_API_KEY from VM clipboard again.",
         ),
         (
             "CLOUDFLARE_API_TOKEN",
-            "github_pat_1234567890abcdef",
+            "github_pat_aaaaaaaaaaaaaaaa",
             "CLOUDFLARE_API_TOKEN looks like a GITHUB token. Copy the value from the "
             "provider page named by this gate inside the VM browser, then click Capture "
             "CLOUDFLARE_API_TOKEN from VM clipboard again.",
         ),
         (
             "VERCEL_TOKEN",
-            "sk-proj-1234567890abcdef",
+            "sk-proj-aaaaaaaaaaaaaaaa",
             "VERCEL_TOKEN looks like a OPENAI token. Copy the value from the provider "
             "page named by this gate inside the VM browser, then click Capture VERCEL_TOKEN "
             "from VM clipboard again.",
@@ -10891,9 +10891,9 @@ def test_control_room_clipboard_capture_rejects_urls_and_multi_token_blobs(value
 @pytest.mark.parametrize(
     "value",
     [
-        "RESEND_API_KEY=re_1234567890abcdef",
-        "api_key=re_1234567890abcdef",
-        "Authorization:Bearer re_1234567890abcdef",
+        "RESEND_API_KEY=re_aaaaaaaaaaaaaaaa",
+        "api_key=re_aaaaaaaaaaaaaaaa",
+        "Authorization:Bearer re_aaaaaaaaaaaaaaaa",
     ],
 )
 def test_control_room_clipboard_capture_rejects_assignment_or_header_blobs(

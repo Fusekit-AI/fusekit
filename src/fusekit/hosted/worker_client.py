@@ -26,6 +26,7 @@ from fusekit.hosted.worker import (
     build_hosted_worker_workspace_proof_payload,
     prepare_hosted_worker_execution,
 )
+from fusekit.security.url import require_safe_url
 
 JsonGet = Callable[[str, Mapping[str, str]], dict[str, Any]]
 JsonPost = Callable[[str, Mapping[str, str], dict[str, object] | None], dict[str, Any]]
@@ -239,8 +240,7 @@ def _require_inputs(
     job_token: str,
     worker_secret: str,
 ) -> None:
-    if not origin.startswith("https://"):
-        raise FuseKitError("Hosted worker origin must be an https URL.")
+    require_safe_url(origin, label="Hosted worker origin")
     if not job_id.startswith("hosted-"):
         raise FuseKitError("Hosted worker job id is required.")
     if not job_token:
@@ -272,8 +272,9 @@ def _worker_headers(*, worker_secret: str, worker_id: str) -> dict[str, str]:
 
 
 def _get_json(url: str, headers: Mapping[str, str]) -> dict[str, Any]:
-    request = urllib.request.Request(url, method="GET", headers=dict(headers))
-    with urllib.request.urlopen(request, timeout=90.0) as response:
+    safe_url = require_safe_url(url, label="Hosted worker API URL")
+    request = urllib.request.Request(safe_url, method="GET", headers=dict(headers))
+    with urllib.request.urlopen(request, timeout=90.0) as response:  # nosec B310
         status = int(getattr(response, "status", 200))
         body = response.read()
     if status >= 400:
@@ -289,14 +290,15 @@ def _post_json(
     headers: Mapping[str, str],
     payload: dict[str, object] | None,
 ) -> dict[str, Any]:
+    safe_url = require_safe_url(url, label="Hosted worker API URL")
     data = json.dumps(payload or {}).encode("utf-8")
     request = urllib.request.Request(
-        url,
+        safe_url,
         data=data,
         method="POST",
         headers=dict(headers),
     )
-    with urllib.request.urlopen(request, timeout=90.0) as response:
+    with urllib.request.urlopen(request, timeout=90.0) as response:  # nosec B310
         status = int(getattr(response, "status", 200))
         body = response.read()
     if status >= 400:

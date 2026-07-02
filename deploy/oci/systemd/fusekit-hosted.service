@@ -1,0 +1,46 @@
+[Unit]
+Description=FuseKit hosted launcher
+Documentation=https://github.com/Fusekit-AI/fusekit
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fusekit
+Group=fusekit
+WorkingDirectory=/opt/fusekit
+EnvironmentFile=/etc/fusekit/hosted-secrets.env
+Environment=FUSEKIT_HOSTED_BIND=127.0.0.1
+Environment=FUSEKIT_HOSTED_PORT=8080
+ExecStart=/opt/fusekit/venv/bin/fusekit-hosted
+Restart=on-failure
+RestartSec=5s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+PrivateDevices=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+StateDirectory=fusekit
+StateDirectoryMode=0750
+LogsDirectory=fusekit
+LogsDirectoryMode=0750
+RuntimeDirectory=fusekit
+RuntimeDirectoryMode=0750
+ReadWritePaths=/var/lib/fusekit /var/log/fusekit /run/fusekit
+
+[Install]
+WantedBy=multi-user.target

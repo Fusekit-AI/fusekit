@@ -10,8 +10,8 @@ from fusekit.security import contains_durable_secret_text, redact_public_text
     [
         "Authorization: Bearer raw-provider-token",
         "Callback failed at https://provider.example/callback?code=secret-code",
-        "api_key = rk_1234567890abcdefghijklmnop",
-        "token: github_pat_1234567890abcdefghijklmnop",
+        "api_key = rk_aaaaaaaaaaaaaaaaaaaa",
+        "token: github_pat_aaaaaaaaaaaaaaaaaaaa",
     ],
 )
 def test_contains_durable_secret_text_rejects_raw_credentials(value: str) -> None:
