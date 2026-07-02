@@ -182,6 +182,7 @@ class HostedLaunchJob:
     worker_contract: HostedWorkerContract
     launch_lane: str = MANAGED_FUSEKIT_RUN_LANE
     payment_status: str = "not_required"
+    payment_price_label: str = ""
     payment_receipt: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
@@ -211,6 +212,7 @@ def build_hosted_launch_job(
     github_installation_id: int | None = None,
     launch_lane: str = MANAGED_FUSEKIT_RUN_LANE,
     payment_required: bool = False,
+    payment_price_label: str = "",
     job_id: str | None = None,
     now: int | None = None,
 ) -> HostedLaunchJob:
@@ -308,6 +310,7 @@ def build_hosted_launch_job(
         worker_contract=worker_contract,
         launch_lane=lane,
         payment_status=payment_status,
+        payment_price_label=payment_price_label if payment_status == "payment_required" else "",
     )
 
 
@@ -319,6 +322,7 @@ def hosted_job_payment_status(job: HostedLaunchJob) -> dict[str, object]:
         "required": job.launch_lane == MANAGED_FUSEKIT_RUN_LANE
         and job.payment_status != "not_required",
         "status": job.payment_status,
+        "price_label": job.payment_price_label,
         "receipt": dict(receipt),
         "secret_boundary": (
             "Payment status contains only public Checkout Session state and never card "
@@ -524,6 +528,7 @@ def hosted_launch_job_from_dict(payload: dict[str, Any]) -> HostedLaunchJob:
     if not isinstance(steps, list) or not isinstance(worker_contract, dict):
         raise FuseKitError("Hosted launch job payload is invalid.")
     payment_status, payment_receipt = _payment_from_payload(payment)
+    payment_price_label = _payment_price_label_from_payload(payment)
     return HostedLaunchJob(
         job_id=job_id,
         app_name=_required_str(payload, "app_name"),
@@ -537,6 +542,7 @@ def hosted_launch_job_from_dict(payload: dict[str, Any]) -> HostedLaunchJob:
         worker_contract=_worker_contract_from_dict(worker_contract),
         launch_lane=launch_lane,
         payment_status=payment_status,
+        payment_price_label=payment_price_label,
         payment_receipt=payment_receipt,
     )
 
@@ -1493,15 +1499,22 @@ def _control_forms(
                 if job.payment_status == "checkout_pending"
                 else "Authorize managed run payment"
             )
+            price_line = (
+                f"<p>Managed run price: {html.escape(job.payment_price_label)}</p>"
+                if job.payment_price_label
+                else ""
+            )
             if not checkout_action:
-                return """
+                return f"""
         <article class="step" aria-label="Payment authorization unavailable">
           <h3>Payment authorization unavailable</h3>
+          {price_line}
           <p>Managed worker dispatch is blocked until payment authorization is available.</p>
           <button type="button" disabled aria-disabled="true">Authorize payment</button>
         </article>
 """
             return f"""
+        {price_line}
         <form method="post" enctype="application/x-www-form-urlencoded" action="{checkout_action}">
           <input type="hidden" name="control" value="{_control_value(control_tokens, "checkout")}">
           <button type="submit">{html.escape(payment_label)}</button>
@@ -1631,6 +1644,7 @@ def _replace_job(
         worker_contract=job.worker_contract,
         launch_lane=job.launch_lane,
         payment_status=payment_status or job.payment_status,
+        payment_price_label=job.payment_price_label,
         payment_receipt=payment_receipt if payment_receipt is not None else job.payment_receipt,
     )
 
@@ -2077,6 +2091,17 @@ def _payment_from_payload(value: object) -> tuple[str, dict[str, object] | None]
     return status, _public_payment_receipt(receipt)
 
 
+def _payment_price_label_from_payload(value: object) -> str:
+    if not isinstance(value, dict):
+        return ""
+    price_label = value.get("price_label")
+    if not isinstance(price_label, str):
+        return ""
+    if len(price_label) > 120 or contains_durable_secret_text(price_label):
+        raise FuseKitError("Hosted launch payment price label is invalid.")
+    return price_label
+
+
 def _public_payment_receipt(receipt: dict[str, object]) -> dict[str, object]:
     allowed = {
         "schema_version",
@@ -2091,6 +2116,7 @@ def _public_payment_receipt(receipt: dict[str, object]) -> dict[str, object]:
         "amount_total",
         "currency",
         "paid",
+        "price_label",
         "secret_boundary",
     }
     result: dict[str, object] = {}

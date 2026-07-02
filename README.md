@@ -419,27 +419,32 @@ approved action ids, required artifact labels, provider gate labels, and worker
 guarantees, so provider/action/gate/artifact/source drift requires a fresh
 visible plan before execution.
 
-Production still needs a supported hosted origin connected to this repository
+Production needs a supported hosted origin connected to this repository
 or deployed from this checkout, an HTTPS worker dispatch service running
-`fusekit-hosted-worker-dispatch` with durable dispatch state,
+`fusekit-hosted-worker-dispatch` with durable dispatch state, and
 `FUSEKIT_HOSTED_WORKER_DISPATCH_URL` set in the hosted environment to that
-service, `fusekit.snowmanai.org` attached to the hosted origin, the Cloudflare
-`fusekit` subdomain routed to the exact provider-provided CNAME target, and
-these runtime environment variables set in the hosted environment:
+service. `fusekit.snowmanai.org` is the canonical public origin; route the
+Cloudflare `fusekit` subdomain to the exact hosted-provider target for the
+chosen runtime. Set these runtime environment variables in the hosted
+environment:
 `FUSEKIT_HOSTED_ORIGIN`,
 `FUSEKIT_GITHUB_APP_ID`, `FUSEKIT_GITHUB_APP_SLUG`,
 `FUSEKIT_GITHUB_APP_PRIVATE_KEY`, `FUSEKIT_HOSTED_STATE_SECRET`, and
-`FUSEKIT_HOSTED_WORKER_SECRET`. A Vercel project must also expose system
+`FUSEKIT_HOSTED_WORKER_SECRET`. Vercel deployments must expose system
 environment variables including `VERCEL_ENV`, `VERCEL_URL`,
 `VERCEL_GIT_PROVIDER`, `VERCEL_GIT_REPO_OWNER`, `VERCEL_GIT_REPO_SLUG`,
-`VERCEL_GIT_COMMIT_REF`, and `VERCEL_GIT_COMMIT_SHA`. An AWS deployment must
-set `FUSEKIT_HOSTED_DEPLOYMENT_PROVIDER=aws-elastic-beanstalk`,
-`FUSEKIT_HOSTED_DEPLOYMENT_ENV=production`,
+`VERCEL_GIT_COMMIT_REF`, and `VERCEL_GIT_COMMIT_SHA`. OCI and AWS deployments
+must set `FUSEKIT_HOSTED_DEPLOYMENT_PROVIDER` to `oci-compute` or
+`aws-elastic-beanstalk`, plus `FUSEKIT_HOSTED_DEPLOYMENT_ENV=production`,
 `FUSEKIT_HOSTED_DEPLOYMENT_URL`, `FUSEKIT_HOSTED_GIT_PROVIDER`,
 `FUSEKIT_HOSTED_GIT_REPO_OWNER`, `FUSEKIT_HOSTED_GIT_REPO_SLUG`,
 `FUSEKIT_HOSTED_GIT_COMMIT_REF`, and `FUSEKIT_HOSTED_GIT_COMMIT_SHA`. The
 hosted verifier rejects the deployment if those public source-provenance fields
-are missing or point at a different repository. Production one-click worker wakeup also needs
+are missing or point at a different repository. Paid Managed FuseKit runs stay
+disabled until the runtime also sets `FUSEKIT_MANAGED_RUNS_ENABLED=1`,
+`FUSEKIT_STRIPE_SECRET_KEY`, `FUSEKIT_STRIPE_PRICE_ID`, and the public
+`FUSEKIT_MANAGED_RUN_PRICE_LABEL` shown before Checkout. Production one-click
+worker wakeup also needs
 `FUSEKIT_HOSTED_WORKER_DISPATCH_URL` pointed at an HTTPS worker dispatch
 service running `fusekit-hosted-worker-dispatch` with
 `FUSEKIT_HOSTED_WORKER_SECRET` and worker runtime environment configured. Set
@@ -447,9 +452,10 @@ service running `fusekit-hosted-worker-dispatch` with
 `FUSEKIT_HOSTED_WORKER_WORKSPACE` for durable duplicate-click protection. Verify
 that service with `/healthz` and `/readiness` before setting
 `FUSEKIT_HOSTED_WORKER_DISPATCH_URL`. As of the latest local check,
-`https://fusekit.snowmanai.org` has public DNS answers through Cloudflare but returns
-Cloudflare's "DNS points to prohibited IP" page instead of the FuseKit hosted
-app, so DNS/custom-domain attachment is not complete yet.
+`https://fusekit.snowmanai.org` resolves through Cloudflare to the OCI-hosted
+launcher and the outside-in hosted verifier passes; the paid Managed lane is
+still intentionally closed until complete Stripe runtime configuration and a
+live paid Checkout proof exist.
 
 ## Real Provider Acceptance Run
 

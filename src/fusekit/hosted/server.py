@@ -493,6 +493,9 @@ HOSTED_READINESS_NEXT_ACTIONS: dict[str, str] = {
     "stripe_price_id_required_for_managed_runs": (
         "Set FUSEKIT_STRIPE_PRICE_ID before enabling managed paid runs."
     ),
+    "managed_run_price_label_required": (
+        "Set FUSEKIT_MANAGED_RUN_PRICE_LABEL to the public price shown before Checkout."
+    ),
     "managed_runs_not_enabled": (
         "Set FUSEKIT_MANAGED_RUNS_ENABLED=1 only after Stripe Checkout is configured."
     ),
@@ -535,6 +538,7 @@ class HostedSettings:
     managed_runs_enabled: bool = False
     stripe_secret_key: str = ""
     stripe_price_id: str = ""
+    managed_run_price_label: str = ""
     hosted_jobs: MutableMapping[str, HostedLaunchJob] = field(default_factory=dict)
 
     @classmethod
@@ -567,6 +571,7 @@ class HostedSettings:
             managed_runs_enabled=_env_flag("FUSEKIT_MANAGED_RUNS_ENABLED"),
             stripe_secret_key=os.environ.get("FUSEKIT_STRIPE_SECRET_KEY", ""),
             stripe_price_id=os.environ.get("FUSEKIT_STRIPE_PRICE_ID", ""),
+            managed_run_price_label=os.environ.get("FUSEKIT_MANAGED_RUN_PRICE_LABEL", ""),
         )
 
     def github_config(self) -> GitHubAppConfig:
@@ -585,6 +590,7 @@ class HostedSettings:
             enabled=self.managed_runs_enabled,
             stripe_secret_key=self.stripe_secret_key,
             stripe_price_id=self.stripe_price_id,
+            price_label=self.managed_run_price_label,
             public_origin=_public_origin_label(self.public_origin),
             opener=self.stripe_opener,
         )
@@ -1649,6 +1655,7 @@ def _github_control_room_response(
         github_installation_id=int(installation_id),
         launch_lane=launch_lane,
         payment_required=launch_lane == MANAGED_FUSEKIT_RUN_LANE,
+        payment_price_label=settings.managed_run_price_label,
     )
     settings.hosted_jobs[job.job_id] = job
     job_token = create_hosted_job_token(settings.state_secret, job)
@@ -1752,7 +1759,10 @@ def _hosted_job_action_response(
             HTTPStatus.PAYMENT_REQUIRED,
             {
                 "error": "payment_required",
-                "payment": payment_required_receipt(lane=job.launch_lane),
+                "payment": payment_required_receipt(
+                    lane=job.launch_lane,
+                    price_label=settings.managed_run_price_label,
+                ),
                 "checkout_path": (
                     f"/api/hosted/jobs/{urllib.parse.quote(job.job_id, safe='')}"
                     "/payments/checkout"
@@ -2391,6 +2401,10 @@ def _hosted_config_errors(settings: HostedSettings) -> tuple[str, ...]:
         errors.append("stripe_secret_key_required_for_managed_runs")
     if settings.managed_runs_enabled and not settings.stripe_price_id.startswith("price_"):
         errors.append("stripe_price_id_required_for_managed_runs")
+    if settings.managed_runs_enabled and not settings.payment_config().public_dict().get(
+        "price_label_configured"
+    ):
+        errors.append("managed_run_price_label_required")
     if settings.source_provenance().get("verified") is not True:
         errors.append("source_provenance_not_verified")
     return tuple(errors)
@@ -2404,6 +2418,8 @@ def _managed_lane_blockers(settings: HostedSettings) -> list[str]:
         blockers.append("stripe_secret_key_required_for_managed_runs")
     if not settings.stripe_price_id.startswith("price_"):
         blockers.append("stripe_price_id_required_for_managed_runs")
+    if not settings.payment_config().public_dict().get("price_label_configured"):
+        blockers.append("managed_run_price_label_required")
     if not settings.worker_secret:
         blockers.append("FUSEKIT_HOSTED_WORKER_SECRET")
     elif len(settings.worker_secret) < 16:

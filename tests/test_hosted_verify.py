@@ -423,6 +423,52 @@ def test_verify_hosted_deployment_rejects_blocked_recommended_lane() -> None:
     ]
 
 
+def test_verify_hosted_deployment_rejects_managed_lane_without_price_label() -> None:
+    readiness = _readiness_contract()
+    lane_readiness = readiness["lane_readiness"]
+    payment = readiness["payment"]
+    assert isinstance(lane_readiness, dict)
+    assert isinstance(payment, dict)
+    lane_readiness["recommended_lane"] = MANAGED_FUSEKIT_RUN_LANE
+    lane_readiness["launchable_lanes"] = [MANAGED_FUSEKIT_RUN_LANE, BYO_OCI_LANE]
+    lanes = lane_readiness["lanes"]
+    assert isinstance(lanes, dict)
+    managed = lanes[MANAGED_FUSEKIT_RUN_LANE]
+    assert isinstance(managed, dict)
+    managed["launchable"] = True
+    managed["managed_worker_dispatch_allowed"] = True
+    managed["blocking_checks"] = []
+    managed["next_actions"] = []
+    payment["enabled"] = True
+    payment["managed_runs_enabled"] = True
+    payment["secret_key_configured"] = True
+    payment["price_configured"] = True
+    payment["price_label_configured"] = False
+    payment["price_label"] = ""
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            readiness,
+            _deployment_contract(),
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["hosted.readiness"]["status"] == "failed"
+    assert "payment_readiness_price_label_not_configured" in checks["hosted.readiness"][
+        "failures"
+    ]
+
+
 def test_verify_hosted_deployment_rejects_non_origin_or_secret_url() -> None:
     with pytest.raises(FuseKitError, match="hosted_origin_must_be_https_origin"):
         verify_hosted_deployment(origin="https://user:pass@fusekit.snowmanai.org")
@@ -1592,6 +1638,34 @@ def _readiness_contract() -> dict[str, object]:
         "required_source_provenance_env": list(HOSTED_SOURCE_PROVENANCE_ENV),
         "source_provenance": _source_provenance_contract(),
         "lane_readiness": _lane_readiness_contract(),
+        "payment": _payment_contract(),
+    }
+
+
+def _payment_contract() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.hosted-payment.v1",
+        "provider": "stripe-checkout",
+        "enabled": False,
+        "managed_runs_enabled": False,
+        "secret_key_configured": True,
+        "price_configured": False,
+        "price_label_configured": False,
+        "price_label": "",
+        "required_for_lanes": [MANAGED_FUSEKIT_RUN_LANE],
+        "mode": "payment",
+        "cost_controls": {
+            "max_unverified_managed_spend_cents": 0,
+            "dispatch_requires_paid_checkout_session": True,
+            "reuse_across_jobs_allowed": False,
+            "session_binding": [
+                "client_reference_id",
+                "job_id",
+                "lane",
+                "github_source_hash",
+                "plan_fingerprint",
+            ],
+        },
     }
 
 
@@ -1606,8 +1680,17 @@ def _lane_readiness_contract() -> dict[str, object]:
                 "launchable": False,
                 "requires_payment": True,
                 "managed_worker_dispatch_allowed": False,
-                "blocking_checks": ["stripe_price_id_required_for_managed_runs"],
-                "next_actions": ["Set FUSEKIT_STRIPE_PRICE_ID before enabling managed paid runs."],
+                "blocking_checks": [
+                    "stripe_price_id_required_for_managed_runs",
+                    "managed_run_price_label_required",
+                ],
+                "next_actions": [
+                    "Set FUSEKIT_STRIPE_PRICE_ID before enabling managed paid runs.",
+                    (
+                        "Set FUSEKIT_MANAGED_RUN_PRICE_LABEL to the public price shown before "
+                        "Checkout."
+                    ),
+                ],
             },
             BYO_OCI_LANE: {
                 "launchable": True,

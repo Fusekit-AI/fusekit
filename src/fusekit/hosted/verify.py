@@ -1150,7 +1150,9 @@ def _hosted_home_readiness_failures(payload: dict[str, Any]) -> list[str]:
             failures.append("required_source_provenance_env_mismatch")
         for failure in _source_provenance_failures(provenance):
             failures.append(f"readiness_{failure}")
-        failures.extend(_lane_readiness_failures(payload.get("lane_readiness")))
+        lane_readiness = payload.get("lane_readiness")
+        failures.extend(_lane_readiness_failures(lane_readiness))
+        failures.extend(_payment_readiness_failures(payload.get("payment"), lane_readiness))
     return failures
 
 
@@ -1231,6 +1233,63 @@ def _byo_lane_readiness_failures(
     if launchable is False and BYO_OCI_LANE in launchable_lanes:
         failures.append("lane_readiness_byo_blocked_but_listed")
     return failures
+
+
+def _payment_readiness_failures(value: object, lane_readiness: object) -> list[str]:
+    if not isinstance(value, dict):
+        return ["payment_readiness_missing"]
+    failures: list[str] = []
+    if value.get("provider") != "stripe-checkout":
+        failures.append("payment_readiness_provider_mismatch")
+    if value.get("mode") != "payment":
+        failures.append("payment_readiness_mode_mismatch")
+    required_for_lanes = value.get("required_for_lanes")
+    if required_for_lanes != [MANAGED_FUSEKIT_RUN_LANE]:
+        failures.append("payment_readiness_required_lanes_mismatch")
+    enabled = value.get("enabled")
+    managed_launchable = _managed_lane_launchable(lane_readiness)
+    if managed_launchable is True and enabled is not True:
+        failures.append("payment_readiness_disabled_for_launchable_managed_lane")
+    if enabled is True and managed_launchable is not True:
+        failures.append("payment_readiness_enabled_for_blocked_managed_lane")
+    label_configured = value.get("price_label_configured")
+    label = value.get("price_label")
+    if enabled is True:
+        for key in ("managed_runs_enabled", "secret_key_configured", "price_configured"):
+            if value.get(key) is not True:
+                failures.append(f"payment_readiness_{key}_false_when_enabled")
+        if label_configured is not True:
+            failures.append("payment_readiness_price_label_not_configured")
+        if not _valid_public_price_label(label):
+            failures.append("payment_readiness_price_label_invalid")
+    elif label not in ("", None):
+        failures.append("payment_readiness_blocked_lane_publishes_price_label")
+    return failures
+
+
+def _managed_lane_launchable(lane_readiness: object) -> bool | None:
+    if not isinstance(lane_readiness, dict):
+        return None
+    lanes = lane_readiness.get("lanes")
+    if not isinstance(lanes, dict):
+        return None
+    managed = lanes.get(MANAGED_FUSEKIT_RUN_LANE)
+    if not isinstance(managed, dict):
+        return None
+    launchable = managed.get("launchable")
+    return launchable if isinstance(launchable, bool) else None
+
+
+def _valid_public_price_label(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    if not value or len(value) > 120:
+        return False
+    if contains_durable_secret_text(value):
+        return False
+    if "price_" in value or "sk_" in value or "pk_" in value:
+        return False
+    return any(ch.isdigit() for ch in value) and all(ch.isprintable() for ch in value)
 
 
 def _embedded_json_scripts(text: str) -> dict[str, str]:

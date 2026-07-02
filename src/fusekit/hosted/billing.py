@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from fusekit.errors import FuseKitError
 from fusekit.hosted.github_app import UrlOpener
 from fusekit.hosted.lanes import MANAGED_FUSEKIT_RUN_LANE
+from fusekit.security import contains_durable_secret_text
 
 HOSTED_PAYMENT_SCHEMA_VERSION = "fusekit.hosted-payment.v1"
 STRIPE_CHECKOUT_PROVIDER = "stripe-checkout"
@@ -29,6 +30,7 @@ class HostedPaymentConfig:
     enabled: bool = False
     stripe_secret_key: str = ""
     stripe_price_id: str = ""
+    price_label: str = ""
     public_origin: str = ""
     opener: UrlOpener | None = None
 
@@ -37,7 +39,13 @@ class HostedPaymentConfig:
 
         secret_key_configured = self.stripe_secret_key.startswith("sk_")
         price_configured = self.stripe_price_id.startswith("price_")
-        ready = self.enabled and secret_key_configured and price_configured
+        price_label_configured = _valid_price_label(self.price_label)
+        ready = (
+            self.enabled
+            and secret_key_configured
+            and price_configured
+            and price_label_configured
+        )
         return {
             "schema_version": HOSTED_PAYMENT_SCHEMA_VERSION,
             "provider": STRIPE_CHECKOUT_PROVIDER,
@@ -45,6 +53,8 @@ class HostedPaymentConfig:
             "managed_runs_enabled": self.enabled,
             "secret_key_configured": secret_key_configured,
             "price_configured": price_configured,
+            "price_label_configured": price_label_configured,
+            "price_label": self.price_label if price_label_configured else "",
             "required_for_lanes": [MANAGED_FUSEKIT_RUN_LANE],
             "mode": "payment",
             "cost_controls": {
@@ -106,7 +116,9 @@ def create_stripe_checkout_session(
         "/v1/checkout/sessions",
         urllib.parse.urlencode(form).encode("utf-8"),
     )
-    return stripe_checkout_session_receipt(response)
+    receipt = stripe_checkout_session_receipt(response)
+    receipt["price_label"] = config.price_label
+    return receipt
 
 
 def retrieve_stripe_checkout_session(
@@ -154,7 +166,7 @@ def stripe_checkout_session_receipt(payload: dict[str, object]) -> dict[str, obj
     }
 
 
-def payment_required_receipt(*, lane: str) -> dict[str, object]:
+def payment_required_receipt(*, lane: str, price_label: str = "") -> dict[str, object]:
     """Return a public payment-required receipt."""
 
     return {
@@ -163,6 +175,7 @@ def payment_required_receipt(*, lane: str) -> dict[str, object]:
         "lane": lane,
         "status": "payment_required",
         "paid": False,
+        "price_label": price_label if _valid_price_label(price_label) else "",
         "cost_controls": {
             "max_unverified_managed_spend_cents": 0,
             "dispatch_requires_paid_checkout_session": True,
@@ -210,6 +223,8 @@ def _require_stripe_config(config: HostedPaymentConfig) -> None:
         raise FuseKitError("Stripe secret key is not configured.")
     if not config.stripe_price_id or not config.stripe_price_id.startswith("price_"):
         raise FuseKitError("Stripe price id is not configured.")
+    if not _valid_price_label(config.price_label):
+        raise FuseKitError("Managed run public price label is not configured.")
     if not config.public_origin.startswith("https://"):
         raise FuseKitError("Hosted payment return origin must be https.")
 
@@ -237,6 +252,18 @@ def _valid_checkout_url(value: object) -> bool:
         return False
     parsed = urllib.parse.urlparse(value)
     return parsed.scheme == "https" and parsed.netloc == "checkout.stripe.com"
+
+
+def _valid_price_label(value: str) -> bool:
+    if not value:
+        return False
+    if len(value) > 120:
+        return False
+    if contains_durable_secret_text(value):
+        return False
+    if "price_" in value or "sk_" in value or "pk_" in value:
+        return False
+    return all(ch.isprintable() for ch in value) and any(ch.isdigit() for ch in value)
 
 
 def _public_stripe_id(value: object) -> str:

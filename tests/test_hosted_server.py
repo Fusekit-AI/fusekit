@@ -34,6 +34,7 @@ FAKE_PRIVATE_KEY = "not-a-pem-private-key"
 STATE_SECRET = "hosted-state-secret"
 WORKER_SECRET = "hosted-worker-secret"
 VERCEL_COMMIT_SHA = "0123456789abcdef0123456789abcdef01234567"
+MANAGED_PRICE_LABEL = "$49 one-time managed FuseKit run"
 
 
 def _vercel_provenance_kwargs() -> dict[str, str]:
@@ -219,6 +220,7 @@ def _settings_with_github(opener: SequenceOpener) -> HostedSettings:
         managed_runs_enabled=True,
         stripe_secret_key="sk_test_redacted",
         stripe_price_id="price_managed_run",
+        managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
     )
 
@@ -533,6 +535,7 @@ def test_hosted_readiness_endpoint_reports_ready_when_configured() -> None:
         "managed_runs_not_enabled",
         "stripe_secret_key_required_for_managed_runs",
         "stripe_price_id_required_for_managed_runs",
+        "managed_run_price_label_required",
     ]
     assert lane_readiness[BYO_OCI_LANE]["launchable"] is True
     assert lane_readiness[BYO_OCI_LANE]["requires_payment"] is False
@@ -582,6 +585,7 @@ def test_hosted_readiness_reports_paid_managed_lane_when_stripe_is_configured() 
         managed_runs_enabled=True,
         stripe_secret_key="sk_test_redacted",
         stripe_price_id="price_managed_run",
+        managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
     )
 
@@ -596,6 +600,8 @@ def test_hosted_readiness_reports_paid_managed_lane_when_stripe_is_configured() 
     assert payload["payment"]["managed_runs_enabled"] is True
     assert payload["payment"]["secret_key_configured"] is True
     assert payload["payment"]["price_configured"] is True
+    assert payload["payment"]["price_label_configured"] is True
+    assert payload["payment"]["price_label"] == MANAGED_PRICE_LABEL
     assert payload["lane_readiness"]["recommended_lane"] == MANAGED_FUSEKIT_RUN_LANE
     assert payload["lane_readiness"]["launchable_lanes"] == [
         MANAGED_FUSEKIT_RUN_LANE,
@@ -679,6 +685,7 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
         "managed_runs_not_enabled",
         "stripe_secret_key_required_for_managed_runs",
         "stripe_price_id_required_for_managed_runs",
+        "managed_run_price_label_required",
     ]
     assert lane_readiness[BYO_OCI_LANE]["launchable"] is True
     assert payload["one_click_launch"]["terminal_required"] is False
@@ -1642,11 +1649,13 @@ def test_hosted_control_room_rejects_unlaunchable_managed_lane_before_github_wor
         "managed_runs_not_enabled",
         "stripe_secret_key_required_for_managed_runs",
         "stripe_price_id_required_for_managed_runs",
+        "managed_run_price_label_required",
     ]
     assert payload["next_actions"] == [
         "Set FUSEKIT_MANAGED_RUNS_ENABLED=1 only after Stripe Checkout is configured.",
         "Set FUSEKIT_STRIPE_SECRET_KEY before enabling managed paid runs.",
         "Set FUSEKIT_STRIPE_PRICE_ID before enabling managed paid runs.",
+        "Set FUSEKIT_MANAGED_RUN_PRICE_LABEL to the public price shown before Checkout.",
     ]
     assert opener.requests == []
     assert settings.hosted_jobs == {}
@@ -1732,6 +1741,7 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
         managed_runs_enabled=True,
         stripe_secret_key="sk_test_redacted",
         stripe_price_id="price_managed_run",
+        managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
     )
 
@@ -1885,6 +1895,7 @@ def test_hosted_byo_oci_lane_starts_without_managed_worker_dispatch() -> None:
         managed_runs_enabled=True,
         stripe_secret_key="sk_test_redacted",
         stripe_price_id="price_managed_run",
+        managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
     )
 
@@ -2349,6 +2360,7 @@ def test_hosted_job_start_dispatches_signed_worker_envelope_when_configured() ->
         managed_runs_enabled=True,
         stripe_secret_key="sk_test_redacted",
         stripe_price_id="price_managed_run",
+        managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
     )
 
@@ -2453,6 +2465,7 @@ def test_hosted_job_actions_reject_duplicate_start_without_second_dispatch() -> 
         managed_runs_enabled=True,
         stripe_secret_key="sk_test_redacted",
         stripe_price_id="price_managed_run",
+        managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
     )
 
