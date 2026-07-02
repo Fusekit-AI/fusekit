@@ -1138,3 +1138,7 @@ def _sanitize_public_value(value: object) -> object:
     if isinstance(value, str):
         return redact_public_text(value)
     return value
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import stat
+import subprocess
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -491,6 +493,29 @@ def test_oci_host_posture_cli_reads_evidence_and_sets_exit_code(tmp_path, capfd)
 
     assert exit_code == 1
     assert output["blocking_checks"] == ["host.patch_posture"]
+
+
+def test_oci_host_posture_module_entrypoint_executes_cli(tmp_path) -> None:
+    evidence_path = tmp_path / "posture.json"
+    evidence_path.write_text(json.dumps(_clean_evidence()), encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "fusekit.hosted.host_posture",
+            "--evidence",
+            str(evidence_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    output = json.loads(result.stdout)
+
+    assert result.returncode == 0
+    assert output["ready"] is True
 
 
 def test_oci_host_posture_cli_rejects_symlinked_evidence(tmp_path, capfd) -> None:
