@@ -15,8 +15,8 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from fusekit.errors import FuseKitError
+from fusekit.hosted.evidence import HOSTED_COMPLETION_EVIDENCE_KEYS
 from fusekit.hosted.launcher import (
-    HOSTED_COMPLETION_EVIDENCE_KEYS,
     HOSTED_LAUNCH_PATH,
     HOSTED_PLAIN_LANGUAGE_JOURNEY,
     HOSTED_PROHIBITED_ACTIONS,

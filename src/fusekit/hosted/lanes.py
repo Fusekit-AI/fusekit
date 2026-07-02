@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from fusekit.hosted.evidence import HOSTED_COMPLETION_EVIDENCE_KEYS
+
 HOSTED_LAUNCH_LANES_SCHEMA_VERSION = "fusekit.hosted-launch-lanes.v1"
 MANAGED_FUSEKIT_RUN_LANE = "managed-fusekit-run"
 BYO_OCI_LANE = "bring-your-own-oci"
@@ -25,11 +27,13 @@ class HostedLaunchLane:
     gates: tuple[str, ...]
     proof: tuple[str, ...]
     cost_controls: tuple[str, ...]
+    user_owned_cost_boundary: dict[str, object] | None = None
+    security_contract: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Serialize browser-safe lane metadata."""
 
-        return {
+        payload: dict[str, object] = {
             "id": self.lane_id,
             "label": self.label,
             "cost_owner": self.cost_owner,
@@ -47,6 +51,48 @@ class HostedLaunchLane:
                 "material."
             ),
         }
+        if self.user_owned_cost_boundary is not None:
+            payload["user_owned_cost_boundary"] = dict(self.user_owned_cost_boundary)
+        if self.security_contract is not None:
+            payload["security_contract"] = dict(self.security_contract)
+        return payload
+
+
+def byo_oci_user_owned_cost_boundary() -> dict[str, object]:
+    """Return the public BYO OCI cost boundary."""
+
+    return {
+        "spend_owner": "user_oci_tenancy",
+        "fusekit_managed_infrastructure_spend": False,
+        "payment_required_by_fusekit": False,
+        "billing_gate_owner": "oracle_cloud",
+        "review_before_run": [
+            "Oracle Cloud account billing status",
+            "selected region capacity",
+            "AMD/x86_64 disposable worker shape",
+            "resources created by the user's Cloud Shell session",
+        ],
+        "statement": (
+            "BYO OCI launches run in the user's Oracle Cloud tenancy. FuseKit does not "
+            "charge a managed-run fee and does not dispatch FuseKit-owned workers for "
+            "this lane."
+        ),
+    }
+
+
+def byo_oci_security_contract() -> dict[str, object]:
+    """Return the public BYO OCI security boundary."""
+
+    return {
+        "managed_worker_dispatch_allowed": False,
+        "hosted_worker_secret_exported": False,
+        "hosted_github_private_key_exported": False,
+        "hosted_github_installation_token_exported": False,
+        "raw_provider_secrets_exported": False,
+        "runner_architecture": "amd_x86_64_only",
+        "human_gate_bypass_allowed": False,
+        "completion_claim_requires": list(HOSTED_COMPLETION_EVIDENCE_KEYS),
+    }
 
 
 def hosted_launch_lane_contract() -> dict[str, object]:
@@ -125,6 +171,8 @@ def hosted_launch_lanes() -> tuple[HostedLaunchLane, ...]:
                 "Disposable workers must use AMD/x86_64 shapes; ARM images are not allowed.",
                 "Human-owned Oracle billing and quota gates must not be bypassed.",
             ),
+            user_owned_cost_boundary=byo_oci_user_owned_cost_boundary(),
+            security_contract=byo_oci_security_contract(),
         ),
     )
 

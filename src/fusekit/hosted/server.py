@@ -26,6 +26,7 @@ from fusekit.hosted.billing import (
     payment_required_receipt,
     retrieve_stripe_checkout_session,
 )
+from fusekit.hosted.evidence import HOSTED_COMPLETION_EVIDENCE_KEYS
 from fusekit.hosted.github_app import (
     GitHubAppConfig,
     UrlOpener,
@@ -59,7 +60,6 @@ from fusekit.hosted.lanes import (
     valid_hosted_launch_lane,
 )
 from fusekit.hosted.launcher import (
-    HOSTED_COMPLETION_EVIDENCE_KEYS,
     HOSTED_LAUNCH_PATH,
     HOSTED_PLAIN_LANGUAGE_JOURNEY,
     HOSTED_PROHIBITED_ACTIONS,

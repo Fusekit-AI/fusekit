@@ -7,6 +7,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from fusekit.hosted.evidence import HOSTED_COMPLETION_EVIDENCE_KEYS
 from fusekit.hosted.lanes import hosted_launch_lanes
 from fusekit.manifest import SetupManifest
 from fusekit.planner import SetupAction, build_plan
@@ -52,17 +53,6 @@ HOSTED_PROOF_REQUIREMENTS = (
     "Detonation receipt",
     "Live acceptance report",
     "Recording proof",
-)
-HOSTED_COMPLETION_EVIDENCE_KEYS = (
-    "live_url",
-    "provider_verifiers",
-    "dns_propagation",
-    "rollback_metadata",
-    "retrieved_remote_artifacts",
-    "run_record",
-    "detonation_receipt",
-    "live_acceptance_report",
-    "recording",
 )
 HOSTED_REVERSAL_PATH = (
     "Show rollback metadata before risky changes.",

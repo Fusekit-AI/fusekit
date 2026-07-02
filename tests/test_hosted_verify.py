@@ -9,7 +9,11 @@ import urllib.request
 import pytest
 
 from fusekit.errors import FuseKitError
-from fusekit.hosted.lanes import BYO_OCI_LANE, MANAGED_FUSEKIT_RUN_LANE
+from fusekit.hosted.lanes import (
+    BYO_OCI_LANE,
+    MANAGED_FUSEKIT_RUN_LANE,
+    hosted_launch_lane_contract,
+)
 from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY, HOSTED_PROHIBITED_ACTIONS
 from fusekit.hosted.server import (
     HOSTED_AWS_OPERATOR_SETUP_STEPS,
@@ -1120,6 +1124,7 @@ def test_verify_hosted_deployment_requires_one_click_contract() -> None:
     one_click["no_terminal_promise"] = "Download the CLI and paste this command."
     one_click["terminal_required"] = True
     one_click["download_required"] = True
+    one_click["lanes"] = {}
     one_click["launch_path"] = ["Run a terminal command."]
     one_click["plain_language_journey"] = ["Open a terminal."]
     one_click["prohibited"] = ["Bypass provider approval screens."]
@@ -1152,6 +1157,7 @@ def test_verify_hosted_deployment_requires_one_click_contract() -> None:
     assert "one_click_launch_download_required_not_false" in checks["hosted.deployment"][
         "failures"
     ]
+    assert "one_click_launch_lanes_mismatch" in checks["hosted.deployment"]["failures"]
     assert "one_click_launch_path_mismatch" in checks["hosted.deployment"]["failures"]
     assert "one_click_launch_plain_language_journey_mismatch" in checks[
         "hosted.deployment"
@@ -1164,6 +1170,39 @@ def test_verify_hosted_deployment_requires_one_click_contract() -> None:
     ]
     assert "one_click_launch_completion_evidence_keys_mismatch" in checks[
         "hosted.deployment"
+    ]["failures"]
+
+
+def test_verify_hosted_deployment_requires_launch_lane_contract() -> None:
+    contract = _deployment_contract()
+    launch_lanes = contract["launch_lanes"]
+    assert isinstance(launch_lanes, dict)
+    lanes = launch_lanes["lanes"]
+    assert isinstance(lanes, list)
+    byo_lane = next(lane for lane in lanes if lane["id"] == BYO_OCI_LANE)
+    assert isinstance(byo_lane, dict)
+    byo_lane.pop("security_contract")
+    opener = SequenceOpener(
+        [
+            _home_html(deployment=contract),
+            {"ok": True},
+            _readiness_contract(),
+            contract,
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert "launch_lanes_contract_mismatch" in checks["hosted.deployment"]["failures"]
+    assert "hosted_home_embedded_deployment_launch_lanes_contract_mismatch" in checks[
+        "hosted.home"
     ]["failures"]
 
 
@@ -1757,6 +1796,7 @@ def _deployment_contract() -> dict[str, object]:
             ],
         },
         "provider_permissions": dict(HOSTED_PROVIDER_PERMISSION_COPY),
+        "launch_lanes": hosted_launch_lane_contract(),
         "one_click_launch": {
             "public_url": "https://fusekit.snowmanai.org",
             "start_control": "Start hosted launch",
@@ -1767,6 +1807,7 @@ def _deployment_contract() -> dict[str, object]:
             "intake": "github-app",
             "repository_scope": "one selected GitHub repository",
             "github_repository_permission": "contents:read",
+            "lanes": hosted_launch_lane_contract(),
             "launch_path": [
                 "Visit the hosted FuseKit URL.",
                 "Install the FuseKit GitHub App on one selected repository.",

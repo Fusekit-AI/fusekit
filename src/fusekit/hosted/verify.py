@@ -16,13 +16,17 @@ from html.parser import HTMLParser
 from typing import Any, Protocol
 
 from fusekit.errors import FuseKitError
+from fusekit.hosted.evidence import HOSTED_COMPLETION_EVIDENCE_KEYS
 from fusekit.hosted.github_app import (
     HOSTED_GITHUB_INTAKE_PERMISSIONS,
     hosted_github_public_token_boundary,
 )
-from fusekit.hosted.lanes import BYO_OCI_LANE, MANAGED_FUSEKIT_RUN_LANE
+from fusekit.hosted.lanes import (
+    BYO_OCI_LANE,
+    MANAGED_FUSEKIT_RUN_LANE,
+    hosted_launch_lane_contract,
+)
 from fusekit.hosted.launcher import (
-    HOSTED_COMPLETION_EVIDENCE_KEYS,
     HOSTED_LAUNCH_PATH,
     HOSTED_PLAIN_LANGUAGE_JOURNEY,
     HOSTED_PROHIBITED_ACTIONS,
@@ -553,6 +557,7 @@ def _hosted_runtime_contract_failures(
     failures.extend(_security_headers_contract_failures(payload.get("security_headers")))
     failures.extend(_source_integrity_contract_failures(payload.get("source_integrity")))
     failures.extend(_source_provenance_failures(payload.get("source_provenance")))
+    failures.extend(_launch_lanes_contract_failures(payload.get("launch_lanes")))
     failures.extend(_one_click_launch_contract_failures(payload.get("one_click_launch")))
     failures.extend(_protected_controls_contract_failures(payload.get("protected_controls")))
     provider = str(runtime.get("provider") or "")
@@ -893,6 +898,8 @@ def _one_click_launch_contract_failures(payload: object) -> list[str]:
         failures.append("one_click_launch_repository_scope_mismatch")
     if payload.get("github_repository_permission") != "contents:read":
         failures.append("one_click_launch_github_permission_mismatch")
+    if payload.get("lanes") != hosted_launch_lane_contract():
+        failures.append("one_click_launch_lanes_mismatch")
     if payload.get("launch_path") != list(HOSTED_LAUNCH_PATH):
         failures.append("one_click_launch_path_mismatch")
     if payload.get("plain_language_journey") != list(HOSTED_PLAIN_LANGUAGE_JOURNEY):
@@ -915,6 +922,12 @@ def _one_click_launch_contract_failures(payload: object) -> list[str]:
     elif not any(isinstance(item, str) and "MFA" in item for item in human_gates):
         failures.append("one_click_launch_human_gates_mfa_missing")
     return failures
+
+
+def _launch_lanes_contract_failures(payload: object) -> list[str]:
+    if payload != hosted_launch_lane_contract():
+        return ["launch_lanes_contract_mismatch"]
+    return []
 
 
 def _protected_controls_contract_failures(payload: object) -> list[str]:

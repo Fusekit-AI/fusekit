@@ -667,6 +667,17 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     assert "Disposable workers must use AMD/x86_64 shapes; ARM images are not allowed." in byo_lane[
         "cost_controls"
     ]
+    assert byo_lane["user_owned_cost_boundary"]["spend_owner"] == "user_oci_tenancy"
+    assert (
+        byo_lane["user_owned_cost_boundary"]["fusekit_managed_infrastructure_spend"] is False
+    )
+    assert byo_lane["security_contract"]["managed_worker_dispatch_allowed"] is False
+    assert byo_lane["security_contract"]["hosted_worker_secret_exported"] is False
+    assert byo_lane["security_contract"]["hosted_github_private_key_exported"] is False
+    assert byo_lane["security_contract"]["runner_architecture"] == "amd_x86_64_only"
+    assert "live_acceptance_report" in byo_lane["security_contract"][
+        "completion_claim_requires"
+    ]
     assert payload["payment"]["cost_controls"] == {
         "max_unverified_managed_spend_cents": 0,
         "dispatch_requires_paid_checkout_session": True,
