@@ -137,7 +137,9 @@ def retrieve_stripe_checkout_session(
         f"/v1/checkout/sessions/{urllib.parse.quote(session_id, safe='')}",
         None,
     )
-    return stripe_checkout_session_receipt(response)
+    receipt = stripe_checkout_session_receipt(response)
+    receipt["price_label"] = config.price_label
+    return receipt
 
 
 def stripe_checkout_session_receipt(payload: dict[str, object]) -> dict[str, object]:

@@ -1816,6 +1816,8 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
     checkout_job_token = checkout["job_token"]
     assert status == "200 OK"
     assert checkout["payment"]["status"] == "checkout_pending"
+    assert checkout["payment"]["price_label"] == MANAGED_PRICE_LABEL
+    assert checkout["payment"]["receipt"]["price_label"] == MANAGED_PRICE_LABEL
     assert checkout["payment"]["receipt"]["checkout_url"] == (
         "https://checkout.stripe.com/c/pay/cs_test_123"
     )
@@ -1853,6 +1855,7 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
     paid_start_control = _control_for_action(paid_text, "start")
     assert status == "200 OK"
     assert "Stripe Checkout authorization verified" in paid_text
+    assert MANAGED_PRICE_LABEL in paid_text
     assert "Start worker" in paid_text
 
     status, _headers, body = _call(
@@ -1867,6 +1870,8 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
     assert status == "200 OK"
     assert started["status"] == "waiting_for_provider_gates"
     assert started["payment"]["status"] == "paid"
+    assert started["payment"]["price_label"] == MANAGED_PRICE_LABEL
+    assert started["payment"]["receipt"]["price_label"] == MANAGED_PRICE_LABEL
     assert started["worker_dispatch"]["dispatched"] is True
     assert len(dispatch_opener.requests) == 1
     assert "sk_test" not in serialized
