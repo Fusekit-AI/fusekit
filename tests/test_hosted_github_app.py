@@ -240,7 +240,7 @@ def test_hosted_github_intake_contract_has_no_secret_material() -> None:
     assert "Detonation receipt" in contract["proof"]
     assert any("rollback" in item for item in contract["reversal"])
     assert contract["open_core"] == {
-        "source_repository": "https://github.com/xpxpxp-coder/fusekit",
+        "source_repository": "https://github.com/Fusekit-AI/fusekit",
         "license": "MIT",
         "reviewable_entrypoint": "app.py",
     }

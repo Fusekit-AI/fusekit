@@ -2471,7 +2471,7 @@ def test_launcher_derives_no_code_live_context_and_snowman_surface(tmp_path) -> 
                 "--app-source",
                 "https://github.com/fusekitdemo/moonlight-rsvp-demo.git",
                 "--fusekit-package",
-                "git+https://github.com/xpxpxp-coder/fusekit.git",
+                "git+https://github.com/Fusekit-AI/fusekit.git",
                 "--approve-dns",
                 "--oci-region",
                 "us-ashburn-1",

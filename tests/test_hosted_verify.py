@@ -1479,7 +1479,7 @@ def _home_html(
         <section>
           open core / narrow permissions / visible plan / redacted proof / reversible setup
         </section>
-        <section>Open core https://github.com/xpxpxp-coder/fusekit</section>
+        <section>Open core https://github.com/Fusekit-AI/fusekit</section>
         <section>Reviewable hosted files</section>
         <section>app.py vercel.json src/fusekit/hosted/server.py</section>
         <section>No private generated artifact is required for the hosted click flow.</section>
@@ -1708,7 +1708,7 @@ def _deployment_contract() -> dict[str, object]:
         "source_integrity": dict(HOSTED_SOURCE_INTEGRITY_CONTRACT),
         "source_provenance": _source_provenance_contract(),
         "open_core": {
-            "source_repository": "https://github.com/xpxpxp-coder/fusekit",
+            "source_repository": "https://github.com/Fusekit-AI/fusekit",
             "license": "MIT",
             "reviewable_entrypoint": "app.py",
         },
@@ -1820,15 +1820,15 @@ def _source_provenance_contract() -> dict[str, object]:
         "expected": {
             "deployment_environment": "production",
             "git_provider": "github",
-            "repo_owner": "xpxpxp-coder",
+            "repo_owner": "Fusekit-AI",
             "repo_slug": "fusekit",
-            "source_repository": "https://github.com/xpxpxp-coder/fusekit",
+            "source_repository": "https://github.com/Fusekit-AI/fusekit",
         },
         "actual": {
             "deployment_environment": "production",
             "deployment_url": "fusekit-snowmanai-org.vercel.app",
             "git_provider": "github",
-            "repo_owner": "xpxpxp-coder",
+            "repo_owner": "Fusekit-AI",
             "repo_slug": "fusekit",
             "commit_ref": "main",
             "commit_sha": VERCEL_COMMIT_SHA,
@@ -1850,15 +1850,15 @@ def _aws_source_provenance_contract() -> dict[str, object]:
         "expected": {
             "deployment_environment": "production",
             "git_provider": "github",
-            "repo_owner": "xpxpxp-coder",
+            "repo_owner": "Fusekit-AI",
             "repo_slug": "fusekit",
-            "source_repository": "https://github.com/xpxpxp-coder/fusekit",
+            "source_repository": "https://github.com/Fusekit-AI/fusekit",
         },
         "actual": {
             "deployment_environment": "production",
             "deployment_url": "https://fusekit-prod.us-east-1.elasticbeanstalk.com",
             "git_provider": "github",
-            "repo_owner": "xpxpxp-coder",
+            "repo_owner": "Fusekit-AI",
             "repo_slug": "fusekit",
             "commit_ref": "main",
             "commit_sha": VERCEL_COMMIT_SHA,
@@ -1880,15 +1880,15 @@ def _oci_source_provenance_contract() -> dict[str, object]:
         "expected": {
             "deployment_environment": "production",
             "git_provider": "github",
-            "repo_owner": "xpxpxp-coder",
+            "repo_owner": "Fusekit-AI",
             "repo_slug": "fusekit",
-            "source_repository": "https://github.com/xpxpxp-coder/fusekit",
+            "source_repository": "https://github.com/Fusekit-AI/fusekit",
         },
         "actual": {
             "deployment_environment": "production",
             "deployment_url": "https://fusekit.snowmanai.org",
             "git_provider": "github",
-            "repo_owner": "xpxpxp-coder",
+            "repo_owner": "Fusekit-AI",
             "repo_slug": "fusekit",
             "commit_ref": "main",
             "commit_sha": VERCEL_COMMIT_SHA,
@@ -2022,7 +2022,7 @@ def _github_intake_contract() -> dict[str, object]:
             ],
         },
         "open_core": {
-            "source_repository": "https://github.com/xpxpxp-coder/fusekit",
+            "source_repository": "https://github.com/Fusekit-AI/fusekit",
             "license": "MIT",
             "reviewable_entrypoint": "app.py",
         },

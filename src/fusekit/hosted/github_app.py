@@ -247,7 +247,7 @@ def hosted_github_intake_contract(
     config: GitHubAppConfig,
     *,
     state: str = "",
-    source_repository: str = "https://github.com/xpxpxp-coder/fusekit",
+    source_repository: str = "https://github.com/Fusekit-AI/fusekit",
     license_name: str = "MIT",
     reviewable_entrypoint: str = "app.py",
 ) -> dict[str, object]:

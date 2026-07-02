@@ -85,8 +85,8 @@ StartResponse = Callable[[str, list[tuple[str, str]]], object]
 
 HOSTED_CANONICAL_ORIGIN = "https://fusekit.snowmanai.org"
 HOSTED_MAX_POST_BODY_BYTES = 65_536
-HOSTED_SOURCE_REPOSITORY = "https://github.com/xpxpxp-coder/fusekit"
-HOSTED_SOURCE_REPOSITORY_OWNER = "xpxpxp-coder"
+HOSTED_SOURCE_REPOSITORY = "https://github.com/Fusekit-AI/fusekit"
+HOSTED_SOURCE_REPOSITORY_OWNER = "Fusekit-AI"
 HOSTED_SOURCE_REPOSITORY_NAME = "fusekit"
 HOSTED_SOURCE_PROVENANCE_ENV = (
     "VERCEL_ENV",
@@ -493,7 +493,7 @@ HOSTED_READINESS_NEXT_ACTIONS: dict[str, str] = {
         "Set FUSEKIT_STRIPE_PRICE_ID before enabling managed paid runs."
     ),
     "source_provenance_not_verified": (
-        "Publish hosted source provenance for xpxpxp-coder/fusekit from the deployment "
+        "Publish hosted source provenance for Fusekit-AI/fusekit from the deployment "
         "runtime so the public source provenance verifies."
     ),
 }

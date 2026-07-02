@@ -600,7 +600,7 @@ def _hosted_runtime_contract_failures(
     if not isinstance(open_core, dict):
         failures.append("open_core_contract_missing")
     else:
-        if open_core.get("source_repository") != "https://github.com/xpxpxp-coder/fusekit":
+        if open_core.get("source_repository") != "https://github.com/Fusekit-AI/fusekit":
             failures.append("open_core_source_repository_mismatch")
         if open_core.get("license") != "MIT":
             failures.append("open_core_license_mismatch")
@@ -1018,7 +1018,7 @@ def _hosted_home_failures(
         "hosted_home_embedded_deployment_contract_missing": (
             'id="fusekit-hosted-deployment"'
         ),
-        "hosted_home_source_repository_missing": "https://github.com/xpxpxp-coder/fusekit",
+        "hosted_home_source_repository_missing": "https://github.com/Fusekit-AI/fusekit",
     }
     failures = [failure for failure, marker in expected.items() if marker not in text]
     failures.extend(
@@ -1235,7 +1235,7 @@ def _github_intake_contract_failures(payload: dict[str, Any]) -> list[str]:
     if not isinstance(open_core, dict):
         failures.append("github_intake_open_core_missing")
     else:
-        if open_core.get("source_repository") != "https://github.com/xpxpxp-coder/fusekit":
+        if open_core.get("source_repository") != "https://github.com/Fusekit-AI/fusekit":
             failures.append("github_intake_open_core_source_repository_mismatch")
         if open_core.get("license") != "MIT":
             failures.append("github_intake_open_core_license_mismatch")

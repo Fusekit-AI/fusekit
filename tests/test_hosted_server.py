@@ -41,7 +41,7 @@ def _vercel_provenance_kwargs() -> dict[str, str]:
         "vercel_env": "production",
         "vercel_url": "fusekit-snowmanai-org.vercel.app",
         "vercel_git_provider": "github",
-        "vercel_git_repo_owner": "xpxpxp-coder",
+        "vercel_git_repo_owner": "Fusekit-AI",
         "vercel_git_repo_slug": "fusekit",
         "vercel_git_commit_ref": "main",
         "vercel_git_commit_sha": VERCEL_COMMIT_SHA,
@@ -54,7 +54,7 @@ def _aws_provenance_kwargs() -> dict[str, str]:
         "aws_deployment_env": "production",
         "aws_deployment_url": "https://fusekit-prod.us-east-1.elasticbeanstalk.com",
         "aws_git_provider": "github",
-        "aws_git_repo_owner": "xpxpxp-coder",
+        "aws_git_repo_owner": "Fusekit-AI",
         "aws_git_repo_slug": "fusekit",
         "aws_git_commit_ref": "main",
         "aws_git_commit_sha": VERCEL_COMMIT_SHA,
@@ -67,7 +67,7 @@ def _oci_provenance_kwargs() -> dict[str, str]:
         "aws_deployment_env": "production",
         "aws_deployment_url": "https://fusekit.snowmanai.org",
         "aws_git_provider": "github",
-        "aws_git_repo_owner": "xpxpxp-coder",
+        "aws_git_repo_owner": "Fusekit-AI",
         "aws_git_repo_slug": "fusekit",
         "aws_git_commit_ref": "main",
         "aws_git_commit_sha": VERCEL_COMMIT_SHA,
@@ -261,14 +261,14 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
     assert "All hosted readiness checks passed." in html
     assert "open-core setup worker" in html
     assert "Open core" in html
-    assert "https://github.com/xpxpxp-coder/fusekit" in html
+    assert "https://github.com/Fusekit-AI/fusekit" in html
     assert "app.py" in html
     assert "Reviewable hosted files" in html
     assert "vercel.json" in html
     assert "src/fusekit/hosted/server.py" in html
     assert "No private generated artifact is required for the hosted click flow." in html
     assert "Deployment provenance" in html
-    assert "xpxpxp-coder/fusekit" in html
+    assert "Fusekit-AI/fusekit" in html
     assert VERCEL_COMMIT_SHA in html
     assert "MIT" in html
     assert "narrow permissions" in html
@@ -331,7 +331,7 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
         "reversible setup",
     ]
     assert payload["prohibited"] == list(HOSTED_PROHIBITED_ACTIONS)
-    assert payload["open_core"]["source_repository"] == "https://github.com/xpxpxp-coder/fusekit"
+    assert payload["open_core"]["source_repository"] == "https://github.com/Fusekit-AI/fusekit"
     assert payload["open_core"]["reviewable_entrypoint"] == "app.py"
 
 
@@ -544,7 +544,7 @@ def test_hosted_readiness_blocks_launch_without_verified_source_provenance() -> 
     assert payload["blocking_checks"] == ["invalid:source_provenance_not_verified"]
     assert payload["next_actions"] == [
         (
-            "Publish hosted source provenance for xpxpxp-coder/fusekit from the "
+            "Publish hosted source provenance for Fusekit-AI/fusekit from the "
             "deployment runtime so the public source provenance verifies."
         )
     ]
@@ -676,7 +676,7 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
         "mode": "python-wsgi",
     }
     assert payload["open_core"] == {
-        "source_repository": "https://github.com/xpxpxp-coder/fusekit",
+        "source_repository": "https://github.com/Fusekit-AI/fusekit",
         "license": "MIT",
         "reviewable_entrypoint": "app.py",
         "public_contracts": [
@@ -692,7 +692,7 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     assert "tokens" in payload["security_headers"]["secret_boundary"]
     assert payload["source_integrity"] == HOSTED_SOURCE_INTEGRITY_CONTRACT
     assert payload["source_integrity"]["source_repository"] == (
-        "https://github.com/xpxpxp-coder/fusekit"
+        "https://github.com/Fusekit-AI/fusekit"
     )
     assert payload["source_integrity"]["private_generated_artifact_required"] is False
     assert "vercel.json" in payload["source_integrity"]["reviewable_files"]
@@ -704,15 +704,15 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     assert provenance["expected"] == {
         "deployment_environment": "production",
         "git_provider": "github",
-        "repo_owner": "xpxpxp-coder",
+        "repo_owner": "Fusekit-AI",
         "repo_slug": "fusekit",
-        "source_repository": "https://github.com/xpxpxp-coder/fusekit",
+        "source_repository": "https://github.com/Fusekit-AI/fusekit",
     }
     assert provenance["actual"] == {
         "deployment_environment": "production",
         "deployment_url": "fusekit-snowmanai-org.vercel.app",
         "git_provider": "github",
-        "repo_owner": "xpxpxp-coder",
+        "repo_owner": "Fusekit-AI",
         "repo_slug": "fusekit",
         "commit_ref": "main",
         "commit_sha": VERCEL_COMMIT_SHA,
@@ -824,7 +824,7 @@ def test_hosted_deployment_endpoint_supports_aws_wsgi_origin_without_secrets() -
         "deployment_environment": "production",
         "deployment_url": "https://fusekit-prod.us-east-1.elasticbeanstalk.com",
         "git_provider": "github",
-        "repo_owner": "xpxpxp-coder",
+        "repo_owner": "Fusekit-AI",
         "repo_slug": "fusekit",
         "commit_ref": "main",
         "commit_sha": VERCEL_COMMIT_SHA,
@@ -905,7 +905,7 @@ def test_hosted_source_provenance_requires_expected_production_git_metadata() ->
     settings = HostedSettings(
         vercel_env="preview",
         vercel_git_provider="github",
-        vercel_git_repo_owner="xpxpxp-coder",
+        vercel_git_repo_owner="Fusekit-AI",
         vercel_git_repo_slug="fusekit",
         vercel_git_commit_ref="main",
         vercel_git_commit_sha="not-a-sha",
@@ -918,7 +918,7 @@ def test_hosted_source_provenance_requires_expected_production_git_metadata() ->
         "deployment_environment": "preview",
         "deployment_url": "",
         "git_provider": "github",
-        "repo_owner": "xpxpxp-coder",
+        "repo_owner": "Fusekit-AI",
         "repo_slug": "fusekit",
         "commit_ref": "main",
         "commit_sha": "not-a-sha",
@@ -930,7 +930,7 @@ def test_hosted_source_provenance_requires_vercel_deployment_url() -> None:
         vercel_env="production",
         vercel_url="fusekit.snowmanai.org",
         vercel_git_provider="github",
-        vercel_git_repo_owner="xpxpxp-coder",
+        vercel_git_repo_owner="Fusekit-AI",
         vercel_git_repo_slug="fusekit",
         vercel_git_commit_ref="main",
         vercel_git_commit_sha=VERCEL_COMMIT_SHA,
@@ -948,7 +948,7 @@ def test_hosted_aws_source_provenance_requires_expected_public_git_metadata() ->
         aws_deployment_env="staging",
         aws_deployment_url="not-a-url",
         aws_git_provider="github",
-        aws_git_repo_owner="xpxpxp-coder",
+        aws_git_repo_owner="Fusekit-AI",
         aws_git_repo_slug="fusekit",
         aws_git_commit_ref="main",
         aws_git_commit_sha="not-a-sha",
@@ -962,7 +962,7 @@ def test_hosted_aws_source_provenance_requires_expected_public_git_metadata() ->
         "deployment_environment": "staging",
         "deployment_url": "not-a-url",
         "git_provider": "github",
-        "repo_owner": "xpxpxp-coder",
+        "repo_owner": "Fusekit-AI",
         "repo_slug": "fusekit",
         "commit_ref": "main",
         "commit_sha": "not-a-sha",
@@ -975,7 +975,7 @@ def test_hosted_aws_source_provenance_requires_elastic_beanstalk_origin() -> Non
         aws_deployment_env="production",
         aws_deployment_url="https://fusekit.snowmanai.org",
         aws_git_provider="github",
-        aws_git_repo_owner="xpxpxp-coder",
+        aws_git_repo_owner="Fusekit-AI",
         aws_git_repo_slug="fusekit",
         aws_git_commit_ref="main",
         aws_git_commit_sha=VERCEL_COMMIT_SHA,
@@ -1034,7 +1034,7 @@ def test_hosted_readiness_endpoint_rejects_invalid_config_shape_without_values()
         "Use at least 16 characters for the hosted state secret.",
         "Use at least 16 characters for the worker secret.",
         (
-            "Publish hosted source provenance for xpxpxp-coder/fusekit from the "
+            "Publish hosted source provenance for Fusekit-AI/fusekit from the "
             "deployment runtime so the public source provenance verifies."
         ),
     ]
@@ -1164,7 +1164,7 @@ def test_hosted_github_intake_endpoint_is_public_safe() -> None:
     ]
     assert any("revoke access" in item for item in payload["reversal"])
     assert payload["open_core"] == {
-        "source_repository": "https://github.com/xpxpxp-coder/fusekit",
+        "source_repository": "https://github.com/Fusekit-AI/fusekit",
         "license": "MIT",
         "reviewable_entrypoint": "app.py",
     }
