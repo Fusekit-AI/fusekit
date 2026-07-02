@@ -18,6 +18,7 @@ from fusekit.hosted.job import create_hosted_job_token
 from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY, HOSTED_PROHIBITED_ACTIONS
 from fusekit.hosted.server import (
     HOSTED_AWS_SOURCE_PROVENANCE_ENV,
+    HOSTED_MAX_POST_BODY_BYTES,
     HOSTED_OCI_SOURCE_PROVENANCE_ENV,
     HOSTED_SECURITY_HEADERS_CONTRACT,
     HOSTED_SOURCE_INTEGRITY_CONTRACT,
@@ -28,7 +29,7 @@ from fusekit.hosted.server import (
 )
 from fusekit.hosted.session import create_hosted_state_token
 
-FAKE_PRIVATE_KEY = "-----BEGIN PRIVATE KEY-----\nnot-real\n-----END PRIVATE KEY-----"
+FAKE_PRIVATE_KEY = "not-a-pem-private-key"
 STATE_SECRET = "hosted-state-secret"
 WORKER_SECRET = "hosted-worker-secret"
 VERCEL_COMMIT_SHA = "0123456789abcdef0123456789abcdef01234567"
@@ -82,6 +83,7 @@ def _call(
     form_body: dict[str, str] | None = None,
     raw_body: bytes | None = None,
     raw_content_type: str = "",
+    content_length: int | None = None,
     settings: HostedSettings | None = None,
 ) -> tuple[str, dict[str, str], bytes]:
     app = hosted_application(
@@ -118,7 +120,7 @@ def _call(
         "REQUEST_METHOD": method,
         "PATH_INFO": path,
         "QUERY_STRING": query_string,
-        "CONTENT_LENGTH": str(len(body)),
+        "CONTENT_LENGTH": str(len(body) if content_length is None else content_length),
         "wsgi.input": io.BytesIO(body),
     }
     if content_type:
@@ -1071,7 +1073,7 @@ def test_hosted_deployment_files_route_all_paths_to_wsgi_entrypoint() -> None:
     assert vercel["routes"] == [{"src": "/(.*)", "dest": "app.py"}]
     assert procfile == "web: gunicorn app:app --bind 0.0.0.0:$PORT"
     assert python_version == "3.12"
-    assert "cryptography==42.0.8" in requirements
+    assert "cryptography>=48.0.1,<49" in requirements
     assert "gunicorn>=23" in requirements
     assert "PyYAML>=6" in requirements
     assert not any("playwright" in line.lower() for line in requirements)
@@ -2273,6 +2275,76 @@ def test_hosted_worker_proof_submission_requires_backend_auth_and_redacted_evide
     assert "PRIVATE KEY" not in serialized
 
 
+def test_hosted_worker_proof_submission_rejects_oversized_body_before_completion() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    settings = _settings_with_github(opener)
+
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=f"installation_id=42&repo=example/one&state={state}",
+        settings=settings,
+    )
+    assert status == "200 OK"
+    text = body.decode("utf-8")
+    job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    control = _control_for_action(text, "start")
+    job_token = _match(text, r"job=([A-Za-z0-9_.-]+)")
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/start",
+        method="POST",
+        query_string=f"job={job_token}",
+        form_body={"control": control},
+        settings=settings,
+    )
+    started = json.loads(body.decode("utf-8"))
+    worker_headers = {
+        "Authorization": f"Bearer {WORKER_SECRET}",
+        "X-FuseKit-Worker-Id": "worker-01",
+    }
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/worker-claims",
+        method="POST",
+        query_string=f"job={started['job_token']}",
+        headers=worker_headers,
+        settings=settings,
+    )
+    claim = json.loads(body.decode("utf-8"))
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/worker-proof",
+        method="POST",
+        query_string=f"job={claim['job_token']}",
+        raw_body=b"{}",
+        raw_content_type="application/json",
+        content_length=HOSTED_MAX_POST_BODY_BYTES + 1,
+        headers=worker_headers,
+        settings=settings,
+    )
+
+    assert status == "400 Bad Request"
+    assert json.loads(body.decode("utf-8")) == {"error": "invalid_worker_proof"}
+    assert settings.hosted_jobs[job_id].status == "worker_claimed"
+
+
 def test_hosted_proof_receipt_page_uses_signed_job_token_without_process_memory() -> None:
     state = create_hosted_state_token(
         STATE_SECRET,
@@ -2776,6 +2848,101 @@ def test_hosted_job_api_rejects_untyped_control_body() -> None:
     assert status == "400 Bad Request"
     assert json.loads(body.decode("utf-8")) == {"error": "missing_control"}
     assert settings.hosted_jobs[job_id].status == "waiting_for_worker"
+
+
+def test_hosted_job_api_rejects_oversized_control_body_without_dispatch() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    settings = _settings_with_github(opener)
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=f"installation_id=42&repo=example/one&state={state}",
+        settings=settings,
+    )
+    assert status == "200 OK"
+    text = body.decode("utf-8")
+    job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    job_token = _job_token(text)
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/start",
+        method="POST",
+        query_string=f"job={job_token}",
+        raw_body=b"control=placeholder",
+        raw_content_type="application/x-www-form-urlencoded",
+        content_length=HOSTED_MAX_POST_BODY_BYTES + 1,
+        settings=settings,
+    )
+
+    assert status == "400 Bad Request"
+    assert json.loads(body.decode("utf-8")) == {"error": "missing_control"}
+    assert settings.hosted_jobs[job_id].status == "waiting_for_worker"
+    assert settings.worker_dispatch_opener is not None
+    assert settings.worker_dispatch_opener.requests == []
+
+
+def test_hosted_job_api_rejects_truncated_control_body_without_dispatch() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    settings = _settings_with_github(opener)
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=f"installation_id=42&repo=example/one&state={state}",
+        settings=settings,
+    )
+    assert status == "200 OK"
+    text = body.decode("utf-8")
+    job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    job_token = _job_token(text)
+    raw_body = b"control=placeholder"
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/start",
+        method="POST",
+        query_string=f"job={job_token}",
+        raw_body=raw_body,
+        raw_content_type="application/x-www-form-urlencoded",
+        content_length=len(raw_body) + 1,
+        settings=settings,
+    )
+
+    assert status == "400 Bad Request"
+    assert json.loads(body.decode("utf-8")) == {"error": "missing_control"}
+    assert settings.hosted_jobs[job_id].status == "waiting_for_worker"
+    assert settings.worker_dispatch_opener is not None
+    assert settings.worker_dispatch_opener.requests == []
 
 
 def test_hosted_job_api_rejects_expired_control_token(monkeypatch) -> None:

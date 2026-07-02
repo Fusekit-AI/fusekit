@@ -21,6 +21,7 @@ from fusekit.errors import FuseKitError
 HOSTED_WORKER_DISPATCH_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch.v1"
 HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch-receipt.v1"
 HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch-readiness.v1"
+HOSTED_WORKER_DISPATCH_MAX_BODY_BYTES = 16_384
 
 StartResponse = Callable[[str, list[tuple[str, str]]], object]
 
@@ -276,6 +277,8 @@ def verify_hosted_worker_dispatch(
 
     if schema != HOSTED_WORKER_DISPATCH_SCHEMA_VERSION:
         raise FuseKitError("unsupported_dispatch_schema")
+    if len(raw_body) > HOSTED_WORKER_DISPATCH_MAX_BODY_BYTES:
+        raise FuseKitError("dispatch_body_too_large")
     if len(secret) < 16:
         raise FuseKitError("hosted_worker_secret_required")
     expected = _dispatch_signature(secret, raw_body)
@@ -395,11 +398,19 @@ def _request_body(environ: dict[str, object]) -> bytes:
         length = int(str(environ.get("CONTENT_LENGTH", "0") or "0"))
     except ValueError as exc:
         raise FuseKitError("invalid_content_length") from exc
+    if length < 0:
+        raise FuseKitError("invalid_content_length")
+    if length > HOSTED_WORKER_DISPATCH_MAX_BODY_BYTES:
+        raise FuseKitError("dispatch_body_too_large")
     body = environ.get("wsgi.input")
     if not hasattr(body, "read"):
         raise FuseKitError("missing_request_body")
-    raw = cast(Any, body).read(max(length, 0))
-    return cast(bytes, raw)
+    raw = cast(Any, body).read(length)
+    if not isinstance(raw, bytes):
+        raise FuseKitError("invalid_request_body")
+    if len(raw) != length:
+        raise FuseKitError("incomplete_request_body")
+    return raw
 
 
 def _dispatch_signature(secret: str, body: bytes) -> str:

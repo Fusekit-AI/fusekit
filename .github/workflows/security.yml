@@ -1,0 +1,106 @@
+name: Security
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main, "codex/**"]
+  schedule:
+    - cron: "17 9 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  python-security:
+    name: Python security scanners
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - name: Install project and scanner tools
+        run: python -m pip install -e ".[dev,security]"
+      - name: Run repo-native scanner suite
+        run: bash scripts/security_check.sh
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: github/codeql-action/init@e8e8e51caba890f74f97e228d00b0b81b666ee4c # v3
+        with:
+          languages: python
+      - uses: github/codeql-action/analyze@e8e8e51caba890f74f97e228d00b0b81b666ee4c # v3
+        with:
+          category: "/language:python"
+
+  supply-chain:
+    name: Supply-chain and secret scanners
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Gitleaks secret scan
+        run: |
+          version="8.30.1"
+          curl -fsSLo /tmp/gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz"
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+          gitleaks detect --source . --redact --verbose --no-git
+      - name: OSV dependency scan
+        uses: google/osv-scanner-action/osv-scanner-action@40a8940a65eab1544a6af759e43d936201a131a2 # v2.0.3
+        with:
+          scan-args: --recursive .
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@df80a981bc6edbc4e220a492d3cbe9f5547a6e75 # v0.17.9
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: fusekit-sbom.cdx.json
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fusekit-cyclonedx-sbom
+          path: fusekit-sbom.cdx.json
+          if-no-files-found: error
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+  scorecard:
+    name: OpenSSF Scorecard
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+      id-token: write
+      security-events: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: ossf/scorecard-action@ff5dd8929f96a8a4dc67d13f32b8c75057829621 # v2.4.0
+        with:
+          results_file: scorecard-results.sarif
+          results_format: sarif
+          publish_results: true
+      - uses: github/codeql-action/upload-sarif@e8e8e51caba890f74f97e228d00b0b81b666ee4c # v3
+        with:
+          sarif_file: scorecard-results.sarif

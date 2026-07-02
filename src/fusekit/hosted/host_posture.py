@@ -1,0 +1,1041 @@
+"""Redacted posture validation for the permanent OCI hosted launcher."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import platform
+import re
+import stat
+import subprocess
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from ipaddress import ip_address
+from pathlib import Path
+
+from fusekit.errors import FuseKitError
+from fusekit.security import contains_durable_secret_text, redact_public_text
+
+OCI_HOST_POSTURE_EVIDENCE_SCHEMA_VERSION = "fusekit.oci-host-posture-evidence.v1"
+OCI_HOST_POSTURE_REPORT_SCHEMA_VERSION = "fusekit.oci-host-posture-report.v1"
+OCI_HOST_POSTURE_REQUIRED_SERVICES = (
+    "nginx",
+    "fusekit-hosted",
+    "fusekit-worker-dispatch",
+)
+OCI_HOST_POSTURE_SYSTEMD_UNITS = (
+    "fusekit-hosted",
+    "fusekit-worker-dispatch",
+)
+OCI_HOST_POSTURE_ALLOWED_PUBLIC_PORTS = (80, 443)
+OCI_HOST_POSTURE_ALLOWED_WRITABLE_PATHS = (
+    "/var/lib/fusekit",
+    "/var/log/fusekit",
+    "/run/fusekit",
+)
+OCI_HOST_POSTURE_WILDCARD_IPV4_BIND = ".".join(("0", "0", "0", "0"))
+OCI_HOST_POSTURE_WILDCARD_IPV6_BIND = ":" * 2
+OCI_HOST_POSTURE_SECRET_DIR = "/etc/fusekit"
+OCI_HOST_POSTURE_SECRET_FILE = "/etc/fusekit/hosted-secrets.env"
+OCI_HOST_POSTURE_ORIGIN = "https://fusekit.snowmanai.org"
+OCI_HOST_POSTURE_DEFAULT_CIS_SUMMARY = "/var/lib/fusekit/posture/cis-summary.json"
+OCI_HOST_POSTURE_DEFAULT_ROOTKIT_SUMMARY = "/var/lib/fusekit/posture/rootkit-summary.json"
+OCI_HOST_POSTURE_MAX_JSON_BYTES = 1_048_576
+OCI_HOST_POSTURE_OUTPUT_MODE = 0o600
+OCI_HOST_POSTURE_ALLOWED_EVIDENCE_KEYS = frozenset(
+    {
+        "schema_version",
+        "architecture",
+        "shape",
+        "running_services",
+        "public_ports",
+        "ssh_ingress",
+        "runtime_secret_dir",
+        "runtime_secret_file",
+        "patch_posture",
+        "cis_baseline",
+        "rootkit_scan",
+        "systemd_units",
+        "hosted_verify",
+        "dns_propagation",
+        "rollback_metadata",
+        "collection",
+    }
+)
+
+
+@dataclass(frozen=True)
+class CommandResult:
+    """Captured read-only host command result."""
+
+    args: tuple[str, ...]
+    returncode: int
+    stdout: str = ""
+    stderr: str = ""
+
+
+def collect_oci_host_posture_evidence(
+    *,
+    shape: str = "",
+    ssh_ingress: str = "",
+    hosted_verify_report: Mapping[str, object] | None = None,
+    dns_report: Mapping[str, object] | None = None,
+    rollback_metadata: Mapping[str, object] | None = None,
+    cis_summary: Mapping[str, object] | None = None,
+    rootkit_summary: Mapping[str, object] | None = None,
+    command_runner: Callable[[Sequence[str]], CommandResult] | None = None,
+    file_exists: Callable[[Path], bool] | None = None,
+) -> dict[str, object]:
+    """Collect a redacted, non-mutating posture evidence bundle from a host."""
+
+    runner = command_runner or _run_command
+    exists = file_exists or Path.exists
+    running_services = _collect_running_services(runner)
+    public_ports = _collect_public_ports(runner)
+    return {
+        "schema_version": OCI_HOST_POSTURE_EVIDENCE_SCHEMA_VERSION,
+        "architecture": platform.machine(),
+        "shape": redact_public_text(shape or os.getenv("FUSEKIT_OCI_SHAPE", "")),
+        "running_services": running_services,
+        "public_ports": public_ports,
+        "ssh_ingress": redact_public_text(ssh_ingress or os.getenv("FUSEKIT_SSH_INGRESS", "")),
+        "runtime_secret_dir": _collect_runtime_secret_dir(runner),
+        "runtime_secret_file": _collect_runtime_secret_file(runner),
+        "patch_posture": _collect_patch_posture(runner, exists),
+        "cis_baseline": _sanitize_summary(cis_summary),
+        "rootkit_scan": _sanitize_summary(rootkit_summary),
+        "systemd_units": _collect_systemd_units(runner),
+        "hosted_verify": _sanitize_public_value(hosted_verify_report or {}),
+        "dns_propagation": _sanitize_summary(dns_report),
+        "rollback_metadata": _sanitize_summary(rollback_metadata),
+        "collection": {
+            "mode": "read_only_local_host",
+            "mutates_oci": False,
+            "mutates_host": False,
+            "secret_boundary": (
+                "Collector records service names, ports, file metadata, systemd hardening, "
+                "scanner summaries, and hosted verifier status only. It does not read secret "
+                "file contents or request OCI credentials."
+            ),
+        },
+    }
+
+
+def evaluate_oci_host_posture(evidence: Mapping[str, object]) -> dict[str, object]:
+    """Evaluate redacted OCI host posture evidence without touching infrastructure."""
+
+    serialized = json.dumps(evidence, sort_keys=True)
+    checks = [
+        _schema_check(evidence),
+        _evidence_shape_check(evidence),
+        _architecture_check(evidence),
+        _services_check(evidence),
+        _public_ports_check(evidence),
+        _runtime_secret_dir_check(evidence),
+        _runtime_secret_file_check(evidence),
+        _patch_check(evidence),
+        _baseline_check(evidence),
+        _rootkit_check(evidence),
+        _systemd_check(evidence),
+        _web_verification_check(evidence),
+        _dns_propagation_check(evidence),
+        _rollback_metadata_check(evidence),
+        _collection_boundary_check(evidence),
+    ]
+    if contains_durable_secret_text(serialized):
+        checks.append(
+            _fail(
+                "evidence.redaction",
+                "evidence_contains_secret_text",
+                "Remove raw secrets/tokens/keys from the posture evidence and rerun.",
+            )
+        )
+    else:
+        checks.append(_ok("evidence.redaction"))
+    blockers = _blocking_check_ids(checks)
+    return {
+        "schema_version": OCI_HOST_POSTURE_REPORT_SCHEMA_VERSION,
+        "ready": not blockers,
+        "blocking_checks": blockers,
+        "checks": checks,
+        "public_summary": {
+            "origin": OCI_HOST_POSTURE_ORIGIN,
+            "target": "permanent-oci-hosted-launcher",
+            "architecture": _public_str(evidence.get("architecture")),
+            "shape": _public_str(evidence.get("shape")),
+            "secret_boundary": (
+                "Posture evidence must contain only file ownership/mode, service, port, "
+                "scanner, and hosted-verifier status. It must not contain OCI credentials, "
+                "GitHub App private keys, provider credentials, HMAC secrets, vault material, "
+                "or raw logs."
+            ),
+        },
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Validate an OCI host posture evidence JSON file."""
+
+    parser = argparse.ArgumentParser(
+        description="Validate redacted OCI host posture evidence for hosted FuseKit."
+    )
+    parser.add_argument("--collect", action="store_true", help="Collect read-only host evidence")
+    parser.add_argument("--evidence", help="Path to redacted posture JSON")
+    parser.add_argument("--output", help="Write collected evidence JSON to this path")
+    parser.add_argument("--shape", default="", help="Public OCI shape label, for example E5 Flex")
+    parser.add_argument("--ssh-ingress", default="", help="Public SSH ingress posture label")
+    parser.add_argument("--hosted-verify-report", default="", help="Path to hosted verifier JSON")
+    parser.add_argument("--dns-report", default="", help="Path to redacted DNS propagation JSON")
+    parser.add_argument(
+        "--rollback-metadata",
+        default="",
+        help="Path to redacted rollback metadata JSON",
+    )
+    parser.add_argument(
+        "--cis-summary",
+        default="",
+        help="Path to redacted CIS/Lynis/OpenSCAP summary JSON",
+    )
+    parser.add_argument(
+        "--rootkit-summary",
+        default="",
+        help="Path to redacted rkhunter/chkrootkit summary JSON",
+    )
+    args = parser.parse_args(argv)
+    if args.collect:
+        try:
+            evidence = collect_oci_host_posture_evidence(
+                shape=args.shape,
+                ssh_ingress=args.ssh_ingress,
+                hosted_verify_report=_read_optional_json(
+                    args.hosted_verify_report,
+                    required=bool(args.hosted_verify_report),
+                ),
+                dns_report=_read_optional_json(
+                    args.dns_report,
+                    required=bool(args.dns_report),
+                ),
+                rollback_metadata=_read_optional_json(
+                    args.rollback_metadata,
+                    required=bool(args.rollback_metadata),
+                ),
+                cis_summary=_read_optional_json(
+                    args.cis_summary or OCI_HOST_POSTURE_DEFAULT_CIS_SUMMARY,
+                    required=bool(args.cis_summary),
+                ),
+                rootkit_summary=_read_optional_json(
+                    args.rootkit_summary or OCI_HOST_POSTURE_DEFAULT_ROOTKIT_SUMMARY,
+                    required=bool(args.rootkit_summary),
+                ),
+            )
+            if args.output:
+                _write_json_output(args.output, _public_json(evidence))
+            else:
+                _emit_public_json(evidence)
+        except (OSError, json.JSONDecodeError, FuseKitError) as exc:
+            _emit_public_json(
+                {
+                    "schema_version": OCI_HOST_POSTURE_REPORT_SCHEMA_VERSION,
+                    "ready": False,
+                    "error": redact_public_text(str(exc)),
+                }
+            )
+            return 1
+        return 0
+    if not args.evidence:
+        parser.error("--evidence is required unless --collect is used")
+    try:
+        raw = _read_json_object_file(args.evidence)
+        report = evaluate_oci_host_posture(raw)
+    except (OSError, json.JSONDecodeError, FuseKitError) as exc:
+        report = {
+            "schema_version": OCI_HOST_POSTURE_REPORT_SCHEMA_VERSION,
+            "ready": False,
+            "error": redact_public_text(str(exc)),
+        }
+    _emit_public_json(report)
+    return 0 if report.get("ready") is True else 1
+
+
+def _run_command(args: Sequence[str]) -> CommandResult:
+    try:
+        completed = subprocess.run(  # noqa: S603
+            list(args),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return CommandResult(tuple(str(item) for item in args), 127, "", str(exc))
+    return CommandResult(
+        tuple(str(item) for item in args),
+        completed.returncode,
+        completed.stdout,
+        completed.stderr,
+    )
+
+
+def _read_optional_json(path: str, *, required: bool = False) -> dict[str, object]:
+    if not path:
+        return {}
+    try:
+        return _read_json_object_file(path, missing_ok=not required)
+    except (OSError, json.JSONDecodeError, FuseKitError):
+        if required:
+            raise
+        return {}
+
+
+def _read_json_object_file(path: str, *, missing_ok: bool = False) -> dict[str, object]:
+    candidate = Path(path)
+    if candidate.is_symlink():
+        raise FuseKitError("posture_json_symlink")
+    _reject_symlinked_parents(candidate, "posture_json_parent_symlink")
+    if not candidate.exists():
+        if missing_ok:
+            return {}
+        raise FuseKitError("posture_json_missing")
+    raw = _read_json_no_follow(candidate)
+    if not isinstance(raw, dict):
+        raise FuseKitError("posture_json_not_object")
+    return raw
+
+
+def _write_json_output(path: str, payload: str) -> None:
+    candidate = Path(path)
+    _reject_symlinked_parents(candidate, "posture_output_parent_symlink")
+    if candidate.is_symlink():
+        raise FuseKitError("posture_output_symlink")
+    if candidate.exists() and not candidate.is_file():
+        raise FuseKitError("posture_output_not_file")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    file_descriptor = os.open(candidate, flags, OCI_HOST_POSTURE_OUTPUT_MODE)
+    try:
+        with os.fdopen(file_descriptor, "w", encoding="utf-8") as handle:
+            handle.write(f"{payload}\n")
+    finally:
+        try:
+            os.chmod(candidate, OCI_HOST_POSTURE_OUTPUT_MODE)
+        except OSError:
+            pass
+
+
+def _reject_symlinked_parents(candidate: Path, error: str) -> None:
+    for parent in candidate.parents:
+        if parent == Path("."):
+            continue
+        if parent.is_symlink():
+            raise FuseKitError(error)
+
+
+def _read_json_no_follow(candidate: Path) -> object:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    file_descriptor = os.open(candidate, flags)
+    try:
+        file_status = os.fstat(file_descriptor)
+        if not stat.S_ISREG(file_status.st_mode):
+            raise FuseKitError("posture_json_not_file")
+        if file_status.st_size > OCI_HOST_POSTURE_MAX_JSON_BYTES:
+            raise FuseKitError("posture_json_too_large")
+        with os.fdopen(file_descriptor, "r", encoding="utf-8") as handle:
+            file_descriptor = -1
+            return json.load(handle)
+    finally:
+        if file_descriptor >= 0:
+            os.close(file_descriptor)
+
+
+def _emit_public_json(value: Mapping[str, object]) -> None:
+    os.write(1, f"{_public_json(value)}\n".encode())
+
+
+def _public_json(value: Mapping[str, object]) -> str:
+    return redact_public_text(json.dumps(value, indent=2, sort_keys=True))
+
+
+def _collect_running_services(
+    runner: Callable[[Sequence[str]], CommandResult],
+) -> list[str]:
+    result = runner(
+        [
+            "systemctl",
+            "--type=service",
+            "--state=running",
+            "--no-legend",
+            "--no-pager",
+        ]
+    )
+    if result.returncode != 0:
+        return []
+    services: list[str] = []
+    for line in result.stdout.splitlines():
+        first = line.strip().split(maxsplit=1)[0] if line.strip() else ""
+        if first.endswith(".service"):
+            first = first.removesuffix(".service")
+        if first and first not in services:
+            services.append(redact_public_text(first))
+    return sorted(services)
+
+
+def _collect_public_ports(
+    runner: Callable[[Sequence[str]], CommandResult],
+) -> list[int]:
+    result = runner(["ss", "-H", "-tuln"])
+    if result.returncode != 0:
+        return []
+    ports: list[int] = []
+    for line in result.stdout.splitlines():
+        port = _port_from_ss_line(line)
+        if port is not None and port not in ports:
+            ports.append(port)
+    return sorted(ports)
+
+
+def _port_from_ss_line(line: str) -> int | None:
+    fields = line.split()
+    if len(fields) < 5:
+        return None
+    local = fields[4]
+    host, port = _parse_ss_local_address(local)
+    if port is None or not _is_externally_reachable_bind(host):
+        return None
+    return port if 0 < port <= 65535 else None
+
+
+def _parse_ss_local_address(local: str) -> tuple[str, int | None]:
+    bracketed = re.match(r"^\[(?P<host>.*)]:(?P<port>\d+)$", local)
+    if bracketed:
+        return bracketed.group("host"), int(bracketed.group("port"))
+    match = re.match(r"^(?P<host>.*):(?P<port>\d+)$", local)
+    if not match:
+        return "", None
+    return match.group("host"), int(match.group("port"))
+
+
+def _is_externally_reachable_bind(host: str) -> bool:
+    normalized = host.strip().strip("[]").lower().split("%", 1)[0]
+    if normalized in {"", "*"}:
+        return True
+    if normalized in {"localhost", "ip6-localhost"}:
+        return False
+    try:
+        address = ip_address(normalized)
+    except ValueError:
+        return True
+    mapped = getattr(address, "ipv4_mapped", None)
+    if mapped is not None:
+        return not mapped.is_loopback
+    if address.is_unspecified:
+        return True
+    return not address.is_loopback
+
+
+def _collect_runtime_secret_dir(
+    runner: Callable[[Sequence[str]], CommandResult],
+) -> dict[str, object]:
+    result = runner(["stat", "-c", "%U %G %a %n", OCI_HOST_POSTURE_SECRET_DIR])
+    if result.returncode != 0:
+        return {
+            "path": OCI_HOST_POSTURE_SECRET_DIR,
+            "owner": "",
+            "group": "",
+            "mode": "",
+        }
+    owner, group, mode = _parse_stat_output(result.stdout)
+    return {
+        "path": OCI_HOST_POSTURE_SECRET_DIR,
+        "owner": owner,
+        "group": group,
+        "mode": mode.zfill(4) if mode else "",
+    }
+
+
+def _collect_runtime_secret_file(
+    runner: Callable[[Sequence[str]], CommandResult],
+) -> dict[str, object]:
+    result = runner(["stat", "-c", "%U %G %a %n", OCI_HOST_POSTURE_SECRET_FILE])
+    if result.returncode != 0:
+        return {
+            "path": OCI_HOST_POSTURE_SECRET_FILE,
+            "owner": "",
+            "group": "",
+            "mode": "",
+        }
+    owner, group, mode = _parse_stat_output(result.stdout)
+    return {
+        "path": OCI_HOST_POSTURE_SECRET_FILE,
+        "owner": owner,
+        "group": group,
+        "mode": mode.zfill(4) if mode else "",
+    }
+
+
+def _parse_stat_output(output: str) -> tuple[str, str, str]:
+    fields = output.strip().split(maxsplit=3)
+    if len(fields) < 3:
+        return "", "", ""
+    return (
+        redact_public_text(fields[0]),
+        redact_public_text(fields[1]),
+        redact_public_text(fields[2]),
+    )
+
+
+def _collect_patch_posture(
+    runner: Callable[[Sequence[str]], CommandResult],
+    file_exists: Callable[[Path], bool],
+) -> dict[str, object]:
+    result = runner(["apt-get", "-s", "upgrade"])
+    pending_security_updates = None
+    if result.returncode == 0:
+        pending_security_updates = sum(
+            1
+            for line in result.stdout.splitlines()
+            if line.startswith("Inst ") and "security" in line.lower()
+        )
+    return {
+        "pending_security_updates": pending_security_updates,
+        "reboot_required": file_exists(Path("/var/run/reboot-required")),
+    }
+
+
+def _collect_systemd_units(
+    runner: Callable[[Sequence[str]], CommandResult],
+) -> dict[str, object]:
+    units: dict[str, object] = {}
+    for unit in OCI_HOST_POSTURE_SYSTEMD_UNITS:
+        result = runner(
+            [
+                "systemctl",
+                "show",
+                f"{unit}.service",
+                "--property=User,UMask,NoNewPrivileges,PrivateTmp,ProtectSystem,ProtectHome,"
+                "PrivateDevices,RestrictSUIDSGID,LockPersonality,SystemCallArchitectures,"
+                "ProtectKernelTunables,ProtectKernelModules,ProtectKernelLogs,"
+                "ProtectControlGroups,RestrictNamespaces,RestrictRealtime,"
+                "MemoryDenyWriteExecute,CapabilityBoundingSet,AmbientCapabilities,"
+                "RestrictAddressFamilies,"
+                "StateDirectory,StateDirectoryMode,LogsDirectory,LogsDirectoryMode,"
+                "RuntimeDirectory,RuntimeDirectoryMode,"
+                "ReadWritePaths,Environment,ExecStart",
+                "--no-pager",
+            ]
+        )
+        units[unit] = _parse_systemd_show(result.stdout) if result.returncode == 0 else {}
+    return units
+
+
+def _parse_systemd_show(output: str) -> dict[str, object]:
+    raw: dict[str, str] = {}
+    for line in output.splitlines():
+        key, separator, value = line.partition("=")
+        if separator:
+            raw[key] = value
+    return {
+        "user": redact_public_text(raw.get("User", "")),
+        "umask": redact_public_text(raw.get("UMask", "")),
+        "no_new_privileges": _systemd_bool(raw.get("NoNewPrivileges", "")),
+        "private_tmp": _systemd_bool(raw.get("PrivateTmp", "")),
+        "protect_system": redact_public_text(raw.get("ProtectSystem", "")),
+        "protect_home": _systemd_bool(raw.get("ProtectHome", "")),
+        "private_devices": _systemd_bool(raw.get("PrivateDevices", "")),
+        "restrict_suid_sgid": _systemd_bool(raw.get("RestrictSUIDSGID", "")),
+        "lock_personality": _systemd_bool(raw.get("LockPersonality", "")),
+        "system_call_architectures": redact_public_text(
+            raw.get("SystemCallArchitectures", "")
+        ),
+        "protect_kernel_tunables": _systemd_bool(raw.get("ProtectKernelTunables", "")),
+        "protect_kernel_modules": _systemd_bool(raw.get("ProtectKernelModules", "")),
+        "protect_kernel_logs": _systemd_bool(raw.get("ProtectKernelLogs", "")),
+        "protect_control_groups": _systemd_bool(raw.get("ProtectControlGroups", "")),
+        "restrict_namespaces": _systemd_bool(raw.get("RestrictNamespaces", "")),
+        "restrict_realtime": _systemd_bool(raw.get("RestrictRealtime", "")),
+        "memory_deny_write_execute": _systemd_bool(
+            raw.get("MemoryDenyWriteExecute", "")
+        ),
+        "capability_bounding_set": redact_public_text(
+            raw.get("CapabilityBoundingSet", "")
+        ),
+        "ambient_capabilities": redact_public_text(raw.get("AmbientCapabilities", "")),
+        "restrict_address_families": [
+            redact_public_text(family)
+            for family in raw.get("RestrictAddressFamilies", "").split()
+            if family.strip()
+        ],
+        "state_directory": _systemd_list(raw.get("StateDirectory", "")),
+        "state_directory_mode": redact_public_text(raw.get("StateDirectoryMode", "")),
+        "logs_directory": _systemd_list(raw.get("LogsDirectory", "")),
+        "logs_directory_mode": redact_public_text(raw.get("LogsDirectoryMode", "")),
+        "runtime_directory": _systemd_list(raw.get("RuntimeDirectory", "")),
+        "runtime_directory_mode": redact_public_text(raw.get("RuntimeDirectoryMode", "")),
+        "read_write_paths": [
+            redact_public_text(path)
+            for path in raw.get("ReadWritePaths", "").split()
+            if path.strip()
+        ],
+        "environment": _systemd_list(raw.get("Environment", "")),
+        "exec_start": redact_public_text(raw.get("ExecStart", "")),
+    }
+
+
+def _systemd_bool(value: str) -> bool | None:
+    normalized = value.strip().lower()
+    if normalized in {"yes", "true", "1"}:
+        return True
+    if normalized in {"no", "false", "0"}:
+        return False
+    return None
+
+
+def _systemd_list(value: str) -> list[str]:
+    return [redact_public_text(item) for item in value.split() if item.strip()]
+
+
+def _sanitize_summary(summary: Mapping[str, object] | None) -> dict[str, object]:
+    sanitized = _sanitize_public_value(summary or {})
+    return sanitized if isinstance(sanitized, dict) else {}
+
+
+def _schema_check(evidence: Mapping[str, object]) -> dict[str, object]:
+    if evidence.get("schema_version") != OCI_HOST_POSTURE_EVIDENCE_SCHEMA_VERSION:
+        return _fail(
+            "evidence.schema",
+            "oci_host_posture_schema_invalid",
+            "Collect posture evidence with schema fusekit.oci-host-posture-evidence.v1.",
+        )
+    return _ok("evidence.schema")
+
+
+def _evidence_shape_check(evidence: Mapping[str, object]) -> dict[str, object]:
+    unexpected = sorted(
+        str(key)
+        for key in evidence
+        if str(key) not in OCI_HOST_POSTURE_ALLOWED_EVIDENCE_KEYS
+    )
+    if unexpected:
+        return _fail(
+            "evidence.shape",
+            "oci_host_posture_evidence_has_unknown_fields",
+            "Collect posture evidence with the bundled read-only collector and attach "
+            "only the documented redacted proof fields.",
+            unexpected_fields=unexpected,
+        )
+    return _ok("evidence.shape")
+
+
+def _architecture_check(evidence: Mapping[str, object]) -> dict[str, object]:
+    architecture = _public_str(evidence.get("architecture")).lower()
+    shape = _public_str(evidence.get("shape")).lower()
+    failures: list[str] = []
+    if architecture not in {"x86_64", "amd64"}:
+        failures.append("oci_host_architecture_must_be_amd_x86_64")
+    if shape and any(marker in shape for marker in ("a1", "arm", "ampere")):
+        failures.append("oci_host_shape_must_not_be_arm")
+    if failures:
+        return _fail(
+            "host.architecture",
+            failures,
+            "Move the hosted launcher to an AMD/x86_64 OCI shape before public launch.",
+        )
+    return _ok(
+        "host.architecture",
+        architecture=architecture,
+        shape=_public_str(evidence.get("shape")),
+    )
+
+
+def _services_check(evidence: Mapping[str, object]) -> dict[str, object]:
+    services = set(_string_list(evidence.get("running_services")))
+    missing = [service for service in OCI_HOST_POSTURE_REQUIRED_SERVICES if service not in services]
+    ssh_present = "ssh" in services or "sshd" in services
+    failures = []
+    if missing:
+        failures.append("oci_host_required_services_missing")
+    if not ssh_present:
+        failures.append("oci_host_ssh_service_missing")
+    if failures:
+        return _fail(
+            "host.services",
+            failures,
+            "Start only the required hosted launcher, worker dispatch, nginx, and SSH services.",
+            missing=missing,
+        )
+    return _ok("host.services")
+
+
+def _public_ports_check(evidence: Mapping[str, object]) -> dict[str, object]:
+    ports = _port_list(evidence.get("public_ports"))
+    ssh_ingress = _public_str(evidence.get("ssh_ingress")).lower()
+    unexpected = [port for port in ports if port not in OCI_HOST_POSTURE_ALLOWED_PUBLIC_PORTS]
+    failures = []
+    if unexpected:
+        failures.append("oci_host_public_ports_must_be_80_443_only")
+    if ssh_ingress not in {"restricted", "operator-only", "vpn-only", "disabled"}:
+        failures.append("oci_host_ssh_ingress_must_be_restricted")
+    if failures:
+        return _fail(
+            "host.public_ports",
+            failures,
+            "Limit public ingress to 80/443 and keep SSH restricted to operator access.",
+            unexpected_ports=unexpected,
+        )
+    return _ok("host.public_ports", public_ports=ports, ssh_ingress=ssh_ingress)
+
+
+def _runtime_secret_dir_check(evidence: Mapping[str, object]) -> dict[str, object]:
+    dir_info = _mapping(evidence.get("runtime_secret_dir"))
+    failures = []
+    if dir_info.get("path") != OCI_HOST_POSTURE_SECRET_DIR:
+        failures.append("oci_host_secret_dir_path_invalid")
+    if dir_info.get("owner") != "root" or dir_info.get("group") != "root":
+        failures.append("oci_host_secret_dir_must_be_root_owned")
+    if str(dir_info.get("mode") or "") not in {"0750", "750", "0700", "700"}:
+        failures.append("oci_host_secret_dir_mode_must_be_0750_or_stricter")
+    if failures:
+        return _fail(
+            "host.runtime_secret_dir",
+            failures,
+            "Keep /etc/fusekit root-owned with mode 0750 or stricter before loading "
+            "hosted runtime secrets.",
+        )
+    return _ok("host.runtime_secret_dir")
+
+
+def _runtime_secret_file_check(evidence: Mapping[str, object]) -> dict[str, object]:
+    file_info = _mapping(evidence.get("runtime_secret_file"))
+    failures = []
+    if file_info.get("path") != OCI_HOST_POSTURE_SECRET_FILE:
+        failures.append("oci_host_secret_file_path_invalid")
+    if file_info.get("owner") != "root" or file_info.get("group") != "root":
+        failures.append("oci_host_secret_file_must_be_root_owned")
+    if str(file_info.get("mode") or "") not in {"0600", "600"}:
+        failures.append("oci_host_secret_file_mode_must_be_0600")
+    if failures:
+        return _fail(
+            "host.runtime_secret_file",
+            failures,
+            "Move runtime secrets to /etc/fusekit/hosted-secrets.env owned by root:root mode 0600.",
+        )
+    return _ok("host.runtime_secret_file")
+
+
+def _patch_check(evidence: Mapping[str, object]) -> dict[str, object]:
+    patch = _mapping(evidence.get("patch_posture"))
+    security_updates = _non_negative_int(patch.get("pending_security_updates"))
+    reboot_required = patch.get("reboot_required")
+    failures = []
+    if security_updates is None or security_updates > 0:
+        failures.append("oci_host_security_updates_pending")
+    if reboot_required is not False:
+        failures.append("oci_host_reboot_state_not_clean")
+    if failures:
+        return _fail(
+            "host.patch_posture",
+            failures,
+            "Apply security updates and reboot if required before publishing posture proof.",
+        )
+    return _ok("host.patch_posture")
+
+
+def _baseline_check(evidence: Mapping[str, object]) -> dict[str, object]:
+    baseline = _mapping(evidence.get("cis_baseline"))
+    scanner = _public_str(baseline.get("scanner")).lower()
+    status = _public_str(baseline.get("status")).lower()
+    critical = _non_negative_int(baseline.get("critical_findings"))
+    high = _non_negative_int(baseline.get("high_findings"))
+    if scanner not in {"lynis", "openscap", "cis-cat", "oscap"} or status != "pass":
+        return _fail(
+            "host.cis_baseline",
+            "oci_host_cis_baseline_missing_or_failed",
+            "Run a CIS-style review such as Lynis or OpenSCAP and attach a redacted "
+            "passing summary.",
+        )
+    if critical not in {0, None} or high not in {0, None}:
+        return _fail(
+            "host.cis_baseline",
+            "oci_host_cis_baseline_high_findings",
+            "Resolve high/critical CIS baseline findings or document an explicit exception.",
+        )
+    return _ok("host.cis_baseline", scanner=scanner)
+
+
+def _rootkit_check(evidence: Mapping[str, object]) -> dict[str, object]:
+    scan = _mapping(evidence.get("rootkit_scan"))
+    scanner = _public_str(scan.get("scanner")).lower()
+    status = _public_str(scan.get("status")).lower()
+    if scanner not in {"rkhunter", "chkrootkit", "lynis"} or status != "pass":
+        return _fail(
+            "host.rootkit_scan",
+            "oci_host_rootkit_scan_missing_or_failed",
+            "Run rkhunter, chkrootkit, or equivalent and attach a redacted passing summary.",
+        )
+    return _ok("host.rootkit_scan", scanner=scanner)
+
+
+def _systemd_check(evidence: Mapping[str, object]) -> dict[str, object]:
+    units = _mapping(evidence.get("systemd_units"))
+    failures: list[str] = []
+    for unit in OCI_HOST_POSTURE_SYSTEMD_UNITS:
+        unit_config = _mapping(units.get(unit))
+        if unit_config.get("user") != "fusekit":
+            failures.append(f"{unit}:user_must_be_fusekit")
+        if str(unit_config.get("umask") or "") not in {"0077", "77"}:
+            failures.append(f"{unit}:umask_must_be_0077")
+        if unit_config.get("no_new_privileges") is not True:
+            failures.append(f"{unit}:no_new_privileges_required")
+        if unit_config.get("private_tmp") is not True:
+            failures.append(f"{unit}:private_tmp_required")
+        if str(unit_config.get("protect_system") or "").lower() not in {"full", "strict"}:
+            failures.append(f"{unit}:protect_system_required")
+        if unit_config.get("protect_home") is not True:
+            failures.append(f"{unit}:protect_home_required")
+        if unit_config.get("private_devices") is not True:
+            failures.append(f"{unit}:private_devices_required")
+        if unit_config.get("restrict_suid_sgid") is not True:
+            failures.append(f"{unit}:restrict_suid_sgid_required")
+        if unit_config.get("lock_personality") is not True:
+            failures.append(f"{unit}:lock_personality_required")
+        if str(unit_config.get("system_call_architectures") or "").lower() != "native":
+            failures.append(f"{unit}:native_syscall_architecture_required")
+        if unit_config.get("protect_kernel_tunables") is not True:
+            failures.append(f"{unit}:protect_kernel_tunables_required")
+        if unit_config.get("protect_kernel_modules") is not True:
+            failures.append(f"{unit}:protect_kernel_modules_required")
+        if unit_config.get("protect_kernel_logs") is not True:
+            failures.append(f"{unit}:protect_kernel_logs_required")
+        if unit_config.get("protect_control_groups") is not True:
+            failures.append(f"{unit}:protect_control_groups_required")
+        if unit_config.get("restrict_namespaces") is not True:
+            failures.append(f"{unit}:restrict_namespaces_required")
+        if unit_config.get("restrict_realtime") is not True:
+            failures.append(f"{unit}:restrict_realtime_required")
+        if unit_config.get("memory_deny_write_execute") is not True:
+            failures.append(f"{unit}:memory_deny_write_execute_required")
+        if str(unit_config.get("capability_bounding_set") or "").strip():
+            failures.append(f"{unit}:capability_bounding_set_must_be_empty")
+        if str(unit_config.get("ambient_capabilities") or "").strip():
+            failures.append(f"{unit}:ambient_capabilities_must_be_empty")
+        address_families = set(_string_list(unit_config.get("restrict_address_families")))
+        if address_families != {"AF_UNIX", "AF_INET", "AF_INET6"}:
+            failures.append(f"{unit}:restricted_address_families_required")
+        if "fusekit" not in set(_string_list(unit_config.get("state_directory"))):
+            failures.append(f"{unit}:state_directory_required")
+        if str(unit_config.get("state_directory_mode") or "") not in {"0750", "750"}:
+            failures.append(f"{unit}:state_directory_mode_must_be_0750")
+        if "fusekit" not in set(_string_list(unit_config.get("logs_directory"))):
+            failures.append(f"{unit}:logs_directory_required")
+        if str(unit_config.get("logs_directory_mode") or "") not in {"0750", "750"}:
+            failures.append(f"{unit}:logs_directory_mode_must_be_0750")
+        if "fusekit" not in set(_string_list(unit_config.get("runtime_directory"))):
+            failures.append(f"{unit}:runtime_directory_required")
+        if str(unit_config.get("runtime_directory_mode") or "") not in {"0750", "750"}:
+            failures.append(f"{unit}:runtime_directory_mode_must_be_0750")
+        writable = _string_list(unit_config.get("read_write_paths"))
+        if not writable:
+            failures.append(f"{unit}:constrained_writable_paths_required")
+        if any(path in {"/", "/etc", "/usr", "/var"} for path in writable):
+            failures.append(f"{unit}:writable_paths_too_broad")
+        unexpected_writable = [
+            path for path in writable if not _is_allowed_systemd_writable_path(path)
+        ]
+        if unexpected_writable:
+            failures.append(f"{unit}:writable_paths_must_stay_under_fusekit_state")
+        environment = set(_string_list(unit_config.get("environment")))
+        exec_start = _public_str(unit_config.get("exec_start"))
+        if unit == "fusekit-hosted":
+            if "FUSEKIT_HOSTED_BIND=127.0.0.1" not in environment:
+                failures.append(f"{unit}:hosted_bind_must_be_loopback")
+            if "FUSEKIT_HOSTED_PORT=8080" not in environment:
+                failures.append(f"{unit}:hosted_port_must_be_internal_8080")
+        if unit == "fusekit-worker-dispatch":
+            if "--host 127.0.0.1" not in exec_start:
+                failures.append(f"{unit}:dispatch_host_must_be_loopback")
+            if "--port 8766" not in exec_start:
+                failures.append(f"{unit}:dispatch_port_must_be_internal_8766")
+        if (
+            OCI_HOST_POSTURE_WILDCARD_IPV4_BIND in exec_start
+            or OCI_HOST_POSTURE_WILDCARD_IPV6_BIND in exec_start
+        ):
+            failures.append(f"{unit}:exec_start_must_not_bind_wildcard")
+    if failures:
+        return _fail(
+            "host.systemd_units",
+            failures,
+            "Harden hosted systemd units with fusekit user, NoNewPrivileges, PrivateTmp, "
+            "ProtectSystem, and constrained writable paths.",
+        )
+    return _ok("host.systemd_units")
+
+
+def _web_verification_check(evidence: Mapping[str, object]) -> dict[str, object]:
+    report = _mapping(evidence.get("hosted_verify"))
+    if report.get("public_origin") != OCI_HOST_POSTURE_ORIGIN or report.get("ready") is not True:
+        return _fail(
+            "host.web_verification",
+            "oci_hosted_verify_must_pass_for_canonical_origin",
+            "Run fusekit-hosted-verify --origin https://fusekit.snowmanai.org and attach "
+            "the redacted ready report.",
+        )
+    return _ok("host.web_verification")
+
+
+def _dns_propagation_check(evidence: Mapping[str, object]) -> dict[str, object]:
+    report = _mapping(evidence.get("dns_propagation"))
+    origin = _public_str(report.get("public_origin") or report.get("origin")).rstrip("/")
+    domain = _public_str(report.get("domain") or report.get("hostname")).lower()
+    status = _public_str(report.get("status")).lower()
+    propagated = report.get("propagated") is True or report.get("ready") is True
+    target_matches = origin == OCI_HOST_POSTURE_ORIGIN or domain == "fusekit.snowmanai.org"
+    if not target_matches or (not propagated and status not in {"ok", "pass", "propagated"}):
+        return _fail(
+            "host.dns_propagation",
+            "oci_host_dns_propagation_proof_missing_or_failed",
+            "Attach redacted DNS propagation proof for fusekit.snowmanai.org before "
+            "publishing OCI host posture.",
+        )
+    return _ok("host.dns_propagation", domain=domain or "fusekit.snowmanai.org")
+
+
+def _rollback_metadata_check(evidence: Mapping[str, object]) -> dict[str, object]:
+    metadata = _mapping(evidence.get("rollback_metadata"))
+    actions = metadata.get("rollback", metadata.get("actions", []))
+    if not isinstance(actions, Sequence) or isinstance(actions, (str, bytes)):
+        actions = []
+    provider_actions = [
+        action
+        for action in actions
+        if isinstance(action, Mapping)
+        and _public_str(action.get("action")).startswith(
+            ("rollback.", "cloudflare.", "github.", "vercel.", "resend.")
+        )
+        and _public_str(action.get("status")).lower() in {"planned", "done"}
+    ]
+    if not provider_actions:
+        return _fail(
+            "host.rollback_metadata",
+            "oci_host_rollback_metadata_provider_actions_missing",
+            "Attach redacted rollback metadata with planned or completed provider rollback "
+            "actions before publishing OCI host posture.",
+        )
+    return _ok("host.rollback_metadata", provider_action_count=len(provider_actions))
+
+
+def _collection_boundary_check(evidence: Mapping[str, object]) -> dict[str, object]:
+    collection = _mapping(evidence.get("collection"))
+    boundary = _public_str(collection.get("secret_boundary")).lower()
+    failures: list[str] = []
+    if collection.get("mode") != "read_only_local_host":
+        failures.append("oci_host_posture_collection_must_be_read_only")
+    if collection.get("mutates_oci") is not False:
+        failures.append("oci_host_posture_collection_must_not_mutate_oci")
+    if collection.get("mutates_host") is not False:
+        failures.append("oci_host_posture_collection_must_not_mutate_host")
+    if "does not read secret file contents" not in boundary:
+        failures.append("oci_host_posture_collection_must_not_read_secret_contents")
+    if "oci credentials" not in boundary:
+        failures.append("oci_host_posture_collection_must_not_request_oci_credentials")
+    if failures:
+        return _fail(
+            "evidence.collection_boundary",
+            failures,
+            "Collect posture with the read-only local-host collector and publish only "
+            "redacted facts; do not use OCI credentials or read secret file contents.",
+        )
+    return _ok("evidence.collection_boundary")
+
+
+def _blocking_check_ids(checks: Sequence[Mapping[str, object]]) -> list[str]:
+    return [
+        str(check["id"])
+        for check in checks
+        if check.get("status") != "ok" and isinstance(check.get("id"), str)
+    ]
+
+
+def _is_allowed_systemd_writable_path(path: str) -> bool:
+    normalized = path.rstrip("/")
+    return any(
+        normalized == allowed or normalized.startswith(f"{allowed}/")
+        for allowed in OCI_HOST_POSTURE_ALLOWED_WRITABLE_PATHS
+    )
+
+
+def _ok(check_id: str, **extra: object) -> dict[str, object]:
+    result: dict[str, object] = {"id": check_id, "status": "ok"}
+    result.update(extra)
+    return result
+
+
+def _fail(
+    check_id: str,
+    failures: str | Sequence[str],
+    next_action: str,
+    **extra: object,
+) -> dict[str, object]:
+    failure_list = [failures] if isinstance(failures, str) else list(failures)
+    result: dict[str, object] = {
+        "id": check_id,
+        "status": "blocked",
+        "failures": failure_list,
+        "next_action": next_action,
+    }
+    result.update(extra)
+    return result
+
+
+def _mapping(value: object) -> Mapping[str, object]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _port_list(value: object) -> list[int]:
+    ports: list[int] = []
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return ports
+    for item in value:
+        if isinstance(item, Mapping):
+            item = item.get("port")
+        try:
+            port = int(str(item))
+        except ValueError:
+            continue
+        if 0 < port <= 65535 and port not in ports:
+            ports.append(port)
+    return sorted(ports)
+
+
+def _non_negative_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        result = int(str(value))
+    except (TypeError, ValueError):
+        return None
+    return result if result >= 0 else None
+
+
+def _public_str(value: object) -> str:
+    return redact_public_text(str(value or "").strip())
+
+
+def _sanitize_public_value(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {
+            redact_public_text(str(key)): _sanitize_public_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_sanitize_public_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [_sanitize_public_value(item) for item in value]
+    if isinstance(value, str):
+        return redact_public_text(value)
+    return value

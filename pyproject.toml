@@ -13,10 +13,9 @@ authors = [
   { name = "FuseKit Contributors" }
 ]
 dependencies = [
-  "cryptography>=42",
+  "cryptography>=48.0.1,<49",
   "dnspython>=2.6",
   "oci>=2.160",
-  "oci-cli>=3.60",
   "playwright>=1.49",
   "PyNaCl>=1.5",
   "PyYAML>=6",
@@ -29,11 +28,17 @@ dev = [
   "ruff>=0.5",
   "types-PyYAML>=6",
 ]
+security = [
+  "bandit>=1.7",
+  "pip-audit>=2.7",
+  "semgrep>=1.80",
+]
 
 [project.scripts]
 fusekit = "fusekit.cli:main"
 fusekit-hosted = "fusekit.hosted.server:main"
 fusekit-hosted-aws-plan = "fusekit.hosted.aws_plan:main"
+fusekit-oci-host-posture = "fusekit.hosted.host_posture:main"
 fusekit-hosted-verify = "fusekit.hosted.verify:main"
 fusekit-hosted-worker = "fusekit.hosted.worker_client:main"
 fusekit-hosted-worker-dispatch = "fusekit.hosted.worker_dispatch:main"

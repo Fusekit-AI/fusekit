@@ -147,12 +147,15 @@ def test_verify_hosted_deployment_passes_launcher_and_dispatch_checks() -> None:
         "hosted.readiness",
         "hosted.deployment",
         "hosted.github_intake",
+        "worker_dispatch.dns",
         "worker_dispatch.health",
         "worker_dispatch.readiness",
     ]
     checks = {check["id"]: check for check in report["checks"]}
     assert checks["hosted.dns"]["hostname"] == "fusekit.snowmanai.org"
     assert checks["hosted.dns"]["addresses"] == PUBLIC_DNS_ADDRESSES
+    assert checks["worker_dispatch.dns"]["hostname"] == "worker.snowmanai.org"
+    assert checks["worker_dispatch.dns"]["addresses"] == PUBLIC_DNS_ADDRESSES
     assert report["worker_dispatch_url"] == "https://worker.snowmanai.org/dispatch"
     assert opener.requests[0].full_url == "https://fusekit.snowmanai.org/"
     assert opener.requests[1].full_url == "https://fusekit.snowmanai.org/healthz"
@@ -1370,9 +1373,11 @@ def test_verify_hosted_deployment_reports_dns_resolution_failure() -> None:
     checks = {check["id"]: check for check in report["checks"]}
 
     assert report["ready"] is False
+    assert report["blocking_checks"] == ["hosted.dns"]
     assert checks["hosted.dns"]["status"] == "failed"
     assert checks["hosted.dns"]["failures"] == ["dns_no_addresses"]
     assert "Cloudflare fusekit CNAME" in checks["hosted.dns"]["next_action"]
+    assert opener.requests == []
 
 
 def test_verify_hosted_deployment_rejects_private_dns_addresses() -> None:
@@ -1394,12 +1399,56 @@ def test_verify_hosted_deployment_rejects_private_dns_addresses() -> None:
     checks = {check["id"]: check for check in report["checks"]}
 
     assert report["ready"] is False
+    assert report["blocking_checks"] == ["hosted.dns"]
     assert checks["hosted.dns"]["failures"] == ["dns_non_public_address"]
     assert checks["hosted.dns"]["addresses"] == ["127.0.0.1"]
+    assert opener.requests == []
+
+
+def test_verify_hosted_deployment_rejects_private_worker_dispatch_dns_before_fetch() -> None:
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            _readiness_contract(),
+            _deployment_contract(),
+            _github_intake_contract(),
+        ]
+    )
+
+    def resolver(hostname: str) -> list[str]:
+        if hostname == "fusekit.snowmanai.org":
+            return PUBLIC_DNS_ADDRESSES
+        if hostname == "worker.snowmanai.org":
+            return ["127.0.0.1"]
+        raise AssertionError(hostname)
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["worker_dispatch.dns"]
+    assert checks["worker_dispatch.dns"]["status"] == "failed"
+    assert checks["worker_dispatch.dns"]["failures"] == ["dns_non_public_address"]
+    assert checks["worker_dispatch.dns"]["addresses"] == ["127.0.0.1"]
+    assert "FUSEKIT_HOSTED_WORKER_DISPATCH_URL" in checks["worker_dispatch.dns"][
+        "next_action"
+    ]
+    assert [request.full_url for request in opener.requests] == [
+        "https://fusekit.snowmanai.org/",
+        "https://fusekit.snowmanai.org/healthz",
+        "https://fusekit.snowmanai.org/api/hosted/readiness",
+        "https://fusekit.snowmanai.org/api/hosted/deployment",
+        "https://fusekit.snowmanai.org/api/github/intake",
+    ]
 
 
 def _public_dns_resolver(hostname: str) -> list[str]:
-    assert hostname == "fusekit.snowmanai.org"
+    assert hostname in {"fusekit.snowmanai.org", "worker.snowmanai.org"}
     return PUBLIC_DNS_ADDRESSES
 
 

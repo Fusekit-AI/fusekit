@@ -291,6 +291,97 @@ def test_hosted_worker_proof_payload_requires_real_recording_ready_report(
     )
 
 
+def test_hosted_worker_proof_payload_requires_explicit_dns_propagation_check(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True, include_dns_check=False)
+
+    bundle = build_hosted_worker_proof_payload(invocation)
+    evidence = bundle.payload["evidence"]
+
+    assert bundle.missing_artifacts == ()
+    assert evidence["dns_propagation"] is False
+    assert evidence["recording"] is True
+    assert evidence["live_acceptance_report"] is True
+    assert bundle.payload["note"] == (
+        "Hosted worker proof is partial; DNS propagation proof is missing."
+    )
+
+
+def test_hosted_worker_proof_payload_rejects_blocked_public_acceptance_report(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(
+        invocation,
+        recording_ready=True,
+        public_launch_ready=False,
+        blockers=["dns_propagation"],
+    )
+
+    bundle = build_hosted_worker_proof_payload(invocation)
+    evidence = bundle.payload["evidence"]
+
+    assert bundle.missing_artifacts == ()
+    assert evidence["live_acceptance_report"] is False
+    assert evidence["recording"] is True
+    assert bundle.payload["note"] == (
+        "Hosted worker proof is partial; acceptance blockers remain."
+    )
+
+
+def test_hosted_worker_proof_payload_rejects_secret_text_in_acceptance_output(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True)
+    report_path = invocation.artifact_paths["acceptance_output"] / "report.json"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report["debug_token"] = "Bearer ghs_rawacceptancetoken123"
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    with pytest.raises(FuseKitError, match="contains secret-looking text"):
+        build_hosted_worker_proof_payload(invocation)
+
+
+def test_hosted_worker_proof_payload_rejects_symlinked_acceptance_output(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True)
+    report_path = invocation.artifact_paths["acceptance_output"] / "report.json"
+    report_path.unlink()
+    report_path.symlink_to(invocation.execution.source_dir / ".fusekit/run_record.json")
+
+    with pytest.raises(FuseKitError, match="must be a regular file"):
+        build_hosted_worker_proof_payload(invocation)
+
+
+def test_hosted_worker_proof_payload_rejects_symlinked_proof_parent(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True)
+    fusekit_dir = invocation.execution.source_dir / ".fusekit"
+    moved_fusekit_dir = tmp_path / "moved-fusekit"
+    shutil.move(str(fusekit_dir), moved_fusekit_dir)
+    fusekit_dir.symlink_to(moved_fusekit_dir, target_is_directory=True)
+
+    with pytest.raises(FuseKitError, match="must not use symlinked parents"):
+        build_hosted_worker_proof_payload(invocation)
+
+
 def test_hosted_worker_proof_payload_rejects_artifact_directory_placeholder(
     tmp_path: Path,
 ) -> None:
@@ -328,6 +419,26 @@ def test_hosted_worker_proof_payload_rejects_empty_artifact_placeholder(
     assert bundle.payload["evidence"]["live_acceptance_report"] is False
 
 
+def test_hosted_worker_proof_payload_rejects_secret_text_in_public_artifact(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True)
+    receipt = invocation.execution.source_dir / ".fusekit/setup_receipt.json"
+    receipt.write_text(
+        '{"status":"ok","provider_token":"Bearer ghs_rawinstallationtoken123"}\n',
+        encoding="utf-8",
+    )
+
+    bundle = build_hosted_worker_proof_payload(invocation)
+
+    assert ".fusekit/setup_receipt.json" in bundle.missing_artifacts
+    assert ".fusekit/setup_receipt.json" not in bundle.completed_artifacts
+    assert bundle.payload["evidence"]["live_acceptance_report"] is False
+
+
 def test_hosted_worker_proof_payload_allows_empty_gate_event_stream(
     tmp_path: Path,
 ) -> None:
@@ -343,6 +454,27 @@ def test_hosted_worker_proof_payload_allows_empty_gate_event_stream(
     assert ".fusekit/gate_events.jsonl" in bundle.completed_artifacts
     assert ".fusekit/gate_events.jsonl" not in bundle.missing_artifacts
     assert bundle.payload["evidence"]["live_acceptance_report"] is True
+
+
+def test_hosted_worker_proof_payload_rejects_placeholder_rollback_metadata(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True)
+    rollback = invocation.execution.source_dir / ".fusekit/rollback_plan.json"
+    rollback.write_text('{"ok":true}\n', encoding="utf-8")
+
+    bundle = build_hosted_worker_proof_payload(invocation)
+
+    assert ".fusekit/rollback_plan.json" in bundle.completed_artifacts
+    assert ".fusekit/rollback_plan.json" not in bundle.missing_artifacts
+    assert bundle.payload["evidence"]["rollback_metadata"] is False
+    assert bundle.payload["evidence"]["live_acceptance_report"] is True
+    assert bundle.payload["note"] == (
+        "Hosted worker proof is partial; rollback metadata has no provider rollback actions."
+    )
 
 
 def test_hosted_worker_proof_payload_rejects_empty_remote_artifact_bundle(
@@ -409,6 +541,60 @@ def test_hosted_worker_proof_payload_rejects_unexpected_remote_survivor(
     bundle = build_hosted_worker_proof_payload(invocation)
 
     assert bundle.payload["evidence"]["retrieved_remote_artifacts"] is False
+
+
+def test_hosted_worker_proof_payload_rejects_secret_text_in_remote_survivor(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True)
+    remote_fusekit = invocation.artifact_paths["remote_artifacts"] / ".fusekit"
+    (remote_fusekit / "setup_receipt.json").write_text(
+        '{"status":"ok","api_key":"sk-live-rawproviderkey12345"}\n',
+        encoding="utf-8",
+    )
+
+    bundle = build_hosted_worker_proof_payload(invocation)
+
+    assert bundle.payload["evidence"]["retrieved_remote_artifacts"] is False
+
+
+def test_hosted_worker_proof_payload_rejects_secret_text_in_optional_remote_survivor(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True)
+    remote_fusekit = invocation.artifact_paths["remote_artifacts"] / ".fusekit"
+    (remote_fusekit / "setup_receipt.md").write_text(
+        "provider token: Bearer ghs_optionalremotesurvivor123\n",
+        encoding="utf-8",
+    )
+
+    bundle = build_hosted_worker_proof_payload(invocation)
+
+    assert bundle.payload["evidence"]["retrieved_remote_artifacts"] is False
+
+
+def test_hosted_worker_proof_payload_rejects_symlinked_public_artifact(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True)
+    receipt = invocation.execution.source_dir / ".fusekit/setup_receipt.json"
+    receipt.unlink()
+    receipt.symlink_to(invocation.execution.source_dir / ".fusekit/run_record.json")
+
+    bundle = build_hosted_worker_proof_payload(invocation)
+
+    assert ".fusekit/setup_receipt.json" in bundle.missing_artifacts
+    assert ".fusekit/setup_receipt.json" not in bundle.completed_artifacts
+    assert bundle.payload["evidence"]["live_acceptance_report"] is False
 
 
 def test_hosted_worker_proof_payload_marks_complete_only_from_live_artifacts(
@@ -705,6 +891,20 @@ def _write_required_artifacts(invocation) -> None:
             path.mkdir(exist_ok=True)
         elif label.endswith(".jsonl"):
             path.write_text('{"event":"redacted"}\n', encoding="utf-8")
+        elif label.endswith("rollback_plan.json"):
+            path.write_text(
+                json.dumps(
+                    {
+                        "rollback": [
+                            {
+                                "action": "rollback.cloudflare.dns",
+                                "status": "planned",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
         else:
             path.write_text('{"ok":true}\n', encoding="utf-8")
 
@@ -714,12 +914,15 @@ def _write_acceptance_report(
     *,
     recording_ready: bool,
     rollback_post_verified: bool = False,
+    include_dns_check: bool = True,
+    public_launch_ready: bool = True,
+    blockers: list[str] | None = None,
 ) -> None:
     invocation.artifact_paths["remote_artifacts"].mkdir(parents=True, exist_ok=True)
     report = {
         "mode": "live",
         "launch_ready": True,
-        "public_launch_ready": True,
+        "public_launch_ready": public_launch_ready,
         "remote_artifacts_ready": True,
         "recording_proof_ready": recording_ready,
         "recording_ready": recording_ready,
@@ -727,11 +930,14 @@ def _write_acceptance_report(
             {"id": "receipt.live_url", "status": "ok", "detail": "redacted"},
             {"id": "verification_report.safe", "status": "ok", "detail": "redacted"},
             {"id": "verification_report.coverage", "status": "ok", "detail": "redacted"},
-            {"id": "cloudflare.dns_propagation", "status": "ok", "detail": "redacted"},
         ],
         "missing": [],
-        "blockers": [],
+        "blockers": blockers or [],
     }
+    if include_dns_check:
+        report["checks"].append(
+            {"id": "cloudflare.dns_propagation", "status": "ok", "detail": "redacted"}
+        )
     if rollback_post_verified:
         report["checks"].append(
             {"id": "rollback.post_verification", "status": "ok", "detail": "redacted"}

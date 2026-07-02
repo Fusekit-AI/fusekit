@@ -28,6 +28,7 @@ from fusekit.runner.remote_survivors import (
     REMOTE_REQUIRED_SURVIVOR_FILES,
 )
 from fusekit.scanner import scan_repo
+from fusekit.security.redaction import contains_durable_secret_text
 from fusekit.source import (
     SourceFetchResult,
     fetch_github_source_archive,
@@ -51,6 +52,11 @@ HOSTED_WORKER_ARTIFACTS = {
     "rollback_plan": ".fusekit/rollback_plan.json",
     "remote_artifacts": ".fusekit/remote-artifacts",
     "acceptance_output": ".fusekit/acceptance",
+}
+PUBLIC_PROOF_ARTIFACT_MAX_BYTES = 1_000_000
+ENCRYPTED_VAULT_ARTIFACT_LABELS = {
+    ".fusekit/fusekit.vault.json",
+    "fusekit.vault.json",
 }
 
 
@@ -287,17 +293,19 @@ def build_hosted_worker_workspace_proof_payload(
         "live_url": checks.get("receipt.live_url") == "ok",
         "provider_verifiers": checks.get("verification_report.coverage") == "ok"
         and checks.get("verification_report.safe") == "ok",
-        "dns_propagation": _dns_evidence_ready(checks, acceptance),
-        "rollback_metadata": ".fusekit/rollback_plan.json" in completed,
+        "dns_propagation": _dns_evidence_ready(checks),
+        "rollback_metadata": _rollback_metadata_ready(
+            invocation_source_dir=source_dir,
+            completed_artifacts=completed,
+        ),
         "retrieved_remote_artifacts": acceptance.get("remote_artifacts_ready") is True
         and _remote_artifacts_bundle_present(artifact_paths["remote_artifacts"]),
         "run_record": ".fusekit/run_record.json" in completed,
         "detonation_receipt": ".fusekit/workspace_detonation.json" in completed,
-        "live_acceptance_report": (
-            acceptance.get("mode") == "live"
-            and report_path.exists()
-            and not missing
-            and acceptance.get("launch_ready") is True
+        "live_acceptance_report": _live_acceptance_report_ready(
+            acceptance=acceptance,
+            report_path=report_path,
+            missing_artifacts=missing,
         ),
         "recording": acceptance.get("recording_ready") is True,
     }
@@ -515,12 +523,26 @@ def _number_arg(value: float) -> str:
 def _read_acceptance_report(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
+    if _path_has_symlink_parent(path, path.parent.parent):
+        raise FuseKitError("Hosted worker acceptance report must not use symlinked parents.")
+    if path.is_symlink() or not path.is_file():
+        raise FuseKitError("Hosted worker acceptance report must be a regular file.")
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
+        if path.stat().st_size > PUBLIC_PROOF_ARTIFACT_MAX_BYTES:
+            raise FuseKitError("Hosted worker acceptance report is too large.")
+    except OSError as exc:
+        raise FuseKitError("Hosted worker acceptance report could not be inspected.") from exc
+    try:
+        content = path.read_text(encoding="utf-8")
+        raw = json.loads(content)
     except (OSError, json.JSONDecodeError) as exc:
         raise FuseKitError("Hosted worker acceptance report could not be read.") from exc
+    except UnicodeDecodeError as exc:
+        raise FuseKitError("Hosted worker acceptance report must be UTF-8 JSON.") from exc
     if not isinstance(raw, dict):
         raise FuseKitError("Hosted worker acceptance report must be a JSON object.")
+    if _json_contains_secret_text(raw):
+        raise FuseKitError("Hosted worker acceptance report contains secret-looking text.")
     return raw
 
 
@@ -534,28 +556,60 @@ def _artifact_completion(
     missing: list[str] = []
     for label in labels:
         path = source_dir / label
-        if _required_artifact_present(label, path):
+        if _required_artifact_present(label, path, root=source_dir):
             completed.append(label)
         else:
             missing.append(label)
     return tuple(completed), tuple(missing)
 
 
-def _required_artifact_present(label: str, path: Path) -> bool:
-    if not path.is_file():
+def _required_artifact_present(
+    label: str,
+    path: Path,
+    *,
+    allow_encrypted_vault: bool = False,
+    root: Path | None = None,
+) -> bool:
+    if root is not None and _path_has_symlink_parent(path, root):
         return False
+    if path.is_symlink() or not path.is_file():
+        return False
+    if allow_encrypted_vault and label in ENCRYPTED_VAULT_ARTIFACT_LABELS:
+        try:
+            return path.stat().st_size > 0
+        except OSError:
+            return False
     if label.endswith("gate_events.jsonl"):
-        return True
+        return _public_proof_artifact_safe(path, allow_empty=True)
+    return _public_proof_artifact_safe(path)
+
+
+def _public_proof_artifact_safe(path: Path, *, allow_empty: bool = False) -> bool:
     try:
-        return path.stat().st_size > 0
+        size = path.stat().st_size
     except OSError:
         return False
+    if size == 0:
+        return allow_empty
+    if size > PUBLIC_PROOF_ARTIFACT_MAX_BYTES:
+        return False
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    except UnicodeDecodeError:
+        return False
+    return not contains_durable_secret_text(content)
 
 
 def _remote_artifacts_bundle_present(path: Path) -> bool:
+    if _path_has_symlink_parent(path, path.parent):
+        return False
     if path.is_symlink() or not path.is_dir():
         return False
     remote_fusekit_dir = path if path.name == ".fusekit" else path / ".fusekit"
+    if _path_has_symlink_parent(remote_fusekit_dir, path):
+        return False
     if remote_fusekit_dir.is_symlink() or not remote_fusekit_dir.is_dir():
         return False
     try:
@@ -569,10 +623,40 @@ def _remote_artifacts_bundle_present(path: Path) -> bool:
     ]
     if unexpected:
         return False
+    if not all(
+        _required_artifact_present(
+            child.name,
+            child,
+            allow_encrypted_vault=True,
+            root=remote_fusekit_dir,
+        )
+        for child in children
+    ):
+        return False
     return all(
-        _required_artifact_present(filename, remote_fusekit_dir / filename)
+        _required_artifact_present(
+            filename,
+            remote_fusekit_dir / filename,
+            allow_encrypted_vault=True,
+            root=remote_fusekit_dir,
+        )
         for filename in REMOTE_REQUIRED_SURVIVOR_FILES
     )
+
+
+def _path_has_symlink_parent(path: Path, root: Path) -> bool:
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        return True
+    if root.is_symlink():
+        return True
+    current = root
+    for part in relative.parts[:-1]:
+        current = current / part
+        if current.is_symlink():
+            return True
+    return False
 
 
 def _check_statuses(acceptance: dict[str, Any]) -> dict[str, str]:
@@ -590,15 +674,71 @@ def _check_statuses(acceptance: dict[str, Any]) -> dict[str, str]:
     return result
 
 
-def _dns_evidence_ready(checks: dict[str, str], acceptance: dict[str, Any]) -> bool:
-    if acceptance.get("recording_ready") is True:
-        return True
+def _dns_evidence_ready(checks: dict[str, str]) -> bool:
     dns_checks = {
         key: status
         for key, status in checks.items()
         if "dns" in key or "domain" in key or "cloudflare" in key
     }
     return bool(dns_checks) and all(status == "ok" for status in dns_checks.values())
+
+
+def _live_acceptance_report_ready(
+    *,
+    acceptance: dict[str, Any],
+    report_path: Path,
+    missing_artifacts: tuple[str, ...],
+) -> bool:
+    return (
+        acceptance.get("mode") == "live"
+        and report_path.exists()
+        and not missing_artifacts
+        and acceptance.get("launch_ready") is True
+        and acceptance.get("public_launch_ready") is True
+        and _acceptance_list_empty(acceptance.get("missing"))
+        and _acceptance_list_empty(acceptance.get("blockers"))
+    )
+
+
+def _acceptance_list_empty(value: object) -> bool:
+    return isinstance(value, list) and not value
+
+
+def _rollback_metadata_ready(
+    *,
+    invocation_source_dir: Path,
+    completed_artifacts: tuple[str, ...],
+) -> bool:
+    if ".fusekit/rollback_plan.json" not in completed_artifacts:
+        return False
+    path = invocation_source_dir / ".fusekit/rollback_plan.json"
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(raw, dict) or _json_contains_secret_text(raw):
+        return False
+    actions = raw.get("rollback", raw.get("actions", []))
+    if not isinstance(actions, list):
+        return False
+    return any(_provider_rollback_action_ready(action) for action in actions)
+
+
+def _provider_rollback_action_ready(action: object) -> bool:
+    if not isinstance(action, Mapping):
+        return False
+    name = str(action.get("action") or "").strip()
+    status = str(action.get("status") or "").strip().lower()
+    is_provider_rollback = (
+        name.startswith("rollback.")
+        or name.endswith(".rollback")
+        or ".rollback." in name
+    )
+    return is_provider_rollback and status in {"planned", "done"}
+
+
+def _json_contains_secret_text(value: object) -> bool:
+    return contains_durable_secret_text(json.dumps(value, sort_keys=True))
 
 
 def _proof_note(
@@ -616,6 +756,10 @@ def _proof_note(
         return "Hosted worker proof is partial; acceptance blockers remain."
     if missing:
         return "Hosted worker proof is partial; required artifact labels are still missing."
+    if not evidence["dns_propagation"]:
+        return "Hosted worker proof is partial; DNS propagation proof is missing."
+    if not evidence["rollback_metadata"]:
+        return "Hosted worker proof is partial; rollback metadata has no provider rollback actions."
     if not evidence["retrieved_remote_artifacts"]:
         return "Hosted worker proof is partial; retrieved remote artifact bundle is not ready."
     return "Hosted worker proof is partial; live acceptance is not recording-ready yet."

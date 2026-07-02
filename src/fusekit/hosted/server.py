@@ -70,6 +70,7 @@ from fusekit.source import (
 StartResponse = Callable[[str, list[tuple[str, str]]], object]
 
 HOSTED_CANONICAL_ORIGIN = "https://fusekit.snowmanai.org"
+HOSTED_MAX_POST_BODY_BYTES = 65_536
 HOSTED_SOURCE_REPOSITORY = "https://github.com/xpxpxp-coder/fusekit"
 HOSTED_SOURCE_REPOSITORY_OWNER = "xpxpxp-coder"
 HOSTED_SOURCE_REPOSITORY_NAME = "fusekit"
@@ -2173,14 +2174,7 @@ def _dispatch_signature(secret: str, body: bytes) -> str:
 
 
 def _json_request_body(environ: dict[str, object]) -> dict[str, object]:
-    try:
-        length = int(str(environ.get("CONTENT_LENGTH", "0") or "0"))
-    except ValueError as exc:
-        raise FuseKitError("Invalid content length.") from exc
-    body = environ.get("wsgi.input")
-    if not hasattr(body, "read"):
-        raise FuseKitError("Missing request body.")
-    raw = cast(Any, body).read(max(length, 0))
+    raw = _request_body(environ, allow_empty=True)
     decoded = json.loads(raw.decode("utf-8") if raw else "{}")
     if not isinstance(decoded, dict):
         raise FuseKitError("JSON request body must be an object.")
@@ -2188,20 +2182,35 @@ def _json_request_body(environ: dict[str, object]) -> dict[str, object]:
 
 
 def _form_request_body(environ: dict[str, object]) -> dict[str, list[str]]:
+    content_type = str(environ.get("CONTENT_TYPE", "") or "").split(";", 1)[0].strip().lower()
+    if content_type != "application/x-www-form-urlencoded":
+        raise FuseKitError("Protected controls require form encoding.")
+    raw = _request_body(environ, allow_empty=True)
+    if not raw:
+        return {}
+    return urllib.parse.parse_qs(raw.decode("utf-8"), keep_blank_values=True)
+
+
+def _request_body(environ: dict[str, object], *, allow_empty: bool) -> bytes:
     try:
         length = int(str(environ.get("CONTENT_LENGTH", "0") or "0"))
     except ValueError as exc:
         raise FuseKitError("Invalid content length.") from exc
-    if length <= 0:
-        return {}
-    content_type = str(environ.get("CONTENT_TYPE", "") or "").split(";", 1)[0].strip().lower()
-    if content_type != "application/x-www-form-urlencoded":
-        raise FuseKitError("Protected controls require form encoding.")
+    if length < 0:
+        raise FuseKitError("Invalid content length.")
+    if length == 0 and not allow_empty:
+        raise FuseKitError("Missing request body.")
+    if length > HOSTED_MAX_POST_BODY_BYTES:
+        raise FuseKitError("Request body is too large.")
     body = environ.get("wsgi.input")
     if not hasattr(body, "read"):
         raise FuseKitError("Missing request body.")
     raw = cast(Any, body).read(length)
-    return urllib.parse.parse_qs(raw.decode("utf-8"), keep_blank_values=True)
+    if not isinstance(raw, bytes):
+        raise FuseKitError("Invalid request body.")
+    if len(raw) != length:
+        raise FuseKitError("Incomplete request body.")
+    return raw
 
 
 def _hosted_action_origin_allowed(settings: HostedSettings, environ: dict[str, object]) -> bool:
