@@ -1586,6 +1586,63 @@ def test_hosted_plan_disables_managed_lane_until_payment_is_configured() -> None
     assert "ghs_fake" not in text
 
 
+def test_hosted_control_room_rejects_unlaunchable_managed_lane_before_github_work() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            }
+        ]
+    )
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=_private_key_pem(),
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        github_opener=opener,
+        **_vercel_provenance_kwargs(),
+    )
+
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=(
+            f"installation_id=42&repo=example/one&state={state}"
+            f"&lane={MANAGED_FUSEKIT_RUN_LANE}"
+        ),
+        settings=settings,
+    )
+    payload = json.loads(body.decode("utf-8"))
+    serialized = json.dumps(payload)
+
+    assert status == "409 Conflict"
+    assert payload["error"] == "lane_not_launchable"
+    assert payload["lane"] == MANAGED_FUSEKIT_RUN_LANE
+    assert payload["blocking_checks"] == [
+        "managed_runs_not_enabled",
+        "stripe_secret_key_required_for_managed_runs",
+        "stripe_price_id_required_for_managed_runs",
+    ]
+    assert payload["next_actions"] == [
+        "Set FUSEKIT_MANAGED_RUNS_ENABLED=1 only after Stripe Checkout is configured.",
+        "Set FUSEKIT_STRIPE_SECRET_KEY before enabling managed paid runs.",
+        "Set FUSEKIT_STRIPE_PRICE_ID before enabling managed paid runs.",
+    ]
+    assert opener.requests == []
+    assert settings.hosted_jobs == {}
+    assert "ghs_fake" not in serialized
+
+
 def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() -> None:
     state = create_hosted_state_token(
         STATE_SECRET,
@@ -2279,6 +2336,9 @@ def test_hosted_job_start_dispatches_signed_worker_envelope_when_configured() ->
         worker_dispatch_url="https://worker.snowmanai.org/dispatch",
         github_opener=github_opener,
         worker_dispatch_opener=dispatch_opener,
+        managed_runs_enabled=True,
+        stripe_secret_key="sk_test_redacted",
+        stripe_price_id="price_managed_run",
         **_vercel_provenance_kwargs(),
     )
 
@@ -2380,6 +2440,9 @@ def test_hosted_job_actions_reject_duplicate_start_without_second_dispatch() -> 
         worker_dispatch_url="https://worker.snowmanai.org/dispatch",
         github_opener=github_opener,
         worker_dispatch_opener=dispatch_opener,
+        managed_runs_enabled=True,
+        stripe_secret_key="sk_test_redacted",
+        stripe_price_id="price_managed_run",
         **_vercel_provenance_kwargs(),
     )
 

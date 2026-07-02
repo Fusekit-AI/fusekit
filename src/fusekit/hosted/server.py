@@ -1573,7 +1573,7 @@ def _github_control_room_response(
     state_token = _first_query_value(query, "state")
     installation_id = _first_query_value(query, "installation_id")
     repo = _first_query_value(query, "repo")
-    launch_lane = _first_query_value(query, "lane") or MANAGED_FUSEKIT_RUN_LANE
+    launch_lane = (_first_query_value(query, "lane") or MANAGED_FUSEKIT_RUN_LANE).strip().lower()
     if not state_token:
         return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "missing_state"})
     if not installation_id or not installation_id.isdecimal() or int(installation_id) <= 0:
@@ -1590,6 +1590,23 @@ def _github_control_room_response(
         verify_hosted_state_token(settings.state_secret, state_token)
     except FuseKitError:
         return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "invalid_state"})
+    lane_readiness = _hosted_lane_readiness(settings, launch_lane)
+    if lane_readiness.get("launchable") is not True:
+        return _response(
+            start_response,
+            HTTPStatus.CONFLICT,
+            {
+                "error": "lane_not_launchable",
+                "lane": launch_lane,
+                "blocking_checks": lane_readiness.get("blocking_checks", []),
+                "next_actions": lane_readiness.get("next_actions", []),
+                "secret_boundary": (
+                    "Lane launch blocking responses expose only public lane ids, blocker "
+                    "codes, and next-action labels. They never include GitHub tokens, Stripe "
+                    "keys, worker secrets, OCI credentials, or vault material."
+                ),
+            },
+        )
     try:
         token = exchange_installation_token(
             settings.github_config(),
@@ -2386,6 +2403,16 @@ def _managed_lane_blockers(settings: HostedSettings) -> list[str]:
         blockers.append("hosted_worker_dispatch_url_must_be_https")
     blockers.extend(_shared_lane_blockers(settings))
     return _unique_public_failures(blockers)
+
+
+def _hosted_lane_readiness(settings: HostedSettings, lane_id: str) -> dict[str, object]:
+    lanes = settings.lane_readiness().get("lanes")
+    if not isinstance(lanes, dict):
+        return {"launchable": False, "blocking_checks": ["lane_readiness_unavailable"]}
+    lane = lanes.get(lane_id)
+    if not isinstance(lane, dict):
+        return {"launchable": False, "blocking_checks": ["lane_readiness_unavailable"]}
+    return dict(lane)
 
 
 def _byo_oci_lane_blockers(settings: HostedSettings) -> list[str]:
