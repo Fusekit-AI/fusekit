@@ -214,8 +214,10 @@ class OpenClawBrowserSpine:
         completed = run(command)
         status = "ok" if completed.returncode == 0 else "failed"
         if completed.returncode != 0:
+            detail = _safe_output(action, completed.stderr.strip())
+            suffix = f": {detail}" if detail else ""
             raise ProviderError(
-                f"OpenClaw browser action failed: {action}: {completed.stderr.strip()}"
+                f"OpenClaw browser action failed: {action}{suffix}"
             )
         return SpineResult(
             action=action,

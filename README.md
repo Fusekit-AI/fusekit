@@ -21,6 +21,7 @@ FuseKit scans generated apps, plans service setup, captures approved provider cr
 - Real-provider execution by default; incomplete local rehearsals require `--allow-incomplete`.
 - Acceptance harness: `fusekit acceptance run` writes a redacted run ledger, artifact snapshots, and launch-readiness report.
 - OCI Cloud Shell deeplink launcher for a no-local-prerequisite browser-first lane.
+- Hosted launcher contract for the planned `fusekit.snowmanai.org` no-terminal path.
 - Encrypted vault bundles using scrypt and AES-256-GCM.
 - Wrong-passphrase failure and ciphertext-only vault files.
 - Redacted JSONL audit logs and setup receipts.
@@ -120,6 +121,335 @@ Use `--require-recording` for the public walkthrough gate; it is accepted only
 with `--mode live` and `--remote-artifacts`, and exits nonzero unless the live
 report proves `recording_ready: true` from the retrieved disposable worker
 bundle.
+
+## Hosted Universal Launcher
+
+The product launch target is `fusekit.snowmanai.org`: a hosted FuseKit launcher
+where a nontechnical user visits a URL, clicks `Start hosted launch`, selects a
+GitHub repository through the FuseKit GitHub App, approves provider-owned gates,
+and receives a live URL plus redacted proof. The trust story is open core,
+narrow permissions, visible plan, redacted proof, and reversible setup.
+
+The open-source core now includes the hosted launch contract and trust-first
+renderer in `fusekit.hosted`. This first slice is non-mutating: it can render a
+universal GitHub intake preview, provider summary, narrow-permission contract,
+visible setup plan, proof list, and rollback promise without asking the user to
+run commands. The homepage and deployment contract now expose the open-core
+source repository, MIT license, and reviewable hosted entrypoint (`app.py`)
+before the user installs the GitHub App. They also publish deployment
+provenance from hosted runtime metadata, including the deployment provider, Git
+provider, repository owner/name, branch/ref, commit SHA, and production
+environment, so the public launcher can be matched back to the reviewed
+open-source commit. Vercel deployments can use Vercel system environment
+variables; AWS deployments use explicit non-secret `FUSEKIT_HOSTED_GIT_*`
+provenance variables, and AWS Elastic Beanstalk provenance must publish a
+clean HTTPS Elastic Beanstalk origin rather than a Cloudflare custom domain or
+URL with credentials, query strings, fragments, or paths.
+Hosted readiness now keeps the start button disabled until that source
+provenance verifies, preventing a public launch from starting from an
+unreviewable or miswired deployment. The outside-in hosted verifier checks the
+readiness endpoint for that same public provenance proof, not just the embedded
+homepage contract.
+For AWS planning, `fusekit-hosted-aws-plan` is deliberately plan-only. It emits
+a redacted proposed account/region/tag/IAM/env/DNS/rollback plan, reports that
+it mutates neither AWS nor Cloudflare, refuses Cloudflare proposals outside the
+`fusekit.snowmanai.org` CNAME, validates a one-record Cloudflare DNS dry-run
+diff, can block wrong-account or wrong-region plans when an expected account or
+region allowlist is supplied, rejects malformed AWS account ids, requires the
+planned AWS origin CNAME to match the Elastic Beanstalk provider contract,
+rejects hidden or malformed DNS dry-run fields, and blocks when a Resource Groups Tagging
+API-style export shows protected MailPilot/SOC 2 resources such as
+`Application=MailPilot`, `DataBoundary=mailpilot`, Terraform-managed MailPilot
+resources, MailPilot-named resources, or PII-tagged resources. Vercel and AWS
+source provenance are provider-bound too, so the public proof cannot claim a
+reviewed hosted provider while publishing an arbitrary custom domain as the
+provider deployment URL. The public hosted deployment contract also exposes
+provider permission copy, DNS dry-run policy, rollback proof requirements, and
+outside-in readiness summaries so a nontechnical operator can see what remains
+without reading terminal output.
+The public GitHub intake contract also
+embeds the same trust story, no-terminal launch path, required proof list,
+reversal path, and open-core metadata before the install click. It
+publishes the capability vault boundary as a user-facing and machine-checkable
+promise: generated apps may request capabilities, only FuseKit may use secrets
+internally, and raw secrets must never leave the vault runtime. It also makes
+the GitHub permission boundary explicit: pre-install intake grants
+`contents:read` on one selected repository, while any GitHub write capability
+requires a separate visible approval/provider route before mutation. Hosted
+GitHub token exchanges now fail closed if GitHub returns all-repository access
+or broader permissions than selected-repository `contents:read` plus GitHub
+metadata read, and the public deployment/intake contracts expose that exact
+token boundary for verifier drift checks. The same selected-repository,
+`contents:read`, metadata-read, all-repository rejection, and
+`contents:write` rejection boundary is visible on the hosted homepage. It also
+includes the GitHub App install URL, app JWT, installation
+token exchange, signed callback state, selected-repository listing page, and
+server-side source fetch/scan into a visible hosted launch plan. It also has a
+public-safe hosted job/control-room shell that tracks proof, rollback, and
+detonation expectations without exposing provider tokens. The control room now
+publishes a redacted hosted-worker contract with the approved action ids,
+provider gates, required public artifacts, Run Record, rollback metadata,
+acceptance report, and workspace detonation receipt that must exist before the
+hosted path can claim completion. The same pages render a permission-boundary
+checklist for the selected-repository GitHub App, `contents:read` source
+permission, backend-only token exchange, vault/provider-native credential
+storage, and HMAC worker dispatch. They also render the approved action ids from
+the visible plan, and tell the user that action drift requires fresh approval.
+The hosted home, pre-install GitHub intake/deployment contracts, and visible
+plan publish the same prohibited-action boundary as the backend worker request:
+no MFA/CAPTCHA/passkey, billing, fraud, consent, or domain-gate bypass; no raw
+secret rendering; no DNS or paid-resource mutation without explicit approval;
+and no completion claim before live acceptance, retrieved artifacts, and
+detonation proof pass.
+The hosted home and selected-repository plan now publish the same no-terminal
+launch path: visit the hosted URL, install the GitHub App on one repository,
+review the plan, click start, pass provider-owned gates, and receive the live
+URL with redacted proof, rollback metadata, and detonation receipt. The same
+contract now carries a plain-language click path for nontechnical users:
+open `fusekit.snowmanai.org`, click start, sign in to GitHub if asked, choose
+one repository, review the plan, complete only highlighted provider-owned
+screens, and review the final proof.
+The homepage also shows the completion proof checklist up front: live URL
+verification, provider verifiers, DNS propagation, redacted receipt/audit proof,
+Run Record, detonation receipt, and live acceptance report must exist before a
+hosted launch can claim completion.
+It also shows the reversible setup path before install: rollback metadata before
+risky changes, rollback actions for created provider resources, and stop,
+revoke-access, rollback, and redacted-proof controls.
+The same page embeds public JSON contract blocks for GitHub intake, hosted
+readiness, and hosted deployment so operators and verifiers can inspect the
+machine-readable trust contract without browser storage, tokens, or raw secrets.
+The outside-in verifier now parses those embedded homepage contracts and fails
+closed if the visible page carries empty, stale, broader-permission, or
+credential-looking JSON.
+Unavailable homepage and launch-plan start states render as disabled non-links,
+while preview controls jump to the relevant trust section instead of pretending
+to run.
+The provider-gate checklist is rendered as human-owned checkpoints so MFA,
+CAPTCHA, billing, fraud, consent, and domain ownership reviews are visible
+instead of hidden in logs. It exposes a redacted job status API and
+protected start, pre-worker stop, rollback, and detonation request controls.
+Those controls carry a signed redacted job token so a stateless hosted function
+can recover the public control-room state without a database or raw provider
+token, plus distinct short-lived action-bound control tokens for protected
+start, stop, rollback, and detonation clicks. Hosted job routes require that
+signed job token even when process memory already has the job, so a known
+`hosted-*` id cannot mint fresh controls by itself. Browser forms submit
+control tokens in URL-encoded POST fields instead of capability-bearing URLs,
+and query or JSON control parameters are rejected.
+If those control tokens are missing or expired, the control room shows disabled
+start/stop/rollback/detonation controls with a plain-language explanation
+instead of hiding the controls or rendering unsafe forms.
+Browser form actions return the updated control room instead of raw JSON, while
+API clients can still request the redacted job object plus a redacted action
+receipt naming the next proof required for worker start, rollback, or detonation. Browser
+clicks now show that same latest protected-action receipt in the control room,
+including public worker-dispatch status, so a nontechnical user sees what the
+button requested and what proof remains without seeing any token. The control
+room and proof receipt now also publish a browser-visible reversal playbook:
+stop before worker start, revoke or narrow the GitHub App installation, request
+rollback with provider inventory proof, and request worker detonation while
+preserving redacted public proof. When GitHub provides the non-secret
+installation id, the revoke step links to the GitHub installation settings page
+without exposing installation tokens. A
+browser-facing proof receipt page
+shows redacted proof, required artifacts, rollback metadata, and detonation
+requirements without claiming completion before live evidence exists. The same
+signed proof route can return the redacted receipt as JSON for download or
+operator archival without exposing tokens. After the
+protected `Start worker` action, `/api/hosted/jobs/<job>/worker-request` exposes
+a signed-job-token-compatible, redacted machine handoff for the eventual hosted
+worker. That request binds the selected GitHub source, approved plan actions,
+provider gates, required remote artifacts, live acceptance mode, recording
+requirement, non-secret GitHub App installation id for backend source fetch,
+rollback metadata, Run Record, and detonation receipt without turning the user
+path into a terminal workflow. GitHub installation tokens remain backend-only
+and are never embedded in hosted pages, job tokens, receipts, or public proof. A backend-only
+`/api/hosted/jobs/<job>/worker-claims` endpoint lets a configured hosted worker
+claim that request with `FUSEKIT_HOSTED_WORKER_SECRET`, updates the public job
+state, and returns a redacted claim receipt without rendering the worker secret,
+provider tokens, GitHub installation token, or vault material. Backend worker
+preparation can now exchange the selected repository's GitHub App installation
+token inside FuseKit, fetch the approved source into worker scratch space,
+re-scan it, and reject execution if the providers, required env vars, approved
+actions, gates, or required artifacts differ from the visible plan the user
+approved. Its execution-plan output uses public labels only; it does not include
+the token, private key, provider credentials, or host filesystem paths. It also
+builds a private backend launch invocation for `fusekit launch` plus the live
+`fusekit acceptance run --mode live --remote-artifacts ... --require-recording`
+gate, while its public serialization redacts worker-local paths to
+`<hosted-worker-source>` labels. After the worker run, backend proof assembly
+can derive the `/worker-proof` payload from the real required artifact labels,
+retrieved required remote-artifacts survivor bundle, and acceptance report; it
+stays partial unless live acceptance is recording-ready and every required
+public artifact is a real proof file rather than a directory or empty
+placeholder. A
+`fusekit-hosted-worker` entrypoint now ties those pieces together for
+one queued job: claim with the worker bearer secret, prepare source, run the
+private launch/acceptance invocations, and submit redacted proof back to the
+hosted API. The same entrypoint now accepts a protected action mode, so a hosted
+worker can run the existing `fusekit rollback --execute` or `fusekit detonate`
+surfaces for signed rollback/detonation requests against the existing worker
+workspace, then submit redacted proof. Rollback maintenance proof is
+action-aware: rollback metadata alone cannot satisfy a rollback request; the
+hosted proof receipt stays incomplete until the worker reports a rollback
+execution receipt and explicit post-rollback verification. Detonation maintenance
+proof is action-aware too: the hosted proof receipt stays incomplete after a
+detonation request until the worker proves the workspace detonation receipt,
+scratch-state destruction, provider-auth session closure, and preserved redacted
+public proof. In production, protected control-room
+actions must post a
+signed dispatch envelope to `FUSEKIT_HOSTED_WORKER_DISPATCH_URL`, letting the
+hosted button wake a worker service without asking the user to run a terminal
+command or download anything. That dispatch carries the signed public job token
+needed by `fusekit-hosted-worker` but omits the worker secret, GitHub
+installation token, provider credentials, signature, and vault material from the
+browser-facing receipt. The dispatch envelope names the requested action
+(`start`, `rollback`, or `detonate`) and the public receipt redacts the signed
+job token. The open-core `fusekit-hosted-worker-dispatch` receiver verifies the
+HMAC envelope with `FUSEKIT_HOSTED_WORKER_SECRET`, starts
+`fusekit-hosted-worker` with the signed job token in environment rather than on
+the process command line, and returns only a redacted accepted receipt. It also
+records a non-secret per-job/action dispatch marker in the worker workspace or
+configured dispatch state directory, so duplicate protected clicks do not spawn
+duplicate setup, rollback, or detonation workers. Its
+`/readiness` endpoint reports only configuration presence and shape errors for
+the worker secret, worker id, optional workspace root, and optional dispatch
+state directory, and separates basic `ready` status from production readiness:
+production readiness requires durable dispatch idempotency through the workspace
+or dispatch state directory, plus public mode/scope/proof text showing the
+non-secret reservation is recorded before worker spawn. The
+backend-only
+`/api/hosted/jobs/<job>/worker-proof` endpoint accepts redacted worker proof
+snapshots, rejects credential-looking public notes or unsupported artifact
+labels, updates public job steps, and only marks hosted completion when live URL,
+provider verifier, DNS, rollback, retrieved remote artifact, Run Record,
+detonation, live acceptance, and recording proof are all present. The public
+proof receipt renders the same redacted `completion_requires` checklist, so a
+launcher can see exactly which evidence keys must still be produced. The public
+deployment and GitHub intake contracts also expose those exact evidence keys
+beside the readable proof labels, letting `fusekit-hosted-verify` catch proof
+vocabulary drift before launch. The verifier also checks the public
+plain-language click path so the hosted flow cannot quietly fall back to
+terminal, download, or expert-only instructions. The friendly browser checklist
+also names recording proof explicitly, and protected action plus worker-claim receipts
+reuse that same evidence vocabulary, so a start click cannot understate the
+remaining recording or remote-artifact proof. The outside-in hosted verifier
+checks every friendly completion-proof label on the homepage, not just the
+embedded JSON contracts, and also checks the visible homepage text for all five
+trust-story labels: open core, narrow permissions, visible plan, redacted proof,
+and reversible setup. It also checks every visible reversible-setup step from the
+public contract, including rollback metadata, provider rollback actions, and
+stop/revoke/rollback/proof controls. The verifier also compares the full operator setup
+checklist for the selected hosted provider plus the Cloudflare CNAME
+label/proof text, and rejects visible provider-copy drift such as AWS pages
+showing Vercel-only setup steps. A redacted
+hosted readiness endpoint reports only configuration presence and shape errors,
+and keeps the homepage launch button disabled until the GitHub App id, slug, RSA
+private key, origin, state secret, worker secret, and worker dispatch URL are
+configured and valid.
+The same readiness contract now publishes redacted `blocking_checks` and
+deduplicated `next_actions`, and the homepage renders that launch-readiness
+summary so an operator can see what to fix without exposing private keys,
+worker secrets, or provider credentials.
+Direct GitHub intake routes also fail closed with the same redacted readiness
+object until those checks pass. The
+remaining slices are running the approved setup actions inside the hosted worker,
+operating the worker service in production, rollback/detonation execution, and
+production DNS/deployment.
+
+The repository includes a minimal WSGI entrypoint at `app.py`, a root
+`vercel.json` that routes all hosted paths to that entrypoint for Vercel, a
+`Procfile` that starts `gunicorn app:app` for AWS Python WSGI runtimes such as
+Elastic Beanstalk, and a minimal `requirements.txt` for the browser launcher
+runtime. The hosted deploy also pins Python 3.12 with `.python-version` and
+uses a wheel-backed `cryptography==42.0.8` requirement so hosted Python
+runtimes do not need native OpenSSL compilation for the public launcher. The
+hosted app also serves
+`/api/hosted/deployment`, a public deployment contract that lists the canonical
+origin, machine-readable trust story, WSGI entrypoint/routing files,
+GitHub callback URL, Cloudflare DNS record name, health/readiness URLs, the
+operator setup checklist for attaching `fusekit.snowmanai.org` to a supported
+hosted origin and Cloudflare, worker dispatch receiver setup/verification steps, a structured
+one-click launch contract proving the hosted path needs no terminal or download,
+production-required worker dispatch wiring, the machine-readable security header
+policy, public source-integrity review files for the hosted launcher, and
+required environment variable
+names without exposing secret values.
+`fusekit-hosted-verify --origin https://fusekit.snowmanai.org`
+performs the outside-in deployment check against public DNS propagation, the
+hosted homepage, `/healthz`, `/api/hosted/readiness`, and
+`/api/hosted/deployment`. When the deployment contract publishes a worker
+dispatch URL, the same command automatically verifies the worker receiver
+`/healthz` and `/readiness` too, including durable worker-dispatch idempotency
+mode, scope, and reservation-before-spawn proof for production.
+`--worker-dispatch-url` remains available for checking an
+explicit receiver URL before it is published in the hosted contract.
+The verifier reports Cloudflare/hosted-origin HTTP failures,
+readiness mismatches, public DNS failures, homepage trust drift, hosted
+runtime/open-core/DNS drift, deployment trust-story drift, homepage completion
+proof checklist drift, homepage reversible-setup drift, one-click launch
+contract drift, protected-control transport/browser-origin drift, embedded
+homepage contract drift, capability-vault boundary drift,
+hosted source-integrity drift,
+pre-install GitHub intake trust drift, and operator-setup contract drift
+as redacted JSON instead of claiming launch readiness. It also publishes
+top-level `blocking_checks` and deduplicated `next_actions` so an operator can
+see the remaining public setup work without searching every check row. Every
+public HTML/JSON payload it fetches is also
+checked with FuseKit's credential-text detector, and any failure is reported
+only as a redacted failure code. Successful public HTTP responses must also
+publish no-store, default-deny CSP, no-framing, no-referrer, nosniff, HSTS,
+disabled-permissions, and same-origin opener headers before the verifier marks
+them ready. It
+also recognizes Cloudflare Error 1000 (`DNS points to prohibited IP`) and
+reports the non-secret next action: attach `fusekit.snowmanai.org` to the
+hosted origin and route the Cloudflare `fusekit` CNAME to the exact
+provider-provided target.
+Hosted responses include no-store caching and browser security headers so the
+launcher behaves like a hardened control surface from first deploy. The worker
+dispatch receiver returns the same no-store, no-framing, no-referrer,
+nosniff, HSTS, and disabled-permissions headers on its JSON readiness and
+dispatch receipt endpoints.
+Hosted launch jobs, protected action receipts, backend worker requests, worker
+claim receipts, and worker proof receipts also publish the same non-secret
+approved-plan fingerprint. The fingerprint covers the selected app name,
+GitHub source URL, detected providers, required environment variable names,
+approved action ids, required artifact labels, provider gate labels, and worker
+guarantees, so provider/action/gate/artifact/source drift requires a fresh
+visible plan before execution.
+
+Production still needs a supported hosted origin connected to this repository
+or deployed from this checkout, an HTTPS worker dispatch service running
+`fusekit-hosted-worker-dispatch` with durable dispatch state,
+`FUSEKIT_HOSTED_WORKER_DISPATCH_URL` set in the hosted environment to that
+service, `fusekit.snowmanai.org` attached to the hosted origin, the Cloudflare
+`fusekit` subdomain routed to the exact provider-provided CNAME target, and
+these runtime environment variables set in the hosted environment:
+`FUSEKIT_HOSTED_ORIGIN`,
+`FUSEKIT_GITHUB_APP_ID`, `FUSEKIT_GITHUB_APP_SLUG`,
+`FUSEKIT_GITHUB_APP_PRIVATE_KEY`, `FUSEKIT_HOSTED_STATE_SECRET`, and
+`FUSEKIT_HOSTED_WORKER_SECRET`. A Vercel project must also expose system
+environment variables including `VERCEL_ENV`, `VERCEL_URL`,
+`VERCEL_GIT_PROVIDER`, `VERCEL_GIT_REPO_OWNER`, `VERCEL_GIT_REPO_SLUG`,
+`VERCEL_GIT_COMMIT_REF`, and `VERCEL_GIT_COMMIT_SHA`. An AWS deployment must
+set `FUSEKIT_HOSTED_DEPLOYMENT_PROVIDER=aws-elastic-beanstalk`,
+`FUSEKIT_HOSTED_DEPLOYMENT_ENV=production`,
+`FUSEKIT_HOSTED_DEPLOYMENT_URL`, `FUSEKIT_HOSTED_GIT_PROVIDER`,
+`FUSEKIT_HOSTED_GIT_REPO_OWNER`, `FUSEKIT_HOSTED_GIT_REPO_SLUG`,
+`FUSEKIT_HOSTED_GIT_COMMIT_REF`, and `FUSEKIT_HOSTED_GIT_COMMIT_SHA`. The
+hosted verifier rejects the deployment if those public source-provenance fields
+are missing or point at a different repository. Production one-click worker wakeup also needs
+`FUSEKIT_HOSTED_WORKER_DISPATCH_URL` pointed at an HTTPS worker dispatch
+service running `fusekit-hosted-worker-dispatch` with
+`FUSEKIT_HOSTED_WORKER_SECRET` and worker runtime environment configured. Set
+`FUSEKIT_HOSTED_WORKER_DISPATCH_STATE_DIR` or a persistent
+`FUSEKIT_HOSTED_WORKER_WORKSPACE` for durable duplicate-click protection. Verify
+that service with `/healthz` and `/readiness` before setting
+`FUSEKIT_HOSTED_WORKER_DISPATCH_URL`. As of the latest local check,
+`https://fusekit.snowmanai.org` has public DNS answers through Cloudflare but returns
+Cloudflare's "DNS points to prohibited IP" page instead of the FuseKit hosted
+app, so DNS/custom-domain attachment is not complete yet.
 
 ## Real Provider Acceptance Run
 
