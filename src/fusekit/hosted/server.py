@@ -786,25 +786,33 @@ class HostedSettings:
 
         managed_blockers = _managed_lane_blockers(self)
         byo_blockers = _byo_oci_lane_blockers(self)
+        lanes = {
+            MANAGED_FUSEKIT_RUN_LANE: {
+                "launchable": not managed_blockers,
+                "requires_payment": True,
+                "managed_worker_dispatch_allowed": not managed_blockers,
+                "blocking_checks": managed_blockers,
+                "next_actions": _hosted_readiness_next_actions((), tuple(managed_blockers)),
+            },
+            BYO_OCI_LANE: {
+                "launchable": not byo_blockers,
+                "requires_payment": False,
+                "managed_worker_dispatch_allowed": False,
+                "blocking_checks": byo_blockers,
+                "next_actions": _hosted_readiness_next_actions((), tuple(byo_blockers)),
+            },
+        }
+        launchable_lanes = [
+            lane_id
+            for lane_id in (MANAGED_FUSEKIT_RUN_LANE, BYO_OCI_LANE)
+            if lanes[lane_id]["launchable"] is True
+        ]
         return {
             "schema_version": HOSTED_LANE_READINESS_SCHEMA_VERSION,
             "default_lane": MANAGED_FUSEKIT_RUN_LANE,
-            "lanes": {
-                MANAGED_FUSEKIT_RUN_LANE: {
-                    "launchable": not managed_blockers,
-                    "requires_payment": True,
-                    "managed_worker_dispatch_allowed": not managed_blockers,
-                    "blocking_checks": managed_blockers,
-                    "next_actions": _hosted_readiness_next_actions((), tuple(managed_blockers)),
-                },
-                BYO_OCI_LANE: {
-                    "launchable": not byo_blockers,
-                    "requires_payment": False,
-                    "managed_worker_dispatch_allowed": False,
-                    "blocking_checks": byo_blockers,
-                    "next_actions": _hosted_readiness_next_actions((), tuple(byo_blockers)),
-                },
-            },
+            "recommended_lane": launchable_lanes[0] if launchable_lanes else "",
+            "launchable_lanes": launchable_lanes,
+            "lanes": lanes,
             "cost_policy": (
                 "Managed FuseKit runs are not launchable until server-side Stripe Checkout "
                 "is fully configured and each job has a paid receipt. BYO OCI remains the "
@@ -1592,12 +1600,15 @@ def _github_control_room_response(
         return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "invalid_state"})
     lane_readiness = _hosted_lane_readiness(settings, launch_lane)
     if lane_readiness.get("launchable") is not True:
+        readiness = settings.lane_readiness()
         return _response(
             start_response,
             HTTPStatus.CONFLICT,
             {
                 "error": "lane_not_launchable",
                 "lane": launch_lane,
+                "recommended_lane": readiness.get("recommended_lane", ""),
+                "launchable_lanes": readiness.get("launchable_lanes", []),
                 "blocking_checks": lane_readiness.get("blocking_checks", []),
                 "next_actions": lane_readiness.get("next_actions", []),
                 "secret_boundary": (

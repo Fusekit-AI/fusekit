@@ -523,6 +523,9 @@ def test_hosted_readiness_endpoint_reports_ready_when_configured() -> None:
     assert payload["required_source_provenance_env"] == list(HOSTED_SOURCE_PROVENANCE_ENV)
     assert payload["source_provenance"]["verified"] is True
     assert payload["source_provenance"]["actual"]["commit_sha"] == VERCEL_COMMIT_SHA
+    assert payload["lane_readiness"]["default_lane"] == MANAGED_FUSEKIT_RUN_LANE
+    assert payload["lane_readiness"]["recommended_lane"] == BYO_OCI_LANE
+    assert payload["lane_readiness"]["launchable_lanes"] == [BYO_OCI_LANE]
     lane_readiness = payload["lane_readiness"]["lanes"]
     assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["launchable"] is False
     assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["managed_worker_dispatch_allowed"] is False
@@ -593,6 +596,11 @@ def test_hosted_readiness_reports_paid_managed_lane_when_stripe_is_configured() 
     assert payload["payment"]["managed_runs_enabled"] is True
     assert payload["payment"]["secret_key_configured"] is True
     assert payload["payment"]["price_configured"] is True
+    assert payload["lane_readiness"]["recommended_lane"] == MANAGED_FUSEKIT_RUN_LANE
+    assert payload["lane_readiness"]["launchable_lanes"] == [
+        MANAGED_FUSEKIT_RUN_LANE,
+        BYO_OCI_LANE,
+    ]
     assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["launchable"] is True
     assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["managed_worker_dispatch_allowed"] is True
     assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["blocking_checks"] == []
@@ -1628,6 +1636,8 @@ def test_hosted_control_room_rejects_unlaunchable_managed_lane_before_github_wor
     assert status == "409 Conflict"
     assert payload["error"] == "lane_not_launchable"
     assert payload["lane"] == MANAGED_FUSEKIT_RUN_LANE
+    assert payload["recommended_lane"] == BYO_OCI_LANE
+    assert payload["launchable_lanes"] == [BYO_OCI_LANE]
     assert payload["blocking_checks"] == [
         "managed_runs_not_enabled",
         "stripe_secret_key_required_for_managed_runs",
