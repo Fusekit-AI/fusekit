@@ -23,7 +23,7 @@ from fusekit.hosted import (
     render_hosted_proof_receipt,
     verify_hosted_job_token,
 )
-from fusekit.hosted.lanes import MANAGED_FUSEKIT_RUN_LANE
+from fusekit.hosted.lanes import BYO_OCI_LANE, MANAGED_FUSEKIT_RUN_LANE
 from fusekit.hosted.launcher import build_hosted_launch_plan
 from fusekit.manifest import ServiceRequirement, SetupManifest
 
@@ -66,6 +66,7 @@ def test_hosted_launch_job_is_public_safe_and_trust_complete() -> None:
     assert payload["worker_contract"]["schema_version"] == "fusekit.hosted-worker-contract.v1"
     assert payload["launch_lane"] == MANAGED_FUSEKIT_RUN_LANE
     assert payload["worker_contract"]["lane"] == MANAGED_FUSEKIT_RUN_LANE
+    assert payload["lane_contract"]["id"] == MANAGED_FUSEKIT_RUN_LANE
     assert payload["payment"]["status"] == "not_required"
     assert payload["worker_contract"]["github_installation_id"] is None
     assert payload["worker_contract"]["plan_integrity"]["algorithm"] == "sha256"
@@ -104,6 +105,9 @@ def test_hosted_proof_receipt_is_redacted_and_not_prematurely_complete() -> None
         "live_acceptance_report",
         "recording",
     ]
+    assert receipt["launch_lane"] == MANAGED_FUSEKIT_RUN_LANE
+    assert receipt["lane_contract"]["id"] == MANAGED_FUSEKIT_RUN_LANE
+    assert receipt["lane_contract"]["requires_payment"] is True
     assert receipt["plan_integrity"] == job.worker_contract.plan_integrity()
     assert receipt["trust_evidence"]["visible_plan_fingerprint"] == (
         job.worker_contract.plan_fingerprint
@@ -149,6 +153,45 @@ def test_hosted_proof_receipt_is_redacted_and_not_prematurely_complete() -> None
     assert "Download proof JSON" in html
     assert "format=json" in html
     assert "Back to control room" in html
+    assert "ghs_" not in serialized
+    assert "PRIVATE KEY" not in serialized
+
+
+def test_hosted_byo_proof_receipt_keeps_user_owned_lane_boundary() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    receipt = hosted_proof_receipt(job)
+    serialized = json.dumps(receipt)
+
+    assert receipt["launch_lane"] == BYO_OCI_LANE
+    assert receipt["lane_contract"]["id"] == BYO_OCI_LANE
+    assert receipt["lane_contract"]["requires_payment"] is False
+    assert receipt["lane_contract"]["managed_worker_dispatch_allowed"] is False
+    assert (
+        receipt["lane_contract"]["user_owned_cost_boundary"]["spend_owner"]
+        == "user_oci_tenancy"
+    )
+    assert (
+        receipt["lane_contract"]["user_owned_cost_boundary"][
+            "fusekit_managed_infrastructure_spend"
+        ]
+        is False
+    )
+    assert (
+        receipt["lane_contract"]["security_contract"]["runner_architecture"]
+        == "amd_x86_64_only"
+    )
+    assert (
+        receipt["lane_contract"]["security_contract"]["hosted_worker_secret_exported"]
+        is False
+    )
+    assert "live_acceptance_report" in receipt["lane_contract"]["security_contract"][
+        "completion_claim_requires"
+    ]
     assert "ghs_" not in serialized
     assert "PRIVATE KEY" not in serialized
 
@@ -335,6 +378,8 @@ def test_hosted_worker_proof_submission_updates_partial_job_without_completion()
     assert updated.status == "proof_submitted"
     assert receipt["schema_version"] == "fusekit.hosted-worker-proof-receipt.v1"
     assert receipt["completion_ready"] is False
+    assert receipt["launch_lane"] == MANAGED_FUSEKIT_RUN_LANE
+    assert receipt["lane_contract"]["id"] == MANAGED_FUSEKIT_RUN_LANE
     assert ".fusekit/acceptance_report.json" in receipt["missing_artifacts"]
     assert steps["setup.execute"]["status"] == "running"
     assert steps["proof.collect"]["status"] == "waiting"

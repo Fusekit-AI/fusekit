@@ -984,6 +984,8 @@ def hosted_proof_receipt(job: HostedLaunchJob) -> dict[str, object]:
         "rollback": list(job.rollback),
         "detonation": list(job.detonation),
         "completion_requires": list(HOSTED_WORKER_PROOF_KEYS),
+        "launch_lane": job.launch_lane,
+        "lane_contract": hosted_launch_lane(job.launch_lane).to_dict(),
         "plan_integrity": job.worker_contract.plan_integrity(),
         "trust_evidence": {
             "open_core": "Hosted source and public contracts remain reviewable before launch.",
@@ -1196,6 +1198,8 @@ def hosted_worker_proof_receipt(
         "status": job.status,
         "completion_ready": completion_ready,
         "maintenance_ready": maintenance_ready,
+        "launch_lane": job.launch_lane,
+        "lane_contract": hosted_launch_lane(job.launch_lane).to_dict(),
         "plan_integrity": job.worker_contract.plan_integrity(),
         "completion_statement": (
             "Hosted completion proof is present."

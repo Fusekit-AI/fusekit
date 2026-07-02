@@ -40,6 +40,7 @@
   Lane readiness now publishes launchable lane ids and a recommended lane, so live hosted deployments can point users to BYO OCI while paid Managed FuseKit runs are still waiting on Stripe price configuration.
   Paid managed runs now also require a public `FUSEKIT_MANAGED_RUN_PRICE_LABEL` before the managed lane can launch, so the browser shows a human-readable price disclosure before Stripe Checkout without exposing Stripe price ids or secret keys.
   BYO OCI bootstrap receipts and public launch-lane deployment contracts now publish a structured user-owned cost boundary and BYO security contract, making clear that the user's OCI tenancy owns spend, FuseKit-managed worker dispatch is disabled, hosted secrets are not exported, AMD/x86_64 workers are required, and completion still requires the full redacted proof set.
+  Hosted proof receipts and worker-proof receipts now carry the same redacted lane contract, so saved proof keeps the BYO/managed cost, worker-owner, and secret-boundary story attached after job start and completion.
   The outside-in hosted verifier now validates lane readiness, including the recommended lane and launchable lane list, so public deployments fail verification if the BYO recommendation or paid-lane blocker state drifts.
 - [x] Security invariants are enforced by tests.
 - [x] CLI defaults to real-provider execution; incomplete local rehearsals require explicit opt-in.
