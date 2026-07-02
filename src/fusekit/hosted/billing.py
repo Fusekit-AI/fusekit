@@ -14,6 +14,12 @@ from fusekit.hosted.lanes import MANAGED_FUSEKIT_RUN_LANE
 HOSTED_PAYMENT_SCHEMA_VERSION = "fusekit.hosted-payment.v1"
 STRIPE_CHECKOUT_PROVIDER = "stripe-checkout"
 STRIPE_API_BASE = "https://api.stripe.com"
+STRIPE_CHECKOUT_METADATA_KEYS = (
+    "job_id",
+    "lane",
+    "github_source_hash",
+    "plan_fingerprint",
+)
 
 
 @dataclass(frozen=True)
@@ -37,6 +43,15 @@ class HostedPaymentConfig:
             "price_configured": bool(self.stripe_price_id),
             "required_for_lanes": [MANAGED_FUSEKIT_RUN_LANE],
             "mode": "payment",
+            "cost_controls": {
+                "max_unverified_managed_spend_cents": 0,
+                "dispatch_requires_paid_checkout_session": True,
+                "reuse_across_jobs_allowed": False,
+                "session_binding": [
+                    "client_reference_id",
+                    *STRIPE_CHECKOUT_METADATA_KEYS,
+                ],
+            },
             "secret_boundary": (
                 "Stripe secret keys stay server-side. FuseKit never collects or renders card "
                 "numbers, CVC, billing address fields, payment method ids, or Stripe client "
@@ -122,7 +137,8 @@ def stripe_checkout_session_receipt(payload: dict[str, object]) -> dict[str, obj
         "status": _public_status(payload.get("status")),
         "payment_status": _public_status(payload.get("payment_status")),
         "mode": _public_status(payload.get("mode")) or "payment",
-        "client_reference_id": _public_status(payload.get("client_reference_id")),
+        "client_reference_id": _public_identifier(payload.get("client_reference_id")),
+        "metadata": _public_metadata(payload.get("metadata")),
         "amount_total": _public_int(payload.get("amount_total")),
         "currency": _public_status(payload.get("currency")),
         "paid": payload.get("payment_status") == "paid",
@@ -143,6 +159,11 @@ def payment_required_receipt(*, lane: str) -> dict[str, object]:
         "lane": lane,
         "status": "payment_required",
         "paid": False,
+        "cost_controls": {
+            "max_unverified_managed_spend_cents": 0,
+            "dispatch_requires_paid_checkout_session": True,
+            "reuse_across_jobs_allowed": False,
+        },
         "secret_boundary": (
             "Managed worker dispatch is blocked until server-side payment authorization "
             "is recorded. Payment method details stay with Stripe Checkout."
@@ -225,6 +246,30 @@ def _public_status(value: object) -> str:
         return ""
     cleaned = value.strip().lower()
     if not cleaned or len(cleaned) > 80:
+        return ""
+    if not all(ch.isalnum() or ch in {"_", "-", ".", ":"} for ch in cleaned):
+        return ""
+    return cleaned
+
+
+def _public_metadata(value: object) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, str] = {}
+    for key in STRIPE_CHECKOUT_METADATA_KEYS:
+        metadata_value = value.get(key)
+        if isinstance(metadata_value, str):
+            public = _public_identifier(metadata_value)
+            if public:
+                result[key] = public
+    return result
+
+
+def _public_identifier(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    cleaned = value.strip()
+    if not cleaned or len(cleaned) > 160:
         return ""
     if not all(ch.isalnum() or ch in {"_", "-", ".", ":"} for ch in cleaned):
         return ""

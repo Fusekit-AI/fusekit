@@ -24,6 +24,7 @@ class HostedLaunchLane:
     summary: str
     gates: tuple[str, ...]
     proof: tuple[str, ...]
+    cost_controls: tuple[str, ...]
 
     def to_dict(self) -> dict[str, object]:
         """Serialize browser-safe lane metadata."""
@@ -39,6 +40,7 @@ class HostedLaunchLane:
             "summary": self.summary,
             "gates": list(self.gates),
             "proof": list(self.proof),
+            "cost_controls": list(self.cost_controls),
             "secret_boundary": (
                 "Lane contracts expose ownership, gates, and proof labels only. They never "
                 "include cloud credentials, payment method details, provider tokens, or vault "
@@ -88,6 +90,12 @@ def hosted_launch_lanes() -> tuple[HostedLaunchLane, ...]:
                 "Managed worker dispatch receipt",
                 "Run Record, remote artifacts, rollback metadata, and detonation receipt",
             ),
+            cost_controls=(
+                "Zero unverified FuseKit-managed infrastructure spend is allowed.",
+                "Worker dispatch requires a paid Stripe Checkout Session.",
+                "Payment receipts must bind to the same job id, lane, and plan fingerprint.",
+                "Checkout sessions cannot be reused across launches.",
+            ),
         ),
         HostedLaunchLane(
             lane_id=BYO_OCI_LANE,
@@ -110,6 +118,12 @@ def hosted_launch_lanes() -> tuple[HostedLaunchLane, ...]:
                 "OCI Cloud Shell bootstrap receipt",
                 "User-tenancy worker request",
                 "Run Record, remote artifacts, rollback metadata, and detonation receipt",
+            ),
+            cost_controls=(
+                "FuseKit-managed worker dispatch is disabled.",
+                "Compute spend stays in the user's Oracle Cloud tenancy.",
+                "Disposable workers must use AMD/x86_64 shapes; ARM images are not allowed.",
+                "Human-owned Oracle billing and quota gates must not be bypassed.",
             ),
         ),
     )

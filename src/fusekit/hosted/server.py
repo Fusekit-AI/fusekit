@@ -1809,6 +1809,12 @@ def _hosted_payment_return_response(
             HTTPStatus.BAD_GATEWAY,
             {"error": "payment_verification_failed"},
         )
+    if not _payment_receipt_matches_job(receipt, job):
+        return _response(
+            start_response,
+            HTTPStatus.FORBIDDEN,
+            {"error": "payment_binding_mismatch"},
+        )
     if receipt.get("paid") is not True:
         return _response(start_response, HTTPStatus.PAYMENT_REQUIRED, {"error": "payment_not_paid"})
     updated = with_hosted_job_payment_receipt(job, receipt)
@@ -2339,6 +2345,23 @@ def _managed_payment_required(settings: HostedSettings, job: HostedLaunchJob) ->
         and job.launch_lane == MANAGED_FUSEKIT_RUN_LANE
         and job.payment_status != "paid"
     )
+
+
+def _payment_receipt_matches_job(receipt: dict[str, object], job: HostedLaunchJob) -> bool:
+    if receipt.get("client_reference_id") != job.job_id:
+        return False
+    metadata = receipt.get("metadata")
+    if not isinstance(metadata, dict):
+        return False
+    expected = {
+        "job_id": job.job_id,
+        "lane": job.launch_lane,
+        "plan_fingerprint": job.worker_contract.plan_fingerprint,
+    }
+    for key, expected_value in expected.items():
+        if metadata.get(key) != expected_value:
+            return False
+    return True
 
 
 def _dispatch_hosted_worker(

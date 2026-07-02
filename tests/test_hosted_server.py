@@ -593,6 +593,31 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     assert "detonation receipt status" in boundary["allowed_public_material"]
     assert payload["one_click_launch"]["public_url"] == "https://fusekit.snowmanai.org"
     assert payload["one_click_launch"]["start_control"] == "Start hosted launch"
+    lanes = payload["launch_lanes"]["lanes"]
+    managed_lane = next(lane for lane in lanes if lane["id"] == MANAGED_FUSEKIT_RUN_LANE)
+    byo_lane = next(lane for lane in lanes if lane["id"] == BYO_OCI_LANE)
+    assert "Zero unverified FuseKit-managed infrastructure spend is allowed." in managed_lane[
+        "cost_controls"
+    ]
+    assert "Checkout sessions cannot be reused across launches." in managed_lane[
+        "cost_controls"
+    ]
+    assert "FuseKit-managed worker dispatch is disabled." in byo_lane["cost_controls"]
+    assert "Disposable workers must use AMD/x86_64 shapes; ARM images are not allowed." in byo_lane[
+        "cost_controls"
+    ]
+    assert payload["payment"]["cost_controls"] == {
+        "max_unverified_managed_spend_cents": 0,
+        "dispatch_requires_paid_checkout_session": True,
+        "reuse_across_jobs_allowed": False,
+        "session_binding": [
+            "client_reference_id",
+            "job_id",
+            "lane",
+            "github_source_hash",
+            "plan_fingerprint",
+        ],
+    }
     assert payload["one_click_launch"]["terminal_required"] is False
     assert payload["one_click_launch"]["download_required"] is False
     assert payload["one_click_launch"]["intake"] == "github-app"
@@ -1488,9 +1513,10 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
                 "status": "open",
                 "payment_status": "unpaid",
                 "mode": "payment",
-                "client_reference_id": "hosted-payment",
+                "client_reference_id": "",
                 "amount_total": 4900,
                 "currency": "usd",
+                "metadata": {},
             },
             {
                 "id": "cs_test_123",
@@ -1498,9 +1524,28 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
                 "status": "complete",
                 "payment_status": "paid",
                 "mode": "payment",
-                "client_reference_id": "hosted-payment",
+                "client_reference_id": "hosted-other-job",
                 "amount_total": 4900,
                 "currency": "usd",
+                "metadata": {
+                    "job_id": "hosted-other-job",
+                    "lane": MANAGED_FUSEKIT_RUN_LANE,
+                    "plan_fingerprint": (
+                        "sha256:"
+                        "0000000000000000000000000000000000000000000000000000000000000000"
+                    ),
+                },
+            },
+            {
+                "id": "cs_test_123",
+                "object": "checkout.session",
+                "status": "complete",
+                "payment_status": "paid",
+                "mode": "payment",
+                "client_reference_id": "",
+                "amount_total": 4900,
+                "currency": "usd",
+                "metadata": {},
             },
         ]
     )
@@ -1531,6 +1576,21 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
     )
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    plan_fingerprint = settings.hosted_jobs[job_id].worker_contract.plan_fingerprint
+    stripe_opener.payloads[0]["client_reference_id"] = job_id
+    stripe_opener.payloads[0]["metadata"] = {
+        "job_id": job_id,
+        "lane": MANAGED_FUSEKIT_RUN_LANE,
+        "github_source_hash": "sha256:test",
+        "plan_fingerprint": plan_fingerprint,
+    }
+    stripe_opener.payloads[2]["client_reference_id"] = job_id
+    stripe_opener.payloads[2]["metadata"] = {
+        "job_id": job_id,
+        "lane": MANAGED_FUSEKIT_RUN_LANE,
+        "github_source_hash": "sha256:test",
+        "plan_fingerprint": plan_fingerprint,
+    }
     job_token = _job_token(text)
     checkout_control = _control_for_payment_checkout(text)
     start_control = create_hosted_state_token(
@@ -1571,8 +1631,27 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
     )
     assert stripe_opener.bodies[0]["mode"] == ["payment"]
     assert stripe_opener.bodies[0]["line_items[0][price]"] == ["price_managed_run"]
+    assert stripe_opener.bodies[0]["metadata[job_id]"] == [job_id]
+    assert stripe_opener.bodies[0]["metadata[lane]"] == [MANAGED_FUSEKIT_RUN_LANE]
+    assert stripe_opener.bodies[0]["metadata[plan_fingerprint]"] == [plan_fingerprint]
     assert "sk_test" not in json.dumps(checkout)
 
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/payments/stripe-return",
+        query_string=f"job={checkout_job_token}&session_id=cs_test_123",
+        headers={"Accept": "text/html"},
+        settings=settings,
+    )
+    assert status == "403 Forbidden"
+    assert json.loads(body.decode("utf-8")) == {"error": "payment_binding_mismatch"}
+
+    stripe_opener.payloads[0]["client_reference_id"] = job_id
+    stripe_opener.payloads[0]["metadata"] = {
+        "job_id": job_id,
+        "lane": MANAGED_FUSEKIT_RUN_LANE,
+        "github_source_hash": "sha256:test",
+        "plan_fingerprint": plan_fingerprint,
+    }
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/payments/stripe-return",
         query_string=f"job={checkout_job_token}&session_id=cs_test_123",

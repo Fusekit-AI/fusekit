@@ -2020,6 +2020,7 @@ def _public_payment_receipt(receipt: dict[str, object]) -> dict[str, object]:
         "payment_status",
         "mode",
         "client_reference_id",
+        "metadata",
         "amount_total",
         "currency",
         "paid",
@@ -2034,6 +2035,8 @@ def _public_payment_receipt(receipt: dict[str, object]) -> dict[str, object]:
             result[key] = value
         elif isinstance(value, bool) or isinstance(value, int) or value is None:
             result[key] = value
+        elif key == "metadata" and isinstance(value, dict):
+            result[key] = _public_payment_metadata(value)
     return result
 
 
@@ -2059,6 +2062,19 @@ def _payment_step_proof(status: str) -> str:
         "Stripe Checkout session is pending; FuseKit-managed worker dispatch remains blocked "
         "until payment authorization is confirmed server-side."
     )
+
+
+def _public_payment_metadata(metadata: dict[str, object]) -> dict[str, str]:
+    allowed = {"job_id", "lane", "github_source_hash", "plan_fingerprint"}
+    result: dict[str, str] = {}
+    for key in allowed:
+        value = metadata.get(key)
+        if not isinstance(value, str):
+            continue
+        if contains_durable_secret_text(value) or len(value) > 256:
+            raise FuseKitError("Hosted launch payment metadata contains secret-looking text.")
+        result[key] = value
+    return result
 
 
 def _plan_fingerprint_from_payload(payload: dict[str, Any]) -> str:
