@@ -473,6 +473,51 @@ def test_verify_hosted_deployment_rejects_managed_lane_without_price_label() -> 
     ]
 
 
+def test_verify_hosted_deployment_allows_staged_managed_price_configuration() -> None:
+    readiness = _readiness_contract()
+    payment = readiness["payment"]
+    assert isinstance(payment, dict)
+    payment["secret_key_configured"] = True
+    payment["price_configured"] = True
+    payment["price_label_configured"] = True
+    payment["price_label"] = "Test mode: $1.00 FuseKit managed run validation"
+    opener = SequenceOpener(
+        [
+            _home_html(readiness=readiness),
+            {"ok": True},
+            readiness,
+            _deployment_contract(),
+            _github_intake_contract(),
+            {"ok": True},
+            {
+                "schema_version": "fusekit.hosted-worker-dispatch-readiness.v1",
+                "ready": True,
+                "production_ready": True,
+                "idempotency": {
+                    "mode": "dispatch-state-dir",
+                    "durable": True,
+                    "scope": "worker deployment",
+                    "proof": (
+                        "Duplicate job/action dispatches are reserved through a configured "
+                        "non-secret state directory before worker spawn."
+                    ),
+                },
+            },
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is True
+    assert checks["hosted.home"]["status"] == "ok"
+    assert checks["hosted.readiness"]["status"] == "ok"
+
+
 def test_verify_hosted_deployment_rejects_non_origin_or_secret_url() -> None:
     with pytest.raises(FuseKitError, match="hosted_origin_must_be_https_origin"):
         verify_hosted_deployment(origin="https://user:pass@fusekit.snowmanai.org")

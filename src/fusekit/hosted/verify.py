@@ -1276,7 +1276,10 @@ def _payment_readiness_failures(value: object, lane_readiness: object) -> list[s
         if not _valid_public_price_label(label):
             failures.append("payment_readiness_price_label_invalid")
     elif label not in ("", None):
-        failures.append("payment_readiness_blocked_lane_publishes_price_label")
+        if label_configured is not True:
+            failures.append("payment_readiness_blocked_lane_price_label_flag_mismatch")
+        if not _valid_public_price_label(label):
+            failures.append("payment_readiness_price_label_invalid")
     return failures
 
 
