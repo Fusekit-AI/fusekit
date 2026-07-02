@@ -438,9 +438,12 @@ def _port_from_ss_line(line: str) -> int | None:
     fields = line.split()
     if len(fields) < 5:
         return None
+    protocol = fields[0].lower()
     local = fields[4]
     host, port = _parse_ss_local_address(local)
     if port is None or not _is_externally_reachable_bind(host):
+        return None
+    if protocol == "udp" and port in {68, 546}:
         return None
     return port if 0 < port <= 65535 else None
 
@@ -768,7 +771,11 @@ def _services_check(evidence: Mapping[str, object]) -> dict[str, object]:
 def _public_ports_check(evidence: Mapping[str, object]) -> dict[str, object]:
     ports = _port_list(evidence.get("public_ports"))
     ssh_ingress = _public_str(evidence.get("ssh_ingress")).lower()
-    unexpected = [port for port in ports if port not in OCI_HOST_POSTURE_ALLOWED_PUBLIC_PORTS]
+    restricted_ssh = ssh_ingress in {"restricted", "operator-only", "vpn-only"}
+    allowed_ports = set(OCI_HOST_POSTURE_ALLOWED_PUBLIC_PORTS)
+    if restricted_ssh:
+        allowed_ports.add(22)
+    unexpected = [port for port in ports if port not in allowed_ports]
     failures = []
     if unexpected:
         failures.append("oci_host_public_ports_must_be_80_443_only")

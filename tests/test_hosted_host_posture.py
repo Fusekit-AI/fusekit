@@ -274,6 +274,19 @@ def test_oci_host_posture_blocks_arm_public_ssh_and_weak_systemd() -> None:
     ]
 
 
+def test_oci_host_posture_allows_restricted_operator_ssh() -> None:
+    evidence = _clean_evidence()
+    evidence["public_ports"] = [22, 80, 443]
+    evidence["ssh_ingress"] = "operator-only"
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is True
+    public_ports = _check(report, "host.public_ports")
+    assert public_ports["public_ports"] == [22, 80, 443]
+    assert public_ports["ssh_ingress"] == "operator-only"
+
+
 def test_oci_host_posture_blocks_missing_extended_systemd_sandboxing() -> None:
     evidence = _clean_evidence()
     systemd_units = evidence["systemd_units"]
@@ -951,6 +964,8 @@ def test_oci_host_posture_collector_counts_non_loopback_listeners(
                 "\n".join(
                     [
                         "tcp LISTEN 0 511 127.0.0.1:8080 0.0.0.0:*",
+                        "udp UNCONN 0 0 10.0.0.12:68 0.0.0.0:*",
+                        "udp UNCONN 0 0 [fe80::1%ens3]:546 [::]:*",
                         "tcp LISTEN 0 511 10.0.0.12:8443 0.0.0.0:*",
                     ]
                 ),
