@@ -1268,9 +1268,16 @@ def _payment_readiness_failures(value: object, lane_readiness: object) -> list[s
     label_configured = value.get("price_label_configured")
     label = value.get("price_label")
     if enabled is True:
-        for key in ("managed_runs_enabled", "secret_key_configured", "price_configured"):
+        for key in (
+            "managed_runs_enabled",
+            "secret_key_configured",
+            "live_mode_configured",
+            "price_configured",
+        ):
             if value.get(key) is not True:
                 failures.append(f"payment_readiness_{key}_false_when_enabled")
+        if value.get("account_mode") != "live":
+            failures.append("payment_readiness_account_mode_not_live")
         if label_configured is not True:
             failures.append("payment_readiness_price_label_not_configured")
         if not _valid_public_price_label(label):

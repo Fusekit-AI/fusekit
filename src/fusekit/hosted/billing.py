@@ -32,17 +32,24 @@ class HostedPaymentConfig:
     stripe_price_id: str = ""
     price_label: str = ""
     public_origin: str = ""
+    test_mode_allowed: bool = False
     opener: UrlOpener | None = None
 
     def public_dict(self) -> dict[str, object]:
         """Return redacted hosted payment readiness."""
 
         secret_key_configured = self.stripe_secret_key.startswith("sk_")
+        account_mode = _stripe_account_mode(self.stripe_secret_key)
+        live_mode_configured = account_mode == "live"
+        live_or_allowed_test_mode = live_mode_configured or (
+            account_mode == "test" and self.test_mode_allowed
+        )
         price_configured = self.stripe_price_id.startswith("price_")
         price_label_configured = _valid_price_label(self.price_label)
         ready = (
             self.enabled
             and secret_key_configured
+            and live_or_allowed_test_mode
             and price_configured
             and price_label_configured
         )
@@ -52,6 +59,9 @@ class HostedPaymentConfig:
             "enabled": ready,
             "managed_runs_enabled": self.enabled,
             "secret_key_configured": secret_key_configured,
+            "account_mode": account_mode,
+            "live_mode_configured": live_mode_configured,
+            "test_mode_allowed": self.test_mode_allowed,
             "price_configured": price_configured,
             "price_label_configured": price_label_configured,
             "price_label": self.price_label if price_label_configured else "",
@@ -223,6 +233,9 @@ def _require_stripe_config(config: HostedPaymentConfig) -> None:
         raise FuseKitError("Managed run billing is not enabled.")
     if not config.stripe_secret_key or not config.stripe_secret_key.startswith("sk_"):
         raise FuseKitError("Stripe secret key is not configured.")
+    test_key_allowed = config.test_mode_allowed and config.stripe_secret_key.startswith("sk_test_")
+    if not config.stripe_secret_key.startswith("sk_live_") and not test_key_allowed:
+        raise FuseKitError("Managed run billing requires a live Stripe secret key.")
     if not config.stripe_price_id or not config.stripe_price_id.startswith("price_"):
         raise FuseKitError("Stripe price id is not configured.")
     if not _valid_price_label(config.price_label):
@@ -266,6 +279,16 @@ def _valid_price_label(value: str) -> bool:
     if "price_" in value or "sk_" in value or "pk_" in value:
         return False
     return all(ch.isprintable() for ch in value) and any(ch.isdigit() for ch in value)
+
+
+def _stripe_account_mode(value: str) -> str:
+    if value.startswith("sk_live_"):
+        return "live"
+    if value.startswith("sk_test_"):
+        return "test"
+    if value.startswith("sk_"):
+        return "unknown"
+    return "unconfigured"
 
 
 def _public_stripe_id(value: object) -> str:

@@ -446,6 +446,9 @@ def test_verify_hosted_deployment_rejects_managed_lane_without_price_label() -> 
     payment["enabled"] = True
     payment["managed_runs_enabled"] = True
     payment["secret_key_configured"] = True
+    payment["account_mode"] = "live"
+    payment["live_mode_configured"] = True
+    payment["test_mode_allowed"] = False
     payment["price_configured"] = True
     payment["price_label_configured"] = False
     payment["price_label"] = ""
@@ -469,6 +472,58 @@ def test_verify_hosted_deployment_rejects_managed_lane_without_price_label() -> 
     assert report["ready"] is False
     assert checks["hosted.readiness"]["status"] == "failed"
     assert "payment_readiness_price_label_not_configured" in checks["hosted.readiness"][
+        "failures"
+    ]
+
+
+def test_verify_hosted_deployment_rejects_launchable_managed_lane_in_test_mode() -> None:
+    readiness = _readiness_contract()
+    lane_readiness = readiness["lane_readiness"]
+    payment = readiness["payment"]
+    assert isinstance(lane_readiness, dict)
+    assert isinstance(payment, dict)
+    lane_readiness["recommended_lane"] = MANAGED_FUSEKIT_RUN_LANE
+    lane_readiness["launchable_lanes"] = [MANAGED_FUSEKIT_RUN_LANE, BYO_OCI_LANE]
+    lanes = lane_readiness["lanes"]
+    assert isinstance(lanes, dict)
+    managed = lanes[MANAGED_FUSEKIT_RUN_LANE]
+    assert isinstance(managed, dict)
+    managed["launchable"] = True
+    managed["managed_worker_dispatch_allowed"] = True
+    managed["blocking_checks"] = []
+    managed["next_actions"] = []
+    payment["enabled"] = True
+    payment["managed_runs_enabled"] = True
+    payment["secret_key_configured"] = True
+    payment["account_mode"] = "test"
+    payment["live_mode_configured"] = False
+    payment["test_mode_allowed"] = False
+    payment["price_configured"] = True
+    payment["price_label_configured"] = True
+    payment["price_label"] = "Test mode: $1.00 FuseKit managed run validation"
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            readiness,
+            _deployment_contract(),
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["hosted.readiness"]["status"] == "failed"
+    assert "payment_readiness_live_mode_configured_false_when_enabled" in checks[
+        "hosted.readiness"
+    ]["failures"]
+    assert "payment_readiness_account_mode_not_live" in checks["hosted.readiness"][
         "failures"
     ]
 
@@ -1733,6 +1788,9 @@ def _payment_contract() -> dict[str, object]:
         "enabled": False,
         "managed_runs_enabled": False,
         "secret_key_configured": True,
+        "account_mode": "test",
+        "live_mode_configured": False,
+        "test_mode_allowed": False,
         "price_configured": False,
         "price_label_configured": False,
         "price_label": "",

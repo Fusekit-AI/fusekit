@@ -490,6 +490,9 @@ HOSTED_READINESS_NEXT_ACTIONS: dict[str, str] = {
     "stripe_secret_key_required_for_managed_runs": (
         "Set FUSEKIT_STRIPE_SECRET_KEY before enabling managed paid runs."
     ),
+    "stripe_live_secret_key_required_for_managed_runs": (
+        "Use a live-mode Stripe secret key before enabling public managed paid runs."
+    ),
     "stripe_price_id_required_for_managed_runs": (
         "Set FUSEKIT_STRIPE_PRICE_ID before enabling managed paid runs."
     ),
@@ -539,6 +542,7 @@ class HostedSettings:
     stripe_secret_key: str = ""
     stripe_price_id: str = ""
     managed_run_price_label: str = ""
+    stripe_test_mode_allowed: bool = False
     hosted_jobs: MutableMapping[str, HostedLaunchJob] = field(default_factory=dict)
 
     @classmethod
@@ -572,6 +576,7 @@ class HostedSettings:
             stripe_secret_key=os.environ.get("FUSEKIT_STRIPE_SECRET_KEY", ""),
             stripe_price_id=os.environ.get("FUSEKIT_STRIPE_PRICE_ID", ""),
             managed_run_price_label=os.environ.get("FUSEKIT_MANAGED_RUN_PRICE_LABEL", ""),
+            stripe_test_mode_allowed=_env_flag("FUSEKIT_STRIPE_TEST_MODE_ALLOWED"),
         )
 
     def github_config(self) -> GitHubAppConfig:
@@ -592,6 +597,7 @@ class HostedSettings:
             stripe_price_id=self.stripe_price_id,
             price_label=self.managed_run_price_label,
             public_origin=_public_origin_label(self.public_origin),
+            test_mode_allowed=self.stripe_test_mode_allowed,
             opener=self.stripe_opener,
         )
 
@@ -2399,6 +2405,16 @@ def _hosted_config_errors(settings: HostedSettings) -> tuple[str, ...]:
         errors.append("hosted_worker_secret_too_short")
     if settings.managed_runs_enabled and not settings.stripe_secret_key.startswith("sk_"):
         errors.append("stripe_secret_key_required_for_managed_runs")
+    if (
+        settings.managed_runs_enabled
+        and settings.stripe_secret_key.startswith("sk_")
+        and not settings.payment_config().public_dict().get("live_mode_configured")
+        and not (
+            settings.stripe_test_mode_allowed
+            and settings.payment_config().public_dict().get("account_mode") == "test"
+        )
+    ):
+        errors.append("stripe_live_secret_key_required_for_managed_runs")
     if settings.managed_runs_enabled and not settings.stripe_price_id.startswith("price_"):
         errors.append("stripe_price_id_required_for_managed_runs")
     if settings.managed_runs_enabled and not settings.payment_config().public_dict().get(
@@ -2416,6 +2432,14 @@ def _managed_lane_blockers(settings: HostedSettings) -> list[str]:
         blockers.append("managed_runs_not_enabled")
     if not settings.stripe_secret_key.startswith("sk_"):
         blockers.append("stripe_secret_key_required_for_managed_runs")
+    elif (
+        settings.payment_config().public_dict().get("live_mode_configured") is not True
+        and not (
+            settings.stripe_test_mode_allowed
+            and settings.payment_config().public_dict().get("account_mode") == "test"
+        )
+    ):
+        blockers.append("stripe_live_secret_key_required_for_managed_runs")
     if not settings.stripe_price_id.startswith("price_"):
         blockers.append("stripe_price_id_required_for_managed_runs")
     if not settings.payment_config().public_dict().get("price_label_configured"):

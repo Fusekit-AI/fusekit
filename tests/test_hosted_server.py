@@ -218,7 +218,7 @@ def _settings_with_github(opener: SequenceOpener) -> HostedSettings:
         github_opener=opener,
         worker_dispatch_opener=SequenceOpener([{} for _ in range(8)]),
         managed_runs_enabled=True,
-        stripe_secret_key="sk_test_redacted",
+        stripe_secret_key="sk_live_redacted",
         stripe_price_id="price_managed_run",
         managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
@@ -583,7 +583,7 @@ def test_hosted_readiness_reports_paid_managed_lane_when_stripe_is_configured() 
         worker_secret=WORKER_SECRET,
         worker_dispatch_url="https://worker.snowmanai.org/dispatch",
         managed_runs_enabled=True,
-        stripe_secret_key="sk_test_redacted",
+        stripe_secret_key="sk_live_redacted",
         stripe_price_id="price_managed_run",
         managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
@@ -599,6 +599,9 @@ def test_hosted_readiness_reports_paid_managed_lane_when_stripe_is_configured() 
     assert payload["payment"]["enabled"] is True
     assert payload["payment"]["managed_runs_enabled"] is True
     assert payload["payment"]["secret_key_configured"] is True
+    assert payload["payment"]["account_mode"] == "live"
+    assert payload["payment"]["live_mode_configured"] is True
+    assert payload["payment"]["test_mode_allowed"] is False
     assert payload["payment"]["price_configured"] is True
     assert payload["payment"]["price_label_configured"] is True
     assert payload["payment"]["price_label"] == MANAGED_PRICE_LABEL
@@ -611,8 +614,73 @@ def test_hosted_readiness_reports_paid_managed_lane_when_stripe_is_configured() 
     assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["managed_worker_dispatch_allowed"] is True
     assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["blocking_checks"] == []
     assert lane_readiness[BYO_OCI_LANE]["launchable"] is True
+    assert "sk_live" not in serialized
+    assert "price_managed_run" not in serialized
+
+
+def test_hosted_readiness_rejects_test_mode_stripe_for_public_managed_lane() -> None:
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=_private_key_pem(),
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        managed_runs_enabled=True,
+        stripe_secret_key="sk_test_redacted",
+        stripe_price_id="price_managed_run",
+        managed_run_price_label=MANAGED_PRICE_LABEL,
+        **_vercel_provenance_kwargs(),
+    )
+
+    status, _headers, body = _call("/api/hosted/readiness", settings=settings)
+    payload = json.loads(body.decode("utf-8"))
+    serialized = json.dumps(payload)
+    managed = payload["lane_readiness"]["lanes"][MANAGED_FUSEKIT_RUN_LANE]
+
+    assert status == "200 OK"
+    assert payload["ready"] is False
+    assert payload["payment"]["enabled"] is False
+    assert payload["payment"]["managed_runs_enabled"] is True
+    assert payload["payment"]["secret_key_configured"] is True
+    assert payload["payment"]["account_mode"] == "test"
+    assert payload["payment"]["live_mode_configured"] is False
+    assert payload["payment"]["test_mode_allowed"] is False
+    assert managed["launchable"] is False
+    assert "stripe_live_secret_key_required_for_managed_runs" in managed["blocking_checks"]
     assert "sk_test" not in serialized
     assert "price_managed_run" not in serialized
+
+
+def test_hosted_readiness_test_mode_override_rejects_unknown_stripe_key_shape() -> None:
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=_private_key_pem(),
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        managed_runs_enabled=True,
+        stripe_secret_key="sk_redacted_unknown",
+        stripe_price_id="price_managed_run",
+        managed_run_price_label=MANAGED_PRICE_LABEL,
+        stripe_test_mode_allowed=True,
+        **_vercel_provenance_kwargs(),
+    )
+
+    status, _headers, body = _call("/api/hosted/readiness", settings=settings)
+    payload = json.loads(body.decode("utf-8"))
+    managed = payload["lane_readiness"]["lanes"][MANAGED_FUSEKIT_RUN_LANE]
+
+    assert status == "200 OK"
+    assert payload["ready"] is False
+    assert payload["payment"]["enabled"] is False
+    assert payload["payment"]["account_mode"] == "unknown"
+    assert payload["payment"]["test_mode_allowed"] is True
+    assert managed["launchable"] is False
+    assert "stripe_live_secret_key_required_for_managed_runs" in managed["blocking_checks"]
 
 
 def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets() -> None:
@@ -1750,7 +1818,7 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
         worker_dispatch_opener=dispatch_opener,
         stripe_opener=stripe_opener,
         managed_runs_enabled=True,
-        stripe_secret_key="sk_test_redacted",
+        stripe_secret_key="sk_live_redacted",
         stripe_price_id="price_managed_run",
         managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
@@ -1826,7 +1894,7 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
     assert stripe_opener.bodies[0]["metadata[job_id]"] == [job_id]
     assert stripe_opener.bodies[0]["metadata[lane]"] == [MANAGED_FUSEKIT_RUN_LANE]
     assert stripe_opener.bodies[0]["metadata[plan_fingerprint]"] == [plan_fingerprint]
-    assert "sk_test" not in json.dumps(checkout)
+    assert "sk_live" not in json.dumps(checkout)
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/payments/stripe-return",
@@ -1874,7 +1942,7 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
     assert started["payment"]["receipt"]["price_label"] == MANAGED_PRICE_LABEL
     assert started["worker_dispatch"]["dispatched"] is True
     assert len(dispatch_opener.requests) == 1
-    assert "sk_test" not in serialized
+    assert "sk_live" not in serialized
     assert "PRIVATE KEY" not in serialized
 
 
@@ -1909,7 +1977,7 @@ def test_hosted_byo_oci_lane_starts_without_managed_worker_dispatch() -> None:
         github_opener=github_opener,
         worker_dispatch_opener=dispatch_opener,
         managed_runs_enabled=True,
-        stripe_secret_key="sk_test_redacted",
+        stripe_secret_key="sk_live_redacted",
         stripe_price_id="price_managed_run",
         managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
@@ -2411,7 +2479,7 @@ def test_hosted_job_start_dispatches_signed_worker_envelope_when_configured() ->
         github_opener=github_opener,
         worker_dispatch_opener=dispatch_opener,
         managed_runs_enabled=True,
-        stripe_secret_key="sk_test_redacted",
+        stripe_secret_key="sk_live_redacted",
         stripe_price_id="price_managed_run",
         managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
@@ -2516,7 +2584,7 @@ def test_hosted_job_actions_reject_duplicate_start_without_second_dispatch() -> 
         github_opener=github_opener,
         worker_dispatch_opener=dispatch_opener,
         managed_runs_enabled=True,
-        stripe_secret_key="sk_test_redacted",
+        stripe_secret_key="sk_live_redacted",
         stripe_price_id="price_managed_run",
         managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),

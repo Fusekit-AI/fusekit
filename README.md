@@ -441,10 +441,12 @@ must set `FUSEKIT_HOSTED_DEPLOYMENT_PROVIDER` to `oci-compute` or
 `FUSEKIT_HOSTED_GIT_COMMIT_REF`, and `FUSEKIT_HOSTED_GIT_COMMIT_SHA`. The
 hosted verifier rejects the deployment if those public source-provenance fields
 are missing or point at a different repository. Paid Managed FuseKit runs stay
-disabled until the runtime also sets `FUSEKIT_MANAGED_RUNS_ENABLED=1`,
-`FUSEKIT_STRIPE_SECRET_KEY`, `FUSEKIT_STRIPE_PRICE_ID`, and the public
-`FUSEKIT_MANAGED_RUN_PRICE_LABEL` shown before Checkout. Production one-click
-worker wakeup also needs
+disabled until the runtime also sets `FUSEKIT_MANAGED_RUNS_ENABLED=1`, a
+live-mode `FUSEKIT_STRIPE_SECRET_KEY`, `FUSEKIT_STRIPE_PRICE_ID`, and the
+public `FUSEKIT_MANAGED_RUN_PRICE_LABEL` shown before Checkout. Test-mode
+Stripe products and prices may be staged while managed runs stay disabled, but
+they do not make the public Managed FuseKit Run lane launchable. Production
+one-click worker wakeup also needs
 `FUSEKIT_HOSTED_WORKER_DISPATCH_URL` pointed at an HTTPS worker dispatch
 service running `fusekit-hosted-worker-dispatch` with
 `FUSEKIT_HOSTED_WORKER_SECRET` and worker runtime environment configured. Set
