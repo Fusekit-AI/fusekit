@@ -90,6 +90,29 @@ def _byo_proof_bundle_from_bootstrap(bootstrap: dict[str, object]) -> dict[str, 
     }
 
 
+def _paid_checkout_receipt(job) -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.hosted-payment.v1",
+        "provider": "stripe-checkout",
+        "checkout_session_id": "cs_test_paid",
+        "status": "complete",
+        "payment_status": "paid",
+        "mode": "payment",
+        "client_reference_id": job.job_id,
+        "metadata": {
+            "job_id": job.job_id,
+            "lane": job.launch_lane,
+            "github_source_hash": "sha256:" + ("a" * 64),
+            "plan_fingerprint": job.worker_contract.plan_fingerprint,
+            "stripe_price_id_hash": "sha256:" + ("b" * 64),
+            "price_label_hash": "sha256:" + ("c" * 64),
+        },
+        "amount_total": 100,
+        "currency": "usd",
+        "paid": True,
+    }
+
+
 def test_hosted_launch_job_is_public_safe_and_trust_complete() -> None:
     job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
     payload = job.to_dict()
@@ -1351,6 +1374,62 @@ def test_hosted_job_decode_rejects_unknown_lane() -> None:
     payload["launch_lane"] = "bring-your-own-oci-typo"
 
     with pytest.raises(FuseKitError, match="Hosted launch lane is invalid"):
+        hosted_launch_job_from_dict(payload)
+
+
+def test_hosted_payment_receipt_requires_full_checkout_shape_before_paid() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=MANAGED_FUSEKIT_RUN_LANE,
+        payment_required=True,
+        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        job_id="hosted-test",
+        now=1_700_000_000,
+    )
+
+    updated = with_hosted_job_payment_receipt(job, _paid_checkout_receipt(job))
+
+    assert updated.payment_status == "paid"
+    assert updated.payment_receipt is not None
+    assert updated.payment_receipt["checkout_session_id"] == "cs_test_paid"
+
+
+def test_hosted_payment_receipt_does_not_mark_paid_from_boolean_stub() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=MANAGED_FUSEKIT_RUN_LANE,
+        payment_required=True,
+        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        job_id="hosted-test",
+        now=1_700_000_000,
+    )
+
+    updated = with_hosted_job_payment_receipt(job, {"paid": True})
+
+    assert updated.payment_status == "checkout_pending"
+    assert updated.payment_receipt is not None
+    assert updated.payment_receipt["paid"] is True
+    assert updated.payment_receipt["checkout_session_id"] is None
+
+
+def test_hosted_job_decode_rejects_paid_status_without_paid_checkout_receipt() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=MANAGED_FUSEKIT_RUN_LANE,
+        payment_required=True,
+        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        job_id="hosted-test",
+        now=1_700_000_000,
+    )
+    paid = with_hosted_job_payment_receipt(job, _paid_checkout_receipt(job))
+    payload = paid.to_dict()
+    payment = payload["payment"]
+    assert isinstance(payment, dict)
+    receipt = payment["receipt"]
+    assert isinstance(receipt, dict)
+    receipt.pop("amount_total")
+
+    with pytest.raises(FuseKitError, match="paid payment receipt is invalid"):
         hosted_launch_job_from_dict(payload)
 
 

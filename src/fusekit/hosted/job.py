@@ -14,7 +14,12 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from fusekit.errors import FuseKitError
-from fusekit.hosted.billing import _valid_price_label
+from fusekit.hosted.billing import (
+    HOSTED_PAYMENT_SCHEMA_VERSION,
+    STRIPE_CHECKOUT_METADATA_KEYS,
+    STRIPE_CHECKOUT_PROVIDER,
+    _valid_price_label,
+)
 from fusekit.hosted.evidence import HOSTED_COMPLETION_EVIDENCE_KEYS
 from fusekit.hosted.lanes import (
     BYO_OCI_LANE,
@@ -404,7 +409,8 @@ def with_hosted_job_payment_receipt(
 ) -> HostedLaunchJob:
     """Return a job updated with a redacted payment receipt."""
 
-    status = "paid" if receipt.get("paid") is True else "checkout_pending"
+    public_receipt = _public_payment_receipt(receipt)
+    status = "paid" if _payment_receipt_is_paid_checkout(public_receipt) else "checkout_pending"
     return _replace_job(
         job,
         status=job.status,
@@ -419,7 +425,7 @@ def with_hosted_job_payment_receipt(
             },
         ),
         payment_status=status,
-        payment_receipt=_public_payment_receipt(receipt),
+        payment_receipt=public_receipt,
     )
 
 
@@ -2817,10 +2823,15 @@ def _payment_from_payload(value: object) -> tuple[str, dict[str, object] | None]
         raise FuseKitError("Hosted launch payment status is unsupported.")
     receipt = value.get("receipt")
     if receipt in (None, {}):
+        if status == "paid":
+            raise FuseKitError("Hosted launch paid payment receipt is invalid.")
         return status, None
     if not isinstance(receipt, dict):
         raise FuseKitError("Hosted launch payment receipt is invalid.")
-    return status, _public_payment_receipt(receipt)
+    public_receipt = _public_payment_receipt(receipt)
+    if status == "paid" and not _payment_receipt_is_paid_checkout(public_receipt):
+        raise FuseKitError("Hosted launch paid payment receipt is invalid.")
+    return status, public_receipt
 
 
 def _payment_price_label_from_payload(value: object) -> str:
@@ -2869,6 +2880,33 @@ def _public_payment_receipt(receipt: dict[str, object]) -> dict[str, object]:
     return result
 
 
+def _payment_receipt_is_paid_checkout(receipt: dict[str, object]) -> bool:
+    session_id = receipt.get("checkout_session_id")
+    amount_total = receipt.get("amount_total")
+    currency = receipt.get("currency")
+    metadata = receipt.get("metadata")
+    return (
+        receipt.get("schema_version") == HOSTED_PAYMENT_SCHEMA_VERSION
+        and receipt.get("provider") == STRIPE_CHECKOUT_PROVIDER
+        and receipt.get("mode") == "payment"
+        and receipt.get("status") == "complete"
+        and receipt.get("payment_status") == "paid"
+        and receipt.get("paid") is True
+        and isinstance(session_id, str)
+        and session_id.startswith("cs_")
+        and isinstance(amount_total, int)
+        and amount_total > 0
+        and isinstance(currency, str)
+        and currency.isalpha()
+        and len(currency) == 3
+        and isinstance(metadata, dict)
+        and all(
+            isinstance(metadata.get(key), str) and metadata.get(key)
+            for key in STRIPE_CHECKOUT_METADATA_KEYS
+        )
+    )
+
+
 def _lane_permission_boundary(lane: str) -> str:
     if lane == BYO_OCI_LANE:
         return (
@@ -2894,7 +2932,14 @@ def _payment_step_proof(status: str) -> str:
 
 
 def _public_payment_metadata(metadata: dict[str, object]) -> dict[str, str]:
-    allowed = {"job_id", "lane", "github_source_hash", "plan_fingerprint"}
+    allowed = {
+        "job_id",
+        "lane",
+        "github_source_hash",
+        "plan_fingerprint",
+        "stripe_price_id_hash",
+        "price_label_hash",
+    }
     result: dict[str, str] = {}
     for key in allowed:
         value = metadata.get(key)
