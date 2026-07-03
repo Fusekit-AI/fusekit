@@ -113,6 +113,20 @@ HOSTED_AWS_SOURCE_PROVENANCE_ENV = (
     "FUSEKIT_HOSTED_GIT_COMMIT_SHA",
 )
 HOSTED_OCI_SOURCE_PROVENANCE_ENV = HOSTED_AWS_SOURCE_PROVENANCE_ENV
+HOSTED_UNKNOWN_SOURCE_PROVENANCE_ENV = ("FUSEKIT_HOSTED_DEPLOYMENT_PROVIDER",)
+HOSTED_GENERIC_OPERATOR_SETUP_STEPS: tuple[dict[str, str], ...] = (
+    {
+        "id": "select_hosted_deployment_provider",
+        "label": (
+            "Select the hosted deployment provider explicitly: oci-compute, "
+            "aws-elastic-beanstalk, or vercel."
+        ),
+        "proof": (
+            "Hosted readiness reports a supported deployment provider before publishing "
+            "provider-specific DNS, runtime, and source-provenance instructions."
+        ),
+    },
+)
 HOSTED_VERCEL_OPERATOR_SETUP_STEPS: tuple[dict[str, str], ...] = (
     {
         "id": "connect_vercel_project",
@@ -516,6 +530,14 @@ HOSTED_READINESS_NEXT_ACTIONS: dict[str, str] = {
         "Use the fusekit-hosted-stripe-price output to set FUSEKIT_MANAGED_RUN_PRICE_LABEL "
         "to the public price shown before Checkout."
     ),
+    "hosted_deployment_provider_required": (
+        "Set FUSEKIT_HOSTED_DEPLOYMENT_PROVIDER to oci-compute, aws-elastic-beanstalk, "
+        "or vercel before relying on provider-specific setup instructions."
+    ),
+    "hosted_deployment_provider_unsupported": (
+        "Use a supported hosted deployment provider: oci-compute, aws-elastic-beanstalk, "
+        "or vercel."
+    ),
     "managed_runs_not_enabled": (
         "Set FUSEKIT_MANAGED_RUNS_ENABLED=1 only after live Stripe Checkout proof and "
         "worker-dispatch acceptance pass."
@@ -879,7 +901,32 @@ class HostedSettings:
             return "aws-elastic-beanstalk"
         if provider in {"oci", "oci-compute", "oracle-cloud", "oracle-cloud-infrastructure"}:
             return "oci-compute"
-        return "vercel"
+        if provider == "vercel" or self._has_vercel_source_provenance():
+            return "vercel"
+        return "unknown"
+
+    def deployment_provider_config_error(self) -> str:
+        """Return the public config error for unsupported or missing provider selection."""
+
+        if self.hosted_deployment_provider() != "unknown":
+            return ""
+        if self.deployment_provider.strip():
+            return "hosted_deployment_provider_unsupported"
+        return "hosted_deployment_provider_required"
+
+    def _has_vercel_source_provenance(self) -> bool:
+        return any(
+            bool(value)
+            for value in (
+                self.vercel_env,
+                self.vercel_url,
+                self.vercel_git_provider,
+                self.vercel_git_repo_owner,
+                self.vercel_git_repo_slug,
+                self.vercel_git_commit_ref,
+                self.vercel_git_commit_sha,
+            )
+        )
 
     def required_source_provenance_env(self) -> tuple[str, ...]:
         """Return provider-specific non-secret provenance environment names."""
@@ -888,7 +935,9 @@ class HostedSettings:
             return HOSTED_AWS_SOURCE_PROVENANCE_ENV
         if self.hosted_deployment_provider() == "oci-compute":
             return HOSTED_OCI_SOURCE_PROVENANCE_ENV
-        return HOSTED_SOURCE_PROVENANCE_ENV
+        if self.hosted_deployment_provider() == "vercel":
+            return HOSTED_SOURCE_PROVENANCE_ENV
+        return HOSTED_UNKNOWN_SOURCE_PROVENANCE_ENV
 
     def runtime_contract(self) -> dict[str, object]:
         """Return provider-specific hosted runtime metadata."""
@@ -913,6 +962,15 @@ class HostedSettings:
                 "application_export": "app",
                 "mode": "python-wsgi-on-oci-compute",
             }
+        if self.hosted_deployment_provider() != "vercel":
+            return {
+                "provider": "unknown",
+                "entrypoint": "app.py",
+                "requirements": "requirements.txt",
+                "python_version": ".python-version",
+                "application_export": "app",
+                "mode": "python-wsgi",
+            }
         return {
             "provider": "vercel",
             "entrypoint": "app.py",
@@ -930,7 +988,9 @@ class HostedSettings:
             return HOSTED_AWS_OPERATOR_SETUP_STEPS
         if self.hosted_deployment_provider() == "oci-compute":
             return HOSTED_OCI_OPERATOR_SETUP_STEPS
-        return HOSTED_VERCEL_OPERATOR_SETUP_STEPS
+        if self.hosted_deployment_provider() == "vercel":
+            return HOSTED_VERCEL_OPERATOR_SETUP_STEPS
+        return HOSTED_GENERIC_OPERATOR_SETUP_STEPS
 
     def source_provenance(self) -> dict[str, object]:
         """Return public Git/deployment provenance for the hosted deployment."""
@@ -939,8 +999,33 @@ class HostedSettings:
             return self._aws_source_provenance()
         if self.hosted_deployment_provider() == "oci-compute":
             return self._oci_source_provenance()
+        if self.hosted_deployment_provider() != "vercel":
+            return self._unknown_source_provenance()
 
         return self._vercel_source_provenance()
+
+    def _unknown_source_provenance(self) -> dict[str, object]:
+        """Return neutral unverified provenance when no provider is selected."""
+
+        return {
+            "provider": "unknown",
+            "source": "deployment_provider_not_selected",
+            "expected": {
+                "deployment_provider": "oci-compute | aws-elastic-beanstalk | vercel",
+                "source_repository": HOSTED_SOURCE_REPOSITORY,
+            },
+            "actual": {
+                "deployment_provider_configured": bool(self.deployment_provider.strip()),
+                "selected_provider": "unknown",
+            },
+            "verified": False,
+            "required_env": list(HOSTED_UNKNOWN_SOURCE_PROVENANCE_ENV),
+            "secret_boundary": (
+                "Source provenance publishes only the provider-selection state. It does "
+                "not publish deployment credentials, GitHub installation tokens, provider "
+                "credentials, or vault material."
+            ),
+        }
 
     def _vercel_source_provenance(self) -> dict[str, object]:
         """Return public Git/Vercel provenance for the hosted deployment."""
@@ -2429,6 +2514,8 @@ def _cloudflare_record_value_label(provider: str) -> str:
         return "Use the exact AWS-provided CNAME target for this environment."
     if provider == "oci-compute":
         return "Use the exact OCI reserved public IP address for this environment."
+    if provider != "vercel":
+        return "Use the exact target for the selected hosted deployment provider."
     return "Use the exact Vercel-provided CNAME target for this project."
 
 
@@ -2438,6 +2525,9 @@ def _hosted_config_errors(settings: HostedSettings) -> tuple[str, ...]:
         errors.append("hosted_origin_must_be_https_origin")
     if settings.worker_dispatch_url and not _valid_https_url(settings.worker_dispatch_url):
         errors.append("hosted_worker_dispatch_url_must_be_https")
+    deployment_provider_error = settings.deployment_provider_config_error()
+    if deployment_provider_error:
+        errors.append(deployment_provider_error)
     if not settings.github_app_id.isdecimal() or int(settings.github_app_id) <= 0:
         errors.append("github_app_id_must_be_positive_integer")
     if not _valid_github_app_slug(settings.github_app_slug):

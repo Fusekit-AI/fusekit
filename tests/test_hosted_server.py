@@ -413,6 +413,58 @@ def test_hosted_home_uses_oci_provider_contract_copy() -> None:
     assert "Vercel-provided CNAME target" not in html
 
 
+def test_hosted_home_requires_explicit_provider_without_vercel_metadata() -> None:
+    html = render_hosted_home(
+        HostedSettings(
+            public_origin="https://fusekit.snowmanai.org",
+            github_app_id="12345",
+            github_app_slug="fusekit-launcher",
+            github_private_key_pem=_private_key_pem(),
+            state_secret=STATE_SECRET,
+            worker_secret=WORKER_SECRET,
+            worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        )
+    )
+
+    assert "select_hosted_deployment_provider" in html
+    assert "Select the hosted deployment provider explicitly" in html
+    assert "invalid:hosted_deployment_provider_required" in html
+    assert "Vercel must serve" not in html
+    assert "Vercel custom domain" not in html
+    assert "Vercel-provided CNAME target" not in html
+    assert "AWS Elastic Beanstalk must serve" not in html
+    assert "AWS-provided CNAME target" not in html
+    assert "OCI Compute must serve" not in html
+    assert "OCI reserved public IP address" not in html
+
+
+def test_hosted_readiness_rejects_unsupported_provider_without_echoing_value() -> None:
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=_private_key_pem(),
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        deployment_provider="temporary-secretish-provider-value",
+    )
+
+    status, _headers, body = _call("/api/hosted/readiness", settings=settings)
+    payload = json.loads(body.decode("utf-8"))
+    serialized = json.dumps(payload)
+
+    assert status == "200 OK"
+    assert payload["ready"] is False
+    assert "hosted_deployment_provider_unsupported" in payload["invalid"]
+    assert payload["source_provenance"]["provider"] == "unknown"
+    assert payload["source_provenance"]["actual"] == {
+        "deployment_provider_configured": True,
+        "selected_provider": "unknown",
+    }
+    assert "temporary-secretish-provider-value" not in serialized
+
+
 def test_hosted_home_waits_for_complete_operator_configuration() -> None:
     html = render_hosted_home(
         HostedSettings(
@@ -589,14 +641,26 @@ def test_hosted_readiness_blocks_launch_without_verified_source_provenance() -> 
     assert status == "200 OK"
     assert payload["ready"] is False
     assert payload["missing"] == []
-    assert payload["invalid"] == ["source_provenance_not_verified"]
-    assert payload["blocking_checks"] == ["invalid:source_provenance_not_verified"]
+    assert payload["invalid"] == [
+        "hosted_deployment_provider_required",
+        "source_provenance_not_verified",
+    ]
+    assert payload["blocking_checks"] == [
+        "invalid:hosted_deployment_provider_required",
+        "invalid:source_provenance_not_verified",
+    ]
     assert payload["next_actions"] == [
+        (
+            "Set FUSEKIT_HOSTED_DEPLOYMENT_PROVIDER to oci-compute, "
+            "aws-elastic-beanstalk, or vercel before relying on provider-specific "
+            "setup instructions."
+        ),
         (
             "Publish hosted source provenance for Fusekit-AI/fusekit from the "
             "deployment runtime so the public source provenance verifies."
         )
     ]
+    assert payload["source_provenance"]["provider"] == "unknown"
     assert payload["source_provenance"]["verified"] is False
     assert "PRIVATE KEY" not in serialized
     assert STATE_SECRET not in serialized
@@ -1260,6 +1324,7 @@ def test_hosted_readiness_endpoint_rejects_invalid_config_shape_without_values()
     assert payload["invalid"] == [
         "hosted_origin_must_be_https_origin",
         "hosted_worker_dispatch_url_must_be_https",
+        "hosted_deployment_provider_required",
         "github_app_id_must_be_positive_integer",
         "github_app_slug_is_invalid",
         "github_app_private_key_must_be_rsa_pem",
@@ -1270,6 +1335,7 @@ def test_hosted_readiness_endpoint_rejects_invalid_config_shape_without_values()
     assert payload["blocking_checks"] == [
         "invalid:hosted_origin_must_be_https_origin",
         "invalid:hosted_worker_dispatch_url_must_be_https",
+        "invalid:hosted_deployment_provider_required",
         "invalid:github_app_id_must_be_positive_integer",
         "invalid:github_app_slug_is_invalid",
         "invalid:github_app_private_key_must_be_rsa_pem",
@@ -1280,6 +1346,11 @@ def test_hosted_readiness_endpoint_rejects_invalid_config_shape_without_values()
     assert payload["next_actions"] == [
         "Use an HTTPS origin with no path, query, credentials, or fragment.",
         "Use an HTTPS worker dispatch URL with no credentials in the URL.",
+        (
+            "Set FUSEKIT_HOSTED_DEPLOYMENT_PROVIDER to oci-compute, "
+            "aws-elastic-beanstalk, or vercel before relying on provider-specific "
+            "setup instructions."
+        ),
         "Use a positive numeric GitHub App id.",
         "Use the GitHub App slug exactly as GitHub provides it.",
         "Store a valid RSA PEM private key for the GitHub App.",
