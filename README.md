@@ -394,7 +394,10 @@ preflight. It consumes redacted instance, VNIC, plugin, SSH probe, and hosted
 verifier evidence, confirms the target is the FuseKit-tagged AMD hosted
 launcher, and reports whether SSH or OCI Run Command can safely perform the
 release without mutating OCI, Cloudflare, MailPilot/AWS, generated-app
-credentials, or provider resources. Its release proof includes a redacted
+credentials, or provider resources. Include available-plugin evidence when it
+is available; the planner distinguishes a missing Run Command plugin from an
+image that cannot support Run Command and then recommends only the approved SSH
+key repair or a replacement FuseKit-tagged AMD host. Its release proof includes a redacted
 `release_action` block with the live commit, expected commit, commit state,
 allowed deploy paths, safe next action, and exact post-deploy verifier command,
 so stale-host repair has a concrete receipt before any host mutation happens.

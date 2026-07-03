@@ -49,6 +49,7 @@ def build_hosted_oci_access_plan(
     instance: Mapping[str, object],
     vnic: Mapping[str, object] | None = None,
     plugins: Sequence[Mapping[str, object]] = (),
+    available_plugins: Sequence[Mapping[str, object]] = (),
     hosted_verify_report: Mapping[str, object] | None = None,
     ssh_probe_status: str = "not_checked",
     expected_commit_sha: str = "",
@@ -63,6 +64,11 @@ def build_hosted_oci_access_plan(
     ).upper()
     public_ip = _public_ip(vnic.get("public-ip") if vnic else instance.get("public-ip"))
     plugin_statuses = _plugin_statuses(plugins)
+    available_plugin_names = _plugin_names(available_plugins)
+    run_command_availability = _run_command_availability(
+        plugin_statuses=plugin_statuses,
+        available_plugin_names=available_plugin_names,
+    )
     hosted_verify = hosted_verify_report or {}
     expected_commit = _valid_commit_sha(expected_commit_sha)
     actual_commit = _hosted_actual_commit_sha(hosted_verify)
@@ -115,7 +121,9 @@ def build_hosted_oci_access_plan(
             "ssh_probe_status": ssh_status,
             "ssh_ready": ssh_ready,
             "oci_run_command_ready": run_command_ready,
+            "oci_run_command_availability": run_command_availability,
             "plugin_statuses": plugin_statuses,
+            "available_plugin_names": available_plugin_names,
             "allowed_deploy_paths": _allowed_deploy_paths(
                 ssh_ready=ssh_ready,
                 run_command_ready=run_command_ready,
@@ -123,12 +131,14 @@ def build_hosted_oci_access_plan(
             "next_actions": _access_next_actions(
                 ssh_ready=ssh_ready,
                 run_command_ready=run_command_ready,
+                run_command_availability=run_command_availability,
             ),
             "repair_contract": _deploy_access_repair_contract(
                 ssh_ready=ssh_ready,
                 run_command_ready=run_command_ready,
                 ssh_status=ssh_status,
                 plugin_statuses=plugin_statuses,
+                run_command_availability=run_command_availability,
             ),
         },
         "release_proof": {
@@ -176,6 +186,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--instance-json", required=True)
     parser.add_argument("--vnic-json", default="")
     parser.add_argument("--plugins-json", default="")
+    parser.add_argument("--available-plugins-json", default="")
     parser.add_argument("--hosted-verify-report", default="")
     parser.add_argument("--ssh-probe-status", default="not_checked")
     parser.add_argument("--expected-commit-sha", default="")
@@ -184,6 +195,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         instance=_read_mapping(args.instance_json),
         vnic=_read_optional_mapping(args.vnic_json),
         plugins=_read_sequence(args.plugins_json),
+        available_plugins=_read_sequence(args.available_plugins_json),
         hosted_verify_report=_read_optional_mapping(args.hosted_verify_report),
         ssh_probe_status=args.ssh_probe_status,
         expected_commit_sha=args.expected_commit_sha,
@@ -268,6 +280,32 @@ def _plugin_statuses(plugins: Sequence[Mapping[str, object]]) -> dict[str, str]:
     return statuses
 
 
+def _plugin_names(plugins: Sequence[Mapping[str, object]]) -> list[str]:
+    names: list[str] = []
+    for plugin in plugins:
+        name = _public_str(plugin.get("name"))
+        if name and name not in names:
+            names.append(name)
+    return sorted(names)
+
+
+def _run_command_availability(
+    *,
+    plugin_statuses: Mapping[str, str],
+    available_plugin_names: Sequence[str],
+) -> str:
+    installed_status = _run_command_plugin_status(plugin_statuses)
+    if installed_status == "RUNNING":
+        return "running"
+    if installed_status != "not_present":
+        return "installed_not_running"
+    if not available_plugin_names:
+        return "unknown"
+    if any(name in available_plugin_names for name in HOSTED_OCI_RUN_COMMAND_PLUGIN_NAMES):
+        return "available_not_installed"
+    return "not_available_for_image"
+
+
 def _allowed_deploy_paths(*, ssh_ready: bool, run_command_ready: bool) -> list[str]:
     paths: list[str] = []
     if ssh_ready:
@@ -277,11 +315,24 @@ def _allowed_deploy_paths(*, ssh_ready: bool, run_command_ready: bool) -> list[s
     return paths
 
 
-def _access_next_actions(*, ssh_ready: bool, run_command_ready: bool) -> list[str]:
+def _access_next_actions(
+    *,
+    ssh_ready: bool,
+    run_command_ready: bool,
+    run_command_availability: str,
+) -> list[str]:
     if ssh_ready or run_command_ready:
         return [
             "Run the hosted release procedure, then rerun fusekit-hosted-verify with "
             "--expected-commit-sha and collect OCI posture evidence.",
+        ]
+    if run_command_availability == "not_available_for_image":
+        return [
+            "Restore exactly one deployment path for the FuseKit hosted launcher: install "
+            "the approved SSH deploy key for the launcher host user, or plan a replacement "
+            "FuseKit-tagged AMD hosted launcher image that supports OCI Run Command.",
+            "Do not broaden Cloudflare DNS, MailPilot/AWS, billing, generated-app, or "
+            "provider credentials while repairing deploy access.",
         ]
     return [
         "Restore exactly one deployment path for the FuseKit hosted launcher: either "
@@ -298,32 +349,20 @@ def _deploy_access_repair_contract(
     run_command_ready: bool,
     ssh_status: str,
     plugin_statuses: Mapping[str, str],
+    run_command_availability: str,
 ) -> dict[str, object]:
     deploy_paths = _allowed_deploy_paths(ssh_ready=ssh_ready, run_command_ready=run_command_ready)
     run_command_status = _run_command_plugin_status(plugin_statuses)
+    allowed_repairs = _deploy_access_allowed_repairs(
+        ssh_status=ssh_status,
+        run_command_status=run_command_status,
+        run_command_availability=run_command_availability,
+    )
     return {
         "schema_version": HOSTED_OCI_DEPLOY_ACCESS_REPAIR_SCHEMA_VERSION,
         "repair_needed": not deploy_paths,
-        "allowed_repairs": [
-            {
-                "id": "enable_oci_run_command_for_fusekit_host",
-                "label": (
-                    "Enable OCI Compute Instance Run Command only for the FuseKit-tagged "
-                    "hosted launcher instance."
-                ),
-                "scope": "single_fusekit_tagged_oci_instance",
-                "current_status": run_command_status,
-            },
-            {
-                "id": "install_fusekit_host_ssh_deploy_key",
-                "label": (
-                    "Install the approved SSH deploy key only for the fusekit host user on "
-                    "the FuseKit-tagged launcher."
-                ),
-                "scope": "single_fusekit_host_user",
-                "current_status": ssh_status,
-            },
-        ],
+        "run_command_availability": run_command_availability,
+        "allowed_repairs": allowed_repairs,
         "forbidden_repairs": [
             "Do not change Cloudflare DNS while restoring deploy access.",
             "Do not add MailPilot, AWS, billing, generated-app, or provider credentials.",
@@ -342,6 +381,48 @@ def _deploy_access_repair_contract(
             "vault material, or raw command output."
         ),
     }
+
+
+def _deploy_access_allowed_repairs(
+    *,
+    ssh_status: str,
+    run_command_status: str,
+    run_command_availability: str,
+) -> list[dict[str, str]]:
+    ssh_repair = {
+        "id": "install_fusekit_host_ssh_deploy_key",
+        "label": (
+            "Install the approved SSH deploy key only for the fusekit host user on "
+            "the FuseKit-tagged launcher."
+        ),
+        "scope": "single_fusekit_host_user",
+        "current_status": ssh_status,
+    }
+    if run_command_availability == "not_available_for_image":
+        return [
+            ssh_repair,
+            {
+                "id": "replace_with_supported_amd_fusekit_host",
+                "label": (
+                    "Plan a replacement FuseKit-tagged AMD hosted launcher image that "
+                    "supports OCI Run Command before moving traffic."
+                ),
+                "scope": "single_fusekit_tagged_oci_instance",
+                "current_status": run_command_availability,
+            },
+        ]
+    return [
+        {
+            "id": "enable_oci_run_command_for_fusekit_host",
+            "label": (
+                "Enable OCI Compute Instance Run Command only for the FuseKit-tagged "
+                "hosted launcher instance."
+            ),
+            "scope": "single_fusekit_tagged_oci_instance",
+            "current_status": run_command_status,
+        },
+        ssh_repair,
+    ]
 
 
 def _run_command_plugin_status(plugin_statuses: Mapping[str, str]) -> str:
@@ -388,7 +469,6 @@ def _release_action(
             "rollback metadata preserved",
         ],
     }
-
 
 def _release_safe_next_action(
     *,

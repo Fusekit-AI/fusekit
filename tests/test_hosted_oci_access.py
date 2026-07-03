@@ -89,9 +89,12 @@ def test_hosted_oci_access_plan_blocks_stale_commit_and_missing_access() -> None
         "oci_deploy_access_unavailable",
     ]
     assert plan["access"]["allowed_deploy_paths"] == []
+    assert plan["access"]["oci_run_command_availability"] == "unknown"
+    assert plan["access"]["available_plugin_names"] == []
     assert plan["access"]["repair_contract"] == {
         "schema_version": HOSTED_OCI_DEPLOY_ACCESS_REPAIR_SCHEMA_VERSION,
         "repair_needed": True,
+        "run_command_availability": "unknown",
         "allowed_repairs": [
             {
                 "id": "enable_oci_run_command_for_fusekit_host",
@@ -175,8 +178,10 @@ def test_hosted_oci_access_plan_allows_redeploy_when_run_command_ready() -> None
     assert plan["blockers"] == []
     assert plan["access"]["ssh_ready"] is False
     assert plan["access"]["oci_run_command_ready"] is True
+    assert plan["access"]["oci_run_command_availability"] == "running"
     assert plan["access"]["allowed_deploy_paths"] == ["oci_run_command_release"]
     assert plan["access"]["repair_contract"]["repair_needed"] is False
+    assert plan["access"]["repair_contract"]["run_command_availability"] == "running"
     assert plan["access"]["repair_contract"]["allowed_repairs"][0]["current_status"] == "RUNNING"
     assert "Do not broaden OCI tenancy-wide admin policy" in " ".join(
         plan["access"]["repair_contract"]["forbidden_repairs"]
@@ -190,6 +195,59 @@ def test_hosted_oci_access_plan_allows_redeploy_when_run_command_ready() -> None
     assert plan["release_proof"]["release_action"]["safe_next_action"] == (
         "No redeploy needed; preserve this release proof with OCI posture evidence."
     )
+
+
+def test_hosted_oci_access_plan_marks_run_command_unavailable_for_image() -> None:
+    plan = build_hosted_oci_access_plan(
+        instance=_instance(),
+        vnic=_vnic(),
+        plugins=[
+            {"name": "Vulnerability Scanning", "status": "STOPPED"},
+            {"name": "Bastion", "status": "STOPPED"},
+        ],
+        available_plugins=[
+            {"name": "Vulnerability Scanning"},
+            {"name": "Bastion"},
+            {"name": "Compute Instance Monitoring"},
+        ],
+        hosted_verify_report=_hosted_verify(ready=False),
+        ssh_probe_status="permission_denied",
+        expected_commit_sha=EXPECTED_COMMIT,
+    )
+
+    repair = plan["access"]["repair_contract"]
+    assert plan["access"]["oci_run_command_ready"] is False
+    assert plan["access"]["oci_run_command_availability"] == "not_available_for_image"
+    assert plan["access"]["available_plugin_names"] == [
+        "Bastion",
+        "Compute Instance Monitoring",
+        "Vulnerability Scanning",
+    ]
+    assert repair["run_command_availability"] == "not_available_for_image"
+    assert repair["allowed_repairs"] == [
+        {
+            "id": "install_fusekit_host_ssh_deploy_key",
+            "label": (
+                "Install the approved SSH deploy key only for the fusekit host user on "
+                "the FuseKit-tagged launcher."
+            ),
+            "scope": "single_fusekit_host_user",
+            "current_status": "permission_denied",
+        },
+        {
+            "id": "replace_with_supported_amd_fusekit_host",
+            "label": (
+                "Plan a replacement FuseKit-tagged AMD hosted launcher image that "
+                "supports OCI Run Command before moving traffic."
+            ),
+            "scope": "single_fusekit_tagged_oci_instance",
+            "current_status": "not_available_for_image",
+        },
+    ]
+    assert "plan a replacement FuseKit-tagged AMD hosted launcher image" in (
+        plan["access"]["next_actions"][0]
+    )
+    assert "enable_oci_run_command_for_fusekit_host" not in json.dumps(repair)
 
 
 def test_hosted_oci_access_plan_allows_redeploy_when_ssh_ready() -> None:
@@ -235,11 +293,16 @@ def test_hosted_oci_access_plan_cli_reads_wrapped_oci_exports(tmp_path, capfd) -
     instance_path = tmp_path / "instance.json"
     vnic_path = tmp_path / "vnic.json"
     plugins_path = tmp_path / "plugins.json"
+    available_plugins_path = tmp_path / "available-plugins.json"
     hosted_verify_path = tmp_path / "hosted-verify.json"
     instance_path.write_text(json.dumps({"data": _instance()}), encoding="utf-8")
     vnic_path.write_text(json.dumps({"data": _vnic()}), encoding="utf-8")
     plugins_path.write_text(
         json.dumps({"data": [{"name": "Compute Instance Run Command", "status": "RUNNING"}]}),
+        encoding="utf-8",
+    )
+    available_plugins_path.write_text(
+        json.dumps({"data": [{"name": "Compute Instance Run Command"}]}),
         encoding="utf-8",
     )
     hosted_verify_path.write_text(json.dumps(_hosted_verify()), encoding="utf-8")
@@ -252,6 +315,8 @@ def test_hosted_oci_access_plan_cli_reads_wrapped_oci_exports(tmp_path, capfd) -
             str(vnic_path),
             "--plugins-json",
             str(plugins_path),
+            "--available-plugins-json",
+            str(available_plugins_path),
             "--hosted-verify-report",
             str(hosted_verify_path),
             "--ssh-probe-status",
@@ -265,3 +330,4 @@ def test_hosted_oci_access_plan_cli_reads_wrapped_oci_exports(tmp_path, capfd) -
     assert exit_code == 0
     assert output["ready_to_redeploy"] is True
     assert output["access"]["allowed_deploy_paths"] == ["oci_run_command_release"]
+    assert output["access"]["oci_run_command_availability"] == "running"
