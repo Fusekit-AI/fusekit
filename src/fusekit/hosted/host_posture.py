@@ -158,6 +158,28 @@ OCI_HOST_POSTURE_DNS_PROPAGATION_KEYS = frozenset(
 )
 OCI_HOST_POSTURE_ROLLBACK_METADATA_KEYS = frozenset({"rollback", "actions"})
 OCI_HOST_POSTURE_ROLLBACK_ACTION_KEYS = frozenset({"action", "status", "target"})
+OCI_HOST_POSTURE_HOSTED_VERIFY_KEYS = frozenset(
+    {
+        "schema_version",
+        "public_origin",
+        "worker_dispatch_url",
+        "ready",
+        "blocking_checks",
+        "readiness_summary",
+        "next_actions",
+        "checks",
+        "secret_boundary",
+        "source_provenance",
+        "commit_sha",
+        "error",
+    }
+)
+OCI_HOST_POSTURE_HOSTED_VERIFY_SOURCE_PROVENANCE_KEYS = frozenset(
+    {"actual", "expected"}
+)
+OCI_HOST_POSTURE_HOSTED_VERIFY_SOURCE_PROVENANCE_ROW_KEYS = frozenset(
+    {"commit_sha"}
+)
 OCI_HOST_POSTURE_CIS_BASELINE_KEYS = frozenset(
     {"scanner", "status", "critical_findings", "high_findings"}
 )
@@ -807,6 +829,14 @@ def _evidence_shape_check(evidence: Mapping[str, object]) -> dict[str, object]:
     unexpected.extend(
         _unexpected_nested_keys(
             evidence,
+            "hosted_verify",
+            OCI_HOST_POSTURE_HOSTED_VERIFY_KEYS,
+        )
+    )
+    unexpected.extend(_unexpected_hosted_verify_keys(evidence))
+    unexpected.extend(
+        _unexpected_nested_keys(
+            evidence,
             "dns_propagation",
             OCI_HOST_POSTURE_DNS_PROPAGATION_KEYS,
         )
@@ -960,6 +990,33 @@ def _unexpected_rollback_metadata_keys(evidence: Mapping[str, object]) -> list[s
             unexpected.extend(
                 f"rollback_metadata.{section}[{index}].{key}"
                 for key in _unexpected_keys(row, OCI_HOST_POSTURE_ROLLBACK_ACTION_KEYS)
+            )
+    return unexpected
+
+
+def _unexpected_hosted_verify_keys(evidence: Mapping[str, object]) -> list[str]:
+    report = evidence.get("hosted_verify")
+    if not isinstance(report, Mapping):
+        return []
+    provenance = report.get("source_provenance")
+    if not isinstance(provenance, Mapping):
+        return []
+    unexpected = [
+        f"hosted_verify.source_provenance.{key}"
+        for key in _unexpected_keys(
+            provenance,
+            OCI_HOST_POSTURE_HOSTED_VERIFY_SOURCE_PROVENANCE_KEYS,
+        )
+    ]
+    for section in OCI_HOST_POSTURE_HOSTED_VERIFY_SOURCE_PROVENANCE_KEYS:
+        row = provenance.get(section)
+        if isinstance(row, Mapping):
+            unexpected.extend(
+                f"hosted_verify.source_provenance.{section}.{key}"
+                for key in _unexpected_keys(
+                    row,
+                    OCI_HOST_POSTURE_HOSTED_VERIFY_SOURCE_PROVENANCE_ROW_KEYS,
+                )
             )
     return unexpected
 

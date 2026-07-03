@@ -812,6 +812,33 @@ def test_oci_host_posture_blocks_dns_and_rollback_sidecars() -> None:
     ]
 
 
+def test_oci_host_posture_blocks_hosted_verify_sidecars() -> None:
+    evidence = _clean_evidence()
+    hosted_verify = evidence["hosted_verify"]
+    assert isinstance(hosted_verify, dict)
+    hosted_verify["raw_deployment_payload"] = {"provider": "oci"}
+    provenance = hosted_verify["source_provenance"]
+    assert isinstance(provenance, dict)
+    provenance["raw_env"] = "FUSEKIT_OCI_DEPLOYMENT_URL=https://example.com"
+    actual = provenance["actual"]
+    assert isinstance(actual, dict)
+    actual["response_header_dump"] = "x-debug: private"
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["evidence.shape"]
+    shape_check = _check(report, "evidence.shape")
+    assert shape_check["failures"] == [
+        "oci_host_posture_evidence_has_unknown_fields"
+    ]
+    assert shape_check["unexpected_fields"] == [
+        "hosted_verify.raw_deployment_payload",
+        "hosted_verify.source_provenance.actual.response_header_dump",
+        "hosted_verify.source_provenance.raw_env",
+    ]
+
+
 def test_oci_host_posture_blocks_missing_release_receipt() -> None:
     evidence = _clean_evidence()
     evidence["release_receipt"] = {}
