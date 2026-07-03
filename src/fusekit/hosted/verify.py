@@ -1362,7 +1362,7 @@ def _hosted_home_embedded_contract_failures(
     *,
     expected_public_origin: str,
 ) -> list[str]:
-    scripts = _embedded_json_scripts(text)
+    scripts, duplicate_script_ids = _embedded_json_scripts(text)
     checks: dict[str, tuple[str, HomeContractValidator]] = {
         "fusekit-github-intake": (
             "github_intake",
@@ -1382,6 +1382,8 @@ def _hosted_home_embedded_contract_failures(
     }
     failures: list[str] = []
     for script_id, (label, validator) in checks.items():
+        if script_id in duplicate_script_ids:
+            failures.append(f"hosted_home_embedded_{label}_contract_duplicate")
         raw = scripts.get(script_id)
         if raw is None:
             failures.append(f"hosted_home_embedded_{label}_contract_missing")
@@ -1766,17 +1768,18 @@ def _valid_public_price_label(value: object) -> bool:
     return _valid_price_label(value)
 
 
-def _embedded_json_scripts(text: str) -> dict[str, str]:
+def _embedded_json_scripts(text: str) -> tuple[dict[str, str], set[str]]:
     parser = _EmbeddedJsonScriptParser()
     parser.feed(text)
     parser.close()
-    return parser.scripts
+    return parser.scripts, parser.duplicate_script_ids
 
 
 class _EmbeddedJsonScriptParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=False)
         self.scripts: dict[str, str] = {}
+        self.duplicate_script_ids: set[str] = set()
         self._active_id = ""
         self._chunks: list[str] = []
 
@@ -1809,6 +1812,8 @@ class _EmbeddedJsonScriptParser(HTMLParser):
 
     def handle_endtag(self, tag: str) -> None:
         if tag.lower() == "script" and self._active_id:
+            if self._active_id in self.scripts:
+                self.duplicate_script_ids.add(self._active_id)
             self.scripts[self._active_id] = "".join(self._chunks)
             self._active_id = ""
             self._chunks = []

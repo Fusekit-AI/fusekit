@@ -2146,6 +2146,41 @@ def test_verify_hosted_deployment_rejects_html_escaped_embedded_json_contracts()
     assert "hosted_home_embedded_deployment_contract_not_direct_json" in failures
 
 
+def test_verify_hosted_deployment_rejects_duplicate_embedded_json_contracts() -> None:
+    home = _home_html()
+    for script_id, contract in {
+        "fusekit-github-intake": _github_intake_contract(),
+        "fusekit-hosted-readiness": _readiness_contract(),
+        "fusekit-hosted-deployment": _deployment_contract(),
+    }.items():
+        direct = _json_script(script_id, json_script_payload(contract))
+        duplicate = _json_script(script_id, json_script_payload(contract))
+        home = home.replace(direct, f"{duplicate}{direct}")
+    opener = SequenceOpener(
+        [
+            home,
+            {"ok": True},
+            _readiness_contract(),
+            _deployment_contract(),
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    failures = {check["id"]: check for check in report["checks"]}["hosted.home"][
+        "failures"
+    ]
+
+    assert report["ready"] is False
+    assert "hosted_home_embedded_github_intake_contract_duplicate" in failures
+    assert "hosted_home_embedded_readiness_contract_duplicate" in failures
+    assert "hosted_home_embedded_deployment_contract_duplicate" in failures
+
+
 def test_verify_hosted_deployment_requires_homepage_readiness_source_provenance() -> None:
     provenance = _source_provenance_contract()
     provenance["verified"] = False
