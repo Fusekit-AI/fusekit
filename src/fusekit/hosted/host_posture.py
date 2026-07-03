@@ -153,6 +153,11 @@ OCI_HOST_POSTURE_STRIPE_RUNTIME_ENV_ROW_KEYS = {
 OCI_HOST_POSTURE_PATCH_POSTURE_KEYS = frozenset(
     {"pending_security_updates", "reboot_required"}
 )
+OCI_HOST_POSTURE_DNS_PROPAGATION_KEYS = frozenset(
+    {"public_origin", "origin", "domain", "hostname", "status", "propagated", "ready"}
+)
+OCI_HOST_POSTURE_ROLLBACK_METADATA_KEYS = frozenset({"rollback", "actions"})
+OCI_HOST_POSTURE_ROLLBACK_ACTION_KEYS = frozenset({"action", "status", "target"})
 OCI_HOST_POSTURE_CIS_BASELINE_KEYS = frozenset(
     {"scanner", "status", "critical_findings", "high_findings"}
 )
@@ -802,6 +807,14 @@ def _evidence_shape_check(evidence: Mapping[str, object]) -> dict[str, object]:
     unexpected.extend(
         _unexpected_nested_keys(
             evidence,
+            "dns_propagation",
+            OCI_HOST_POSTURE_DNS_PROPAGATION_KEYS,
+        )
+    )
+    unexpected.extend(_unexpected_rollback_metadata_keys(evidence))
+    unexpected.extend(
+        _unexpected_nested_keys(
+            evidence,
             "cis_baseline",
             OCI_HOST_POSTURE_CIS_BASELINE_KEYS,
         )
@@ -926,6 +939,28 @@ def _unexpected_runtime_secret_verify_keys(evidence: Mapping[str, object]) -> li
                     f"runtime_secret_verify.stripe_runtime_env.{key}.{row_key}"
                     for row_key in _unexpected_keys(row, allowed)
                 )
+    return unexpected
+
+
+def _unexpected_rollback_metadata_keys(evidence: Mapping[str, object]) -> list[str]:
+    metadata = evidence.get("rollback_metadata")
+    if not isinstance(metadata, Mapping):
+        return []
+    unexpected = [
+        f"rollback_metadata.{key}"
+        for key in _unexpected_keys(metadata, OCI_HOST_POSTURE_ROLLBACK_METADATA_KEYS)
+    ]
+    for section in ("rollback", "actions"):
+        rows = metadata.get(section)
+        if not isinstance(rows, Sequence) or isinstance(rows, (str, bytes)):
+            continue
+        for index, row in enumerate(rows):
+            if not isinstance(row, Mapping):
+                continue
+            unexpected.extend(
+                f"rollback_metadata.{section}[{index}].{key}"
+                for key in _unexpected_keys(row, OCI_HOST_POSTURE_ROLLBACK_ACTION_KEYS)
+            )
     return unexpected
 
 

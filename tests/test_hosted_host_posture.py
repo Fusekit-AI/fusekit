@@ -779,6 +779,39 @@ def test_oci_host_posture_blocks_missing_dns_and_rollback_proof() -> None:
     ]
 
 
+def test_oci_host_posture_blocks_dns_and_rollback_sidecars() -> None:
+    evidence = _clean_evidence()
+    dns = evidence["dns_propagation"]
+    rollback = evidence["rollback_metadata"]
+    assert isinstance(dns, dict)
+    assert isinstance(rollback, dict)
+    dns["zone_id"] = "hidden-zone-id"
+    dns["raw_dig_output"] = "fusekit.snowmanai.org. 300 IN CNAME target.example.net."
+    rows = rollback["rollback"]
+    assert isinstance(rows, list)
+    row = rows[0]
+    assert isinstance(row, dict)
+    row["zone_id"] = "hidden-zone-id"
+    row["raw_provider_inventory"] = "cloudflare export belongs in private logs"
+    rollback["operator_notes"] = ["manual rollback possible"]
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["evidence.shape"]
+    shape_check = _check(report, "evidence.shape")
+    assert shape_check["failures"] == [
+        "oci_host_posture_evidence_has_unknown_fields"
+    ]
+    assert shape_check["unexpected_fields"] == [
+        "dns_propagation.raw_dig_output",
+        "dns_propagation.zone_id",
+        "rollback_metadata.operator_notes",
+        "rollback_metadata.rollback[0].raw_provider_inventory",
+        "rollback_metadata.rollback[0].zone_id",
+    ]
+
+
 def test_oci_host_posture_blocks_missing_release_receipt() -> None:
     evidence = _clean_evidence()
     evidence["release_receipt"] = {}
