@@ -2089,20 +2089,7 @@ def _hosted_payment_return_response(
             updated,
             control_tokens=_hosted_control_tokens(settings, updated),
             job_token=job_token,
-            action_receipt={
-                "schema_version": "fusekit.hosted-payment-return.v1",
-                "action": "payment",
-                "receipt_statement": (
-                    "Stripe Checkout authorization verified; managed worker start is now enabled."
-                ),
-                "next_required_proof": ["worker_claim", "detonation_receipt", "recording"],
-                "secret_boundary": (
-                    "Payment return receipts expose only Stripe Checkout authorization "
-                    "status and next proof labels. They never include card data, payment "
-                    "method ids, billing details, Stripe secret keys, client secrets, or "
-                    "provider credentials."
-                ),
-            },
+            action_receipt=_hosted_payment_return_action_receipt(),
         ),
     )
 
@@ -2129,6 +2116,44 @@ def _hosted_payment_error_payload(error: str) -> dict[str, object]:
     return payload
 
 
+def _hosted_payment_return_action_receipt() -> dict[str, object]:
+    receipt: dict[str, object] = {
+        "schema_version": "fusekit.hosted-payment-return.v1",
+        "action": "payment",
+        "receipt_statement": (
+            "Stripe Checkout authorization verified; managed worker start is now enabled."
+        ),
+        "next_required_proof": ["worker_claim", "detonation_receipt", "recording"],
+        "secret_boundary": (
+            "Payment return receipts expose only Stripe Checkout authorization "
+            "status and next proof labels. They never include card data, payment "
+            "method ids, billing details, Stripe secret keys, client secrets, raw "
+            "Checkout sessions, or provider credentials."
+        ),
+    }
+    _assert_public_action_response_payload(receipt)
+    return receipt
+
+
+def _hosted_payment_cancel_action_receipt() -> dict[str, object]:
+    receipt: dict[str, object] = {
+        "schema_version": "fusekit.hosted-payment-cancel.v1",
+        "action": "payment_cancelled",
+        "receipt_statement": (
+            "Payment authorization was cancelled; managed worker dispatch remains blocked."
+        ),
+        "next_required_proof": ["stripe_checkout_authorization"],
+        "secret_boundary": (
+            "Payment cancel receipts expose only cancellation status and next proof "
+            "labels. They never include card data, payment method ids, billing "
+            "details, Stripe secret keys, client secrets, raw Checkout sessions, or "
+            "provider credentials."
+        ),
+    }
+    _assert_public_action_response_payload(receipt)
+    return receipt
+
+
 def _hosted_payment_cancel_response(
     settings: HostedSettings,
     start_response: StartResponse,
@@ -2141,19 +2166,7 @@ def _hosted_payment_cancel_response(
             job,
             control_tokens=_hosted_control_tokens(settings, job),
             job_token=job_token,
-            action_receipt={
-                "schema_version": "fusekit.hosted-payment-cancel.v1",
-                "action": "payment_cancelled",
-                "receipt_statement": (
-                    "Payment authorization was cancelled; managed worker dispatch remains blocked."
-                ),
-                "next_required_proof": ["stripe_checkout_authorization"],
-                "secret_boundary": (
-                    "Payment cancel receipts expose only cancellation status and next proof "
-                    "labels. They never include card data, payment method ids, billing "
-                    "details, Stripe secret keys, client secrets, or provider credentials."
-                ),
-            },
+            action_receipt=_hosted_payment_cancel_action_receipt(),
         ),
     )
 

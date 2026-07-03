@@ -2253,10 +2253,13 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
     assert status == "200 OK"
     assert "Stripe Checkout authorization verified" in paid_text
     assert "Payment return receipts expose only Stripe Checkout authorization" in paid_text
+    assert "raw Checkout sessions" in paid_text
+    assert "worker_claim" in paid_text
     assert MANAGED_PRICE_LABEL in paid_text
     assert "Start worker" in paid_text
     assert "sk_live" not in paid_text
     assert "client_secret" not in paid_text
+    assert "payment_method" not in paid_text
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
@@ -2551,6 +2554,24 @@ def test_hosted_payment_checkout_rejects_bad_controls_without_stripe_call() -> N
     )
     assert status == "403 Forbidden"
     _assert_public_payment_error(body, "invalid_control")
+    assert settings.hosted_jobs[job_id].payment_status == "payment_required"
+    assert stripe_opener.requests == []
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/payments/stripe-cancel",
+        query_string=f"job={job_token}",
+        headers={"Accept": "text/html"},
+        settings=settings,
+    )
+    cancel_text = body.decode("utf-8")
+    assert status == "200 OK"
+    assert "Payment authorization was cancelled" in cancel_text
+    assert "Payment cancel receipts expose only cancellation status" in cancel_text
+    assert "raw Checkout sessions" in cancel_text
+    assert "stripe_checkout_authorization" in cancel_text
+    assert "sk_live" not in cancel_text
+    assert "client_secret" not in cancel_text
+    assert "payment_method" not in cancel_text
     assert settings.hosted_jobs[job_id].payment_status == "payment_required"
     assert stripe_opener.requests == []
 
