@@ -91,6 +91,37 @@ SECURITY_HEADER_NAMES = (
     "x-content-type-options",
     "x-frame-options",
 )
+WORKER_DISPATCH_READINESS_KEYS = frozenset(
+    {
+        "schema_version",
+        "ready",
+        "production_ready",
+        "configured",
+        "invalid",
+        "dispatch_binding",
+        "idempotency",
+        "optional_runtime_env",
+        "required_runtime_env",
+        "secret_boundary",
+    }
+)
+WORKER_DISPATCH_BINDING_KEYS = frozenset(
+    {
+        "required",
+        "required_fields",
+        "required_for_actions",
+        "lane",
+        "payment_status",
+        "hash_fields",
+        "secret_boundary",
+    }
+)
+WORKER_DISPATCH_IDEMPOTENCY_KEYS = frozenset(
+    {"mode", "durable", "ready", "scope", "storage", "blockers", "proof"}
+)
+WORKER_DISPATCH_IDEMPOTENCY_STORAGE_KEYS = frozenset(
+    {"exists", "directory", "symlink", "mode", "private_enough", "writable"}
+)
 
 
 class UrlOpener(Protocol):
@@ -503,10 +534,18 @@ def _worker_dispatch_url_from_deployment(payload: dict[str, Any]) -> str:
 
 def _worker_dispatch_readiness_failures(payload: dict[str, Any]) -> list[str]:
     failures: list[str] = []
+    failures.extend(
+        f"worker_dispatch_readiness_unexpected_field:{field}"
+        for field in _unexpected_keys(payload, WORKER_DISPATCH_READINESS_KEYS)
+    )
     failures.extend(_worker_dispatch_binding_failures(payload.get("dispatch_binding")))
     idempotency = payload.get("idempotency")
     if not isinstance(idempotency, dict):
         return ["worker_dispatch_idempotency_missing"]
+    failures.extend(
+        f"worker_dispatch_idempotency_unexpected_field:{field}"
+        for field in _unexpected_keys(idempotency, WORKER_DISPATCH_IDEMPOTENCY_KEYS)
+    )
     if idempotency.get("durable") is not True:
         failures.append("worker_dispatch_idempotency_not_durable")
     mode = idempotency.get("mode")
@@ -522,6 +561,14 @@ def _worker_dispatch_readiness_failures(payload: dict[str, Any]) -> list[str]:
         not isinstance(proof, str) or "before worker spawn" not in proof
     ):
         failures.append("worker_dispatch_idempotency_proof_missing")
+    storage = idempotency.get("storage")
+    if not isinstance(storage, dict):
+        failures.append("worker_dispatch_idempotency_storage_missing")
+    else:
+        failures.extend(
+            f"worker_dispatch_idempotency_storage_unexpected_field:{field}"
+            for field in _unexpected_keys(storage, WORKER_DISPATCH_IDEMPOTENCY_STORAGE_KEYS)
+        )
     production_ready = payload.get("production_ready")
     if production_ready is not True:
         failures.append("worker_dispatch_production_ready_not_true")
@@ -532,6 +579,10 @@ def _worker_dispatch_binding_failures(payload: object) -> list[str]:
     failures: list[str] = []
     if not isinstance(payload, dict):
         return ["worker_dispatch_binding_missing"]
+    failures.extend(
+        f"worker_dispatch_binding_unexpected_field:{field}"
+        for field in _unexpected_keys(payload, WORKER_DISPATCH_BINDING_KEYS)
+    )
     if payload.get("required") is not True:
         failures.append("worker_dispatch_binding_not_required")
     if payload.get("required_fields") != list(HOSTED_WORKER_DISPATCH_BINDING_FIELDS):
@@ -552,6 +603,10 @@ def _worker_dispatch_binding_failures(payload: object) -> list[str]:
     ):
         failures.append("worker_dispatch_binding_secret_boundary_missing")
     return failures
+
+
+def _unexpected_keys(payload: dict[str, Any], allowed: frozenset[str]) -> list[str]:
+    return sorted(str(key) for key in payload if str(key) not in allowed)
 
 
 def _dns_check(

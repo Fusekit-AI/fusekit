@@ -138,11 +138,40 @@ def _worker_dispatch_readiness_contract() -> dict[str, object]:
             "mode": "dispatch-state-dir",
             "durable": True,
             "scope": "worker deployment",
+            "storage": {
+                "exists": True,
+                "directory": True,
+                "symlink": False,
+                "mode": "0750",
+                "private_enough": True,
+                "writable": True,
+            },
+            "blockers": [],
             "proof": (
                 "Duplicate job/action dispatches are reserved through a configured "
                 "non-secret state directory before worker spawn."
             ),
         },
+        "configured": {
+            "FUSEKIT_HOSTED_WORKER_SECRET": True,
+            "FUSEKIT_HOSTED_WORKER_ID": True,
+            "FUSEKIT_HOSTED_WORKER_WORKSPACE": False,
+            "FUSEKIT_HOSTED_WORKER_DISPATCH_STATE_DIR": True,
+        },
+        "invalid": [],
+        "optional_runtime_env": [
+            "FUSEKIT_HOSTED_WORKER_WORKSPACE",
+            "FUSEKIT_HOSTED_WORKER_DISPATCH_STATE_DIR",
+        ],
+        "required_runtime_env": [
+            "FUSEKIT_HOSTED_WORKER_SECRET",
+            "FUSEKIT_HOSTED_WORKER_ID",
+        ],
+        "secret_boundary": (
+            "Dispatch readiness reports only configuration presence and shape errors. "
+            "It never renders worker secrets, signed job tokens, HMAC signatures, "
+            "provider credentials, GitHub installation tokens, or vault material."
+        ),
     }
 
 
@@ -256,6 +285,14 @@ def test_verify_hosted_deployment_requires_durable_worker_dispatch_idempotency()
                 "idempotency": {
                     "mode": "process",
                     "durable": False,
+                    "storage": {
+                        "exists": False,
+                        "directory": False,
+                        "symlink": False,
+                        "mode": "",
+                        "private_enough": False,
+                        "writable": False,
+                    },
                 },
             },
         ]
@@ -295,6 +332,14 @@ def test_verify_hosted_deployment_requires_worker_dispatch_idempotency_proof() -
                     "mode": "dispatch-state-dir",
                     "durable": True,
                     "scope": "single receiver process",
+                    "storage": {
+                        "exists": True,
+                        "directory": True,
+                        "symlink": False,
+                        "mode": "0750",
+                        "private_enough": True,
+                        "writable": True,
+                    },
                     "proof": "Duplicate dispatches are handled.",
                 },
             },
@@ -348,6 +393,54 @@ def test_verify_hosted_deployment_requires_worker_dispatch_readiness_binding_con
         "worker_dispatch_binding_not_required",
         "worker_dispatch_binding_fields_mismatch",
         "worker_dispatch_binding_payment_status_mismatch",
+    ]
+
+
+def test_verify_hosted_deployment_rejects_worker_dispatch_readiness_sidecars() -> None:
+    readiness = _worker_dispatch_readiness_contract()
+    readiness["raw_log_excerpt"] = "dispatch worker log lines do not belong here"
+    binding = readiness["dispatch_binding"]
+    idempotency = readiness["idempotency"]
+    assert isinstance(binding, dict)
+    assert isinstance(idempotency, dict)
+    binding["stripe_price_id"] = "price_should_not_be_public_readiness"
+    idempotency["state_dir"] = "/var/lib/fusekit/dispatch-state"
+    storage = {
+        "exists": True,
+        "directory": True,
+        "symlink": False,
+        "mode": "0750",
+        "private_enough": True,
+        "writable": True,
+        "path": "/var/lib/fusekit/dispatch-state",
+    }
+    idempotency["storage"] = storage
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            _readiness_contract(),
+            _deployment_contract(),
+            _github_intake_contract(),
+            {"ok": True},
+            readiness,
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["worker_dispatch.readiness"]["status"] == "failed"
+    assert checks["worker_dispatch.readiness"]["failures"] == [
+        "worker_dispatch_readiness_unexpected_field:raw_log_excerpt",
+        "worker_dispatch_binding_unexpected_field:stripe_price_id",
+        "worker_dispatch_idempotency_unexpected_field:state_dir",
+        "worker_dispatch_idempotency_storage_unexpected_field:path",
     ]
 
 
