@@ -5,9 +5,11 @@ import json
 from fusekit.hosted.runtime_secrets import (
     HOSTED_RUNTIME_SECRET_INSTALL_SCHEMA_VERSION,
     HOSTED_RUNTIME_SECRET_PLAN_SCHEMA_VERSION,
+    HOSTED_RUNTIME_SECRET_VERIFY_SCHEMA_VERSION,
     build_hosted_runtime_secret_plan,
     install_hosted_runtime_secret_file,
     main,
+    verify_hosted_runtime_secret_file,
 )
 from fusekit.security import contains_durable_secret_text
 
@@ -157,6 +159,75 @@ def test_runtime_secret_installer_writes_owner_only_env_file_without_public_valu
     assert "BEGIN RSA PRIVATE KEY" not in serialized
     assert "state-secret-value" not in serialized
     assert not contains_durable_secret_text(serialized)
+
+
+def test_runtime_secret_verifier_proves_file_metadata_and_key_inventory_without_values(
+    tmp_path,
+) -> None:
+    output_path = tmp_path / "hosted-secrets.env"
+    install_hosted_runtime_secret_file(
+        env=_env(),
+        output_path=str(output_path),
+        execute=True,
+    )
+
+    report = verify_hosted_runtime_secret_file(path=str(output_path))
+    serialized = json.dumps(report, sort_keys=True)
+
+    assert report["schema_version"] == HOSTED_RUNTIME_SECRET_VERIFY_SCHEMA_VERSION
+    assert report["mode"] == "verify"
+    assert report["mutates_host"] is False
+    assert report["mutates_provider"] is False
+    assert report["ready"] is True
+    assert report["ready_for_managed_payment_staging"] is True
+    assert report["blockers"] == []
+    assert report["secret_file"]["exists"] is True
+    assert report["secret_file"]["regular_file"] is True
+    assert report["secret_file"]["symlink"] is False
+    assert report["secret_file"]["owner_only"] is True
+    assert report["required_runtime_env"]["FUSEKIT_GITHUB_APP_PRIVATE_KEY"] == {
+        "present": True
+    }
+    assert report["key_inventory"]["missing"] == []
+    assert "sk_live_secretfixture" not in serialized
+    assert "BEGIN RSA PRIVATE KEY" not in serialized
+    assert "state-secret-value" not in serialized
+    assert "worker-secret-value" not in serialized
+    assert not contains_durable_secret_text(serialized)
+
+
+def test_runtime_secret_verifier_rejects_symlink_without_reading_target(
+    tmp_path,
+) -> None:
+    target_path = tmp_path / "target.env"
+    link_path = tmp_path / "hosted-secrets.env"
+    target_path.write_text("FUSEKIT_STRIPE_SECRET_KEY='sk_live_targetsecret'\n", encoding="utf-8")
+    target_path.chmod(0o600)
+    link_path.symlink_to(target_path)
+
+    report = verify_hosted_runtime_secret_file(path=str(link_path))
+    serialized = json.dumps(report, sort_keys=True)
+
+    assert report["ready"] is False
+    assert "runtime_secret_file_must_not_be_symlink" in report["blockers"]
+    assert "sk_live_targetsecret" not in serialized
+    assert not contains_durable_secret_text(serialized)
+
+
+def test_runtime_secret_verifier_cli_reads_written_file(tmp_path, capfd) -> None:
+    output_path = tmp_path / "hosted-secrets.env"
+    install_hosted_runtime_secret_file(
+        env=_env(),
+        output_path=str(output_path),
+        execute=True,
+    )
+
+    exit_code = main(["--verify-file", str(output_path)])
+    output = json.loads(capfd.readouterr().out)
+
+    assert exit_code == 0
+    assert output["schema_version"] == HOSTED_RUNTIME_SECRET_VERIFY_SCHEMA_VERSION
+    assert output["ready"] is True
 
 
 def test_runtime_secret_installer_does_not_write_when_blocked(tmp_path) -> None:

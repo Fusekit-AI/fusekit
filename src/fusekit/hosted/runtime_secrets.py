@@ -11,6 +11,7 @@ import stat
 import urllib.parse
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import cast
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.billing import _stripe_account_mode, _valid_price_label
@@ -19,6 +20,7 @@ from fusekit.security import contains_durable_secret_text, redact_public_text
 
 HOSTED_RUNTIME_SECRET_PLAN_SCHEMA_VERSION = "fusekit.hosted-runtime-secret-plan.v1"
 HOSTED_RUNTIME_SECRET_INSTALL_SCHEMA_VERSION = "fusekit.hosted-runtime-secret-install.v1"
+HOSTED_RUNTIME_SECRET_VERIFY_SCHEMA_VERSION = "fusekit.hosted-runtime-secret-verify.v1"
 HOSTED_RUNTIME_SECRET_FILE = "/etc/fusekit/hosted-secrets.env"
 HOSTED_RUNTIME_GENERATABLE_SECRETS = (
     "FUSEKIT_HOSTED_STATE_SECRET",
@@ -30,6 +32,7 @@ HOSTED_RUNTIME_STRIPE_ENV = (
     "FUSEKIT_MANAGED_RUN_PRICE_LABEL",
     "FUSEKIT_MANAGED_RUNS_ENABLED",
 )
+HOSTED_RUNTIME_REQUIRED_FILE_ENV = (*REQUIRED_HOSTED_ENV, *HOSTED_RUNTIME_STRIPE_ENV)
 
 
 def build_hosted_runtime_secret_plan(
@@ -146,6 +149,70 @@ def install_hosted_runtime_secret_file(
     return report
 
 
+def verify_hosted_runtime_secret_file(
+    *,
+    path: str = HOSTED_RUNTIME_SECRET_FILE,
+) -> dict[str, object]:
+    """Verify the hosted runtime EnvironmentFile without emitting values."""
+
+    secret_path = Path(path)
+    blockers: list[str] = []
+    metadata = _runtime_secret_file_metadata(secret_path)
+    blockers.extend(_string_list(metadata["blockers"]))
+    material: dict[str, str] = {}
+    parse_failures: list[str] = []
+    if not blockers:
+        try:
+            material, parse_failures = _parse_systemd_env_file(secret_path)
+        except OSError:
+            blockers.append("runtime_secret_file_unreadable")
+    blockers.extend(parse_failures)
+    missing = [name for name in HOSTED_RUNTIME_REQUIRED_FILE_ENV if not material.get(name, "")]
+    blockers.extend(missing)
+    blockers.extend(_runtime_invalid(material, generated={}))
+    stripe = _stripe_runtime_status(material)
+    blockers.extend(_string_list(stripe["blockers"]))
+    if stripe["ready_for_managed_payment_staging"] is not True:
+        blockers.append("runtime_secret_payment_staging_not_ready")
+    secret_file_public: dict[str, object] = {"path": redact_public_text(path)}
+    secret_file_public.update(cast(Mapping[str, object], metadata["public"]))
+    report = {
+        "schema_version": HOSTED_RUNTIME_SECRET_VERIFY_SCHEMA_VERSION,
+        "mode": "verify",
+        "mutates_host": False,
+        "mutates_provider": False,
+        "ready": not blockers,
+        "ready_for_managed_payment_staging": stripe["ready_for_managed_payment_staging"],
+        "blockers": blockers,
+        "secret_file": secret_file_public,
+        "required_runtime_env": {
+            name: {"present": bool(material.get(name, ""))}
+            for name in HOSTED_RUNTIME_REQUIRED_FILE_ENV
+        },
+        "stripe_runtime_env": stripe["public_env"],
+        "key_inventory": {
+            "required_count": len(HOSTED_RUNTIME_REQUIRED_FILE_ENV),
+            "present_required_count": len(HOSTED_RUNTIME_REQUIRED_FILE_ENV) - len(missing),
+            "missing": missing,
+            "unexpected_keys": [
+                name
+                for name in sorted(material)
+                if name not in HOSTED_RUNTIME_REQUIRED_FILE_ENV
+            ],
+        },
+        "next_actions": _verify_next_actions(blockers),
+        "secret_boundary": (
+            "This verifier reads the hosted runtime EnvironmentFile only to validate file "
+            "metadata, required env names, secret shapes, disabled managed-run state, and "
+            "public Stripe object labels. It emits no environment values, Stripe secret "
+            "keys, GitHub App private keys, hosted state or worker secrets, OCI "
+            "credentials, provider credentials, or vault material."
+        ),
+    }
+    _assert_public_runtime_plan(report)
+    return report
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Print redacted hosted runtime secret-file readiness."""
 
@@ -156,15 +223,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--allow-generated-state-secrets", action="store_true")
     parser.add_argument("--output", default=HOSTED_RUNTIME_SECRET_FILE)
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--verify-file", default="")
     args = parser.parse_args(argv)
     try:
-        env = _read_env(args.env_json) if args.env_json else dict(os.environ)
-        plan = install_hosted_runtime_secret_file(
-            env=env,
-            output_path=args.output,
-            allow_generated_state_secrets=args.allow_generated_state_secrets,
-            execute=args.execute,
-        )
+        if args.verify_file:
+            plan = verify_hosted_runtime_secret_file(path=args.verify_file)
+        else:
+            env = _read_env(args.env_json) if args.env_json else dict(os.environ)
+            plan = install_hosted_runtime_secret_file(
+                env=env,
+                output_path=args.output,
+                allow_generated_state_secrets=args.allow_generated_state_secrets,
+                execute=args.execute,
+            )
     except FuseKitError as exc:
         plan = {
             "schema_version": HOSTED_RUNTIME_SECRET_PLAN_SCHEMA_VERSION,
@@ -176,7 +247,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "secret_boundary": "Runtime secret planning errors never emit secret values.",
         }
     print(json.dumps(plan, indent=2, sort_keys=True))
-    return 0 if plan.get("ready_to_write_secret_file") is True else 2
+    return 0 if plan.get("ready_to_write_secret_file") is True or plan.get("ready") is True else 2
 
 
 def _install_report(
@@ -260,6 +331,110 @@ def _write_secret_env_file(path: Path, material: Mapping[str, str]) -> None:
     os.replace(tmp_path, path)
 
 
+def _runtime_secret_file_metadata(path: Path) -> dict[str, object]:
+    blockers: list[str] = []
+    public: dict[str, object] = {
+        "exists": False,
+        "regular_file": False,
+        "symlink": False,
+        "mode": "",
+        "owner_only": False,
+        "parent_mode": "",
+        "parent_private_enough": False,
+        "root_owned_required": _production_secret_path(path),
+        "root_owned": False,
+    }
+    try:
+        path_stat = path.lstat()
+    except OSError:
+        blockers.append("runtime_secret_file_missing")
+        return {"public": public, "blockers": blockers}
+    mode = stat.S_IMODE(path_stat.st_mode)
+    public["exists"] = True
+    public["mode"] = f"{mode:04o}"
+    public["symlink"] = stat.S_ISLNK(path_stat.st_mode)
+    public["regular_file"] = stat.S_ISREG(path_stat.st_mode)
+    public["owner_only"] = mode & (stat.S_IRWXG | stat.S_IRWXO) == 0
+    public["root_owned"] = path_stat.st_uid == 0 and path_stat.st_gid == 0
+    if public["symlink"] is True:
+        blockers.append("runtime_secret_file_must_not_be_symlink")
+    if public["regular_file"] is not True:
+        blockers.append("runtime_secret_file_must_be_regular")
+    if public["owner_only"] is not True:
+        blockers.append("runtime_secret_file_must_be_owner_only")
+    if public["root_owned_required"] is True and public["root_owned"] is not True:
+        blockers.append("runtime_secret_file_must_be_root_owned")
+    try:
+        parent_stat = path.parent.lstat()
+    except OSError:
+        blockers.append("runtime_secret_directory_missing")
+        return {"public": public, "blockers": blockers}
+    parent_mode = stat.S_IMODE(parent_stat.st_mode)
+    public["parent_mode"] = f"{parent_mode:04o}"
+    public["parent_private_enough"] = (
+        parent_mode & (stat.S_IWGRP | stat.S_IRWXO) == 0
+        and stat.S_ISDIR(parent_stat.st_mode)
+    )
+    if public["parent_private_enough"] is not True:
+        blockers.append("runtime_secret_directory_not_private_enough")
+    return {"public": public, "blockers": blockers}
+
+
+def _production_secret_path(path: Path) -> bool:
+    try:
+        resolved = path.resolve(strict=False)
+    except OSError:
+        resolved = path.absolute()
+    return str(resolved) == HOSTED_RUNTIME_SECRET_FILE or str(resolved).startswith(
+        "/etc/fusekit/"
+    )
+
+
+def _parse_systemd_env_file(path: Path) -> tuple[dict[str, str], list[str]]:
+    material: dict[str, str] = {}
+    failures: list[str] = []
+    lines = path.read_text(encoding="utf-8").splitlines()
+    index = 0
+    while index < len(lines):
+        line_number = index + 1
+        raw_line = lines[index]
+        line = raw_line.strip()
+        index += 1
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            failures.append(f"runtime_secret_line_{line_number}_missing_equals")
+            continue
+        name, value = line.split("=", 1)
+        name = name.strip()
+        if not re.fullmatch(r"[A-Z][A-Z0-9_]*", name):
+            failures.append(f"runtime_secret_line_{line_number}_invalid_key")
+            continue
+        value = value.strip()
+        if value.startswith("'") and not value.endswith("'"):
+            value_lines = [value]
+            while index < len(lines):
+                continuation = lines[index]
+                value_lines.append(continuation)
+                index += 1
+                if continuation.endswith("'"):
+                    break
+            value = "\n".join(value_lines)
+            if not value.endswith("'"):
+                failures.append(f"runtime_secret_line_{line_number}_unterminated_quote")
+                continue
+        material[name] = _systemd_unquote(value.strip())
+    return material, failures
+
+
+def _systemd_unquote(value: str) -> str:
+    if len(value) >= 2 and value[0] == "'" and value[-1] == "'":
+        return value[1:-1].replace("'\\''", "'")
+    if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
+        return value[1:-1]
+    return value
+
+
 def _systemd_quote(value: str) -> str:
     return "'" + value.replace("'", "'\\''") + "'"
 
@@ -269,7 +444,7 @@ def _install_next_actions(*, execute: bool, written: bool) -> list[str]:
         return [
             "Restart only fusekit-hosted.service and fusekit-worker-dispatch.service after "
             "the matching release is installed.",
-            "Run fusekit-hosted-runtime-secret-plan again to collect redacted proof.",
+            "Run fusekit-hosted-runtime-secret-plan --verify-file to collect redacted proof.",
             "Keep FUSEKIT_MANAGED_RUNS_ENABLED=0 until live Checkout proof passes.",
         ]
     if execute:
@@ -277,6 +452,19 @@ def _install_next_actions(*, execute: bool, written: bool) -> list[str]:
     return [
         "Review the redacted plan, then re-run with --execute on the replacement host.",
         "Do not paste secret values into docs, logs, pull requests, or public receipts.",
+    ]
+
+
+def _verify_next_actions(blockers: Sequence[str]) -> list[str]:
+    if not blockers:
+        return [
+            "Attach this verify report to fusekit-hosted-oci-replacement-plan.",
+            "Keep FUSEKIT_MANAGED_RUNS_ENABLED=0 until live Checkout and webhook proof pass.",
+        ]
+    return [
+        "Repair only the hosted runtime secret file metadata or missing env names.",
+        "Do not paste secret values into docs, logs, pull requests, or public receipts.",
+        "Re-run with --verify-file after repair; do not move DNS before this report is ready.",
     ]
 
 

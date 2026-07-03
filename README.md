@@ -423,11 +423,12 @@ replacement host has the runtime-secret inputs needed for
 `/etc/fusekit/hosted-secrets.env` without printing any values. It reports only
 env names, configured booleans, Stripe public object ids/labels, and whether the
 hosted state/worker secrets must be generated on the host. The OCI replacement
-plan can attach the install receipt with `--runtime-secret-report`; replacement
-infrastructure may be ready while `ready_for_dns_cutover=false` until the runtime
-secret file has actually been written with `--execute`, Stripe staging, hosted
-verifier, posture, release receipt, DNS dry-run, and rollback proof are all
-present.
+plan requires the follow-up `--verify-file` report with `--runtime-secret-report`;
+replacement infrastructure may be ready while `ready_for_dns_cutover=false` until
+the runtime secret file has actually been written with `--execute`, verified as a
+private non-symlink file with the required key inventory, and Stripe staging,
+hosted verifier, posture, release receipt, DNS dry-run, and rollback proof are
+all present.
 `fusekit-hosted-oci-access-plan` is the matching plan-only OCI redeploy/access
 preflight. It consumes redacted instance, VNIC, plugin, SSH probe, and hosted
 verifier evidence, confirms the target is the FuseKit-tagged AMD hosted

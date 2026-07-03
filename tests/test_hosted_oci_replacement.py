@@ -12,7 +12,10 @@ from fusekit.hosted.oci_replacement import (
     build_hosted_oci_replacement_plan,
     main,
 )
-from fusekit.hosted.runtime_secrets import install_hosted_runtime_secret_file
+from fusekit.hosted.runtime_secrets import (
+    install_hosted_runtime_secret_file,
+    verify_hosted_runtime_secret_file,
+)
 from fusekit.security import contains_durable_secret_text
 
 EXPECTED_COMMIT = "04cdf22c57842f5516f9fb90acfcd706cb8e5952"
@@ -105,6 +108,16 @@ def _runtime_secret_install_report(tmp_path) -> dict[str, object]:
     )
 
 
+def _runtime_secret_verify_report(tmp_path) -> dict[str, object]:
+    output_path = tmp_path / "hosted-secrets.env"
+    install_hosted_runtime_secret_file(
+        env=_runtime_secret_env(),
+        output_path=str(output_path),
+        execute=True,
+    )
+    return verify_hosted_runtime_secret_file(path=str(output_path))
+
+
 def _runtime_secret_dry_run_report(tmp_path) -> dict[str, object]:
     return install_hosted_runtime_secret_file(
         env=_runtime_secret_env(),
@@ -129,10 +142,15 @@ def test_oci_replacement_plan_keeps_cutover_blocked_for_runtime_secret_dry_run(
     assert plan["runtime_secret_readiness"] == {
         "attached": True,
         "install_receipt": True,
+        "verify_report": False,
         "written": False,
+        "verified": False,
         "ready_to_write_secret_file": True,
         "ready_for_managed_payment_staging": True,
-        "blockers": ["runtime_secret_file_not_written"],
+        "blockers": [
+            "runtime_secret_file_not_written",
+            "runtime_secret_verify_report_required_for_cutover",
+        ],
     }
 
 
@@ -191,7 +209,7 @@ def test_oci_replacement_plan_allows_narrow_amd_candidate_with_deploy_path() -> 
     assert not contains_durable_secret_text(serialized)
 
 
-def test_oci_replacement_plan_allows_cutover_when_runtime_secret_install_receipt_ready(
+def test_oci_replacement_plan_blocks_cutover_when_only_runtime_secret_install_receipt_ready(
     tmp_path,
 ) -> None:
     plan = build_hosted_oci_replacement_plan(
@@ -203,13 +221,41 @@ def test_oci_replacement_plan_allows_cutover_when_runtime_secret_install_receipt
     )
 
     assert plan["ready_to_create_replacement"] is True
+    assert plan["ready_for_dns_cutover"] is False
+    assert plan["cutover_blockers"] == ["runtime_secret_verify_report_required_for_cutover"]
+    assert plan["runtime_secret_readiness"] == {
+        "attached": True,
+        "install_receipt": True,
+        "verify_report": False,
+        "written": True,
+        "verified": False,
+        "ready_to_write_secret_file": True,
+        "ready_for_managed_payment_staging": True,
+        "blockers": ["runtime_secret_verify_report_required_for_cutover"],
+    }
+
+
+def test_oci_replacement_plan_allows_cutover_when_runtime_secret_verify_report_ready(
+    tmp_path,
+) -> None:
+    plan = build_hosted_oci_replacement_plan(
+        inventory_report=_inventory_report(),
+        replacement_shape="VM.Standard.E5.Flex",
+        replacement_run_command_availability="available_not_installed",
+        expected_commit_sha=EXPECTED_COMMIT,
+        runtime_secret_report=_runtime_secret_verify_report(tmp_path),
+    )
+
+    assert plan["ready_to_create_replacement"] is True
     assert plan["ready_for_dns_cutover"] is True
     assert plan["cutover_blockers"] == []
     assert plan["runtime_secret_readiness"] == {
         "attached": True,
-        "install_receipt": True,
-        "written": True,
-        "ready_to_write_secret_file": True,
+        "install_receipt": False,
+        "verify_report": True,
+        "written": False,
+        "verified": True,
+        "ready_to_write_secret_file": False,
         "ready_for_managed_payment_staging": True,
         "blockers": [],
     }
@@ -227,7 +273,7 @@ def test_oci_replacement_plan_blocks_legacy_runtime_secret_plan_for_cutover() ->
     assert plan["ready_to_create_replacement"] is True
     assert plan["ready_for_dns_cutover"] is False
     assert plan["runtime_secret_readiness"]["blockers"] == [
-        "runtime_secret_install_receipt_required_for_cutover"
+        "runtime_secret_verify_report_required_for_cutover"
     ]
 
 

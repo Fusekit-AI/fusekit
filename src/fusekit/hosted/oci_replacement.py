@@ -17,6 +17,7 @@ from fusekit.hosted.oci_inventory import HOSTED_OCI_INVENTORY_SCHEMA_VERSION
 from fusekit.hosted.runtime_secrets import (
     HOSTED_RUNTIME_SECRET_INSTALL_SCHEMA_VERSION,
     HOSTED_RUNTIME_SECRET_PLAN_SCHEMA_VERSION,
+    HOSTED_RUNTIME_SECRET_VERIFY_SCHEMA_VERSION,
 )
 from fusekit.hosted.server import HOSTED_CANONICAL_ORIGIN
 from fusekit.security import contains_durable_secret_text, redact_public_text
@@ -275,25 +276,36 @@ def _runtime_secret_readiness(
     plan_schema = runtime_secret_report.get("plan_schema_version")
     install_report = schema == HOSTED_RUNTIME_SECRET_INSTALL_SCHEMA_VERSION
     plan_report = schema == HOSTED_RUNTIME_SECRET_PLAN_SCHEMA_VERSION
-    if not plan_report and not (
+    verify_report = schema == HOSTED_RUNTIME_SECRET_VERIFY_SCHEMA_VERSION
+    if not verify_report and not plan_report and not (
         install_report and plan_schema == HOSTED_RUNTIME_SECRET_PLAN_SCHEMA_VERSION
     ):
         blockers.append("runtime_secret_report_schema_invalid")
     if runtime_secret_report.get("mutates_provider") is not False:
         blockers.append("runtime_secret_report_must_not_mutate_provider")
-    if runtime_secret_report.get("ready_to_write_secret_file") is not True:
+    if verify_report:
+        if runtime_secret_report.get("mutates_host") is not False:
+            blockers.append("runtime_secret_verify_report_must_not_mutate_host")
+        if runtime_secret_report.get("ready") is not True:
+            blockers.append("runtime_secret_verify_report_not_ready")
+    elif runtime_secret_report.get("ready_to_write_secret_file") is not True:
         blockers.append("runtime_secret_report_not_ready")
     if runtime_secret_report.get("ready_for_managed_payment_staging") is not True:
         blockers.append("runtime_secret_report_payment_staging_not_ready")
-    if install_report:
+    if verify_report:
+        pass
+    elif install_report:
         if runtime_secret_report.get("written") is not True:
             blockers.append("runtime_secret_file_not_written")
+        blockers.append("runtime_secret_verify_report_required_for_cutover")
     else:
-        blockers.append("runtime_secret_install_receipt_required_for_cutover")
+        blockers.append("runtime_secret_verify_report_required_for_cutover")
     return {
         "attached": True,
         "install_receipt": install_report,
+        "verify_report": verify_report,
         "written": runtime_secret_report.get("written") is True,
+        "verified": verify_report and runtime_secret_report.get("ready") is True,
         "ready_to_write_secret_file": runtime_secret_report.get("ready_to_write_secret_file")
         is True,
         "ready_for_managed_payment_staging": runtime_secret_report.get(
