@@ -25,10 +25,13 @@ from fusekit.hosted import (
 )
 from fusekit.hosted.job import (
     HOSTED_BYO_OCI_HANDOFF_PREFLIGHT_SCHEMA_VERSION,
+    HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION,
     HOSTED_BYO_OCI_PROOF_MANIFEST_SCHEMA_VERSION,
+    HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION,
     HOSTED_BYO_OCI_REVERSIBILITY_SCHEMA_VERSION,
     hosted_byo_oci_bootstrap,
     render_hosted_byo_oci_bootstrap,
+    verify_hosted_byo_oci_proof_bundle,
     with_hosted_job_payment_receipt,
 )
 from fusekit.hosted.lanes import BYO_OCI_LANE, MANAGED_FUSEKIT_RUN_LANE
@@ -58,6 +61,31 @@ def _plan():
         ),
     )
     return build_hosted_launch_plan(manifest, github_source="https://github.com/example/job-demo")
+
+
+def _byo_proof_bundle_from_bootstrap(bootstrap: dict[str, object]) -> dict[str, object]:
+    manifest = bootstrap["proof_manifest"]
+    assert isinstance(manifest, dict)
+    artifacts = manifest["required_remote_artifacts"]
+    assert isinstance(artifacts, list)
+    return {
+        "schema_version": HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION,
+        "proof_bundle_root": manifest["proof_bundle_root"],
+        "artifacts": [
+            {
+                "path": artifact["path"],
+                "label": artifact["label"],
+                "sha256": "sha256:" + ("a" * 64),
+                "size_bytes": 1024,
+                "redacted": True,
+            }
+            for artifact in artifacts
+            if isinstance(artifact, dict)
+        ],
+        "completion_evidence": {
+            key: True for key in manifest["required_completion_evidence"]
+        },
+    }
 
 
 def test_hosted_launch_job_is_public_safe_and_trust_complete() -> None:
@@ -307,6 +335,22 @@ def test_hosted_byo_bootstrap_publishes_preflight_and_reversibility_contract() -
             "--remote-artifacts <app>/.fusekit/remote-artifacts --require-recording"
         ),
     }
+    assert bootstrap["proof_return"]["verifier_contract"] == {
+        "input_schema": HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION,
+        "output_schema": HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION,
+        "requires_redacted_artifacts": True,
+        "requires_completion_evidence": [
+            "live_url",
+            "provider_verifiers",
+            "dns_propagation",
+            "rollback_metadata",
+            "retrieved_remote_artifacts",
+            "run_record",
+            "detonation_receipt",
+            "live_acceptance_report",
+            "recording",
+        ],
+    }
     assert "worker-local paths are not allowed" in bootstrap["proof_manifest"][
         "secret_boundary"
     ]
@@ -345,6 +389,71 @@ def test_hosted_byo_bootstrap_renders_browser_handoff_page() -> None:
     assert "ghs_" not in html
     assert "PRIVATE KEY" not in html
     assert "sk_live" not in html
+
+
+def test_hosted_byo_proof_bundle_verifier_accepts_complete_redacted_inventory() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+    serialized = json.dumps(report, sort_keys=True)
+
+    assert report["schema_version"] == HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION
+    assert report["input_schema_version"] == HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION
+    assert report["ready"] is True
+    assert report["blockers"] == []
+    assert report["proof_bundle_root"] == ".fusekit/remote-artifacts"
+    assert report["artifact_summary"]["missing"] == []
+    assert report["artifact_summary"]["unexpected"] == []
+    assert report["artifact_summary"]["present_required_count"] == report[
+        "artifact_summary"
+    ]["required_count"]
+    assert all(report["completion_evidence"].values())
+    assert "ghs_" not in serialized
+    assert "sk_live" not in serialized
+    assert "PRIVATE KEY" not in serialized
+
+
+def test_hosted_byo_proof_bundle_verifier_blocks_missing_and_unsafe_inventory() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+    artifacts = bundle["artifacts"]
+    assert isinstance(artifacts, list)
+    artifacts.pop()
+    artifacts.append(
+        {
+            "path": "../worker.log",
+            "label": "worker log with ghs_not_real_token",
+            "sha256": "not-a-hash",
+            "size_bytes": -1,
+            "redacted": False,
+        }
+    )
+    evidence = bundle["completion_evidence"]
+    assert isinstance(evidence, dict)
+    evidence["recording"] = False
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+    serialized = json.dumps(report, sort_keys=True)
+
+    assert report["ready"] is False
+    assert any(str(blocker).startswith("missing_artifact:") for blocker in report["blockers"])
+    assert "artifact_path_invalid" in " ".join(str(blocker) for blocker in report["blockers"])
+    assert "missing_completion_evidence:recording" in report["blockers"]
+    assert "ghs_not_real_token" not in serialized
+    assert "PRIVATE KEY" not in serialized
 
 
 def test_hosted_worker_request_binds_live_acceptance_and_no_secret_policy() -> None:

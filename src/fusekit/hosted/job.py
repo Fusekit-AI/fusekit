@@ -47,6 +47,8 @@ HOSTED_BYO_OCI_FUSEKIT_PACKAGE = "fusekit"
 HOSTED_BYO_OCI_HANDOFF_PREFLIGHT_SCHEMA_VERSION = "fusekit.hosted-byo-oci-preflight.v1"
 HOSTED_BYO_OCI_REVERSIBILITY_SCHEMA_VERSION = "fusekit.hosted-byo-oci-reversibility.v1"
 HOSTED_BYO_OCI_PROOF_MANIFEST_SCHEMA_VERSION = "fusekit.hosted-byo-oci-proof-manifest.v1"
+HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION = "fusekit.hosted-byo-oci-proof-bundle.v1"
+HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION = "fusekit.hosted-byo-oci-proof-verify.v1"
 
 HOSTED_WORKER_PROOF_KEYS = HOSTED_COMPLETION_EVIDENCE_KEYS
 HOSTED_WORKER_MAINTENANCE_PROOF_KEYS = (
@@ -494,6 +496,12 @@ def hosted_byo_oci_bootstrap(job: HostedLaunchJob) -> dict[str, object]:
                 "--remote-artifacts <app>/.fusekit/remote-artifacts --require-recording"
             ),
             "not_hosted_complete_until": list(HOSTED_WORKER_PROOF_KEYS),
+            "verifier_contract": {
+                "input_schema": HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION,
+                "output_schema": HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION,
+                "requires_redacted_artifacts": True,
+                "requires_completion_evidence": list(HOSTED_WORKER_PROOF_KEYS),
+            },
         },
         "proof_manifest": _byo_oci_proof_manifest(job),
         "reversibility": {
@@ -784,6 +792,159 @@ def _byo_oci_proof_manifest(job: HostedLaunchJob) -> dict[str, object]:
             "plaintext, browser profiles, and worker-local paths are not allowed."
         ),
     }
+
+
+def verify_hosted_byo_oci_proof_bundle(
+    job: HostedLaunchJob,
+    bundle: dict[str, object],
+) -> dict[str, object]:
+    """Verify a returned BYO OCI artifact inventory without exposing contents."""
+
+    manifest = _byo_oci_proof_manifest(job)
+    required_artifacts = _manifest_artifact_labels(manifest)
+    blockers: list[str] = []
+    if job.launch_lane != BYO_OCI_LANE:
+        blockers.append("byo_oci_proof_bundle_job_lane_mismatch")
+    if bundle.get("schema_version") != HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION:
+        blockers.append("byo_oci_proof_bundle_schema_invalid")
+    if bundle.get("proof_bundle_root") != manifest["proof_bundle_root"]:
+        blockers.append("byo_oci_proof_bundle_root_mismatch")
+    artifacts = _public_byo_artifact_inventory(bundle.get("artifacts"), blockers=blockers)
+    present_paths = {str(artifact["path"]) for artifact in artifacts}
+    missing = [path for path in required_artifacts if path not in present_paths]
+    unexpected = [path for path in present_paths if path not in required_artifacts]
+    blockers.extend(f"missing_artifact:{path}" for path in missing)
+    blockers.extend(f"unexpected_artifact:{path}" for path in unexpected)
+    for artifact in artifacts:
+        path = str(artifact["path"])
+        expected_label = required_artifacts.get(path)
+        if expected_label is not None and artifact.get("label") != expected_label:
+            blockers.append(f"artifact_label_mismatch:{path}")
+        if artifact.get("redacted") is not True:
+            blockers.append(f"artifact_not_marked_redacted:{path}")
+        if not _valid_sha256_label(str(artifact.get("sha256", ""))):
+            blockers.append(f"artifact_sha256_invalid:{path}")
+    evidence = _public_completion_evidence(bundle.get("completion_evidence"))
+    missing_evidence = [key for key in HOSTED_WORKER_PROOF_KEYS if evidence.get(key) is not True]
+    blockers.extend(f"missing_completion_evidence:{key}" for key in missing_evidence)
+    report = {
+        "schema_version": HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION,
+        "input_schema_version": bundle.get("schema_version")
+        if isinstance(bundle.get("schema_version"), str)
+        else "",
+        "job_id": job.job_id,
+        "lane": job.launch_lane,
+        "ready": not blockers,
+        "blockers": blockers,
+        "proof_bundle_root": manifest["proof_bundle_root"],
+        "artifact_summary": {
+            "required_count": len(required_artifacts),
+            "present_required_count": len(required_artifacts) - len(missing),
+            "missing": missing,
+            "unexpected": unexpected,
+            "artifacts": artifacts,
+        },
+        "completion_evidence": {
+            key: evidence.get(key) is True for key in HOSTED_WORKER_PROOF_KEYS
+        },
+        "acceptance_gate": manifest["acceptance_gate"],
+        "secret_boundary": (
+            "BYO OCI proof verification reads only a redacted artifact inventory, public "
+            "paths, labels, hashes, sizes, and completion booleans. It must not include "
+            "OCI credentials, provider secrets, GitHub tokens, payment details, vault "
+            "plaintext, browser profiles, raw logs, worker-local paths, or artifact contents."
+        ),
+    }
+    _assert_public_byo_proof_report(report)
+    return report
+
+
+def _manifest_artifact_labels(manifest: dict[str, object]) -> dict[str, str]:
+    raw = manifest.get("required_remote_artifacts")
+    if not isinstance(raw, list):
+        return {}
+    labels: dict[str, str] = {}
+    for artifact in raw:
+        if not isinstance(artifact, dict):
+            continue
+        path = artifact.get("path")
+        label = artifact.get("label")
+        if isinstance(path, str) and isinstance(label, str):
+            labels[path] = label
+    return labels
+
+
+def _public_byo_artifact_inventory(
+    value: object,
+    *,
+    blockers: list[str],
+) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        blockers.append("byo_oci_proof_bundle_artifacts_invalid")
+        return []
+    artifacts: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for index, row in enumerate(value):
+        if not isinstance(row, dict):
+            blockers.append(f"artifact_row_invalid:{index}")
+            continue
+        path = str(row.get("path", ""))
+        if not _safe_byo_artifact_path(path):
+            blockers.append(f"artifact_path_invalid:{index}")
+            continue
+        if path in seen:
+            blockers.append(f"duplicate_artifact:{path}")
+            continue
+        seen.add(path)
+        label = str(row.get("label", ""))
+        sha256 = str(row.get("sha256", ""))
+        size_bytes = row.get("size_bytes")
+        if not isinstance(size_bytes, int) or size_bytes < 0:
+            blockers.append(f"artifact_size_invalid:{path}")
+            size_bytes = 0
+        artifacts.append(
+            {
+                "path": path,
+                "label": label if not contains_durable_secret_text(label) else "",
+                "sha256": sha256,
+                "size_bytes": size_bytes,
+                "redacted": row.get("redacted") is True,
+            }
+        )
+    return artifacts
+
+
+def _public_completion_evidence(value: object) -> dict[str, bool]:
+    if not isinstance(value, dict):
+        return {}
+    return {key: value.get(key) is True for key in HOSTED_WORKER_PROOF_KEYS}
+
+
+def _safe_byo_artifact_path(path: str) -> bool:
+    if not path.startswith(".fusekit/"):
+        return False
+    if path.startswith("/") or "\\" in path:
+        return False
+    parts = path.split("/")
+    return all(part and part not in {".", ".."} for part in parts)
+
+
+def _valid_sha256_label(value: str) -> bool:
+    digest = value.removeprefix("sha256:")
+    return (
+        value.startswith("sha256:")
+        and len(digest) == 64
+        and all(character in "0123456789abcdef" for character in digest)
+    )
+
+
+def _assert_public_byo_proof_report(report: dict[str, object]) -> None:
+    serialized = json.dumps(report, sort_keys=True)
+    if contains_durable_secret_text(serialized):
+        raise FuseKitError("Hosted BYO OCI proof report contains secret-looking text.")
+    forbidden = ("ghs_", "sk_live", "sk_test", "-----BEGIN", "ocid1.")
+    if any(token.lower() in serialized.lower() for token in forbidden):
+        raise FuseKitError("Hosted BYO OCI proof report contains private material.")
 
 
 def _byo_oci_launch_args(job: HostedLaunchJob) -> tuple[str, ...]:

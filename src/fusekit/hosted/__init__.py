@@ -29,6 +29,7 @@ from fusekit.hosted.job import (
     hosted_worker_request,
     render_hosted_control_room,
     render_hosted_proof_receipt,
+    verify_hosted_byo_oci_proof_bundle,
     verify_hosted_job_token,
 )
 from fusekit.hosted.launcher import (
@@ -122,6 +123,7 @@ __all__ = [
     "prepare_hosted_worker_execution",
     "run_hosted_worker_once",
     "verify_hosted_job_token",
+    "verify_hosted_byo_oci_proof_bundle",
     "verify_hosted_worker_dispatch",
     "verify_hosted_state_token",
 ]
