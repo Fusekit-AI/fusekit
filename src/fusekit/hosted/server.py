@@ -2002,6 +2002,14 @@ def _hosted_payment_checkout_response(
     payload["payment"] = updated.to_dict()["payment"]
     if _wants_html(environ) and isinstance(receipt.get("checkout_url"), str):
         return _redirect_response(start_response, str(receipt["checkout_url"]))
+    try:
+        _assert_public_action_response_payload(payload)
+    except FuseKitError:
+        return _response(
+            start_response,
+            HTTPStatus.INTERNAL_SERVER_ERROR,
+            {"error": "public_payment_payload_rejected"},
+        )
     return _response(start_response, HTTPStatus.OK, payload)
 
 
@@ -2049,6 +2057,12 @@ def _hosted_payment_return_response(
                     "Stripe Checkout authorization verified; managed worker start is now enabled."
                 ),
                 "next_required_proof": ["worker_claim", "detonation_receipt", "recording"],
+                "secret_boundary": (
+                    "Payment return receipts expose only Stripe Checkout authorization "
+                    "status and next proof labels. They never include card data, payment "
+                    "method ids, billing details, Stripe secret keys, client secrets, or "
+                    "provider credentials."
+                ),
             },
         ),
     )
@@ -2073,6 +2087,11 @@ def _hosted_payment_cancel_response(
                     "Payment authorization was cancelled; managed worker dispatch remains blocked."
                 ),
                 "next_required_proof": ["stripe_checkout_authorization"],
+                "secret_boundary": (
+                    "Payment cancel receipts expose only cancellation status and next proof "
+                    "labels. They never include card data, payment method ids, billing "
+                    "details, Stripe secret keys, client secrets, or provider credentials."
+                ),
             },
         ),
     )

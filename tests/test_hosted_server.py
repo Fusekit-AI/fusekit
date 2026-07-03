@@ -2154,6 +2154,8 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
     assert checkout["payment"]["receipt"]["checkout_url"] == (
         "https://checkout.stripe.com/c/pay/cs_test_123"
     )
+    assert "Stripe secret keys" in checkout["payment"]["receipt"]["secret_boundary"]
+    assert "payment method ids" in checkout["payment"]["receipt"]["secret_boundary"]
     assert stripe_opener.bodies[0]["mode"] == ["payment"]
     assert stripe_opener.bodies[0]["line_items[0][price]"] == ["price_managed_run"]
     assert stripe_opener.bodies[0]["metadata[job_id]"] == [job_id]
@@ -2211,8 +2213,11 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
     paid_start_control = _control_for_action(paid_text, "start")
     assert status == "200 OK"
     assert "Stripe Checkout authorization verified" in paid_text
+    assert "Payment return receipts expose only Stripe Checkout authorization" in paid_text
     assert MANAGED_PRICE_LABEL in paid_text
     assert "Start worker" in paid_text
+    assert "sk_live" not in paid_text
+    assert "client_secret" not in paid_text
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
