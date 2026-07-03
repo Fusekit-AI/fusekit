@@ -17,6 +17,7 @@ from fusekit.hosted.host_posture import (
     evaluate_oci_host_posture,
     main,
 )
+from fusekit.hosted.runtime_secrets import HOSTED_RUNTIME_REQUIRED_FILE_ENV
 from fusekit.security import contains_durable_secret_text
 
 HOSTED_COMMIT = "ca295a41d9f6d0ef5864f398d94f675a6c9eec11"
@@ -41,8 +42,7 @@ def _runtime_secret_verify_report() -> dict[str, object]:
             "root_owned": True,
         },
         "required_runtime_env": {
-            "FUSEKIT_HOSTED_ORIGIN": {"present": True},
-            "FUSEKIT_GITHUB_APP_PRIVATE_KEY": {"present": True},
+            name: {"present": True} for name in HOSTED_RUNTIME_REQUIRED_FILE_ENV
         },
         "stripe_runtime_env": {
             "FUSEKIT_STRIPE_SECRET_KEY": {
@@ -367,6 +367,24 @@ def test_oci_host_posture_blocks_runtime_secret_inventory_count_drift() -> None:
     verify_check = _check(report, "host.runtime_secret_verify")
     assert verify_check["failures"] == [
         "oci_host_runtime_secret_key_inventory_count_mismatch"
+    ]
+
+
+def test_oci_host_posture_blocks_runtime_secret_required_env_presence_drift() -> None:
+    evidence = _clean_evidence()
+    verify_report = evidence["runtime_secret_verify"]
+    assert isinstance(verify_report, dict)
+    required_runtime_env = verify_report["required_runtime_env"]
+    assert isinstance(required_runtime_env, dict)
+    required_runtime_env["FUSEKIT_GITHUB_APP_PRIVATE_KEY"] = {"present": False}
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.runtime_secret_verify"]
+    verify_check = _check(report, "host.runtime_secret_verify")
+    assert verify_check["failures"] == [
+        "oci_host_runtime_secret_required_env_presence_mismatch"
     ]
 
 

@@ -960,6 +960,7 @@ def _runtime_secret_file_check(evidence: Mapping[str, object]) -> dict[str, obje
 def _runtime_secret_verify_check(evidence: Mapping[str, object]) -> dict[str, object]:
     report = _mapping(evidence.get("runtime_secret_verify"))
     key_inventory = _mapping(report.get("key_inventory"))
+    required_runtime_env = _mapping(report.get("required_runtime_env"))
     missing_keys = _string_list(key_inventory.get("missing"))
     unexpected_keys = _string_list(key_inventory.get("unexpected_keys"))
     required_count = _literal_non_negative_int(key_inventory.get("required_count"))
@@ -986,6 +987,8 @@ def _runtime_secret_verify_check(evidence: Mapping[str, object]) -> dict[str, ob
         or present_required_count != required_count - len(missing_keys)
     ):
         failures.append("oci_host_runtime_secret_key_inventory_count_mismatch")
+    if not _required_runtime_env_present(required_runtime_env):
+        failures.append("oci_host_runtime_secret_required_env_presence_mismatch")
     boundary = _public_str(report.get("secret_boundary")).lower()
     if "emits no" not in boundary or "secret" not in boundary:
         failures.append("oci_host_runtime_secret_verify_secret_boundary_missing")
@@ -1401,6 +1404,14 @@ def _literal_non_negative_int(value: object) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         return None
     return value
+
+
+def _required_runtime_env_present(value: Mapping[str, object]) -> bool:
+    for name in HOSTED_RUNTIME_REQUIRED_FILE_ENV:
+        row = value.get(name)
+        if not isinstance(row, Mapping) or row.get("present") is not True:
+            return False
+    return True
 
 
 def _public_str(value: object) -> str:
