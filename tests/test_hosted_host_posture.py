@@ -645,6 +645,22 @@ def test_oci_host_posture_blocks_missing_release_receipt() -> None:
     ]
 
 
+def test_oci_host_posture_requires_dedicated_rootkit_scanner() -> None:
+    evidence = _clean_evidence()
+    evidence["rootkit_scan"] = {
+        "scanner": "lynis",
+        "status": "pass",
+    }
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.rootkit_scan"]
+    rootkit_check = _check(report, "host.rootkit_scan")
+    assert rootkit_check["failures"] == ["oci_host_rootkit_scan_missing_or_failed"]
+    assert "rkhunter or chkrootkit" in rootkit_check["next_action"]
+
+
 def test_oci_host_posture_blocks_release_receipt_commit_mismatch() -> None:
     evidence = _clean_evidence()
     receipt = evidence["release_receipt"]

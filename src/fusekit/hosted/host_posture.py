@@ -1012,11 +1012,11 @@ def _rootkit_check(evidence: Mapping[str, object]) -> dict[str, object]:
     scan = _mapping(evidence.get("rootkit_scan"))
     scanner = _public_str(scan.get("scanner")).lower()
     status = _public_str(scan.get("status")).lower()
-    if scanner not in {"rkhunter", "chkrootkit", "lynis"} or status != "pass":
+    if scanner not in {"rkhunter", "chkrootkit"} or status != "pass":
         return _fail(
             "host.rootkit_scan",
             "oci_host_rootkit_scan_missing_or_failed",
-            "Run rkhunter, chkrootkit, or equivalent and attach a redacted passing summary.",
+            "Run rkhunter or chkrootkit and attach a redacted passing summary.",
         )
     return _ok("host.rootkit_scan", scanner=scanner)
 
