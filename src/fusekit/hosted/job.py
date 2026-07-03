@@ -1023,10 +1023,15 @@ def _public_byo_contract(
     if contains_durable_secret_text(json.dumps(value, sort_keys=True)):
         blockers.append(f"byo_oci_proof_bundle_{name}_unsafe")
         return {}
-    public_value = dict(value)
+    unexpected = sorted(_public_byo_sidecar_field_name(key) for key in value if key not in expected)
+    blockers.extend(
+        f"byo_oci_proof_bundle_{name}_unexpected_field:{key}" for key in unexpected
+    )
+    public_value = {key: value.get(key) for key in expected}
     if public_value != expected:
         blockers.append(f"byo_oci_proof_bundle_{name}_mismatch")
-    return public_value
+        return {}
+    return dict(public_value)
 
 
 def _manifest_artifact_labels(manifest: dict[str, object]) -> dict[str, str]:

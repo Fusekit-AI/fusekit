@@ -38,7 +38,12 @@ from fusekit.hosted.job import (
     verify_hosted_byo_oci_proof_bundle,
     with_hosted_job_payment_receipt,
 )
-from fusekit.hosted.lanes import BYO_OCI_LANE, MANAGED_FUSEKIT_RUN_LANE
+from fusekit.hosted.lanes import (
+    BYO_OCI_LANE,
+    MANAGED_FUSEKIT_RUN_LANE,
+    byo_oci_security_contract,
+    byo_oci_user_owned_cost_boundary,
+)
 from fusekit.hosted.launcher import build_hosted_launch_plan
 from fusekit.manifest import ServiceRequirement, SetupManifest
 from fusekit.runner.cloud_shell import CloudShellLaunchPlan
@@ -556,12 +561,8 @@ def test_hosted_byo_proof_bundle_verifier_accepts_complete_redacted_inventory() 
     assert report["ready"] is True
     assert report["blockers"] == []
     assert report["job_binding"] == bootstrap["proof_manifest"]["job_binding"]
-    assert report["user_owned_cost_boundary"] == bootstrap["proof_manifest"][
-        "user_owned_cost_boundary"
-    ]
-    assert report["byo_security_contract"] == bootstrap["proof_manifest"][
-        "byo_security_contract"
-    ]
+    assert report["user_owned_cost_boundary"] == byo_oci_user_owned_cost_boundary()
+    assert report["byo_security_contract"] == byo_oci_security_contract()
     assert report["proof_bundle_root"] == ".fusekit/remote-artifacts"
     assert report["artifact_summary"]["missing"] == []
     assert report["artifact_summary"]["unexpected"] == []
@@ -688,6 +689,42 @@ def test_hosted_byo_proof_bundle_verifier_blocks_cost_and_security_drift() -> No
     assert report["ready"] is False
     assert "byo_oci_proof_bundle_user_owned_cost_boundary_mismatch" in report["blockers"]
     assert "byo_oci_proof_bundle_byo_security_contract_mismatch" in report["blockers"]
+    assert report["user_owned_cost_boundary"] == {}
+    assert report["byo_security_contract"] == {}
+
+
+def test_hosted_byo_proof_bundle_verifier_strips_contract_sidecars() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+    cost_boundary = bundle["user_owned_cost_boundary"]
+    security_contract = bundle["byo_security_contract"]
+    assert isinstance(cost_boundary, dict)
+    assert isinstance(security_contract, dict)
+    cost_boundary["worker_region"] = "us-ashburn-1"
+    security_contract["console_session_label"] = "operator-reviewed"
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+    serialized = json.dumps(report, sort_keys=True)
+
+    assert report["ready"] is False
+    assert (
+        "byo_oci_proof_bundle_user_owned_cost_boundary_unexpected_field:worker_region"
+        in report["blockers"]
+    )
+    assert (
+        "byo_oci_proof_bundle_byo_security_contract_unexpected_field:console_session_label"
+        in report["blockers"]
+    )
+    assert report["user_owned_cost_boundary"] == byo_oci_user_owned_cost_boundary()
+    assert report["byo_security_contract"] == byo_oci_security_contract()
+    assert "us-ashburn-1" not in serialized
+    assert "operator-reviewed" not in serialized
 
 
 def test_hosted_byo_proof_bundle_verifier_blocks_missing_cost_and_security_contracts() -> None:
