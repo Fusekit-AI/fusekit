@@ -179,6 +179,44 @@ def test_hosted_oci_inventory_rejects_boolean_counts() -> None:
     assert report["access_plan"] == {}
 
 
+def test_hosted_oci_inventory_redacts_unknown_collection_failure_operations() -> None:
+    report = build_hosted_oci_inventory_report(
+        target_match_count=1,
+        running_instance_count=1,
+        instance=_instance(),
+        vnic={"public-ip": "129.153.118.11"},
+        image={
+            "display-name": "Canonical-Ubuntu-24.04-Minimal",
+            "operating-system": "Canonical Ubuntu",
+            "operating-system-version": "24.04",
+        },
+        plugins=[{"name": "Compute Instance Run Command", "status": "RUNNING"}],
+        available_plugins=[{"name": "Compute Instance Run Command"}],
+        collection_failures=[
+            {
+                "operation": "core.list_instances_sk_live_should_not_echo",
+                "status": "403",
+                "code": "NotAuthorizedOrNotFound",
+            }
+        ],
+        hosted_verify_report=_hosted_verify(),
+        ssh_probe_status="permission_denied",
+        expected_commit_sha=EXPECTED_COMMIT,
+    )
+    serialized = json.dumps(report, sort_keys=True)
+
+    assert report["ready"] is False
+    assert report["collection_failures"] == [
+        {
+            "operation": "redacted",
+            "status": "403",
+            "code": "NotAuthorizedOrNotFound",
+        }
+    ]
+    assert "core.list_instances_sk_live_should_not_echo" not in serialized
+    assert not contains_durable_secret_text(serialized)
+
+
 def test_hosted_oci_inventory_reports_ambiguous_target_without_details() -> None:
     report = build_hosted_oci_inventory_report(
         target_match_count=2,

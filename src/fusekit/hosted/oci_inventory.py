@@ -17,6 +17,15 @@ from fusekit.security import contains_durable_secret_text, redact_public_text
 
 HOSTED_OCI_INVENTORY_SCHEMA_VERSION = "fusekit.hosted-oci-inventory.v1"
 HOSTED_OCI_INVENTORY_MODE = "oci_sdk_read_only_inventory"
+HOSTED_OCI_INVENTORY_ALLOWED_READS = (
+    "identity.list_compartments",
+    "core.list_instances",
+    "core.list_vnic_attachments",
+    "core.get_vnic",
+    "core.get_image",
+    "compute_instance_agent.list_instance_agent_plugins",
+    "compute_instance_agent.list_instanceagent_available_plugins",
+)
 
 
 def build_hosted_oci_inventory_report(
@@ -121,13 +130,7 @@ def build_hosted_oci_inventory_report(
             "scope": "single_fusekit_tagged_oci_host_inventory",
             "api_mode": "read_only",
             "allowed_reads": [
-                "identity.list_compartments",
-                "core.list_instances",
-                "core.list_vnic_attachments",
-                "core.get_vnic",
-                "core.get_image",
-                "compute_instance_agent.list_instance_agent_plugins",
-                "compute_instance_agent.list_instanceagent_available_plugins",
+                *HOSTED_OCI_INVENTORY_ALLOWED_READS,
             ],
             "forbidden_mutations": [
                 "create_update_or_delete_oci_resources",
@@ -583,10 +586,17 @@ def _public_image(value: Mapping[str, object]) -> dict[str, str]:
 
 def _public_collection_failure(value: Mapping[str, object]) -> dict[str, str]:
     return {
-        "operation": _public_str(value.get("operation")),
+        "operation": _public_collection_operation(value.get("operation")),
         "status": _public_str(value.get("status")),
         "code": _public_str(value.get("code")),
     }
+
+
+def _public_collection_operation(value: object) -> str:
+    operation = _public_str(value)
+    if operation in HOSTED_OCI_INVENTORY_ALLOWED_READS:
+        return operation
+    return "redacted"
 
 
 def _sdk_failure(operation: str, exc: Exception) -> dict[str, object]:
