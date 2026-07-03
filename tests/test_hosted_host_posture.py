@@ -807,6 +807,28 @@ def test_oci_host_posture_blocks_missing_dns_and_rollback_proof() -> None:
     ]
 
 
+def test_oci_host_posture_blocks_rollback_metadata_target_mismatch() -> None:
+    evidence = _clean_evidence()
+    evidence["rollback_metadata"] = {
+        "rollback": [
+            {
+                "action": "rollback.cloudflare.dns",
+                "status": "planned",
+                "target": "www.snowmanai.org",
+            }
+        ]
+    }
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.rollback_metadata"]
+    rollback_check = _check(report, "host.rollback_metadata")
+    assert rollback_check["failures"] == [
+        "oci_host_rollback_metadata_provider_actions_missing"
+    ]
+
+
 def test_oci_host_posture_blocks_status_only_dns_propagation_proof() -> None:
     evidence = _clean_evidence()
     evidence["dns_propagation"] = {
@@ -1592,6 +1614,7 @@ def test_oci_host_posture_collector_builds_validator_ready_redacted_evidence(
                 {
                     "action": "cloudflare.dns.rollback",
                     "status": "planned",
+                    "target": "fusekit.snowmanai.org",
                 }
             ]
         },
@@ -1670,7 +1693,13 @@ def test_oci_host_posture_collector_builds_validator_ready_redacted_evidence(
         "propagated": True,
     }
     assert evidence["rollback_metadata"] == {
-        "actions": [{"action": "cloudflare.dns.rollback", "status": "planned"}]
+        "actions": [
+            {
+                "action": "cloudflare.dns.rollback",
+                "status": "planned",
+                "target": "fusekit.snowmanai.org",
+            }
+        ]
     }
     assert evidence["release_receipt"] == _clean_evidence()["release_receipt"]
     assert report["ready"] is True

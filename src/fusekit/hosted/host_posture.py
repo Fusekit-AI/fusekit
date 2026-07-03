@@ -1537,6 +1537,7 @@ def _rollback_metadata_check(evidence: Mapping[str, object]) -> dict[str, object
             ("rollback.", "cloudflare.", "github.", "vercel.", "resend.")
         )
         and _public_str(action.get("status")).lower() in {"planned", "done"}
+        and _public_str(action.get("target")).lower() == "fusekit.snowmanai.org"
     ]
     if not provider_actions:
         return _fail(
