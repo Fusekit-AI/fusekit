@@ -151,6 +151,42 @@ HOSTED_WORKER_REQUIRED_ARTIFACTS = (
     ".fusekit/workspace_detonation.json",
     ".fusekit/acceptance_report.json",
 )
+HOSTED_JOB_PAYLOAD_KEYS = frozenset(
+    {
+        "schema_version",
+        "job_id",
+        "app_name",
+        "github_source",
+        "status",
+        "created_at",
+        "steps",
+        "proof",
+        "rollback",
+        "detonation",
+        "launch_lane",
+        "lane_contract",
+        "payment",
+        "worker_contract",
+    }
+)
+HOSTED_JOB_STEP_KEYS = frozenset({"id", "label", "owner", "status", "proof"})
+HOSTED_WORKER_CONTRACT_KEYS = frozenset(
+    {
+        "schema_version",
+        "lane",
+        "github_source",
+        "github_installation_id",
+        "plan_integrity",
+        "source_token_policy",
+        "providers",
+        "required_env",
+        "permission_boundary",
+        "approved_actions",
+        "required_artifacts",
+        "gates",
+        "guarantees",
+    }
+)
 HOSTED_WORKER_GUARANTEES = (
     "Only actions from the visible plan may run.",
     (
@@ -1214,6 +1250,11 @@ def hosted_launch_job_from_dict(payload: dict[str, Any]) -> HostedLaunchJob:
 
     if payload.get("schema_version") != HOSTED_JOB_SCHEMA_VERSION:
         raise FuseKitError("Hosted launch job schema is unsupported.")
+    _reject_unexpected_payload_keys(
+        payload,
+        HOSTED_JOB_PAYLOAD_KEYS,
+        "Hosted launch job payload",
+    )
     job_id = _required_str(payload, "job_id")
     if not job_id.startswith("hosted-"):
         raise FuseKitError("Hosted launch job id is invalid.")
@@ -1223,6 +1264,7 @@ def hosted_launch_job_from_dict(payload: dict[str, Any]) -> HostedLaunchJob:
     detonation = payload.get("detonation")
     worker_contract = payload.get("worker_contract")
     launch_lane = _hosted_lane_from_payload(payload.get("launch_lane"))
+    _validate_public_lane_contract(payload.get("lane_contract"), launch_lane)
     payment = payload.get("payment")
     if not isinstance(steps, list) or not isinstance(worker_contract, dict):
         raise FuseKitError("Hosted launch job payload is invalid.")
@@ -2905,6 +2947,11 @@ def _approved_plan_fingerprint(
 def _worker_contract_from_dict(payload: dict[str, Any]) -> HostedWorkerContract:
     if payload.get("schema_version") != HOSTED_WORKER_CONTRACT_SCHEMA_VERSION:
         raise FuseKitError("Hosted worker contract schema is unsupported.")
+    _reject_unexpected_payload_keys(
+        payload,
+        HOSTED_WORKER_CONTRACT_KEYS,
+        "Hosted worker contract payload",
+    )
     github_installation_id = payload.get("github_installation_id")
     if github_installation_id is not None and not isinstance(github_installation_id, int):
         raise FuseKitError("Hosted worker contract github_installation_id is invalid.")
@@ -3179,6 +3226,11 @@ def _valid_plan_fingerprint(value: str) -> bool:
 def _job_step_from_dict(payload: object) -> HostedLaunchJobStep:
     if not isinstance(payload, dict):
         raise FuseKitError("Hosted launch job step payload is invalid.")
+    _reject_unexpected_payload_keys(
+        payload,
+        HOSTED_JOB_STEP_KEYS,
+        "Hosted launch job step payload",
+    )
     return HostedLaunchJobStep(
         id=_required_str(payload, "id"),
         label=_required_str(payload, "label"),
@@ -3193,6 +3245,22 @@ def _required_str(payload: dict[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value:
         raise FuseKitError(f"Hosted launch job {key} is invalid.")
     return value
+
+
+def _validate_public_lane_contract(value: object, launch_lane: str) -> None:
+    if value != hosted_launch_lane(launch_lane).to_dict():
+        raise FuseKitError("Hosted launch lane contract is invalid.")
+
+
+def _reject_unexpected_payload_keys(
+    payload: dict[str, Any],
+    allowed: frozenset[str],
+    label: str,
+) -> None:
+    unexpected = sorted(str(key) for key in payload if str(key) not in allowed)
+    if unexpected:
+        joined = ", ".join(unexpected)
+        raise FuseKitError(f"{label} has unexpected fields: {joined}.")
 
 
 def _required_int(payload: dict[str, Any], key: str) -> int:

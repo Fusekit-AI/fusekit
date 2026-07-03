@@ -1574,6 +1574,62 @@ def test_hosted_worker_contract_decodes_older_public_payload_without_boundary() 
     assert decoded.worker_contract.plan_fingerprint == job.worker_contract.plan_fingerprint
 
 
+def test_hosted_job_decode_rejects_top_level_sidecar_fields() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    payload = job.to_dict()
+    payload["private_note"] = "hidden hosted job sidecar"
+
+    with pytest.raises(
+        FuseKitError,
+        match="Hosted launch job payload has unexpected fields: private_note",
+    ):
+        hosted_launch_job_from_dict(payload)
+
+
+def test_hosted_job_decode_rejects_step_sidecar_fields() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    payload = job.to_dict()
+    steps = payload["steps"]
+    assert isinstance(steps, list)
+    first = steps[0]
+    assert isinstance(first, dict)
+    first["worker_log"] = "sidecar log should not enter public status"
+
+    with pytest.raises(
+        FuseKitError,
+        match="Hosted launch job step payload has unexpected fields: worker_log",
+    ):
+        hosted_launch_job_from_dict(payload)
+
+
+def test_hosted_job_decode_rejects_worker_contract_sidecar_fields() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    payload = job.to_dict()
+    worker_contract = payload["worker_contract"]
+    assert isinstance(worker_contract, dict)
+    worker_contract["github_installation_token"] = "ghs_should_not_be_public"
+
+    with pytest.raises(
+        FuseKitError,
+        match=(
+            "Hosted worker contract payload has unexpected fields: "
+            "github_installation_token"
+        ),
+    ):
+        hosted_launch_job_from_dict(payload)
+
+
+def test_hosted_job_decode_rejects_lane_contract_drift() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    payload = job.to_dict()
+    lane_contract = payload["lane_contract"]
+    assert isinstance(lane_contract, dict)
+    lane_contract["managed_worker_dispatch_allowed"] = False
+
+    with pytest.raises(FuseKitError, match="Hosted launch lane contract is invalid"):
+        hosted_launch_job_from_dict(payload)
+
+
 def test_hosted_worker_contract_rejects_invalid_plan_integrity() -> None:
     job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
     payload = job.to_dict()
