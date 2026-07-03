@@ -1247,6 +1247,28 @@ def _lane_readiness_failures(value: object) -> list[str]:
         failures.append("lane_readiness_recommended_lane_invalid")
     elif recommended_lane not in launchable_lanes:
         failures.append("lane_readiness_recommended_lane_not_launchable")
+    cost_policy = value.get("cost_policy")
+    if not _contains_all_markers(
+        cost_policy,
+        (
+            "paid receipt",
+            "BYO OCI",
+            "no-FuseKit-managed-infrastructure",
+        ),
+    ):
+        failures.append("lane_readiness_cost_policy_mismatch")
+    secret_boundary = value.get("secret_boundary")
+    if not _contains_all_markers(
+        secret_boundary,
+        (
+            "Stripe keys",
+            "GitHub tokens",
+            "worker secrets",
+            "OCI credentials",
+            "vault material",
+        ),
+    ):
+        failures.append("lane_readiness_secret_boundary_mismatch")
     lanes = value.get("lanes")
     if not isinstance(lanes, dict):
         return failures + ["lane_readiness_lanes_missing"]
@@ -1261,6 +1283,13 @@ def _lane_readiness_failures(value: object) -> list[str]:
     else:
         failures.extend(_byo_lane_readiness_failures(byo, launchable_lanes))
     return failures
+
+
+def _contains_all_markers(value: object, markers: tuple[str, ...]) -> bool:
+    if not isinstance(value, str):
+        return False
+    normalized = value.lower()
+    return all(marker.lower() in normalized for marker in markers)
 
 
 def _managed_lane_readiness_failures(

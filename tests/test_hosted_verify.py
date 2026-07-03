@@ -480,6 +480,39 @@ def test_verify_hosted_deployment_requires_byo_readiness_contract() -> None:
     ]
 
 
+def test_verify_hosted_deployment_requires_lane_cost_and_secret_boundary() -> None:
+    readiness = _readiness_contract()
+    lane_readiness = readiness["lane_readiness"]
+    assert isinstance(lane_readiness, dict)
+    lane_readiness["cost_policy"] = "Hosted lanes are available."
+    lane_readiness["secret_boundary"] = "Lane readiness exposes redacted status."
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            readiness,
+            _deployment_contract(),
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["hosted.readiness"]["status"] == "failed"
+    assert "lane_readiness_cost_policy_mismatch" in checks["hosted.readiness"][
+        "failures"
+    ]
+    assert "lane_readiness_secret_boundary_mismatch" in checks["hosted.readiness"][
+        "failures"
+    ]
+
+
 def test_verify_hosted_deployment_rejects_managed_lane_without_price_label() -> None:
     readiness = _readiness_contract()
     lane_readiness = readiness["lane_readiness"]
@@ -2102,7 +2135,16 @@ def _lane_readiness_contract() -> dict[str, object]:
                 "next_actions": [],
             },
         },
-        "secret_boundary": "Lane readiness exposes only redacted public status.",
+        "cost_policy": (
+            "Managed FuseKit runs are not launchable until server-side Stripe Checkout "
+            "is fully configured and each job has a paid receipt. BYO OCI remains the "
+            "no-FuseKit-managed-infrastructure lane."
+        ),
+        "secret_boundary": (
+            "Lane readiness exposes only booleans, public lane ids, failure codes, and "
+            "next-action labels. It never renders Stripe keys, GitHub tokens, worker "
+            "secrets, OCI credentials, or vault material."
+        ),
     }
 
 
