@@ -154,7 +154,9 @@ def build_hosted_launch_plan(
     public_github_source = public_hosted_github_source(github_source)
     plan = build_plan(manifest)
     providers = _provider_names(manifest)
-    user_gate_providers = _user_gate_providers(plan.actions)
+    actions = tuple(public_hosted_plan_action(action) for action in plan.actions)
+    required_env = tuple(sorted(public_hosted_env_name(name) for name in manifest.required_env))
+    user_gate_providers = _user_gate_providers(actions)
     trust = HostedLaunchTrustContract(
         scope=(
             f"Scan and launch the selected GitHub repository: {public_github_source}",
@@ -184,8 +186,8 @@ def build_hosted_launch_plan(
         app_name=public_app_name,
         github_source=public_github_source,
         providers=providers,
-        required_env=tuple(sorted(manifest.required_env)),
-        actions=plan.actions,
+        required_env=required_env,
+        actions=actions,
         trust=trust,
     )
 
@@ -234,10 +236,91 @@ def public_hosted_github_source(value: str) -> str:
     return f"https://github.com/{owner}/{repo}"
 
 
+def public_hosted_provider_name(value: str) -> str:
+    """Return a public provider label for hosted launch surfaces."""
+
+    cleaned = value.strip().lower()
+    if (
+        not cleaned
+        or len(cleaned) > 64
+        or contains_durable_secret_text(cleaned)
+        or _contains_hosted_private_marker(cleaned)
+    ):
+        raise FuseKitError("Hosted provider name is invalid.")
+    if not all(character.isalnum() or character in {"-", "_", "."} for character in cleaned):
+        raise FuseKitError("Hosted provider name contains unsupported characters.")
+    return cleaned
+
+
+def public_hosted_env_name(value: str) -> str:
+    """Return a public env-var label for hosted launch surfaces."""
+
+    cleaned = value.strip()
+    if (
+        not cleaned
+        or len(cleaned) > 80
+        or contains_durable_secret_text(cleaned)
+        or _contains_hosted_private_marker(cleaned)
+    ):
+        raise FuseKitError("Hosted env name is invalid.")
+    if not (cleaned[0].isalpha() or cleaned[0] == "_"):
+        raise FuseKitError("Hosted env name contains unsupported characters.")
+    if not all(character.isalnum() or character == "_" for character in cleaned):
+        raise FuseKitError("Hosted env name contains unsupported characters.")
+    return cleaned
+
+
+def public_hosted_plan_action(action: SetupAction) -> SetupAction:
+    """Return a public-safe hosted setup action."""
+
+    action_id = public_hosted_action_id(action.id)
+    provider = public_hosted_provider_name(action.provider)
+    summary = _public_hosted_action_summary(action.summary)
+    if action.kind not in {"automatic", "user_required", "approval_required"}:
+        raise FuseKitError("Hosted action kind is invalid.")
+    if action.risk not in {"low", "medium", "high"}:
+        raise FuseKitError("Hosted action risk is invalid.")
+    return SetupAction(
+        id=action_id,
+        kind=action.kind,
+        provider=provider,
+        summary=summary,
+        risk=action.risk,
+    )
+
+
 def _safe_github_slug_part(value: str) -> bool:
     return bool(value) and len(value) <= 100 and all(
         character.isalnum() or character in {"-", "_", "."} for character in value
     )
+
+
+def public_hosted_action_id(value: str) -> str:
+    cleaned = value.strip()
+    if (
+        not cleaned
+        or len(cleaned) > 160
+        or contains_durable_secret_text(cleaned)
+        or _contains_hosted_private_marker(cleaned)
+    ):
+        raise FuseKitError("Hosted action id is invalid.")
+    if not all(character.isalnum() or character in {"-", "_", "."} for character in cleaned):
+        raise FuseKitError("Hosted action id contains unsupported characters.")
+    return cleaned
+
+
+def _public_hosted_action_summary(value: str) -> str:
+    cleaned = " ".join(value.split())
+    if (
+        not cleaned
+        or len(cleaned) > 240
+        or contains_durable_secret_text(cleaned)
+        or _contains_hosted_private_marker(cleaned)
+    ):
+        raise FuseKitError("Hosted action summary is invalid.")
+    if any(character in cleaned for character in "<>{}"):
+        raise FuseKitError("Hosted action summary contains unsupported characters.")
+    return cleaned
 
 
 def _contains_hosted_private_marker(value: str) -> bool:
@@ -612,8 +695,8 @@ def _lane_next_actions(lane_readiness: dict[str, object], lane_id: str) -> list[
 
 
 def _provider_names(manifest: SetupManifest) -> tuple[str, ...]:
-    names = {service.provider.lower() for service in manifest.services}
-    names.update(domain.provider.lower() for domain in manifest.domains)
+    names = {public_hosted_provider_name(service.provider) for service in manifest.services}
+    names.update(public_hosted_provider_name(domain.provider) for domain in manifest.domains)
     if manifest.webhooks:
         names.add("webhooks")
     return tuple(sorted(names))

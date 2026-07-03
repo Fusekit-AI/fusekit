@@ -33,8 +33,11 @@ from fusekit.hosted.lanes import (
 from fusekit.hosted.launcher import (
     HOSTED_PROHIBITED_ACTIONS,
     HostedLaunchPlan,
+    public_hosted_action_id,
     public_hosted_app_name,
+    public_hosted_env_name,
     public_hosted_github_source,
+    public_hosted_provider_name,
 )
 from fusekit.runner.cloud_shell import build_cloud_shell_launch_plan
 from fusekit.security.redaction import contains_durable_secret_text, redact_public_text
@@ -2900,13 +2903,22 @@ def _worker_contract_from_dict(payload: dict[str, Any]) -> HostedWorkerContract:
         github_source=public_hosted_github_source(_required_str(payload, "github_source")),
         github_installation_id=github_installation_id,
         plan_fingerprint=plan_fingerprint,
-        providers=_str_tuple(payload.get("providers"), "providers"),
-        required_env=_str_tuple(payload.get("required_env"), "required_env"),
+        providers=tuple(
+            public_hosted_provider_name(provider)
+            for provider in _str_tuple(payload.get("providers"), "providers")
+        ),
+        required_env=tuple(
+            public_hosted_env_name(name)
+            for name in _str_tuple(payload.get("required_env"), "required_env")
+        ),
         permission_boundary=_str_tuple(
             payload.get("permission_boundary", []),
             "permission_boundary",
         ),
-        approved_actions=_str_tuple(payload.get("approved_actions"), "approved_actions"),
+        approved_actions=tuple(
+            public_hosted_action_id(action)
+            for action in _str_tuple(payload.get("approved_actions"), "approved_actions")
+        ),
         required_artifacts=_str_tuple(payload.get("required_artifacts"), "required_artifacts"),
         gates=_str_tuple(payload.get("gates"), "gates"),
         guarantees=_str_tuple(payload.get("guarantees"), "guarantees"),

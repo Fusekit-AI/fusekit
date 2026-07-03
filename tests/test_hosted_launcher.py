@@ -142,6 +142,51 @@ def test_hosted_launch_plan_rejects_secret_or_markup_app_name() -> None:
         )
 
 
+def test_hosted_launch_plan_rejects_secret_shaped_provider_or_env_labels() -> None:
+    with pytest.raises(FuseKitError, match="Hosted provider name"):
+        build_hosted_launch_plan(
+            SetupManifest(
+                app_name="clean-demo",
+                services=(
+                    ServiceRequirement(
+                        provider="sk_live_provider",
+                        kind="api",
+                        name="bad-provider",
+                    ),
+                ),
+            ),
+            github_source="https://github.com/example/any-app",
+        )
+
+    with pytest.raises(FuseKitError, match="Hosted env name"):
+        build_hosted_launch_plan(
+            SetupManifest(
+                app_name="clean-demo",
+                required_env=("sk_live_SHOULD_NOT_RENDER",),
+            ),
+            github_source="https://github.com/example/any-app",
+        )
+
+
+def test_hosted_launch_plan_rejects_secret_shaped_action_summary() -> None:
+    with pytest.raises(FuseKitError, match="Hosted action summary"):
+        build_hosted_launch_plan(
+            SetupManifest(
+                app_name="clean-demo",
+                services=(
+                    ServiceRequirement(
+                        provider="github",
+                        kind="provider-pack",
+                        name="source",
+                        capabilities=("capability_pack",),
+                        settings={"capability_pack": "sk_live_should_not_render"},
+                    ),
+                ),
+            ),
+            github_source="https://github.com/example/any-app",
+        )
+
+
 def test_hosted_launch_plan_rejects_secret_or_non_github_source() -> None:
     with pytest.raises(FuseKitError, match="Hosted GitHub source"):
         build_hosted_launch_plan(

@@ -1618,6 +1618,33 @@ def test_hosted_job_decode_rejects_secret_shaped_app_name() -> None:
         hosted_launch_job_from_dict(payload)
 
 
+def test_hosted_job_decode_rejects_secret_shaped_worker_contract_labels() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    payload = job.to_dict()
+    worker_contract = payload["worker_contract"]
+    assert isinstance(worker_contract, dict)
+    worker_contract["providers"] = ["github", "sk_live_provider"]
+
+    with pytest.raises(FuseKitError, match="Hosted provider name"):
+        hosted_launch_job_from_dict(payload)
+
+    payload = job.to_dict()
+    worker_contract = payload["worker_contract"]
+    assert isinstance(worker_contract, dict)
+    worker_contract["required_env"] = ["RESEND_API_KEY", "sk_live_ENV"]
+
+    with pytest.raises(FuseKitError, match="Hosted env name"):
+        hosted_launch_job_from_dict(payload)
+
+    payload = job.to_dict()
+    worker_contract = payload["worker_contract"]
+    assert isinstance(worker_contract, dict)
+    worker_contract["approved_actions"] = ["github.authorize", "sk_live.action"]
+
+    with pytest.raises(FuseKitError, match="Hosted action id"):
+        hosted_launch_job_from_dict(payload)
+
+
 def test_hosted_payment_receipt_requires_full_checkout_shape_before_paid() -> None:
     job = build_hosted_launch_job(
         _plan(),
