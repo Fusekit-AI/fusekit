@@ -37,6 +37,7 @@ from fusekit.hosted.job import (
 from fusekit.hosted.lanes import BYO_OCI_LANE, MANAGED_FUSEKIT_RUN_LANE
 from fusekit.hosted.launcher import build_hosted_launch_plan
 from fusekit.manifest import ServiceRequirement, SetupManifest
+from fusekit.runner.cloud_shell import CloudShellLaunchPlan
 
 
 def _plan():
@@ -357,6 +358,35 @@ def test_hosted_byo_bootstrap_publishes_preflight_and_reversibility_contract() -
     assert "ghs_" not in serialized
     assert "PRIVATE KEY" not in serialized
     assert "sk_live" not in serialized
+
+
+def test_hosted_byo_bootstrap_rejects_secret_text_in_public_handoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+
+    def secret_cloud_shell_plan(**_kwargs: object) -> CloudShellLaunchPlan:
+        return CloudShellLaunchPlan(
+            app_source="https://github.com/example/one",
+            fusekit_package="fusekit",
+            launch_args=(),
+            deeplink_url="https://cloud.oracle.com/?cloudshell=true",
+            bootstrap_command="printf '%s' ghs_secret_token_should_not_render",
+            fallback_steps=("Paste ghs_secret_token_should_not_render.",),
+        )
+
+    monkeypatch.setattr(
+        "fusekit.hosted.job.build_cloud_shell_launch_plan",
+        secret_cloud_shell_plan,
+    )
+
+    with pytest.raises(FuseKitError, match="bootstrap contains private material"):
+        hosted_byo_oci_bootstrap(job)
 
 
 def test_hosted_byo_bootstrap_renders_browser_handoff_page() -> None:

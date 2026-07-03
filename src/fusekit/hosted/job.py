@@ -432,7 +432,7 @@ def hosted_byo_oci_bootstrap(job: HostedLaunchJob) -> dict[str, object]:
         runner="oci-existing",
         launch_args=_byo_oci_launch_args(job),
     )
-    return {
+    payload: dict[str, object] = {
         "schema_version": HOSTED_BYO_OCI_BOOTSTRAP_SCHEMA_VERSION,
         "job_id": job.job_id,
         "lane": BYO_OCI_LANE,
@@ -528,6 +528,8 @@ def hosted_byo_oci_bootstrap(job: HostedLaunchJob) -> dict[str, object]:
             "vault material, or provider secrets."
         ),
     }
+    _assert_public_byo_oci_bootstrap(payload)
+    return payload
 
 
 def render_hosted_byo_oci_bootstrap(job: HostedLaunchJob, *, job_token: str = "") -> str:
@@ -945,6 +947,23 @@ def _assert_public_byo_proof_report(report: dict[str, object]) -> None:
     forbidden = ("ghs_", "sk_live", "sk_test", "-----BEGIN", "ocid1.")
     if any(token.lower() in serialized.lower() for token in forbidden):
         raise FuseKitError("Hosted BYO OCI proof report contains private material.")
+
+
+def _assert_public_byo_oci_bootstrap(payload: dict[str, object]) -> None:
+    serialized = json.dumps(payload, sort_keys=True)
+    forbidden = (
+        "ghs_",
+        "ghp_",
+        "github_pat_",
+        "sk_live",
+        "sk_test",
+        "-----BEGIN",
+        "PRIVATE KEY-----",
+        "ocid1.",
+        "AKIA",
+    )
+    if any(token.lower() in serialized.lower() for token in forbidden):
+        raise FuseKitError("Hosted BYO OCI bootstrap contains private material.")
 
 
 def _byo_oci_launch_args(job: HostedLaunchJob) -> tuple[str, ...]:
