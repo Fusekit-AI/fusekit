@@ -79,6 +79,7 @@ from fusekit.hosted.launcher import (
 )
 from fusekit.hosted.session import create_hosted_state_token, verify_hosted_state_token
 from fusekit.scanner import scan_repo
+from fusekit.security.redaction import contains_durable_secret_text
 from fusekit.source import (
     UrlOpener as SourceUrlOpener,
 )
@@ -1944,6 +1945,14 @@ def _hosted_job_action_response(
     payload["action_receipt"] = action_receipt
     if dispatch_receipt is not None:
         payload["worker_dispatch"] = dispatch_receipt
+    try:
+        _assert_public_action_response_payload(payload)
+    except FuseKitError:
+        return _response(
+            start_response,
+            HTTPStatus.INTERNAL_SERVER_ERROR,
+            {"error": "public_action_payload_rejected"},
+        )
     return _response(start_response, HTTPStatus.OK, payload)
 
 
@@ -2734,6 +2743,12 @@ def _dispatch_hosted_worker(
             "dispatch_binding": _worker_dispatch_binding(settings, job, action=action),
             "dispatched": False,
             "reason": "worker_dispatch_url_not_configured",
+            "secret_boundary": (
+                "Dispatch was not sent because no worker dispatch URL is configured. "
+                "The receipt contains only public job/action/lane/payment labels and "
+                "hashes; it omits job tokens, worker secrets, provider tokens, and "
+                "vault material."
+            ),
         }
     if not _valid_https_url(settings.worker_dispatch_url):
         raise FuseKitError("Hosted worker dispatch URL must be https.")
@@ -2818,6 +2833,27 @@ def _dispatch_signature(secret: str, body: bytes) -> str:
         raise FuseKitError("Hosted worker secret is required for dispatch.")
     digest = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
     return f"sha256={digest}"
+
+
+def _assert_public_action_response_payload(payload: dict[str, object]) -> None:
+    serialized = json.dumps(payload, sort_keys=True)
+    if contains_durable_secret_text(serialized) or _contains_private_marker(serialized):
+        raise FuseKitError("Hosted protected action response contains private material.")
+
+
+def _contains_private_marker(value: str) -> bool:
+    forbidden = (
+        "ghs_",
+        "ghp_",
+        "github_pat_",
+        "sk_live",
+        "sk_test",
+        "-----BEGIN",
+        "PRIVATE KEY-----",
+        "ocid1.",
+        "AKIA",
+    )
+    return any(token.lower() in value.lower() for token in forbidden)
 
 
 def _json_request_body(environ: dict[str, object]) -> dict[str, object]:

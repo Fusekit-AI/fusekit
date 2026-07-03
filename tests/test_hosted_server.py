@@ -8,6 +8,7 @@ import re
 import urllib.request
 import zipfile
 from collections.abc import Iterable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -2542,6 +2543,7 @@ def test_hosted_job_api_returns_redacted_status_and_accepts_protected_action() -
     assert ".fusekit/run_record.json" in payload["worker_contract"]["required_artifacts"]
     assert "ghs_fake" not in json.dumps(payload)
 
+    settings = replace(settings, worker_dispatch_url="")
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
@@ -2562,6 +2564,10 @@ def test_hosted_job_api_returns_redacted_status_and_accepts_protected_action() -
     assert "worker_claim" in payload["action_receipt"]["next_required_proof"]
     assert "detonation_receipt" in payload["action_receipt"]["next_required_proof"]
     assert "recording" in payload["action_receipt"]["next_required_proof"]
+    assert payload["worker_dispatch"]["dispatched"] is False
+    assert payload["worker_dispatch"]["reason"] == "worker_dispatch_url_not_configured"
+    assert "omits job tokens" in payload["worker_dispatch"]["secret_boundary"]
+    assert "worker secrets" in payload["worker_dispatch"]["secret_boundary"]
     assert steps["provider.gates"]["status"] == "waiting"
     assert "ghs_fake" not in json.dumps(payload)
 
