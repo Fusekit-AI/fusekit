@@ -44,6 +44,7 @@ from fusekit.hosted.verify import (
     verify_hosted_deployment,
 )
 from fusekit.hosted.worker_dispatch import HOSTED_WORKER_DISPATCH_BINDING_FIELDS
+from fusekit.security import contains_durable_secret_text
 
 PUBLIC_DNS_ADDRESSES = ["2606:4700::6810:84e5", "76.76.21.21"]
 VERCEL_COMMIT_SHA = "0123456789abcdef0123456789abcdef01234567"
@@ -399,11 +400,13 @@ def test_verify_hosted_deployment_requires_worker_dispatch_readiness_binding_con
 def test_verify_hosted_deployment_rejects_worker_dispatch_readiness_sidecars() -> None:
     readiness = _worker_dispatch_readiness_contract()
     readiness["raw_log_excerpt"] = "dispatch worker log lines do not belong here"
+    readiness["sk_live_readiness_field_should_not_echo"] = "public"
     binding = readiness["dispatch_binding"]
     idempotency = readiness["idempotency"]
     assert isinstance(binding, dict)
     assert isinstance(idempotency, dict)
     binding["stripe_price_id"] = "price_should_not_be_public_readiness"
+    binding["ghp_binding_field_should_not_echo"] = "public"
     idempotency["state_dir"] = "/var/lib/fusekit/dispatch-state"
     storage = {
         "exists": True,
@@ -436,12 +439,26 @@ def test_verify_hosted_deployment_rejects_worker_dispatch_readiness_sidecars() -
 
     assert report["ready"] is False
     assert checks["worker_dispatch.readiness"]["status"] == "failed"
-    assert checks["worker_dispatch.readiness"]["failures"] == [
-        "worker_dispatch_readiness_unexpected_field:raw_log_excerpt",
-        "worker_dispatch_binding_unexpected_field:stripe_price_id",
-        "worker_dispatch_idempotency_unexpected_field:state_dir",
-        "worker_dispatch_idempotency_storage_unexpected_field:path",
-    ]
+    failures = checks["worker_dispatch.readiness"]["failures"]
+    assert "sk_live_readiness_field_should_not_echo" not in json.dumps(report)
+    assert "ghp_binding_field_should_not_echo" not in json.dumps(report)
+    assert not contains_durable_secret_text(json.dumps(report))
+    assert "public_json_contains_credential_text" in failures
+    assert "worker_dispatch_readiness_unexpected_field:raw_log_excerpt" in failures
+    assert "worker_dispatch_binding_unexpected_field:stripe_price_id" in failures
+    assert "worker_dispatch_idempotency_unexpected_field:state_dir" in failures
+    assert "worker_dispatch_idempotency_storage_unexpected_field:path" in failures
+    assert any(
+        failure.startswith("worker_dispatch_readiness_unexpected_field:")
+        and "redacted" in failure.lower()
+        for failure in failures
+    )
+    assert any(
+        failure.startswith("worker_dispatch_binding_unexpected_field:")
+        and "redacted" in failure.lower()
+        for failure in failures
+    )
+    assert len(failures) == 7
 
 
 def test_verify_hosted_deployment_reports_cloudflare_error_without_claiming_ready() -> None:

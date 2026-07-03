@@ -80,7 +80,7 @@ from fusekit.hosted.worker_dispatch import (
     HOSTED_WORKER_DISPATCH_BINDING_FIELDS,
     HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION,
 )
-from fusekit.security import contains_durable_secret_text
+from fusekit.security import contains_durable_secret_text, redact_public_text
 
 HOSTED_DEPLOYMENT_VERIFICATION_SCHEMA_VERSION = "fusekit.hosted-deployment-verification.v1"
 HomeContractValidator = Callable[[dict[str, Any]], list[str]]
@@ -705,7 +705,7 @@ def _worker_dispatch_binding_failures(payload: object) -> list[str]:
 
 
 def _unexpected_keys(payload: dict[str, Any], allowed: frozenset[str]) -> list[str]:
-    return sorted(str(key) for key in payload if str(key) not in allowed)
+    return sorted(redact_public_text(str(key)) for key in payload if str(key) not in allowed)
 
 
 def _dns_check(
