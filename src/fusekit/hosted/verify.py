@@ -54,6 +54,7 @@ from fusekit.hosted.server import (
     HOSTED_CANONICAL_ORIGIN,
     HOSTED_CAPABILITY_VAULT_BOUNDARY,
     HOSTED_DEPLOYMENT_SCHEMA_VERSION,
+    HOSTED_GENERIC_OPERATOR_SETUP_STEPS,
     HOSTED_OCI_OPERATOR_SETUP_STEPS,
     HOSTED_OCI_SOURCE_PROVENANCE_ENV,
     HOSTED_OPERATOR_SETUP_STEPS,
@@ -66,6 +67,7 @@ from fusekit.hosted.server import (
     HOSTED_SOURCE_REPOSITORY,
     HOSTED_SOURCE_REPOSITORY_NAME,
     HOSTED_SOURCE_REPOSITORY_OWNER,
+    HOSTED_UNKNOWN_SOURCE_PROVENANCE_ENV,
     HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
     valid_hosted_aws_deployment_url,
     valid_hosted_oci_deployment_url,
@@ -773,6 +775,15 @@ def _expected_runtime_contract(provider: str) -> dict[str, object]:
             "application_export": "app",
             "mode": "python-wsgi",
         }
+    if provider == "unknown":
+        return {
+            "provider": "unknown",
+            "entrypoint": "app.py",
+            "requirements": "requirements.txt",
+            "python_version": ".python-version",
+            "application_export": "app",
+            "mode": "python-wsgi",
+        }
     return {}
 
 
@@ -781,6 +792,8 @@ def _expected_operator_setup_steps(provider: str) -> tuple[dict[str, str], ...]:
         return HOSTED_AWS_OPERATOR_SETUP_STEPS
     if provider == "oci-compute":
         return HOSTED_OCI_OPERATOR_SETUP_STEPS
+    if provider == "unknown":
+        return HOSTED_GENERIC_OPERATOR_SETUP_STEPS
     return HOSTED_OPERATOR_SETUP_STEPS
 
 
@@ -789,6 +802,8 @@ def _expected_source_provenance_env(provider: str) -> tuple[str, ...]:
         return HOSTED_AWS_SOURCE_PROVENANCE_ENV
     if provider == "oci-compute":
         return HOSTED_OCI_SOURCE_PROVENANCE_ENV
+    if provider == "unknown":
+        return HOSTED_UNKNOWN_SOURCE_PROVENANCE_ENV
     return HOSTED_SOURCE_PROVENANCE_ENV
 
 
@@ -905,6 +920,36 @@ def _source_provenance_failures(payload: object) -> list[str]:
     provider = str(payload.get("provider") or "")
     if provider not in {"vercel", "aws-elastic-beanstalk", "oci-compute"}:
         failures.append("source_provenance_provider_mismatch")
+    if provider == "unknown":
+        if payload.get("source") != "deployment_provider_not_selected":
+            failures.append("source_provenance_source_mismatch")
+        expected = payload.get("expected")
+        if not isinstance(expected, dict):
+            failures.append("source_provenance_expected_missing")
+        else:
+            if (
+                expected.get("deployment_provider")
+                != "oci-compute | aws-elastic-beanstalk | vercel"
+            ):
+                failures.append("source_provenance_expected_provider_selection_mismatch")
+            if expected.get("source_repository") != HOSTED_SOURCE_REPOSITORY:
+                failures.append("source_provenance_expected_source_repository_mismatch")
+        actual = payload.get("actual")
+        if not isinstance(actual, dict):
+            failures.append("source_provenance_actual_missing")
+        else:
+            if not isinstance(actual.get("deployment_provider_configured"), bool):
+                failures.append("source_provenance_actual_provider_configured_invalid")
+            if actual.get("selected_provider") != "unknown":
+                failures.append("source_provenance_actual_selected_provider_mismatch")
+        if payload.get("verified") is not False:
+            failures.append("source_provenance_unknown_provider_must_not_verify")
+        if payload.get("required_env") != list(HOSTED_UNKNOWN_SOURCE_PROVENANCE_ENV):
+            failures.append("source_provenance_required_env_mismatch")
+        boundary = payload.get("secret_boundary")
+        if not isinstance(boundary, str) or "provider-selection state" not in boundary:
+            failures.append("source_provenance_secret_boundary_missing")
+        return failures
     expected_source = (
         "vercel_system_environment_variables"
         if provider == "vercel"

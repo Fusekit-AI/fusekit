@@ -81,6 +81,7 @@
   OCI hosted release templates now use `/opt/fusekit/current` as the rollback symlink, publish a narrow exact-commit release script, update only non-secret provenance outside the secret env file, restart only the two FuseKit services, and emit a redacted release receipt for post-deploy verification.
   OCI host posture now validates that redacted release receipt, including the allowed mutated paths, restarted FuseKit services, rollback mode, public commit, release directory, secret boundary, and post-deploy verifier command, and blocks readiness if the receipt commit does not match the hosted verifier's deployed commit proof.
   Hosted deployment provider selection now fails closed instead of silently defaulting to Vercel: Vercel is inferred only from Vercel system metadata, OCI/AWS remain explicit, and missing or unsupported providers publish neutral setup/provenance blockers without leaking Vercel-specific DNS/runtime instructions.
+  The outside-in hosted verifier now mirrors that provider-neutral contract: unknown provider deployments expect only the generic setup step and provider-selection provenance env, fail on `source_provenance_provider_mismatch`, and do not fall back to Vercel runtime, operator, or source-env expectations.
 - [x] Security invariants are enforced by tests.
 - [x] CLI defaults to real-provider execution; incomplete local rehearsals require explicit opt-in.
 - [x] FuseKit bootstraps its own runtime components instead of assuming Codex/OpenClaw is preinstalled.

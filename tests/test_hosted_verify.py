@@ -30,12 +30,14 @@ from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY, HOSTED_PROHIB
 from fusekit.hosted.server import (
     HOSTED_AWS_OPERATOR_SETUP_STEPS,
     HOSTED_AWS_SOURCE_PROVENANCE_ENV,
+    HOSTED_GENERIC_OPERATOR_SETUP_STEPS,
     HOSTED_OCI_OPERATOR_SETUP_STEPS,
     HOSTED_OCI_SOURCE_PROVENANCE_ENV,
     HOSTED_PROVIDER_PERMISSION_COPY,
     HOSTED_SECURITY_HEADERS_CONTRACT,
     HOSTED_SOURCE_INTEGRITY_CONTRACT,
     HOSTED_SOURCE_PROVENANCE_ENV,
+    HOSTED_UNKNOWN_SOURCE_PROVENANCE_ENV,
 )
 from fusekit.hosted.verify import (
     HOSTED_DEPLOYMENT_VERIFICATION_SCHEMA_VERSION,
@@ -1516,6 +1518,47 @@ def test_verify_hosted_deployment_rejects_vercel_provenance_url_drift() -> None:
     assert "source_provenance_deployment_url_invalid" in checks["hosted.deployment"]["failures"]
 
 
+def test_verify_hosted_deployment_rejects_unknown_provider_without_vercel_fallback() -> None:
+    readiness = _readiness_contract()
+    readiness["ready"] = False
+    readiness["blocking_checks"] = [
+        "invalid:hosted_deployment_provider_required",
+        "invalid:source_provenance_not_verified",
+    ]
+    readiness["next_actions"] = [
+        "Set FUSEKIT_HOSTED_DEPLOYMENT_PROVIDER to oci-compute, aws-elastic-beanstalk, or vercel."
+    ]
+    readiness["required_source_provenance_env"] = list(HOSTED_UNKNOWN_SOURCE_PROVENANCE_ENV)
+    readiness["source_provenance"] = _unknown_source_provenance_contract()
+    deployment = _unknown_deployment_contract()
+    opener = SequenceOpener(
+        [
+            _home_html(readiness=readiness, deployment=deployment),
+            {"ok": True},
+            readiness,
+            deployment,
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+    deployment_failures = checks["hosted.deployment"]["failures"]
+
+    assert report["ready"] is False
+    assert "source_provenance_provider_mismatch" in deployment_failures
+    assert "runtime_provider_mismatch" not in deployment_failures
+    assert "operator_setup_steps_mismatch" not in deployment_failures
+    assert "required_source_provenance_env_mismatch" not in deployment_failures
+    assert "source_provenance_source_mismatch" not in deployment_failures
+    assert "source_provenance_secret_boundary_missing" not in deployment_failures
+    assert "Vercel" not in json.dumps(checks["hosted.deployment"])
+
+
 def test_verify_hosted_deployment_requires_one_click_contract() -> None:
     contract = _deployment_contract()
     one_click = contract["one_click_launch"]
@@ -2482,6 +2525,28 @@ def _source_provenance_contract() -> dict[str, object]:
     }
 
 
+def _unknown_source_provenance_contract() -> dict[str, object]:
+    return {
+        "provider": "unknown",
+        "source": "deployment_provider_not_selected",
+        "expected": {
+            "deployment_provider": "oci-compute | aws-elastic-beanstalk | vercel",
+            "source_repository": "https://github.com/Fusekit-AI/fusekit",
+        },
+        "actual": {
+            "deployment_provider_configured": False,
+            "selected_provider": "unknown",
+        },
+        "verified": False,
+        "required_env": list(HOSTED_UNKNOWN_SOURCE_PROVENANCE_ENV),
+        "secret_boundary": (
+            "Source provenance publishes only the provider-selection state. It does not "
+            "publish deployment credentials, GitHub installation tokens, provider "
+            "credentials, or vault material."
+        ),
+    }
+
+
 def _aws_source_provenance_contract() -> dict[str, object]:
     return {
         "provider": "aws-elastic-beanstalk",
@@ -2540,6 +2605,35 @@ def _oci_source_provenance_contract() -> dict[str, object]:
             "provider credentials, or vault material."
         ),
     }
+
+
+def _unknown_deployment_contract() -> dict[str, object]:
+    contract = _deployment_contract()
+    contract["runtime"] = {
+        "provider": "unknown",
+        "entrypoint": "app.py",
+        "requirements": "requirements.txt",
+        "python_version": ".python-version",
+        "application_export": "app",
+        "mode": "python-wsgi",
+    }
+    contract["source_provenance"] = _unknown_source_provenance_contract()
+    contract["required_source_provenance_env"] = list(HOSTED_UNKNOWN_SOURCE_PROVENANCE_ENV)
+    contract["operator_setup"] = {
+        "target_subdomain": "fusekit.snowmanai.org",
+        "steps": [dict(step) for step in HOSTED_GENERIC_OPERATOR_SETUP_STEPS],
+        "secret_boundary": (
+            "Operator setup names provider surfaces and expected public proof only. "
+            "It does not include AWS credentials, Vercel tokens, Cloudflare API tokens, "
+            "GitHub private keys, HMAC secrets, or vault material."
+        ),
+    }
+    cloudflare_dns = contract["cloudflare_dns"]
+    assert isinstance(cloudflare_dns, dict)
+    cloudflare_dns["record_value"] = (
+        "Use the exact target for the selected hosted deployment provider."
+    )
+    return contract
 
 
 def _aws_deployment_contract() -> dict[str, object]:
