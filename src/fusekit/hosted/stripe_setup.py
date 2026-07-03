@@ -165,6 +165,20 @@ def create_stripe_managed_run_price(
         raise FuseKitError(
             "Refusing Stripe mutation without --confirm-shared-account acknowledgement."
         )
+    existing_price = _find_existing_stripe_managed_run_price(
+        stripe_secret_key,
+        plan,
+        opener=opener,
+    )
+    if existing_price:
+        return _stripe_setup_report(
+            plan,
+            executed=True,
+            product_id=existing_price["product_id"],
+            price_id=existing_price["price_id"],
+            reused_existing=True,
+            mutated=False,
+        )
     product = _stripe_request(
         stripe_secret_key,
         "POST",
@@ -192,6 +206,8 @@ def create_stripe_managed_run_price(
         executed=True,
         product_id=product_id,
         price_id=price_id,
+        reused_existing=False,
+        mutated=True,
     )
 
 
@@ -255,6 +271,8 @@ def _stripe_setup_report(
     executed: bool,
     product_id: str,
     price_id: str,
+    reused_existing: bool = False,
+    mutated: bool = False,
 ) -> dict[str, object]:
     next_actions = [
         "Store FUSEKIT_STRIPE_SECRET_KEY only in the hosted runtime secret file.",
@@ -267,6 +285,8 @@ def _stripe_setup_report(
         {
             "ready": True,
             "executed": executed,
+            "mutated": mutated,
+            "reused_existing": reused_existing,
             "product_id": product_id,
             "price_id": price_id,
             "hosted_runtime_env": {
@@ -279,11 +299,121 @@ def _stripe_setup_report(
     )
     if not executed:
         report["dry_run"] = True
+        report["mutated"] = False
+        report["reused_existing"] = False
         report["next_actions"] = [
             "Re-run with --execute --confirm-shared-account after reviewing this plan.",
             *next_actions,
         ]
     return report
+
+
+def _find_existing_stripe_managed_run_price(
+    stripe_secret_key: str,
+    plan: StripeManagedRunPricePlan,
+    *,
+    opener: UrlOpener | None,
+) -> dict[str, str]:
+    payload = _stripe_get(
+        stripe_secret_key,
+        "/v1/prices",
+        {
+            "active": "true",
+            "limit": "10",
+            "lookup_keys[]": plan.lookup_key,
+            "expand[]": "data.product",
+        },
+        opener=opener,
+    )
+    data = payload.get("data")
+    if not isinstance(data, list) or not data:
+        return {}
+    expected_metadata = _stripe_setup_metadata(
+        lane=MANAGED_FUSEKIT_RUN_LANE,
+        price_label=plan.price_label,
+    )
+    for item in data:
+        if _stripe_price_matches_plan(
+            item,
+            plan=plan,
+            expected_metadata=expected_metadata,
+        ):
+            assert isinstance(item, Mapping)
+            product = item.get("product")
+            assert isinstance(product, Mapping)
+            return {
+                "price_id": _public_stripe_id(item.get("id"), prefix="price_"),
+                "product_id": _public_stripe_id(product.get("id"), prefix="prod_"),
+            }
+    raise FuseKitError(
+        "Existing Stripe Price with FuseKit lookup key does not match the requested "
+        "FuseKit-scoped managed-run price."
+    )
+
+
+def _stripe_price_matches_plan(
+    value: object,
+    *,
+    plan: StripeManagedRunPricePlan,
+    expected_metadata: Mapping[str, str],
+) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    product = value.get("product")
+    if not isinstance(product, Mapping):
+        return False
+    return (
+        _public_stripe_id(value.get("id"), prefix="price_") != ""
+        and value.get("active") is True
+        and value.get("type") in {"one_time", "", None}
+        and value.get("unit_amount") == plan.amount_cents
+        and str(value.get("currency") or "").lower() == plan.currency
+        and value.get("lookup_key") == plan.lookup_key
+        and _metadata_matches(value.get("metadata"), expected_metadata)
+        and _public_stripe_id(product.get("id"), prefix="prod_") != ""
+        and product.get("active") is True
+        and _product_name_scoped(product)
+        and _metadata_matches(product.get("metadata"), expected_metadata)
+    )
+
+
+def _metadata_matches(value: object, expected: Mapping[str, str]) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    return all(value.get(key) == expected_value for key, expected_value in expected.items())
+
+
+def _product_name_scoped(value: Mapping[str, object]) -> bool:
+    name = value.get("name")
+    return isinstance(name, str) and "fusekit" in name.lower()
+
+
+def _stripe_get(
+    stripe_secret_key: str,
+    path: str,
+    query: Mapping[str, str],
+    *,
+    opener: UrlOpener | None,
+) -> dict[str, object]:
+    url = STRIPE_API_BASE + path + "?" + urllib.parse.urlencode(query)
+    request = urllib.request.Request(
+        url,
+        method="GET",
+        headers={
+            "Authorization": f"Bearer {stripe_secret_key}",
+            "User-Agent": "FuseKit",
+        },
+    )
+    open_url = opener or urllib.request.urlopen
+    with open_url(request, timeout=30.0) as response:
+        raw = response.read()
+        status = int(getattr(response, "status", 200))
+    if status >= 400:
+        raise FuseKitError(f"Stripe setup lookup returned HTTP {status}.")
+    decoded = json.loads(raw.decode("utf-8") if raw else "{}")
+    if not isinstance(decoded, dict):
+        raise FuseKitError("Stripe setup lookup response is invalid.")
+    return decoded
 
 
 def _stripe_request(

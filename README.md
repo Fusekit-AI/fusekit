@@ -509,10 +509,15 @@ FUSEKIT_STRIPE_SECRET_KEY=sk_live_... \
     --confirm-shared-account
 ```
 
-The command prints only redacted public JSON: the Stripe Product id, Stripe
-Price id, the public `FUSEKIT_MANAGED_RUN_PRICE_LABEL`, and next runtime
+On execute, the helper first looks up the deterministic FuseKit Price
+`lookup_key`. If a matching active FuseKit-scoped Price/Product already exists,
+it reuses that Price id and reports `reused_existing=true` without creating
+another Stripe object. If the lookup key is occupied by non-FuseKit metadata, it
+stops instead of touching another Snowman AI product. The command prints only
+redacted public JSON: the Stripe Product id, Stripe Price id, whether a mutation
+occurred, the public `FUSEKIT_MANAGED_RUN_PRICE_LABEL`, and next runtime
 environment actions. Omit `--execute` for a dry run. Before enabling managed
-runs, verify the created Price/Product in the shared Stripe account:
+runs, verify the created or reused Price/Product in the shared Stripe account:
 
 ```zsh
 FUSEKIT_STRIPE_SECRET_KEY=sk_live_... \
