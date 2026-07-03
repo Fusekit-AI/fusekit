@@ -20,6 +20,7 @@ from fusekit.hosted.runtime_secrets import (
     HOSTED_RUNTIME_SECRET_VERIFY_SCHEMA_VERSION,
     HOSTED_RUNTIME_STRIPE_ENV,
 )
+from fusekit.hosted.verify import HOSTED_DEPLOYMENT_VERIFICATION_SCHEMA_VERSION
 from fusekit.security import contains_durable_secret_text, redact_public_text
 
 OCI_HOST_POSTURE_EVIDENCE_SCHEMA_VERSION = "fusekit.oci-host-posture-evidence.v1"
@@ -1410,11 +1411,25 @@ def _systemd_check(evidence: Mapping[str, object]) -> dict[str, object]:
 
 def _web_verification_check(evidence: Mapping[str, object]) -> dict[str, object]:
     report = _mapping(evidence.get("hosted_verify"))
-    if report.get("public_origin") != OCI_HOST_POSTURE_ORIGIN or report.get("ready") is not True:
+    failures: list[str] = []
+    if report.get("schema_version") != HOSTED_DEPLOYMENT_VERIFICATION_SCHEMA_VERSION:
+        failures.append("oci_hosted_verify_schema_invalid")
+    if report.get("public_origin") != OCI_HOST_POSTURE_ORIGIN:
+        failures.append("oci_hosted_verify_origin_mismatch")
+    if report.get("ready") is not True:
+        failures.append("oci_hosted_verify_not_ready")
+    boundary = _public_str(report.get("secret_boundary")).lower()
+    if (
+        "public html/json endpoints only" not in boundary
+        or "never" not in boundary
+        or "provider credentials" not in boundary
+    ):
+        failures.append("oci_hosted_verify_secret_boundary_mismatch")
+    if failures:
         hosted_blockers = _public_string_list(report.get("blocking_checks"))
         return _fail(
             "host.web_verification",
-            "oci_hosted_verify_must_pass_for_canonical_origin",
+            failures,
             "Run fusekit-hosted-verify --origin https://fusekit.snowmanai.org "
             '--expected-commit-sha "$(git rev-parse HEAD)" and attach the redacted '
             "ready report.",

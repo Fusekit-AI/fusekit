@@ -208,6 +208,7 @@ def _clean_evidence() -> dict[str, object]:
             },
         },
         "hosted_verify": {
+            "schema_version": "fusekit.hosted-deployment-verification.v1",
             "public_origin": "https://fusekit.snowmanai.org",
             "ready": True,
             "source_provenance": {
@@ -215,6 +216,11 @@ def _clean_evidence() -> dict[str, object]:
                     "commit_sha": HOSTED_COMMIT,
                 },
             },
+            "secret_boundary": (
+                "Hosted deployment verification fetches public HTML/JSON endpoints only. "
+                "It never requires or returns GitHub private keys, worker secrets, HMAC "
+                "signatures, provider credentials, signed job tokens, or vault material."
+            ),
         },
         "dns_propagation": {
             "public_origin": "https://fusekit.snowmanai.org",
@@ -867,6 +873,24 @@ def test_oci_host_posture_blocks_hosted_verify_sidecars() -> None:
     ]
 
 
+def test_oci_host_posture_blocks_malformed_hosted_verify_envelope() -> None:
+    evidence = _clean_evidence()
+    hosted_verify = evidence["hosted_verify"]
+    assert isinstance(hosted_verify, dict)
+    hosted_verify.pop("schema_version")
+    hosted_verify["secret_boundary"] = "Public status report."
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.web_verification"]
+    web_check = _check(report, "host.web_verification")
+    assert web_check["failures"] == [
+        "oci_hosted_verify_schema_invalid",
+        "oci_hosted_verify_secret_boundary_mismatch",
+    ]
+
+
 def test_oci_host_posture_blocks_missing_release_receipt() -> None:
     evidence = _clean_evidence()
     evidence["release_receipt"] = {}
@@ -944,6 +968,7 @@ def test_oci_host_posture_blocks_release_receipt_commit_mismatch() -> None:
 def test_oci_host_posture_preserves_hosted_expected_commit_blocker() -> None:
     evidence = _clean_evidence()
     evidence["hosted_verify"] = {
+        "schema_version": "fusekit.hosted-deployment-verification.v1",
         "public_origin": "https://fusekit.snowmanai.org",
         "ready": False,
         "blocking_checks": ["hosted.expected_commit"],
@@ -956,6 +981,11 @@ def test_oci_host_posture_preserves_hosted_expected_commit_blocker() -> None:
                 "failures": ["expected_commit_sha_mismatch"],
             }
         ],
+        "secret_boundary": (
+            "Hosted deployment verification fetches public HTML/JSON endpoints only. "
+            "It never requires or returns GitHub private keys, worker secrets, HMAC "
+            "signatures, provider credentials, signed job tokens, or vault material."
+        ),
     }
 
     report = evaluate_oci_host_posture(evidence)
@@ -1396,6 +1426,7 @@ def test_oci_host_posture_collector_builds_validator_ready_redacted_evidence(
         shape="VM.Standard.E5.Flex",
         ssh_ingress="restricted",
         hosted_verify_report={
+            "schema_version": "fusekit.hosted-deployment-verification.v1",
             "public_origin": "https://fusekit.snowmanai.org",
             "ready": True,
             "source_provenance": {
@@ -1403,6 +1434,11 @@ def test_oci_host_posture_collector_builds_validator_ready_redacted_evidence(
                     "commit_sha": HOSTED_COMMIT,
                 },
             },
+            "secret_boundary": (
+                "Hosted deployment verification fetches public HTML/JSON endpoints only. "
+                "It never requires or returns GitHub private keys, worker secrets, HMAC "
+                "signatures, provider credentials, signed job tokens, or vault material."
+            ),
         },
         dns_report={
             "public_origin": "https://fusekit.snowmanai.org",
