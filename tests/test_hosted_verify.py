@@ -10,6 +10,7 @@ import pytest
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.billing import (
+    HOSTED_STRIPE_PRICE_LOOKUP_POLICY,
     HOSTED_STRIPE_PRICE_SETUP_HELPER,
     HOSTED_STRIPE_PRICE_SETUP_MODULE,
     HOSTED_STRIPE_PRICE_SETUP_REQUIRED_FLAGS,
@@ -813,6 +814,7 @@ def test_verify_hosted_deployment_requires_payment_operator_setup_contract() -> 
     operator_setup["module_fallback"] = "python -m snowman.shared_stripe_setup"
     operator_setup["verification_module_fallback"] = "python -m snowman.shared_stripe_verify"
     operator_setup["mutation_requires"] = ["--execute"]
+    operator_setup["lookup_key_policy"] = "Manual dashboard search is enough."
     operator_setup["shared_account_boundary"] = "May reuse existing Snowman AI products."
     opener = SequenceOpener(
         [
@@ -848,6 +850,9 @@ def test_verify_hosted_deployment_requires_payment_operator_setup_contract() -> 
     assert "payment_operator_setup_mutation_gate_mismatch" in checks["hosted.readiness"][
         "failures"
     ]
+    assert "payment_operator_setup_lookup_key_policy_mismatch" in checks[
+        "hosted.readiness"
+    ]["failures"]
     assert "payment_operator_setup_shared_account_boundary_mismatch" in checks[
         "hosted.readiness"
     ]["failures"]
@@ -2007,6 +2012,7 @@ def _payment_contract() -> dict[str, object]:
             "verification_module_fallback": HOSTED_STRIPE_PRICE_VERIFY_MODULE,
             "dry_run_default": True,
             "mutation_requires": list(HOSTED_STRIPE_PRICE_SETUP_REQUIRED_FLAGS),
+            "lookup_key_policy": HOSTED_STRIPE_PRICE_LOOKUP_POLICY,
             "shared_account_boundary": HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY,
             "secret_boundary": HOSTED_STRIPE_SETUP_SECRET_BOUNDARY,
             "managed_runs_enable_after": "live Checkout proof and worker-dispatch acceptance pass",

@@ -14,6 +14,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from fusekit.hosted.billing import (
+    HOSTED_STRIPE_PRICE_LOOKUP_POLICY,
     HOSTED_STRIPE_PRICE_SETUP_HELPER,
     HOSTED_STRIPE_PRICE_SETUP_MODULE,
     HOSTED_STRIPE_PRICE_SETUP_REQUIRED_FLAGS,
@@ -821,6 +822,7 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
         "verification_module_fallback": HOSTED_STRIPE_PRICE_VERIFY_MODULE,
         "dry_run_default": True,
         "mutation_requires": list(HOSTED_STRIPE_PRICE_SETUP_REQUIRED_FLAGS),
+        "lookup_key_policy": HOSTED_STRIPE_PRICE_LOOKUP_POLICY,
         "shared_account_boundary": HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY,
         "secret_boundary": HOSTED_STRIPE_SETUP_SECRET_BOUNDARY,
         "managed_runs_enable_after": "live Checkout proof and worker-dispatch acceptance pass",

@@ -17,6 +17,7 @@ from typing import Any, Protocol
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.billing import (
+    HOSTED_STRIPE_PRICE_LOOKUP_POLICY,
     HOSTED_STRIPE_PRICE_SETUP_HELPER,
     HOSTED_STRIPE_PRICE_SETUP_MODULE,
     HOSTED_STRIPE_PRICE_SETUP_REQUIRED_FLAGS,
@@ -1365,6 +1366,8 @@ def _payment_operator_setup_failures(value: object) -> list[str]:
         failures.append("payment_operator_setup_dry_run_policy_mismatch")
     if value.get("mutation_requires") != list(HOSTED_STRIPE_PRICE_SETUP_REQUIRED_FLAGS):
         failures.append("payment_operator_setup_mutation_gate_mismatch")
+    if value.get("lookup_key_policy") != HOSTED_STRIPE_PRICE_LOOKUP_POLICY:
+        failures.append("payment_operator_setup_lookup_key_policy_mismatch")
     if value.get("shared_account_boundary") != HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY:
         failures.append("payment_operator_setup_shared_account_boundary_mismatch")
     if value.get("secret_boundary") != HOSTED_STRIPE_SETUP_SECRET_BOUNDARY:

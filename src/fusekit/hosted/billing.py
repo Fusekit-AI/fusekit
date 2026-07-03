@@ -29,6 +29,12 @@ HOSTED_STRIPE_PRICE_SETUP_REQUIRED_FLAGS = (
     "--execute",
     "--confirm-shared-account",
 )
+HOSTED_STRIPE_PRICE_LOOKUP_POLICY = (
+    "Before creating Stripe objects, list active Prices by the deterministic FuseKit "
+    "lookup_key with expanded Product. Reuse only an existing active FuseKit-scoped "
+    "Price/Product with matching amount, currency, metadata, and public label hash; "
+    "halt if that lookup key is occupied by non-FuseKit metadata."
+)
 HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY = (
     "Creates a new FuseKit-scoped Stripe Product and Price only. It does not edit, "
     "archive, or reuse existing Snowman AI products, prices, customers, subscriptions, "
@@ -114,6 +120,7 @@ class HostedPaymentConfig:
                 "verification_module_fallback": HOSTED_STRIPE_PRICE_VERIFY_MODULE,
                 "dry_run_default": True,
                 "mutation_requires": list(HOSTED_STRIPE_PRICE_SETUP_REQUIRED_FLAGS),
+                "lookup_key_policy": HOSTED_STRIPE_PRICE_LOOKUP_POLICY,
                 "shared_account_boundary": HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY,
                 "secret_boundary": HOSTED_STRIPE_SETUP_SECRET_BOUNDARY,
                 "managed_runs_enable_after": (
