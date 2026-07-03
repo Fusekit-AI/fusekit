@@ -39,6 +39,9 @@ def _runtime_secret_verify_report() -> dict[str, object]:
             "symlink": False,
             "mode": "0600",
             "owner_only": True,
+            "parent_mode": "0700",
+            "parent_private_enough": True,
+            "root_owned_required": True,
             "root_owned": True,
         },
         "required_runtime_env": {
@@ -398,6 +401,25 @@ def test_oci_host_posture_blocks_runtime_secret_required_env_presence_drift() ->
     verify_check = _check(report, "host.runtime_secret_verify")
     assert verify_check["failures"] == [
         "oci_host_runtime_secret_required_env_presence_mismatch"
+    ]
+
+
+def test_oci_host_posture_blocks_runtime_secret_file_metadata_drift() -> None:
+    evidence = _clean_evidence()
+    verify_report = evidence["runtime_secret_verify"]
+    assert isinstance(verify_report, dict)
+    secret_file = verify_report["secret_file"]
+    assert isinstance(secret_file, dict)
+    secret_file["mode"] = "0640"
+    secret_file["parent_private_enough"] = False
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.runtime_secret_verify"]
+    verify_check = _check(report, "host.runtime_secret_verify")
+    assert verify_check["failures"] == [
+        "oci_host_runtime_secret_verify_file_metadata_mismatch"
     ]
 
 

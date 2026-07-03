@@ -1050,6 +1050,7 @@ def _runtime_secret_file_check(evidence: Mapping[str, object]) -> dict[str, obje
 def _runtime_secret_verify_check(evidence: Mapping[str, object]) -> dict[str, object]:
     report = _mapping(evidence.get("runtime_secret_verify"))
     key_inventory = _mapping(report.get("key_inventory"))
+    secret_file = _mapping(report.get("secret_file"))
     required_runtime_env = _mapping(report.get("required_runtime_env"))
     stripe_runtime_env = _mapping(report.get("stripe_runtime_env"))
     missing_keys = _string_list(key_inventory.get("missing"))
@@ -1082,6 +1083,8 @@ def _runtime_secret_verify_check(evidence: Mapping[str, object]) -> dict[str, ob
         failures.append("oci_host_runtime_secret_required_env_presence_mismatch")
     if not _stripe_runtime_env_ready(stripe_runtime_env):
         failures.append("oci_host_runtime_secret_stripe_env_mismatch")
+    if not _runtime_secret_verify_file_ready(secret_file):
+        failures.append("oci_host_runtime_secret_verify_file_metadata_mismatch")
     boundary = _public_str(report.get("secret_boundary")).lower()
     if "emits no" not in boundary or "secret" not in boundary:
         failures.append("oci_host_runtime_secret_verify_secret_boundary_missing")
@@ -1522,6 +1525,21 @@ def _stripe_runtime_env_ready(value: Mapping[str, object]) -> bool:
         and managed_runs.get("configured") is True
         and managed_runs.get("must_remain_disabled") is True
         and managed_runs.get("enabled") is False
+    )
+
+
+def _runtime_secret_verify_file_ready(value: Mapping[str, object]) -> bool:
+    return (
+        value.get("path") == OCI_HOST_POSTURE_SECRET_FILE
+        and value.get("exists") is True
+        and value.get("regular_file") is True
+        and value.get("symlink") is False
+        and str(value.get("mode") or "") in {"0600", "600"}
+        and value.get("owner_only") is True
+        and str(value.get("parent_mode") or "") in {"0700", "700", "0750", "750"}
+        and value.get("parent_private_enough") is True
+        and value.get("root_owned_required") is True
+        and value.get("root_owned") is True
     )
 
 
