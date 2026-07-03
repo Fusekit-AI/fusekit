@@ -19,6 +19,7 @@ from fusekit.errors import FuseKitError
 from fusekit.hosted.billing import (
     HOSTED_STRIPE_PRICE_SETUP_HELPER,
     HOSTED_STRIPE_PRICE_SETUP_REQUIRED_FLAGS,
+    HOSTED_STRIPE_PRICE_VERIFY_HELPER,
     HOSTED_STRIPE_SETUP_SECRET_BOUNDARY,
     HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY,
     _valid_price_label,
@@ -1352,6 +1353,8 @@ def _payment_operator_setup_failures(value: object) -> list[str]:
     failures: list[str] = []
     if value.get("helper_command") != HOSTED_STRIPE_PRICE_SETUP_HELPER:
         failures.append("payment_operator_setup_helper_mismatch")
+    if value.get("verification_command") != HOSTED_STRIPE_PRICE_VERIFY_HELPER:
+        failures.append("payment_operator_setup_verification_helper_mismatch")
     if value.get("dry_run_default") is not True:
         failures.append("payment_operator_setup_dry_run_policy_mismatch")
     if value.get("mutation_requires") != list(HOSTED_STRIPE_PRICE_SETUP_REQUIRED_FLAGS):

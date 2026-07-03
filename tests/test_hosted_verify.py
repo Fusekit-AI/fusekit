@@ -12,6 +12,7 @@ from fusekit.errors import FuseKitError
 from fusekit.hosted.billing import (
     HOSTED_STRIPE_PRICE_SETUP_HELPER,
     HOSTED_STRIPE_PRICE_SETUP_REQUIRED_FLAGS,
+    HOSTED_STRIPE_PRICE_VERIFY_HELPER,
     HOSTED_STRIPE_SETUP_SECRET_BOUNDARY,
     HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY,
 )
@@ -806,6 +807,7 @@ def test_verify_hosted_deployment_requires_payment_operator_setup_contract() -> 
     operator_setup = payment["operator_setup"]
     assert isinstance(operator_setup, dict)
     operator_setup["helper_command"] = "stripe dashboard manual setup"
+    operator_setup["verification_command"] = "stripe dashboard manual verification"
     operator_setup["mutation_requires"] = ["--execute"]
     operator_setup["shared_account_boundary"] = "May reuse existing Snowman AI products."
     opener = SequenceOpener(
@@ -830,6 +832,9 @@ def test_verify_hosted_deployment_requires_payment_operator_setup_contract() -> 
     assert "payment_operator_setup_helper_mismatch" in checks["hosted.readiness"][
         "failures"
     ]
+    assert "payment_operator_setup_verification_helper_mismatch" in checks[
+        "hosted.readiness"
+    ]["failures"]
     assert "payment_operator_setup_mutation_gate_mismatch" in checks["hosted.readiness"][
         "failures"
     ]
@@ -1987,6 +1992,7 @@ def _payment_contract() -> dict[str, object]:
         },
         "operator_setup": {
             "helper_command": HOSTED_STRIPE_PRICE_SETUP_HELPER,
+            "verification_command": HOSTED_STRIPE_PRICE_VERIFY_HELPER,
             "dry_run_default": True,
             "mutation_requires": list(HOSTED_STRIPE_PRICE_SETUP_REQUIRED_FLAGS),
             "shared_account_boundary": HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY,

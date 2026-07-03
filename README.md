@@ -465,9 +465,11 @@ service running `fusekit-hosted-worker-dispatch` with
 that service with `/healthz` and `/readiness` before setting
 `FUSEKIT_HOSTED_WORKER_DISPATCH_URL`. As of the latest local check,
 `https://fusekit.snowmanai.org` resolves through Cloudflare to the OCI-hosted
-launcher and the outside-in hosted verifier passes; the paid Managed lane is
-still intentionally closed until complete Stripe runtime configuration and a
-live paid Checkout proof exist.
+launcher and the basic outside-in hosted verifier passes. Exact release proof
+with `--expected-commit-sha` must also pass before claiming the live URL serves
+current `main`; the paid Managed lane is still intentionally closed until
+complete Stripe runtime configuration, Stripe price verification, and a live
+paid Checkout proof exist.
 
 For shared Snowman AI Stripe accounts, create hosted managed-run pricing with
 the repo-native helper so FuseKit only creates a FuseKit-scoped Product and
@@ -485,11 +487,25 @@ FUSEKIT_STRIPE_SECRET_KEY=sk_live_... \
 
 The command prints only redacted public JSON: the Stripe Product id, Stripe
 Price id, the public `FUSEKIT_MANAGED_RUN_PRICE_LABEL`, and next runtime
-environment actions. Omit `--execute` for a dry run. Keep
-`FUSEKIT_MANAGED_RUNS_ENABLED=0` until live Checkout proof and worker-dispatch
-acceptance have passed. Keep literal dollar-amount labels in single quotes, or
-use a currency-code label such as `USD 1.00`, so the shell cannot expand `$1`
-into an ambiguous `.00` public price.
+environment actions. Omit `--execute` for a dry run. Before enabling managed
+runs, verify the created Price/Product in the shared Stripe account:
+
+```zsh
+FUSEKIT_STRIPE_SECRET_KEY=sk_live_... \
+FUSEKIT_STRIPE_PRICE_ID=price_... \
+  fusekit-hosted-stripe-price-verify \
+    --amount-cents 100 \
+    --currency usd \
+    --label 'Launch validation: $1.00 FuseKit managed run'
+```
+
+The verifier retrieves the Stripe Price with its Product, checks the active
+one-time amount, currency, lookup key, FuseKit metadata, product scope, and
+public label hash, and emits only redacted JSON. Keep
+`FUSEKIT_MANAGED_RUNS_ENABLED=0` until the price verifier, live Checkout proof,
+and worker-dispatch acceptance have passed. Keep literal dollar-amount labels
+in single quotes, or use a currency-code label such as `USD 1.00`, so the shell
+cannot expand `$1` into an ambiguous `.00` public price.
 
 ## Real Provider Acceptance Run
 
