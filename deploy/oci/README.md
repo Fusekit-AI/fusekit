@@ -57,8 +57,12 @@ fusekit-hosted-oci-inventory \
   --ssh-probe-status permission_denied \
   --expected-commit-sha "$(git rev-parse HEAD)" \
   > hosted-oci-inventory.json
+fusekit-hosted-runtime-secret-plan \
+  --allow-generated-state-secrets \
+  > hosted-runtime-secret-plan.json
 fusekit-hosted-oci-replacement-plan \
   --inventory-report hosted-oci-inventory.json \
+  --runtime-secret-report hosted-runtime-secret-plan.json \
   --replacement-shape VM.Standard.E5.Flex \
   --replacement-os 'Canonical Ubuntu' \
   --replacement-os-version 24.04 \
@@ -92,3 +96,12 @@ keeps the old host plus Cloudflare DNS unchanged until replacement verifier,
 posture, release receipt, DNS dry-run, and rollback proof all pass. It also
 forbids MailPilot/AWS, Stripe, generated-app/provider credentials, tenancy-wide
 policy broadening, and ARM/Ampere shapes in the repair path.
+
+The replacement plan distinguishes replacement infrastructure from cutover. A
+candidate host can be ready to create while `ready_for_dns_cutover=false` if the
+runtime secret plan is missing or incomplete. `fusekit-hosted-runtime-secret-plan`
+must prove the required hosted env names are available for
+`/etc/fusekit/hosted-secrets.env`, that managed runs remain disabled, and that
+the verified Stripe Price can be staged without emitting the live Stripe secret,
+GitHub App private key, hosted state secret, worker secret, OCI credentials, or
+vault material.

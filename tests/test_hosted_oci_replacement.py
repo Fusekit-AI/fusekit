@@ -12,6 +12,7 @@ from fusekit.hosted.oci_replacement import (
     build_hosted_oci_replacement_plan,
     main,
 )
+from fusekit.hosted.runtime_secrets import build_hosted_runtime_secret_plan
 from fusekit.security import contains_durable_secret_text
 
 EXPECTED_COMMIT = "04cdf22c57842f5516f9fb90acfcd706cb8e5952"
@@ -78,6 +79,26 @@ def _inventory_report() -> dict[str, object]:
     )
 
 
+def _runtime_secret_report() -> dict[str, object]:
+    return build_hosted_runtime_secret_plan(
+        env={
+            "FUSEKIT_HOSTED_ORIGIN": "https://fusekit.snowmanai.org",
+            "FUSEKIT_GITHUB_APP_ID": "4197238",
+            "FUSEKIT_GITHUB_APP_SLUG": "fusekit-launcher",
+            "FUSEKIT_GITHUB_APP_PRIVATE_KEY": (
+                "-----BEGIN RSA PRIVATE KEY-----\nfixture\n-----END RSA PRIVATE KEY-----"
+            ),
+            "FUSEKIT_HOSTED_STATE_SECRET": "state-secret-value-with-enough-entropy",
+            "FUSEKIT_HOSTED_WORKER_SECRET": "worker-secret-value-with-enough-entropy",
+            "FUSEKIT_HOSTED_WORKER_DISPATCH_URL": "https://fusekit.snowmanai.org/dispatch",
+            "FUSEKIT_STRIPE_SECRET_KEY": "sk_live_fixture",
+            "FUSEKIT_STRIPE_PRICE_ID": "price_1ToydUPZlsTa6iL323anyggA",
+            "FUSEKIT_MANAGED_RUN_PRICE_LABEL": "Launch validation: $1.00 FuseKit managed run",
+            "FUSEKIT_MANAGED_RUNS_ENABLED": "0",
+        }
+    )
+
+
 def test_oci_replacement_plan_allows_narrow_amd_candidate_with_deploy_path() -> None:
     plan = build_hosted_oci_replacement_plan(
         inventory_report=_inventory_report(),
@@ -96,7 +117,15 @@ def test_oci_replacement_plan_allows_narrow_amd_candidate_with_deploy_path() -> 
     assert plan["mutates_host"] is False
     assert plan["mutates_dns"] is False
     assert plan["ready_to_create_replacement"] is True
+    assert plan["ready_for_dns_cutover"] is False
     assert plan["blockers"] == []
+    assert plan["cutover_blockers"] == ["runtime_secret_report_required_for_cutover"]
+    assert plan["runtime_secret_readiness"] == {
+        "attached": False,
+        "ready_to_write_secret_file": False,
+        "ready_for_managed_payment_staging": False,
+        "blockers": ["runtime_secret_report_required_for_cutover"],
+    }
     assert plan["current_host"]["status"] == "kept_live_until_replacement_proof_passes"
     assert plan["current_host"]["run_command_availability"] == "not_available_for_image"
     assert plan["current_host"]["allowed_deploy_paths"] == []
@@ -115,6 +144,26 @@ def test_oci_replacement_plan_allows_narrow_amd_candidate_with_deploy_path() -> 
     assert not contains_durable_secret_text(serialized)
 
 
+def test_oci_replacement_plan_allows_cutover_when_runtime_secret_report_ready() -> None:
+    plan = build_hosted_oci_replacement_plan(
+        inventory_report=_inventory_report(),
+        replacement_shape="VM.Standard.E5.Flex",
+        replacement_run_command_availability="available_not_installed",
+        expected_commit_sha=EXPECTED_COMMIT,
+        runtime_secret_report=_runtime_secret_report(),
+    )
+
+    assert plan["ready_to_create_replacement"] is True
+    assert plan["ready_for_dns_cutover"] is True
+    assert plan["cutover_blockers"] == []
+    assert plan["runtime_secret_readiness"] == {
+        "attached": True,
+        "ready_to_write_secret_file": True,
+        "ready_for_managed_payment_staging": True,
+        "blockers": [],
+    }
+
+
 def test_oci_replacement_plan_blocks_arm_and_missing_replacement_deploy_access() -> None:
     plan = build_hosted_oci_replacement_plan(
         inventory_report=_inventory_report(),
@@ -125,6 +174,7 @@ def test_oci_replacement_plan_blocks_arm_and_missing_replacement_deploy_access()
     )
 
     assert plan["ready_to_create_replacement"] is False
+    assert plan["ready_for_dns_cutover"] is False
     assert plan["blockers"] == [
         "replacement_shape_must_be_amd_x86_64",
         "replacement_deploy_access_not_proven",
@@ -154,6 +204,7 @@ def test_oci_replacement_plan_requires_current_access_blocker_evidence() -> None
     )
 
     assert plan["ready_to_create_replacement"] is False
+    assert plan["ready_for_dns_cutover"] is False
     assert plan["blockers"] == ["current_host_deploy_access_unavailable_not_proven"]
 
 
@@ -203,6 +254,7 @@ def test_oci_replacement_plan_cli_reads_inventory(tmp_path, capfd) -> None:
 
     assert exit_code == 0
     assert output["ready_to_create_replacement"] is True
+    assert output["ready_for_dns_cutover"] is False
     assert output["replacement_candidate"]["deploy_access"]["allowed_deploy_paths"] == [
         "oci_run_command_release"
     ]

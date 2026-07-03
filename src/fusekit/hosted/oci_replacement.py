@@ -14,6 +14,7 @@ from fusekit.hosted.oci_access import (
     HOSTED_OCI_FORBIDDEN_ARM_SHAPE_PREFIXES,
 )
 from fusekit.hosted.oci_inventory import HOSTED_OCI_INVENTORY_SCHEMA_VERSION
+from fusekit.hosted.runtime_secrets import HOSTED_RUNTIME_SECRET_PLAN_SCHEMA_VERSION
 from fusekit.hosted.server import HOSTED_CANONICAL_ORIGIN
 from fusekit.security import contains_durable_secret_text, redact_public_text
 
@@ -37,6 +38,7 @@ def build_hosted_oci_replacement_plan(
     replacement_run_command_availability: str = "unknown",
     replacement_ssh_probe_status: str = "not_checked",
     expected_commit_sha: str = "",
+    runtime_secret_report: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     """Build a redacted, non-mutating replacement-host plan."""
 
@@ -72,6 +74,8 @@ def build_hosted_oci_replacement_plan(
         blockers.append("replacement_deploy_access_not_proven")
     if not expected_commit:
         blockers.append("expected_commit_sha_required")
+    runtime = _runtime_secret_readiness(runtime_secret_report)
+    cutover_blockers = [*blockers, *_code_string_list(runtime.get("blockers"))]
     plan = {
         "schema_version": HOSTED_OCI_REPLACEMENT_PLAN_SCHEMA_VERSION,
         "mode": "plan_only",
@@ -79,7 +83,9 @@ def build_hosted_oci_replacement_plan(
         "mutates_host": False,
         "mutates_dns": False,
         "ready_to_create_replacement": not blockers,
+        "ready_for_dns_cutover": not cutover_blockers,
         "blockers": blockers,
+        "cutover_blockers": cutover_blockers,
         "canonical_origin": HOSTED_CANONICAL_ORIGIN,
         "current_host": {
             "status": "kept_live_until_replacement_proof_passes",
@@ -118,6 +124,7 @@ def build_hosted_oci_replacement_plan(
                 "allowed_deploy_paths": replacement_deploy_paths,
             },
         },
+        "runtime_secret_readiness": runtime,
         "cutover_gates": [
             "create_replacement_without_changing_cloudflare_dns",
             "install_deploy_oci_templates_and_nonsecret_provenance",
@@ -183,6 +190,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--replacement-run-command-availability", default="unknown")
     parser.add_argument("--replacement-ssh-probe-status", default="not_checked")
     parser.add_argument("--expected-commit-sha", default="")
+    parser.add_argument("--runtime-secret-report", default="")
     args = parser.parse_args(argv)
     try:
         plan = build_hosted_oci_replacement_plan(
@@ -193,12 +201,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             replacement_run_command_availability=args.replacement_run_command_availability,
             replacement_ssh_probe_status=args.replacement_ssh_probe_status,
             expected_commit_sha=args.expected_commit_sha,
+            runtime_secret_report=_read_optional_mapping(args.runtime_secret_report),
         )
     except FuseKitError as exc:
         plan = {
             "schema_version": HOSTED_OCI_REPLACEMENT_PLAN_SCHEMA_VERSION,
             "mode": "plan_only",
             "ready_to_create_replacement": False,
+            "ready_for_dns_cutover": False,
             "mutates_oci": False,
             "mutates_host": False,
             "mutates_dns": False,
@@ -209,6 +219,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         }
     print(json.dumps(plan, indent=2, sort_keys=True))
     return 0 if plan.get("ready_to_create_replacement") is True else 2
+
+
+def _read_optional_mapping(path: str) -> Mapping[str, object] | None:
+    if not path:
+        return None
+    return _read_mapping(path)
 
 
 def _read_mapping(path: str) -> Mapping[str, object]:
@@ -239,6 +255,39 @@ def _inventory_blockers(inventory_report: Mapping[str, object]) -> list[str]:
     if inventory_report.get("collection_failures") not in ([], ()):
         blockers.append("inventory_report_collection_failures_present")
     return blockers
+
+
+def _runtime_secret_readiness(
+    runtime_secret_report: Mapping[str, object] | None,
+) -> dict[str, object]:
+    if runtime_secret_report is None:
+        return {
+            "attached": False,
+            "ready_to_write_secret_file": False,
+            "ready_for_managed_payment_staging": False,
+            "blockers": ["runtime_secret_report_required_for_cutover"],
+        }
+    blockers: list[str] = []
+    if runtime_secret_report.get("schema_version") != HOSTED_RUNTIME_SECRET_PLAN_SCHEMA_VERSION:
+        blockers.append("runtime_secret_report_schema_invalid")
+    if runtime_secret_report.get("mutates_host") is not False:
+        blockers.append("runtime_secret_report_must_not_mutate_host")
+    if runtime_secret_report.get("mutates_provider") is not False:
+        blockers.append("runtime_secret_report_must_not_mutate_provider")
+    if runtime_secret_report.get("ready_to_write_secret_file") is not True:
+        blockers.append("runtime_secret_report_not_ready")
+    if runtime_secret_report.get("ready_for_managed_payment_staging") is not True:
+        blockers.append("runtime_secret_report_payment_staging_not_ready")
+    return {
+        "attached": True,
+        "ready_to_write_secret_file": runtime_secret_report.get("ready_to_write_secret_file")
+        is True,
+        "ready_for_managed_payment_staging": runtime_secret_report.get(
+            "ready_for_managed_payment_staging"
+        )
+        is True,
+        "blockers": blockers,
+    }
 
 
 def _replacement_deploy_paths(
@@ -305,6 +354,17 @@ def _public_string_list(value: object) -> list[str]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         return []
     return [redact_public_text(str(item).strip()) for item in value if str(item).strip()]
+
+
+def _code_string_list(value: object) -> list[str]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return []
+    codes: list[str] = []
+    for item in value:
+        code = str(item).strip()
+        if re.fullmatch(r"[a-z0-9_]+", code):
+            codes.append(code)
+    return codes
 
 
 def _public_str(value: object) -> str:

@@ -418,6 +418,15 @@ supported Ubuntu image, replacement deploy path through Run Command or approved
 SSH, old-host preservation, proof-before-DNS cutover, rollback metadata, and
 forbids MailPilot/AWS, Stripe, generated-app/provider credentials, tenancy-wide
 policy broadening, and ARM/Ampere shapes.
+Use `fusekit-hosted-runtime-secret-plan` before replacement cutover to prove the
+replacement host has the runtime-secret inputs needed for
+`/etc/fusekit/hosted-secrets.env` without printing any values. It reports only
+env names, configured booleans, Stripe public object ids/labels, and whether the
+hosted state/worker secrets must be generated on the host. The OCI replacement
+plan can attach that report with `--runtime-secret-report`; replacement
+infrastructure may be ready while `ready_for_dns_cutover=false` until the runtime
+secret file, Stripe staging, hosted verifier, posture, release receipt, DNS
+dry-run, and rollback proof are all present.
 `fusekit-hosted-oci-access-plan` is the matching plan-only OCI redeploy/access
 preflight. It consumes redacted instance, VNIC, plugin, SSH probe, and hosted
 verifier evidence, confirms the target is the FuseKit-tagged AMD hosted
