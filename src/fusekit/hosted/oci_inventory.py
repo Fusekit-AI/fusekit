@@ -40,12 +40,25 @@ def build_hosted_oci_inventory_report(
     public_vnic = _public_vnic(vnic or {})
     public_plugins = [_public_plugin(plugin) for plugin in plugins]
     public_available_plugins = [_public_available_plugin(plugin) for plugin in available_plugins]
+    inventory_count_blockers: list[str] = []
+    safe_target_match_count = _public_nonnegative_count(target_match_count)
+    if safe_target_match_count is None:
+        inventory_count_blockers.append("oci_inventory_target_match_count_invalid")
+        safe_target_match_count = 0
+    safe_running_instance_count = (
+        safe_target_match_count
+        if running_instance_count is None
+        else _public_nonnegative_count(running_instance_count)
+    )
+    if safe_running_instance_count is None:
+        inventory_count_blockers.append("oci_inventory_running_instance_count_invalid")
+        safe_running_instance_count = safe_target_match_count
     running_instances_seen = max(
-        target_match_count if running_instance_count is None else running_instance_count,
+        safe_running_instance_count,
         0,
     )
-    inventory_blockers = _inventory_blockers(
-        target_match_count=target_match_count,
+    inventory_blockers = inventory_count_blockers + _inventory_blockers(
+        target_match_count=safe_target_match_count,
         instance=public_instance,
     )
     access_plan: dict[str, object] = {}
@@ -69,13 +82,13 @@ def build_hosted_oci_inventory_report(
         and not access_plan.get("blockers", []),
         "inventory_ready": not inventory_blockers,
         "blockers": inventory_blockers,
-        "target_match_count": target_match_count,
+        "target_match_count": safe_target_match_count,
         "inventory_scope": {
             "scans_running_instances": True,
             "running_instances_seen": running_instances_seen,
-            "target_match_count": target_match_count,
+            "target_match_count": safe_target_match_count,
             "non_target_running_instances_seen": max(
-                running_instances_seen - target_match_count,
+                running_instances_seen - safe_target_match_count,
                 0,
             ),
             "target_selector": dict(HOSTED_OCI_ALLOWED_TARGET_TAGS),
@@ -508,6 +521,12 @@ def _inventory_blockers(
     if not _target_tags_match(tags):
         return ["oci_hosted_launcher_target_tags_invalid"]
     return []
+
+
+def _public_nonnegative_count(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
 
 
 def _instance_mapping(value: object) -> dict[str, object]:

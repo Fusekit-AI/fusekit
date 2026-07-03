@@ -254,7 +254,12 @@ def _inventory_blockers(inventory_report: Mapping[str, object]) -> list[str]:
         blockers.append("inventory_report_must_not_mutate_host")
     if inventory_report.get("inventory_ready") is not True:
         blockers.append("inventory_report_not_ready")
-    if inventory_report.get("target_match_count") != 1:
+    target_match_count = inventory_report.get("target_match_count")
+    if (
+        isinstance(target_match_count, bool)
+        or not isinstance(target_match_count, int)
+        or target_match_count != 1
+    ):
         blockers.append("inventory_report_target_must_be_unique")
     if inventory_report.get("collection_failures") not in ([], ()):
         blockers.append("inventory_report_collection_failures_present")

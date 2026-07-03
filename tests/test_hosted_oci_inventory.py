@@ -148,6 +148,37 @@ def test_hosted_oci_inventory_reports_non_target_running_instance_counts() -> No
     ]
 
 
+def test_hosted_oci_inventory_rejects_boolean_counts() -> None:
+    report = build_hosted_oci_inventory_report(
+        target_match_count=True,
+        running_instance_count=True,
+        instance=_instance(),
+        vnic={"public-ip": "129.153.118.11"},
+        image={
+            "display-name": "Canonical-Ubuntu-24.04-Minimal",
+            "operating-system": "Canonical Ubuntu",
+            "operating-system-version": "24.04",
+        },
+        plugins=[{"name": "Compute Instance Run Command", "status": "RUNNING"}],
+        available_plugins=[{"name": "Compute Instance Run Command"}],
+        hosted_verify_report=_hosted_verify(),
+        ssh_probe_status="permission_denied",
+        expected_commit_sha=EXPECTED_COMMIT,
+    )
+
+    assert report["ready"] is False
+    assert report["inventory_ready"] is False
+    assert report["target_match_count"] == 0
+    assert report["inventory_scope"]["target_match_count"] == 0
+    assert report["inventory_scope"]["running_instances_seen"] == 0
+    assert report["blockers"] == [
+        "oci_inventory_target_match_count_invalid",
+        "oci_inventory_running_instance_count_invalid",
+        "oci_hosted_launcher_target_not_found",
+    ]
+    assert report["access_plan"] == {}
+
+
 def test_hosted_oci_inventory_reports_ambiguous_target_without_details() -> None:
     report = build_hosted_oci_inventory_report(
         target_match_count=2,

@@ -337,6 +337,20 @@ def test_oci_replacement_plan_blocks_ambiguous_inventory() -> None:
     assert "inventory_report_target_must_be_unique" in plan["blockers"]
 
 
+def test_oci_replacement_plan_rejects_boolean_target_count() -> None:
+    inventory = _inventory_report()
+    inventory["target_match_count"] = True
+
+    plan = build_hosted_oci_replacement_plan(
+        inventory_report=inventory,
+        replacement_run_command_availability="running",
+        expected_commit_sha=EXPECTED_COMMIT,
+    )
+
+    assert plan["ready_to_create_replacement"] is False
+    assert "inventory_report_target_must_be_unique" in plan["blockers"]
+
+
 def test_oci_replacement_plan_rejects_nonpublic_identifiers() -> None:
     inventory = _inventory_report()
     inventory["target"]["instance"]["display-name"] = "ocid1.tenancy.oc1..do-not-emit"
