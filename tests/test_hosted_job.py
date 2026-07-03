@@ -1862,6 +1862,7 @@ def test_hosted_launch_job_to_dict_rejects_payment_receipt_sidecar_drift() -> No
     unsafe_sidecar = replace(
         job,
         payment_status="checkout_pending",
+        payment_price_label="Launch validation: $1.00 FuseKit managed run",
         payment_receipt={"customer_email": "buyer@example.com"},
     )
 
@@ -1874,6 +1875,7 @@ def test_hosted_launch_job_to_dict_rejects_payment_receipt_sidecar_drift() -> No
     unsafe_type = replace(
         job,
         payment_status="checkout_pending",
+        payment_price_label="Launch validation: $1.00 FuseKit managed run",
         payment_receipt="checkout_pending",
     )
 
@@ -1905,6 +1907,31 @@ def test_hosted_launch_job_to_dict_rejects_inconsistent_payment_state_drift() ->
 
     with pytest.raises(FuseKitError, match="payment status does not match receipt"):
         pending_with_paid_receipt.to_dict()
+
+
+def test_hosted_launch_job_requires_price_label_for_payment_states() -> None:
+    with pytest.raises(FuseKitError, match="payment price label is required"):
+        build_hosted_launch_job(
+            _plan(),
+            launch_lane=MANAGED_FUSEKIT_RUN_LANE,
+            payment_required=True,
+            job_id="hosted-test",
+            now=1_700_000_000,
+        )
+
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    missing_label = replace(job, payment_status="checkout_pending")
+
+    with pytest.raises(FuseKitError, match="payment price label is required"):
+        missing_label.to_dict()
+
+    stray_price = replace(
+        job,
+        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+    )
+
+    with pytest.raises(FuseKitError, match="payment price is invalid for status"):
+        stray_price.to_dict()
 
 
 def test_hosted_launch_job_to_dict_rejects_payment_state_for_byo_lane() -> None:
