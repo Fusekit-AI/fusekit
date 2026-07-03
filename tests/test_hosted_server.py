@@ -2136,6 +2136,14 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
     blocked = json.loads(body.decode("utf-8"))
     assert status == "402 Payment Required"
     assert blocked["error"] == "payment_required"
+    assert blocked["payment"]["status"] == "payment_required"
+    assert blocked["payment"]["price_label"] == MANAGED_PRICE_LABEL
+    assert blocked["checkout_path"] == f"/api/hosted/jobs/{job_id}/payments/checkout"
+    assert "Stripe Checkout authorization" in blocked["secret_boundary"]
+    assert "payment method ids" in blocked["secret_boundary"]
+    blocked_text = json.dumps(blocked)
+    assert "sk_live" not in blocked_text
+    assert "client_secret" not in blocked_text
     assert len(dispatch_opener.requests) == 0
 
     status, _headers, body = _call(

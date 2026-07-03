@@ -1881,21 +1881,33 @@ def _hosted_job_action_response(
     except FuseKitError:
         return _response(start_response, HTTPStatus.FORBIDDEN, {"error": "invalid_control"})
     if action == "start" and _managed_payment_required(job):
-        return _response(
-            start_response,
-            HTTPStatus.PAYMENT_REQUIRED,
-            {
-                "error": "payment_required",
-                "payment": payment_required_receipt(
-                    lane=job.launch_lane,
-                    price_label=settings.managed_run_price_label,
-                ),
-                "checkout_path": (
-                    f"/api/hosted/jobs/{urllib.parse.quote(job.job_id, safe='')}"
-                    "/payments/checkout"
-                ),
-            },
-        )
+        payload: dict[str, object] = {
+            "error": "payment_required",
+            "payment": payment_required_receipt(
+                lane=job.launch_lane,
+                price_label=settings.managed_run_price_label,
+            ),
+            "checkout_path": (
+                f"/api/hosted/jobs/{urllib.parse.quote(job.job_id, safe='')}"
+                "/payments/checkout"
+            ),
+            "secret_boundary": (
+                "Managed worker start remains blocked until Stripe Checkout "
+                "authorization is recorded server-side. This response contains only "
+                "public lane, price-label, and checkout route metadata; it omits "
+                "Stripe secret keys, client secrets, payment method ids, card data, "
+                "provider credentials, and vault material."
+            ),
+        }
+        try:
+            _assert_public_action_response_payload(payload)
+        except FuseKitError:
+            return _response(
+                start_response,
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {"error": "public_payment_required_payload_rejected"},
+            )
+        return _response(start_response, HTTPStatus.PAYMENT_REQUIRED, payload)
     try:
         updated = advance_hosted_launch_job(job, action)
     except ValueError:
