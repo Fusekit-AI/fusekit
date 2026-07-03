@@ -174,6 +174,10 @@ def verify_hosted_runtime_secret_file(
     blockers.extend(_string_list(stripe["blockers"]))
     if stripe["ready_for_managed_payment_staging"] is not True:
         blockers.append("runtime_secret_payment_staging_not_ready")
+    unexpected_keys = [
+        name for name in sorted(material) if name not in HOSTED_RUNTIME_REQUIRED_FILE_ENV
+    ]
+    blockers.extend(f"runtime_secret_unexpected_key:{name}" for name in unexpected_keys)
     secret_file_public: dict[str, object] = {"path": redact_public_text(path)}
     secret_file_public.update(cast(Mapping[str, object], metadata["public"]))
     report = {
@@ -194,11 +198,7 @@ def verify_hosted_runtime_secret_file(
             "required_count": len(HOSTED_RUNTIME_REQUIRED_FILE_ENV),
             "present_required_count": len(HOSTED_RUNTIME_REQUIRED_FILE_ENV) - len(missing),
             "missing": missing,
-            "unexpected_keys": [
-                name
-                for name in sorted(material)
-                if name not in HOSTED_RUNTIME_REQUIRED_FILE_ENV
-            ],
+            "unexpected_keys": unexpected_keys,
         },
         "next_actions": _verify_next_actions(blockers),
         "secret_boundary": (

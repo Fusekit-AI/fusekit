@@ -196,6 +196,28 @@ def test_runtime_secret_verifier_proves_file_metadata_and_key_inventory_without_
     assert not contains_durable_secret_text(serialized)
 
 
+def test_runtime_secret_verifier_blocks_unexpected_keys_without_values(
+    tmp_path,
+) -> None:
+    output_path = tmp_path / "hosted-secrets.env"
+    install_hosted_runtime_secret_file(
+        env=_env(),
+        output_path=str(output_path),
+        execute=True,
+    )
+    with output_path.open("a", encoding="utf-8") as handle:
+        handle.write("OPENAI_API_KEY='sk-live-unexpected-secret'\n")
+
+    report = verify_hosted_runtime_secret_file(path=str(output_path))
+    serialized = json.dumps(report, sort_keys=True)
+
+    assert report["ready"] is False
+    assert "runtime_secret_unexpected_key:OPENAI_API_KEY" in report["blockers"]
+    assert report["key_inventory"]["unexpected_keys"] == ["OPENAI_API_KEY"]
+    assert "sk-live-unexpected-secret" not in serialized
+    assert not contains_durable_secret_text(serialized)
+
+
 def test_runtime_secret_verifier_rejects_symlink_without_reading_target(
     tmp_path,
 ) -> None:
