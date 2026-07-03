@@ -1418,6 +1418,18 @@ def _web_verification_check(evidence: Mapping[str, object]) -> dict[str, object]
         failures.append("oci_hosted_verify_origin_mismatch")
     if report.get("ready") is not True:
         failures.append("oci_hosted_verify_not_ready")
+    if _string_list(report.get("blocking_checks")):
+        failures.append("oci_hosted_verify_blocking_checks_not_empty")
+    summary = _mapping(report.get("readiness_summary"))
+    blocking_count = _literal_non_negative_int(summary.get("blocking_count"))
+    summary_blockers = _mapping_list(summary.get("blockers"))
+    if (
+        summary.get("launchable") is not True
+        or blocking_count != 0
+        or summary_blockers
+        or _string_list(summary.get("next_actions"))
+    ):
+        failures.append("oci_hosted_verify_readiness_summary_mismatch")
     boundary = _public_str(report.get("secret_boundary")).lower()
     if (
         "public html/json endpoints only" not in boundary

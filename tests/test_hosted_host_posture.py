@@ -211,6 +211,18 @@ def _clean_evidence() -> dict[str, object]:
             "schema_version": "fusekit.hosted-deployment-verification.v1",
             "public_origin": "https://fusekit.snowmanai.org",
             "ready": True,
+            "blocking_checks": [],
+            "readiness_summary": {
+                "launchable": True,
+                "blocking_count": 0,
+                "blockers": [],
+                "next_actions": [],
+                "secret_boundary": (
+                    "Readiness summary contains public check ids, failure codes, and "
+                    "redacted next actions only."
+                ),
+            },
+            "next_actions": [],
             "source_provenance": {
                 "actual": {
                     "commit_sha": HOSTED_COMMIT,
@@ -858,7 +870,7 @@ def test_oci_host_posture_blocks_hosted_verify_sidecars() -> None:
     report = evaluate_oci_host_posture(evidence)
 
     assert report["ready"] is False
-    assert report["blocking_checks"] == ["evidence.shape"]
+    assert report["blocking_checks"] == ["evidence.shape", "host.web_verification"]
     shape_check = _check(report, "evidence.shape")
     assert shape_check["failures"] == [
         "oci_host_posture_evidence_has_unknown_fields"
@@ -870,6 +882,10 @@ def test_oci_host_posture_blocks_hosted_verify_sidecars() -> None:
         "hosted_verify.readiness_summary.debug_payload",
         "hosted_verify.source_provenance.actual.response_header_dump",
         "hosted_verify.source_provenance.raw_env",
+    ]
+    web_check = _check(report, "host.web_verification")
+    assert web_check["failures"] == [
+        "oci_hosted_verify_readiness_summary_mismatch"
     ]
 
 
@@ -889,6 +905,39 @@ def test_oci_host_posture_blocks_malformed_hosted_verify_envelope() -> None:
         "oci_hosted_verify_schema_invalid",
         "oci_hosted_verify_secret_boundary_mismatch",
     ]
+
+
+def test_oci_host_posture_blocks_contradictory_hosted_verify_readiness() -> None:
+    evidence = _clean_evidence()
+    hosted_verify = evidence["hosted_verify"]
+    assert isinstance(hosted_verify, dict)
+    hosted_verify["blocking_checks"] = ["hosted.deployment"]
+    hosted_verify["readiness_summary"] = {
+        "launchable": False,
+        "blocking_count": 1,
+        "blockers": [
+            {
+                "check": "hosted.deployment",
+                "failures": ["schema_mismatch"],
+            }
+        ],
+        "next_actions": ["Redeploy the hosted launcher."],
+        "secret_boundary": (
+            "Readiness summary contains public check ids, failure codes, and "
+            "redacted next actions only."
+        ),
+    }
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.web_verification"]
+    web_check = _check(report, "host.web_verification")
+    assert web_check["failures"] == [
+        "oci_hosted_verify_blocking_checks_not_empty",
+        "oci_hosted_verify_readiness_summary_mismatch",
+    ]
+    assert web_check["hosted_verifier_blocking_checks"] == ["hosted.deployment"]
 
 
 def test_oci_host_posture_blocks_missing_release_receipt() -> None:
@@ -1429,6 +1478,18 @@ def test_oci_host_posture_collector_builds_validator_ready_redacted_evidence(
             "schema_version": "fusekit.hosted-deployment-verification.v1",
             "public_origin": "https://fusekit.snowmanai.org",
             "ready": True,
+            "blocking_checks": [],
+            "readiness_summary": {
+                "launchable": True,
+                "blocking_count": 0,
+                "blockers": [],
+                "next_actions": [],
+                "secret_boundary": (
+                    "Readiness summary contains public check ids, failure codes, and "
+                    "redacted next actions only."
+                ),
+            },
+            "next_actions": [],
             "source_provenance": {
                 "actual": {
                     "commit_sha": HOSTED_COMMIT,
