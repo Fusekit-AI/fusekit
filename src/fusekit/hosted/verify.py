@@ -71,7 +71,10 @@ from fusekit.hosted.server import (
     valid_hosted_oci_deployment_url,
     valid_hosted_vercel_deployment_url,
 )
-from fusekit.hosted.worker_dispatch import HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION
+from fusekit.hosted.worker_dispatch import (
+    HOSTED_WORKER_DISPATCH_BINDING_FIELDS,
+    HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION,
+)
 from fusekit.security import contains_durable_secret_text
 
 HOSTED_DEPLOYMENT_VERIFICATION_SCHEMA_VERSION = "fusekit.hosted-deployment-verification.v1"
@@ -498,6 +501,7 @@ def _worker_dispatch_url_from_deployment(payload: dict[str, Any]) -> str:
 
 def _worker_dispatch_readiness_failures(payload: dict[str, Any]) -> list[str]:
     failures: list[str] = []
+    failures.extend(_worker_dispatch_binding_failures(payload.get("dispatch_binding")))
     idempotency = payload.get("idempotency")
     if not isinstance(idempotency, dict):
         return ["worker_dispatch_idempotency_missing"]
@@ -519,6 +523,32 @@ def _worker_dispatch_readiness_failures(payload: dict[str, Any]) -> list[str]:
     production_ready = payload.get("production_ready")
     if production_ready is not True:
         failures.append("worker_dispatch_production_ready_not_true")
+    return failures
+
+
+def _worker_dispatch_binding_failures(payload: object) -> list[str]:
+    failures: list[str] = []
+    if not isinstance(payload, dict):
+        return ["worker_dispatch_binding_missing"]
+    if payload.get("required") is not True:
+        failures.append("worker_dispatch_binding_not_required")
+    if payload.get("required_fields") != list(HOSTED_WORKER_DISPATCH_BINDING_FIELDS):
+        failures.append("worker_dispatch_binding_fields_mismatch")
+    if payload.get("required_for_actions") != ["start", "rollback", "detonate"]:
+        failures.append("worker_dispatch_binding_actions_mismatch")
+    if payload.get("lane") != "managed-fusekit-run":
+        failures.append("worker_dispatch_binding_lane_mismatch")
+    if payload.get("payment_status") != "paid":
+        failures.append("worker_dispatch_binding_payment_status_mismatch")
+    if payload.get("hash_fields") != ["plan_fingerprint", "price_label_hash"]:
+        failures.append("worker_dispatch_binding_hash_fields_mismatch")
+    boundary = payload.get("secret_boundary")
+    if (
+        not isinstance(boundary, str)
+        or "job tokens" not in boundary
+        or "worker secrets" not in boundary
+    ):
+        failures.append("worker_dispatch_binding_secret_boundary_missing")
     return failures
 
 
@@ -780,6 +810,7 @@ def _worker_dispatch_contract_failures(payload: object) -> list[str]:
         failures.append("worker_dispatch_production_required_not_true")
     if payload.get("no_terminal_wakeup_required") is not True:
         failures.append("worker_dispatch_no_terminal_wakeup_required_not_true")
+    failures.extend(_worker_dispatch_binding_failures(payload.get("dispatch_binding")))
     checks = payload.get("checks")
     if not isinstance(checks, dict):
         failures.append("worker_dispatch_checks_missing")

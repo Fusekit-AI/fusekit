@@ -830,6 +830,25 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
             "price_label_hash",
         ],
     }
+    assert payload["worker_dispatch"]["dispatch_binding"] == {
+        "required": True,
+        "required_fields": [
+            "job_id",
+            "action",
+            "lane",
+            "payment_status",
+            "plan_fingerprint",
+            "price_label_hash",
+        ],
+        "required_for_actions": ["start", "rollback", "detonate"],
+        "lane": MANAGED_FUSEKIT_RUN_LANE,
+        "payment_status": "paid",
+        "hash_fields": ["plan_fingerprint", "price_label_hash"],
+        "secret_boundary": (
+            "Dispatch binding contains only public job/action/lane/payment labels "
+            "and SHA-256 public hashes; job tokens and worker secrets are excluded."
+        ),
+    }
     assert payload["payment"]["operator_setup"] == {
         "helper_command": HOSTED_STRIPE_PRICE_SETUP_HELPER,
         "verification_command": HOSTED_STRIPE_PRICE_VERIFY_HELPER,

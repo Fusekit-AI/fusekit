@@ -81,6 +81,25 @@ def test_hosted_worker_dispatch_readiness_reports_presence_without_secrets() -> 
         "FUSEKIT_HOSTED_WORKER_WORKSPACE": False,
         "FUSEKIT_HOSTED_WORKER_DISPATCH_STATE_DIR": False,
     }
+    assert readiness["dispatch_binding"] == {
+        "required": True,
+        "required_fields": [
+            "job_id",
+            "action",
+            "lane",
+            "payment_status",
+            "plan_fingerprint",
+            "price_label_hash",
+        ],
+        "required_for_actions": ["start", "rollback", "detonate"],
+        "lane": "managed-fusekit-run",
+        "payment_status": "paid",
+        "hash_fields": ["plan_fingerprint", "price_label_hash"],
+        "secret_boundary": (
+            "Dispatch binding contains only public job/action/lane/payment labels "
+            "and SHA-256 public hashes; job tokens and worker secrets are excluded."
+        ),
+    }
     assert readiness["idempotency"] == {
         "mode": "process",
         "durable": False,

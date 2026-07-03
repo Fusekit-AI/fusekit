@@ -23,6 +23,14 @@ HOSTED_WORKER_DISPATCH_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch.v1"
 HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch-receipt.v1"
 HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch-readiness.v1"
 HOSTED_WORKER_DISPATCH_MAX_BODY_BYTES = 16_384
+HOSTED_WORKER_DISPATCH_BINDING_FIELDS = (
+    "job_id",
+    "action",
+    "lane",
+    "payment_status",
+    "plan_fingerprint",
+    "price_label_hash",
+)
 
 StartResponse = Callable[[str, list[tuple[str, str]]], object]
 
@@ -88,6 +96,18 @@ class HostedWorkerDispatchSettings:
             ),
             "configured": configured,
             "invalid": invalid,
+            "dispatch_binding": {
+                "required": True,
+                "required_fields": list(HOSTED_WORKER_DISPATCH_BINDING_FIELDS),
+                "required_for_actions": ["start", "rollback", "detonate"],
+                "lane": "managed-fusekit-run",
+                "payment_status": "paid",
+                "hash_fields": ["plan_fingerprint", "price_label_hash"],
+                "secret_boundary": (
+                    "Dispatch binding contains only public job/action/lane/payment labels "
+                    "and SHA-256 public hashes; job tokens and worker secrets are excluded."
+                ),
+            },
             "idempotency": idempotency,
             "optional_runtime_env": [
                 "FUSEKIT_HOSTED_WORKER_WORKSPACE",
@@ -507,16 +527,8 @@ def _dispatch_binding_from_payload(
     value = payload.get("dispatch_binding")
     if not isinstance(value, dict):
         raise FuseKitError("missing_dispatch_binding")
-    allowed = {
-        "job_id",
-        "action",
-        "lane",
-        "plan_fingerprint",
-        "payment_status",
-        "price_label_hash",
-    }
     binding: dict[str, str] = {}
-    for key in allowed:
+    for key in HOSTED_WORKER_DISPATCH_BINDING_FIELDS:
         raw = value.get(key)
         if not isinstance(raw, str) or not raw:
             raise FuseKitError(f"missing_dispatch_binding_{key}")

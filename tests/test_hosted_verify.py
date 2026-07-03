@@ -41,6 +41,7 @@ from fusekit.hosted.verify import (
     HOSTED_DEPLOYMENT_VERIFICATION_SCHEMA_VERSION,
     verify_hosted_deployment,
 )
+from fusekit.hosted.worker_dispatch import HOSTED_WORKER_DISPATCH_BINDING_FIELDS
 
 PUBLIC_DNS_ADDRESSES = ["2606:4700::6810:84e5", "76.76.21.21"]
 VERCEL_COMMIT_SHA = "0123456789abcdef0123456789abcdef01234567"
@@ -110,6 +111,39 @@ class SequenceOpener:
         return FakeResponse(payload)
 
 
+def _worker_dispatch_binding_contract() -> dict[str, object]:
+    return {
+        "required": True,
+        "required_fields": list(HOSTED_WORKER_DISPATCH_BINDING_FIELDS),
+        "required_for_actions": ["start", "rollback", "detonate"],
+        "lane": "managed-fusekit-run",
+        "payment_status": "paid",
+        "hash_fields": ["plan_fingerprint", "price_label_hash"],
+        "secret_boundary": (
+            "Dispatch binding contains only public job/action/lane/payment labels "
+            "and SHA-256 public hashes; job tokens and worker secrets are excluded."
+        ),
+    }
+
+
+def _worker_dispatch_readiness_contract() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.hosted-worker-dispatch-readiness.v1",
+        "ready": True,
+        "production_ready": True,
+        "dispatch_binding": _worker_dispatch_binding_contract(),
+        "idempotency": {
+            "mode": "dispatch-state-dir",
+            "durable": True,
+            "scope": "worker deployment",
+            "proof": (
+                "Duplicate job/action dispatches are reserved through a configured "
+                "non-secret state directory before worker spawn."
+            ),
+        },
+    }
+
+
 def test_verify_hosted_deployment_passes_launcher_and_dispatch_checks() -> None:
     opener = SequenceOpener(
         [
@@ -119,20 +153,7 @@ def test_verify_hosted_deployment_passes_launcher_and_dispatch_checks() -> None:
             _deployment_contract(),
             _github_intake_contract(),
             {"ok": True},
-            {
-                "schema_version": "fusekit.hosted-worker-dispatch-readiness.v1",
-                "ready": True,
-                "production_ready": True,
-                "idempotency": {
-                    "mode": "dispatch-state-dir",
-                    "durable": True,
-                    "scope": "worker deployment",
-                    "proof": (
-                        "Duplicate job/action dispatches are reserved through a configured "
-                        "non-secret state directory before worker spawn."
-                    ),
-                },
-            },
+            _worker_dispatch_readiness_contract(),
         ]
     )
 
@@ -229,6 +250,7 @@ def test_verify_hosted_deployment_requires_durable_worker_dispatch_idempotency()
                 "schema_version": "fusekit.hosted-worker-dispatch-readiness.v1",
                 "ready": True,
                 "production_ready": False,
+                "dispatch_binding": _worker_dispatch_binding_contract(),
                 "idempotency": {
                     "mode": "process",
                     "durable": False,
@@ -266,6 +288,7 @@ def test_verify_hosted_deployment_requires_worker_dispatch_idempotency_proof() -
                 "schema_version": "fusekit.hosted-worker-dispatch-readiness.v1",
                 "ready": True,
                 "production_ready": True,
+                "dispatch_binding": _worker_dispatch_binding_contract(),
                 "idempotency": {
                     "mode": "dispatch-state-dir",
                     "durable": True,
@@ -288,6 +311,41 @@ def test_verify_hosted_deployment_requires_worker_dispatch_idempotency_proof() -
     assert checks["worker_dispatch.readiness"]["failures"] == [
         "worker_dispatch_idempotency_scope_mismatch",
         "worker_dispatch_idempotency_proof_missing",
+    ]
+
+
+def test_verify_hosted_deployment_requires_worker_dispatch_readiness_binding_contract() -> None:
+    readiness = _worker_dispatch_readiness_contract()
+    binding = readiness["dispatch_binding"]
+    assert isinstance(binding, dict)
+    binding["required"] = False
+    binding["required_fields"] = ["job_id", "action"]
+    binding["payment_status"] = "checkout_pending"
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            _readiness_contract(),
+            _deployment_contract(),
+            _github_intake_contract(),
+            {"ok": True},
+            readiness,
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["worker_dispatch.readiness"]["status"] == "failed"
+    assert checks["worker_dispatch.readiness"]["failures"] == [
+        "worker_dispatch_binding_not_required",
+        "worker_dispatch_binding_fields_mismatch",
+        "worker_dispatch_binding_payment_status_mismatch",
     ]
 
 
@@ -630,20 +688,7 @@ def test_verify_hosted_deployment_allows_staged_managed_price_configuration() ->
             _deployment_contract(),
             _github_intake_contract(),
             {"ok": True},
-            {
-                "schema_version": "fusekit.hosted-worker-dispatch-readiness.v1",
-                "ready": True,
-                "production_ready": True,
-                "idempotency": {
-                    "mode": "dispatch-state-dir",
-                    "durable": True,
-                    "scope": "worker deployment",
-                    "proof": (
-                        "Duplicate job/action dispatches are reserved through a configured "
-                        "non-secret state directory before worker spawn."
-                    ),
-                },
-            },
+            _worker_dispatch_readiness_contract(),
         ]
     )
 
@@ -1014,6 +1059,39 @@ def test_verify_hosted_deployment_requires_worker_dispatch_contract() -> None:
     assert "worker_dispatch_dispatch_url_placeholder" in failures
 
 
+def test_verify_hosted_deployment_requires_worker_dispatch_binding_contract() -> None:
+    contract = _deployment_contract()
+    worker_dispatch = contract["worker_dispatch"]
+    assert isinstance(worker_dispatch, dict)
+    binding = worker_dispatch["dispatch_binding"]
+    assert isinstance(binding, dict)
+    binding["required_for_actions"] = ["start"]
+    binding["hash_fields"] = ["plan_fingerprint"]
+    binding["secret_boundary"] = "Public dispatch labels only."
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            _readiness_contract(),
+            contract,
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks_by_id = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    failures = checks_by_id["hosted.deployment"]["failures"]
+    assert "worker_dispatch_binding_actions_mismatch" in failures
+    assert "worker_dispatch_binding_hash_fields_mismatch" in failures
+    assert "worker_dispatch_binding_secret_boundary_missing" in failures
+
+
 def test_verify_hosted_deployment_requires_public_trust_contract() -> None:
     contract = _deployment_contract()
     contract["trust_story"] = ["open core", "redacted proof"]
@@ -1214,20 +1292,7 @@ def test_verify_hosted_deployment_accepts_aws_source_provenance_contract() -> No
             aws_deployment,
             _github_intake_contract(),
             {"ok": True},
-            {
-                "schema_version": "fusekit.hosted-worker-dispatch-readiness.v1",
-                "ready": True,
-                "production_ready": True,
-                "idempotency": {
-                    "mode": "dispatch-state-dir",
-                    "durable": True,
-                    "scope": "worker deployment",
-                    "proof": (
-                        "Duplicate job/action dispatches are reserved through a configured "
-                        "non-secret state directory before worker spawn."
-                    ),
-                },
-            },
+            _worker_dispatch_readiness_contract(),
         ]
     )
 
@@ -1255,20 +1320,7 @@ def test_verify_hosted_deployment_accepts_oci_source_provenance_contract() -> No
             oci_deployment,
             _github_intake_contract(),
             {"ok": True},
-            {
-                "schema_version": "fusekit.hosted-worker-dispatch-readiness.v1",
-                "ready": True,
-                "production_ready": True,
-                "idempotency": {
-                    "mode": "dispatch-state-dir",
-                    "durable": True,
-                    "scope": "worker deployment",
-                    "proof": (
-                        "Duplicate job/action dispatches are reserved through a configured "
-                        "non-secret state directory before worker spawn."
-                    ),
-                },
-            },
+            _worker_dispatch_readiness_contract(),
         ]
     )
 
@@ -1297,20 +1349,7 @@ def test_verify_hosted_deployment_accepts_expected_commit_sha() -> None:
             oci_deployment,
             _github_intake_contract(),
             {"ok": True},
-            {
-                "schema_version": "fusekit.hosted-worker-dispatch-readiness.v1",
-                "ready": True,
-                "production_ready": True,
-                "idempotency": {
-                    "mode": "dispatch-state-dir",
-                    "durable": True,
-                    "scope": "worker deployment",
-                    "proof": (
-                        "Duplicate job/action dispatches are reserved through a configured "
-                        "non-secret state directory before worker spawn."
-                    ),
-                },
-            },
+            _worker_dispatch_readiness_contract(),
         ]
     )
 
@@ -1341,20 +1380,7 @@ def test_verify_hosted_deployment_rejects_stale_expected_commit_sha() -> None:
             oci_deployment,
             _github_intake_contract(),
             {"ok": True},
-            {
-                "schema_version": "fusekit.hosted-worker-dispatch-readiness.v1",
-                "ready": True,
-                "production_ready": True,
-                "idempotency": {
-                    "mode": "dispatch-state-dir",
-                    "durable": True,
-                    "scope": "worker deployment",
-                    "proof": (
-                        "Duplicate job/action dispatches are reserved through a configured "
-                        "non-secret state directory before worker spawn."
-                    ),
-                },
-            },
+            _worker_dispatch_readiness_contract(),
         ]
     )
 
@@ -2416,6 +2442,7 @@ def _deployment_contract() -> dict[str, object]:
             "receiver_command": "fusekit-hosted-worker-dispatch",
             "production_required": True,
             "no_terminal_wakeup_required": True,
+            "dispatch_binding": _worker_dispatch_binding_contract(),
             "checks": {
                 "dispatch": "https://worker.snowmanai.org/dispatch",
                 "health": "https://worker.snowmanai.org/healthz",

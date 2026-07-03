@@ -452,6 +452,14 @@ HOSTED_READINESS_SCHEMA_VERSION = "fusekit.hosted-readiness.v1"
 HOSTED_DEPLOYMENT_SCHEMA_VERSION = "fusekit.hosted-deployment.v1"
 HOSTED_LANE_READINESS_SCHEMA_VERSION = "fusekit.hosted-lane-readiness.v1"
 HOSTED_WORKER_DISPATCH_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch.v1"
+HOSTED_WORKER_DISPATCH_BINDING_FIELDS = (
+    "job_id",
+    "action",
+    "lane",
+    "payment_status",
+    "plan_fingerprint",
+    "price_label_hash",
+)
 HOSTED_CONTROL_TOKEN_TTL_SECONDS = 300
 REQUIRED_HOSTED_ENV = (
     "FUSEKIT_HOSTED_ORIGIN",
@@ -778,6 +786,19 @@ class HostedSettings:
                 "authentication": "HMAC-SHA256 with FUSEKIT_HOSTED_WORKER_SECRET",
                 "production_required": True,
                 "no_terminal_wakeup_required": True,
+                "dispatch_binding": {
+                    "required": True,
+                    "required_fields": list(HOSTED_WORKER_DISPATCH_BINDING_FIELDS),
+                    "required_for_actions": ["start", "rollback", "detonate"],
+                    "lane": MANAGED_FUSEKIT_RUN_LANE,
+                    "payment_status": "paid",
+                    "hash_fields": ["plan_fingerprint", "price_label_hash"],
+                    "secret_boundary": (
+                        "Dispatch binding contains only public job/action/lane/payment "
+                        "labels and SHA-256 public hashes; job tokens and worker secrets "
+                        "are excluded."
+                    ),
+                },
                 "checks": {
                     "dispatch": dispatch_url,
                     "health": f"{dispatch_receiver_base}/healthz",
