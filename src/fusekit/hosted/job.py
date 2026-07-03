@@ -760,6 +760,7 @@ def render_hosted_byo_oci_bootstrap(job: HostedLaunchJob, *, job_token: str = ""
 def _byo_oci_proof_manifest(job: HostedLaunchJob) -> dict[str, object]:
     return {
         "schema_version": HOSTED_BYO_OCI_PROOF_MANIFEST_SCHEMA_VERSION,
+        "job_binding": _byo_oci_proof_job_binding(job),
         "proof_bundle_root": ".fusekit/remote-artifacts",
         "required_completion_evidence": list(HOSTED_WORKER_PROOF_KEYS),
         "required_remote_artifacts": [
@@ -809,6 +810,11 @@ def verify_hosted_byo_oci_proof_bundle(
         blockers.append("byo_oci_proof_bundle_job_lane_mismatch")
     if bundle.get("schema_version") != HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION:
         blockers.append("byo_oci_proof_bundle_schema_invalid")
+    expected_binding = _byo_oci_proof_job_binding(job)
+    binding = _public_byo_job_binding(bundle.get("job_binding"), blockers=blockers)
+    for key, expected_value in expected_binding.items():
+        if binding.get(key) != expected_value:
+            blockers.append(f"byo_oci_proof_bundle_{key}_mismatch")
     if bundle.get("proof_bundle_root") != manifest["proof_bundle_root"]:
         blockers.append("byo_oci_proof_bundle_root_mismatch")
     artifacts = _public_byo_artifact_inventory(bundle.get("artifacts"), blockers=blockers)
@@ -836,6 +842,7 @@ def verify_hosted_byo_oci_proof_bundle(
         else "",
         "job_id": job.job_id,
         "lane": job.launch_lane,
+        "job_binding": binding,
         "ready": not blockers,
         "blockers": blockers,
         "proof_bundle_root": manifest["proof_bundle_root"],
@@ -859,6 +866,37 @@ def verify_hosted_byo_oci_proof_bundle(
     }
     _assert_public_byo_proof_report(report)
     return report
+
+
+def _byo_oci_proof_job_binding(job: HostedLaunchJob) -> dict[str, str]:
+    return {
+        "job_id": job.job_id,
+        "lane": job.launch_lane,
+        "github_source_hash": _github_source_hash(job.github_source),
+        "plan_fingerprint": job.worker_contract.plan_fingerprint,
+    }
+
+
+def _public_byo_job_binding(
+    value: object,
+    *,
+    blockers: list[str],
+) -> dict[str, str]:
+    allowed = {"job_id", "lane", "github_source_hash", "plan_fingerprint"}
+    if not isinstance(value, dict):
+        blockers.append("byo_oci_proof_bundle_job_binding_invalid")
+        return {}
+    binding: dict[str, str] = {}
+    for key in allowed:
+        raw = value.get(key)
+        if not isinstance(raw, str) or not raw:
+            blockers.append(f"byo_oci_proof_bundle_{key}_missing")
+            continue
+        if contains_durable_secret_text(raw) or len(raw) > 256:
+            blockers.append(f"byo_oci_proof_bundle_{key}_unsafe")
+            continue
+        binding[key] = raw
+    return binding
 
 
 def _manifest_artifact_labels(manifest: dict[str, object]) -> dict[str, str]:
@@ -938,6 +976,10 @@ def _valid_sha256_label(value: str) -> bool:
         and len(digest) == 64
         and all(character in "0123456789abcdef" for character in digest)
     )
+
+
+def _github_source_hash(github_source: str) -> str:
+    return "sha256:" + hashlib.sha256(github_source.encode("utf-8")).hexdigest()
 
 
 def _assert_public_byo_proof_report(report: dict[str, object]) -> None:

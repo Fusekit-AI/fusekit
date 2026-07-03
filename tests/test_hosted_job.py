@@ -71,6 +71,7 @@ def _byo_proof_bundle_from_bootstrap(bootstrap: dict[str, object]) -> dict[str, 
     assert isinstance(artifacts, list)
     return {
         "schema_version": HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION,
+        "job_binding": manifest["job_binding"],
         "proof_bundle_root": manifest["proof_bundle_root"],
         "artifacts": [
             {
@@ -438,6 +439,7 @@ def test_hosted_byo_proof_bundle_verifier_accepts_complete_redacted_inventory() 
     assert report["input_schema_version"] == HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION
     assert report["ready"] is True
     assert report["blockers"] == []
+    assert report["job_binding"] == bootstrap["proof_manifest"]["job_binding"]
     assert report["proof_bundle_root"] == ".fusekit/remote-artifacts"
     assert report["artifact_summary"]["missing"] == []
     assert report["artifact_summary"]["unexpected"] == []
@@ -448,6 +450,52 @@ def test_hosted_byo_proof_bundle_verifier_accepts_complete_redacted_inventory() 
     assert "ghs_" not in serialized
     assert "sk_live" not in serialized
     assert "PRIVATE KEY" not in serialized
+
+
+def test_hosted_byo_proof_bundle_verifier_blocks_replayed_job_binding() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    other_job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo-other",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(other_job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+    serialized = json.dumps(report, sort_keys=True)
+
+    assert report["ready"] is False
+    assert "byo_oci_proof_bundle_job_id_mismatch" in report["blockers"]
+    assert "ghs_" not in serialized
+    assert "PRIVATE KEY" not in serialized
+
+
+def test_hosted_byo_proof_bundle_verifier_blocks_source_and_plan_drift() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+    binding = bundle["job_binding"]
+    assert isinstance(binding, dict)
+    binding["github_source_hash"] = "sha256:" + ("b" * 64)
+    binding["plan_fingerprint"] = "sha256:" + ("c" * 64)
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+
+    assert report["ready"] is False
+    assert "byo_oci_proof_bundle_github_source_hash_mismatch" in report["blockers"]
+    assert "byo_oci_proof_bundle_plan_fingerprint_mismatch" in report["blockers"]
 
 
 def test_hosted_byo_proof_bundle_verifier_blocks_missing_and_unsafe_inventory() -> None:
@@ -772,6 +820,45 @@ def test_byo_worker_proof_can_complete_with_verified_proof_bundle() -> None:
     assert receipt["byo_oci_proof_bundle"]["ready"] is True
     assert receipt["byo_oci_proof_bundle"]["blockers"] == []
     assert receipt["byo_oci_proof_bundle"]["artifact_summary"]["missing"] == []
+
+
+def test_byo_worker_proof_cannot_complete_with_replayed_proof_bundle() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    other_job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo-other",
+        now=1_700_000_000,
+    )
+    started = advance_hosted_launch_job(job, "start", now=1_700_000_001)
+    claimed = claim_hosted_launch_job(started, worker_id="byo-worker", now=1_700_000_002)
+    proof_payload = _proof_payload(
+        complete=True,
+        completed_artifacts=list(claimed.worker_contract.required_artifacts),
+        note="BYO proof bundle was replayed from another job.",
+    )
+    proof_payload["byo_oci_proof_bundle"] = _byo_proof_bundle_from_bootstrap(
+        hosted_byo_oci_bootstrap(other_job)
+    )
+
+    updated, receipt = apply_hosted_worker_proof(
+        claimed,
+        proof_payload,
+        worker_id="byo-worker",
+        now=1_700_000_003,
+    )
+
+    assert updated.status == "proof_submitted"
+    assert receipt["completion_ready"] is False
+    assert receipt["byo_oci_proof_bundle"]["ready"] is False
+    assert "byo_oci_proof_bundle_job_id_mismatch" in receipt["byo_oci_proof_bundle"][
+        "blockers"
+    ]
 
 
 def test_hosted_worker_proof_requires_rollback_execution_after_rollback_request() -> None:
