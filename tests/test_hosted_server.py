@@ -278,18 +278,35 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
             **_vercel_provenance_kwargs(),
         )
     )
-    payload = json.loads(
-        _match(
-            html,
-            r'<script id="fusekit-github-intake" type="application/json">(.*?)</script>',
-        ).replace("&quot;", '"')
+    intake_script = _match(
+        html,
+        r'<script id="fusekit-github-intake" type="application/json">(.*?)</script>',
     )
+    readiness_script = _match(
+        html,
+        r'<script id="fusekit-hosted-readiness" type="application/json">(.*?)</script>',
+    )
+    deployment_script = _match(
+        html,
+        r'<script id="fusekit-hosted-deployment" type="application/json">(.*?)</script>',
+    )
+    assert "&quot;" not in intake_script
+    assert "&quot;" not in readiness_script
+    assert "&quot;" not in deployment_script
+    assert "</script" not in intake_script.lower()
+    assert "</script" not in readiness_script.lower()
+    assert "</script" not in deployment_script.lower()
+    payload = json.loads(intake_script)
+    readiness_payload = json.loads(readiness_script)
+    deployment_payload = json.loads(deployment_script)
 
     assert "https://fusekit.snowmanai.org" in html
     assert "Launch any GitHub app without touching a terminal." in html
     assert "Start hosted launch" in html
     assert "Launch readiness" in html
     assert "All hosted readiness checks passed." in html
+    assert readiness_payload["ready"] is True
+    assert deployment_payload["runtime"]["provider"] == "vercel"
     assert "open-core setup worker" in html
     assert "Open core" in html
     assert "https://github.com/Fusekit-AI/fusekit" in html
@@ -3237,12 +3254,13 @@ def test_hosted_job_action_from_browser_returns_updated_control_room_html() -> N
         settings=settings,
     )
     text = body.decode("utf-8")
-    payload = json.loads(
-        _match(
-            text,
-            r'<script id="fusekit-hosted-job" type="application/json">(.*?)</script>',
-        ).replace("&quot;", '"')
+    script_payload = _match(
+        text,
+        r'<script id="fusekit-hosted-job" type="application/json">(.*?)</script>',
     )
+    assert "&quot;" not in script_payload
+    assert "</script" not in script_payload.lower()
+    payload = json.loads(script_payload)
 
     assert status == "200 OK"
     assert headers["Content-Type"] == "text/html; charset=utf-8"
@@ -3931,12 +3949,13 @@ def test_hosted_proof_receipt_page_uses_signed_job_token_without_process_memory(
         settings=stateless_settings,
     )
     text = body.decode("utf-8")
-    payload = json.loads(
-        _match(
-            text,
-            r'<script id="fusekit-hosted-proof" type="application/json">(.*?)</script>',
-        ).replace("&quot;", '"')
+    script_payload = _match(
+        text,
+        r'<script id="fusekit-hosted-proof" type="application/json">(.*?)</script>',
     )
+    assert "&quot;" not in script_payload
+    assert "</script" not in script_payload.lower()
+    payload = json.loads(script_payload)
 
     assert status == "200 OK"
     assert headers["Content-Type"] == "text/html; charset=utf-8"

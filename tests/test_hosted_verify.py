@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import html
 import io
 import json
 import urllib.error
@@ -27,6 +26,7 @@ from fusekit.hosted.lanes import (
     hosted_launch_lane_contract,
 )
 from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY, HOSTED_PROHIBITED_ACTIONS
+from fusekit.hosted.script_json import json_script_payload
 from fusekit.hosted.server import (
     HOSTED_AWS_OPERATOR_SETUP_STEPS,
     HOSTED_AWS_SOURCE_PROVENANCE_ENV,
@@ -2263,9 +2263,9 @@ def _home_html(
         else readiness
     )
     deployment = _deployment_contract() if deployment is None else deployment
-    intake_payload = html.escape(json.dumps(github_intake, sort_keys=True))
-    readiness_payload = html.escape(json.dumps(readiness, sort_keys=True))
-    deployment_payload = html.escape(json.dumps(deployment, sort_keys=True))
+    intake_payload = json_script_payload(github_intake)
+    readiness_payload = json_script_payload(readiness)
+    deployment_payload = json_script_payload(deployment)
     intake_script = _json_script("fusekit-github-intake", intake_payload)
     readiness_script = _json_script("fusekit-hosted-readiness", readiness_payload)
     deployment_script = _json_script("fusekit-hosted-deployment", deployment_payload)

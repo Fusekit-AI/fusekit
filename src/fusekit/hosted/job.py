@@ -39,6 +39,7 @@ from fusekit.hosted.launcher import (
     public_hosted_github_source,
     public_hosted_provider_name,
 )
+from fusekit.hosted.script_json import json_script_payload
 from fusekit.runner.cloud_shell import build_cloud_shell_launch_plan
 from fusekit.security.redaction import contains_durable_secret_text, redact_public_text
 
@@ -611,7 +612,7 @@ def render_hosted_byo_oci_bootstrap(job: HostedLaunchJob, *, job_token: str = ""
     reversibility_data = reversibility if isinstance(reversibility, dict) else {}
     deeplink = _safe_cloud_shell_url(cloud_shell_data.get("deeplink_url"))
     command = str(cloud_shell_data.get("bootstrap_command", ""))
-    payload = _json_script_payload(bootstrap)
+    payload = json_script_payload(bootstrap)
     fallback = _list(_string_tuple(cloud_shell_data.get("fallback_steps")))
     human_gates = _list(_string_tuple(cloud_shell_data.get("human_gates")))
     required_artifacts = _list(_string_tuple(proof_data.get("required_artifacts")))
@@ -1167,20 +1168,6 @@ def _assert_public_byo_oci_bootstrap(payload: dict[str, object]) -> None:
     if any(token.lower() in serialized.lower() for token in forbidden):
         raise FuseKitError("Hosted BYO OCI bootstrap contains private material.")
 
-
-def _json_script_payload(payload: dict[str, object]) -> str:
-    """Return JSON that remains parseable inside a raw-text script element."""
-
-    return (
-        json.dumps(payload, sort_keys=True)
-        .replace("&", "\\u0026")
-        .replace("<", "\\u003c")
-        .replace(">", "\\u003e")
-        .replace("\u2028", "\\u2028")
-        .replace("\u2029", "\\u2029")
-    )
-
-
 def _assert_public_worker_request(payload: dict[str, object]) -> None:
     serialized = json.dumps(payload, sort_keys=True)
     if contains_durable_secret_text(serialized) or _contains_byo_private_marker(serialized):
@@ -1597,7 +1584,7 @@ def render_hosted_control_room(
         payload_dict["latest_action_receipt"] = action_receipt
     if dispatch_receipt is not None:
         payload_dict["worker_dispatch"] = dispatch_receipt
-    payload = _json_script_payload(payload_dict)
+    payload = json_script_payload(payload_dict)
     rows = "\n".join(_step_card(step) for step in job.steps)
     controls = _control_forms(job, control_tokens=control_tokens or {}, job_token=job_token)
     action_outcome = _action_receipt_section(action_receipt, dispatch_receipt)
@@ -2040,7 +2027,7 @@ def render_hosted_proof_receipt(job: HostedLaunchJob, *, job_token: str = "") ->
     """Render the browser-facing hosted proof receipt."""
 
     receipt = hosted_proof_receipt(job)
-    payload = _json_script_payload(receipt)
+    payload = json_script_payload(receipt)
     app_name = html.escape(job.app_name)
     github_source = html.escape(job.github_source)
     job_id = html.escape(job.job_id)

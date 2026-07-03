@@ -282,7 +282,10 @@ def test_hosted_launcher_embeds_redacted_public_plan_json() -> None:
     )
 
     assert match is not None
-    payload = json.loads(match.group(1).replace("&quot;", '"'))
+    script_payload = match.group(1)
+    assert "&quot;" not in script_payload
+    assert "</script" not in script_payload.lower()
+    payload = json.loads(script_payload)
     assert payload["schema_version"] == "fusekit.hosted-launcher.v1"
     assert payload["trust"]["schema_version"] == "fusekit.hosted-trust-contract.v1"
     assert payload["trust"]["proof"] == [

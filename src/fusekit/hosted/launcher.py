@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import html
-import json
 import urllib.parse
 from dataclasses import dataclass
 from typing import Any
@@ -11,6 +10,7 @@ from typing import Any
 from fusekit.errors import FuseKitError
 from fusekit.hosted.evidence import HOSTED_COMPLETION_EVIDENCE_KEYS
 from fusekit.hosted.lanes import hosted_launch_lanes
+from fusekit.hosted.script_json import json_script_payload
 from fusekit.manifest import SetupManifest
 from fusekit.planner import SetupAction, build_plan
 from fusekit.security import contains_durable_secret_text
@@ -337,7 +337,7 @@ def render_hosted_launcher(
 ) -> str:
     """Render a no-terminal hosted launcher page for a universal GitHub app."""
 
-    payload = json.dumps(plan.to_dict(), sort_keys=True)
+    payload = json_script_payload(plan.to_dict())
     providers = _list_markup(plan.providers)
     env_names = _list_markup(plan.required_env or ("No app env vars detected yet",))
     actions = "\n".join(_action_card(action) for action in plan.actions)
@@ -605,7 +605,7 @@ def render_hosted_launcher(
         {env_names}
       </aside>
     </div>
-    <script id="fusekit-hosted-launch-plan" type="application/json">{html.escape(payload)}</script>
+    <script id="fusekit-hosted-launch-plan" type="application/json">{payload}</script>
   </main>
 </body>
 </html>

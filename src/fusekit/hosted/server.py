@@ -77,6 +77,7 @@ from fusekit.hosted.launcher import (
     build_hosted_launch_plan,
     render_hosted_launcher,
 )
+from fusekit.hosted.script_json import json_script_payload
 from fusekit.hosted.session import create_hosted_state_token, verify_hosted_state_token
 from fusekit.scanner import scan_repo
 from fusekit.security.redaction import contains_durable_secret_text
@@ -1222,10 +1223,10 @@ def render_hosted_home(settings: HostedSettings) -> str:
     contract = _github_intake_contract(settings.github_config(), state=state)
     install_url = html.escape(str(contract["install_url"]), quote=True)
     public_origin = html.escape(str(readiness["public_origin"]))
-    payload = html.escape(json.dumps(contract, sort_keys=True))
-    readiness_payload = html.escape(json.dumps(readiness, sort_keys=True))
+    payload = json_script_payload(contract)
+    readiness_payload = json_script_payload(readiness)
     deployment_contract = settings.deployment_contract()
-    deployment_payload = html.escape(json.dumps(deployment_contract, sort_keys=True))
+    deployment_payload = json_script_payload(deployment_contract)
     runtime = cast(dict[str, object], deployment_contract["runtime"])
     provider_label = _deployment_provider_label(str(runtime.get("provider") or ""))
     provider_runtime_mode = html.escape(str(runtime.get("mode") or "hosted runtime"))
