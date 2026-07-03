@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import html
 import ipaddress
 import json
 import re
@@ -1388,9 +1387,12 @@ def _hosted_home_embedded_contract_failures(
             failures.append(f"hosted_home_embedded_{label}_contract_missing")
             continue
         try:
-            payload = json.loads(html.unescape(raw))
+            payload = json.loads(raw)
         except json.JSONDecodeError:
-            failures.append(f"hosted_home_embedded_{label}_contract_invalid_json")
+            failure = "contract_invalid_json"
+            if _json_script_requires_entity_unescape(raw):
+                failure = "contract_not_direct_json"
+            failures.append(f"hosted_home_embedded_{label}_{failure}")
             continue
         if not isinstance(payload, dict):
             failures.append(f"hosted_home_embedded_{label}_contract_not_object")
@@ -1408,6 +1410,21 @@ def _hosted_home_embedded_contract_failures(
         if script_id == "fusekit-hosted-deployment":
             failures.extend(_hosted_home_visible_deployment_failures(text, payload))
     return failures
+
+
+def _json_script_requires_entity_unescape(raw: str) -> bool:
+    if not any(marker in raw for marker in ("&quot;", "&#34;", "&#x22;")):
+        return False
+    repaired = (
+        raw.replace("&quot;", '"')
+        .replace("&#34;", '"')
+        .replace("&#x22;", '"')
+        .replace("&#X22;", '"')
+    )
+    try:
+        return isinstance(json.loads(repaired), dict)
+    except json.JSONDecodeError:
+        return False
 
 
 def _hosted_home_visible_deployment_failures(
