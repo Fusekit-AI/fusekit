@@ -448,14 +448,19 @@ def build_hosted_launch_job(
 def hosted_job_payment_status(job: HostedLaunchJob) -> dict[str, object]:
     """Return browser-safe payment status for a hosted job."""
 
-    receipt = job.payment_receipt if isinstance(job.payment_receipt, dict) else {}
+    if job.payment_receipt is None:
+        receipt: dict[str, object] = {}
+    elif not isinstance(job.payment_receipt, dict):
+        raise FuseKitError("Hosted launch payment receipt is invalid.")
+    else:
+        receipt = _public_payment_receipt(job.payment_receipt)
     return {
         "required": job.launch_lane == MANAGED_FUSEKIT_RUN_LANE
         and job.payment_status != "not_required",
         "status": job.payment_status,
         "price_label": job.payment_price_label,
         "price_id_hash": job.payment_price_id_hash,
-        "receipt": dict(receipt),
+        "receipt": receipt,
         "secret_boundary": (
             "Payment status contains only public Checkout Session state and never card "
             "numbers, CVC, payment method ids, billing details, Stripe secret keys, or "

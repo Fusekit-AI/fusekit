@@ -1851,14 +1851,34 @@ def test_hosted_launch_job_to_dict_rejects_private_material_drift() -> None:
     with pytest.raises(FuseKitError, match="Hosted launch job contains private material"):
         unsafe_proof.to_dict()
 
-    unsafe_payment = replace(
-        job,
-        payment_status="checkout_pending",
-        payment_receipt={"secret": "sk_live_should_not_render"},
-    )
+    unsafe_job_id = replace(job, job_id="hosted-sk_live_should_not_render")
 
     with pytest.raises(FuseKitError, match="Hosted launch job contains private material"):
-        unsafe_payment.to_dict()
+        unsafe_job_id.to_dict()
+
+
+def test_hosted_launch_job_to_dict_rejects_payment_receipt_sidecar_drift() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    unsafe_sidecar = replace(
+        job,
+        payment_status="checkout_pending",
+        payment_receipt={"customer_email": "buyer@example.com"},
+    )
+
+    with pytest.raises(
+        FuseKitError,
+        match="Hosted launch payment receipt contains unexpected field",
+    ):
+        unsafe_sidecar.to_dict()
+
+    unsafe_type = replace(
+        job,
+        payment_status="checkout_pending",
+        payment_receipt="checkout_pending",
+    )
+
+    with pytest.raises(FuseKitError, match="Hosted launch payment receipt is invalid"):
+        unsafe_type.to_dict()
 
 
 def test_hosted_worker_contract_rejects_boolean_github_installation_id() -> None:
