@@ -307,7 +307,7 @@ def _require_stripe_config(config: HostedPaymentConfig) -> None:
         raise FuseKitError("Stripe price id is not configured.")
     if not _valid_price_label(config.price_label):
         raise FuseKitError("Managed run public price label is not configured.")
-    if not config.public_origin.startswith("https://"):
+    if not _valid_public_payment_origin(config.public_origin):
         raise FuseKitError("Hosted payment return origin must be https.")
 
 
@@ -490,6 +490,20 @@ def _valid_public_github_source(value: str) -> bool:
 def _valid_github_path_segment(value: str) -> bool:
     return bool(value) and len(value) <= 100 and all(
         ch.isalnum() or ch in {"-", "_", "."} for ch in value
+    )
+
+
+def _valid_public_payment_origin(value: str) -> bool:
+    parsed = urllib.parse.urlparse(value)
+    return (
+        parsed.scheme == "https"
+        and bool(parsed.netloc)
+        and not parsed.path.rstrip("/")
+        and not parsed.params
+        and not parsed.query
+        and not parsed.fragment
+        and not parsed.username
+        and not parsed.password
     )
 
 

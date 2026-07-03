@@ -233,6 +233,41 @@ def test_create_stripe_checkout_session_rejects_bad_binding_before_network(
     assert opener.requests == []
 
 
+@pytest.mark.parametrize(
+    "public_origin",
+    [
+        "http://fusekit.snowmanai.org",
+        "https://fusekit.snowmanai.org/path",
+        "https://fusekit.snowmanai.org?job=token",
+        "https://fusekit.snowmanai.org#fragment",
+        "https://user@fusekit.snowmanai.org",
+    ],
+)
+def test_create_stripe_checkout_session_rejects_bad_return_origin_before_network(
+    public_origin: str,
+) -> None:
+    opener = StripeCheckoutOpener()
+
+    with pytest.raises(FuseKitError, match="Hosted payment return origin must be https"):
+        create_stripe_checkout_session(
+            HostedPaymentConfig(
+                enabled=True,
+                stripe_secret_key="sk_live_secret_value",
+                stripe_price_id="price_managed_run",
+                price_label="Launch validation: $1.00 FuseKit managed run",
+                public_origin=public_origin,
+                opener=opener,
+            ),
+            job_id="hosted-job",
+            job_token="signed.public.job",
+            lane="managed-fusekit-run",
+            github_source="https://github.com/Fusekit-AI/fusekit",
+            plan_fingerprint=_sha256_label("visible-plan"),
+        )
+
+    assert opener.requests == []
+
+
 def test_payment_required_receipt_is_public_and_scanned() -> None:
     receipt = payment_required_receipt(
         lane="managed-fusekit-run",
