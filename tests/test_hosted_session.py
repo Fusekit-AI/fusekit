@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json
+
 import pytest
 
 from fusekit.errors import FuseKitError
@@ -52,6 +57,21 @@ def test_hosted_state_token_rejects_expired_state() -> None:
         verify_hosted_state_token("test-secret", token, now=1_700_001_000)
 
 
+def test_hosted_state_token_rejects_boolean_timestamp() -> None:
+    token = _signed_state_token_payload(
+        "test-secret",
+        {
+            "schema_version": HOSTED_STATE_SCHEMA_VERSION,
+            "nonce": "nonce-for-hosted-state",
+            "issued_at": True,
+            "return_path": "/launch/github",
+        },
+    )
+
+    with pytest.raises(FuseKitError, match="timestamp"):
+        verify_hosted_state_token("test-secret", token, now=1_700_000_001)
+
+
 def test_hosted_state_token_normalizes_unsafe_return_path() -> None:
     token = create_hosted_state_token(
         "test-secret",
@@ -76,3 +96,16 @@ def test_hosted_state_token_requires_secret() -> None:
     )
     with pytest.raises(FuseKitError, match="state secret"):
         verify_hosted_state_token("", token, now=1_700_000_001)
+
+
+def _signed_state_token_payload(secret: str, payload: dict[str, object]) -> str:
+    encoded_payload = base64.urlsafe_b64encode(
+        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    ).rstrip(b"=").decode("ascii")
+    signature = hmac.new(
+        secret.encode("utf-8"),
+        encoded_payload.encode("ascii"),
+        hashlib.sha256,
+    ).digest()
+    encoded_signature = base64.urlsafe_b64encode(signature).rstrip(b"=").decode("ascii")
+    return f"{encoded_payload}.{encoded_signature}"

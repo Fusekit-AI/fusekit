@@ -1271,7 +1271,7 @@ def verify_hosted_job_token(
         "Hosted launcher job token payload",
     )
     issued_at = raw.get("issued_at")
-    if not isinstance(issued_at, int):
+    if isinstance(issued_at, bool) or not isinstance(issued_at, int):
         raise FuseKitError("Hosted launcher job token timestamp is invalid.")
     current = int(time.time() if now is None else now)
     if issued_at > current + 60:
@@ -3329,7 +3329,7 @@ def _reject_unexpected_payload_keys(
 
 def _required_int(payload: dict[str, Any], key: str) -> int:
     value = payload.get(key)
-    if not isinstance(value, int):
+    if isinstance(value, bool) or not isinstance(value, int):
         raise FuseKitError(f"Hosted launch job {key} is invalid.")
     return value
 

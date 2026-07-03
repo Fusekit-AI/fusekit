@@ -2162,6 +2162,30 @@ def test_hosted_job_token_rejects_tampering_and_expiry() -> None:
         )
 
 
+def test_hosted_job_token_rejects_boolean_timestamp() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    token = _signed_job_token_payload(
+        "job-secret",
+        {
+            "schema_version": "fusekit.hosted-job-token.v1",
+            "issued_at": True,
+            "job": job.to_dict(),
+        },
+    )
+
+    with pytest.raises(FuseKitError, match="timestamp"):
+        verify_hosted_job_token("job-secret", token, now=1_700_000_002)
+
+
+def test_hosted_launch_job_rejects_boolean_created_at() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    payload = job.to_dict()
+    payload["created_at"] = True
+
+    with pytest.raises(FuseKitError, match="created_at"):
+        hosted_launch_job_from_dict(payload)
+
+
 def test_hosted_job_token_rejects_signed_sidecar_fields() -> None:
     job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
     token = _signed_job_token_payload(

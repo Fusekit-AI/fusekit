@@ -85,7 +85,7 @@ def verify_hosted_state_token(
     return_path = raw.get("return_path", "/")
     if not isinstance(nonce, str) or len(nonce) < 16:
         raise FuseKitError("Hosted launcher state token nonce is invalid.")
-    if not isinstance(issued_at, int):
+    if isinstance(issued_at, bool) or not isinstance(issued_at, int):
         raise FuseKitError("Hosted launcher state token timestamp is invalid.")
     current = int(time.time() if now is None else now)
     if issued_at > current + 60:
