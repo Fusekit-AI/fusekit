@@ -115,7 +115,7 @@ def _paid_checkout_receipt(job) -> dict[str, object]:
             "lane": job.launch_lane,
             "github_source_hash": _public_hash(job.github_source),
             "plan_fingerprint": job.worker_contract.plan_fingerprint,
-            "stripe_price_id_hash": job.payment_price_id_hash or "sha256:" + ("b" * 64),
+            "stripe_price_id_hash": job.payment_price_id_hash,
             "price_label_hash": _public_hash(job.payment_price_label),
         },
         "amount_total": 100,
@@ -127,6 +127,10 @@ def _paid_checkout_receipt(job) -> dict[str, object]:
 
 def _public_hash(value: str) -> str:
     return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+MANAGED_PRICE_LABEL = "Launch validation: $1.00 FuseKit managed run"
+MANAGED_PRICE_ID_HASH = _public_hash("price_managed_run")
 
 
 def test_hosted_launch_job_is_public_safe_and_trust_complete() -> None:
@@ -1862,7 +1866,8 @@ def test_hosted_launch_job_to_dict_rejects_payment_receipt_sidecar_drift() -> No
     unsafe_sidecar = replace(
         job,
         payment_status="checkout_pending",
-        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        payment_price_label=MANAGED_PRICE_LABEL,
+        payment_price_id_hash=MANAGED_PRICE_ID_HASH,
         payment_receipt={"customer_email": "buyer@example.com"},
     )
 
@@ -1875,7 +1880,8 @@ def test_hosted_launch_job_to_dict_rejects_payment_receipt_sidecar_drift() -> No
     unsafe_type = replace(
         job,
         payment_status="checkout_pending",
-        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        payment_price_label=MANAGED_PRICE_LABEL,
+        payment_price_id_hash=MANAGED_PRICE_ID_HASH,
         payment_receipt="checkout_pending",
     )
 
@@ -1888,7 +1894,8 @@ def test_hosted_launch_job_to_dict_rejects_inconsistent_payment_state_drift() ->
         _plan(),
         launch_lane=MANAGED_FUSEKIT_RUN_LANE,
         payment_required=True,
-        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        payment_price_label=MANAGED_PRICE_LABEL,
+        payment_price_id_hash=MANAGED_PRICE_ID_HASH,
         job_id="hosted-test",
         now=1_700_000_000,
     )
@@ -1919,15 +1926,35 @@ def test_hosted_launch_job_requires_price_label_for_payment_states() -> None:
             now=1_700_000_000,
         )
 
+    with pytest.raises(FuseKitError, match="payment price id hash is required"):
+        build_hosted_launch_job(
+            _plan(),
+            launch_lane=MANAGED_FUSEKIT_RUN_LANE,
+            payment_required=True,
+            payment_price_label=MANAGED_PRICE_LABEL,
+            job_id="hosted-test",
+            now=1_700_000_000,
+        )
+
     job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
     missing_label = replace(job, payment_status="checkout_pending")
 
     with pytest.raises(FuseKitError, match="payment price label is required"):
         missing_label.to_dict()
 
+    missing_hash = replace(
+        job,
+        payment_status="checkout_pending",
+        payment_price_label=MANAGED_PRICE_LABEL,
+    )
+
+    with pytest.raises(FuseKitError, match="payment price id hash is required"):
+        missing_hash.to_dict()
+
     stray_price = replace(
         job,
-        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        payment_price_label=MANAGED_PRICE_LABEL,
+        payment_price_id_hash=MANAGED_PRICE_ID_HASH,
     )
 
     with pytest.raises(FuseKitError, match="payment price is invalid for status"):
@@ -1944,7 +1971,8 @@ def test_hosted_launch_job_to_dict_rejects_payment_state_for_byo_lane() -> None:
     unsafe = replace(
         job,
         payment_status="checkout_pending",
-        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        payment_price_label=MANAGED_PRICE_LABEL,
+        payment_price_id_hash=MANAGED_PRICE_ID_HASH,
     )
 
     with pytest.raises(FuseKitError, match="payment status is invalid for lane"):
@@ -2133,7 +2161,7 @@ def test_hosted_payment_receipt_requires_full_checkout_shape_before_paid() -> No
         _plan(),
         launch_lane=MANAGED_FUSEKIT_RUN_LANE,
         payment_required=True,
-        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        payment_price_label=MANAGED_PRICE_LABEL,
         payment_price_id_hash=price_id_hash,
         job_id="hosted-test",
         now=1_700_000_000,
@@ -2155,7 +2183,8 @@ def test_hosted_payment_receipt_rejects_paid_receipt_for_wrong_job_binding() -> 
         _plan(),
         launch_lane=MANAGED_FUSEKIT_RUN_LANE,
         payment_required=True,
-        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        payment_price_label=MANAGED_PRICE_LABEL,
+        payment_price_id_hash=MANAGED_PRICE_ID_HASH,
         job_id="hosted-test",
         now=1_700_000_000,
     )
@@ -2171,7 +2200,8 @@ def test_hosted_payment_receipt_rejects_paid_receipt_for_plan_or_label_drift() -
         _plan(),
         launch_lane=MANAGED_FUSEKIT_RUN_LANE,
         payment_required=True,
-        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        payment_price_label=MANAGED_PRICE_LABEL,
+        payment_price_id_hash=MANAGED_PRICE_ID_HASH,
         job_id="hosted-test",
         now=1_700_000_000,
     )
@@ -2195,7 +2225,7 @@ def test_hosted_payment_receipt_rejects_paid_receipt_for_price_hash_drift() -> N
         _plan(),
         launch_lane=MANAGED_FUSEKIT_RUN_LANE,
         payment_required=True,
-        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        payment_price_label=MANAGED_PRICE_LABEL,
         payment_price_id_hash=_public_hash("price_managed_run"),
         job_id="hosted-test",
         now=1_700_000_000,
@@ -2214,7 +2244,8 @@ def test_hosted_payment_receipt_rejects_malformed_hash_metadata() -> None:
         _plan(),
         launch_lane=MANAGED_FUSEKIT_RUN_LANE,
         payment_required=True,
-        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        payment_price_label=MANAGED_PRICE_LABEL,
+        payment_price_id_hash=MANAGED_PRICE_ID_HASH,
         job_id="hosted-test",
         now=1_700_000_000,
     )
@@ -2232,7 +2263,8 @@ def test_hosted_payment_receipt_does_not_mark_paid_from_boolean_stub() -> None:
         _plan(),
         launch_lane=MANAGED_FUSEKIT_RUN_LANE,
         payment_required=True,
-        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        payment_price_label=MANAGED_PRICE_LABEL,
+        payment_price_id_hash=MANAGED_PRICE_ID_HASH,
         job_id="hosted-test",
         now=1_700_000_000,
     )
@@ -2250,7 +2282,8 @@ def test_hosted_payment_receipt_does_not_mark_paid_from_boolean_amount() -> None
         _plan(),
         launch_lane=MANAGED_FUSEKIT_RUN_LANE,
         payment_required=True,
-        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        payment_price_label=MANAGED_PRICE_LABEL,
+        payment_price_id_hash=MANAGED_PRICE_ID_HASH,
         job_id="hosted-test",
         now=1_700_000_000,
     )
@@ -2270,7 +2303,8 @@ def test_hosted_job_decode_normalizes_pending_boolean_paid_stub() -> None:
         _plan(),
         launch_lane=MANAGED_FUSEKIT_RUN_LANE,
         payment_required=True,
-        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        payment_price_label=MANAGED_PRICE_LABEL,
+        payment_price_id_hash=MANAGED_PRICE_ID_HASH,
         job_id="hosted-test",
         now=1_700_000_000,
     )
@@ -2292,7 +2326,8 @@ def test_hosted_payment_receipt_rejects_unexpected_top_level_fields() -> None:
         _plan(),
         launch_lane=MANAGED_FUSEKIT_RUN_LANE,
         payment_required=True,
-        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        payment_price_label=MANAGED_PRICE_LABEL,
+        payment_price_id_hash=MANAGED_PRICE_ID_HASH,
         job_id="hosted-test",
         now=1_700_000_000,
     )
@@ -2311,7 +2346,8 @@ def test_hosted_job_decode_rejects_paid_status_without_paid_checkout_receipt() -
         _plan(),
         launch_lane=MANAGED_FUSEKIT_RUN_LANE,
         payment_required=True,
-        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        payment_price_label=MANAGED_PRICE_LABEL,
+        payment_price_id_hash=MANAGED_PRICE_ID_HASH,
         job_id="hosted-test",
         now=1_700_000_000,
     )
@@ -2332,7 +2368,8 @@ def test_hosted_job_decode_rejects_paid_receipt_binding_drift() -> None:
         _plan(),
         launch_lane=MANAGED_FUSEKIT_RUN_LANE,
         payment_required=True,
-        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        payment_price_label=MANAGED_PRICE_LABEL,
+        payment_price_id_hash=MANAGED_PRICE_ID_HASH,
         job_id="hosted-test",
         now=1_700_000_000,
     )
@@ -2355,7 +2392,7 @@ def test_hosted_job_decode_rejects_paid_receipt_price_hash_drift() -> None:
         _plan(),
         launch_lane=MANAGED_FUSEKIT_RUN_LANE,
         payment_required=True,
-        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        payment_price_label=MANAGED_PRICE_LABEL,
         payment_price_id_hash=_public_hash("price_managed_run"),
         job_id="hosted-test",
         now=1_700_000_000,
@@ -2380,7 +2417,8 @@ def test_hosted_job_decode_rejects_malformed_payment_hash_metadata() -> None:
         _plan(),
         launch_lane=MANAGED_FUSEKIT_RUN_LANE,
         payment_required=True,
-        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        payment_price_label=MANAGED_PRICE_LABEL,
+        payment_price_id_hash=MANAGED_PRICE_ID_HASH,
         job_id="hosted-test",
         now=1_700_000_000,
     )
@@ -2403,7 +2441,8 @@ def test_hosted_job_decode_rejects_unexpected_payment_receipt_fields() -> None:
         _plan(),
         launch_lane=MANAGED_FUSEKIT_RUN_LANE,
         payment_required=True,
-        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        payment_price_label=MANAGED_PRICE_LABEL,
+        payment_price_id_hash=MANAGED_PRICE_ID_HASH,
         job_id="hosted-test",
         now=1_700_000_000,
     )

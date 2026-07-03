@@ -355,6 +355,8 @@ def build_hosted_launch_job(
     )
     if payment_status == "payment_required" and not _valid_price_label(payment_price_label):
         raise FuseKitError("Hosted launch payment price label is required.")
+    if payment_status == "payment_required" and not _valid_sha256_label(payment_price_id_hash):
+        raise FuseKitError("Hosted launch payment price id hash is required.")
     if payment_price_id_hash and not _valid_sha256_label(payment_price_id_hash):
         raise FuseKitError("Hosted launch payment price id hash is invalid.")
     worker_prepare_proof = (
@@ -463,6 +465,8 @@ def hosted_job_payment_status(job: HostedLaunchJob) -> dict[str, object]:
         raise FuseKitError("Hosted launch payment price id hash is invalid.")
     if status != "not_required" and not job.payment_price_label:
         raise FuseKitError("Hosted launch payment price label is required.")
+    if status != "not_required" and not job.payment_price_id_hash:
+        raise FuseKitError("Hosted launch payment price id hash is required.")
     if status == "not_required" and (job.payment_price_label or job.payment_price_id_hash):
         raise FuseKitError("Hosted launch payment price is invalid for status.")
     if job.payment_receipt is None:
