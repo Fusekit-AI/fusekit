@@ -425,12 +425,17 @@ def test_oci_host_posture_blocks_runtime_secret_nested_sidecars() -> None:
     evidence = _clean_evidence()
     verify_report = evidence["runtime_secret_verify"]
     assert isinstance(verify_report, dict)
+    secret_file = verify_report["secret_file"]
     required_runtime_env = verify_report["required_runtime_env"]
     key_inventory = verify_report["key_inventory"]
     stripe_runtime_env = verify_report["stripe_runtime_env"]
+    assert isinstance(secret_file, dict)
     assert isinstance(required_runtime_env, dict)
     assert isinstance(key_inventory, dict)
     assert isinstance(stripe_runtime_env, dict)
+    secret_file["raw_stat_output"] = (
+        "/etc/fusekit/hosted-secrets.env uid=0 gid=0 mode=0600"
+    )
     row = required_runtime_env["FUSEKIT_GITHUB_APP_PRIVATE_KEY"]
     assert isinstance(row, dict)
     row["raw_env_line"] = "FUSEKIT_GITHUB_APP_PRIVATE_KEY=secret"
@@ -450,6 +455,7 @@ def test_oci_host_posture_blocks_runtime_secret_nested_sidecars() -> None:
         "runtime_secret_verify.key_inventory.raw_diff",
         "runtime_secret_verify.required_runtime_env.FUSEKIT_GITHUB_APP_PRIVATE_KEY.raw_env_line",
         "runtime_secret_verify.required_runtime_env.OPENAI_API_KEY",
+        "runtime_secret_verify.secret_file.raw_stat_output",
         "runtime_secret_verify.stripe_runtime_env.FUSEKIT_STRIPE_SECRET_KEY.raw_value",
         "runtime_secret_verify.stripe_runtime_env.STRIPE_WEBHOOK_SECRET",
     ]

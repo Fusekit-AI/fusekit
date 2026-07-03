@@ -123,6 +123,20 @@ OCI_HOST_POSTURE_RUNTIME_SECRET_VERIFY_KEYS = frozenset(
         "secret_boundary",
     }
 )
+OCI_HOST_POSTURE_RUNTIME_SECRET_VERIFY_FILE_KEYS = frozenset(
+    {
+        "path",
+        "exists",
+        "regular_file",
+        "symlink",
+        "mode",
+        "owner_only",
+        "parent_mode",
+        "parent_private_enough",
+        "root_owned_required",
+        "root_owned",
+    }
+)
 OCI_HOST_POSTURE_RUNTIME_SECRET_ENV_ROW_KEYS = frozenset({"present"})
 OCI_HOST_POSTURE_RUNTIME_SECRET_KEY_INVENTORY_KEYS = frozenset(
     {"required_count", "present_required_count", "missing", "unexpected_keys"}
@@ -859,6 +873,15 @@ def _unexpected_runtime_secret_verify_keys(evidence: Mapping[str, object]) -> li
     if not isinstance(report, Mapping):
         return []
     unexpected: list[str] = []
+    secret_file = report.get("secret_file")
+    if isinstance(secret_file, Mapping):
+        unexpected.extend(
+            f"runtime_secret_verify.secret_file.{key}"
+            for key in _unexpected_keys(
+                secret_file,
+                OCI_HOST_POSTURE_RUNTIME_SECRET_VERIFY_FILE_KEYS,
+            )
+        )
     key_inventory = report.get("key_inventory")
     if isinstance(key_inventory, Mapping):
         unexpected.extend(
