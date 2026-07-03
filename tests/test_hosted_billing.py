@@ -74,7 +74,7 @@ def test_stripe_checkout_session_receipt_rejects_unexpected_metadata() -> None:
 
 
 def test_stripe_checkout_session_receipt_rejects_secret_text_in_public_fields() -> None:
-    with pytest.raises(FuseKitError, match="stripe_checkout_receipt_contains_secret_text"):
+    with pytest.raises(FuseKitError, match="stripe_checkout_metadata_contains_secret_text"):
         stripe_checkout_session_receipt(
             {
                 "id": "cs_live_public",
@@ -86,6 +86,23 @@ def test_stripe_checkout_session_receipt_rejects_secret_text_in_public_fields() 
                 "currency": "usd",
                 "metadata": {
                     "job_id": "sk_live_should_not_be_public",
+                    "lane": "managed-fusekit-run",
+                },
+            }
+        )
+
+    with pytest.raises(FuseKitError, match="stripe_checkout_metadata_contains_secret_text"):
+        stripe_checkout_session_receipt(
+            {
+                "id": "cs_live_public",
+                "status": "complete",
+                "payment_status": "paid",
+                "mode": "payment",
+                "client_reference_id": "hosted-job",
+                "amount_total": 100,
+                "currency": "usd",
+                "metadata": {
+                    "job_id": "<sk_live_should_not_be_public>",
                     "lane": "managed-fusekit-run",
                 },
             }
@@ -104,6 +121,20 @@ def test_stripe_checkout_session_receipt_only_keeps_checkout_payment_urls() -> N
     )
 
     assert receipt["checkout_url"] == ""
+
+    receipt = stripe_checkout_session_receipt(
+        {
+            "id": "cs_live_public",
+            "url": "https://checkout.stripe.com/c/pay/cs_live_public?client_secret=hidden",
+            "status": "open",
+            "payment_status": "unpaid",
+            "mode": "payment",
+        }
+    )
+
+    serialized = json.dumps(receipt)
+    assert receipt["checkout_url"] == ""
+    assert "client_secret" not in serialized
 
 
 def test_payment_required_receipt_is_public_and_scanned() -> None:

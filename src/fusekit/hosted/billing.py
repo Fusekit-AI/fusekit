@@ -337,6 +337,7 @@ def _valid_checkout_url(value: object) -> bool:
         parsed.scheme == "https"
         and parsed.netloc == "checkout.stripe.com"
         and parsed.path.startswith("/c/pay/")
+        and not parsed.query
         and not parsed.params
         and not parsed.fragment
         and not parsed.username
@@ -409,6 +410,8 @@ def _public_metadata(value: object) -> dict[str, str]:
     for key in STRIPE_CHECKOUT_METADATA_KEYS:
         metadata_value = value.get(key)
         if isinstance(metadata_value, str):
+            if contains_durable_secret_text(metadata_value):
+                raise FuseKitError("stripe_checkout_metadata_contains_secret_text")
             public = _public_identifier(metadata_value)
             if public:
                 result[key] = public
