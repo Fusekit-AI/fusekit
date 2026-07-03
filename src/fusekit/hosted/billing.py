@@ -20,6 +20,8 @@ STRIPE_CHECKOUT_METADATA_KEYS = (
     "lane",
     "github_source_hash",
     "plan_fingerprint",
+    "stripe_price_id_hash",
+    "price_label_hash",
 )
 HOSTED_STRIPE_PRICE_SETUP_HELPER = "fusekit-hosted-stripe-price"
 HOSTED_STRIPE_PRICE_VERIFY_HELPER = "fusekit-hosted-stripe-price-verify"
@@ -170,6 +172,8 @@ def create_stripe_checkout_session(
         "metadata[lane]": lane,
         "metadata[github_source_hash]": _public_hash(github_source),
         "metadata[plan_fingerprint]": plan_fingerprint,
+        "metadata[stripe_price_id_hash]": _public_hash(config.stripe_price_id),
+        "metadata[price_label_hash]": _public_hash(config.price_label),
     }
     response = _stripe_request(
         config,

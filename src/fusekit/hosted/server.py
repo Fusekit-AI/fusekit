@@ -1909,7 +1909,7 @@ def _hosted_payment_return_response(
             HTTPStatus.BAD_GATEWAY,
             {"error": "payment_verification_failed"},
         )
-    if not _payment_receipt_matches_job(receipt, job):
+    if not _payment_receipt_matches_job(settings, receipt, job):
         return _response(
             start_response,
             HTTPStatus.FORBIDDEN,
@@ -2545,7 +2545,11 @@ def _managed_payment_required(job: HostedLaunchJob) -> bool:
     return job.launch_lane == MANAGED_FUSEKIT_RUN_LANE and job.payment_status != "paid"
 
 
-def _payment_receipt_matches_job(receipt: dict[str, object], job: HostedLaunchJob) -> bool:
+def _payment_receipt_matches_job(
+    settings: HostedSettings,
+    receipt: dict[str, object],
+    job: HostedLaunchJob,
+) -> bool:
     if not _payment_receipt_is_paid_checkout(receipt):
         return False
     if receipt.get("client_reference_id") != job.job_id:
@@ -2558,6 +2562,8 @@ def _payment_receipt_matches_job(receipt: dict[str, object], job: HostedLaunchJo
         "lane": job.launch_lane,
         "github_source_hash": _payment_github_source_hash(job.github_source),
         "plan_fingerprint": job.worker_contract.plan_fingerprint,
+        "stripe_price_id_hash": _payment_public_hash(settings.stripe_price_id),
+        "price_label_hash": _payment_public_hash(settings.managed_run_price_label),
     }
     for key, expected_value in expected.items():
         if metadata.get(key) != expected_value:
@@ -2587,7 +2593,11 @@ def _payment_receipt_is_paid_checkout(receipt: dict[str, object]) -> bool:
 
 
 def _payment_github_source_hash(github_source: str) -> str:
-    return "sha256:" + hashlib.sha256(github_source.encode("utf-8")).hexdigest()
+    return _payment_public_hash(github_source)
+
+
+def _payment_public_hash(value: str) -> str:
+    return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def _dispatch_hosted_worker(
