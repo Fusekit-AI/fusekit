@@ -23,6 +23,8 @@ STRIPE_CHECKOUT_METADATA_KEYS = (
 )
 HOSTED_STRIPE_PRICE_SETUP_HELPER = "fusekit-hosted-stripe-price"
 HOSTED_STRIPE_PRICE_VERIFY_HELPER = "fusekit-hosted-stripe-price-verify"
+HOSTED_STRIPE_PRICE_SETUP_MODULE = "python -m fusekit.hosted.stripe_setup"
+HOSTED_STRIPE_PRICE_VERIFY_MODULE = "python -m fusekit.hosted.stripe_verify"
 HOSTED_STRIPE_PRICE_SETUP_REQUIRED_FLAGS = (
     "--execute",
     "--confirm-shared-account",
@@ -108,6 +110,8 @@ class HostedPaymentConfig:
             "operator_setup": {
                 "helper_command": HOSTED_STRIPE_PRICE_SETUP_HELPER,
                 "verification_command": HOSTED_STRIPE_PRICE_VERIFY_HELPER,
+                "module_fallback": HOSTED_STRIPE_PRICE_SETUP_MODULE,
+                "verification_module_fallback": HOSTED_STRIPE_PRICE_VERIFY_MODULE,
                 "dry_run_default": True,
                 "mutation_requires": list(HOSTED_STRIPE_PRICE_SETUP_REQUIRED_FLAGS),
                 "shared_account_boundary": HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY,

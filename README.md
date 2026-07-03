@@ -485,6 +485,19 @@ FUSEKIT_STRIPE_SECRET_KEY=sk_live_... \
     --confirm-shared-account
 ```
 
+If the source checkout has not been installed as a package yet, use the module
+fallback with the same flags:
+
+```zsh
+FUSEKIT_STRIPE_SECRET_KEY=sk_live_... \
+  python -m fusekit.hosted.stripe_setup \
+    --amount-cents 100 \
+    --currency usd \
+    --label 'Launch validation: $1.00 FuseKit managed run' \
+    --execute \
+    --confirm-shared-account
+```
+
 The command prints only redacted public JSON: the Stripe Product id, Stripe
 Price id, the public `FUSEKIT_MANAGED_RUN_PRICE_LABEL`, and next runtime
 environment actions. Omit `--execute` for a dry run. Before enabling managed
@@ -494,6 +507,17 @@ runs, verify the created Price/Product in the shared Stripe account:
 FUSEKIT_STRIPE_SECRET_KEY=sk_live_... \
 FUSEKIT_STRIPE_PRICE_ID=price_... \
   fusekit-hosted-stripe-price-verify \
+    --amount-cents 100 \
+    --currency usd \
+    --label 'Launch validation: $1.00 FuseKit managed run'
+```
+
+The source-checkout fallback is:
+
+```zsh
+FUSEKIT_STRIPE_SECRET_KEY=sk_live_... \
+FUSEKIT_STRIPE_PRICE_ID=price_... \
+  python -m fusekit.hosted.stripe_verify \
     --amount-cents 100 \
     --currency usd \
     --label 'Launch validation: $1.00 FuseKit managed run'
