@@ -15,7 +15,10 @@ from ipaddress import ip_address
 from pathlib import Path
 
 from fusekit.errors import FuseKitError
-from fusekit.hosted.runtime_secrets import HOSTED_RUNTIME_SECRET_VERIFY_SCHEMA_VERSION
+from fusekit.hosted.runtime_secrets import (
+    HOSTED_RUNTIME_REQUIRED_FILE_ENV,
+    HOSTED_RUNTIME_SECRET_VERIFY_SCHEMA_VERSION,
+)
 from fusekit.security import contains_durable_secret_text, redact_public_text
 
 OCI_HOST_POSTURE_EVIDENCE_SCHEMA_VERSION = "fusekit.oci-host-posture-evidence.v1"
@@ -957,6 +960,12 @@ def _runtime_secret_file_check(evidence: Mapping[str, object]) -> dict[str, obje
 def _runtime_secret_verify_check(evidence: Mapping[str, object]) -> dict[str, object]:
     report = _mapping(evidence.get("runtime_secret_verify"))
     key_inventory = _mapping(report.get("key_inventory"))
+    missing_keys = _string_list(key_inventory.get("missing"))
+    unexpected_keys = _string_list(key_inventory.get("unexpected_keys"))
+    required_count = _literal_non_negative_int(key_inventory.get("required_count"))
+    present_required_count = _literal_non_negative_int(
+        key_inventory.get("present_required_count")
+    )
     failures: list[str] = []
     if report.get("schema_version") != HOSTED_RUNTIME_SECRET_VERIFY_SCHEMA_VERSION:
         failures.append("oci_host_runtime_secret_verify_schema_invalid")
@@ -966,10 +975,17 @@ def _runtime_secret_verify_check(evidence: Mapping[str, object]) -> dict[str, ob
         failures.append("oci_host_runtime_secret_payment_staging_not_ready")
     if _string_list(report.get("blockers")):
         failures.append("oci_host_runtime_secret_verify_has_blockers")
-    if _string_list(key_inventory.get("missing")):
+    if missing_keys:
         failures.append("oci_host_runtime_secret_required_keys_missing")
-    if _string_list(key_inventory.get("unexpected_keys")):
+    if unexpected_keys:
         failures.append("oci_host_runtime_secret_unexpected_keys")
+    if (
+        required_count is None
+        or present_required_count is None
+        or required_count != len(HOSTED_RUNTIME_REQUIRED_FILE_ENV)
+        or present_required_count != required_count - len(missing_keys)
+    ):
+        failures.append("oci_host_runtime_secret_key_inventory_count_mismatch")
     boundary = _public_str(report.get("secret_boundary")).lower()
     if "emits no" not in boundary or "secret" not in boundary:
         failures.append("oci_host_runtime_secret_verify_secret_boundary_missing")
@@ -980,8 +996,8 @@ def _runtime_secret_verify_check(evidence: Mapping[str, object]) -> dict[str, ob
             "Attach a ready redacted runtime secret verifier report with no missing or "
             "unexpected keys before DNS cutover.",
             runtime_secret_blockers=_public_string_list(report.get("blockers")),
-            missing_keys=_public_string_list(key_inventory.get("missing")),
-            unexpected_keys=_public_string_list(key_inventory.get("unexpected_keys")),
+            missing_keys=_public_string_list(missing_keys),
+            unexpected_keys=_public_string_list(unexpected_keys),
         )
     return _ok("host.runtime_secret_verify")
 
@@ -1379,6 +1395,12 @@ def _non_negative_int(value: object) -> int | None:
     except (TypeError, ValueError):
         return None
     return result if result >= 0 else None
+
+
+def _literal_non_negative_int(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
 
 
 def _public_str(value: object) -> str:
