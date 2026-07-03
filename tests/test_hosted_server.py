@@ -4277,11 +4277,12 @@ def _paid_control_room_text(settings: HostedSettings, job_id: str) -> str:
             "github_source_hash": _payment_source_hash(job.github_source),
             "plan_fingerprint": job.worker_contract.plan_fingerprint,
             "stripe_price_id_hash": _payment_public_hash("price_managed_run"),
-            "price_label_hash": _payment_public_hash(MANAGED_PRICE_LABEL),
+            "price_label_hash": _payment_public_hash(job.payment_price_label),
         },
         "amount_total": 4900,
         "currency": "usd",
         "paid": True,
+        "price_label": job.payment_price_label,
     }
     paid_job = with_hosted_job_payment_receipt(job, receipt)
     settings.hosted_jobs[job_id] = paid_job
