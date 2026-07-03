@@ -149,6 +149,36 @@ def test_stripe_price_verify_blocks_shared_account_wrong_price() -> None:
     assert "Do not enable managed paid runs" in report["next_actions"][0]
 
 
+def test_stripe_price_verify_blocks_secret_shaped_product_name() -> None:
+    opener = StripeVerifyOpener(
+        _price_payload(
+            product={
+                "id": "prod_fusekit_managed_run",
+                "active": True,
+                "name": "FuseKit sk_live_thisshouldnotrender",
+                "metadata": _price_payload()["metadata"],
+            },
+        )
+    )
+
+    report = verify_stripe_managed_run_price(
+        stripe_secret_key="sk_live_secret_value",
+        price_id="price_fusekit_managed_run",
+        amount_cents=100,
+        currency="usd",
+        price_label=PRICE_LABEL,
+        opener=opener,
+    )
+
+    assert report["ready"] is False
+    assert "stripe_product_not_fusekit_scoped" in report["blockers"]
+    assert report["hosted_runtime_env"] == {
+        "FUSEKIT_STRIPE_PRICE_ID": "",
+        "FUSEKIT_MANAGED_RUN_PRICE_LABEL": "",
+        "FUSEKIT_MANAGED_RUNS_ENABLED": "0",
+    }
+
+
 def test_stripe_price_verify_main_reads_env_and_redacts_output(
     monkeypatch,
     capsys,

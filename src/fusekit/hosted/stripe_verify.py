@@ -22,6 +22,7 @@ from fusekit.hosted.lanes import MANAGED_FUSEKIT_RUN_LANE
 from fusekit.hosted.stripe_setup import (
     STRIPE_MANAGED_PRICE_SETUP_SCHEMA_VERSION,
     StripeManagedRunPricePlan,
+    _valid_fusekit_product_name,
     build_stripe_managed_run_price_plan,
 )
 from fusekit.security import contains_durable_secret_text
@@ -253,7 +254,7 @@ def _product_name_scoped(value: object) -> bool:
     if not isinstance(value, Mapping):
         return False
     name = value.get("name")
-    return isinstance(name, str) and "fusekit" in name.lower()
+    return isinstance(name, str) and _valid_fusekit_product_name(name)
 
 
 def _public_hash(value: str) -> str:

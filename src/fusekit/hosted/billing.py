@@ -351,6 +351,8 @@ def _valid_price_label(value: str) -> bool:
         return False
     if "price_" in value or "sk_" in value or "pk_" in value:
         return False
+    if any(ch in value for ch in "<>{}"):
+        return False
     return (
         all(ch.isprintable() for ch in value)
         and any(ch.isdigit() for ch in value)

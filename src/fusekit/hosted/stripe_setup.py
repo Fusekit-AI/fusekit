@@ -23,6 +23,7 @@ from fusekit.hosted.billing import (
 )
 from fusekit.hosted.github_app import UrlOpener
 from fusekit.hosted.lanes import MANAGED_FUSEKIT_RUN_LANE
+from fusekit.security import contains_durable_secret_text
 
 STRIPE_MANAGED_PRICE_SETUP_SCHEMA_VERSION = "fusekit.stripe-managed-price-setup.v1"
 DEFAULT_MANAGED_RUN_PRODUCT_NAME = "FuseKit Managed Run"
@@ -30,6 +31,8 @@ DEFAULT_MANAGED_RUN_PRODUCT_DESCRIPTION = (
     "One-time payment authorization for a FuseKit-managed hosted launch worker."
 )
 MAX_MANAGED_RUN_AMOUNT_CENTS = 1_000_000
+MAX_MANAGED_RUN_PRODUCT_NAME_LENGTH = 80
+MAX_MANAGED_RUN_PRODUCT_DESCRIPTION_LENGTH = 240
 
 
 @dataclass(frozen=True)
@@ -109,11 +112,11 @@ def build_stripe_managed_run_price_plan(
         raise FuseKitError(
             "Managed-run public price label must match the configured amount and currency."
         )
-    cleaned_product_name = " ".join(product_name.split())
-    if not cleaned_product_name or "fusekit" not in cleaned_product_name.lower():
+    cleaned_product_name = _public_stripe_product_name(product_name)
+    if not _valid_fusekit_product_name(cleaned_product_name):
         raise FuseKitError("Stripe product name must be FuseKit-scoped.")
-    cleaned_description = " ".join(product_description.split())
-    if not cleaned_description or len(cleaned_description) > 240:
+    cleaned_description = _public_stripe_product_description(product_description)
+    if not cleaned_description:
         raise FuseKitError("Stripe product description is invalid.")
     return StripeManagedRunPricePlan(
         account_mode=account_mode,
@@ -385,7 +388,7 @@ def _metadata_matches(value: object, expected: Mapping[str, str]) -> bool:
 
 def _product_name_scoped(value: Mapping[str, object]) -> bool:
     name = value.get("name")
-    return isinstance(name, str) and "fusekit" in name.lower()
+    return isinstance(name, str) and _valid_fusekit_product_name(name)
 
 
 def _stripe_get(
@@ -484,6 +487,33 @@ def _stripe_setup_metadata(*, lane: str, price_label: str) -> dict[str, str]:
         "fusekit_scope": "managed-run-price",
         "public_price_label_hash": _public_hash(price_label),
     }
+
+
+def _valid_fusekit_product_name(value: str) -> bool:
+    cleaned = _public_stripe_product_name(value)
+    return bool(cleaned and cleaned == value and "fusekit" in cleaned.lower())
+
+
+def _public_stripe_product_name(value: str) -> str:
+    cleaned = " ".join(value.split())
+    if not cleaned or len(cleaned) > MAX_MANAGED_RUN_PRODUCT_NAME_LENGTH:
+        return ""
+    if contains_durable_secret_text(cleaned) or any(ch in cleaned for ch in "<>{}"):
+        return ""
+    if not all(ch.isprintable() for ch in cleaned):
+        return ""
+    return cleaned
+
+
+def _public_stripe_product_description(value: str) -> str:
+    cleaned = " ".join(value.split())
+    if not cleaned or len(cleaned) > MAX_MANAGED_RUN_PRODUCT_DESCRIPTION_LENGTH:
+        return ""
+    if contains_durable_secret_text(cleaned) or any(ch in cleaned for ch in "<>{}"):
+        return ""
+    if not all(ch.isprintable() for ch in cleaned):
+        return ""
+    return cleaned
 
 
 def _managed_run_lookup_key(*, amount_cents: int, currency: str, price_label: str) -> str:
