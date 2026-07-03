@@ -385,6 +385,10 @@ dispatch URL, the same command automatically verifies the worker receiver
 mode, scope, and reservation-before-spawn proof for production.
 `--worker-dispatch-url` remains available for checking an
 explicit receiver URL before it is published in the hosted contract.
+For release proof, pass the expected Git commit too:
+`fusekit-hosted-verify --origin https://fusekit.snowmanai.org --expected-commit-sha "$(git rev-parse HEAD)"`.
+That fails closed when the public source-provenance contract is healthy but the
+OCI host is still serving an older commit.
 The verifier reports Cloudflare/hosted-origin HTTP failures,
 readiness mismatches, public DNS failures, homepage trust drift, hosted
 runtime/open-core/DNS drift, deployment trust-story drift, homepage completion

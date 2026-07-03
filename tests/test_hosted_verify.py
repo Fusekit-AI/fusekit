@@ -1188,6 +1188,106 @@ def test_verify_hosted_deployment_accepts_oci_source_provenance_contract() -> No
     assert checks["hosted.readiness"]["status"] == "ok"
 
 
+def test_verify_hosted_deployment_accepts_expected_commit_sha() -> None:
+    readiness = _readiness_contract()
+    readiness["required_source_provenance_env"] = list(HOSTED_OCI_SOURCE_PROVENANCE_ENV)
+    readiness["source_provenance"] = _oci_source_provenance_contract()
+    oci_deployment = _oci_deployment_contract()
+    opener = SequenceOpener(
+        [
+            _home_html(readiness=readiness, deployment=oci_deployment),
+            {"ok": True},
+            readiness,
+            oci_deployment,
+            _github_intake_contract(),
+            {"ok": True},
+            {
+                "schema_version": "fusekit.hosted-worker-dispatch-readiness.v1",
+                "ready": True,
+                "production_ready": True,
+                "idempotency": {
+                    "mode": "dispatch-state-dir",
+                    "durable": True,
+                    "scope": "worker deployment",
+                    "proof": (
+                        "Duplicate job/action dispatches are reserved through a configured "
+                        "non-secret state directory before worker spawn."
+                    ),
+                },
+            },
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        expected_commit_sha=VERCEL_COMMIT_SHA,
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is True
+    assert checks["hosted.expected_commit"]["status"] == "ok"
+    assert checks["hosted.expected_commit"]["actual_commit_sha"] == VERCEL_COMMIT_SHA
+
+
+def test_verify_hosted_deployment_rejects_stale_expected_commit_sha() -> None:
+    readiness = _readiness_contract()
+    readiness["required_source_provenance_env"] = list(HOSTED_OCI_SOURCE_PROVENANCE_ENV)
+    readiness["source_provenance"] = _oci_source_provenance_contract()
+    oci_deployment = _oci_deployment_contract()
+    expected_commit = "fedcba9876543210fedcba9876543210fedcba98"
+    opener = SequenceOpener(
+        [
+            _home_html(readiness=readiness, deployment=oci_deployment),
+            {"ok": True},
+            readiness,
+            oci_deployment,
+            _github_intake_contract(),
+            {"ok": True},
+            {
+                "schema_version": "fusekit.hosted-worker-dispatch-readiness.v1",
+                "ready": True,
+                "production_ready": True,
+                "idempotency": {
+                    "mode": "dispatch-state-dir",
+                    "durable": True,
+                    "scope": "worker deployment",
+                    "proof": (
+                        "Duplicate job/action dispatches are reserved through a configured "
+                        "non-secret state directory before worker spawn."
+                    ),
+                },
+            },
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        expected_commit_sha=expected_commit,
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert "hosted.expected_commit" in report["blocking_checks"]
+    assert checks["hosted.expected_commit"]["expected_commit_sha"] == expected_commit
+    assert checks["hosted.expected_commit"]["actual_commit_sha"] == VERCEL_COMMIT_SHA
+    assert checks["hosted.expected_commit"]["failures"] == ["expected_commit_sha_mismatch"]
+    assert "Redeploy the hosted launcher" in checks["hosted.expected_commit"]["next_action"]
+
+
+def test_verify_hosted_deployment_rejects_invalid_expected_commit_sha() -> None:
+    with pytest.raises(FuseKitError, match="expected_commit_sha"):
+        verify_hosted_deployment(
+            origin="https://fusekit.snowmanai.org",
+            expected_commit_sha="main",
+            opener=SequenceOpener([]),
+            dns_resolver=_public_dns_resolver,
+        )
+
+
 def test_verify_hosted_deployment_rejects_provider_copy_drift_on_homepage() -> None:
     readiness = _readiness_contract()
     readiness["required_source_provenance_env"] = list(HOSTED_AWS_SOURCE_PROVENANCE_ENV)

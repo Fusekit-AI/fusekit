@@ -103,12 +103,14 @@ def verify_hosted_deployment(
     *,
     origin: str,
     worker_dispatch_url: str = "",
+    expected_commit_sha: str = "",
     opener: UrlOpener | None = None,
     dns_resolver: DnsResolver | None = None,
 ) -> dict[str, object]:
     """Verify hosted launcher and production worker dispatch endpoints without secrets."""
 
     public_origin = _valid_public_origin(origin)
+    expected_commit = _valid_expected_commit_sha(expected_commit_sha)
     public_host = urllib.parse.urlparse(public_origin).hostname or ""
     dispatch_public_url = ""
     if worker_dispatch_url:
@@ -156,6 +158,8 @@ def verify_hosted_deployment(
         expected_public_origin=public_origin,
     )
     checks.append(hosted_deployment)
+    if expected_commit:
+        checks.append(_expected_commit_check(deployment_payload, expected_commit))
     checks.append(
         _json_check(
             "hosted.github_intake",
@@ -235,11 +239,17 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Verify hosted FuseKit deployment endpoints")
     parser.add_argument("--origin", default="https://fusekit.snowmanai.org")
     parser.add_argument("--worker-dispatch-url", default="")
+    parser.add_argument(
+        "--expected-commit-sha",
+        default="",
+        help="Optional exact Git commit SHA the public deployment must report.",
+    )
     args = parser.parse_args(argv)
     try:
         report = verify_hosted_deployment(
             origin=args.origin,
             worker_dispatch_url=args.worker_dispatch_url,
+            expected_commit_sha=args.expected_commit_sha,
         )
     except FuseKitError as exc:
         report = {
@@ -424,6 +434,44 @@ def _json_check_with_payload(
         },
         payload,
     )
+
+
+def _expected_commit_check(
+    deployment_payload: dict[str, Any],
+    expected_commit_sha: str,
+) -> dict[str, object]:
+    actual_commit_sha = _deployment_commit_sha(deployment_payload)
+    failures: list[str] = []
+    if not actual_commit_sha:
+        failures.append("expected_commit_actual_missing")
+    elif actual_commit_sha != expected_commit_sha:
+        failures.append("expected_commit_sha_mismatch")
+    return {
+        "id": "hosted.expected_commit",
+        "status": "failed" if failures else "ok",
+        "expected_commit_sha": expected_commit_sha,
+        "actual_commit_sha": actual_commit_sha,
+        "failures": failures,
+        "next_action": (
+            "Redeploy the hosted launcher from the expected commit and update "
+            "FUSEKIT_HOSTED_GIT_COMMIT_SHA before claiming live release proof."
+            if failures
+            else ""
+        ),
+    }
+
+
+def _deployment_commit_sha(deployment_payload: dict[str, Any]) -> str:
+    provenance = deployment_payload.get("source_provenance")
+    if not isinstance(provenance, dict):
+        return ""
+    actual = provenance.get("actual")
+    if not isinstance(actual, dict):
+        return ""
+    commit_sha = actual.get("commit_sha")
+    if not isinstance(commit_sha, str):
+        return ""
+    return commit_sha if re.fullmatch(r"[0-9a-f]{40}", commit_sha) else ""
 
 
 def _worker_dispatch_url_from_deployment(payload: dict[str, Any]) -> str:
@@ -1580,6 +1628,15 @@ def _valid_public_origin(value: str) -> str:
     ):
         raise FuseKitError("hosted_origin_must_be_https_origin")
     return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, "", "", "", ""))
+
+
+def _valid_expected_commit_sha(value: str) -> str:
+    cleaned = value.strip().lower()
+    if not cleaned:
+        return ""
+    if not re.fullmatch(r"[0-9a-f]{40}", cleaned):
+        raise FuseKitError("expected_commit_sha_must_be_40_hex_chars")
+    return cleaned
 
 
 def _valid_https_url(value: str) -> str:

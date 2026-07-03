@@ -52,6 +52,7 @@
   Managed-run price labels now require both a numeric amount and an explicit public currency marker, and the shared Stripe setup docs use single-quoted dollar labels so shell expansion cannot silently turn `$1.00` into an ambiguous `.00` public price.
   Managed-run Stripe setup now rejects mutations when the public price label does not match the configured Stripe amount and currency, so the browser-visible cost disclosure cannot drift from the Checkout charge.
   The outside-in hosted verifier now validates lane readiness, including the recommended lane and launchable lane list, so public deployments fail verification if the BYO recommendation or paid-lane blocker state drifts.
+  Release proof can now require an exact deployed commit with `fusekit-hosted-verify --expected-commit-sha`, so a healthy public OCI launcher still fails verification when it is serving stale source provenance.
 - [x] Security invariants are enforced by tests.
 - [x] CLI defaults to real-provider execution; incomplete local rehearsals require explicit opt-in.
 - [x] FuseKit bootstraps its own runtime components instead of assuming Codex/OpenClaw is preinstalled.
