@@ -294,7 +294,7 @@ def _clean_evidence() -> dict[str, object]:
             "mutates_host": False,
             "secret_boundary": (
                 "Collector records posture facts only. It does not read secret file "
-                "contents or request OCI credentials."
+                "contents and does not request OCI credentials."
             ),
         },
     }
@@ -1167,6 +1167,27 @@ def test_oci_host_posture_blocks_mutating_collection_boundary() -> None:
         "oci_host_posture_collection_must_not_mutate_host",
         "oci_host_posture_collection_must_not_read_secret_contents",
         "oci_host_posture_collection_must_not_request_oci_credentials",
+    ]
+
+
+def test_oci_host_posture_blocks_collection_boundary_that_requests_oci_credentials() -> None:
+    evidence = _clean_evidence()
+    evidence["collection"] = {
+        "mode": "read_only_local_host",
+        "mutates_oci": False,
+        "mutates_host": False,
+        "secret_boundary": (
+            "Collector does not read secret file contents but requests OCI credentials."
+        ),
+    }
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["evidence.collection_boundary"]
+    collection_check = _check(report, "evidence.collection_boundary")
+    assert collection_check["failures"] == [
+        "oci_host_posture_collection_must_not_request_oci_credentials"
     ]
 
 

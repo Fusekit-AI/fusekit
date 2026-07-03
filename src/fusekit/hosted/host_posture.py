@@ -307,7 +307,7 @@ def collect_oci_host_posture_evidence(
             "secret_boundary": (
                 "Collector records service names, ports, file metadata, systemd hardening, "
                 "scanner summaries, and hosted verifier status only. It does not read secret "
-                "file contents or request OCI credentials."
+                "file contents and does not request OCI credentials."
             ),
         },
     }
@@ -1561,7 +1561,7 @@ def _collection_boundary_check(evidence: Mapping[str, object]) -> dict[str, obje
         failures.append("oci_host_posture_collection_must_not_mutate_host")
     if "does not read secret file contents" not in boundary:
         failures.append("oci_host_posture_collection_must_not_read_secret_contents")
-    if "oci credentials" not in boundary:
+    if "does not request oci credentials" not in boundary:
         failures.append("oci_host_posture_collection_must_not_request_oci_credentials")
     if failures:
         return _fail(
