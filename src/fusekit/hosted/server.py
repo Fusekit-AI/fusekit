@@ -22,6 +22,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from fusekit.errors import FuseKitError
 from fusekit.hosted.billing import (
     HOSTED_PAYMENT_SCHEMA_VERSION,
+    STRIPE_CHECKOUT_METADATA_KEYS,
     STRIPE_CHECKOUT_PROVIDER,
     HostedPaymentConfig,
     create_stripe_checkout_session,
@@ -2686,6 +2687,7 @@ def _payment_receipt_is_paid_checkout(receipt: dict[str, object]) -> bool:
     session_id = receipt.get("checkout_session_id")
     amount_total = receipt.get("amount_total")
     currency = receipt.get("currency")
+    metadata = receipt.get("metadata")
     return (
         receipt.get("schema_version") == HOSTED_PAYMENT_SCHEMA_VERSION
         and receipt.get("provider") == STRIPE_CHECKOUT_PROVIDER
@@ -2700,6 +2702,11 @@ def _payment_receipt_is_paid_checkout(receipt: dict[str, object]) -> bool:
         and isinstance(currency, str)
         and currency.isalpha()
         and len(currency) == 3
+        and isinstance(metadata, dict)
+        and all(
+            isinstance(metadata.get(key), str) and metadata.get(key)
+            for key in STRIPE_CHECKOUT_METADATA_KEYS
+        )
     )
 
 
