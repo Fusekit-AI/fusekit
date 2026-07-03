@@ -15,6 +15,7 @@ from ipaddress import ip_address
 from pathlib import Path
 
 from fusekit.errors import FuseKitError
+from fusekit.hosted.runtime_secrets import HOSTED_RUNTIME_SECRET_VERIFY_SCHEMA_VERSION
 from fusekit.security import contains_durable_secret_text, redact_public_text
 
 OCI_HOST_POSTURE_EVIDENCE_SCHEMA_VERSION = "fusekit.oci-host-posture-evidence.v1"
@@ -53,6 +54,7 @@ OCI_HOST_POSTURE_ALLOWED_EVIDENCE_KEYS = frozenset(
         "ssh_ingress",
         "runtime_secret_dir",
         "runtime_secret_file",
+        "runtime_secret_verify",
         "patch_posture",
         "cis_baseline",
         "rootkit_scan",
@@ -100,6 +102,23 @@ OCI_HOST_POSTURE_PUBLIC_GIT_SHA_KEYS = frozenset(
     }
 )
 OCI_HOST_POSTURE_SECRET_METADATA_KEYS = frozenset({"path", "owner", "group", "mode"})
+OCI_HOST_POSTURE_RUNTIME_SECRET_VERIFY_KEYS = frozenset(
+    {
+        "schema_version",
+        "mode",
+        "mutates_host",
+        "mutates_provider",
+        "ready",
+        "ready_for_managed_payment_staging",
+        "blockers",
+        "secret_file",
+        "required_runtime_env",
+        "stripe_runtime_env",
+        "key_inventory",
+        "next_actions",
+        "secret_boundary",
+    }
+)
 OCI_HOST_POSTURE_PATCH_POSTURE_KEYS = frozenset(
     {"pending_security_updates", "reboot_required"}
 )
@@ -159,6 +178,7 @@ def collect_oci_host_posture_evidence(
     hosted_verify_report: Mapping[str, object] | None = None,
     dns_report: Mapping[str, object] | None = None,
     release_receipt: Mapping[str, object] | None = None,
+    runtime_secret_verify_report: Mapping[str, object] | None = None,
     rollback_metadata: Mapping[str, object] | None = None,
     cis_summary: Mapping[str, object] | None = None,
     rootkit_summary: Mapping[str, object] | None = None,
@@ -180,6 +200,7 @@ def collect_oci_host_posture_evidence(
         "ssh_ingress": redact_public_text(ssh_ingress or os.getenv("FUSEKIT_SSH_INGRESS", "")),
         "runtime_secret_dir": _collect_runtime_secret_dir(runner),
         "runtime_secret_file": _collect_runtime_secret_file(runner),
+        "runtime_secret_verify": _sanitize_summary(runtime_secret_verify_report),
         "patch_posture": _collect_patch_posture(runner, exists),
         "cis_baseline": _sanitize_summary(cis_summary),
         "rootkit_scan": _sanitize_summary(rootkit_summary),
@@ -213,6 +234,7 @@ def evaluate_oci_host_posture(evidence: Mapping[str, object]) -> dict[str, objec
         _public_ports_check(evidence),
         _runtime_secret_dir_check(evidence),
         _runtime_secret_file_check(evidence),
+        _runtime_secret_verify_check(evidence),
         _patch_check(evidence),
         _baseline_check(evidence),
         _rootkit_check(evidence),
@@ -269,6 +291,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dns-report", default="", help="Path to redacted DNS propagation JSON")
     parser.add_argument("--release-receipt", default="", help="Path to OCI release receipt JSON")
     parser.add_argument(
+        "--runtime-secret-verify-report",
+        default="",
+        help="Path to redacted fusekit-hosted-runtime-secret-plan --verify-file JSON",
+    )
+    parser.add_argument(
         "--rollback-metadata",
         default="",
         help="Path to redacted rollback metadata JSON",
@@ -300,6 +327,10 @@ def main(argv: list[str] | None = None) -> int:
                 release_receipt=_read_optional_json(
                     args.release_receipt,
                     required=bool(args.release_receipt),
+                ),
+                runtime_secret_verify_report=_read_optional_json(
+                    args.runtime_secret_verify_report,
+                    required=bool(args.runtime_secret_verify_report),
                 ),
                 rollback_metadata=_read_optional_json(
                     args.rollback_metadata,
@@ -721,6 +752,13 @@ def _evidence_shape_check(evidence: Mapping[str, object]) -> dict[str, object]:
     unexpected.extend(
         _unexpected_nested_keys(
             evidence,
+            "runtime_secret_verify",
+            OCI_HOST_POSTURE_RUNTIME_SECRET_VERIFY_KEYS,
+        )
+    )
+    unexpected.extend(
+        _unexpected_nested_keys(
+            evidence,
             "patch_posture",
             OCI_HOST_POSTURE_PATCH_POSTURE_KEYS,
         )
@@ -896,6 +934,38 @@ def _runtime_secret_file_check(evidence: Mapping[str, object]) -> dict[str, obje
             "Move runtime secrets to /etc/fusekit/hosted-secrets.env owned by root:root mode 0600.",
         )
     return _ok("host.runtime_secret_file")
+
+
+def _runtime_secret_verify_check(evidence: Mapping[str, object]) -> dict[str, object]:
+    report = _mapping(evidence.get("runtime_secret_verify"))
+    key_inventory = _mapping(report.get("key_inventory"))
+    failures: list[str] = []
+    if report.get("schema_version") != HOSTED_RUNTIME_SECRET_VERIFY_SCHEMA_VERSION:
+        failures.append("oci_host_runtime_secret_verify_schema_invalid")
+    if report.get("ready") is not True:
+        failures.append("oci_host_runtime_secret_verify_not_ready")
+    if report.get("ready_for_managed_payment_staging") is not True:
+        failures.append("oci_host_runtime_secret_payment_staging_not_ready")
+    if _string_list(report.get("blockers")):
+        failures.append("oci_host_runtime_secret_verify_has_blockers")
+    if _string_list(key_inventory.get("missing")):
+        failures.append("oci_host_runtime_secret_required_keys_missing")
+    if _string_list(key_inventory.get("unexpected_keys")):
+        failures.append("oci_host_runtime_secret_unexpected_keys")
+    boundary = _public_str(report.get("secret_boundary")).lower()
+    if "emits no" not in boundary or "secret" not in boundary:
+        failures.append("oci_host_runtime_secret_verify_secret_boundary_missing")
+    if failures:
+        return _fail(
+            "host.runtime_secret_verify",
+            failures,
+            "Attach a ready redacted runtime secret verifier report with no missing or "
+            "unexpected keys before DNS cutover.",
+            runtime_secret_blockers=_public_string_list(report.get("blockers")),
+            missing_keys=_public_string_list(key_inventory.get("missing")),
+            unexpected_keys=_public_string_list(key_inventory.get("unexpected_keys")),
+        )
+    return _ok("host.runtime_secret_verify")
 
 
 def _patch_check(evidence: Mapping[str, object]) -> dict[str, object]:

@@ -22,6 +22,51 @@ from fusekit.security import contains_durable_secret_text
 HOSTED_COMMIT = "ca295a41d9f6d0ef5864f398d94f675a6c9eec11"
 
 
+def _runtime_secret_verify_report() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.hosted-runtime-secret-verify.v1",
+        "mode": "verify",
+        "mutates_host": False,
+        "mutates_provider": False,
+        "ready": True,
+        "ready_for_managed_payment_staging": True,
+        "blockers": [],
+        "secret_file": {
+            "path": "/etc/fusekit/hosted-secrets.env",
+            "exists": True,
+            "regular_file": True,
+            "symlink": False,
+            "mode": "0600",
+            "owner_only": True,
+            "root_owned": True,
+        },
+        "required_runtime_env": {
+            "FUSEKIT_HOSTED_ORIGIN": {"present": True},
+            "FUSEKIT_GITHUB_APP_PRIVATE_KEY": {"present": True},
+        },
+        "stripe_runtime_env": {
+            "FUSEKIT_STRIPE_SECRET_KEY": {
+                "configured": True,
+                "account_mode": "live",
+            },
+        },
+        "key_inventory": {
+            "required_count": 11,
+            "present_required_count": 11,
+            "missing": [],
+            "unexpected_keys": [],
+        },
+        "next_actions": [
+            "Keep FUSEKIT_MANAGED_RUNS_ENABLED=0 until live Checkout proof passes.",
+        ],
+        "secret_boundary": (
+            "This verifier reads metadata and key inventory only. It emits no environment "
+            "values, Stripe secret keys, GitHub App private keys, hosted state or worker "
+            "secrets, OCI credentials, provider credentials, or vault material."
+        ),
+    }
+
+
 def _clean_evidence() -> dict[str, object]:
     return {
         "schema_version": OCI_HOST_POSTURE_EVIDENCE_SCHEMA_VERSION,
@@ -47,6 +92,7 @@ def _clean_evidence() -> dict[str, object]:
             "group": "root",
             "mode": "0600",
         },
+        "runtime_secret_verify": _runtime_secret_verify_report(),
         "patch_posture": {
             "pending_security_updates": 0,
             "reboot_required": False,
@@ -277,6 +323,32 @@ def test_oci_host_posture_blocks_unknown_nested_secret_metadata_fields() -> None
         "oci_host_posture_evidence_has_unknown_fields"
     ]
     assert shape_check["unexpected_fields"] == ["runtime_secret_file.raw_stat_output"]
+
+
+def test_oci_host_posture_blocks_runtime_secret_verifier_drift() -> None:
+    evidence = _clean_evidence()
+    verify_report = evidence["runtime_secret_verify"]
+    assert isinstance(verify_report, dict)
+    verify_report["ready"] = False
+    verify_report["blockers"] = ["runtime_secret_unexpected_key:OPENAI_API_KEY"]
+    key_inventory = verify_report["key_inventory"]
+    assert isinstance(key_inventory, dict)
+    key_inventory["unexpected_keys"] = ["OPENAI_API_KEY"]
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert "host.runtime_secret_verify" in report["blocking_checks"]
+    verify_check = _check(report, "host.runtime_secret_verify")
+    assert verify_check["failures"] == [
+        "oci_host_runtime_secret_verify_not_ready",
+        "oci_host_runtime_secret_verify_has_blockers",
+        "oci_host_runtime_secret_unexpected_keys",
+    ]
+    assert verify_check["runtime_secret_blockers"] == [
+        "runtime_secret_unexpected_key:OPENAI_API_KEY"
+    ]
+    assert verify_check["unexpected_keys"] == ["OPENAI_API_KEY"]
 
 
 def test_oci_host_posture_blocks_unknown_nested_systemd_fields() -> None:
@@ -1071,6 +1143,7 @@ def test_oci_host_posture_collector_builds_validator_ready_redacted_evidence(
             ]
         },
         release_receipt=_clean_evidence()["release_receipt"],
+        runtime_secret_verify_report=_runtime_secret_verify_report(),
         cis_summary={
             "scanner": "lynis",
             "status": "pass",
