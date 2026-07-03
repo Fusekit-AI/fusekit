@@ -179,6 +179,7 @@ def create_stripe_checkout_session(
     )
     receipt = stripe_checkout_session_receipt(response)
     receipt["price_label"] = config.price_label
+    _assert_public_payment_receipt(receipt)
     return receipt
 
 
@@ -200,6 +201,7 @@ def retrieve_stripe_checkout_session(
     )
     receipt = stripe_checkout_session_receipt(response)
     receipt["price_label"] = config.price_label
+    _assert_public_payment_receipt(receipt)
     return receipt
 
 
@@ -208,7 +210,7 @@ def stripe_checkout_session_receipt(payload: dict[str, object]) -> dict[str, obj
 
     session_id = _public_stripe_id(payload.get("id"))
     checkout_url = payload.get("url")
-    return {
+    receipt = {
         "schema_version": HOSTED_PAYMENT_SCHEMA_VERSION,
         "provider": STRIPE_CHECKOUT_PROVIDER,
         "checkout_session_id": session_id,
@@ -227,6 +229,8 @@ def stripe_checkout_session_receipt(payload: dict[str, object]) -> dict[str, obj
             "secret keys, and client secrets are not accepted into FuseKit receipts."
         ),
     }
+    _assert_public_payment_receipt(receipt)
+    return receipt
 
 
 def payment_required_receipt(*, lane: str, price_label: str = "") -> dict[str, object]:
@@ -293,6 +297,12 @@ def _require_stripe_config(config: HostedPaymentConfig) -> None:
         raise FuseKitError("Managed run public price label is not configured.")
     if not config.public_origin.startswith("https://"):
         raise FuseKitError("Hosted payment return origin must be https.")
+
+
+def _assert_public_payment_receipt(receipt: dict[str, object]) -> None:
+    serialized = json.dumps(receipt, sort_keys=True)
+    if contains_durable_secret_text(serialized):
+        raise FuseKitError("stripe_checkout_receipt_contains_secret_text")
 
 
 def _payment_return_url(
