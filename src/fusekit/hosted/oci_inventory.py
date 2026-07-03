@@ -22,6 +22,7 @@ HOSTED_OCI_INVENTORY_MODE = "oci_sdk_read_only_inventory"
 def build_hosted_oci_inventory_report(
     *,
     target_match_count: int,
+    running_instance_count: int | None = None,
     instance: Mapping[str, object] | None = None,
     vnic: Mapping[str, object] | None = None,
     plugins: Sequence[Mapping[str, object]] = (),
@@ -39,6 +40,10 @@ def build_hosted_oci_inventory_report(
     public_vnic = _public_vnic(vnic or {})
     public_plugins = [_public_plugin(plugin) for plugin in plugins]
     public_available_plugins = [_public_available_plugin(plugin) for plugin in available_plugins]
+    running_instances_seen = max(
+        target_match_count if running_instance_count is None else running_instance_count,
+        0,
+    )
     inventory_blockers = _inventory_blockers(
         target_match_count=target_match_count,
         instance=public_instance,
@@ -65,6 +70,22 @@ def build_hosted_oci_inventory_report(
         "inventory_ready": not inventory_blockers,
         "blockers": inventory_blockers,
         "target_match_count": target_match_count,
+        "inventory_scope": {
+            "scans_running_instances": True,
+            "running_instances_seen": running_instances_seen,
+            "target_match_count": target_match_count,
+            "non_target_running_instances_seen": max(
+                running_instances_seen - target_match_count,
+                0,
+            ),
+            "target_selector": dict(HOSTED_OCI_ALLOWED_TARGET_TAGS),
+            "uniqueness_required": True,
+            "cost_visibility": (
+                "Inventory exposes running-instance counts only. Non-target running "
+                "instances are not stopped, deleted, or remediated by this read-only "
+                "collector and should be reviewed separately before broad cost claims."
+            ),
+        },
         "compartments_scanned": max(compartments_scanned, 0),
         "collection_failures": [_public_collection_failure(item) for item in collection_failures],
         "target": {
@@ -146,6 +167,7 @@ def collect_hosted_oci_inventory(
         failures=failures,
     )
     matches: list[dict[str, object]] = []
+    running_instance_count = 0
     for candidate_compartment_id in compartments:
         for instance in _list_instances(
             oci,
@@ -153,6 +175,7 @@ def collect_hosted_oci_inventory(
             compartment_id=candidate_compartment_id,
             failures=failures,
         ):
+            running_instance_count += 1
             if _target_tags_match(_model_value(instance, "freeform_tags")):
                 matches.append(
                     {
@@ -209,6 +232,7 @@ def collect_hosted_oci_inventory(
     )
     return build_hosted_oci_inventory_report(
         target_match_count=len(matches),
+        running_instance_count=running_instance_count,
         instance=instance,
         vnic=vnic,
         plugins=plugins,

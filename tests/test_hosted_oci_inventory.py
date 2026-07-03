@@ -80,6 +80,26 @@ def test_hosted_oci_inventory_builds_redacted_access_plan() -> None:
     assert report["ready"] is True
     assert report["inventory_ready"] is True
     assert report["target_match_count"] == 1
+    assert report["inventory_scope"] == {
+        "scans_running_instances": True,
+        "running_instances_seen": 1,
+        "target_match_count": 1,
+        "non_target_running_instances_seen": 0,
+        "target_selector": {
+            "Application": "FuseKit",
+            "DataBoundary": "fusekit-public-launcher",
+            "Environment": "production",
+            "ManagedBy": "FuseKit",
+            "PiiData": "false",
+            "Role": "hosted-launcher",
+        },
+        "uniqueness_required": True,
+        "cost_visibility": (
+            "Inventory exposes running-instance counts only. Non-target running "
+            "instances are not stopped, deleted, or remediated by this read-only "
+            "collector and should be reviewed separately before broad cost claims."
+        ),
+    }
     assert report["compartments_scanned"] == 3
     assert report["collection_failures"] == []
     assert report["target"]["instance"]["freeform-tags"] == {
@@ -100,6 +120,32 @@ def test_hosted_oci_inventory_builds_redacted_access_plan() -> None:
     assert "should-not-emit" not in serialized
     assert "fingerprint" not in serialized.lower()
     assert not contains_durable_secret_text(serialized)
+
+
+def test_hosted_oci_inventory_reports_non_target_running_instance_counts() -> None:
+    report = build_hosted_oci_inventory_report(
+        target_match_count=1,
+        running_instance_count=3,
+        instance=_instance(),
+        vnic={"public-ip": "129.153.118.11"},
+        image={
+            "display-name": "Canonical-Ubuntu-24.04-Minimal",
+            "operating-system": "Canonical Ubuntu",
+            "operating-system-version": "24.04",
+        },
+        plugins=[{"name": "Compute Instance Run Command", "status": "RUNNING"}],
+        available_plugins=[{"name": "Compute Instance Run Command"}],
+        hosted_verify_report=_hosted_verify(),
+        ssh_probe_status="permission_denied",
+        expected_commit_sha=EXPECTED_COMMIT,
+    )
+
+    assert report["ready"] is True
+    assert report["inventory_scope"]["running_instances_seen"] == 3
+    assert report["inventory_scope"]["non_target_running_instances_seen"] == 2
+    assert "not stopped, deleted, or remediated" in report["inventory_scope"][
+        "cost_visibility"
+    ]
 
 
 def test_hosted_oci_inventory_reports_ambiguous_target_without_details() -> None:
@@ -157,6 +203,8 @@ def test_hosted_oci_inventory_uses_raw_ocids_only_inside_sdk_calls(monkeypatch) 
 
     assert report["ready"] is True
     assert report["target_match_count"] == 1
+    assert report["inventory_scope"]["running_instances_seen"] == 1
+    assert report["inventory_scope"]["non_target_running_instances_seen"] == 0
     assert report["access_plan"]["access"]["allowed_deploy_paths"] == ["ssh_release"]
     assert TENANCY_ID not in serialized
     assert COMPARTMENT_ID not in serialized
