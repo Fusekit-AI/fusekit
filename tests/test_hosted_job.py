@@ -1881,6 +1881,49 @@ def test_hosted_launch_job_to_dict_rejects_payment_receipt_sidecar_drift() -> No
         unsafe_type.to_dict()
 
 
+def test_hosted_launch_job_to_dict_rejects_inconsistent_payment_state_drift() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=MANAGED_FUSEKIT_RUN_LANE,
+        payment_required=True,
+        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        job_id="hosted-test",
+        now=1_700_000_000,
+    )
+    fake_paid = replace(job, payment_status="paid", payment_receipt=None)
+
+    with pytest.raises(FuseKitError, match="paid payment receipt is invalid"):
+        fake_paid.to_dict()
+
+    paid = with_hosted_job_payment_receipt(job, _paid_checkout_receipt(job))
+    mismatched_job = replace(paid, job_id="hosted-other")
+
+    with pytest.raises(FuseKitError, match="paid payment receipt does not match"):
+        mismatched_job.to_dict()
+
+    pending_with_paid_receipt = replace(paid, payment_status="checkout_pending")
+
+    with pytest.raises(FuseKitError, match="payment status does not match receipt"):
+        pending_with_paid_receipt.to_dict()
+
+
+def test_hosted_launch_job_to_dict_rejects_payment_state_for_byo_lane() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-test",
+        now=1_700_000_000,
+    )
+    unsafe = replace(
+        job,
+        payment_status="checkout_pending",
+        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+    )
+
+    with pytest.raises(FuseKitError, match="payment status is invalid for lane"):
+        unsafe.to_dict()
+
+
 def test_hosted_worker_contract_rejects_boolean_github_installation_id() -> None:
     with pytest.raises(FuseKitError, match="github_installation_id"):
         build_hosted_worker_contract(_plan(), github_installation_id=True)
