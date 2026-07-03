@@ -50,6 +50,7 @@
   Shared-account Stripe setup is now repo-native: `fusekit-hosted-stripe-price` dry-runs by default, reads the Stripe secret only from env, requires `--execute --confirm-shared-account` before mutation, creates only FuseKit-scoped Product/Price objects, and prints redacted runtime env values while keeping managed dispatch disabled until live proof passes.
   Hosted payment readiness now publishes and verifies that same Stripe setup contract, including the dry-run default, required mutation flags, shared Snowman AI account boundary, and live-proof gate before `FUSEKIT_MANAGED_RUNS_ENABLED=1`.
   Managed-run price labels now require both a numeric amount and an explicit public currency marker, and the shared Stripe setup docs use single-quoted dollar labels so shell expansion cannot silently turn `$1.00` into an ambiguous `.00` public price.
+  Managed-run Stripe setup now rejects mutations when the public price label does not match the configured Stripe amount and currency, so the browser-visible cost disclosure cannot drift from the Checkout charge.
   The outside-in hosted verifier now validates lane readiness, including the recommended lane and launchable lane list, so public deployments fail verification if the BYO recommendation or paid-lane blocker state drifts.
 - [x] Security invariants are enforced by tests.
 - [x] CLI defaults to real-provider execution; incomplete local rehearsals require explicit opt-in.
