@@ -389,6 +389,27 @@ For release proof, pass the expected Git commit too:
 `fusekit-hosted-verify --origin https://fusekit.snowmanai.org --expected-commit-sha "$(git rev-parse HEAD)"`.
 That fails closed when the public source-provenance contract is healthy but the
 OCI host is still serving an older commit.
+`fusekit-hosted-oci-inventory` is the repo-native read-only OCI evidence
+collector for the permanent launcher host. It uses the local OCI SDK profile to
+list only public inventory for the single FuseKit-tagged launcher, redacts OCI
+OCIDs and credential metadata, collects public instance-agent plugin and
+available-plugin labels, and embeds the same non-mutating access-plan proof:
+
+```zsh
+fusekit-hosted-verify \
+  --origin https://fusekit.snowmanai.org \
+  --expected-commit-sha "$(git rev-parse HEAD)" > hosted-verify.json
+
+fusekit-hosted-oci-inventory \
+  --hosted-verify-report hosted-verify.json \
+  --ssh-probe-status permission_denied \
+  --expected-commit-sha "$(git rev-parse HEAD)" > hosted-oci-inventory.json
+```
+
+The inventory command does not mutate OCI, Cloudflare, Stripe, MailPilot/AWS,
+host files, or generated-app resources, and it does not open SSH sessions or
+run host commands. It fails closed if zero or multiple FuseKit-tagged launcher
+instances are found.
 `fusekit-hosted-oci-access-plan` is the matching plan-only OCI redeploy/access
 preflight. It consumes redacted instance, VNIC, plugin, SSH probe, and hosted
 verifier evidence, confirms the target is the FuseKit-tagged AMD hosted
