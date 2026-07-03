@@ -499,6 +499,13 @@ def hosted_byo_oci_bootstrap(job: HostedLaunchJob) -> dict[str, object]:
             "verifier_contract": {
                 "input_schema": HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION,
                 "output_schema": HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION,
+                "requires_job_binding": True,
+                "job_binding_fields": [
+                    "job_id",
+                    "lane",
+                    "github_source_hash",
+                    "plan_fingerprint",
+                ],
                 "requires_redacted_artifacts": True,
                 "requires_completion_evidence": list(HOSTED_WORKER_PROOF_KEYS),
             },

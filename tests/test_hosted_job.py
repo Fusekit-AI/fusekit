@@ -340,6 +340,13 @@ def test_hosted_byo_bootstrap_publishes_preflight_and_reversibility_contract() -
     assert bootstrap["proof_return"]["verifier_contract"] == {
         "input_schema": HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION,
         "output_schema": HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION,
+        "requires_job_binding": True,
+        "job_binding_fields": [
+            "job_id",
+            "lane",
+            "github_source_hash",
+            "plan_fingerprint",
+        ],
         "requires_redacted_artifacts": True,
         "requires_completion_evidence": [
             "live_url",
@@ -422,6 +429,36 @@ def test_hosted_byo_bootstrap_renders_browser_handoff_page() -> None:
     assert "sk_live" not in html
 
 
+def test_hosted_byo_bootstrap_exposes_proof_job_binding_contract() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    proof_return = bootstrap["proof_return"]
+    assert isinstance(proof_return, dict)
+    verifier = proof_return["verifier_contract"]
+    assert isinstance(verifier, dict)
+
+    assert verifier["requires_job_binding"] is True
+    assert verifier["job_binding_fields"] == [
+        "job_id",
+        "lane",
+        "github_source_hash",
+        "plan_fingerprint",
+    ]
+    assert bootstrap["proof_manifest"]["job_binding"] == {
+        "job_id": "hosted-byo",
+        "lane": BYO_OCI_LANE,
+        "github_source_hash": (
+            "sha256:29c7eead948068a33f22cc20a2dc46cd46721f2842706856d10acf37c03b1c30"
+        ),
+        "plan_fingerprint": job.worker_contract.plan_fingerprint,
+    }
+
+
 def test_hosted_byo_proof_bundle_verifier_accepts_complete_redacted_inventory() -> None:
     job = build_hosted_launch_job(
         _plan(),
@@ -450,6 +487,26 @@ def test_hosted_byo_proof_bundle_verifier_accepts_complete_redacted_inventory() 
     assert "ghs_" not in serialized
     assert "sk_live" not in serialized
     assert "PRIVATE KEY" not in serialized
+
+
+def test_hosted_byo_proof_bundle_verifier_blocks_missing_job_binding() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+    bundle.pop("job_binding")
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+
+    assert report["ready"] is False
+    assert "byo_oci_proof_bundle_job_binding_invalid" in report["blockers"]
+    assert "byo_oci_proof_bundle_job_id_mismatch" in report["blockers"]
+    assert "byo_oci_proof_bundle_github_source_hash_mismatch" in report["blockers"]
+    assert "byo_oci_proof_bundle_plan_fingerprint_mismatch" in report["blockers"]
 
 
 def test_hosted_byo_proof_bundle_verifier_blocks_replayed_job_binding() -> None:
