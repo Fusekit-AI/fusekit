@@ -17,6 +17,7 @@ from typing import Any, Protocol
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.billing import (
+    HOSTED_PAYMENT_SCHEMA_VERSION,
     HOSTED_STRIPE_PRICE_LOOKUP_POLICY,
     HOSTED_STRIPE_PRICE_SETUP_HELPER,
     HOSTED_STRIPE_PRICE_SETUP_MODULE,
@@ -25,6 +26,8 @@ from fusekit.hosted.billing import (
     HOSTED_STRIPE_PRICE_VERIFY_MODULE,
     HOSTED_STRIPE_SETUP_SECRET_BOUNDARY,
     HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY,
+    STRIPE_CHECKOUT_METADATA_KEYS,
+    STRIPE_CHECKOUT_PROVIDER,
     _valid_price_label,
 )
 from fusekit.hosted.evidence import HOSTED_COMPLETION_EVIDENCE_KEYS
@@ -55,6 +58,7 @@ from fusekit.hosted.server import (
     HOSTED_CAPABILITY_VAULT_BOUNDARY,
     HOSTED_DEPLOYMENT_SCHEMA_VERSION,
     HOSTED_GENERIC_OPERATOR_SETUP_STEPS,
+    HOSTED_LANE_READINESS_SCHEMA_VERSION,
     HOSTED_OCI_OPERATOR_SETUP_STEPS,
     HOSTED_OCI_SOURCE_PROVENANCE_ENV,
     HOSTED_OPERATOR_SETUP_STEPS,
@@ -123,7 +127,14 @@ WORKER_DISPATCH_IDEMPOTENCY_STORAGE_KEYS = frozenset(
     {"exists", "directory", "symlink", "mode", "private_enough", "writable"}
 )
 CLOUDFLARE_DNS_CONTRACT_KEYS = frozenset(
-    {"zone", "record_name", "record_type", "record_value", "dry_run_policy"}
+    {
+        "zone",
+        "record_name",
+        "record_type",
+        "record_value",
+        "verification",
+        "dry_run_policy",
+    }
 )
 CLOUDFLARE_DNS_DRY_RUN_POLICY_KEYS = frozenset(
     {"allowed_actions", "allowed_fqdn", "forbidden_records", "requires_visible_approval"}
@@ -135,6 +146,80 @@ ROLLBACK_REQUIREMENTS_KEYS = frozenset(
         "post_rollback_verification_required",
         "provider_inventory_required",
         "secret_boundary",
+    }
+)
+LANE_READINESS_KEYS = frozenset(
+    {
+        "schema_version",
+        "default_lane",
+        "recommended_lane",
+        "launchable_lanes",
+        "lanes",
+        "cost_policy",
+        "secret_boundary",
+    }
+)
+MANAGED_LANE_READINESS_KEYS = frozenset(
+    {
+        "launchable",
+        "requires_payment",
+        "managed_worker_dispatch_allowed",
+        "blocking_checks",
+        "next_actions",
+    }
+)
+BYO_LANE_READINESS_KEYS = frozenset(
+    {
+        "launchable",
+        "requires_payment",
+        "managed_worker_dispatch_allowed",
+        "requires_user_cloud_account",
+        "user_owned_cost_boundary",
+        "security_contract",
+        "blocking_checks",
+        "next_actions",
+    }
+)
+PAYMENT_READINESS_KEYS = frozenset(
+    {
+        "schema_version",
+        "provider",
+        "enabled",
+        "managed_runs_enabled",
+        "secret_key_configured",
+        "account_mode",
+        "live_mode_configured",
+        "test_mode_allowed",
+        "price_configured",
+        "price_label_configured",
+        "price_label",
+        "required_for_lanes",
+        "mode",
+        "cost_controls",
+        "operator_setup",
+        "secret_boundary",
+    }
+)
+PAYMENT_COST_CONTROL_KEYS = frozenset(
+    {
+        "max_unverified_managed_spend_cents",
+        "dispatch_requires_paid_checkout_session",
+        "reuse_across_jobs_allowed",
+        "session_binding",
+    }
+)
+PAYMENT_OPERATOR_SETUP_KEYS = frozenset(
+    {
+        "helper_command",
+        "verification_command",
+        "module_fallback",
+        "verification_module_fallback",
+        "dry_run_default",
+        "mutation_requires",
+        "lookup_key_policy",
+        "shared_account_boundary",
+        "secret_boundary",
+        "managed_runs_enable_after",
     }
 )
 
@@ -744,6 +829,13 @@ def _hosted_runtime_contract_failures(
             failures.append("cloudflare_record_name_mismatch")
         if cloudflare_dns.get("record_type") != _expected_cloudflare_record_type(provider):
             failures.append("cloudflare_record_type_mismatch")
+        verification = cloudflare_dns.get("verification")
+        if (
+            not isinstance(verification, str)
+            or "must serve this app" not in verification
+            or "Cloudflare error page" not in verification
+        ):
+            failures.append("cloudflare_verification_mismatch")
         dry_run_policy = cloudflare_dns.get("dry_run_policy")
         expected_dry_run_policy = {
             "allowed_actions": ["create", "update", "upsert", "noop"],
@@ -1395,6 +1487,12 @@ def _lane_readiness_failures(value: object) -> list[str]:
     if not isinstance(value, dict):
         return ["lane_readiness_missing"]
     failures: list[str] = []
+    failures.extend(
+        f"lane_readiness_unexpected_field:{field}"
+        for field in _unexpected_keys(value, LANE_READINESS_KEYS)
+    )
+    if value.get("schema_version") != HOSTED_LANE_READINESS_SCHEMA_VERSION:
+        failures.append("lane_readiness_schema_mismatch")
     if value.get("default_lane") != MANAGED_FUSEKIT_RUN_LANE:
         failures.append("lane_readiness_default_lane_mismatch")
     launchable_lanes = value.get("launchable_lanes")
@@ -1433,6 +1531,12 @@ def _lane_readiness_failures(value: object) -> list[str]:
     lanes = value.get("lanes")
     if not isinstance(lanes, dict):
         return failures + ["lane_readiness_lanes_missing"]
+    unexpected_lane_ids = sorted(
+        str(lane_id)
+        for lane_id in lanes
+        if str(lane_id) not in {MANAGED_FUSEKIT_RUN_LANE, BYO_OCI_LANE}
+    )
+    failures.extend(f"lane_readiness_unexpected_lane:{lane_id}" for lane_id in unexpected_lane_ids)
     managed = lanes.get(MANAGED_FUSEKIT_RUN_LANE)
     byo = lanes.get(BYO_OCI_LANE)
     if not isinstance(managed, dict):
@@ -1458,6 +1562,10 @@ def _managed_lane_readiness_failures(
     launchable_lanes: list[object],
 ) -> list[str]:
     failures: list[str] = []
+    failures.extend(
+        f"lane_readiness_managed_unexpected_field:{field}"
+        for field in _unexpected_keys(lane, MANAGED_LANE_READINESS_KEYS)
+    )
     launchable = lane.get("launchable")
     if lane.get("requires_payment") is not True:
         failures.append("lane_readiness_managed_payment_not_required")
@@ -1482,6 +1590,10 @@ def _byo_lane_readiness_failures(
     launchable_lanes: list[object],
 ) -> list[str]:
     failures: list[str] = []
+    failures.extend(
+        f"lane_readiness_byo_unexpected_field:{field}"
+        for field in _unexpected_keys(lane, BYO_LANE_READINESS_KEYS)
+    )
     launchable = lane.get("launchable")
     if lane.get("requires_payment") is not False:
         failures.append("lane_readiness_byo_payment_required")
@@ -1509,7 +1621,13 @@ def _payment_readiness_failures(value: object, lane_readiness: object) -> list[s
     if not isinstance(value, dict):
         return ["payment_readiness_missing"]
     failures: list[str] = []
-    if value.get("provider") != "stripe-checkout":
+    failures.extend(
+        f"payment_readiness_unexpected_field:{field}"
+        for field in _unexpected_keys(value, PAYMENT_READINESS_KEYS)
+    )
+    if value.get("schema_version") != HOSTED_PAYMENT_SCHEMA_VERSION:
+        failures.append("payment_readiness_schema_mismatch")
+    if value.get("provider") != STRIPE_CHECKOUT_PROVIDER:
         failures.append("payment_readiness_provider_mismatch")
     if value.get("mode") != "payment":
         failures.append("payment_readiness_mode_mismatch")
@@ -1544,7 +1662,39 @@ def _payment_readiness_failures(value: object, lane_readiness: object) -> list[s
             failures.append("payment_readiness_blocked_lane_price_label_flag_mismatch")
         if not _valid_public_price_label(label):
             failures.append("payment_readiness_price_label_invalid")
+    failures.extend(_payment_cost_control_failures(value.get("cost_controls")))
     failures.extend(_payment_operator_setup_failures(value.get("operator_setup")))
+    secret_boundary = value.get("secret_boundary")
+    if not _contains_all_markers(
+        secret_boundary,
+        (
+            "Stripe secret keys",
+            "card numbers",
+            "payment method ids",
+            "Stripe client secrets",
+        ),
+    ):
+        failures.append("payment_readiness_secret_boundary_mismatch")
+    return failures
+
+
+def _payment_cost_control_failures(value: object) -> list[str]:
+    if not isinstance(value, dict):
+        return ["payment_cost_controls_missing"]
+    failures: list[str] = []
+    failures.extend(
+        f"payment_cost_controls_unexpected_field:{field}"
+        for field in _unexpected_keys(value, PAYMENT_COST_CONTROL_KEYS)
+    )
+    if value.get("max_unverified_managed_spend_cents") != 0:
+        failures.append("payment_cost_controls_unverified_spend_mismatch")
+    if value.get("dispatch_requires_paid_checkout_session") is not True:
+        failures.append("payment_cost_controls_paid_checkout_required_mismatch")
+    if value.get("reuse_across_jobs_allowed") is not False:
+        failures.append("payment_cost_controls_reuse_policy_mismatch")
+    expected_binding = ["client_reference_id", *STRIPE_CHECKOUT_METADATA_KEYS]
+    if value.get("session_binding") != expected_binding:
+        failures.append("payment_cost_controls_session_binding_mismatch")
     return failures
 
 
@@ -1552,6 +1702,10 @@ def _payment_operator_setup_failures(value: object) -> list[str]:
     if not isinstance(value, dict):
         return ["payment_operator_setup_missing"]
     failures: list[str] = []
+    failures.extend(
+        f"payment_operator_setup_unexpected_field:{field}"
+        for field in _unexpected_keys(value, PAYMENT_OPERATOR_SETUP_KEYS)
+    )
     if value.get("helper_command") != HOSTED_STRIPE_PRICE_SETUP_HELPER:
         failures.append("payment_operator_setup_helper_mismatch")
     if value.get("verification_command") != HOSTED_STRIPE_PRICE_VERIFY_HELPER:

@@ -666,6 +666,92 @@ def test_verify_hosted_deployment_requires_lane_cost_and_secret_boundary() -> No
     ]
 
 
+def test_verify_hosted_deployment_rejects_lane_readiness_sidecars() -> None:
+    readiness = _readiness_contract()
+    lane_readiness = readiness["lane_readiness"]
+    assert isinstance(lane_readiness, dict)
+    lane_readiness["raw_oci_tenancy"] = "ocid1.tenancy.oc1..not-for-browser"
+    lanes = lane_readiness["lanes"]
+    assert isinstance(lanes, dict)
+    lanes["internal-preview"] = {"launchable": True}
+    managed = lanes[MANAGED_FUSEKIT_RUN_LANE]
+    byo = lanes[BYO_OCI_LANE]
+    assert isinstance(managed, dict)
+    assert isinstance(byo, dict)
+    managed["stripe_price_id"] = "price_live_sidecar"
+    byo["worker_ocid"] = "ocid1.instance.oc1..not-for-browser"
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            readiness,
+            _deployment_contract(),
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["hosted.readiness"]["status"] == "failed"
+    failures = checks["hosted.readiness"]["failures"]
+    assert "lane_readiness_unexpected_field:raw_oci_tenancy" in failures
+    assert "lane_readiness_unexpected_lane:internal-preview" in failures
+    assert "lane_readiness_managed_unexpected_field:stripe_price_id" in failures
+    assert "lane_readiness_byo_unexpected_field:worker_ocid" in failures
+
+
+def test_verify_hosted_deployment_requires_payment_cost_control_contract() -> None:
+    readiness = _readiness_contract()
+    payment = readiness["payment"]
+    assert isinstance(payment, dict)
+    payment["stripe_customer_id"] = "cus_hidden_sidecar"
+    payment["secret_boundary"] = "Stripe is configured."
+    cost_controls = payment["cost_controls"]
+    assert isinstance(cost_controls, dict)
+    cost_controls["max_unverified_managed_spend_cents"] = 100
+    cost_controls["dispatch_requires_paid_checkout_session"] = False
+    cost_controls["reuse_across_jobs_allowed"] = True
+    cost_controls["session_binding"] = ["client_reference_id", "job_id"]
+    cost_controls["raw_checkout_session"] = "cs_live_not-for-readiness"
+    operator_setup = payment["operator_setup"]
+    assert isinstance(operator_setup, dict)
+    operator_setup["stripe_dashboard_url"] = "https://dashboard.stripe.com"
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            readiness,
+            _deployment_contract(),
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["hosted.readiness"]["status"] == "failed"
+    failures = checks["hosted.readiness"]["failures"]
+    assert "payment_readiness_unexpected_field:stripe_customer_id" in failures
+    assert "payment_readiness_secret_boundary_mismatch" in failures
+    assert "payment_cost_controls_unexpected_field:raw_checkout_session" in failures
+    assert "payment_cost_controls_unverified_spend_mismatch" in failures
+    assert "payment_cost_controls_paid_checkout_required_mismatch" in failures
+    assert "payment_cost_controls_reuse_policy_mismatch" in failures
+    assert "payment_cost_controls_session_binding_mismatch" in failures
+    assert "payment_operator_setup_unexpected_field:stripe_dashboard_url" in failures
+
+
 def test_verify_hosted_deployment_rejects_managed_lane_without_price_label() -> None:
     readiness = _readiness_contract()
     lane_readiness = readiness["lane_readiness"]
@@ -2277,6 +2363,8 @@ def _payment_contract() -> dict[str, object]:
                 "lane",
                 "github_source_hash",
                 "plan_fingerprint",
+                "stripe_price_id_hash",
+                "price_label_hash",
             ],
         },
         "operator_setup": {
@@ -2291,6 +2379,11 @@ def _payment_contract() -> dict[str, object]:
             "secret_boundary": HOSTED_STRIPE_SETUP_SECRET_BOUNDARY,
             "managed_runs_enable_after": "live Checkout proof and worker-dispatch acceptance pass",
         },
+        "secret_boundary": (
+            "Stripe secret keys stay server-side. FuseKit never collects or renders card "
+            "numbers, CVC, billing address fields, payment method ids, or Stripe client "
+            "secrets in hosted pages, job tokens, receipts, or logs."
+        ),
     }
 
 
@@ -2493,6 +2586,7 @@ def _deployment_contract() -> dict[str, object]:
             "zone": "snowmanai.org",
             "record_name": "fusekit",
             "record_type": "CNAME",
+            "verification": "The subdomain must serve this app, not a Cloudflare error page.",
             "dry_run_policy": {
                 "allowed_actions": ["create", "update", "upsert", "noop"],
                 "allowed_fqdn": "fusekit.snowmanai.org",
