@@ -156,6 +156,20 @@ def test_hosted_launch_job_rejects_unknown_lane_instead_of_defaulting_managed() 
         )
 
 
+def test_hosted_payment_receipt_rejects_unexpected_metadata() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    receipt = _paid_checkout_receipt(job)
+    metadata = receipt["metadata"]
+    assert isinstance(metadata, dict)
+    metadata["provider_token"] = "not-allowed-here"
+
+    with pytest.raises(
+        FuseKitError,
+        match="Hosted launch payment metadata contains unexpected field",
+    ):
+        with_hosted_job_payment_receipt(job, receipt)
+
+
 def test_hosted_worker_contract_rejects_unknown_lane() -> None:
     with pytest.raises(FuseKitError, match="Hosted launch lane is invalid"):
         build_hosted_worker_contract(

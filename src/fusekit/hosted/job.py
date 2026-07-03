@@ -2975,6 +2975,9 @@ def _public_payment_metadata(metadata: dict[str, object]) -> dict[str, str]:
         "stripe_price_id_hash",
         "price_label_hash",
     }
+    unexpected = sorted(str(key) for key in metadata if key not in allowed)
+    if unexpected:
+        raise FuseKitError("Hosted launch payment metadata contains unexpected field.")
     result: dict[str, str] = {}
     for key in allowed:
         value = metadata.get(key)

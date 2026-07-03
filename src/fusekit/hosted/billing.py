@@ -398,6 +398,9 @@ def _public_status(value: object) -> str:
 def _public_metadata(value: object) -> dict[str, str]:
     if not isinstance(value, dict):
         return {}
+    unexpected = sorted(str(key) for key in value if key not in STRIPE_CHECKOUT_METADATA_KEYS)
+    if unexpected:
+        raise FuseKitError("stripe_checkout_metadata_unexpected_field")
     result: dict[str, str] = {}
     for key in STRIPE_CHECKOUT_METADATA_KEYS:
         metadata_value = value.get(key)
