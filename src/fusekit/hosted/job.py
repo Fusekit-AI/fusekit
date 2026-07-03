@@ -919,12 +919,16 @@ def verify_hosted_byo_oci_proof_bundle(
     for artifact in artifacts:
         path = str(artifact["path"])
         expected_label = required_artifacts.get(path)
-        if expected_label is not None and artifact.get("label") != expected_label:
+        if expected_label is None:
+            artifact["label"] = ""
+        elif artifact.get("label") != expected_label:
             blockers.append(f"artifact_label_mismatch:{path}")
+            artifact["label"] = ""
         if artifact.get("redacted") is not True:
             blockers.append(f"artifact_not_marked_redacted:{path}")
         if not _valid_sha256_label(str(artifact.get("sha256", ""))):
             blockers.append(f"artifact_sha256_invalid:{path}")
+            artifact["sha256"] = ""
     evidence = _public_completion_evidence(bundle.get("completion_evidence"), blockers=blockers)
     missing_evidence = [key for key in HOSTED_WORKER_PROOF_KEYS if evidence.get(key) is not True]
     blockers.extend(f"missing_completion_evidence:{key}" for key in missing_evidence)

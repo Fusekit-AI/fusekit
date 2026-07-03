@@ -749,6 +749,42 @@ def test_hosted_byo_proof_bundle_verifier_blocks_unsafe_artifact_label_and_hash(
     assert "sk_live_not_real" not in serialized
 
 
+def test_hosted_byo_proof_bundle_verifier_redacts_mismatched_label_and_invalid_hash() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+    artifacts = bundle["artifacts"]
+    assert isinstance(artifacts, list)
+    artifact = artifacts[0]
+    assert isinstance(artifact, dict)
+    path = str(artifact["path"])
+    artifact["label"] = "operator note with raw log summary"
+    artifact["sha256"] = "not-a-sha-label"
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+    serialized = json.dumps(report, sort_keys=True)
+    artifact_summary = report["artifact_summary"]
+    assert isinstance(artifact_summary, dict)
+    public_artifacts = artifact_summary["artifacts"]
+    assert isinstance(public_artifacts, list)
+    public_artifact = next(
+        item for item in public_artifacts if isinstance(item, dict) and item["path"] == path
+    )
+
+    assert report["ready"] is False
+    assert f"artifact_label_mismatch:{path}" in report["blockers"]
+    assert f"artifact_sha256_invalid:{path}" in report["blockers"]
+    assert public_artifact["label"] == ""
+    assert public_artifact["sha256"] == ""
+    assert "operator note with raw log summary" not in serialized
+    assert "not-a-sha-label" not in serialized
+
+
 def test_hosted_byo_proof_bundle_verifier_blocks_sidecar_fields() -> None:
     job = build_hosted_launch_job(
         _plan(),
