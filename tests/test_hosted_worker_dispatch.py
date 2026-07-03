@@ -36,6 +36,15 @@ class FakeSpawner:
         return FakeSpawned()
 
 
+class BooleanPidSpawned:
+    pid = True
+
+
+class BooleanPidSpawner:
+    def __call__(self, args: tuple[str, ...], env: dict[str, str]) -> BooleanPidSpawned:
+        return BooleanPidSpawned()
+
+
 def test_verify_hosted_worker_dispatch_accepts_signed_envelope_without_leaks() -> None:
     body = _dispatch_body(action="start")
     dispatch = verify_hosted_worker_dispatch(
@@ -307,6 +316,26 @@ def test_accept_hosted_worker_dispatch_spawns_env_backed_worker_and_redacts_rece
     assert WORKER_SECRET not in serialized
     assert "signed-public-job-token" not in serialized
     assert "sha256=" not in serialized
+
+
+def test_accept_hosted_worker_dispatch_redacts_boolean_spawn_pid() -> None:
+    body = _dispatch_body(action="rollback")
+    dispatch = verify_hosted_worker_dispatch(
+        body,
+        signature=_signature(body),
+        schema=HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+        secret=WORKER_SECRET,
+    )
+    settings = HostedWorkerDispatchSettings(
+        worker_secret=WORKER_SECRET,
+        worker_id="worker-01",
+        spawner=BooleanPidSpawner(),
+    )
+
+    receipt = accept_hosted_worker_dispatch(dispatch, settings=settings)
+
+    assert receipt["accepted"] is True
+    assert receipt["spawned"] == {"pid": None}
 
 
 def test_accept_hosted_worker_dispatch_is_idempotent_per_job_action(tmp_path: Path) -> None:

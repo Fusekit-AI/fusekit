@@ -645,7 +645,15 @@ def _spawn_worker(args: tuple[str, ...], env: dict[str, str]) -> subprocess.Pope
 
 def _public_spawn_label(spawned: object) -> dict[str, object]:
     pid = getattr(spawned, "pid", None)
-    return {"pid": pid if isinstance(pid, int) and pid > 0 else None}
+    return {
+        "pid": (
+            pid
+            if isinstance(pid, int)
+            and not isinstance(pid, bool)
+            and pid > 0
+            else None
+        )
+    }
 
 
 def _response(
