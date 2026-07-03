@@ -817,6 +817,17 @@ def test_oci_host_posture_blocks_hosted_verify_sidecars() -> None:
     hosted_verify = evidence["hosted_verify"]
     assert isinstance(hosted_verify, dict)
     hosted_verify["raw_deployment_payload"] = {"provider": "oci"}
+    hosted_verify["checks"] = [
+        {
+            "id": "hosted.deployment",
+            "url": "https://fusekit.snowmanai.org/api/hosted/deployment",
+            "status": "ok",
+            "http_status": 200,
+            "schema_version": "fusekit.hosted-deployment.v1",
+            "failures": [],
+            "raw_response_body": '{"schema_version":"fusekit.hosted-deployment.v1"}',
+        }
+    ]
     provenance = hosted_verify["source_provenance"]
     assert isinstance(provenance, dict)
     provenance["raw_env"] = "FUSEKIT_OCI_DEPLOYMENT_URL=https://example.com"
@@ -833,6 +844,7 @@ def test_oci_host_posture_blocks_hosted_verify_sidecars() -> None:
         "oci_host_posture_evidence_has_unknown_fields"
     ]
     assert shape_check["unexpected_fields"] == [
+        "hosted_verify.checks[0].raw_response_body",
         "hosted_verify.raw_deployment_payload",
         "hosted_verify.source_provenance.actual.response_header_dump",
         "hosted_verify.source_provenance.raw_env",

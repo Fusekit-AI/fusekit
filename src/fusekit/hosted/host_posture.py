@@ -180,6 +180,22 @@ OCI_HOST_POSTURE_HOSTED_VERIFY_SOURCE_PROVENANCE_KEYS = frozenset(
 OCI_HOST_POSTURE_HOSTED_VERIFY_SOURCE_PROVENANCE_ROW_KEYS = frozenset(
     {"commit_sha"}
 )
+OCI_HOST_POSTURE_HOSTED_VERIFY_CHECK_KEYS = frozenset(
+    {
+        "id",
+        "url",
+        "status",
+        "http_status",
+        "schema_version",
+        "failures",
+        "hostname",
+        "addresses",
+        "expected_commit_sha",
+        "actual_commit_sha",
+        "diagnosis",
+        "next_action",
+    }
+)
 OCI_HOST_POSTURE_CIS_BASELINE_KEYS = frozenset(
     {"scanner", "status", "critical_findings", "high_findings"}
 )
@@ -998,16 +1014,29 @@ def _unexpected_hosted_verify_keys(evidence: Mapping[str, object]) -> list[str]:
     report = evidence.get("hosted_verify")
     if not isinstance(report, Mapping):
         return []
+    unexpected: list[str] = []
+    checks = report.get("checks")
+    if isinstance(checks, Sequence) and not isinstance(checks, (str, bytes)):
+        for index, row in enumerate(checks):
+            if not isinstance(row, Mapping):
+                continue
+            unexpected.extend(
+                f"hosted_verify.checks[{index}].{key}"
+                for key in _unexpected_keys(
+                    row,
+                    OCI_HOST_POSTURE_HOSTED_VERIFY_CHECK_KEYS,
+                )
+            )
     provenance = report.get("source_provenance")
     if not isinstance(provenance, Mapping):
-        return []
-    unexpected = [
+        return unexpected
+    unexpected.extend(
         f"hosted_verify.source_provenance.{key}"
         for key in _unexpected_keys(
             provenance,
             OCI_HOST_POSTURE_HOSTED_VERIFY_SOURCE_PROVENANCE_KEYS,
         )
-    ]
+    )
     for section in OCI_HOST_POSTURE_HOSTED_VERIFY_SOURCE_PROVENANCE_KEYS:
         row = provenance.get(section)
         if isinstance(row, Mapping):
