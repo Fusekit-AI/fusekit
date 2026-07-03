@@ -20,7 +20,15 @@ from fusekit.hosted.billing import (
     HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY,
 )
 from fusekit.hosted.github_app import GitHubAppConfig
-from fusekit.hosted.job import create_hosted_job_token, with_hosted_job_payment_receipt
+from fusekit.hosted.job import (
+    HOSTED_BYO_OCI_HANDOFF_PREFLIGHT,
+    HOSTED_BYO_OCI_HANDOFF_PREFLIGHT_SCHEMA_VERSION,
+    HOSTED_BYO_OCI_REVERSIBILITY_SCHEMA_VERSION,
+    HOSTED_BYO_OCI_REVERSIBILITY_SURVIVORS,
+    HOSTED_BYO_OCI_REVERSIBILITY_TARGETS,
+    create_hosted_job_token,
+    with_hosted_job_payment_receipt,
+)
 from fusekit.hosted.lanes import BYO_OCI_LANE, MANAGED_FUSEKIT_RUN_LANE
 from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY, HOSTED_PROHIBITED_ACTIONS
 from fusekit.hosted.server import (
@@ -2155,6 +2163,25 @@ def test_hosted_byo_oci_lane_starts_without_managed_worker_dispatch() -> None:
             "recording",
         ],
     }
+    assert bootstrap["handoff_preflight"] == {
+        "schema_version": HOSTED_BYO_OCI_HANDOFF_PREFLIGHT_SCHEMA_VERSION,
+        "must_be_visible_before_cloud_shell": True,
+        "checks": [dict(check) for check in HOSTED_BYO_OCI_HANDOFF_PREFLIGHT],
+        "cost_acknowledgement": {
+            "required": True,
+            "spend_owner": "user_oci_tenancy",
+            "fusekit_fee": "none_for_byo_oci",
+            "oracle_billing_gate_owner": "oracle_cloud",
+            "statement": (
+                "Starting BYO OCI can create Oracle Cloud resources in the user's tenancy; "
+                "FuseKit-managed infrastructure spend remains zero."
+            ),
+        },
+        "secret_boundary": (
+            "BYO preflight contains public review labels only. It does not contain OCI "
+            "credentials, payment methods, GitHub installation tokens, or vault material."
+        ),
+    }
     cloud_shell = bootstrap["cloud_shell"]
     command = cloud_shell["bootstrap_command"]
     assert cloud_shell["deeplink_url"] == "https://cloud.oracle.com/?cloudshell=true"
@@ -2168,6 +2195,22 @@ def test_hosted_byo_oci_lane_starts_without_managed_worker_dispatch() -> None:
     assert "--require-recording" not in command
     assert "fusekit-hosted-worker" not in command
     assert bootstrap["proof_return"]["mode"] == "user_downloads_or_shares_redacted_artifacts"
+    assert bootstrap["reversibility"] == {
+        "schema_version": HOSTED_BYO_OCI_REVERSIBILITY_SCHEMA_VERSION,
+        "detonation_required": True,
+        "rollback_metadata_required": True,
+        "delete_targets": list(HOSTED_BYO_OCI_REVERSIBILITY_TARGETS),
+        "survivors": list(HOSTED_BYO_OCI_REVERSIBILITY_SURVIVORS),
+        "completion_receipt": ".fusekit/workspace_detonation.json",
+        "post_run_acceptance_required": (
+            "fusekit acceptance run <app> --mode live "
+            "--remote-artifacts <app>/.fusekit/remote-artifacts --require-recording"
+        ),
+        "statement": (
+            "A BYO OCI run is not considered complete until reversible setup proof, "
+            "retrieved redacted artifacts, and workspace detonation proof are present."
+        ),
+    }
     serialized = json.dumps(bootstrap)
     assert "ghs_fake" not in serialized
     assert WORKER_SECRET not in serialized

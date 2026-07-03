@@ -23,7 +23,12 @@ from fusekit.hosted import (
     render_hosted_proof_receipt,
     verify_hosted_job_token,
 )
-from fusekit.hosted.job import with_hosted_job_payment_receipt
+from fusekit.hosted.job import (
+    HOSTED_BYO_OCI_HANDOFF_PREFLIGHT_SCHEMA_VERSION,
+    HOSTED_BYO_OCI_REVERSIBILITY_SCHEMA_VERSION,
+    hosted_byo_oci_bootstrap,
+    with_hosted_job_payment_receipt,
+)
 from fusekit.hosted.lanes import BYO_OCI_LANE, MANAGED_FUSEKIT_RUN_LANE
 from fusekit.hosted.launcher import build_hosted_launch_plan
 from fusekit.manifest import ServiceRequirement, SetupManifest
@@ -204,6 +209,54 @@ def test_hosted_byo_proof_receipt_keeps_user_owned_lane_boundary() -> None:
     ]
     assert "ghs_" not in serialized
     assert "PRIVATE KEY" not in serialized
+
+
+def test_hosted_byo_bootstrap_publishes_preflight_and_reversibility_contract() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    serialized = json.dumps(bootstrap)
+
+    assert bootstrap["handoff_preflight"]["schema_version"] == (
+        HOSTED_BYO_OCI_HANDOFF_PREFLIGHT_SCHEMA_VERSION
+    )
+    assert bootstrap["handoff_preflight"]["must_be_visible_before_cloud_shell"] is True
+    assert bootstrap["handoff_preflight"]["cost_acknowledgement"] == {
+        "required": True,
+        "spend_owner": "user_oci_tenancy",
+        "fusekit_fee": "none_for_byo_oci",
+        "oracle_billing_gate_owner": "oracle_cloud",
+        "statement": (
+            "Starting BYO OCI can create Oracle Cloud resources in the user's tenancy; "
+            "FuseKit-managed infrastructure spend remains zero."
+        ),
+    }
+    preflight_ids = {check["id"] for check in bootstrap["handoff_preflight"]["checks"]}
+    assert preflight_ids == {
+        "review_oracle_billing",
+        "confirm_amd_shape",
+        "keep_human_gates_human",
+        "return_redacted_proof",
+    }
+    assert bootstrap["reversibility"]["schema_version"] == (
+        HOSTED_BYO_OCI_REVERSIBILITY_SCHEMA_VERSION
+    )
+    assert bootstrap["reversibility"]["detonation_required"] is True
+    assert bootstrap["reversibility"]["rollback_metadata_required"] is True
+    assert bootstrap["reversibility"]["completion_receipt"] == (
+        ".fusekit/workspace_detonation.json"
+    )
+    assert "disposable OCI compute instance" in bootstrap["reversibility"]["delete_targets"]
+    assert "encrypted vault" in bootstrap["reversibility"]["survivors"]
+    assert "workspace detonation proof" in bootstrap["reversibility"]["statement"]
+    assert "ghs_" not in serialized
+    assert "PRIVATE KEY" not in serialized
+    assert "sk_live" not in serialized
 
 
 def test_hosted_worker_request_binds_live_acceptance_and_no_secret_policy() -> None:

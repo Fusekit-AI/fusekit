@@ -44,6 +44,8 @@ HOSTED_WORKER_PROOF_SCHEMA_VERSION = "fusekit.hosted-worker-proof.v1"
 HOSTED_WORKER_PROOF_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-worker-proof-receipt.v1"
 HOSTED_BYO_OCI_BOOTSTRAP_SCHEMA_VERSION = "fusekit.hosted-byo-oci-bootstrap.v1"
 HOSTED_BYO_OCI_FUSEKIT_PACKAGE = "fusekit"
+HOSTED_BYO_OCI_HANDOFF_PREFLIGHT_SCHEMA_VERSION = "fusekit.hosted-byo-oci-preflight.v1"
+HOSTED_BYO_OCI_REVERSIBILITY_SCHEMA_VERSION = "fusekit.hosted-byo-oci-reversibility.v1"
 
 HOSTED_WORKER_PROOF_KEYS = HOSTED_COMPLETION_EVIDENCE_KEYS
 HOSTED_WORKER_MAINTENANCE_PROOF_KEYS = (
@@ -53,6 +55,48 @@ HOSTED_WORKER_MAINTENANCE_PROOF_KEYS = (
     "scratch_state_destroyed",
     "provider_auth_session_closed",
     "redacted_public_proof_preserved",
+)
+HOSTED_BYO_OCI_HANDOFF_PREFLIGHT = (
+    {
+        "id": "review_oracle_billing",
+        "label": "Review Oracle Cloud billing status before opening Cloud Shell.",
+        "required": True,
+        "proof": "The bootstrap states that OCI spend belongs to the user's tenancy.",
+    },
+    {
+        "id": "confirm_amd_shape",
+        "label": "Confirm the bootstrap uses the AMD/x86_64 runner profile.",
+        "required": True,
+        "proof": "The Cloud Shell command includes the exact non-ARM OCI shape.",
+    },
+    {
+        "id": "keep_human_gates_human",
+        "label": "Pass Oracle, GitHub, billing, consent, CAPTCHA, and MFA gates yourself.",
+        "required": True,
+        "proof": "FuseKit records provider gates as human-owned instead of bypassed.",
+    },
+    {
+        "id": "return_redacted_proof",
+        "label": "Return only the encrypted/redacted remote artifact bundle after the run.",
+        "required": True,
+        "proof": (
+            "Completion waits for remote artifacts, Run Record, detonation, acceptance, "
+            "and recording proof."
+        ),
+    },
+)
+HOSTED_BYO_OCI_REVERSIBILITY_TARGETS = (
+    "remote plaintext worker state",
+    "disposable OCI compute instance",
+    "boot volume",
+    "FuseKit-created network resources",
+)
+HOSTED_BYO_OCI_REVERSIBILITY_SURVIVORS = (
+    "encrypted vault",
+    "redacted audit log",
+    "redacted setup receipt",
+    "Run Record",
+    "workspace detonation receipt",
 )
 HOSTED_PLAN_INTEGRITY_COVERAGE = (
     "app_name",
@@ -391,6 +435,25 @@ def hosted_byo_oci_bootstrap(job: HostedLaunchJob) -> dict[str, object]:
         },
         "user_owned_cost_boundary": byo_oci_user_owned_cost_boundary(),
         "byo_security_contract": byo_oci_security_contract(),
+        "handoff_preflight": {
+            "schema_version": HOSTED_BYO_OCI_HANDOFF_PREFLIGHT_SCHEMA_VERSION,
+            "must_be_visible_before_cloud_shell": True,
+            "checks": [dict(check) for check in HOSTED_BYO_OCI_HANDOFF_PREFLIGHT],
+            "cost_acknowledgement": {
+                "required": True,
+                "spend_owner": "user_oci_tenancy",
+                "fusekit_fee": "none_for_byo_oci",
+                "oracle_billing_gate_owner": "oracle_cloud",
+                "statement": (
+                    "Starting BYO OCI can create Oracle Cloud resources in the user's "
+                    "tenancy; FuseKit-managed infrastructure spend remains zero."
+                ),
+            },
+            "secret_boundary": (
+                "BYO preflight contains public review labels only. It does not contain OCI "
+                "credentials, payment methods, GitHub installation tokens, or vault material."
+            ),
+        },
         "cloud_shell": {
             "provider": "oci-cloud-shell",
             "requires_user_oci_account": True,
@@ -415,6 +478,22 @@ def hosted_byo_oci_bootstrap(job: HostedLaunchJob) -> dict[str, object]:
                 "--remote-artifacts <app>/.fusekit/remote-artifacts --require-recording"
             ),
             "not_hosted_complete_until": list(HOSTED_WORKER_PROOF_KEYS),
+        },
+        "reversibility": {
+            "schema_version": HOSTED_BYO_OCI_REVERSIBILITY_SCHEMA_VERSION,
+            "detonation_required": True,
+            "rollback_metadata_required": True,
+            "delete_targets": list(HOSTED_BYO_OCI_REVERSIBILITY_TARGETS),
+            "survivors": list(HOSTED_BYO_OCI_REVERSIBILITY_SURVIVORS),
+            "completion_receipt": ".fusekit/workspace_detonation.json",
+            "post_run_acceptance_required": (
+                "fusekit acceptance run <app> --mode live "
+                "--remote-artifacts <app>/.fusekit/remote-artifacts --require-recording"
+            ),
+            "statement": (
+                "A BYO OCI run is not considered complete until reversible setup proof, "
+                "retrieved redacted artifacts, and workspace detonation proof are present."
+            ),
         },
         "worker_request": hosted_worker_request(job),
         "secret_boundary": (
