@@ -807,6 +807,24 @@ def test_oci_host_posture_blocks_missing_dns_and_rollback_proof() -> None:
     ]
 
 
+def test_oci_host_posture_blocks_status_only_dns_propagation_proof() -> None:
+    evidence = _clean_evidence()
+    evidence["dns_propagation"] = {
+        "public_origin": "https://fusekit.snowmanai.org",
+        "domain": "fusekit.snowmanai.org",
+        "status": "ok",
+    }
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.dns_propagation"]
+    dns_check = _check(report, "host.dns_propagation")
+    assert dns_check["failures"] == [
+        "oci_host_dns_propagation_proof_missing_or_failed"
+    ]
+
+
 def test_oci_host_posture_blocks_dns_and_rollback_sidecars() -> None:
     evidence = _clean_evidence()
     dns = evidence["dns_propagation"]
@@ -1547,6 +1565,7 @@ def test_oci_host_posture_collector_builds_validator_ready_redacted_evidence(
         dns_report={
             "public_origin": "https://fusekit.snowmanai.org",
             "status": "ok",
+            "propagated": True,
         },
         rollback_metadata={
             "actions": [
@@ -1627,6 +1646,7 @@ def test_oci_host_posture_collector_builds_validator_ready_redacted_evidence(
     assert evidence["dns_propagation"] == {
         "public_origin": "https://fusekit.snowmanai.org",
         "status": "ok",
+        "propagated": True,
     }
     assert evidence["rollback_metadata"] == {
         "actions": [{"action": "cloudflare.dns.rollback", "status": "planned"}]
