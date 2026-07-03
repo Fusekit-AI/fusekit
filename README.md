@@ -317,8 +317,9 @@ duplicate setup, rollback, or detonation workers. Its
 the worker secret, worker id, optional workspace root, and optional dispatch
 state directory, and separates basic `ready` status from production readiness:
 production readiness requires durable dispatch idempotency through the workspace
-or dispatch state directory, plus public mode/scope/proof text showing the
-non-secret reservation is recorded before worker spawn. The
+or dispatch state directory, plus public mode/scope/proof and private-storage
+metadata showing the non-secret reservation is recorded before worker spawn in a
+non-symlink directory that is not writable by other users. The
 backend-only
 `/api/hosted/jobs/<job>/worker-proof` endpoint accepts redacted worker proof
 snapshots, rejects credential-looking public notes or unsupported artifact
@@ -512,8 +513,10 @@ one-click worker wakeup also needs
 service running `fusekit-hosted-worker-dispatch` with
 `FUSEKIT_HOSTED_WORKER_SECRET` and worker runtime environment configured. Set
 `FUSEKIT_HOSTED_WORKER_DISPATCH_STATE_DIR` or a persistent
-`FUSEKIT_HOSTED_WORKER_WORKSPACE` for durable duplicate-click protection. Verify
-that service with `/healthz` and `/readiness` before setting
+`FUSEKIT_HOSTED_WORKER_WORKSPACE` for durable duplicate-click protection; for
+production, the dispatch state directory must already exist as a private
+non-symlink directory, such as `/var/lib/fusekit/dispatch-state` from the OCI
+tmpfiles config. Verify that service with `/healthz` and `/readiness` before setting
 `FUSEKIT_HOSTED_WORKER_DISPATCH_URL`. As of the latest local check,
 `https://fusekit.snowmanai.org` resolves through Cloudflare to the OCI-hosted
 launcher and the basic outside-in hosted verifier passes. Exact release proof

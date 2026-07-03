@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import json
 import os
+import stat
 import subprocess
 import threading
 import urllib.parse
@@ -74,6 +75,7 @@ class HostedWorkerDispatchSettings:
             invalid.append("hosted_worker_secret_too_short")
         if not self.worker_id:
             invalid.append("hosted_worker_id_required")
+        idempotency_ready = idempotency.get("ready") is True
         return {
             "schema_version": HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION,
             "ready": bool(self.worker_secret) and bool(self.worker_id) and not invalid,
@@ -82,6 +84,7 @@ class HostedWorkerDispatchSettings:
                 and bool(self.worker_id)
                 and not invalid
                 and idempotency["durable"] is True
+                and idempotency_ready
             ),
             "configured": configured,
             "invalid": invalid,
@@ -105,29 +108,47 @@ class HostedWorkerDispatchSettings:
         """Return public dispatch idempotency metadata without exposing paths."""
 
         if self.dispatch_state_dir is not None:
+            metadata = _dispatch_state_metadata(self.dispatch_state_dir)
             return {
                 "mode": "dispatch-state-dir",
                 "durable": True,
+                "ready": metadata["ready"],
                 "scope": "worker deployment",
+                "storage": metadata["public"],
+                "blockers": metadata["blockers"],
                 "proof": (
                     "Duplicate job/action dispatches are reserved through a configured "
-                    "non-secret state directory before worker spawn."
+                    "private non-secret state directory before worker spawn."
                 ),
             }
         if self.workspace is not None:
+            metadata = _dispatch_state_metadata(self.workspace)
             return {
                 "mode": "workspace",
                 "durable": True,
+                "ready": metadata["ready"],
                 "scope": "worker workspace",
+                "storage": metadata["public"],
+                "blockers": metadata["blockers"],
                 "proof": (
                     "Duplicate job/action dispatches are reserved through a non-secret "
-                    "marker in the worker workspace before worker spawn."
+                    "marker in a private worker workspace before worker spawn."
                 ),
             }
         return {
             "mode": "process",
             "durable": False,
+            "ready": False,
             "scope": "single receiver process",
+            "storage": {
+                "exists": False,
+                "directory": False,
+                "symlink": False,
+                "mode": "",
+                "private_enough": False,
+                "writable": False,
+            },
+            "blockers": ["worker_dispatch_durable_state_dir_required"],
             "proof": (
                 "Duplicate job/action dispatches are guarded in process only; configure "
                 "FUSEKIT_HOSTED_WORKER_DISPATCH_STATE_DIR or FUSEKIT_HOSTED_WORKER_WORKSPACE "
@@ -349,8 +370,9 @@ def _reserve_dispatch(
     ).hexdigest()
     path = state_dir / f"{digest}.json"
     try:
-        state_dir.mkdir(parents=True, exist_ok=True)
-        with path.open("x", encoding="utf-8") as handle:
+        _prepare_dispatch_state_dir(state_dir)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        with os.fdopen(os.open(path, flags, 0o640), "w", encoding="utf-8") as handle:
             json.dump(
                 {
                     "schema_version": HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION,
@@ -362,6 +384,7 @@ def _reserve_dispatch(
                 sort_keys=True,
             )
             handle.write("\n")
+        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP)
     except FileExistsError:
         duplicate = True
     except OSError as exc:
@@ -375,6 +398,50 @@ def _reserve_dispatch(
         "duplicate": duplicate,
         "proof": proof,
     }
+
+
+def _prepare_dispatch_state_dir(path: Path) -> None:
+    path.mkdir(mode=0o750, parents=True, exist_ok=True)
+    metadata = _dispatch_state_metadata(path)
+    if metadata["ready"] is not True:
+        raise FuseKitError("hosted_worker_dispatch_state_unavailable")
+
+
+def _dispatch_state_metadata(path: Path) -> dict[str, object]:
+    blockers: list[str] = []
+    public: dict[str, object] = {
+        "exists": False,
+        "directory": False,
+        "symlink": False,
+        "mode": "",
+        "private_enough": False,
+        "writable": False,
+    }
+    try:
+        path_stat = path.lstat()
+    except OSError:
+        blockers.append("worker_dispatch_state_dir_missing")
+        return {"ready": False, "public": public, "blockers": blockers}
+    mode = stat.S_IMODE(path_stat.st_mode)
+    public["exists"] = True
+    public["directory"] = stat.S_ISDIR(path_stat.st_mode)
+    public["symlink"] = stat.S_ISLNK(path_stat.st_mode)
+    public["mode"] = f"{mode:04o}"
+    public["private_enough"] = (
+        stat.S_ISDIR(path_stat.st_mode)
+        and not stat.S_ISLNK(path_stat.st_mode)
+        and mode & (stat.S_IWGRP | stat.S_IRWXO) == 0
+    )
+    public["writable"] = os.access(path, os.W_OK)
+    if public["symlink"] is True:
+        blockers.append("worker_dispatch_state_dir_must_not_be_symlink")
+    if public["directory"] is not True:
+        blockers.append("worker_dispatch_state_dir_must_be_directory")
+    if public["private_enough"] is not True:
+        blockers.append("worker_dispatch_state_dir_not_private_enough")
+    if public["writable"] is not True:
+        blockers.append("worker_dispatch_state_dir_not_writable")
+    return {"ready": not blockers, "public": public, "blockers": blockers}
 
 
 def _verified_dispatch_from_wsgi(

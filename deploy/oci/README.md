@@ -15,6 +15,10 @@ They are intentionally narrow:
   rewriting the secret runtime file;
 - mutable state is constrained to `/var/lib/fusekit`, `/var/log/fusekit`, and
   `/run/fusekit`;
+- worker dispatch duplicate-click state lives in
+  `/var/lib/fusekit/dispatch-state`, created by tmpfiles as a private
+  non-symlink directory before `/readiness` can report production-ready worker
+  dispatch;
 - the units use the `fusekit` system user with `NoNewPrivileges`, `PrivateTmp`,
   `ProtectSystem`, home/device/kernel/control-group protections, no ambient or
   bounding capabilities, restricted address families, owner-only umask,

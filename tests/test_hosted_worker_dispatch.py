@@ -71,7 +71,17 @@ def test_hosted_worker_dispatch_readiness_reports_presence_without_secrets() -> 
     assert readiness["idempotency"] == {
         "mode": "process",
         "durable": False,
+        "ready": False,
         "scope": "single receiver process",
+        "storage": {
+            "exists": False,
+            "directory": False,
+            "symlink": False,
+            "mode": "",
+            "private_enough": False,
+            "writable": False,
+        },
+        "blockers": ["worker_dispatch_durable_state_dir_required"],
         "proof": (
             "Duplicate job/action dispatches are guarded in process only; configure "
             "FUSEKIT_HOSTED_WORKER_DISPATCH_STATE_DIR or FUSEKIT_HOSTED_WORKER_WORKSPACE "
@@ -87,26 +97,58 @@ def test_hosted_worker_dispatch_readiness_reports_presence_without_secrets() -> 
 
 
 def test_hosted_worker_dispatch_readiness_reports_durable_idempotency(tmp_path: Path) -> None:
+    state_dir = tmp_path / "dispatch-state"
+    state_dir.mkdir(mode=0o750)
+
     readiness = HostedWorkerDispatchSettings(
         worker_secret=WORKER_SECRET,
         worker_id="worker-01",
-        dispatch_state_dir=tmp_path / "dispatch-state",
+        dispatch_state_dir=state_dir,
     ).readiness()
     serialized = json.dumps(readiness)
 
     assert readiness["ready"] is True
     assert readiness["production_ready"] is True
-    assert readiness["idempotency"] == {
-        "mode": "dispatch-state-dir",
-        "durable": True,
-        "scope": "worker deployment",
-        "proof": (
-            "Duplicate job/action dispatches are reserved through a configured "
-            "non-secret state directory before worker spawn."
-        ),
-    }
+    assert readiness["idempotency"]["mode"] == "dispatch-state-dir"
+    assert readiness["idempotency"]["durable"] is True
+    assert readiness["idempotency"]["ready"] is True
+    assert readiness["idempotency"]["scope"] == "worker deployment"
+    assert readiness["idempotency"]["storage"]["exists"] is True
+    assert readiness["idempotency"]["storage"]["directory"] is True
+    assert readiness["idempotency"]["storage"]["symlink"] is False
+    assert readiness["idempotency"]["storage"]["private_enough"] is True
+    assert readiness["idempotency"]["storage"]["writable"] is True
+    assert readiness["idempotency"]["blockers"] == []
+    assert "private non-secret state directory before worker spawn" in readiness[
+        "idempotency"
+    ]["proof"]
     assert str(tmp_path) not in serialized
     assert WORKER_SECRET not in serialized
+
+
+def test_hosted_worker_dispatch_readiness_blocks_missing_or_public_state_dir(
+    tmp_path: Path,
+) -> None:
+    missing = HostedWorkerDispatchSettings(
+        worker_secret=WORKER_SECRET,
+        worker_id="worker-01",
+        dispatch_state_dir=tmp_path / "missing",
+    ).readiness()
+    public_dir = tmp_path / "public"
+    public_dir.mkdir(mode=0o777)
+    public_dir.chmod(0o777)
+    public = HostedWorkerDispatchSettings(
+        worker_secret=WORKER_SECRET,
+        worker_id="worker-01",
+        dispatch_state_dir=public_dir,
+    ).readiness()
+
+    assert missing["production_ready"] is False
+    assert missing["idempotency"]["blockers"] == ["worker_dispatch_state_dir_missing"]
+    assert public["production_ready"] is False
+    assert "worker_dispatch_state_dir_not_private_enough" in public["idempotency"][
+        "blockers"
+    ]
 
 
 def test_hosted_worker_dispatch_readiness_reports_shape_errors_only() -> None:
@@ -223,6 +265,7 @@ def test_accept_hosted_worker_dispatch_is_idempotent_per_job_action(tmp_path: Pa
     first = accept_hosted_worker_dispatch(dispatch, settings=settings)
     second = accept_hosted_worker_dispatch(dispatch, settings=settings)
     serialized = json.dumps(second)
+    markers = list((tmp_path / "dispatch-state").glob("*.json"))
 
     assert first["duplicate"] is False
     assert second["accepted"] is True
@@ -238,6 +281,9 @@ def test_accept_hosted_worker_dispatch_is_idempotent_per_job_action(tmp_path: Pa
             "before worker spawn."
         ),
     }
+    assert len(markers) == 1
+    assert markers[0].stat().st_mode & 0o777 == 0o640
+    assert (tmp_path / "dispatch-state").stat().st_mode & 0o777 in {0o700, 0o750}
     assert len(spawner.calls) == 1
     assert WORKER_SECRET not in serialized
     assert "signed-public-job-token" not in serialized
