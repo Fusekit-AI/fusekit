@@ -1739,6 +1739,20 @@ def test_hosted_worker_contract_is_public_and_binds_approved_plan() -> None:
     assert "VERCEL_TOKEN" not in serialized
 
 
+def test_hosted_worker_contract_rejects_boolean_github_installation_id() -> None:
+    with pytest.raises(FuseKitError, match="github_installation_id"):
+        build_hosted_worker_contract(_plan(), github_installation_id=True)
+
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    payload = job.to_dict()
+    worker_contract = payload["worker_contract"]
+    assert isinstance(worker_contract, dict)
+    worker_contract["github_installation_id"] = True
+
+    with pytest.raises(FuseKitError, match="github_installation_id"):
+        hosted_launch_job_from_dict(payload)
+
+
 def test_hosted_worker_contract_decodes_older_public_payload_without_boundary() -> None:
     job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
     payload = job.to_dict()

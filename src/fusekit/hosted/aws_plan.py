@@ -144,7 +144,9 @@ def validate_cloudflare_fusekit_dns_dry_run(
         if proxied is not None and not isinstance(proxied, bool):
             raise FuseKitError("cloudflare_dns_dry_run_proxied_must_be_boolean")
         ttl = change.get("ttl")
-        if ttl is not None and not (ttl == "auto" or isinstance(ttl, int)):
+        if ttl is not None and not (
+            ttl == "auto" or (isinstance(ttl, int) and not isinstance(ttl, bool))
+        ):
             raise FuseKitError("cloudflare_dns_dry_run_ttl_invalid")
         action = str(change.get("action") or "").strip().lower()
         if action not in {"create", "update", "upsert", "noop"}:

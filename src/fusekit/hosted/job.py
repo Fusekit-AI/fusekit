@@ -1354,10 +1354,11 @@ def build_hosted_worker_contract(
     required_artifacts = HOSTED_WORKER_REQUIRED_ARTIFACTS
     gates = plan.trust.user_gates
     guarantees = HOSTED_WORKER_GUARANTEES
+    safe_github_installation_id = _public_github_installation_id(github_installation_id)
     return HostedWorkerContract(
         lane=lane,
         github_source=public_source,
-        github_installation_id=github_installation_id,
+        github_installation_id=safe_github_installation_id,
         plan_fingerprint=_approved_plan_fingerprint(
             app_name=public_app_name,
             github_source=public_source,
@@ -1383,6 +1384,14 @@ def build_hosted_worker_contract(
         gates=gates,
         guarantees=guarantees,
     )
+
+
+def _public_github_installation_id(value: object) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise FuseKitError("Hosted worker contract github_installation_id is invalid.")
+    return value
 
 
 def advance_hosted_launch_job(
@@ -3000,9 +3009,9 @@ def _worker_contract_from_dict(payload: dict[str, Any]) -> HostedWorkerContract:
         HOSTED_WORKER_CONTRACT_KEYS,
         "Hosted worker contract payload",
     )
-    github_installation_id = payload.get("github_installation_id")
-    if github_installation_id is not None and not isinstance(github_installation_id, int):
-        raise FuseKitError("Hosted worker contract github_installation_id is invalid.")
+    github_installation_id = _public_github_installation_id(
+        payload.get("github_installation_id")
+    )
     plan_fingerprint = _plan_fingerprint_from_payload(payload)
     return HostedWorkerContract(
         lane=_required_str(payload, "lane"),

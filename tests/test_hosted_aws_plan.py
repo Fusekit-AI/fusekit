@@ -149,6 +149,9 @@ def test_cloudflare_dns_dry_run_rejects_hidden_fields_and_bad_options() -> None:
     with pytest.raises(FuseKitError, match="cloudflare_dns_dry_run_ttl_invalid"):
         validate_cloudflare_fusekit_dns_dry_run([{**valid_change, "ttl": "forever"}])
 
+    with pytest.raises(FuseKitError, match="cloudflare_dns_dry_run_ttl_invalid"):
+        validate_cloudflare_fusekit_dns_dry_run([{**valid_change, "ttl": True}])
+
 
 def test_protected_aws_resource_findings_detects_pii_tags_without_mailpilot_name() -> None:
     findings = protected_aws_resource_findings(
