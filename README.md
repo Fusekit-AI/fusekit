@@ -389,6 +389,12 @@ For release proof, pass the expected Git commit too:
 `fusekit-hosted-verify --origin https://fusekit.snowmanai.org --expected-commit-sha "$(git rev-parse HEAD)"`.
 That fails closed when the public source-provenance contract is healthy but the
 OCI host is still serving an older commit.
+`fusekit-hosted-oci-access-plan` is the matching plan-only OCI redeploy/access
+preflight. It consumes redacted instance, VNIC, plugin, SSH probe, and hosted
+verifier evidence, confirms the target is the FuseKit-tagged AMD hosted
+launcher, and reports whether SSH or OCI Run Command can safely perform the
+release without mutating OCI, Cloudflare, MailPilot/AWS, generated-app
+credentials, or provider resources.
 The verifier reports Cloudflare/hosted-origin HTTP failures,
 readiness mismatches, public DNS failures, homepage trust drift, hosted
 runtime/open-core/DNS drift, deployment trust-story drift, homepage completion

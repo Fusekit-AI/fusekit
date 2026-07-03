@@ -54,6 +54,7 @@
   The outside-in hosted verifier now validates lane readiness, including the recommended lane and launchable lane list, so public deployments fail verification if the BYO recommendation or paid-lane blocker state drifts.
   Release proof can now require an exact deployed commit with `fusekit-hosted-verify --expected-commit-sha`, so a healthy public OCI launcher still fails verification when it is serving stale source provenance.
   OCI host posture now preserves the redacted hosted verifier blocker ids, including `hosted.expected_commit`, so stale release provenance is visible in posture evidence instead of collapsing into a generic web-verification failure.
+  OCI hosted redeploy access is now plan-only and evidence-backed: `fusekit-hosted-oci-access-plan` checks the FuseKit-tagged AMD launcher instance, public VNIC, SSH probe status, OCI Run Command plugin status, and hosted expected-commit report without mutating OCI or host state, surfacing `oci_deploy_access_unavailable` before release claims.
 - [x] Security invariants are enforced by tests.
 - [x] CLI defaults to real-provider execution; incomplete local rehearsals require explicit opt-in.
 - [x] FuseKit bootstraps its own runtime components instead of assuming Codex/OpenClaw is preinstalled.

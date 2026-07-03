@@ -25,6 +25,14 @@ fusekit-hosted-verify \
   --origin https://fusekit.snowmanai.org \
   --expected-commit-sha "$(git rev-parse HEAD)" \
   > hosted-verify.json
+fusekit-hosted-oci-access-plan \
+  --instance-json instance.json \
+  --vnic-json vnic.json \
+  --plugins-json plugins.json \
+  --hosted-verify-report hosted-verify.json \
+  --ssh-probe-status permission_denied \
+  --expected-commit-sha "$(git rev-parse HEAD)" \
+  > oci-access-plan.json
 fusekit-oci-host-posture --collect \
   --shape VM.Standard.E5.Flex \
   --ssh-ingress restricted \
