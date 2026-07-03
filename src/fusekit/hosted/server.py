@@ -2004,14 +2004,14 @@ def _hosted_payment_checkout_response(
         return _response(
             start_response,
             HTTPStatus.SERVICE_UNAVAILABLE,
-            {"error": "payment_not_ready"},
+            _hosted_payment_error_payload("payment_not_ready"),
         )
     checkout_url = receipt.get("checkout_url")
     if not isinstance(checkout_url, str) or not checkout_url:
         return _response(
             start_response,
             HTTPStatus.BAD_GATEWAY,
-            {"error": "payment_checkout_url_unavailable"},
+            _hosted_payment_error_payload("payment_checkout_url_unavailable"),
         )
     updated = with_hosted_job_payment_receipt(job, receipt)
     settings.hosted_jobs[job.job_id] = updated
