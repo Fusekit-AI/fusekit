@@ -1834,8 +1834,30 @@ def test_hosted_payment_receipt_does_not_mark_paid_from_boolean_stub() -> None:
 
     assert updated.payment_status == "checkout_pending"
     assert updated.payment_receipt is not None
-    assert updated.payment_receipt["paid"] is True
+    assert updated.payment_receipt["paid"] is False
     assert updated.payment_receipt["checkout_session_id"] is None
+
+
+def test_hosted_job_decode_normalizes_pending_boolean_paid_stub() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=MANAGED_FUSEKIT_RUN_LANE,
+        payment_required=True,
+        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        job_id="hosted-test",
+        now=1_700_000_000,
+    )
+    payload = job.to_dict()
+    payment = payload["payment"]
+    assert isinstance(payment, dict)
+    payment["status"] = "checkout_pending"
+    payment["receipt"] = {"paid": True}
+
+    decoded = hosted_launch_job_from_dict(payload)
+
+    assert decoded.payment_status == "checkout_pending"
+    assert decoded.payment_receipt is not None
+    assert decoded.payment_receipt["paid"] is False
 
 
 def test_hosted_payment_receipt_rejects_unexpected_top_level_fields() -> None:

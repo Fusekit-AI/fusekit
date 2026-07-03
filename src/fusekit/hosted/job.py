@@ -3112,6 +3112,8 @@ def _public_payment_receipt(receipt: dict[str, object]) -> dict[str, object]:
             result[key] = value
         elif key == "metadata" and isinstance(value, dict):
             result[key] = _public_payment_metadata(value)
+    if result.get("paid") is True and not _payment_receipt_is_paid_checkout(result):
+        result["paid"] = False
     return result
 
 
