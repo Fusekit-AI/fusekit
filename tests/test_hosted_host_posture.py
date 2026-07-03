@@ -684,6 +684,21 @@ def test_oci_host_posture_requires_dedicated_rootkit_scanner() -> None:
     assert "rkhunter or chkrootkit" in rootkit_check["next_action"]
 
 
+def test_oci_host_posture_requires_literal_zero_cis_finding_counts() -> None:
+    evidence = _clean_evidence()
+    cis_baseline = evidence["cis_baseline"]
+    assert isinstance(cis_baseline, dict)
+    cis_baseline["critical_findings"] = True
+    cis_baseline.pop("high_findings")
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.cis_baseline"]
+    baseline_check = _check(report, "host.cis_baseline")
+    assert baseline_check["failures"] == ["oci_host_cis_baseline_high_findings"]
+
+
 def test_oci_host_posture_blocks_release_receipt_commit_mismatch() -> None:
     evidence = _clean_evidence()
     receipt = evidence["release_receipt"]

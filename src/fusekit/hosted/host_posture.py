@@ -1017,7 +1017,7 @@ def _baseline_check(evidence: Mapping[str, object]) -> dict[str, object]:
             "Run a CIS-style review such as Lynis or OpenSCAP and attach a redacted "
             "passing summary.",
         )
-    if critical not in {0, None} or high not in {0, None}:
+    if critical != 0 or high != 0:
         return _fail(
             "host.cis_baseline",
             "oci_host_cis_baseline_high_findings",
