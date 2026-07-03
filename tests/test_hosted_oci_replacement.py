@@ -12,7 +12,7 @@ from fusekit.hosted.oci_replacement import (
     build_hosted_oci_replacement_plan,
     main,
 )
-from fusekit.hosted.runtime_secrets import build_hosted_runtime_secret_plan
+from fusekit.hosted.runtime_secrets import install_hosted_runtime_secret_file
 from fusekit.security import contains_durable_secret_text
 
 EXPECTED_COMMIT = "04cdf22c57842f5516f9fb90acfcd706cb8e5952"
@@ -79,22 +79,69 @@ def _inventory_report() -> dict[str, object]:
     )
 
 
-def _runtime_secret_report() -> dict[str, object]:
+def _runtime_secret_env() -> dict[str, str]:
+    return {
+        "FUSEKIT_HOSTED_ORIGIN": "https://fusekit.snowmanai.org",
+        "FUSEKIT_GITHUB_APP_ID": "4197238",
+        "FUSEKIT_GITHUB_APP_SLUG": "fusekit-launcher",
+        "FUSEKIT_GITHUB_APP_PRIVATE_KEY": (
+            "-----BEGIN RSA PRIVATE KEY-----\nfixture\n-----END RSA PRIVATE KEY-----"
+        ),
+        "FUSEKIT_HOSTED_STATE_SECRET": "state-secret-value-with-enough-entropy",
+        "FUSEKIT_HOSTED_WORKER_SECRET": "worker-secret-value-with-enough-entropy",
+        "FUSEKIT_HOSTED_WORKER_DISPATCH_URL": "https://fusekit.snowmanai.org/dispatch",
+        "FUSEKIT_STRIPE_SECRET_KEY": "sk_live_fixture",
+        "FUSEKIT_STRIPE_PRICE_ID": "price_1ToydUPZlsTa6iL323anyggA",
+        "FUSEKIT_MANAGED_RUN_PRICE_LABEL": "Launch validation: $1.00 FuseKit managed run",
+        "FUSEKIT_MANAGED_RUNS_ENABLED": "0",
+    }
+
+
+def _runtime_secret_install_report(tmp_path) -> dict[str, object]:
+    return install_hosted_runtime_secret_file(
+        env=_runtime_secret_env(),
+        output_path=str(tmp_path / "hosted-secrets.env"),
+        execute=True,
+    )
+
+
+def _runtime_secret_dry_run_report(tmp_path) -> dict[str, object]:
+    return install_hosted_runtime_secret_file(
+        env=_runtime_secret_env(),
+        output_path=str(tmp_path / "hosted-secrets.env"),
+        execute=False,
+    )
+
+
+def test_oci_replacement_plan_keeps_cutover_blocked_for_runtime_secret_dry_run(
+    tmp_path,
+) -> None:
+    plan = build_hosted_oci_replacement_plan(
+        inventory_report=_inventory_report(),
+        replacement_shape="VM.Standard.E5.Flex",
+        replacement_run_command_availability="available_not_installed",
+        expected_commit_sha=EXPECTED_COMMIT,
+        runtime_secret_report=_runtime_secret_dry_run_report(tmp_path),
+    )
+
+    assert plan["ready_to_create_replacement"] is True
+    assert plan["ready_for_dns_cutover"] is False
+    assert plan["runtime_secret_readiness"] == {
+        "attached": True,
+        "install_receipt": True,
+        "written": False,
+        "ready_to_write_secret_file": True,
+        "ready_for_managed_payment_staging": True,
+        "blockers": ["runtime_secret_file_not_written"],
+    }
+
+
+def _legacy_runtime_secret_plan_report() -> dict[str, object]:
+    from fusekit.hosted.runtime_secrets import build_hosted_runtime_secret_plan
+
     return build_hosted_runtime_secret_plan(
         env={
-            "FUSEKIT_HOSTED_ORIGIN": "https://fusekit.snowmanai.org",
-            "FUSEKIT_GITHUB_APP_ID": "4197238",
-            "FUSEKIT_GITHUB_APP_SLUG": "fusekit-launcher",
-            "FUSEKIT_GITHUB_APP_PRIVATE_KEY": (
-                "-----BEGIN RSA PRIVATE KEY-----\nfixture\n-----END RSA PRIVATE KEY-----"
-            ),
-            "FUSEKIT_HOSTED_STATE_SECRET": "state-secret-value-with-enough-entropy",
-            "FUSEKIT_HOSTED_WORKER_SECRET": "worker-secret-value-with-enough-entropy",
-            "FUSEKIT_HOSTED_WORKER_DISPATCH_URL": "https://fusekit.snowmanai.org/dispatch",
-            "FUSEKIT_STRIPE_SECRET_KEY": "sk_live_fixture",
-            "FUSEKIT_STRIPE_PRICE_ID": "price_1ToydUPZlsTa6iL323anyggA",
-            "FUSEKIT_MANAGED_RUN_PRICE_LABEL": "Launch validation: $1.00 FuseKit managed run",
-            "FUSEKIT_MANAGED_RUNS_ENABLED": "0",
+            **_runtime_secret_env(),
         }
     )
 
@@ -144,13 +191,15 @@ def test_oci_replacement_plan_allows_narrow_amd_candidate_with_deploy_path() -> 
     assert not contains_durable_secret_text(serialized)
 
 
-def test_oci_replacement_plan_allows_cutover_when_runtime_secret_report_ready() -> None:
+def test_oci_replacement_plan_allows_cutover_when_runtime_secret_install_receipt_ready(
+    tmp_path,
+) -> None:
     plan = build_hosted_oci_replacement_plan(
         inventory_report=_inventory_report(),
         replacement_shape="VM.Standard.E5.Flex",
         replacement_run_command_availability="available_not_installed",
         expected_commit_sha=EXPECTED_COMMIT,
-        runtime_secret_report=_runtime_secret_report(),
+        runtime_secret_report=_runtime_secret_install_report(tmp_path),
     )
 
     assert plan["ready_to_create_replacement"] is True
@@ -158,10 +207,28 @@ def test_oci_replacement_plan_allows_cutover_when_runtime_secret_report_ready() 
     assert plan["cutover_blockers"] == []
     assert plan["runtime_secret_readiness"] == {
         "attached": True,
+        "install_receipt": True,
+        "written": True,
         "ready_to_write_secret_file": True,
         "ready_for_managed_payment_staging": True,
         "blockers": [],
     }
+
+
+def test_oci_replacement_plan_blocks_legacy_runtime_secret_plan_for_cutover() -> None:
+    plan = build_hosted_oci_replacement_plan(
+        inventory_report=_inventory_report(),
+        replacement_shape="VM.Standard.E5.Flex",
+        replacement_run_command_availability="available_not_installed",
+        expected_commit_sha=EXPECTED_COMMIT,
+        runtime_secret_report=_legacy_runtime_secret_plan_report(),
+    )
+
+    assert plan["ready_to_create_replacement"] is True
+    assert plan["ready_for_dns_cutover"] is False
+    assert plan["runtime_secret_readiness"]["blockers"] == [
+        "runtime_secret_install_receipt_required_for_cutover"
+    ]
 
 
 def test_oci_replacement_plan_blocks_arm_and_missing_replacement_deploy_access() -> None:

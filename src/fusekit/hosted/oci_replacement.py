@@ -14,7 +14,10 @@ from fusekit.hosted.oci_access import (
     HOSTED_OCI_FORBIDDEN_ARM_SHAPE_PREFIXES,
 )
 from fusekit.hosted.oci_inventory import HOSTED_OCI_INVENTORY_SCHEMA_VERSION
-from fusekit.hosted.runtime_secrets import HOSTED_RUNTIME_SECRET_PLAN_SCHEMA_VERSION
+from fusekit.hosted.runtime_secrets import (
+    HOSTED_RUNTIME_SECRET_INSTALL_SCHEMA_VERSION,
+    HOSTED_RUNTIME_SECRET_PLAN_SCHEMA_VERSION,
+)
 from fusekit.hosted.server import HOSTED_CANONICAL_ORIGIN
 from fusekit.security import contains_durable_secret_text, redact_public_text
 
@@ -268,18 +271,29 @@ def _runtime_secret_readiness(
             "blockers": ["runtime_secret_report_required_for_cutover"],
         }
     blockers: list[str] = []
-    if runtime_secret_report.get("schema_version") != HOSTED_RUNTIME_SECRET_PLAN_SCHEMA_VERSION:
+    schema = runtime_secret_report.get("schema_version")
+    plan_schema = runtime_secret_report.get("plan_schema_version")
+    install_report = schema == HOSTED_RUNTIME_SECRET_INSTALL_SCHEMA_VERSION
+    plan_report = schema == HOSTED_RUNTIME_SECRET_PLAN_SCHEMA_VERSION
+    if not plan_report and not (
+        install_report and plan_schema == HOSTED_RUNTIME_SECRET_PLAN_SCHEMA_VERSION
+    ):
         blockers.append("runtime_secret_report_schema_invalid")
-    if runtime_secret_report.get("mutates_host") is not False:
-        blockers.append("runtime_secret_report_must_not_mutate_host")
     if runtime_secret_report.get("mutates_provider") is not False:
         blockers.append("runtime_secret_report_must_not_mutate_provider")
     if runtime_secret_report.get("ready_to_write_secret_file") is not True:
         blockers.append("runtime_secret_report_not_ready")
     if runtime_secret_report.get("ready_for_managed_payment_staging") is not True:
         blockers.append("runtime_secret_report_payment_staging_not_ready")
+    if install_report:
+        if runtime_secret_report.get("written") is not True:
+            blockers.append("runtime_secret_file_not_written")
+    else:
+        blockers.append("runtime_secret_install_receipt_required_for_cutover")
     return {
         "attached": True,
+        "install_receipt": install_report,
+        "written": runtime_secret_report.get("written") is True,
         "ready_to_write_secret_file": runtime_secret_report.get("ready_to_write_secret_file")
         is True,
         "ready_for_managed_payment_staging": runtime_secret_report.get(

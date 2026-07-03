@@ -60,9 +60,13 @@ fusekit-hosted-oci-inventory \
 fusekit-hosted-runtime-secret-plan \
   --allow-generated-state-secrets \
   > hosted-runtime-secret-plan.json
+sudo -E fusekit-hosted-runtime-secret-plan \
+  --allow-generated-state-secrets \
+  --execute \
+  > hosted-runtime-secret-install.json
 fusekit-hosted-oci-replacement-plan \
   --inventory-report hosted-oci-inventory.json \
-  --runtime-secret-report hosted-runtime-secret-plan.json \
+  --runtime-secret-report hosted-runtime-secret-install.json \
   --replacement-shape VM.Standard.E5.Flex \
   --replacement-os 'Canonical Ubuntu' \
   --replacement-os-version 24.04 \
@@ -99,9 +103,10 @@ policy broadening, and ARM/Ampere shapes in the repair path.
 
 The replacement plan distinguishes replacement infrastructure from cutover. A
 candidate host can be ready to create while `ready_for_dns_cutover=false` if the
-runtime secret plan is missing or incomplete. `fusekit-hosted-runtime-secret-plan`
-must prove the required hosted env names are available for
-`/etc/fusekit/hosted-secrets.env`, that managed runs remain disabled, and that
-the verified Stripe Price can be staged without emitting the live Stripe secret,
-GitHub App private key, hosted state secret, worker secret, OCI credentials, or
-vault material.
+runtime secret install receipt is missing, incomplete, or only a dry run.
+`fusekit-hosted-runtime-secret-plan` dry-runs by default, and writes
+`/etc/fusekit/hosted-secrets.env` only with `--execute`. Its receipt must prove
+the required hosted env names were available or generated on-host, that managed
+runs remain disabled, and that the verified Stripe Price can be staged without
+emitting the live Stripe secret, GitHub App private key, hosted state secret,
+worker secret, OCI credentials, or vault material.

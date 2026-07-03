@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 
 from fusekit.hosted.runtime_secrets import (
+    HOSTED_RUNTIME_SECRET_INSTALL_SCHEMA_VERSION,
     HOSTED_RUNTIME_SECRET_PLAN_SCHEMA_VERSION,
     build_hosted_runtime_secret_plan,
+    install_hosted_runtime_secret_file,
     main,
 )
 from fusekit.security import contains_durable_secret_text
@@ -48,7 +50,7 @@ def test_runtime_secret_plan_reports_readiness_without_secret_values() -> None:
         "owner": "root:root",
         "mode": "0600",
         "directory_owner": "root:root",
-        "directory_mode": "0750",
+        "directory_mode": "0700",
     }
     assert plan["stripe_runtime_env"]["FUSEKIT_STRIPE_SECRET_KEY"] == {
         "configured": True,
@@ -110,5 +112,63 @@ def test_runtime_secret_plan_cli_reads_env_json(tmp_path, capfd) -> None:
     output = json.loads(capfd.readouterr().out)
 
     assert exit_code == 0
+    assert output["schema_version"] == HOSTED_RUNTIME_SECRET_INSTALL_SCHEMA_VERSION
+    assert output["mode"] == "plan_only"
+    assert output["executed"] is False
+    assert output["written"] is False
     assert output["ready_to_write_secret_file"] is True
     assert output["ready_for_managed_payment_staging"] is True
+
+
+def test_runtime_secret_installer_writes_owner_only_env_file_without_public_values(
+    tmp_path,
+) -> None:
+    output_path = tmp_path / "hosted-secrets.env"
+
+    report = install_hosted_runtime_secret_file(
+        env=_env(FUSEKIT_HOSTED_STATE_SECRET="", FUSEKIT_HOSTED_WORKER_SECRET=""),
+        output_path=str(output_path),
+        allow_generated_state_secrets=True,
+        execute=True,
+    )
+    serialized = json.dumps(report, sort_keys=True)
+    written = output_path.read_text(encoding="utf-8")
+
+    assert report["schema_version"] == HOSTED_RUNTIME_SECRET_INSTALL_SCHEMA_VERSION
+    assert report["mode"] == "write"
+    assert report["mutates_host"] is True
+    assert report["mutates_provider"] is False
+    assert report["ready_to_write_secret_file"] is True
+    assert report["ready_for_managed_payment_staging"] is True
+    assert report["executed"] is True
+    assert report["written"] is True
+    assert report["generated_secret_names"] == [
+        "FUSEKIT_HOSTED_STATE_SECRET",
+        "FUSEKIT_HOSTED_WORKER_SECRET",
+    ]
+    assert "FUSEKIT_GITHUB_APP_PRIVATE_KEY" in report["keys_written"]
+    assert "FUSEKIT_MANAGED_RUNS_ENABLED" in report["keys_written"]
+    assert "FUSEKIT_MANAGED_RUNS_ENABLED='0'" in written
+    assert "FUSEKIT_HOSTED_STATE_SECRET='" in written
+    assert "FUSEKIT_HOSTED_WORKER_SECRET='" in written
+    assert "sk_live_secretfixture" in written
+    assert "BEGIN RSA PRIVATE KEY" in written
+    assert "sk_live_secretfixture" not in serialized
+    assert "BEGIN RSA PRIVATE KEY" not in serialized
+    assert "state-secret-value" not in serialized
+    assert not contains_durable_secret_text(serialized)
+
+
+def test_runtime_secret_installer_does_not_write_when_blocked(tmp_path) -> None:
+    output_path = tmp_path / "hosted-secrets.env"
+
+    report = install_hosted_runtime_secret_file(
+        env=_env(FUSEKIT_GITHUB_APP_PRIVATE_KEY=""),
+        output_path=str(output_path),
+        execute=True,
+    )
+
+    assert report["ready_to_write_secret_file"] is False
+    assert report["written"] is False
+    assert "FUSEKIT_GITHUB_APP_PRIVATE_KEY" in report["blockers"]
+    assert not output_path.exists()

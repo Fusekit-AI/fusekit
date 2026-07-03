@@ -6,8 +6,11 @@ import argparse
 import json
 import os
 import re
+import secrets
+import stat
 import urllib.parse
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.billing import _stripe_account_mode, _valid_price_label
@@ -15,6 +18,7 @@ from fusekit.hosted.server import HOSTED_CANONICAL_ORIGIN, REQUIRED_HOSTED_ENV
 from fusekit.security import contains_durable_secret_text, redact_public_text
 
 HOSTED_RUNTIME_SECRET_PLAN_SCHEMA_VERSION = "fusekit.hosted-runtime-secret-plan.v1"
+HOSTED_RUNTIME_SECRET_INSTALL_SCHEMA_VERSION = "fusekit.hosted-runtime-secret-install.v1"
 HOSTED_RUNTIME_SECRET_FILE = "/etc/fusekit/hosted-secrets.env"
 HOSTED_RUNTIME_GENERATABLE_SECRETS = (
     "FUSEKIT_HOSTED_STATE_SECRET",
@@ -61,7 +65,7 @@ def build_hosted_runtime_secret_plan(
             "owner": "root:root",
             "mode": "0600",
             "directory_owner": "root:root",
-            "directory_mode": "0750",
+            "directory_mode": "0700",
         },
         "required_runtime_env": {
             name: {
@@ -94,6 +98,54 @@ def build_hosted_runtime_secret_plan(
     return plan
 
 
+def install_hosted_runtime_secret_file(
+    *,
+    env: Mapping[str, str],
+    output_path: str = HOSTED_RUNTIME_SECRET_FILE,
+    allow_generated_state_secrets: bool = False,
+    execute: bool = False,
+) -> dict[str, object]:
+    """Plan or write the hosted runtime EnvironmentFile without emitting values."""
+
+    plan = build_hosted_runtime_secret_plan(
+        env=env,
+        allow_generated_state_secrets=allow_generated_state_secrets,
+    )
+    if plan["ready_to_write_secret_file"] is not True:
+        report = _install_report(
+            plan=plan,
+            output_path=output_path,
+            execute=execute,
+            written=False,
+            generated_secret_names=[],
+            keys_written=[],
+        )
+        _assert_public_runtime_plan(report)
+        return report
+    material = _runtime_secret_material(
+        env=env,
+        allow_generated_state_secrets=allow_generated_state_secrets,
+    )
+    generated_secret_names = [
+        name
+        for name in HOSTED_RUNTIME_GENERATABLE_SECRETS
+        if not env.get(name, "") and name in material
+    ]
+    keys_written = sorted(material)
+    if execute:
+        _write_secret_env_file(Path(output_path), material)
+    report = _install_report(
+        plan=plan,
+        output_path=output_path,
+        execute=execute,
+        written=execute,
+        generated_secret_names=generated_secret_names,
+        keys_written=keys_written,
+    )
+    _assert_public_runtime_plan(report)
+    return report
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Print redacted hosted runtime secret-file readiness."""
 
@@ -102,12 +154,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--env-json", default="")
     parser.add_argument("--allow-generated-state-secrets", action="store_true")
+    parser.add_argument("--output", default=HOSTED_RUNTIME_SECRET_FILE)
+    parser.add_argument("--execute", action="store_true")
     args = parser.parse_args(argv)
     try:
         env = _read_env(args.env_json) if args.env_json else dict(os.environ)
-        plan = build_hosted_runtime_secret_plan(
+        plan = install_hosted_runtime_secret_file(
             env=env,
+            output_path=args.output,
             allow_generated_state_secrets=args.allow_generated_state_secrets,
+            execute=args.execute,
         )
     except FuseKitError as exc:
         plan = {
@@ -121,6 +177,107 @@ def main(argv: Sequence[str] | None = None) -> int:
         }
     print(json.dumps(plan, indent=2, sort_keys=True))
     return 0 if plan.get("ready_to_write_secret_file") is True else 2
+
+
+def _install_report(
+    *,
+    plan: Mapping[str, object],
+    output_path: str,
+    execute: bool,
+    written: bool,
+    generated_secret_names: Sequence[str],
+    keys_written: Sequence[str],
+) -> dict[str, object]:
+    return {
+        "schema_version": HOSTED_RUNTIME_SECRET_INSTALL_SCHEMA_VERSION,
+        "plan_schema_version": HOSTED_RUNTIME_SECRET_PLAN_SCHEMA_VERSION,
+        "mode": "write" if execute else "plan_only",
+        "mutates_host": bool(execute),
+        "mutates_provider": False,
+        "ready_to_write_secret_file": plan.get("ready_to_write_secret_file") is True,
+        "ready_for_managed_payment_staging": plan.get("ready_for_managed_payment_staging")
+        is True,
+        "executed": execute,
+        "written": written,
+        "secret_file": {
+            "path": redact_public_text(output_path),
+            "owner": "root:root",
+            "mode": "0600",
+            "directory_owner": "root:root",
+            "directory_mode": "0700",
+        },
+        "blockers": _string_list(plan.get("blockers")),
+        "generated_secret_names": list(generated_secret_names),
+        "keys_written": list(keys_written),
+        "managed_runs_enabled_value": "0",
+        "next_actions": _install_next_actions(execute=execute, written=written),
+        "secret_boundary": (
+            "The installer writes hosted runtime values to the target EnvironmentFile only "
+            "when --execute is set. It emits env names, file metadata, and generated-secret "
+            "names only; it never emits secret values, generated state/worker material, "
+            "GitHub App private keys, Stripe secret keys, OCI credentials, or vault material."
+        ),
+    }
+
+
+def _runtime_secret_material(
+    *,
+    env: Mapping[str, str],
+    allow_generated_state_secrets: bool,
+) -> dict[str, str]:
+    material: dict[str, str] = {}
+    for name in REQUIRED_HOSTED_ENV:
+        value = env.get(name, "")
+        if not value and name in HOSTED_RUNTIME_GENERATABLE_SECRETS:
+            if not allow_generated_state_secrets:
+                continue
+            value = secrets.token_urlsafe(48)
+        if value:
+            material[name] = value
+    for name in HOSTED_RUNTIME_STRIPE_ENV:
+        value = env.get(name, "")
+        if name == "FUSEKIT_MANAGED_RUNS_ENABLED":
+            value = "0"
+        if value:
+            material[name] = value
+    material.setdefault("FUSEKIT_MANAGED_RUNS_ENABLED", "0")
+    return material
+
+
+def _write_secret_env_file(path: Path, material: Mapping[str, str]) -> None:
+    parent = path.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(parent, stat.S_IRWXU)
+    tmp_path = path.with_name(f".{path.name}.tmp")
+    text = "".join(f"{name}={_systemd_quote(value)}\n" for name, value in sorted(material.items()))
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    with os.fdopen(os.open(tmp_path, flags, 0o600), "w", encoding="utf-8") as handle:
+        handle.write(text)
+    os.chmod(tmp_path, stat.S_IRUSR | stat.S_IWUSR)
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        os.chown(parent, 0, 0)
+        os.chown(tmp_path, 0, 0)
+    os.replace(tmp_path, path)
+
+
+def _systemd_quote(value: str) -> str:
+    return "'" + value.replace("'", "'\\''") + "'"
+
+
+def _install_next_actions(*, execute: bool, written: bool) -> list[str]:
+    if written:
+        return [
+            "Restart only fusekit-hosted.service and fusekit-worker-dispatch.service after "
+            "the matching release is installed.",
+            "Run fusekit-hosted-runtime-secret-plan again to collect redacted proof.",
+            "Keep FUSEKIT_MANAGED_RUNS_ENABLED=0 until live Checkout proof passes.",
+        ]
+    if execute:
+        return ["Resolve blockers before writing the hosted runtime secret file."]
+    return [
+        "Review the redacted plan, then re-run with --execute on the replacement host.",
+        "Do not paste secret values into docs, logs, pull requests, or public receipts.",
+    ]
 
 
 def _runtime_invalid(env: Mapping[str, str], *, generated: Mapping[str, bool]) -> list[str]:
