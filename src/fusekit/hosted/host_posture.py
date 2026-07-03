@@ -18,6 +18,7 @@ from fusekit.errors import FuseKitError
 from fusekit.hosted.runtime_secrets import (
     HOSTED_RUNTIME_REQUIRED_FILE_ENV,
     HOSTED_RUNTIME_SECRET_VERIFY_SCHEMA_VERSION,
+    HOSTED_RUNTIME_STRIPE_ENV,
 )
 from fusekit.security import contains_durable_secret_text, redact_public_text
 
@@ -126,6 +127,15 @@ OCI_HOST_POSTURE_RUNTIME_SECRET_ENV_ROW_KEYS = frozenset({"present"})
 OCI_HOST_POSTURE_RUNTIME_SECRET_KEY_INVENTORY_KEYS = frozenset(
     {"required_count", "present_required_count", "missing", "unexpected_keys"}
 )
+OCI_HOST_POSTURE_STRIPE_RUNTIME_ENV_KEYS = frozenset(HOSTED_RUNTIME_STRIPE_ENV)
+OCI_HOST_POSTURE_STRIPE_RUNTIME_ENV_ROW_KEYS = {
+    "FUSEKIT_STRIPE_SECRET_KEY": frozenset({"configured", "account_mode"}),
+    "FUSEKIT_STRIPE_PRICE_ID": frozenset({"configured", "public_id"}),
+    "FUSEKIT_MANAGED_RUN_PRICE_LABEL": frozenset({"configured", "public_label"}),
+    "FUSEKIT_MANAGED_RUNS_ENABLED": frozenset(
+        {"configured", "must_remain_disabled", "enabled"}
+    ),
+}
 OCI_HOST_POSTURE_PATCH_POSTURE_KEYS = frozenset(
     {"pending_security_updates", "reboot_required"}
 )
@@ -877,6 +887,22 @@ def _unexpected_runtime_secret_verify_keys(evidence: Mapping[str, object]) -> li
                         OCI_HOST_POSTURE_RUNTIME_SECRET_ENV_ROW_KEYS,
                     )
                 )
+    stripe_runtime_env = report.get("stripe_runtime_env")
+    if isinstance(stripe_runtime_env, Mapping):
+        unexpected.extend(
+            f"runtime_secret_verify.stripe_runtime_env.{key}"
+            for key in _unexpected_keys(
+                stripe_runtime_env,
+                OCI_HOST_POSTURE_STRIPE_RUNTIME_ENV_KEYS,
+            )
+        )
+        for key, allowed in OCI_HOST_POSTURE_STRIPE_RUNTIME_ENV_ROW_KEYS.items():
+            row = stripe_runtime_env.get(key)
+            if isinstance(row, Mapping):
+                unexpected.extend(
+                    f"runtime_secret_verify.stripe_runtime_env.{key}.{row_key}"
+                    for row_key in _unexpected_keys(row, allowed)
+                )
     return unexpected
 
 
@@ -1002,6 +1028,7 @@ def _runtime_secret_verify_check(evidence: Mapping[str, object]) -> dict[str, ob
     report = _mapping(evidence.get("runtime_secret_verify"))
     key_inventory = _mapping(report.get("key_inventory"))
     required_runtime_env = _mapping(report.get("required_runtime_env"))
+    stripe_runtime_env = _mapping(report.get("stripe_runtime_env"))
     missing_keys = _string_list(key_inventory.get("missing"))
     unexpected_keys = _string_list(key_inventory.get("unexpected_keys"))
     required_count = _literal_non_negative_int(key_inventory.get("required_count"))
@@ -1030,6 +1057,8 @@ def _runtime_secret_verify_check(evidence: Mapping[str, object]) -> dict[str, ob
         failures.append("oci_host_runtime_secret_key_inventory_count_mismatch")
     if not _required_runtime_env_present(required_runtime_env):
         failures.append("oci_host_runtime_secret_required_env_presence_mismatch")
+    if not _stripe_runtime_env_ready(stripe_runtime_env):
+        failures.append("oci_host_runtime_secret_stripe_env_mismatch")
     boundary = _public_str(report.get("secret_boundary")).lower()
     if "emits no" not in boundary or "secret" not in boundary:
         failures.append("oci_host_runtime_secret_verify_secret_boundary_missing")
@@ -1453,6 +1482,24 @@ def _required_runtime_env_present(value: Mapping[str, object]) -> bool:
         if not isinstance(row, Mapping) or row.get("present") is not True:
             return False
     return True
+
+
+def _stripe_runtime_env_ready(value: Mapping[str, object]) -> bool:
+    secret_key = _mapping(value.get("FUSEKIT_STRIPE_SECRET_KEY"))
+    price_id = _mapping(value.get("FUSEKIT_STRIPE_PRICE_ID"))
+    price_label = _mapping(value.get("FUSEKIT_MANAGED_RUN_PRICE_LABEL"))
+    managed_runs = _mapping(value.get("FUSEKIT_MANAGED_RUNS_ENABLED"))
+    return (
+        secret_key.get("configured") is True
+        and secret_key.get("account_mode") == "live"
+        and price_id.get("configured") is True
+        and _public_str(price_id.get("public_id")).startswith("price_")
+        and price_label.get("configured") is True
+        and bool(_public_str(price_label.get("public_label")))
+        and managed_runs.get("configured") is True
+        and managed_runs.get("must_remain_disabled") is True
+        and managed_runs.get("enabled") is False
+    )
 
 
 def _public_str(value: object) -> str:

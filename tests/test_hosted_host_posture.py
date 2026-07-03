@@ -49,6 +49,19 @@ def _runtime_secret_verify_report() -> dict[str, object]:
                 "configured": True,
                 "account_mode": "live",
             },
+            "FUSEKIT_STRIPE_PRICE_ID": {
+                "configured": True,
+                "public_id": "price_1ToydUPZlsTa6iL323anyggA",
+            },
+            "FUSEKIT_MANAGED_RUN_PRICE_LABEL": {
+                "configured": True,
+                "public_label": "Launch validation: $1.00 FuseKit managed run",
+            },
+            "FUSEKIT_MANAGED_RUNS_ENABLED": {
+                "configured": True,
+                "must_remain_disabled": True,
+                "enabled": False,
+            },
         },
         "key_inventory": {
             "required_count": 11,
@@ -388,19 +401,45 @@ def test_oci_host_posture_blocks_runtime_secret_required_env_presence_drift() ->
     ]
 
 
+def test_oci_host_posture_blocks_runtime_secret_stripe_env_drift() -> None:
+    evidence = _clean_evidence()
+    verify_report = evidence["runtime_secret_verify"]
+    assert isinstance(verify_report, dict)
+    stripe_runtime_env = verify_report["stripe_runtime_env"]
+    assert isinstance(stripe_runtime_env, dict)
+    managed_runs = stripe_runtime_env["FUSEKIT_MANAGED_RUNS_ENABLED"]
+    assert isinstance(managed_runs, dict)
+    managed_runs["enabled"] = True
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.runtime_secret_verify"]
+    verify_check = _check(report, "host.runtime_secret_verify")
+    assert verify_check["failures"] == [
+        "oci_host_runtime_secret_stripe_env_mismatch"
+    ]
+
+
 def test_oci_host_posture_blocks_runtime_secret_nested_sidecars() -> None:
     evidence = _clean_evidence()
     verify_report = evidence["runtime_secret_verify"]
     assert isinstance(verify_report, dict)
     required_runtime_env = verify_report["required_runtime_env"]
     key_inventory = verify_report["key_inventory"]
+    stripe_runtime_env = verify_report["stripe_runtime_env"]
     assert isinstance(required_runtime_env, dict)
     assert isinstance(key_inventory, dict)
+    assert isinstance(stripe_runtime_env, dict)
     row = required_runtime_env["FUSEKIT_GITHUB_APP_PRIVATE_KEY"]
     assert isinstance(row, dict)
     row["raw_env_line"] = "FUSEKIT_GITHUB_APP_PRIVATE_KEY=secret"
     required_runtime_env["OPENAI_API_KEY"] = {"present": True}
     key_inventory["raw_diff"] = "OPENAI_API_KEY added manually"
+    stripe_secret = stripe_runtime_env["FUSEKIT_STRIPE_SECRET_KEY"]
+    assert isinstance(stripe_secret, dict)
+    stripe_secret["raw_value"] = "sk_live_secret"
+    stripe_runtime_env["STRIPE_WEBHOOK_SECRET"] = {"configured": True}
 
     report = evaluate_oci_host_posture(evidence)
 
@@ -411,6 +450,8 @@ def test_oci_host_posture_blocks_runtime_secret_nested_sidecars() -> None:
         "runtime_secret_verify.key_inventory.raw_diff",
         "runtime_secret_verify.required_runtime_env.FUSEKIT_GITHUB_APP_PRIVATE_KEY.raw_env_line",
         "runtime_secret_verify.required_runtime_env.OPENAI_API_KEY",
+        "runtime_secret_verify.stripe_runtime_env.FUSEKIT_STRIPE_SECRET_KEY.raw_value",
+        "runtime_secret_verify.stripe_runtime_env.STRIPE_WEBHOOK_SECRET",
     ]
 
 
