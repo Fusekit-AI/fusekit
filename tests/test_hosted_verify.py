@@ -121,7 +121,11 @@ def _worker_dispatch_binding_contract() -> dict[str, object]:
         "required_for_actions": ["start", "rollback", "detonate"],
         "lane": "managed-fusekit-run",
         "payment_status": "paid",
-        "hash_fields": ["plan_fingerprint", "price_label_hash"],
+        "hash_fields": [
+            "plan_fingerprint",
+            "stripe_price_id_hash",
+            "price_label_hash",
+        ],
         "secret_boundary": (
             "Dispatch binding contains only public job/action/lane/payment labels "
             "and SHA-256 public hashes; job tokens and worker secrets are excluded."

@@ -73,6 +73,21 @@ def test_verify_hosted_worker_dispatch_rejects_binding_drift() -> None:
         )
 
 
+def test_verify_hosted_worker_dispatch_rejects_invalid_price_hash() -> None:
+    body = _dispatch_body(
+        action="start",
+        binding={"stripe_price_id_hash": "sha256:not-a-real-digest"},
+    )
+
+    with pytest.raises(FuseKitError, match="invalid_dispatch_binding_stripe_price_id_hash"):
+        verify_hosted_worker_dispatch(
+            body,
+            signature=_signature(body),
+            schema=HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+            secret=WORKER_SECRET,
+        )
+
+
 def test_verify_hosted_worker_dispatch_rejects_unexpected_envelope_fields() -> None:
     body = _dispatch_body(
         action="start",
@@ -128,12 +143,17 @@ def test_hosted_worker_dispatch_readiness_reports_presence_without_secrets() -> 
             "lane",
             "payment_status",
             "plan_fingerprint",
+            "stripe_price_id_hash",
             "price_label_hash",
         ],
         "required_for_actions": ["start", "rollback", "detonate"],
         "lane": "managed-fusekit-run",
         "payment_status": "paid",
-        "hash_fields": ["plan_fingerprint", "price_label_hash"],
+        "hash_fields": [
+            "plan_fingerprint",
+            "stripe_price_id_hash",
+            "price_label_hash",
+        ],
         "secret_boundary": (
             "Dispatch binding contains only public job/action/lane/payment labels "
             "and SHA-256 public hashes; job tokens and worker secrets are excluded."
@@ -629,6 +649,7 @@ def _dispatch_binding(*, action: str) -> dict[str, str]:
         "lane": "managed-fusekit-run",
         "payment_status": "paid",
         "plan_fingerprint": "sha256:" + ("a" * 64),
+        "stripe_price_id_hash": "sha256:" + ("c" * 64),
         "price_label_hash": "sha256:" + ("b" * 64),
     }
 

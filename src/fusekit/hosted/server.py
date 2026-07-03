@@ -475,6 +475,7 @@ HOSTED_WORKER_DISPATCH_BINDING_FIELDS = (
     "lane",
     "payment_status",
     "plan_fingerprint",
+    "stripe_price_id_hash",
     "price_label_hash",
 )
 HOSTED_CONTROL_TOKEN_TTL_SECONDS = 300
@@ -817,7 +818,11 @@ class HostedSettings:
                     "required_for_actions": ["start", "rollback", "detonate"],
                     "lane": MANAGED_FUSEKIT_RUN_LANE,
                     "payment_status": "paid",
-                    "hash_fields": ["plan_fingerprint", "price_label_hash"],
+                    "hash_fields": [
+                        "plan_fingerprint",
+                        "stripe_price_id_hash",
+                        "price_label_hash",
+                    ],
                     "secret_boundary": (
                         "Dispatch binding contains only public job/action/lane/payment "
                         "labels and SHA-256 public hashes; job tokens and worker secrets "
@@ -2952,6 +2957,7 @@ def _worker_dispatch_binding(
         "lane": job.launch_lane,
         "plan_fingerprint": job.worker_contract.plan_fingerprint,
         "payment_status": job.payment_status,
+        "stripe_price_id_hash": _payment_public_hash(settings.stripe_price_id),
         "price_label_hash": _payment_public_hash(
             job.payment_price_label or settings.managed_run_price_label
         ),

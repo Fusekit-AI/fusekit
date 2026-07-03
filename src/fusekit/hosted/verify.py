@@ -692,7 +692,11 @@ def _worker_dispatch_binding_failures(payload: object) -> list[str]:
         failures.append("worker_dispatch_binding_lane_mismatch")
     if payload.get("payment_status") != "paid":
         failures.append("worker_dispatch_binding_payment_status_mismatch")
-    if payload.get("hash_fields") != ["plan_fingerprint", "price_label_hash"]:
+    if payload.get("hash_fields") != [
+        "plan_fingerprint",
+        "stripe_price_id_hash",
+        "price_label_hash",
+    ]:
         failures.append("worker_dispatch_binding_hash_fields_mismatch")
     boundary = payload.get("secret_boundary")
     if (

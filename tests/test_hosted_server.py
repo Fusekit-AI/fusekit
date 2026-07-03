@@ -920,12 +920,17 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
             "lane",
             "payment_status",
             "plan_fingerprint",
+            "stripe_price_id_hash",
             "price_label_hash",
         ],
         "required_for_actions": ["start", "rollback", "detonate"],
         "lane": MANAGED_FUSEKIT_RUN_LANE,
         "payment_status": "paid",
-        "hash_fields": ["plan_fingerprint", "price_label_hash"],
+        "hash_fields": [
+            "plan_fingerprint",
+            "stripe_price_id_hash",
+            "price_label_hash",
+        ],
         "secret_boundary": (
             "Dispatch binding contains only public job/action/lane/payment labels "
             "and SHA-256 public hashes; job tokens and worker secrets are excluded."
@@ -2300,6 +2305,7 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
         "lane": MANAGED_FUSEKIT_RUN_LANE,
         "payment_status": "paid",
         "plan_fingerprint": plan_fingerprint,
+        "stripe_price_id_hash": price_id_hash,
         "price_label_hash": price_label_hash,
     }
     assert len(dispatch_opener.requests) == 1
@@ -3364,6 +3370,7 @@ def test_hosted_job_start_dispatches_signed_worker_envelope_when_configured() ->
         "lane": MANAGED_FUSEKIT_RUN_LANE,
         "payment_status": "paid",
         "plan_fingerprint": response["worker_contract"]["plan_integrity"]["fingerprint"],
+        "stripe_price_id_hash": _payment_public_hash("price_managed_run"),
         "price_label_hash": _payment_public_hash(MANAGED_PRICE_LABEL),
     }
     assert response["worker_dispatch"] == {

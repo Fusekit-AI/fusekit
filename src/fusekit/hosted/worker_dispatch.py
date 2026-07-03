@@ -29,6 +29,7 @@ HOSTED_WORKER_DISPATCH_BINDING_FIELDS = (
     "lane",
     "payment_status",
     "plan_fingerprint",
+    "stripe_price_id_hash",
     "price_label_hash",
 )
 HOSTED_WORKER_DISPATCH_ENVELOPE_FIELDS = frozenset(
@@ -115,7 +116,11 @@ class HostedWorkerDispatchSettings:
                 "required_for_actions": ["start", "rollback", "detonate"],
                 "lane": "managed-fusekit-run",
                 "payment_status": "paid",
-                "hash_fields": ["plan_fingerprint", "price_label_hash"],
+                "hash_fields": [
+                    "plan_fingerprint",
+                    "stripe_price_id_hash",
+                    "price_label_hash",
+                ],
                 "secret_boundary": (
                     "Dispatch binding contains only public job/action/lane/payment labels "
                     "and SHA-256 public hashes; job tokens and worker secrets are excluded."
@@ -611,6 +616,8 @@ def _dispatch_binding_from_payload(
         raise FuseKitError("dispatch_binding_payment_not_paid")
     if not _valid_sha256_label(binding["plan_fingerprint"]):
         raise FuseKitError("invalid_dispatch_binding_plan_fingerprint")
+    if not _valid_sha256_label(binding["stripe_price_id_hash"]):
+        raise FuseKitError("invalid_dispatch_binding_stripe_price_id_hash")
     if not _valid_sha256_label(binding["price_label_hash"]):
         raise FuseKitError("invalid_dispatch_binding_price_label_hash")
     return {key: binding[key] for key in sorted(binding)}
