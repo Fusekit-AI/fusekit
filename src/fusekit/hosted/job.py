@@ -33,6 +33,7 @@ from fusekit.hosted.lanes import (
 from fusekit.hosted.launcher import (
     HOSTED_PROHIBITED_ACTIONS,
     HostedLaunchPlan,
+    public_hosted_github_source,
 )
 from fusekit.runner.cloud_shell import build_cloud_shell_launch_plan
 from fusekit.security.redaction import contains_durable_secret_text, redact_public_text
@@ -290,6 +291,7 @@ def build_hosted_launch_job(
     """Create the public control-room job contract for an approved hosted plan."""
 
     lane = hosted_launch_lane(launch_lane).lane_id
+    public_source = public_hosted_github_source(plan.github_source)
     worker_contract = build_hosted_worker_contract(
         plan,
         github_installation_id=github_installation_id,
@@ -316,7 +318,7 @@ def build_hosted_launch_job(
     return HostedLaunchJob(
         job_id=job_id or f"hosted-{secrets.token_urlsafe(12)}",
         app_name=plan.app_name,
-        github_source=plan.github_source,
+        github_source=public_source,
         status="waiting_for_worker",
         created_at=int(time.time() if now is None else now),
         steps=(
@@ -1218,10 +1220,11 @@ def hosted_launch_job_from_dict(payload: dict[str, Any]) -> HostedLaunchJob:
         raise FuseKitError("Hosted launch job payload is invalid.")
     payment_status, payment_receipt = _payment_from_payload(payment)
     payment_price_label = _payment_price_label_from_payload(payment)
+    github_source = public_hosted_github_source(_required_str(payload, "github_source"))
     return HostedLaunchJob(
         job_id=job_id,
         app_name=_required_str(payload, "app_name"),
-        github_source=_required_str(payload, "github_source"),
+        github_source=github_source,
         status=_required_str(payload, "status"),
         created_at=_required_int(payload, "created_at"),
         steps=tuple(_job_step_from_dict(step) for step in steps),
@@ -1245,6 +1248,7 @@ def build_hosted_worker_contract(
     """Build the redacted execution contract for the hosted setup worker."""
 
     lane = hosted_launch_lane(launch_lane).lane_id
+    public_source = public_hosted_github_source(plan.github_source)
     providers = plan.providers
     required_env = plan.required_env
     approved_actions = tuple(action.id for action in plan.actions)
@@ -1253,11 +1257,11 @@ def build_hosted_worker_contract(
     guarantees = HOSTED_WORKER_GUARANTEES
     return HostedWorkerContract(
         lane=lane,
-        github_source=plan.github_source,
+        github_source=public_source,
         github_installation_id=github_installation_id,
         plan_fingerprint=_approved_plan_fingerprint(
             app_name=plan.app_name,
-            github_source=plan.github_source,
+            github_source=public_source,
             providers=providers,
             required_env=required_env,
             approved_actions=approved_actions,
@@ -2889,7 +2893,7 @@ def _worker_contract_from_dict(payload: dict[str, Any]) -> HostedWorkerContract:
     plan_fingerprint = _plan_fingerprint_from_payload(payload)
     return HostedWorkerContract(
         lane=_required_str(payload, "lane"),
-        github_source=_required_str(payload, "github_source"),
+        github_source=public_hosted_github_source(_required_str(payload, "github_source")),
         github_installation_id=github_installation_id,
         plan_fingerprint=plan_fingerprint,
         providers=_str_tuple(payload.get("providers"), "providers"),

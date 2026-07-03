@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 import re
 
+import pytest
+
+from fusekit.errors import FuseKitError
 from fusekit.hosted import build_hosted_launch_plan, render_hosted_launcher
 from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY, public_plan_summary
 from fusekit.manifest import (
@@ -73,6 +76,8 @@ def test_hosted_launch_plan_is_universal_github_intake() -> None:
         "redacted proof",
         "reversible setup",
     ]
+
+
     assert raw["trust"]["no_terminal_promise"].startswith("No terminal")
     assert raw["trust"]["launch_path"] == [
         "Visit the hosted FuseKit URL.",
@@ -101,6 +106,37 @@ def test_hosted_launch_plan_is_universal_github_intake() -> None:
             "and detonation proof pass."
         ),
     ]
+
+
+def test_hosted_launch_plan_normalizes_public_github_source() -> None:
+    plan = build_hosted_launch_plan(
+        _manifest(),
+        github_source=" https://github.com/example/any-app.git/ ",
+    )
+    serialized = json.dumps(plan.to_dict(), sort_keys=True)
+
+    assert plan.github_source == "https://github.com/example/any-app"
+    assert "https://github.com/example/any-app.git" not in serialized
+
+
+def test_hosted_launch_plan_rejects_secret_or_non_github_source() -> None:
+    with pytest.raises(FuseKitError, match="Hosted GitHub source"):
+        build_hosted_launch_plan(
+            _manifest(),
+            github_source="https://ghs_should_not_be_public@github.com/example/any-app",
+        )
+
+    with pytest.raises(FuseKitError, match="Hosted GitHub source"):
+        build_hosted_launch_plan(
+            _manifest(),
+            github_source="https://github.com/example/any-app?token=sk_live_hidden",
+        )
+
+    with pytest.raises(FuseKitError, match="Hosted GitHub source"):
+        build_hosted_launch_plan(
+            _manifest(),
+            github_source="https://gitlab.com/example/any-app",
+        )
 
 
 def test_hosted_launcher_html_has_no_terminal_or_download_happy_path() -> None:

@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import html
 import json
+import urllib.parse
 from dataclasses import dataclass
 from typing import Any
 
+from fusekit.errors import FuseKitError
 from fusekit.hosted.evidence import HOSTED_COMPLETION_EVIDENCE_KEYS
 from fusekit.hosted.lanes import hosted_launch_lanes
 from fusekit.manifest import SetupManifest
 from fusekit.planner import SetupAction, build_plan
+from fusekit.security import contains_durable_secret_text
 
 HOSTED_LAUNCHER_SCHEMA_VERSION = "fusekit.hosted-launcher.v1"
 TRUST_CONTRACT_SCHEMA_VERSION = "fusekit.hosted-trust-contract.v1"
@@ -147,12 +150,13 @@ def build_hosted_launch_plan(
 ) -> HostedLaunchPlan:
     """Build the non-secret hosted launch plan shown before provider gates."""
 
+    public_github_source = public_hosted_github_source(github_source)
     plan = build_plan(manifest)
     providers = _provider_names(manifest)
     user_gate_providers = _user_gate_providers(plan.actions)
     trust = HostedLaunchTrustContract(
         scope=(
-            f"Scan and launch the selected GitHub repository: {github_source}",
+            f"Scan and launch the selected GitHub repository: {public_github_source}",
             "Create or update only resources named in the visible launch plan.",
             "Use provider-native APIs, CLIs, or human gates according to the route plan.",
             "Detonate disposable worker, browser, auth, log, and plaintext setup state.",
@@ -177,11 +181,45 @@ def build_hosted_launch_plan(
     )
     return HostedLaunchPlan(
         app_name=manifest.app_name,
-        github_source=github_source,
+        github_source=public_github_source,
         providers=providers,
         required_env=tuple(sorted(manifest.required_env)),
         actions=plan.actions,
         trust=trust,
+    )
+
+
+def public_hosted_github_source(value: str) -> str:
+    """Return the browser-safe GitHub repository URL for hosted launch source."""
+
+    raw = value.strip()
+    if not raw or contains_durable_secret_text(raw):
+        raise FuseKitError("Hosted GitHub source is invalid.")
+    parsed = urllib.parse.urlparse(raw)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "github.com"
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or parsed.params
+    ):
+        raise FuseKitError("Hosted GitHub source must be a public github.com repository URL.")
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) != 2:
+        raise FuseKitError("Hosted GitHub source must name one repository.")
+    owner, repo = parts
+    if repo.endswith(".git"):
+        repo = repo[:-4]
+    if not _safe_github_slug_part(owner) or not _safe_github_slug_part(repo):
+        raise FuseKitError("Hosted GitHub source contains unsupported repository characters.")
+    return f"https://github.com/{owner}/{repo}"
+
+
+def _safe_github_slug_part(value: str) -> bool:
+    return bool(value) and len(value) <= 100 and all(
+        character.isalnum() or character in {"-", "_", "."} for character in value
     )
 
 
