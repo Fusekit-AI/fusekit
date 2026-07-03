@@ -1420,6 +1420,8 @@ def _web_verification_check(evidence: Mapping[str, object]) -> dict[str, object]
         failures.append("oci_hosted_verify_not_ready")
     if _string_list(report.get("blocking_checks")):
         failures.append("oci_hosted_verify_blocking_checks_not_empty")
+    if not _hosted_verify_checks_ready(report):
+        failures.append("oci_hosted_verify_checks_not_ready")
     summary = _mapping(report.get("readiness_summary"))
     blocking_count = _literal_non_negative_int(summary.get("blocking_count"))
     summary_blockers = _mapping_list(summary.get("blockers"))
@@ -1599,6 +1601,11 @@ def _hosted_verify_commit_sha(report: Mapping[str, object]) -> str:
         return commit
     commit = _valid_git_sha(_raw_str(report.get("commit_sha")))
     return commit or ""
+
+
+def _hosted_verify_checks_ready(report: Mapping[str, object]) -> bool:
+    checks = _mapping_list(report.get("checks"))
+    return bool(checks) and all(check.get("status") == "ok" for check in checks)
 
 
 def _valid_git_sha(value: str, *, allow_empty: bool = False) -> str | None:

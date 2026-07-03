@@ -223,6 +223,16 @@ def _clean_evidence() -> dict[str, object]:
                 ),
             },
             "next_actions": [],
+            "checks": [
+                {
+                    "id": "hosted.health",
+                    "url": "https://fusekit.snowmanai.org/healthz",
+                    "status": "ok",
+                    "http_status": 200,
+                    "schema_version": "",
+                    "failures": [],
+                }
+            ],
             "source_provenance": {
                 "actual": {
                     "commit_sha": HOSTED_COMMIT,
@@ -940,6 +950,29 @@ def test_oci_host_posture_blocks_contradictory_hosted_verify_readiness() -> None
     assert web_check["hosted_verifier_blocking_checks"] == ["hosted.deployment"]
 
 
+def test_oci_host_posture_blocks_failed_hosted_verify_check_rows() -> None:
+    evidence = _clean_evidence()
+    hosted_verify = evidence["hosted_verify"]
+    assert isinstance(hosted_verify, dict)
+    hosted_verify["checks"] = [
+        {
+            "id": "hosted.deployment",
+            "url": "https://fusekit.snowmanai.org/api/hosted/deployment",
+            "status": "failed",
+            "http_status": 200,
+            "schema_version": "fusekit.hosted-deployment.v1",
+            "failures": ["schema_mismatch"],
+        }
+    ]
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.web_verification"]
+    web_check = _check(report, "host.web_verification")
+    assert web_check["failures"] == ["oci_hosted_verify_checks_not_ready"]
+
+
 def test_oci_host_posture_blocks_missing_release_receipt() -> None:
     evidence = _clean_evidence()
     evidence["release_receipt"] = {}
@@ -1490,6 +1523,16 @@ def test_oci_host_posture_collector_builds_validator_ready_redacted_evidence(
                 ),
             },
             "next_actions": [],
+            "checks": [
+                {
+                    "id": "hosted.health",
+                    "url": "https://fusekit.snowmanai.org/healthz",
+                    "status": "ok",
+                    "http_status": 200,
+                    "schema_version": "",
+                    "failures": [],
+                }
+            ],
             "source_provenance": {
                 "actual": {
                     "commit_sha": HOSTED_COMMIT,
