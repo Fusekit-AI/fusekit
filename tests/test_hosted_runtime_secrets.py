@@ -218,6 +218,32 @@ def test_runtime_secret_verifier_blocks_unexpected_keys_without_values(
     assert not contains_durable_secret_text(serialized)
 
 
+def test_runtime_secret_verifier_redacts_secret_shaped_unexpected_key_names(
+    tmp_path,
+) -> None:
+    output_path = tmp_path / "hosted-secrets.env"
+    install_hosted_runtime_secret_file(
+        env=_env(),
+        output_path=str(output_path),
+        execute=True,
+    )
+    with output_path.open("a", encoding="utf-8") as handle:
+        handle.write("SK_LIVE_FIELD_NAME_SHOULD_NOT_ECHO='public'\n")
+
+    report = verify_hosted_runtime_secret_file(path=str(output_path))
+    serialized = json.dumps(report, sort_keys=True)
+
+    assert report["ready"] is False
+    assert "SK_LIVE_FIELD_NAME_SHOULD_NOT_ECHO" not in serialized
+    assert not contains_durable_secret_text(serialized)
+    assert any(
+        blocker.startswith("runtime_secret_unexpected_key:")
+        and "redacted" in blocker.lower()
+        for blocker in report["blockers"]
+    )
+    assert all("redacted" in key.lower() for key in report["key_inventory"]["unexpected_keys"])
+
+
 def test_runtime_secret_verifier_rejects_symlink_without_reading_target(
     tmp_path,
 ) -> None:

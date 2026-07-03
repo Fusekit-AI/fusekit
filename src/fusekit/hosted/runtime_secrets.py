@@ -177,7 +177,8 @@ def verify_hosted_runtime_secret_file(
     unexpected_keys = [
         name for name in sorted(material) if name not in HOSTED_RUNTIME_REQUIRED_FILE_ENV
     ]
-    blockers.extend(f"runtime_secret_unexpected_key:{name}" for name in unexpected_keys)
+    public_unexpected_keys = [_public_env_name(name) for name in unexpected_keys]
+    blockers.extend(f"runtime_secret_unexpected_key:{name}" for name in public_unexpected_keys)
     secret_file_public: dict[str, object] = {"path": redact_public_text(path)}
     secret_file_public.update(cast(Mapping[str, object], metadata["public"]))
     report = {
@@ -198,7 +199,7 @@ def verify_hosted_runtime_secret_file(
             "required_count": len(HOSTED_RUNTIME_REQUIRED_FILE_ENV),
             "present_required_count": len(HOSTED_RUNTIME_REQUIRED_FILE_ENV) - len(missing),
             "missing": missing,
-            "unexpected_keys": unexpected_keys,
+            "unexpected_keys": public_unexpected_keys,
         },
         "next_actions": _verify_next_actions(blockers),
         "secret_boundary": (
@@ -549,6 +550,10 @@ def _runtime_env_source(name: str, *, generated: Mapping[str, bool]) -> str:
     if name in HOSTED_RUNTIME_GENERATABLE_SECRETS:
         return "provided_or_generated_on_host_install"
     return "provided_secret_input"
+
+
+def _public_env_name(value: str) -> str:
+    return redact_public_text(value)
 
 
 def _next_actions(blockers: Sequence[str]) -> list[str]:
