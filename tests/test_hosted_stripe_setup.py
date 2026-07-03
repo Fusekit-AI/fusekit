@@ -248,6 +248,51 @@ def test_stripe_price_setup_reuses_existing_matching_fusekit_price() -> None:
     assert "lookup_keys%5B%5D=" in opener.requests[0].full_url
 
 
+def test_stripe_price_setup_does_not_reuse_price_with_extra_metadata() -> None:
+    plan = build_stripe_managed_run_price_plan(
+        stripe_secret_key="sk_live_secret_value",
+        amount_cents=100,
+        currency="usd",
+        price_label="Launch validation: $1.00 FuseKit managed run",
+    )
+    metadata = plan.public_dict()["price"]["metadata"]
+    assert isinstance(metadata, dict)
+    metadata_with_sidecar = dict(metadata)
+    metadata_with_sidecar["snowman_product"] = "mailpilot"
+    opener = StripeSetupOpener(
+        existing_prices=[
+            {
+                "id": "price_existing_fusekit",
+                "active": True,
+                "type": "one_time",
+                "unit_amount": 100,
+                "currency": "usd",
+                "lookup_key": plan.lookup_key,
+                "metadata": metadata_with_sidecar,
+                "product": {
+                    "id": "prod_existing_fusekit",
+                    "active": True,
+                    "name": "FuseKit Managed Run",
+                    "metadata": metadata,
+                },
+            }
+        ]
+    )
+
+    with pytest.raises(FuseKitError, match="lookup key does not match"):
+        create_stripe_managed_run_price(
+            stripe_secret_key="sk_live_secret_value",
+            amount_cents=100,
+            currency="usd",
+            price_label="Launch validation: $1.00 FuseKit managed run",
+            execute=True,
+            confirm_shared_account=True,
+            opener=opener,
+        )
+
+    assert len(opener.requests) == 1
+
+
 def test_stripe_price_setup_blocks_occupied_lookup_key_that_is_not_fusekit_scoped() -> None:
     plan = build_stripe_managed_run_price_plan(
         stripe_secret_key="sk_live_secret_value",

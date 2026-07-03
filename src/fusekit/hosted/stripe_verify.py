@@ -250,6 +250,8 @@ def _expected_metadata(plan: StripeManagedRunPricePlan) -> dict[str, str]:
 def _metadata_matches(value: object, expected: Mapping[str, str]) -> bool:
     if not isinstance(value, Mapping):
         return False
+    if set(value.keys()) != set(expected.keys()):
+        return False
     return all(value.get(key) == expected_value for key, expected_value in expected.items())
 
 

@@ -188,6 +188,31 @@ def test_stripe_price_verify_blocks_shared_account_wrong_price() -> None:
     assert "Do not enable managed paid runs" in report["next_actions"][0]
 
 
+def test_stripe_price_verify_blocks_extra_metadata_sidecar() -> None:
+    payload = _price_payload()
+    assert isinstance(payload["metadata"], dict)
+    payload["metadata"]["snowman_product"] = "mailpilot"
+
+    report = verify_stripe_managed_run_price(
+        stripe_secret_key="sk_live_secret_value",
+        price_id="price_fusekit_managed_run",
+        amount_cents=100,
+        currency="usd",
+        price_label=PRICE_LABEL,
+        opener=StripeVerifyOpener(payload),
+    )
+
+    assert report["ready"] is False
+    assert report["checks"]["price_metadata_matches"] is False
+    assert report["checks"]["product_metadata_matches"] is True
+    assert report["blockers"] == ["stripe_price_metadata_mismatch"]
+    assert report["hosted_runtime_env"] == {
+        "FUSEKIT_STRIPE_PRICE_ID": "",
+        "FUSEKIT_MANAGED_RUN_PRICE_LABEL": "",
+        "FUSEKIT_MANAGED_RUNS_ENABLED": "0",
+    }
+
+
 def test_stripe_price_verify_blocks_secret_shaped_product_name() -> None:
     opener = StripeVerifyOpener(
         _price_payload(
