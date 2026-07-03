@@ -678,6 +678,72 @@ def test_hosted_worker_proof_submission_can_mark_complete_only_with_full_evidenc
     assert steps["detonate.worker"]["status"] == "done"
 
 
+def test_byo_worker_proof_requires_returned_proof_bundle_before_completion() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    started = advance_hosted_launch_job(job, "start", now=1_700_000_001)
+    claimed = claim_hosted_launch_job(started, worker_id="byo-worker", now=1_700_000_002)
+
+    updated, receipt = apply_hosted_worker_proof(
+        claimed,
+        _proof_payload(
+            complete=True,
+            completed_artifacts=list(claimed.worker_contract.required_artifacts),
+            note="BYO live proof flags passed, bundle still pending.",
+        ),
+        worker_id="byo-worker",
+        now=1_700_000_003,
+    )
+    serialized = json.dumps(receipt)
+
+    assert updated.status == "proof_submitted"
+    assert receipt["completion_ready"] is False
+    assert receipt["byo_oci_proof_bundle"]["ready"] is False
+    assert receipt["byo_oci_proof_bundle"]["blockers"] == [
+        "byo_oci_proof_bundle_required_for_completion"
+    ]
+    assert ".fusekit/run_record.json" in receipt["byo_oci_proof_bundle"][
+        "artifact_summary"
+    ]["missing"]
+    assert "ghs_" not in serialized
+    assert "PRIVATE KEY" not in serialized
+
+
+def test_byo_worker_proof_can_complete_with_verified_proof_bundle() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    started = advance_hosted_launch_job(job, "start", now=1_700_000_001)
+    claimed = claim_hosted_launch_job(started, worker_id="byo-worker", now=1_700_000_002)
+    bootstrap = hosted_byo_oci_bootstrap(claimed)
+    proof_payload = _proof_payload(
+        complete=True,
+        completed_artifacts=list(claimed.worker_contract.required_artifacts),
+        note="BYO proof bundle and live acceptance passed.",
+    )
+    proof_payload["byo_oci_proof_bundle"] = _byo_proof_bundle_from_bootstrap(bootstrap)
+
+    updated, receipt = apply_hosted_worker_proof(
+        claimed,
+        proof_payload,
+        worker_id="byo-worker",
+        now=1_700_000_003,
+    )
+
+    assert updated.status == "complete"
+    assert receipt["completion_ready"] is True
+    assert receipt["byo_oci_proof_bundle"]["ready"] is True
+    assert receipt["byo_oci_proof_bundle"]["blockers"] == []
+    assert receipt["byo_oci_proof_bundle"]["artifact_summary"]["missing"] == []
+
+
 def test_hosted_worker_proof_requires_rollback_execution_after_rollback_request() -> None:
     job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
     started = advance_hosted_launch_job(job, "start", now=1_700_000_001)

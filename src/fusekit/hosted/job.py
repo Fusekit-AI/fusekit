@@ -1709,12 +1709,17 @@ def hosted_worker_proof_receipt(
         if artifact not in completed_artifacts
     )
     maintenance_ready = _maintenance_ready(job, evidence)
+    byo_oci_proof = _byo_oci_worker_proof_report(job, payload.get("byo_oci_proof_bundle"))
+    byo_oci_proof_ready = (
+        job.launch_lane != BYO_OCI_LANE or byo_oci_proof.get("ready") is True
+    )
     completion_ready = (
         all(evidence[key] for key in HOSTED_WORKER_PROOF_KEYS)
         and not missing_artifacts
         and maintenance_ready
+        and byo_oci_proof_ready
     )
-    return {
+    receipt = {
         "schema_version": HOSTED_WORKER_PROOF_RECEIPT_SCHEMA_VERSION,
         "job_id": job.job_id,
         "worker_id": _public_worker_id(worker_id),
@@ -1741,6 +1746,9 @@ def hosted_worker_proof_receipt(
             "and worker secrets are rejected before receipt rendering."
         ),
     }
+    if byo_oci_proof:
+        receipt["byo_oci_proof_bundle"] = byo_oci_proof
+    return receipt
 
 
 def render_hosted_proof_receipt(job: HostedLaunchJob, *, job_token: str = "") -> str:
@@ -2410,6 +2418,40 @@ def _completion_ready(job: HostedLaunchJob) -> bool:
         and steps.get("rollback.ready") == "done"
         and steps.get("detonate.worker") == "done"
     )
+
+
+def _byo_oci_worker_proof_report(
+    job: HostedLaunchJob,
+    value: object,
+) -> dict[str, object]:
+    if job.launch_lane != BYO_OCI_LANE:
+        return {}
+    if not isinstance(value, dict):
+        report = {
+            "schema_version": HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION,
+            "input_schema_version": "",
+            "job_id": job.job_id,
+            "lane": job.launch_lane,
+            "ready": False,
+            "blockers": ["byo_oci_proof_bundle_required_for_completion"],
+            "proof_bundle_root": ".fusekit/remote-artifacts",
+            "artifact_summary": {
+                "required_count": len(job.worker_contract.required_artifacts),
+                "present_required_count": 0,
+                "missing": list(job.worker_contract.required_artifacts),
+                "unexpected": [],
+                "artifacts": [],
+            },
+            "completion_evidence": {key: False for key in HOSTED_WORKER_PROOF_KEYS},
+            "acceptance_gate": _byo_oci_proof_manifest(job)["acceptance_gate"],
+            "secret_boundary": (
+                "BYO OCI completion requires a redacted proof-bundle inventory. Missing "
+                "bundle reports contain only public artifact labels and blocker codes."
+            ),
+        }
+        _assert_public_byo_proof_report(report)
+        return report
+    return verify_hosted_byo_oci_proof_bundle(job, value)
 
 
 def _proof_evidence(value: object) -> dict[str, bool]:
