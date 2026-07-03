@@ -1247,6 +1247,42 @@ def test_hosted_worker_proof_rejects_unknown_artifact_and_secret_text() -> None:
         )
 
 
+def test_hosted_worker_proof_rejects_top_level_sidecar_fields() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    started = advance_hosted_launch_job(job, "start", now=1_700_000_001)
+    claimed = claim_hosted_launch_job(started, worker_id="worker-01", now=1_700_000_002)
+    payload = _proof_payload(
+        complete=False,
+        completed_artifacts=[".fusekit/run_record.json"],
+    )
+    payload["raw_worker_log"] = "not-allowed-here"
+
+    with pytest.raises(ValueError, match="worker proof payload contains unsupported keys"):
+        hosted_worker_proof_receipt(claimed, payload, worker_id="worker-01")
+
+
+def test_managed_worker_proof_rejects_byo_proof_bundle_sidecar() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    started = advance_hosted_launch_job(job, "start", now=1_700_000_001)
+    claimed = claim_hosted_launch_job(started, worker_id="worker-01", now=1_700_000_002)
+    byo_job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    payload = _proof_payload(
+        complete=False,
+        completed_artifacts=[".fusekit/run_record.json"],
+    )
+    payload["byo_oci_proof_bundle"] = _byo_proof_bundle_from_bootstrap(
+        hosted_byo_oci_bootstrap(byo_job)
+    )
+
+    with pytest.raises(ValueError, match="worker proof payload contains unsupported keys"):
+        hosted_worker_proof_receipt(claimed, payload, worker_id="worker-01")
+
+
 def test_hosted_control_room_embeds_redacted_job_json() -> None:
     job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
     started = advance_hosted_launch_job(job, "start", now=1_700_000_001)

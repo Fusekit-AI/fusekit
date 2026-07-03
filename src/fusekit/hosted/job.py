@@ -1858,6 +1858,7 @@ def hosted_worker_proof_receipt(
 
     if payload.get("schema_version") != HOSTED_WORKER_PROOF_SCHEMA_VERSION:
         raise ValueError("Hosted worker proof schema is unsupported.")
+    _validate_worker_proof_payload_shape(job, payload)
     evidence = _proof_evidence(payload.get("evidence"))
     completed_artifacts = _completed_artifacts(
         payload.get("completed_artifacts"),
@@ -1910,6 +1911,18 @@ def hosted_worker_proof_receipt(
     if byo_oci_proof:
         receipt["byo_oci_proof_bundle"] = byo_oci_proof
     return receipt
+
+
+def _validate_worker_proof_payload_shape(
+    job: HostedLaunchJob,
+    payload: dict[str, object],
+) -> None:
+    allowed = {"schema_version", "evidence", "completed_artifacts", "note"}
+    if job.launch_lane == BYO_OCI_LANE:
+        allowed.add("byo_oci_proof_bundle")
+    unexpected = sorted(str(key) for key in payload if key not in allowed)
+    if unexpected:
+        raise ValueError("Hosted worker proof payload contains unsupported keys.")
 
 
 def render_hosted_proof_receipt(job: HostedLaunchJob, *, job_token: str = "") -> str:
