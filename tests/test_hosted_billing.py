@@ -67,3 +67,29 @@ def test_stripe_checkout_session_receipt_rejects_secret_text_in_public_fields() 
                 },
             }
         )
+
+
+def test_stripe_checkout_session_receipt_only_keeps_checkout_payment_urls() -> None:
+    receipt = stripe_checkout_session_receipt(
+        {
+            "id": "cs_live_public",
+            "url": "https://checkout.stripe.com/not-a-pay-session",
+            "status": "open",
+            "payment_status": "unpaid",
+            "mode": "payment",
+        }
+    )
+
+    assert receipt["checkout_url"] == ""
+
+    receipt = stripe_checkout_session_receipt(
+        {
+            "id": "cs_live_public",
+            "url": "https://checkout.stripe.com/c/pay/cs_live_public#fragment",
+            "status": "open",
+            "payment_status": "unpaid",
+            "mode": "payment",
+        }
+    )
+
+    assert receipt["checkout_url"] == ""

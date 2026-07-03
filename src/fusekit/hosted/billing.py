@@ -327,7 +327,15 @@ def _valid_checkout_url(value: object) -> bool:
     if not isinstance(value, str):
         return False
     parsed = urllib.parse.urlparse(value)
-    return parsed.scheme == "https" and parsed.netloc == "checkout.stripe.com"
+    return (
+        parsed.scheme == "https"
+        and parsed.netloc == "checkout.stripe.com"
+        and parsed.path.startswith("/c/pay/")
+        and not parsed.params
+        and not parsed.fragment
+        and not parsed.username
+        and not parsed.password
+    )
 
 
 def _valid_price_label(value: str) -> bool:
