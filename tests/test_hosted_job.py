@@ -27,6 +27,7 @@ from fusekit.hosted.job import (
     HOSTED_BYO_OCI_HANDOFF_PREFLIGHT_SCHEMA_VERSION,
     HOSTED_BYO_OCI_REVERSIBILITY_SCHEMA_VERSION,
     hosted_byo_oci_bootstrap,
+    render_hosted_byo_oci_bootstrap,
     with_hosted_job_payment_receipt,
 )
 from fusekit.hosted.lanes import BYO_OCI_LANE, MANAGED_FUSEKIT_RUN_LANE
@@ -257,6 +258,33 @@ def test_hosted_byo_bootstrap_publishes_preflight_and_reversibility_contract() -
     assert "ghs_" not in serialized
     assert "PRIVATE KEY" not in serialized
     assert "sk_live" not in serialized
+
+
+def test_hosted_byo_bootstrap_renders_browser_handoff_page() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+
+    html = render_hosted_byo_oci_bootstrap(job, job_token="signed-public-job")
+
+    assert "BYO OCI handoff." in html
+    assert "Open Oracle Cloud Shell" in html
+    assert "Review Oracle Cloud billing status" in html
+    assert "FuseKit fee: none_for_byo_oci" in html
+    assert "Confirm the bootstrap uses the AMD/x86_64 runner profile." in html
+    assert "workspace detonation proof" in html
+    assert "Download bootstrap JSON" in html
+    assert "Back to control room" in html
+    assert "fusekit.hosted-byo-oci-bootstrap.v1" in html
+    assert "fusekit launch" in html
+    assert "--oci-shape VM.Standard.E5.Flex" in html
+    assert "cloud.oracle.com" in html
+    assert "ghs_" not in html
+    assert "PRIVATE KEY" not in html
+    assert "sk_live" not in html
 
 
 def test_hosted_worker_request_binds_live_acceptance_and_no_secret_policy() -> None:

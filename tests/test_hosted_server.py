@@ -2216,6 +2216,37 @@ def test_hosted_byo_oci_lane_starts_without_managed_worker_dispatch() -> None:
     assert WORKER_SECRET not in serialized
     assert "PRIVATE KEY" not in serialized
 
+    status, headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/byo-oci-bootstrap",
+        query_string=f"job={started['job_token']}",
+        headers={"Accept": "text/html,application/xhtml+xml"},
+        settings=settings,
+    )
+    html = body.decode("utf-8")
+    assert status == "200 OK"
+    assert headers["Content-Type"] == "text/html; charset=utf-8"
+    assert "BYO OCI handoff." in html
+    assert "Open Oracle Cloud Shell" in html
+    assert "Review Oracle Cloud billing status" in html
+    assert "FuseKit fee: none_for_byo_oci" in html
+    assert "workspace detonation proof" in html
+    assert "Download bootstrap JSON" in html
+    assert "--oci-shape VM.Standard.E5.Flex" in html
+    assert "ghs_fake" not in html
+    assert WORKER_SECRET not in html
+    assert "PRIVATE KEY" not in html
+
+    status, headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/byo-oci-bootstrap",
+        query_string=f"job={started['job_token']}&format=json",
+        headers={"Accept": "text/html"},
+        settings=settings,
+    )
+    json_payload = json.loads(body.decode("utf-8"))
+    assert status == "200 OK"
+    assert headers["Content-Type"] == "application/json; charset=utf-8"
+    assert json_payload["schema_version"] == "fusekit.hosted-byo-oci-bootstrap.v1"
+
 
 def test_hosted_job_api_returns_redacted_status_and_accepts_protected_action() -> None:
     state = create_hosted_state_token(

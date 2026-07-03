@@ -48,6 +48,7 @@ from fusekit.hosted.job import (
     hosted_proof_receipt,
     hosted_worker_claim_receipt,
     hosted_worker_request,
+    render_hosted_byo_oci_bootstrap,
     render_hosted_control_room,
     render_hosted_proof_receipt,
     verify_hosted_job_token,
@@ -1711,7 +1712,7 @@ def _hosted_job_api_response(
     if len(parts) == 5 and parts[4] == "worker-proof" and method == "POST":
         return _hosted_worker_proof_response(settings, environ, start_response, job)
     if len(parts) == 5 and parts[4] == "byo-oci-bootstrap" and method == "GET":
-        return _hosted_byo_oci_bootstrap_response(start_response, job)
+        return _hosted_byo_oci_bootstrap_response(settings, environ, start_response, job, query)
     if len(parts) == 6 and parts[4] == "payments" and parts[5] == "checkout" and method == "POST":
         return _hosted_payment_checkout_response(settings, environ, start_response, job=job)
     if (
@@ -1955,13 +1956,24 @@ def _hosted_payment_cancel_response(
 
 
 def _hosted_byo_oci_bootstrap_response(
+    settings: HostedSettings,
+    environ: dict[str, object],
     start_response: StartResponse,
     job: HostedLaunchJob,
+    query: dict[str, list[str]],
 ) -> Iterable[bytes]:
     if job.launch_lane != BYO_OCI_LANE:
         return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "byo_oci_not_selected"})
     if job.status == "waiting_for_worker":
         return _response(start_response, HTTPStatus.CONFLICT, {"error": "worker_not_started"})
+    if _wants_html(environ) and _first_query_value(query, "format").strip().lower() != "json":
+        return _html_response(
+            start_response,
+            render_hosted_byo_oci_bootstrap(
+                job,
+                job_token=create_hosted_job_token(settings.state_secret, job),
+            ),
+        )
     return _response(start_response, HTTPStatus.OK, hosted_byo_oci_bootstrap(job))
 
 

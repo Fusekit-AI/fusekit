@@ -505,6 +505,217 @@ def hosted_byo_oci_bootstrap(job: HostedLaunchJob) -> dict[str, object]:
     }
 
 
+def render_hosted_byo_oci_bootstrap(job: HostedLaunchJob, *, job_token: str = "") -> str:
+    """Render the BYO OCI bootstrap as a browser-readable handoff page."""
+
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    cloud_shell = bootstrap.get("cloud_shell")
+    proof_return = bootstrap.get("proof_return")
+    handoff = bootstrap.get("handoff_preflight")
+    reversibility = bootstrap.get("reversibility")
+    cloud_shell_data = cloud_shell if isinstance(cloud_shell, dict) else {}
+    proof_data = proof_return if isinstance(proof_return, dict) else {}
+    handoff_data = handoff if isinstance(handoff, dict) else {}
+    reversibility_data = reversibility if isinstance(reversibility, dict) else {}
+    deeplink = _safe_cloud_shell_url(cloud_shell_data.get("deeplink_url"))
+    command = str(cloud_shell_data.get("bootstrap_command", ""))
+    payload = html.escape(json.dumps(bootstrap, sort_keys=True))
+    fallback = _list(_string_tuple(cloud_shell_data.get("fallback_steps")))
+    human_gates = _list(_string_tuple(cloud_shell_data.get("human_gates")))
+    required_artifacts = _list(_string_tuple(proof_data.get("required_artifacts")))
+    not_complete_until = _list(_string_tuple(proof_data.get("not_hosted_complete_until")))
+    preflight = _preflight_cards(handoff_data.get("checks"))
+    cost_acknowledgement = _cost_acknowledgement_section(
+        handoff_data.get("cost_acknowledgement")
+    )
+    delete_targets = _list(_string_tuple(reversibility_data.get("delete_targets")))
+    survivors = _list(_string_tuple(reversibility_data.get("survivors")))
+    acceptance_command = html.escape(str(proof_data.get("acceptance_command", "")))
+    json_link = _byo_oci_json_link(job, job_token=job_token)
+    control_room_link = _control_room_link(job, job_token=job_token)
+    app_name = html.escape(job.app_name)
+    github_source = html.escape(job.github_source)
+    job_id = html.escape(job.job_id)
+    command_block = (
+        f"<pre>{html.escape(command)}</pre>"
+        if command
+        else "<p>Bootstrap command is unavailable for this job.</p>"
+    )
+    cloud_shell_button = (
+        f'<a class="button" href="{html.escape(deeplink, quote=True)}">'
+        "Open Oracle Cloud Shell</a>"
+        if deeplink
+        else (
+            '<span class="button disabled" aria-disabled="true">'
+            "Oracle Cloud Shell unavailable</span>"
+        )
+    )
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FuseKit BYO OCI bootstrap</title>
+  <style>
+    :root {{
+      color-scheme: light;
+      font-family:
+        Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", sans-serif;
+      --ink: #101820;
+      --muted: #536476;
+      --line: #cfd9e2;
+      --blue: #0077cc;
+      --green: #167a4a;
+      --amber: #8a5a00;
+      --bg: #f6fbff;
+      --panel: #ffffff;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin: 0; background: var(--bg); color: var(--ink); }}
+    main {{
+      width: min(1120px, calc(100vw - 28px));
+      margin: 0 auto;
+      padding: 30px 0 48px;
+      display: grid;
+      gap: 18px;
+    }}
+    header {{
+      border-bottom: 2px solid var(--ink);
+      padding-bottom: 20px;
+      display: grid;
+      gap: 10px;
+    }}
+    h1, h2, h3, p {{ margin: 0; }}
+    h1 {{ font-size: clamp(34px, 5vw, 58px); line-height: 1; letter-spacing: 0; }}
+    p {{ color: #31465c; line-height: 1.5; }}
+    .source {{
+      overflow-wrap: anywhere;
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+    }}
+    .grid {{
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: 18px;
+      align-items: start;
+    }}
+    section, aside {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      display: grid;
+      gap: 14px;
+    }}
+    article {{
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--amber);
+      border-radius: 6px;
+      padding: 10px 12px;
+      display: grid;
+      gap: 4px;
+    }}
+    article.done {{ border-left-color: var(--green); }}
+    .button {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      width: fit-content;
+      border-radius: 6px;
+      background: var(--blue);
+      color: white;
+      padding: 0 14px;
+      font-weight: 850;
+      text-decoration: none;
+      border: 1px solid var(--blue);
+    }}
+    .button.disabled {{
+      background: #d8e1ea;
+      border-color: #aebcca;
+      color: #52616f;
+    }}
+    ul {{ margin: 0; padding-left: 20px; color: #2e4256; }}
+    li + li {{ margin-top: 6px; }}
+    pre {{
+      margin: 0;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      background: #0f1720;
+      color: #f8fbff;
+      border-radius: 6px;
+      padding: 12px;
+      font-size: 13px;
+      line-height: 1.45;
+    }}
+    script[type="application/json"] {{ display: none; }}
+    @media (max-width: 880px) {{ .grid {{ grid-template-columns: 1fr; }} }}
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="source">{job_id} / bring your own OCI</p>
+      <h1>BYO OCI handoff.</h1>
+      <p>
+        {app_name} will run in your Oracle Cloud tenancy. FuseKit charges no managed-run
+        fee for this lane, does not dispatch FuseKit-owned worker infrastructure, and
+        keeps hosted worker secrets out of this handoff.
+      </p>
+      <p class="source">{github_source}</p>
+    </header>
+    <div class="grid">
+      <section aria-label="Before opening Cloud Shell">
+        <h2>Before Opening Cloud Shell</h2>
+        {cost_acknowledgement}
+        {preflight}
+      </section>
+      <aside aria-label="Cloud Shell launch">
+        <h2>Cloud Shell Launch</h2>
+        {cloud_shell_button}
+        <h3>Fallback Command</h3>
+        {command_block}
+        <h3>Fallback Steps</h3>
+        {fallback}
+        <h3>Human Gates</h3>
+        {human_gates}
+      </aside>
+    </div>
+    <div class="grid">
+      <section aria-label="Proof return">
+        <h2>Proof Return</h2>
+        <p>Hosted completion waits for these redacted artifacts and proof labels.</p>
+        <h3>Required Artifacts</h3>
+        {required_artifacts}
+        <h3>Not Complete Until</h3>
+        {not_complete_until}
+        <h3>Acceptance Command</h3>
+        <pre>{acceptance_command}</pre>
+      </section>
+      <aside aria-label="Reversible setup">
+        <h2>Reversible Setup</h2>
+        <p>{html.escape(str(reversibility_data.get("statement", "")))}</p>
+        <h3>Delete Targets</h3>
+        {delete_targets}
+        <h3>Survivors</h3>
+        {survivors}
+      </aside>
+    </div>
+    <section aria-label="Boundary">
+      <h2>Secret Boundary</h2>
+      <p>{html.escape(str(bootstrap.get("secret_boundary", "")))}</p>
+      {json_link}
+      {control_room_link}
+    </section>
+    <script id="fusekit-byo-oci-bootstrap" type="application/json">{payload}</script>
+  </main>
+</body>
+</html>
+"""
+
+
 def _byo_oci_launch_args(job: HostedLaunchJob) -> tuple[str, ...]:
     args = [
         "--oci-shape",
@@ -1701,6 +1912,17 @@ def _byo_oci_bootstrap_link(job: HostedLaunchJob, *, job_token: str) -> str:
     return f'<a class="button" href="{href}">Open BYO OCI bootstrap</a>'
 
 
+def _byo_oci_json_link(job: HostedLaunchJob, *, job_token: str) -> str:
+    if not job_token:
+        return ""
+    href = html.escape(
+        f"/api/hosted/jobs/{urllib.parse.quote(job.job_id)}/byo-oci-bootstrap?"
+        + urllib.parse.urlencode({"job": job_token, "format": "json"}),
+        quote=True,
+    )
+    return f'<a class="button" href="{href}">Download bootstrap JSON</a>'
+
+
 def _control_room_link(job: HostedLaunchJob, *, job_token: str) -> str:
     if not job_token:
         return ""
@@ -1763,6 +1985,62 @@ def _update_steps(
 
 def _list(items: tuple[str, ...]) -> str:
     return "<ul>" + "\n".join(f"<li>{html.escape(item)}</li>" for item in items) + "</ul>"
+
+
+def _string_tuple(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(str(item) for item in value if str(item).strip())
+
+
+def _safe_cloud_shell_url(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    parsed = urllib.parse.urlparse(value)
+    if parsed.scheme != "https" or parsed.netloc.lower() != "cloud.oracle.com":
+        return ""
+    return value
+
+
+def _preflight_cards(value: object) -> str:
+    if not isinstance(value, list):
+        return ""
+    cards: list[str] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        label = html.escape(str(item.get("label", "")))
+        proof = html.escape(str(item.get("proof", "")))
+        check_id = html.escape(str(item.get("id", "preflight")))
+        required = "required" if item.get("required") is True else "optional"
+        cards.append(
+            f"""
+        <article class="done" aria-label="{check_id}">
+          <h3>{label}</h3>
+          <small>{html.escape(required)}</small>
+          <p>{proof}</p>
+        </article>
+"""
+        )
+    return "\n".join(cards)
+
+
+def _cost_acknowledgement_section(value: object) -> str:
+    if not isinstance(value, dict):
+        return ""
+    statement = html.escape(str(value.get("statement", "")))
+    spend_owner = html.escape(str(value.get("spend_owner", "")))
+    fusekit_fee = html.escape(str(value.get("fusekit_fee", "")))
+    billing_owner = html.escape(str(value.get("oracle_billing_gate_owner", "")))
+    return f"""
+        <article class="done" aria-label="Cost acknowledgement">
+          <h3>Cost acknowledgement</h3>
+          <p>{statement}</p>
+          <small>Spend owner: {spend_owner}</small>
+          <small>FuseKit fee: {fusekit_fee}</small>
+          <small>Billing gate owner: {billing_owner}</small>
+        </article>
+"""
 
 
 def _worker_contract_section(contract: HostedWorkerContract) -> str:
