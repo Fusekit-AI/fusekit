@@ -2179,9 +2179,17 @@ def _hosted_byo_oci_bootstrap_response(
     query: dict[str, list[str]],
 ) -> Iterable[bytes]:
     if job.launch_lane != BYO_OCI_LANE:
-        return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "byo_oci_not_selected"})
+        return _response(
+            start_response,
+            HTTPStatus.BAD_REQUEST,
+            _hosted_byo_oci_bootstrap_error_payload("byo_oci_not_selected"),
+        )
     if job.status == "waiting_for_worker":
-        return _response(start_response, HTTPStatus.CONFLICT, {"error": "worker_not_started"})
+        return _response(
+            start_response,
+            HTTPStatus.CONFLICT,
+            _hosted_byo_oci_bootstrap_error_payload("worker_not_started"),
+        )
     if _wants_html(environ) and _first_query_value(query, "format").strip().lower() != "json":
         return _html_response(
             start_response,
@@ -2191,6 +2199,32 @@ def _hosted_byo_oci_bootstrap_response(
             ),
         )
     return _response(start_response, HTTPStatus.OK, hosted_byo_oci_bootstrap(job))
+
+
+def _hosted_byo_oci_bootstrap_error_payload(error: str) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "schema_version": "fusekit.hosted-byo-oci-bootstrap-error.v1",
+        "error": error,
+        "lane": BYO_OCI_LANE,
+        "bootstrap_available": False,
+        "managed_worker_dispatch_allowed": False,
+        "worker_dispatch": "not_applicable_user_owned_oci",
+        "next_required_proof": ["byo_oci_start_action", "oci_cloud_shell_handoff"],
+        "user_owned_cost_boundary": byo_oci_user_owned_cost_boundary(),
+        "byo_security_contract": byo_oci_security_contract(),
+        "receipt_statement": (
+            "BYO OCI bootstrap is not available from this job state; no FuseKit-managed "
+            "worker infrastructure has been dispatched."
+        ),
+        "secret_boundary": (
+            "BYO OCI bootstrap error receipts expose only lane, cost, security, and next "
+            "proof labels. They never include Oracle credentials, GitHub installation "
+            "tokens, hosted worker secrets, hosted GitHub private keys, API keys, vault "
+            "material, provider secrets, or worker-local paths."
+        ),
+    }
+    _assert_public_action_response_payload(payload)
+    return payload
 
 
 def _hosted_job_html_response(

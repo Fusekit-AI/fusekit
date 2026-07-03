@@ -2827,6 +2827,89 @@ def test_hosted_byo_oci_lane_starts_without_managed_worker_dispatch() -> None:
     assert json_payload["schema_version"] == "fusekit.hosted-byo-oci-bootstrap.v1"
 
 
+def test_hosted_byo_oci_bootstrap_errors_keep_lane_boundary() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    settings = _settings_with_github(opener)
+
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=f"installation_id=42&repo=example/one&state={state}",
+        settings=settings,
+    )
+    assert status == "200 OK"
+    text = body.decode("utf-8")
+    managed_job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    managed_job_token = _job_token(text)
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{managed_job_id}/byo-oci-bootstrap",
+        query_string=f"job={managed_job_token}",
+        settings=settings,
+    )
+    assert status == "400 Bad Request"
+    _assert_public_byo_bootstrap_error(body, "byo_oci_not_selected")
+
+    byo_state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-byo-state",
+    )
+    byo_opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    byo_settings = _settings_with_github(byo_opener)
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=(
+            f"installation_id=42&repo=example/one&state={byo_state}"
+            f"&lane={BYO_OCI_LANE}"
+        ),
+        settings=byo_settings,
+    )
+    assert status == "200 OK"
+    byo_text = body.decode("utf-8")
+    byo_job_id = _match(byo_text, r"hosted-[A-Za-z0-9_-]+")
+    byo_job_token = _job_token(byo_text)
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{byo_job_id}/byo-oci-bootstrap",
+        query_string=f"job={byo_job_token}",
+        settings=byo_settings,
+    )
+    assert status == "409 Conflict"
+    _assert_public_byo_bootstrap_error(body, "worker_not_started")
+    assert byo_settings.hosted_jobs[byo_job_id].status == "waiting_for_worker"
+    assert byo_settings.worker_dispatch_opener is not None
+    assert byo_settings.worker_dispatch_opener.requests == []
+
+
 def test_hosted_job_api_returns_redacted_status_and_accepts_protected_action() -> None:
     state = create_hosted_state_token(
         STATE_SECRET,
@@ -4596,6 +4679,36 @@ def _assert_public_payment_error(body: bytes, error: str) -> None:
     assert "sk_live" not in serialized
     assert "client_secret" not in serialized
     assert "payment_method" not in serialized
+
+
+def _assert_public_byo_bootstrap_error(body: bytes, error: str) -> None:
+    payload = json.loads(body.decode("utf-8"))
+    serialized = json.dumps(payload)
+    assert payload["schema_version"] == "fusekit.hosted-byo-oci-bootstrap-error.v1"
+    assert payload["error"] == error
+    assert payload["lane"] == BYO_OCI_LANE
+    assert payload["bootstrap_available"] is False
+    assert payload["managed_worker_dispatch_allowed"] is False
+    assert payload["worker_dispatch"] == "not_applicable_user_owned_oci"
+    assert payload["next_required_proof"] == [
+        "byo_oci_start_action",
+        "oci_cloud_shell_handoff",
+    ]
+    assert payload["user_owned_cost_boundary"]["spend_owner"] == "user_oci_tenancy"
+    assert (
+        payload["user_owned_cost_boundary"]["fusekit_managed_infrastructure_spend"]
+        is False
+    )
+    assert payload["byo_security_contract"]["managed_worker_dispatch_allowed"] is False
+    assert payload["byo_security_contract"]["hosted_worker_secret_exported"] is False
+    assert payload["byo_security_contract"]["hosted_github_private_key_exported"] is False
+    assert payload["byo_security_contract"]["runner_architecture"] == "amd_x86_64_only"
+    assert "no FuseKit-managed worker infrastructure" in payload["receipt_statement"]
+    assert "worker-local paths" in payload["secret_boundary"]
+    assert "ghs_" not in serialized
+    assert "sk_live" not in serialized
+    assert "PRIVATE KEY" not in serialized
+    assert "ocid1." not in serialized
 
 
 def _control_for_action(text: str, action: str) -> str:
