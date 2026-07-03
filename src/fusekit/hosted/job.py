@@ -307,7 +307,7 @@ class HostedLaunchJob:
     def to_dict(self) -> dict[str, object]:
         """Serialize a browser-safe hosted job."""
 
-        return {
+        payload: dict[str, object] = {
             "schema_version": HOSTED_JOB_SCHEMA_VERSION,
             "job_id": self.job_id,
             "app_name": self.app_name,
@@ -323,6 +323,8 @@ class HostedLaunchJob:
             "payment": hosted_job_payment_status(self),
             "worker_contract": self.worker_contract.to_dict(),
         }
+        _assert_public_hosted_job(payload)
+        return payload
 
 
 def build_hosted_launch_job(
@@ -1200,6 +1202,13 @@ def _assert_public_byo_oci_bootstrap(payload: dict[str, object]) -> None:
     )
     if any(token.lower() in serialized.lower() for token in forbidden):
         raise FuseKitError("Hosted BYO OCI bootstrap contains private material.")
+
+
+def _assert_public_hosted_job(payload: dict[str, object]) -> None:
+    serialized = json.dumps(payload, sort_keys=True)
+    if contains_durable_secret_text(serialized) or _contains_byo_private_marker(serialized):
+        raise FuseKitError("Hosted launch job contains private material.")
+
 
 def _assert_public_worker_request(payload: dict[str, object]) -> None:
     serialized = json.dumps(payload, sort_keys=True)

@@ -1844,6 +1844,23 @@ def test_hosted_worker_contract_is_public_and_binds_approved_plan() -> None:
     assert "VERCEL_TOKEN" not in serialized
 
 
+def test_hosted_launch_job_to_dict_rejects_private_material_drift() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    unsafe_proof = replace(job, proof=("worker token ghs_should_not_render",))
+
+    with pytest.raises(FuseKitError, match="Hosted launch job contains private material"):
+        unsafe_proof.to_dict()
+
+    unsafe_payment = replace(
+        job,
+        payment_status="checkout_pending",
+        payment_receipt={"secret": "sk_live_should_not_render"},
+    )
+
+    with pytest.raises(FuseKitError, match="Hosted launch job contains private material"):
+        unsafe_payment.to_dict()
+
+
 def test_hosted_worker_contract_rejects_boolean_github_installation_id() -> None:
     with pytest.raises(FuseKitError, match="github_installation_id"):
         build_hosted_worker_contract(_plan(), github_installation_id=True)
