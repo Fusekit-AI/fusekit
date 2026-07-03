@@ -93,6 +93,27 @@ def test_hosted_oci_access_plan_blocks_stale_commit_and_missing_access() -> None
     ]
     assert plan["release_proof"]["actual_commit_sha"] == ACTUAL_COMMIT
     assert plan["release_proof"]["expected_commit_sha"] == EXPECTED_COMMIT
+    assert plan["release_proof"]["release_action"] == {
+        "commit_state": "stale",
+        "live_commit_sha": ACTUAL_COMMIT,
+        "expected_commit_sha": EXPECTED_COMMIT,
+        "deploy_access_ready": False,
+        "allowed_deploy_paths": [],
+        "safe_next_action": (
+            "Restore one narrow deploy path for the FuseKit-tagged OCI launcher before "
+            "redeploying: SSH release or OCI Run Command release."
+        ),
+        "post_deploy_proof_command": (
+            "fusekit-hosted-verify --origin https://fusekit.snowmanai.org "
+            "--expected-commit-sha <expected-commit-sha>"
+        ),
+        "completion_requires": [
+            "hosted verifier ready",
+            "expected commit matches live commit",
+            "OCI posture evidence captured after redeploy",
+            "rollback metadata preserved",
+        ],
+    }
     assert INSTANCE_ID not in serialized
     assert "ocid1.instance.<redacted:" in serialized
     assert not contains_durable_secret_text(serialized)
@@ -114,6 +135,14 @@ def test_hosted_oci_access_plan_allows_redeploy_when_run_command_ready() -> None
     assert plan["access"]["oci_run_command_ready"] is True
     assert plan["access"]["allowed_deploy_paths"] == ["oci_run_command_release"]
     assert plan["release_proof"]["expected_commit_matches_live"] is True
+    assert plan["release_proof"]["release_action"]["commit_state"] == "current"
+    assert plan["release_proof"]["release_action"]["deploy_access_ready"] is True
+    assert plan["release_proof"]["release_action"]["allowed_deploy_paths"] == [
+        "oci_run_command_release"
+    ]
+    assert plan["release_proof"]["release_action"]["safe_next_action"] == (
+        "No redeploy needed; preserve this release proof with OCI posture evidence."
+    )
 
 
 def test_hosted_oci_access_plan_allows_redeploy_when_ssh_ready() -> None:

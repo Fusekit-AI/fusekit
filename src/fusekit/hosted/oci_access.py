@@ -72,6 +72,13 @@ def build_hosted_oci_access_plan(
         for name in HOSTED_OCI_RUN_COMMAND_PLUGIN_NAMES
     )
     ssh_ready = ssh_status in HOSTED_OCI_SSH_OK_STATUSES
+    release_action = _release_action(
+        expected_commit=expected_commit,
+        actual_commit=actual_commit,
+        hosted_verify_ready=hosted_verify.get("ready") is True,
+        ssh_ready=ssh_ready,
+        run_command_ready=run_command_ready,
+    )
     blockers: list[str] = []
     if not _target_tags_match(tags):
         blockers.append("oci_instance_tags_not_fusekit_hosted_launcher")
@@ -125,6 +132,7 @@ def build_hosted_oci_access_plan(
             "expected_commit_matches_live": bool(
                 expected_commit and actual_commit and expected_commit == actual_commit
             ),
+            "release_action": release_action,
         },
         "rollback_metadata": {
             "scope": "fusekit_permanent_oci_host_only",
@@ -275,6 +283,68 @@ def _access_next_actions(*, ssh_ready: bool, run_command_ready: bool) -> list[st
         "Do not broaden Cloudflare DNS, MailPilot/AWS, or generated-app credentials while "
         "repairing deploy access.",
     ]
+
+
+def _release_action(
+    *,
+    expected_commit: str,
+    actual_commit: str,
+    hosted_verify_ready: bool,
+    ssh_ready: bool,
+    run_command_ready: bool,
+) -> dict[str, object]:
+    deploy_paths = _allowed_deploy_paths(ssh_ready=ssh_ready, run_command_ready=run_command_ready)
+    commit_state = "unknown"
+    if expected_commit and actual_commit:
+        commit_state = "current" if expected_commit == actual_commit else "stale"
+    elif expected_commit and not actual_commit:
+        commit_state = "missing_live_commit"
+    return {
+        "commit_state": commit_state,
+        "live_commit_sha": actual_commit,
+        "expected_commit_sha": expected_commit,
+        "deploy_access_ready": bool(deploy_paths),
+        "allowed_deploy_paths": deploy_paths,
+        "safe_next_action": _release_safe_next_action(
+            commit_state=commit_state,
+            hosted_verify_ready=hosted_verify_ready,
+            deploy_paths=deploy_paths,
+        ),
+        "post_deploy_proof_command": (
+            "fusekit-hosted-verify --origin https://fusekit.snowmanai.org "
+            "--expected-commit-sha <expected-commit-sha>"
+        ),
+        "completion_requires": [
+            "hosted verifier ready",
+            "expected commit matches live commit",
+            "OCI posture evidence captured after redeploy",
+            "rollback metadata preserved",
+        ],
+    }
+
+
+def _release_safe_next_action(
+    *,
+    commit_state: str,
+    hosted_verify_ready: bool,
+    deploy_paths: Sequence[str],
+) -> str:
+    if not deploy_paths:
+        return (
+            "Restore one narrow deploy path for the FuseKit-tagged OCI launcher before "
+            "redeploying: SSH release or OCI Run Command release."
+        )
+    if commit_state in {"stale", "missing_live_commit"}:
+        return (
+            "Redeploy only the FuseKit hosted launcher from the expected commit using an "
+            "allowed deploy path, then rerun the expected-commit verifier."
+        )
+    if not hosted_verify_ready:
+        return (
+            "Keep the deployed commit in place and repair the hosted verifier blockers before "
+            "claiming launch readiness."
+        )
+    return "No redeploy needed; preserve this release proof with OCI posture evidence."
 
 
 def _hosted_actual_commit_sha(report: Mapping[str, object]) -> str:
