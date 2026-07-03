@@ -831,7 +831,7 @@ def verify_hosted_byo_oci_proof_bundle(
         "completion_evidence",
     }
     unexpected_bundle_fields = sorted(
-        str(key) for key in bundle if key not in allowed_bundle_fields
+        _public_byo_sidecar_field_name(key) for key in bundle if key not in allowed_bundle_fields
     )
     blockers.extend(
         f"byo_oci_proof_bundle_unexpected_field:{key}" for key in unexpected_bundle_fields
@@ -930,7 +930,7 @@ def _public_byo_job_binding(
     if not isinstance(value, dict):
         blockers.append("byo_oci_proof_bundle_job_binding_invalid")
         return {}
-    unexpected = sorted(str(key) for key in value if key not in allowed)
+    unexpected = sorted(_public_byo_sidecar_field_name(key) for key in value if key not in allowed)
     blockers.extend(
         f"byo_oci_proof_bundle_job_binding_unexpected_field:{key}" for key in unexpected
     )
@@ -996,10 +996,16 @@ def _public_byo_artifact_inventory(
             blockers.append(f"artifact_row_invalid:{index}")
             continue
         allowed = {"path", "label", "sha256", "size_bytes", "redacted"}
-        unexpected = sorted(str(key) for key in row if key not in allowed)
+        unexpected = sorted(
+            _public_byo_sidecar_field_name(key) for key in row if key not in allowed
+        )
         blockers.extend(f"artifact_row_unexpected_field:{index}:{key}" for key in unexpected)
         path = str(row.get("path", ""))
-        if not _safe_byo_artifact_path(path):
+        if (
+            not _safe_byo_artifact_path(path)
+            or contains_durable_secret_text(path)
+            or _contains_byo_private_marker(path)
+        ):
             blockers.append(f"artifact_path_invalid:{index}")
             continue
         if path in seen:
@@ -1027,9 +1033,32 @@ def _public_byo_artifact_inventory(
 def _public_completion_evidence(value: object, *, blockers: list[str]) -> dict[str, bool]:
     if not isinstance(value, dict):
         return {}
-    unexpected = sorted(str(key) for key in value if key not in HOSTED_WORKER_PROOF_KEYS)
+    unexpected = sorted(
+        _public_byo_sidecar_field_name(key) for key in value if key not in HOSTED_WORKER_PROOF_KEYS
+    )
     blockers.extend(f"completion_evidence_unexpected_field:{key}" for key in unexpected)
     return {key: value.get(key) is True for key in HOSTED_WORKER_PROOF_KEYS}
+
+
+def _public_byo_sidecar_field_name(value: object) -> str:
+    raw = str(value)
+    if (
+        not raw
+        or len(raw) > 80
+        or contains_durable_secret_text(raw)
+        or _contains_byo_private_marker(raw)
+    ):
+        return "redacted"
+    cleaned = "".join(
+        character if character.isalnum() or character in {"_", "-", "."} else "_"
+        for character in raw
+    )
+    return cleaned or "redacted"
+
+
+def _contains_byo_private_marker(value: str) -> bool:
+    forbidden = ("ghs_", "sk_live", "sk_test", "-----BEGIN", "ocid1.")
+    return any(token.lower() in value.lower() for token in forbidden)
 
 
 def _safe_byo_artifact_path(path: str) -> bool:
@@ -1058,8 +1087,7 @@ def _assert_public_byo_proof_report(report: dict[str, object]) -> None:
     serialized = json.dumps(report, sort_keys=True)
     if contains_durable_secret_text(serialized):
         raise FuseKitError("Hosted BYO OCI proof report contains secret-looking text.")
-    forbidden = ("ghs_", "sk_live", "sk_test", "-----BEGIN", "ocid1.")
-    if any(token.lower() in serialized.lower() for token in forbidden):
+    if _contains_byo_private_marker(serialized):
         raise FuseKitError("Hosted BYO OCI proof report contains private material.")
 
 

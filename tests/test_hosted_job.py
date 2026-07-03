@@ -736,6 +736,45 @@ def test_hosted_byo_proof_bundle_verifier_blocks_sidecar_fields() -> None:
     assert "/home/opc/app/.fusekit/run_record.json" not in serialized
 
 
+def test_hosted_byo_proof_bundle_redacts_secret_like_sidecar_field_names() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+    bundle["sk_live_should_not_be_a_field"] = "not-rendered"
+    binding = bundle["job_binding"]
+    assert isinstance(binding, dict)
+    binding["ghs_should_not_be_a_field"] = "not-rendered"
+    artifacts = bundle["artifacts"]
+    assert isinstance(artifacts, list)
+    first_artifact = artifacts[0]
+    assert isinstance(first_artifact, dict)
+    first_artifact["sk_live_artifact_field"] = "not-rendered"
+    first_artifact["path"] = ".fusekit/sk_live_hidden_path.json"
+    evidence = bundle["completion_evidence"]
+    assert isinstance(evidence, dict)
+    evidence["ghs_should_not_be_evidence"] = True
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+    serialized = json.dumps(report, sort_keys=True)
+
+    assert report["ready"] is False
+    assert "byo_oci_proof_bundle_unexpected_field:redacted" in report["blockers"]
+    assert "byo_oci_proof_bundle_job_binding_unexpected_field:redacted" in report[
+        "blockers"
+    ]
+    assert "artifact_row_unexpected_field:0:redacted" in report["blockers"]
+    assert "artifact_path_invalid:0" in report["blockers"]
+    assert "completion_evidence_unexpected_field:redacted" in report["blockers"]
+    assert "sk_live" not in serialized
+    assert "ghs_" not in serialized
+    assert "not-rendered" not in serialized
+
+
 def test_hosted_worker_request_binds_live_acceptance_and_no_secret_policy() -> None:
     job = build_hosted_launch_job(
         _plan(),
