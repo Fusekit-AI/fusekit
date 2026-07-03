@@ -3153,6 +3153,12 @@ def _payment_receipt_is_paid_checkout(receipt: dict[str, object]) -> bool:
     amount_total = receipt.get("amount_total")
     currency = receipt.get("currency")
     metadata = receipt.get("metadata")
+    hash_keys = {
+        "github_source_hash",
+        "plan_fingerprint",
+        "stripe_price_id_hash",
+        "price_label_hash",
+    }
     return (
         receipt.get("schema_version") == HOSTED_PAYMENT_SCHEMA_VERSION
         and receipt.get("provider") == STRIPE_CHECKOUT_PROVIDER
@@ -3173,6 +3179,7 @@ def _payment_receipt_is_paid_checkout(receipt: dict[str, object]) -> bool:
             isinstance(metadata.get(key), str) and metadata.get(key)
             for key in STRIPE_CHECKOUT_METADATA_KEYS
         )
+        and all(_valid_sha256_label(metadata[key]) for key in hash_keys)
     )
 
 
@@ -3246,6 +3253,12 @@ def _public_payment_metadata(metadata: dict[str, object]) -> dict[str, str]:
         "stripe_price_id_hash",
         "price_label_hash",
     }
+    hash_keys = {
+        "github_source_hash",
+        "plan_fingerprint",
+        "stripe_price_id_hash",
+        "price_label_hash",
+    }
     unexpected = sorted(str(key) for key in metadata if key not in allowed)
     if unexpected:
         raise FuseKitError("Hosted launch payment metadata contains unexpected field.")
@@ -3256,6 +3269,8 @@ def _public_payment_metadata(metadata: dict[str, object]) -> dict[str, str]:
             continue
         if contains_durable_secret_text(value) or len(value) > 256:
             raise FuseKitError("Hosted launch payment metadata contains secret-looking text.")
+        if key in hash_keys and not _valid_sha256_label(value):
+            raise FuseKitError("Hosted launch payment metadata hash is invalid.")
         result[key] = value
     return result
 

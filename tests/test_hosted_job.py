@@ -1972,6 +1972,24 @@ def test_hosted_payment_receipt_rejects_paid_receipt_for_plan_or_label_drift() -
         with_hosted_job_payment_receipt(job, receipt)
 
 
+def test_hosted_payment_receipt_rejects_malformed_hash_metadata() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=MANAGED_FUSEKIT_RUN_LANE,
+        payment_required=True,
+        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        job_id="hosted-test",
+        now=1_700_000_000,
+    )
+    receipt = _paid_checkout_receipt(job)
+    metadata = receipt["metadata"]
+    assert isinstance(metadata, dict)
+    metadata["stripe_price_id_hash"] = "sha256:not-a-real-digest"
+
+    with pytest.raises(FuseKitError, match="payment metadata hash is invalid"):
+        with_hosted_job_payment_receipt(job, receipt)
+
+
 def test_hosted_payment_receipt_does_not_mark_paid_from_boolean_stub() -> None:
     job = build_hosted_launch_job(
         _plan(),
@@ -2092,6 +2110,29 @@ def test_hosted_job_decode_rejects_paid_receipt_binding_drift() -> None:
     metadata["github_source_hash"] = "sha256:" + ("0" * 64)
 
     with pytest.raises(FuseKitError, match="paid payment receipt does not match"):
+        hosted_launch_job_from_dict(payload)
+
+
+def test_hosted_job_decode_rejects_malformed_payment_hash_metadata() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=MANAGED_FUSEKIT_RUN_LANE,
+        payment_required=True,
+        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        job_id="hosted-test",
+        now=1_700_000_000,
+    )
+    paid = with_hosted_job_payment_receipt(job, _paid_checkout_receipt(job))
+    payload = paid.to_dict()
+    payment = payload["payment"]
+    assert isinstance(payment, dict)
+    receipt = payment["receipt"]
+    assert isinstance(receipt, dict)
+    metadata = receipt["metadata"]
+    assert isinstance(metadata, dict)
+    metadata["github_source_hash"] = "sha256:not-a-real-digest"
+
+    with pytest.raises(FuseKitError, match="payment metadata hash is invalid"):
         hosted_launch_job_from_dict(payload)
 
 
