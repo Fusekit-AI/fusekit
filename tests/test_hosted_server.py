@@ -33,7 +33,12 @@ from fusekit.hosted.job import (
     create_hosted_job_token,
     with_hosted_job_payment_receipt,
 )
-from fusekit.hosted.lanes import BYO_OCI_LANE, MANAGED_FUSEKIT_RUN_LANE
+from fusekit.hosted.lanes import (
+    BYO_OCI_LANE,
+    MANAGED_FUSEKIT_RUN_LANE,
+    byo_oci_security_contract,
+    byo_oci_user_owned_cost_boundary,
+)
 from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY, HOSTED_PROHIBITED_ACTIONS
 from fusekit.hosted.server import (
     HOSTED_AWS_SOURCE_PROVENANCE_ENV,
@@ -557,6 +562,11 @@ def test_hosted_readiness_endpoint_reports_ready_when_configured() -> None:
     ]
     assert lane_readiness[BYO_OCI_LANE]["launchable"] is True
     assert lane_readiness[BYO_OCI_LANE]["requires_payment"] is False
+    assert lane_readiness[BYO_OCI_LANE]["requires_user_cloud_account"] is True
+    assert lane_readiness[BYO_OCI_LANE][
+        "user_owned_cost_boundary"
+    ] == byo_oci_user_owned_cost_boundary()
+    assert lane_readiness[BYO_OCI_LANE]["security_contract"] == byo_oci_security_contract()
 
 
 def test_hosted_readiness_blocks_launch_without_verified_source_provenance() -> None:
@@ -632,6 +642,7 @@ def test_hosted_readiness_reports_paid_managed_lane_when_stripe_is_configured() 
     assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["managed_worker_dispatch_allowed"] is True
     assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["blocking_checks"] == []
     assert lane_readiness[BYO_OCI_LANE]["launchable"] is True
+    assert lane_readiness[BYO_OCI_LANE]["security_contract"] == byo_oci_security_contract()
     assert "sk_live" not in serialized
     assert "price_managed_run" not in serialized
 

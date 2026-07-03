@@ -57,6 +57,8 @@ from fusekit.hosted.job import (
 from fusekit.hosted.lanes import (
     BYO_OCI_LANE,
     MANAGED_FUSEKIT_RUN_LANE,
+    byo_oci_security_contract,
+    byo_oci_user_owned_cost_boundary,
     hosted_launch_lane_contract,
     valid_hosted_launch_lane,
 )
@@ -816,6 +818,9 @@ class HostedSettings:
                 "launchable": not byo_blockers,
                 "requires_payment": False,
                 "managed_worker_dispatch_allowed": False,
+                "requires_user_cloud_account": True,
+                "user_owned_cost_boundary": byo_oci_user_owned_cost_boundary(),
+                "security_contract": byo_oci_security_contract(),
                 "blocking_checks": byo_blockers,
                 "next_actions": _hosted_readiness_next_actions((), tuple(byo_blockers)),
             },

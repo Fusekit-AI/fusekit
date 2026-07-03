@@ -35,6 +35,8 @@ from fusekit.hosted.github_app import (
 from fusekit.hosted.lanes import (
     BYO_OCI_LANE,
     MANAGED_FUSEKIT_RUN_LANE,
+    byo_oci_security_contract,
+    byo_oci_user_owned_cost_boundary,
     hosted_launch_lane_contract,
 )
 from fusekit.hosted.launcher import (
@@ -1295,6 +1297,12 @@ def _byo_lane_readiness_failures(
         failures.append("lane_readiness_byo_payment_required")
     if lane.get("managed_worker_dispatch_allowed") is not False:
         failures.append("lane_readiness_byo_dispatch_allowed")
+    if lane.get("requires_user_cloud_account") is not True:
+        failures.append("lane_readiness_byo_user_cloud_account_not_required")
+    if lane.get("user_owned_cost_boundary") != byo_oci_user_owned_cost_boundary():
+        failures.append("lane_readiness_byo_cost_boundary_mismatch")
+    if lane.get("security_contract") != byo_oci_security_contract():
+        failures.append("lane_readiness_byo_security_contract_mismatch")
     blockers = lane.get("blocking_checks")
     if not isinstance(blockers, list):
         failures.append("lane_readiness_byo_blockers_invalid")

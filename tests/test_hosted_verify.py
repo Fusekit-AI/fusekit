@@ -22,6 +22,8 @@ from fusekit.hosted.billing import (
 from fusekit.hosted.lanes import (
     BYO_OCI_LANE,
     MANAGED_FUSEKIT_RUN_LANE,
+    byo_oci_security_contract,
+    byo_oci_user_owned_cost_boundary,
     hosted_launch_lane_contract,
 )
 from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY, HOSTED_PROHIBITED_ACTIONS
@@ -433,6 +435,47 @@ def test_verify_hosted_deployment_rejects_blocked_recommended_lane() -> None:
     assert report["ready"] is False
     assert checks["hosted.readiness"]["status"] == "failed"
     assert "lane_readiness_recommended_lane_not_launchable" in checks["hosted.readiness"][
+        "failures"
+    ]
+
+
+def test_verify_hosted_deployment_requires_byo_readiness_contract() -> None:
+    readiness = _readiness_contract()
+    lane_readiness = readiness["lane_readiness"]
+    assert isinstance(lane_readiness, dict)
+    lanes = lane_readiness["lanes"]
+    assert isinstance(lanes, dict)
+    byo = lanes[BYO_OCI_LANE]
+    assert isinstance(byo, dict)
+    byo["requires_user_cloud_account"] = False
+    byo["user_owned_cost_boundary"] = {}
+    byo["security_contract"] = {}
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            readiness,
+            _deployment_contract(),
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["hosted.readiness"]["status"] == "failed"
+    assert "lane_readiness_byo_user_cloud_account_not_required" in checks[
+        "hosted.readiness"
+    ]["failures"]
+    assert "lane_readiness_byo_cost_boundary_mismatch" in checks["hosted.readiness"][
+        "failures"
+    ]
+    assert "lane_readiness_byo_security_contract_mismatch" in checks["hosted.readiness"][
         "failures"
     ]
 
@@ -2052,6 +2095,9 @@ def _lane_readiness_contract() -> dict[str, object]:
                 "launchable": True,
                 "requires_payment": False,
                 "managed_worker_dispatch_allowed": False,
+                "requires_user_cloud_account": True,
+                "user_owned_cost_boundary": byo_oci_user_owned_cost_boundary(),
+                "security_contract": byo_oci_security_contract(),
                 "blocking_checks": [],
                 "next_actions": [],
             },
