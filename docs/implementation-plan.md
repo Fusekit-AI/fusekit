@@ -82,6 +82,7 @@
   OCI host posture now validates that redacted release receipt, including the allowed mutated paths, restarted FuseKit services, rollback mode, public commit, release directory, secret boundary, and post-deploy verifier command, and blocks readiness if the receipt commit does not match the hosted verifier's deployed commit proof.
   Hosted deployment provider selection now fails closed instead of silently defaulting to Vercel: Vercel is inferred only from Vercel system metadata, OCI/AWS remain explicit, and missing or unsupported providers publish neutral setup/provenance blockers without leaking Vercel-specific DNS/runtime instructions.
   The outside-in hosted verifier now mirrors that provider-neutral contract: unknown provider deployments expect only the generic setup step and provider-selection provenance env, fail on `source_provenance_provider_mismatch`, and do not fall back to Vercel runtime, operator, or source-env expectations.
+  Hosted lane selection now fails closed below the route layer too: invalid lane ids cannot silently fall back to the paid Managed FuseKit lane when building jobs, worker contracts, or decoding public job payloads.
 - [x] Security invariants are enforced by tests.
 - [x] CLI defaults to real-provider execution; incomplete local rehearsals require explicit opt-in.
 - [x] FuseKit bootstraps its own runtime components instead of assuming Codex/OpenClaw is preinstalled.

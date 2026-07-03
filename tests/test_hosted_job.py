@@ -121,6 +121,24 @@ def test_hosted_launch_job_is_public_safe_and_trust_complete() -> None:
     assert "PRIVATE KEY" not in serialized
 
 
+def test_hosted_launch_job_rejects_unknown_lane_instead_of_defaulting_managed() -> None:
+    with pytest.raises(FuseKitError, match="Hosted launch lane is invalid"):
+        build_hosted_launch_job(
+            _plan(),
+            launch_lane="managed-fusekit-run-typo",
+            job_id="hosted-test",
+            now=1_700_000_000,
+        )
+
+
+def test_hosted_worker_contract_rejects_unknown_lane() -> None:
+    with pytest.raises(FuseKitError, match="Hosted launch lane is invalid"):
+        build_hosted_worker_contract(
+            _plan(),
+            launch_lane="bring-your-own-oci-typo",
+        )
+
+
 def test_hosted_proof_receipt_is_redacted_and_not_prematurely_complete() -> None:
     job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
     receipt = hosted_proof_receipt(job)
@@ -1324,6 +1342,15 @@ def test_hosted_worker_contract_rejects_invalid_plan_integrity() -> None:
     plan_integrity["fingerprint"] = "sha256:not-a-real-digest"
 
     with pytest.raises(FuseKitError, match="plan_integrity fingerprint is invalid"):
+        hosted_launch_job_from_dict(payload)
+
+
+def test_hosted_job_decode_rejects_unknown_lane() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    payload = job.to_dict()
+    payload["launch_lane"] = "bring-your-own-oci-typo"
+
+    with pytest.raises(FuseKitError, match="Hosted launch lane is invalid"):
         hosted_launch_job_from_dict(payload)
 
 

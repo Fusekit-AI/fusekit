@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from fusekit.errors import FuseKitError
 from fusekit.hosted.evidence import HOSTED_COMPLETION_EVIDENCE_KEYS
 
 HOSTED_LAUNCH_LANES_SCHEMA_VERSION = "fusekit.hosted-launch-lanes.v1"
@@ -188,13 +189,13 @@ def hosted_launch_lanes() -> tuple[HostedLaunchLane, ...]:
 
 
 def hosted_launch_lane(lane_id: str) -> HostedLaunchLane:
-    """Return one supported lane, falling back to the managed lane."""
+    """Return one supported lane, failing closed on unknown lane ids."""
 
     normalized = lane_id.strip().lower()
     for lane in hosted_launch_lanes():
         if lane.lane_id == normalized:
             return lane
-    return hosted_launch_lanes()[0]
+    raise FuseKitError("Hosted launch lane is invalid.")
 
 
 def valid_hosted_launch_lane(lane_id: str) -> bool:
