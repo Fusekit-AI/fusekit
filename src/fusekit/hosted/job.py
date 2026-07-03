@@ -1107,7 +1107,17 @@ def _public_byo_sidecar_field_name(value: object) -> str:
 
 
 def _contains_byo_private_marker(value: str) -> bool:
-    forbidden = ("ghs_", "sk_live", "sk_test", "-----BEGIN", "ocid1.")
+    forbidden = (
+        "ghs_",
+        "ghp_",
+        "github_pat_",
+        "sk_live",
+        "sk_test",
+        "-----BEGIN",
+        "PRIVATE KEY-----",
+        "ocid1.",
+        "AKIA",
+    )
     return any(token.lower() in value.lower() for token in forbidden)
 
 
@@ -1156,6 +1166,12 @@ def _assert_public_byo_oci_bootstrap(payload: dict[str, object]) -> None:
     )
     if any(token.lower() in serialized.lower() for token in forbidden):
         raise FuseKitError("Hosted BYO OCI bootstrap contains private material.")
+
+
+def _assert_public_worker_request(payload: dict[str, object]) -> None:
+    serialized = json.dumps(payload, sort_keys=True)
+    if contains_durable_secret_text(serialized) or _contains_byo_private_marker(serialized):
+        raise FuseKitError("Hosted worker request contains private material.")
 
 
 def _byo_oci_launch_args(job: HostedLaunchJob) -> tuple[str, ...]:
@@ -1820,7 +1836,7 @@ def hosted_worker_request(job: HostedLaunchJob, *, now: int | None = None) -> di
     """Build the redacted machine handoff a hosted worker may claim."""
 
     requested_at = int(time.time() if now is None else now)
-    return {
+    request = {
         "schema_version": HOSTED_WORKER_REQUEST_SCHEMA_VERSION,
         "job_id": job.job_id,
         "app_name": job.app_name,
@@ -1851,7 +1867,16 @@ def hosted_worker_request(job: HostedLaunchJob, *, now: int | None = None) -> di
         "completion_requires": list(HOSTED_WORKER_PROOF_KEYS),
         "prohibited": list(HOSTED_PROHIBITED_ACTIONS),
         "worker_contract": job.worker_contract.to_dict(),
+        "secret_boundary": (
+            "Hosted worker requests contain public job labels, approved plan fingerprints, "
+            "human-gate labels, artifact labels, and a non-secret GitHub installation id only. "
+            "They never include worker secrets, GitHub installation tokens, provider "
+            "credentials, Stripe keys, payment method details, vault material, or copy-once "
+            "credentials."
+        ),
     }
+    _assert_public_worker_request(request)
+    return request
 
 
 def hosted_job_action_receipt(

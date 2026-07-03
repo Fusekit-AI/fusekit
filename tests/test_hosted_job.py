@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import re
+from dataclasses import replace
 
 import pytest
 
@@ -802,6 +803,9 @@ def test_hosted_worker_request_binds_live_acceptance_and_no_secret_policy() -> N
     assert request["claim_policy"]["mode"] == "live"
     assert request["claim_policy"]["remote_artifacts_required"] is True
     assert request["claim_policy"]["recording_required"] is True
+    assert "worker secrets" in request["secret_boundary"]
+    assert "GitHub installation tokens" in request["secret_boundary"]
+    assert "Stripe keys" in request["secret_boundary"]
     assert request["plan_integrity"] == started.worker_contract.plan_integrity()
     assert request["worker_contract"]["plan_integrity"] == (
         started.worker_contract.plan_integrity()
@@ -825,6 +829,24 @@ def test_hosted_worker_request_binds_live_acceptance_and_no_secret_policy() -> N
     assert "fraud" in request["prohibited"][0]
     assert "ghs_" not in serialized
     assert "PRIVATE KEY" not in serialized
+
+
+def test_hosted_worker_request_rejects_private_material_before_rendering() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        github_installation_id=42,
+        job_id="hosted-test",
+        now=1_700_000_000,
+    )
+    started = advance_hosted_launch_job(job, "start", now=1_700_000_001)
+    unsafe_contract = replace(
+        started.worker_contract,
+        approved_actions=("github.authorize", "ghs_should_not_leave_worker_request"),
+    )
+    unsafe_started = replace(started, worker_contract=unsafe_contract)
+
+    with pytest.raises(FuseKitError, match="Hosted worker request contains private material"):
+        hosted_worker_request(unsafe_started, now=1_700_000_002)
 
 
 def test_hosted_reversal_playbook_links_known_github_installation_settings() -> None:
