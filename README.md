@@ -459,6 +459,26 @@ launcher and the outside-in hosted verifier passes; the paid Managed lane is
 still intentionally closed until complete Stripe runtime configuration and a
 live paid Checkout proof exist.
 
+For shared Snowman AI Stripe accounts, create hosted managed-run pricing with
+the repo-native helper so FuseKit only creates a FuseKit-scoped Product and
+Price and never edits existing Snowman AI products:
+
+```zsh
+FUSEKIT_STRIPE_SECRET_KEY=sk_live_... \
+  fusekit-hosted-stripe-price \
+    --amount-cents 100 \
+    --currency usd \
+    --label "Launch validation: $1.00 FuseKit managed run" \
+    --execute \
+    --confirm-shared-account
+```
+
+The command prints only redacted public JSON: the Stripe Product id, Stripe
+Price id, the public `FUSEKIT_MANAGED_RUN_PRICE_LABEL`, and next runtime
+environment actions. Omit `--execute` for a dry run. Keep
+`FUSEKIT_MANAGED_RUNS_ENABLED=0` until live Checkout proof and worker-dispatch
+acceptance have passed.
+
 ## Real Provider Acceptance Run
 
 The V1 real path is GitHub + Resend + Vercel + Cloudflare DNS. FuseKit uses OpenClaw computer use to navigate provider websites and run supervised account/token/project handoff playbooks in the shared VM browser. It will not bypass login, MFA, CAPTCHA, billing, payment verification, provider fraud controls, or consent screens. Create or sign in to the provider account, pass the real human gate, copy any one-time provider token inside the VM browser, then click the exact env-named FuseKit control such as `Capture RESEND_API_KEY from VM clipboard` so the approved value lands directly in the encrypted vault.
