@@ -876,6 +876,40 @@ def test_hosted_worker_claim_updates_job_and_writes_redacted_receipt() -> None:
     assert "ghs_" not in serialized
 
 
+def test_hosted_worker_id_redacts_secret_shaped_values() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    started = advance_hosted_launch_job(job, "start", now=1_700_000_001)
+    claimed = claim_hosted_launch_job(
+        started,
+        worker_id="sk_live_should_not_be_a_worker_id",
+        now=1_700_000_002,
+    )
+    claim_receipt = hosted_worker_claim_receipt(
+        claimed,
+        worker_id="ghs_should_not_be_a_worker_id",
+        now=1_700_000_003,
+    )
+    proof_receipt = hosted_worker_proof_receipt(
+        claimed,
+        _proof_payload(complete=False, completed_artifacts=[".fusekit/run_record.json"]),
+        worker_id="ocid1.worker.should_not_be_a_worker_id",
+        now=1_700_000_004,
+    )
+    steps = {step["id"]: step for step in claimed.to_dict()["steps"]}
+    serialized = (
+        json.dumps(claimed.to_dict(), sort_keys=True)
+        + json.dumps(claim_receipt, sort_keys=True)
+        + json.dumps(proof_receipt, sort_keys=True)
+    )
+
+    assert "Hosted worker hosted-worker claimed" in steps["worker.prepare"]["proof"]
+    assert claim_receipt["worker_id"] == "hosted-worker"
+    assert proof_receipt["worker_id"] == "hosted-worker"
+    assert "sk_live" not in serialized
+    assert "ghs_" not in serialized
+    assert "ocid1." not in serialized
+
+
 def test_hosted_worker_claim_rejects_unstarted_or_terminal_jobs() -> None:
     job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
 

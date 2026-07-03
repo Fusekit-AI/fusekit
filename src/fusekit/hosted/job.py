@@ -2793,6 +2793,8 @@ def _detonation_step(
 
 
 def _public_worker_id(value: str) -> str:
+    if contains_durable_secret_text(value) or _contains_byo_private_marker(value):
+        return "hosted-worker"
     sanitized = "".join(
         character for character in value.strip()[:80] if character.isalnum() or character in "-_"
     )
