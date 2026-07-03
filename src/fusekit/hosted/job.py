@@ -1069,10 +1069,16 @@ def _public_byo_artifact_inventory(
         if not isinstance(size_bytes, int) or size_bytes < 0:
             blockers.append(f"artifact_size_invalid:{path}")
             size_bytes = 0
+        if contains_durable_secret_text(label) or _contains_byo_private_marker(label):
+            blockers.append(f"artifact_label_unsafe:{path}")
+            label = ""
+        if contains_durable_secret_text(sha256) or _contains_byo_private_marker(sha256):
+            blockers.append(f"artifact_sha256_unsafe:{path}")
+            sha256 = ""
         artifacts.append(
             {
                 "path": path,
-                "label": label if not contains_durable_secret_text(label) else "",
+                "label": label,
                 "sha256": sha256,
                 "size_bytes": size_bytes,
                 "redacted": row.get("redacted") is True,
