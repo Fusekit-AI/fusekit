@@ -185,6 +185,15 @@ def test_hosted_byo_proof_receipt_keeps_user_owned_lane_boundary() -> None:
         receipt["lane_contract"]["security_contract"]["runner_architecture"]
         == "amd_x86_64_only"
     )
+    assert receipt["lane_contract"]["security_contract"]["runner_profile"] == {
+        "provider": "oracle-cloud-infrastructure",
+        "runner": "oci-existing",
+        "shape": "VM.Standard.E5.Flex",
+        "shape_family": "standard-e5",
+        "architecture": "amd64/x86_64",
+        "arm_allowed": False,
+        "visual_runner": "novnc",
+    }
     assert (
         receipt["lane_contract"]["security_contract"]["hosted_worker_secret_exported"]
         is False

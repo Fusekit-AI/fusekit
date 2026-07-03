@@ -17,6 +17,7 @@ from fusekit.errors import FuseKitError
 from fusekit.hosted.evidence import HOSTED_COMPLETION_EVIDENCE_KEYS
 from fusekit.hosted.lanes import (
     BYO_OCI_LANE,
+    BYO_OCI_RUNNER_PROFILE,
     MANAGED_FUSEKIT_RUN_LANE,
     byo_oci_security_contract,
     byo_oci_user_owned_cost_boundary,
@@ -374,6 +375,7 @@ def hosted_byo_oci_bootstrap(job: HostedLaunchJob) -> dict[str, object]:
         "lane": BYO_OCI_LANE,
         "worker_dispatch": "not_applicable_user_owned_oci",
         "runner_shape_policy": "AMD/x86_64 only; ARM images are not allowed.",
+        "runner_profile": dict(BYO_OCI_RUNNER_PROFILE),
         "open_core_execution": {
             "mode": "user-owned-oci-cloud-shell",
             "fusekit_package": HOSTED_BYO_OCI_FUSEKIT_PACKAGE,
@@ -426,7 +428,7 @@ def hosted_byo_oci_bootstrap(job: HostedLaunchJob) -> dict[str, object]:
 def _byo_oci_launch_args(job: HostedLaunchJob) -> tuple[str, ...]:
     args = [
         "--oci-shape",
-        "VM.Standard.E5.Flex",
+        str(BYO_OCI_RUNNER_PROFILE["shape"]),
         "--visual-runner",
         "novnc",
         "--infer-ui",

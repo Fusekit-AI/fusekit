@@ -10,6 +10,15 @@ HOSTED_LAUNCH_LANES_SCHEMA_VERSION = "fusekit.hosted-launch-lanes.v1"
 MANAGED_FUSEKIT_RUN_LANE = "managed-fusekit-run"
 BYO_OCI_LANE = "bring-your-own-oci"
 HOSTED_LAUNCH_LANES = (MANAGED_FUSEKIT_RUN_LANE, BYO_OCI_LANE)
+BYO_OCI_RUNNER_PROFILE = {
+    "provider": "oracle-cloud-infrastructure",
+    "runner": "oci-existing",
+    "shape": "VM.Standard.E5.Flex",
+    "shape_family": "standard-e5",
+    "architecture": "amd64/x86_64",
+    "arm_allowed": False,
+    "visual_runner": "novnc",
+}
 
 
 @dataclass(frozen=True)
@@ -90,6 +99,7 @@ def byo_oci_security_contract() -> dict[str, object]:
         "hosted_github_installation_token_exported": False,
         "raw_provider_secrets_exported": False,
         "runner_architecture": "amd_x86_64_only",
+        "runner_profile": dict(BYO_OCI_RUNNER_PROFILE),
         "human_gate_bypass_allowed": False,
         "completion_claim_requires": list(HOSTED_COMPLETION_EVIDENCE_KEYS),
     }

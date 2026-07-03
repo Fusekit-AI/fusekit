@@ -743,6 +743,15 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     assert byo_lane["security_contract"]["hosted_worker_secret_exported"] is False
     assert byo_lane["security_contract"]["hosted_github_private_key_exported"] is False
     assert byo_lane["security_contract"]["runner_architecture"] == "amd_x86_64_only"
+    assert byo_lane["security_contract"]["runner_profile"] == {
+        "provider": "oracle-cloud-infrastructure",
+        "runner": "oci-existing",
+        "shape": "VM.Standard.E5.Flex",
+        "shape_family": "standard-e5",
+        "architecture": "amd64/x86_64",
+        "arm_allowed": False,
+        "visual_runner": "novnc",
+    }
     assert "live_acceptance_report" in byo_lane["security_contract"][
         "completion_claim_requires"
     ]
@@ -2020,6 +2029,15 @@ def test_hosted_byo_oci_lane_starts_without_managed_worker_dispatch() -> None:
     assert bootstrap["lane"] == BYO_OCI_LANE
     assert bootstrap["worker_dispatch"] == "not_applicable_user_owned_oci"
     assert bootstrap["runner_shape_policy"] == "AMD/x86_64 only; ARM images are not allowed."
+    assert bootstrap["runner_profile"] == {
+        "provider": "oracle-cloud-infrastructure",
+        "runner": "oci-existing",
+        "shape": "VM.Standard.E5.Flex",
+        "shape_family": "standard-e5",
+        "architecture": "amd64/x86_64",
+        "arm_allowed": False,
+        "visual_runner": "novnc",
+    }
     assert bootstrap["open_core_execution"] == {
         "mode": "user-owned-oci-cloud-shell",
         "fusekit_package": "fusekit",
@@ -2056,6 +2074,15 @@ def test_hosted_byo_oci_lane_starts_without_managed_worker_dispatch() -> None:
         "hosted_github_installation_token_exported": False,
         "raw_provider_secrets_exported": False,
         "runner_architecture": "amd_x86_64_only",
+        "runner_profile": {
+            "provider": "oracle-cloud-infrastructure",
+            "runner": "oci-existing",
+            "shape": "VM.Standard.E5.Flex",
+            "shape_family": "standard-e5",
+            "architecture": "amd64/x86_64",
+            "arm_allowed": False,
+            "visual_runner": "novnc",
+        },
         "human_gate_bypass_allowed": False,
         "completion_claim_requires": [
             "live_url",
@@ -2074,7 +2101,9 @@ def test_hosted_byo_oci_lane_starts_without_managed_worker_dispatch() -> None:
     assert cloud_shell["deeplink_url"] == "https://cloud.oracle.com/?cloudshell=true"
     assert "fusekit launch" in command
     assert "--runner oci-existing" in command
-    assert "--oci-shape VM.Standard.E5.Flex" in command
+    assert f"--oci-shape {bootstrap['runner_profile']['shape']}" in command
+    assert "aarch64" not in command
+    assert "Ampere" not in command
     assert "--visual-runner novnc" in command
     assert "--github-repo example/one" in command
     assert "--require-recording" not in command

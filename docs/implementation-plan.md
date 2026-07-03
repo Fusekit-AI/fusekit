@@ -44,6 +44,7 @@
   Stripe Checkout creation and verified-return receipts now both carry the same public managed-run price label, so the paid lane's cost disclosure survives redirect, payment proof, and worker dispatch without exposing Stripe price ids or secret keys.
   Hosted verification now accepts staged managed-run billing setup where a public Stripe price label and price id are configured but managed worker dispatch remains disabled, so operators can prepare Checkout without accidentally opening a public paid lane.
   Public Managed FuseKit runs now require live-mode Stripe billing before launchability; test-mode Stripe keys can stage Checkout configuration, but cannot enable public managed worker dispatch unless an explicit test-mode override is set for non-production tests.
+  BYO OCI launch-lane contracts and bootstrap receipts now publish the exact AMD/x86_64 runner profile used in the Cloud Shell launch command, so public proof binds the user-owned worker lane to a non-ARM OCI shape before provider work starts.
   The outside-in hosted verifier now validates lane readiness, including the recommended lane and launchable lane list, so public deployments fail verification if the BYO recommendation or paid-lane blocker state drifts.
 - [x] Security invariants are enforced by tests.
 - [x] CLI defaults to real-provider execution; incomplete local rehearsals require explicit opt-in.
