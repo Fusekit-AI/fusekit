@@ -196,6 +196,18 @@ OCI_HOST_POSTURE_HOSTED_VERIFY_CHECK_KEYS = frozenset(
         "next_action",
     }
 )
+OCI_HOST_POSTURE_HOSTED_VERIFY_READINESS_SUMMARY_KEYS = frozenset(
+    {
+        "launchable",
+        "blocking_count",
+        "blockers",
+        "next_actions",
+        "secret_boundary",
+    }
+)
+OCI_HOST_POSTURE_HOSTED_VERIFY_READINESS_BLOCKER_KEYS = frozenset(
+    {"check", "failures", "next_action"}
+)
 OCI_HOST_POSTURE_CIS_BASELINE_KEYS = frozenset(
     {"scanner", "status", "critical_findings", "high_findings"}
 )
@@ -1027,6 +1039,27 @@ def _unexpected_hosted_verify_keys(evidence: Mapping[str, object]) -> list[str]:
                     OCI_HOST_POSTURE_HOSTED_VERIFY_CHECK_KEYS,
                 )
             )
+    summary = report.get("readiness_summary")
+    if isinstance(summary, Mapping):
+        unexpected.extend(
+            f"hosted_verify.readiness_summary.{key}"
+            for key in _unexpected_keys(
+                summary,
+                OCI_HOST_POSTURE_HOSTED_VERIFY_READINESS_SUMMARY_KEYS,
+            )
+        )
+        blockers = summary.get("blockers")
+        if isinstance(blockers, Sequence) and not isinstance(blockers, (str, bytes)):
+            for index, row in enumerate(blockers):
+                if not isinstance(row, Mapping):
+                    continue
+                unexpected.extend(
+                    f"hosted_verify.readiness_summary.blockers[{index}].{key}"
+                    for key in _unexpected_keys(
+                        row,
+                        OCI_HOST_POSTURE_HOSTED_VERIFY_READINESS_BLOCKER_KEYS,
+                    )
+                )
     provenance = report.get("source_provenance")
     if not isinstance(provenance, Mapping):
         return unexpected

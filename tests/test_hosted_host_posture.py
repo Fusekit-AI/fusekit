@@ -817,6 +817,20 @@ def test_oci_host_posture_blocks_hosted_verify_sidecars() -> None:
     hosted_verify = evidence["hosted_verify"]
     assert isinstance(hosted_verify, dict)
     hosted_verify["raw_deployment_payload"] = {"provider": "oci"}
+    hosted_verify["readiness_summary"] = {
+        "launchable": False,
+        "blocking_count": 1,
+        "blockers": [
+            {
+                "check": "hosted.deployment",
+                "failures": ["schema_mismatch"],
+                "raw_response_excerpt": "private diagnostics",
+            }
+        ],
+        "next_actions": ["Redeploy the hosted launcher."],
+        "secret_boundary": "Readiness summary contains public check ids only.",
+        "debug_payload": {"private": True},
+    }
     hosted_verify["checks"] = [
         {
             "id": "hosted.deployment",
@@ -846,6 +860,8 @@ def test_oci_host_posture_blocks_hosted_verify_sidecars() -> None:
     assert shape_check["unexpected_fields"] == [
         "hosted_verify.checks[0].raw_response_body",
         "hosted_verify.raw_deployment_payload",
+        "hosted_verify.readiness_summary.blockers[0].raw_response_excerpt",
+        "hosted_verify.readiness_summary.debug_payload",
         "hosted_verify.source_provenance.actual.response_header_dump",
         "hosted_verify.source_provenance.raw_env",
     ]
