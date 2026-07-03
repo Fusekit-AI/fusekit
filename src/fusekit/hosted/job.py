@@ -774,6 +774,8 @@ def _byo_oci_proof_manifest(job: HostedLaunchJob) -> dict[str, object]:
     return {
         "schema_version": HOSTED_BYO_OCI_PROOF_MANIFEST_SCHEMA_VERSION,
         "job_binding": _byo_oci_proof_job_binding(job),
+        "user_owned_cost_boundary": byo_oci_user_owned_cost_boundary(),
+        "byo_security_contract": byo_oci_security_contract(),
         "proof_bundle_root": ".fusekit/remote-artifacts",
         "required_completion_evidence": list(HOSTED_WORKER_PROOF_KEYS),
         "required_remote_artifacts": [
@@ -830,6 +832,18 @@ def verify_hosted_byo_oci_proof_bundle(
             blockers.append(f"byo_oci_proof_bundle_{key}_mismatch")
     if bundle.get("proof_bundle_root") != manifest["proof_bundle_root"]:
         blockers.append("byo_oci_proof_bundle_root_mismatch")
+    user_owned_cost_boundary = _public_byo_contract(
+        bundle.get("user_owned_cost_boundary"),
+        expected=byo_oci_user_owned_cost_boundary(),
+        name="user_owned_cost_boundary",
+        blockers=blockers,
+    )
+    byo_security_contract = _public_byo_contract(
+        bundle.get("byo_security_contract"),
+        expected=byo_oci_security_contract(),
+        name="byo_security_contract",
+        blockers=blockers,
+    )
     artifacts = _public_byo_artifact_inventory(bundle.get("artifacts"), blockers=blockers)
     present_paths = {str(artifact["path"]) for artifact in artifacts}
     missing = [path for path in required_artifacts if path not in present_paths]
@@ -859,6 +873,8 @@ def verify_hosted_byo_oci_proof_bundle(
         "ready": not blockers,
         "blockers": blockers,
         "proof_bundle_root": manifest["proof_bundle_root"],
+        "user_owned_cost_boundary": user_owned_cost_boundary,
+        "byo_security_contract": byo_security_contract,
         "artifact_summary": {
             "required_count": len(required_artifacts),
             "present_required_count": len(required_artifacts) - len(missing),
@@ -910,6 +926,25 @@ def _public_byo_job_binding(
             continue
         binding[key] = raw
     return binding
+
+
+def _public_byo_contract(
+    value: object,
+    *,
+    expected: dict[str, object],
+    name: str,
+    blockers: list[str],
+) -> dict[str, object]:
+    if not isinstance(value, dict):
+        blockers.append(f"byo_oci_proof_bundle_{name}_invalid")
+        return {}
+    if contains_durable_secret_text(json.dumps(value, sort_keys=True)):
+        blockers.append(f"byo_oci_proof_bundle_{name}_unsafe")
+        return {}
+    public_value = dict(value)
+    if public_value != expected:
+        blockers.append(f"byo_oci_proof_bundle_{name}_mismatch")
+    return public_value
 
 
 def _manifest_artifact_labels(manifest: dict[str, object]) -> dict[str, str]:

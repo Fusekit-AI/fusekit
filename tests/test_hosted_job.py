@@ -72,6 +72,8 @@ def _byo_proof_bundle_from_bootstrap(bootstrap: dict[str, object]) -> dict[str, 
     return {
         "schema_version": HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION,
         "job_binding": manifest["job_binding"],
+        "user_owned_cost_boundary": manifest["user_owned_cost_boundary"],
+        "byo_security_contract": manifest["byo_security_contract"],
         "proof_bundle_root": manifest["proof_bundle_root"],
         "artifacts": [
             {
@@ -518,6 +520,12 @@ def test_hosted_byo_proof_bundle_verifier_accepts_complete_redacted_inventory() 
     assert report["ready"] is True
     assert report["blockers"] == []
     assert report["job_binding"] == bootstrap["proof_manifest"]["job_binding"]
+    assert report["user_owned_cost_boundary"] == bootstrap["proof_manifest"][
+        "user_owned_cost_boundary"
+    ]
+    assert report["byo_security_contract"] == bootstrap["proof_manifest"][
+        "byo_security_contract"
+    ]
     assert report["proof_bundle_root"] == ".fusekit/remote-artifacts"
     assert report["artifact_summary"]["missing"] == []
     assert report["artifact_summary"]["unexpected"] == []
@@ -594,6 +602,50 @@ def test_hosted_byo_proof_bundle_verifier_blocks_source_and_plan_drift() -> None
     assert report["ready"] is False
     assert "byo_oci_proof_bundle_github_source_hash_mismatch" in report["blockers"]
     assert "byo_oci_proof_bundle_plan_fingerprint_mismatch" in report["blockers"]
+
+
+def test_hosted_byo_proof_bundle_verifier_blocks_cost_and_security_drift() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+    cost_boundary = bundle["user_owned_cost_boundary"]
+    security_contract = bundle["byo_security_contract"]
+    assert isinstance(cost_boundary, dict)
+    assert isinstance(security_contract, dict)
+    cost_boundary["spend_owner"] = "fusekit_managed_infrastructure"
+    security_contract["runner_architecture"] = "arm64"
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+
+    assert report["ready"] is False
+    assert "byo_oci_proof_bundle_user_owned_cost_boundary_mismatch" in report["blockers"]
+    assert "byo_oci_proof_bundle_byo_security_contract_mismatch" in report["blockers"]
+
+
+def test_hosted_byo_proof_bundle_verifier_blocks_missing_cost_and_security_contracts() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+    bundle.pop("user_owned_cost_boundary")
+    bundle.pop("byo_security_contract")
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+
+    assert report["ready"] is False
+    assert "byo_oci_proof_bundle_user_owned_cost_boundary_invalid" in report["blockers"]
+    assert "byo_oci_proof_bundle_byo_security_contract_invalid" in report["blockers"]
+    assert report["user_owned_cost_boundary"] == {}
+    assert report["byo_security_contract"] == {}
 
 
 def test_hosted_byo_proof_bundle_verifier_blocks_missing_and_unsafe_inventory() -> None:
