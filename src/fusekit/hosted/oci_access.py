@@ -13,6 +13,7 @@ from fusekit.hosted.server import HOSTED_CANONICAL_ORIGIN
 from fusekit.security import contains_durable_secret_text, redact_public_text
 
 HOSTED_OCI_ACCESS_PLAN_SCHEMA_VERSION = "fusekit.hosted-oci-access-plan.v1"
+HOSTED_OCI_DEPLOY_ACCESS_REPAIR_SCHEMA_VERSION = "fusekit.hosted-oci-deploy-access-repair.v1"
 HOSTED_OCI_ALLOWED_TARGET_TAGS = {
     "Application": "FuseKit",
     "Environment": "production",
@@ -122,6 +123,12 @@ def build_hosted_oci_access_plan(
             "next_actions": _access_next_actions(
                 ssh_ready=ssh_ready,
                 run_command_ready=run_command_ready,
+            ),
+            "repair_contract": _deploy_access_repair_contract(
+                ssh_ready=ssh_ready,
+                run_command_ready=run_command_ready,
+                ssh_status=ssh_status,
+                plugin_statuses=plugin_statuses,
             ),
         },
         "release_proof": {
@@ -283,6 +290,66 @@ def _access_next_actions(*, ssh_ready: bool, run_command_ready: bool) -> list[st
         "Do not broaden Cloudflare DNS, MailPilot/AWS, or generated-app credentials while "
         "repairing deploy access.",
     ]
+
+
+def _deploy_access_repair_contract(
+    *,
+    ssh_ready: bool,
+    run_command_ready: bool,
+    ssh_status: str,
+    plugin_statuses: Mapping[str, str],
+) -> dict[str, object]:
+    deploy_paths = _allowed_deploy_paths(ssh_ready=ssh_ready, run_command_ready=run_command_ready)
+    run_command_status = _run_command_plugin_status(plugin_statuses)
+    return {
+        "schema_version": HOSTED_OCI_DEPLOY_ACCESS_REPAIR_SCHEMA_VERSION,
+        "repair_needed": not deploy_paths,
+        "allowed_repairs": [
+            {
+                "id": "enable_oci_run_command_for_fusekit_host",
+                "label": (
+                    "Enable OCI Compute Instance Run Command only for the FuseKit-tagged "
+                    "hosted launcher instance."
+                ),
+                "scope": "single_fusekit_tagged_oci_instance",
+                "current_status": run_command_status,
+            },
+            {
+                "id": "install_fusekit_host_ssh_deploy_key",
+                "label": (
+                    "Install the approved SSH deploy key only for the fusekit host user on "
+                    "the FuseKit-tagged launcher."
+                ),
+                "scope": "single_fusekit_host_user",
+                "current_status": ssh_status,
+            },
+        ],
+        "forbidden_repairs": [
+            "Do not change Cloudflare DNS while restoring deploy access.",
+            "Do not add MailPilot, AWS, billing, generated-app, or provider credentials.",
+            "Do not broaden OCI tenancy-wide admin policy for the hosted launcher.",
+            "Do not switch to ARM/Ampere shapes.",
+        ],
+        "completion_requires": [
+            "exactly_one_allowed_deploy_path_ready",
+            "fusekit_hosted_release_receipt",
+            "expected_commit_verifier_passes",
+            "oci_host_posture_report_attaches_release_receipt",
+        ],
+        "secret_boundary": (
+            "Deploy-access repair proof contains public status labels only. It must not "
+            "include SSH private keys, OCI API keys, session tokens, provider credentials, "
+            "vault material, or raw command output."
+        ),
+    }
+
+
+def _run_command_plugin_status(plugin_statuses: Mapping[str, str]) -> str:
+    for name in HOSTED_OCI_RUN_COMMAND_PLUGIN_NAMES:
+        status = plugin_statuses.get(name)
+        if status:
+            return status
+    return "not_present"
 
 
 def _release_action(

@@ -4,6 +4,7 @@ import json
 
 from fusekit.hosted.oci_access import (
     HOSTED_OCI_ACCESS_PLAN_SCHEMA_VERSION,
+    HOSTED_OCI_DEPLOY_ACCESS_REPAIR_SCHEMA_VERSION,
     build_hosted_oci_access_plan,
     main,
 )
@@ -88,6 +89,47 @@ def test_hosted_oci_access_plan_blocks_stale_commit_and_missing_access() -> None
         "oci_deploy_access_unavailable",
     ]
     assert plan["access"]["allowed_deploy_paths"] == []
+    assert plan["access"]["repair_contract"] == {
+        "schema_version": HOSTED_OCI_DEPLOY_ACCESS_REPAIR_SCHEMA_VERSION,
+        "repair_needed": True,
+        "allowed_repairs": [
+            {
+                "id": "enable_oci_run_command_for_fusekit_host",
+                "label": (
+                    "Enable OCI Compute Instance Run Command only for the FuseKit-tagged "
+                    "hosted launcher instance."
+                ),
+                "scope": "single_fusekit_tagged_oci_instance",
+                "current_status": "not_present",
+            },
+            {
+                "id": "install_fusekit_host_ssh_deploy_key",
+                "label": (
+                    "Install the approved SSH deploy key only for the fusekit host user on "
+                    "the FuseKit-tagged launcher."
+                ),
+                "scope": "single_fusekit_host_user",
+                "current_status": "permission_denied",
+            },
+        ],
+        "forbidden_repairs": [
+            "Do not change Cloudflare DNS while restoring deploy access.",
+            "Do not add MailPilot, AWS, billing, generated-app, or provider credentials.",
+            "Do not broaden OCI tenancy-wide admin policy for the hosted launcher.",
+            "Do not switch to ARM/Ampere shapes.",
+        ],
+        "completion_requires": [
+            "exactly_one_allowed_deploy_path_ready",
+            "fusekit_hosted_release_receipt",
+            "expected_commit_verifier_passes",
+            "oci_host_posture_report_attaches_release_receipt",
+        ],
+        "secret_boundary": (
+            "Deploy-access repair proof contains public status labels only. It must not "
+            "include SSH private keys, OCI API keys, session tokens, provider credentials, "
+            "vault material, or raw command output."
+        ),
+    }
     assert plan["release_proof"]["hosted_verifier_blocking_checks"] == [
         "hosted.expected_commit"
     ]
@@ -134,6 +176,11 @@ def test_hosted_oci_access_plan_allows_redeploy_when_run_command_ready() -> None
     assert plan["access"]["ssh_ready"] is False
     assert plan["access"]["oci_run_command_ready"] is True
     assert plan["access"]["allowed_deploy_paths"] == ["oci_run_command_release"]
+    assert plan["access"]["repair_contract"]["repair_needed"] is False
+    assert plan["access"]["repair_contract"]["allowed_repairs"][0]["current_status"] == "RUNNING"
+    assert "Do not broaden OCI tenancy-wide admin policy" in " ".join(
+        plan["access"]["repair_contract"]["forbidden_repairs"]
+    )
     assert plan["release_proof"]["expected_commit_matches_live"] is True
     assert plan["release_proof"]["release_action"]["commit_state"] == "current"
     assert plan["release_proof"]["release_action"]["deploy_access_ready"] is True
