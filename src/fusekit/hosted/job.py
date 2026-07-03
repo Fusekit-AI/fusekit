@@ -169,7 +169,11 @@ HOSTED_JOB_PAYLOAD_KEYS = frozenset(
         "worker_contract",
     }
 )
+HOSTED_JOB_TOKEN_KEYS = frozenset({"schema_version", "issued_at", "job"})
 HOSTED_JOB_STEP_KEYS = frozenset({"id", "label", "owner", "status", "proof"})
+HOSTED_PLAN_INTEGRITY_KEYS = frozenset(
+    {"algorithm", "fingerprint", "covers", "secret_boundary"}
+)
 HOSTED_WORKER_CONTRACT_KEYS = frozenset(
     {
         "schema_version",
@@ -1231,6 +1235,11 @@ def verify_hosted_job_token(
     raw = _decode_json(payload)
     if raw.get("schema_version") != HOSTED_JOB_TOKEN_SCHEMA_VERSION:
         raise FuseKitError("Hosted launcher job token schema is unsupported.")
+    _reject_unexpected_payload_keys(
+        raw,
+        HOSTED_JOB_TOKEN_KEYS,
+        "Hosted launcher job token payload",
+    )
     issued_at = raw.get("issued_at")
     if not isinstance(issued_at, int):
         raise FuseKitError("Hosted launcher job token timestamp is invalid.")
@@ -3200,6 +3209,11 @@ def _plan_fingerprint_from_payload(payload: dict[str, Any]) -> str:
     plan_integrity = payload.get("plan_integrity")
     if not isinstance(plan_integrity, dict):
         raise FuseKitError("Hosted worker contract plan_integrity is invalid.")
+    _reject_unexpected_payload_keys(
+        plan_integrity,
+        HOSTED_PLAN_INTEGRITY_KEYS,
+        "Hosted worker contract plan_integrity",
+    )
     if plan_integrity.get("algorithm") != "sha256":
         raise FuseKitError("Hosted worker contract plan_integrity algorithm is invalid.")
     if plan_integrity.get("covers") != list(HOSTED_PLAN_INTEGRITY_COVERAGE):

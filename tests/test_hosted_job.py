@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 import hashlib
+import hmac
 import json
 import re
 
@@ -1643,6 +1645,22 @@ def test_hosted_worker_contract_rejects_invalid_plan_integrity() -> None:
         hosted_launch_job_from_dict(payload)
 
 
+def test_hosted_worker_contract_rejects_plan_integrity_sidecars() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    payload = job.to_dict()
+    worker_contract = payload["worker_contract"]
+    assert isinstance(worker_contract, dict)
+    plan_integrity = worker_contract["plan_integrity"]
+    assert isinstance(plan_integrity, dict)
+    plan_integrity["raw_plan_json"] = "sidecar plan data should not enter public token"
+
+    with pytest.raises(
+        FuseKitError,
+        match="Hosted worker contract plan_integrity has unexpected fields: raw_plan_json",
+    ):
+        hosted_launch_job_from_dict(payload)
+
+
 def test_hosted_job_decode_rejects_unknown_lane() -> None:
     job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
     payload = job.to_dict()
@@ -1924,3 +1942,35 @@ def test_hosted_job_token_rejects_tampering_and_expiry() -> None:
             now=1_700_100_000,
             ttl_seconds=60,
         )
+
+
+def test_hosted_job_token_rejects_signed_sidecar_fields() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    token = _signed_job_token_payload(
+        "job-secret",
+        {
+            "schema_version": "fusekit.hosted-job-token.v1",
+            "issued_at": 1_700_000_001,
+            "job": job.to_dict(),
+            "private_note": "signed sidecar should not enter public job token",
+        },
+    )
+
+    with pytest.raises(
+        FuseKitError,
+        match="Hosted launcher job token payload has unexpected fields: private_note",
+    ):
+        verify_hosted_job_token("job-secret", token, now=1_700_000_002)
+
+
+def _signed_job_token_payload(secret: str, payload: dict[str, object]) -> str:
+    encoded_payload = base64.urlsafe_b64encode(
+        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    ).rstrip(b"=").decode("ascii")
+    signature = hmac.new(
+        secret.encode("utf-8"),
+        encoded_payload.encode("ascii"),
+        hashlib.sha256,
+    ).digest()
+    encoded_signature = base64.urlsafe_b64encode(signature).rstrip(b"=").decode("ascii")
+    return f"{encoded_payload}.{encoded_signature}"
