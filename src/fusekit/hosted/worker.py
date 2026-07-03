@@ -307,7 +307,8 @@ def build_hosted_worker_workspace_proof_payload(
             report_path=report_path,
             missing_artifacts=missing,
         ),
-        "recording": acceptance.get("recording_ready") is True,
+        "recording": acceptance.get("recording_ready") is True
+        and acceptance.get("recording_proof_ready") is True,
     }
     if maintenance_action == "rollback":
         evidence["rollback_execution_receipt"] = (

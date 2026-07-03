@@ -291,6 +291,38 @@ def test_hosted_worker_proof_payload_requires_real_recording_ready_report(
     )
 
 
+def test_hosted_worker_proof_payload_requires_recording_proof_report(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(
+        invocation,
+        recording_ready=True,
+        recording_proof_ready=False,
+    )
+
+    bundle = build_hosted_worker_proof_payload(invocation)
+    evidence = bundle.payload["evidence"]
+
+    assert bundle.missing_artifacts == ()
+    assert evidence["live_acceptance_report"] is True
+    assert evidence["recording"] is False
+    assert bundle.to_dict()["acceptance_report"] == {
+        "mode": "live",
+        "launch_ready": True,
+        "public_launch_ready": True,
+        "remote_artifacts_ready": True,
+        "recording_proof_ready": False,
+        "recording_ready": True,
+        "check_count": 4,
+    }
+    assert bundle.payload["note"] == (
+        "Hosted worker proof is partial; live acceptance is not recording-ready yet."
+    )
+
+
 def test_hosted_worker_proof_payload_requires_explicit_dns_propagation_check(
     tmp_path: Path,
 ) -> None:
@@ -913,6 +945,7 @@ def _write_acceptance_report(
     invocation,
     *,
     recording_ready: bool,
+    recording_proof_ready: bool | None = None,
     rollback_post_verified: bool = False,
     include_dns_check: bool = True,
     public_launch_ready: bool = True,
@@ -924,7 +957,9 @@ def _write_acceptance_report(
         "launch_ready": True,
         "public_launch_ready": public_launch_ready,
         "remote_artifacts_ready": True,
-        "recording_proof_ready": recording_ready,
+        "recording_proof_ready": (
+            recording_ready if recording_proof_ready is None else recording_proof_ready
+        ),
         "recording_ready": recording_ready,
         "checks": [
             {"id": "receipt.live_url", "status": "ok", "detail": "redacted"},
