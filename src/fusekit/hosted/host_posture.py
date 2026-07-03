@@ -923,7 +923,7 @@ def _evidence_shape_check(evidence: Mapping[str, object]) -> dict[str, object]:
 
 
 def _unexpected_keys(value: Mapping[str, object], allowed: frozenset[str]) -> list[str]:
-    return sorted(str(key) for key in value if str(key) not in allowed)
+    return sorted(redact_public_text(str(key)) for key in value if str(key) not in allowed)
 
 
 def _unexpected_nested_keys(

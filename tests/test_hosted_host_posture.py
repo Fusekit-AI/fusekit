@@ -369,6 +369,29 @@ def test_oci_host_posture_blocks_unknown_nested_secret_metadata_fields() -> None
     assert shape_check["unexpected_fields"] == ["runtime_secret_file.raw_stat_output"]
 
 
+def test_oci_host_posture_redacts_secret_shaped_unexpected_field_names() -> None:
+    evidence = _clean_evidence()
+    evidence["sk_live_field_name_should_not_echo"] = "public"
+    runtime_secret_file = evidence["runtime_secret_file"]
+    assert isinstance(runtime_secret_file, dict)
+    runtime_secret_file["ghp_nested_field_name_should_not_echo"] = "public"
+
+    report = evaluate_oci_host_posture(evidence)
+    serialized = json.dumps(report, sort_keys=True)
+
+    assert report["ready"] is False
+    assert "evidence.shape" in report["blocking_checks"]
+    assert "evidence.redaction" in report["blocking_checks"]
+    shape_check = _check(report, "evidence.shape")
+    assert "sk_live_field_name_should_not_echo" not in serialized
+    assert "ghp_nested_field_name_should_not_echo" not in serialized
+    assert not contains_durable_secret_text(serialized)
+    assert all(
+        "redacted" in str(field).lower() or "[redacted]" in str(field).lower()
+        for field in shape_check["unexpected_fields"]
+    )
+
+
 def test_oci_host_posture_blocks_runtime_secret_verifier_drift() -> None:
     evidence = _clean_evidence()
     verify_report = evidence["runtime_secret_verify"]
