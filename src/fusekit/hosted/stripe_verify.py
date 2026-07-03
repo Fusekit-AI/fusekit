@@ -89,7 +89,10 @@ def verify_stripe_managed_run_price(
             "price_active": payload.get("active") is True,
             "price_id_matches": payload.get("id") == public_price_id,
             "price_is_one_time": payload.get("type") in {"one_time", "", None},
-            "amount_matches": payload.get("unit_amount") == plan.amount_cents,
+            "amount_matches": _unit_amount_matches(
+                payload.get("unit_amount"),
+                plan.amount_cents,
+            ),
             "currency_matches": str(payload.get("currency") or "").lower() == plan.currency,
             "lookup_key_matches": payload.get("lookup_key") == plan.lookup_key,
             "price_metadata_matches": _metadata_matches(
@@ -197,7 +200,7 @@ def _price_verification_blockers(
         blockers.append("stripe_price_inactive")
     if payload.get("type") not in {"one_time", "", None}:
         blockers.append("stripe_price_must_be_one_time")
-    if payload.get("unit_amount") != amount_cents:
+    if not _unit_amount_matches(payload.get("unit_amount"), amount_cents):
         blockers.append("stripe_price_amount_mismatch")
     if str(payload.get("currency") or "").lower() != currency:
         blockers.append("stripe_price_currency_mismatch")
@@ -248,6 +251,14 @@ def _metadata_matches(value: object, expected: Mapping[str, str]) -> bool:
     if not isinstance(value, Mapping):
         return False
     return all(value.get(key) == expected_value for key, expected_value in expected.items())
+
+
+def _unit_amount_matches(value: object, amount_cents: int) -> bool:
+    return (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and value == amount_cents
+    )
 
 
 def _product_name_scoped(value: object) -> bool:

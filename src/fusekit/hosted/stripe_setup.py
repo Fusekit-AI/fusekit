@@ -97,7 +97,12 @@ def build_stripe_managed_run_price_plan(
         raise FuseKitError("Stripe secret key mode is unknown.")
     if account_mode == "test" and not allow_test_mode:
         raise FuseKitError("Live managed-run pricing requires a live Stripe secret key.")
-    if amount_cents <= 0 or amount_cents > MAX_MANAGED_RUN_AMOUNT_CENTS:
+    if (
+        isinstance(amount_cents, bool)
+        or not isinstance(amount_cents, int)
+        or amount_cents <= 0
+        or amount_cents > MAX_MANAGED_RUN_AMOUNT_CENTS
+    ):
         raise FuseKitError("Managed-run amount must be between 1 and 1000000 cents.")
     normalized_currency = currency.strip().lower()
     if len(normalized_currency) != 3 or not normalized_currency.isalpha():
@@ -365,11 +370,14 @@ def _stripe_price_matches_plan(
     product = value.get("product")
     if not isinstance(product, Mapping):
         return False
+    unit_amount = value.get("unit_amount")
     return (
         _public_stripe_id(value.get("id"), prefix="price_") != ""
         and value.get("active") is True
         and value.get("type") in {"one_time", "", None}
-        and value.get("unit_amount") == plan.amount_cents
+        and isinstance(unit_amount, int)
+        and not isinstance(unit_amount, bool)
+        and unit_amount == plan.amount_cents
         and str(value.get("currency") or "").lower() == plan.currency
         and value.get("lookup_key") == plan.lookup_key
         and _metadata_matches(value.get("metadata"), expected_metadata)

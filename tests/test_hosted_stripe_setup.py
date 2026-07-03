@@ -104,6 +104,16 @@ def test_stripe_price_setup_dry_run_has_no_network_and_no_secret() -> None:
     assert "card" not in serialized.lower()
 
 
+def test_stripe_price_setup_rejects_boolean_amount() -> None:
+    with pytest.raises(FuseKitError, match="amount"):
+        build_stripe_managed_run_price_plan(
+            stripe_secret_key="sk_live_secret_value",
+            amount_cents=True,
+            currency="usd",
+            price_label="Launch validation: $0.01 FuseKit managed run",
+        )
+
+
 def test_stripe_price_setup_execute_creates_fusekit_scoped_product_and_price() -> None:
     opener = StripeSetupOpener()
 
@@ -144,6 +154,49 @@ def test_stripe_price_setup_execute_creates_fusekit_scoped_product_and_price() -
     assert opener.bodies[2]["currency"] == ["usd"]
     assert opener.bodies[2]["metadata[fusekit_scope]"] == ["managed-run-price"]
     assert "sk_live_secret_value" not in serialized
+
+
+def test_stripe_price_setup_rejects_existing_boolean_unit_amount() -> None:
+    price_label = "Launch validation: $0.01 FuseKit managed run"
+    plan = build_stripe_managed_run_price_plan(
+        stripe_secret_key="sk_live_secret_value",
+        amount_cents=1,
+        currency="usd",
+        price_label=price_label,
+    )
+    metadata = plan.public_dict()["price"]["metadata"]
+    assert isinstance(metadata, dict)
+    opener = StripeSetupOpener(
+        existing_prices=[
+            {
+                "id": "price_boolean_unit_amount",
+                "active": True,
+                "type": "one_time",
+                "unit_amount": True,
+                "currency": "usd",
+                "lookup_key": plan.lookup_key,
+                "metadata": metadata,
+                "product": {
+                    "id": "prod_boolean_unit_amount",
+                    "active": True,
+                    "name": DEFAULT_MANAGED_RUN_PRODUCT_NAME,
+                    "metadata": metadata,
+                },
+            }
+        ]
+    )
+
+    with pytest.raises(FuseKitError, match="does not match"):
+        create_stripe_managed_run_price(
+            stripe_secret_key="sk_live_secret_value",
+            amount_cents=1,
+            currency="usd",
+            price_label=price_label,
+            execute=True,
+            confirm_shared_account=True,
+            opener=opener,
+        )
+    assert len(opener.requests) == 1
 
 
 def test_stripe_price_setup_reuses_existing_matching_fusekit_price() -> None:

@@ -109,6 +109,45 @@ def test_stripe_price_verify_accepts_fusekit_scoped_price() -> None:
     assert "card" not in serialized.lower()
 
 
+def test_stripe_price_verify_rejects_boolean_unit_amount() -> None:
+    price_label = "Launch validation: $0.01 FuseKit managed run"
+    metadata = {
+        "fusekit_component": "hosted-launcher",
+        "fusekit_lane": "managed-fusekit-run",
+        "fusekit_scope": "managed-run-price",
+        "public_price_label_hash": hashlib.sha256(price_label.encode("utf-8")).hexdigest(),
+    }
+    opener = StripeVerifyOpener(
+        _price_payload(
+            unit_amount=True,
+            lookup_key=(
+                "fusekit_managed_run_usd_1_"
+                + hashlib.sha256(f"1:usd:{price_label}".encode()).hexdigest()[:16]
+            ),
+            metadata=metadata,
+            product={
+                "id": "prod_fusekit_managed_run",
+                "active": True,
+                "name": "FuseKit Managed Run",
+                "metadata": metadata,
+            },
+        )
+    )
+
+    report = verify_stripe_managed_run_price(
+        stripe_secret_key="sk_live_secret_value",
+        price_id="price_fusekit_managed_run",
+        amount_cents=1,
+        currency="usd",
+        price_label=price_label,
+        opener=opener,
+    )
+
+    assert report["ready"] is False
+    assert report["checks"]["amount_matches"] is False
+    assert report["blockers"] == ["stripe_price_amount_mismatch"]
+
+
 def test_stripe_price_verify_blocks_shared_account_wrong_price() -> None:
     opener = StripeVerifyOpener(
         _price_payload(
