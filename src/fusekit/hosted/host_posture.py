@@ -1458,7 +1458,7 @@ def _dns_propagation_check(evidence: Mapping[str, object]) -> dict[str, object]:
     domain = _public_str(report.get("domain") or report.get("hostname")).lower()
     status = _public_str(report.get("status")).lower()
     propagated = report.get("propagated") is True or report.get("ready") is True
-    target_matches = origin == OCI_HOST_POSTURE_ORIGIN or domain == "fusekit.snowmanai.org"
+    target_matches = origin == OCI_HOST_POSTURE_ORIGIN and domain == "fusekit.snowmanai.org"
     if not target_matches or not propagated or status not in {"ok", "pass", "propagated"}:
         return _fail(
             "host.dns_propagation",
