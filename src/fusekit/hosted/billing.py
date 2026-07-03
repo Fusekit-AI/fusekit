@@ -149,6 +149,12 @@ def create_stripe_checkout_session(
     """Create a Stripe Checkout Session and return a redacted receipt."""
 
     _require_stripe_config(config)
+    _require_checkout_binding(
+        job_id=job_id,
+        lane=lane,
+        github_source=github_source,
+        plan_fingerprint=plan_fingerprint,
+    )
     success_url = _payment_return_url(
         config.public_origin,
         job_id=job_id,
@@ -305,6 +311,27 @@ def _require_stripe_config(config: HostedPaymentConfig) -> None:
         raise FuseKitError("Hosted payment return origin must be https.")
 
 
+def _require_checkout_binding(
+    *,
+    job_id: str,
+    lane: str,
+    github_source: str,
+    plan_fingerprint: str,
+) -> None:
+    if lane != MANAGED_FUSEKIT_RUN_LANE:
+        raise FuseKitError("stripe_checkout_lane_not_managed")
+    if _public_identifier(job_id) != job_id:
+        raise FuseKitError("stripe_checkout_job_id_invalid")
+    if contains_durable_secret_text(job_id):
+        raise FuseKitError("stripe_checkout_job_id_contains_secret_text")
+    if not _valid_public_github_source(github_source):
+        raise FuseKitError("stripe_checkout_github_source_invalid")
+    if contains_durable_secret_text(github_source):
+        raise FuseKitError("stripe_checkout_github_source_contains_secret_text")
+    if not _valid_sha256_label(plan_fingerprint):
+        raise FuseKitError("stripe_checkout_plan_fingerprint_invalid")
+
+
 def _assert_public_payment_receipt(receipt: dict[str, object]) -> None:
     serialized = json.dumps(receipt, sort_keys=True)
     if contains_durable_secret_text(serialized):
@@ -433,6 +460,37 @@ def _public_int(value: object) -> int | None:
     if isinstance(value, int) and value >= 0:
         return value
     return None
+
+
+def _valid_sha256_label(value: str) -> bool:
+    digest = value.removeprefix("sha256:")
+    return (
+        value.startswith("sha256:")
+        and len(digest) == 64
+        and all(ch in "0123456789abcdef" for ch in digest)
+    )
+
+
+def _valid_public_github_source(value: str) -> bool:
+    parsed = urllib.parse.urlparse(value)
+    parts = [part for part in parsed.path.split("/") if part]
+    return (
+        parsed.scheme == "https"
+        and parsed.netloc == "github.com"
+        and len(parts) == 2
+        and not parsed.params
+        and not parsed.query
+        and not parsed.fragment
+        and not parsed.username
+        and not parsed.password
+        and all(_valid_github_path_segment(part) for part in parts)
+    )
+
+
+def _valid_github_path_segment(value: str) -> bool:
+    return bool(value) and len(value) <= 100 and all(
+        ch.isalnum() or ch in {"-", "_", "."} for ch in value
+    )
 
 
 def _public_hash(value: str) -> str:
