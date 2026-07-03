@@ -821,6 +821,21 @@ def verify_hosted_byo_oci_proof_bundle(
     manifest = _byo_oci_proof_manifest(job)
     required_artifacts = _manifest_artifact_labels(manifest)
     blockers: list[str] = []
+    allowed_bundle_fields = {
+        "schema_version",
+        "job_binding",
+        "user_owned_cost_boundary",
+        "byo_security_contract",
+        "proof_bundle_root",
+        "artifacts",
+        "completion_evidence",
+    }
+    unexpected_bundle_fields = sorted(
+        str(key) for key in bundle if key not in allowed_bundle_fields
+    )
+    blockers.extend(
+        f"byo_oci_proof_bundle_unexpected_field:{key}" for key in unexpected_bundle_fields
+    )
     if job.launch_lane != BYO_OCI_LANE:
         blockers.append("byo_oci_proof_bundle_job_lane_mismatch")
     if bundle.get("schema_version") != HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION:
@@ -859,7 +874,7 @@ def verify_hosted_byo_oci_proof_bundle(
             blockers.append(f"artifact_not_marked_redacted:{path}")
         if not _valid_sha256_label(str(artifact.get("sha256", ""))):
             blockers.append(f"artifact_sha256_invalid:{path}")
-    evidence = _public_completion_evidence(bundle.get("completion_evidence"))
+    evidence = _public_completion_evidence(bundle.get("completion_evidence"), blockers=blockers)
     missing_evidence = [key for key in HOSTED_WORKER_PROOF_KEYS if evidence.get(key) is not True]
     blockers.extend(f"missing_completion_evidence:{key}" for key in missing_evidence)
     report = {
@@ -915,6 +930,10 @@ def _public_byo_job_binding(
     if not isinstance(value, dict):
         blockers.append("byo_oci_proof_bundle_job_binding_invalid")
         return {}
+    unexpected = sorted(str(key) for key in value if key not in allowed)
+    blockers.extend(
+        f"byo_oci_proof_bundle_job_binding_unexpected_field:{key}" for key in unexpected
+    )
     binding: dict[str, str] = {}
     for key in allowed:
         raw = value.get(key)
@@ -976,6 +995,9 @@ def _public_byo_artifact_inventory(
         if not isinstance(row, dict):
             blockers.append(f"artifact_row_invalid:{index}")
             continue
+        allowed = {"path", "label", "sha256", "size_bytes", "redacted"}
+        unexpected = sorted(str(key) for key in row if key not in allowed)
+        blockers.extend(f"artifact_row_unexpected_field:{index}:{key}" for key in unexpected)
         path = str(row.get("path", ""))
         if not _safe_byo_artifact_path(path):
             blockers.append(f"artifact_path_invalid:{index}")
@@ -1002,9 +1024,11 @@ def _public_byo_artifact_inventory(
     return artifacts
 
 
-def _public_completion_evidence(value: object) -> dict[str, bool]:
+def _public_completion_evidence(value: object, *, blockers: list[str]) -> dict[str, bool]:
     if not isinstance(value, dict):
         return {}
+    unexpected = sorted(str(key) for key in value if key not in HOSTED_WORKER_PROOF_KEYS)
+    blockers.extend(f"completion_evidence_unexpected_field:{key}" for key in unexpected)
     return {key: value.get(key) is True for key in HOSTED_WORKER_PROOF_KEYS}
 
 

@@ -698,6 +698,44 @@ def test_hosted_byo_proof_bundle_verifier_blocks_missing_and_unsafe_inventory() 
     assert "PRIVATE KEY" not in serialized
 
 
+def test_hosted_byo_proof_bundle_verifier_blocks_sidecar_fields() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+    bundle["raw_worker_log"] = "not-allowed-here"
+    binding = bundle["job_binding"]
+    assert isinstance(binding, dict)
+    binding["worker_ocid"] = "redacted-but-still-not-allowed"
+    artifacts = bundle["artifacts"]
+    assert isinstance(artifacts, list)
+    first_artifact = artifacts[0]
+    assert isinstance(first_artifact, dict)
+    first_artifact["local_path"] = "/home/opc/app/.fusekit/run_record.json"
+    evidence = bundle["completion_evidence"]
+    assert isinstance(evidence, dict)
+    evidence["oci_console_session"] = True
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+    serialized = json.dumps(report, sort_keys=True)
+
+    assert report["ready"] is False
+    assert "byo_oci_proof_bundle_unexpected_field:raw_worker_log" in report["blockers"]
+    assert (
+        "byo_oci_proof_bundle_job_binding_unexpected_field:worker_ocid"
+        in report["blockers"]
+    )
+    assert "artifact_row_unexpected_field:0:local_path" in report["blockers"]
+    assert "completion_evidence_unexpected_field:oci_console_session" in report["blockers"]
+    assert "not-allowed-here" not in serialized
+    assert "redacted-but-still-not-allowed" not in serialized
+    assert "/home/opc/app/.fusekit/run_record.json" not in serialized
+
+
 def test_hosted_worker_request_binds_live_acceptance_and_no_secret_policy() -> None:
     job = build_hosted_launch_job(
         _plan(),
