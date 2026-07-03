@@ -472,6 +472,11 @@ def test_hosted_byo_bootstrap_renders_browser_handoff_page() -> None:
     )
 
     html = render_hosted_byo_oci_bootstrap(job, job_token="signed-public-job")
+    script_match = re.search(
+        r'<script id="fusekit-byo-oci-bootstrap" type="application/json">(.*?)</script>',
+        html,
+        flags=re.DOTALL,
+    )
 
     assert "BYO OCI handoff." in html
     assert "Open Oracle Cloud Shell" in html
@@ -490,6 +495,14 @@ def test_hosted_byo_bootstrap_renders_browser_handoff_page() -> None:
     assert "fusekit launch" in html
     assert "--oci-shape VM.Standard.E5.Flex" in html
     assert "cloud.oracle.com" in html
+    assert script_match is not None
+    script_payload = script_match.group(1)
+    assert "&quot;" not in script_payload
+    assert "</script" not in script_payload.lower()
+    bootstrap = json.loads(script_payload)
+    assert bootstrap["schema_version"] == "fusekit.hosted-byo-oci-bootstrap.v1"
+    assert bootstrap["lane"] == BYO_OCI_LANE
+    assert bootstrap["runner_profile"]["architecture"] == "amd64/x86_64"
     assert "ghs_" not in html
     assert "PRIVATE KEY" not in html
     assert "sk_live" not in html
@@ -1392,7 +1405,10 @@ def test_hosted_control_room_embeds_redacted_job_json() -> None:
     assert 'disabled aria-disabled="true">Request rollback</button>' in html
     assert "/api/hosted/jobs/hosted-test/actions/rollback?control=" not in html
     assert match is not None
-    payload = json.loads(match.group(1).replace("&quot;", '"'))
+    script_payload = match.group(1)
+    assert "&quot;" not in script_payload
+    assert "</script" not in script_payload.lower()
+    payload = json.loads(script_payload)
     assert payload["schema_version"] == "fusekit.hosted-job.v1"
     assert payload["latest_action_receipt"]["action"] == "start"
     assert payload["worker_dispatch"]["reason"] == "worker_dispatch_url_not_configured"
