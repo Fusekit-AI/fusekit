@@ -809,6 +809,31 @@ def test_hosted_byo_proof_bundle_verifier_blocks_empty_required_artifacts() -> N
     assert "artifact_empty:.fusekit/run_record.json" in report["blockers"]
 
 
+def test_hosted_byo_proof_bundle_verifier_rejects_boolean_artifact_size() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+    artifacts = bundle["artifacts"]
+    assert isinstance(artifacts, list)
+    artifact = next(
+        item
+        for item in artifacts
+        if isinstance(item, dict) and item["path"] == ".fusekit/run_record.json"
+    )
+    artifact["size_bytes"] = True
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+
+    assert report["ready"] is False
+    assert "artifact_size_invalid:.fusekit/run_record.json" in report["blockers"]
+    assert "artifact_empty:.fusekit/run_record.json" in report["blockers"]
+
+
 def test_hosted_byo_proof_bundle_verifier_allows_empty_gate_event_stream() -> None:
     job = build_hosted_launch_job(
         _plan(),
@@ -1949,6 +1974,26 @@ def test_hosted_payment_receipt_does_not_mark_paid_from_boolean_stub() -> None:
     assert updated.payment_receipt is not None
     assert updated.payment_receipt["paid"] is False
     assert updated.payment_receipt["checkout_session_id"] is None
+
+
+def test_hosted_payment_receipt_does_not_mark_paid_from_boolean_amount() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=MANAGED_FUSEKIT_RUN_LANE,
+        payment_required=True,
+        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        job_id="hosted-test",
+        now=1_700_000_000,
+    )
+    receipt = _paid_checkout_receipt(job)
+    receipt["amount_total"] = True
+
+    updated = with_hosted_job_payment_receipt(job, receipt)
+
+    assert updated.payment_status == "checkout_pending"
+    assert updated.payment_receipt is not None
+    assert updated.payment_receipt["paid"] is False
+    assert updated.payment_receipt["amount_total"] is None
 
 
 def test_hosted_job_decode_normalizes_pending_boolean_paid_stub() -> None:

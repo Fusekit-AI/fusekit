@@ -2835,6 +2835,7 @@ def _payment_receipt_is_paid_checkout(receipt: dict[str, object]) -> bool:
         and isinstance(session_id, str)
         and session_id.startswith("cs_")
         and isinstance(amount_total, int)
+        and not isinstance(amount_total, bool)
         and amount_total > 0
         and isinstance(currency, str)
         and currency.isalpha()

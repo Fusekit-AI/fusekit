@@ -1074,7 +1074,7 @@ def _public_byo_artifact_inventory(
         label = str(row.get("label", ""))
         sha256 = str(row.get("sha256", ""))
         size_bytes = row.get("size_bytes")
-        if not isinstance(size_bytes, int) or size_bytes < 0:
+        if isinstance(size_bytes, bool) or not isinstance(size_bytes, int) or size_bytes < 0:
             blockers.append(f"artifact_size_invalid:{path}")
             size_bytes = 0
         if contains_durable_secret_text(label) or _contains_byo_private_marker(label):
@@ -3116,6 +3116,14 @@ def _public_payment_receipt(receipt: dict[str, object]) -> dict[str, object]:
     result: dict[str, object] = {}
     for key in allowed:
         value = receipt.get(key)
+        if key == "amount_total":
+            if isinstance(value, bool):
+                result[key] = None
+            elif isinstance(value, int) and value >= 0:
+                result[key] = value
+            elif value is None:
+                result[key] = None
+            continue
         if isinstance(value, str):
             if contains_durable_secret_text(value) or len(value) > 2048:
                 raise FuseKitError("Hosted launch payment receipt contains secret-looking text.")
@@ -3146,6 +3154,7 @@ def _payment_receipt_is_paid_checkout(receipt: dict[str, object]) -> bool:
         and isinstance(session_id, str)
         and session_id.startswith("cs_")
         and isinstance(amount_total, int)
+        and not isinstance(amount_total, bool)
         and amount_total > 0
         and isinstance(currency, str)
         and currency.isalpha()

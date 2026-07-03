@@ -84,6 +84,29 @@ def test_stripe_checkout_session_receipt_is_public_and_bound() -> None:
     assert "buyer@example.com" not in serialized
 
 
+def test_stripe_checkout_session_receipt_rejects_boolean_amount_total() -> None:
+    receipt = stripe_checkout_session_receipt(
+        {
+            "id": "cs_live_public",
+            "url": "https://checkout.stripe.com/c/pay/cs_live_public",
+            "status": "complete",
+            "payment_status": "paid",
+            "mode": "payment",
+            "client_reference_id": "hosted-job",
+            "amount_total": True,
+            "currency": "usd",
+            "metadata": {
+                "job_id": "hosted-job",
+                "lane": "managed-fusekit-run",
+                "github_source_hash": "sha256:source",
+                "plan_fingerprint": "sha256:plan",
+            },
+        }
+    )
+
+    assert receipt["amount_total"] is None
+
+
 def test_stripe_checkout_session_receipt_rejects_unexpected_metadata() -> None:
     with pytest.raises(FuseKitError, match="stripe_checkout_metadata_unexpected_field"):
         stripe_checkout_session_receipt(

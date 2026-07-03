@@ -457,6 +457,8 @@ def _public_identifier(value: object) -> str:
 
 
 def _public_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
     if isinstance(value, int) and value >= 0:
         return value
     return None
