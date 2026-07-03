@@ -16,6 +16,12 @@ from html.parser import HTMLParser
 from typing import Any, Protocol
 
 from fusekit.errors import FuseKitError
+from fusekit.hosted.billing import (
+    HOSTED_STRIPE_PRICE_SETUP_HELPER,
+    HOSTED_STRIPE_PRICE_SETUP_REQUIRED_FLAGS,
+    HOSTED_STRIPE_SETUP_SECRET_BOUNDARY,
+    HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY,
+)
 from fusekit.hosted.evidence import HOSTED_COMPLETION_EVIDENCE_KEYS
 from fusekit.hosted.github_app import (
     HOSTED_GITHUB_INTAKE_PERMISSIONS,
@@ -1287,6 +1293,27 @@ def _payment_readiness_failures(value: object, lane_readiness: object) -> list[s
             failures.append("payment_readiness_blocked_lane_price_label_flag_mismatch")
         if not _valid_public_price_label(label):
             failures.append("payment_readiness_price_label_invalid")
+    failures.extend(_payment_operator_setup_failures(value.get("operator_setup")))
+    return failures
+
+
+def _payment_operator_setup_failures(value: object) -> list[str]:
+    if not isinstance(value, dict):
+        return ["payment_operator_setup_missing"]
+    failures: list[str] = []
+    if value.get("helper_command") != HOSTED_STRIPE_PRICE_SETUP_HELPER:
+        failures.append("payment_operator_setup_helper_mismatch")
+    if value.get("dry_run_default") is not True:
+        failures.append("payment_operator_setup_dry_run_policy_mismatch")
+    if value.get("mutation_requires") != list(HOSTED_STRIPE_PRICE_SETUP_REQUIRED_FLAGS):
+        failures.append("payment_operator_setup_mutation_gate_mismatch")
+    if value.get("shared_account_boundary") != HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY:
+        failures.append("payment_operator_setup_shared_account_boundary_mismatch")
+    if value.get("secret_boundary") != HOSTED_STRIPE_SETUP_SECRET_BOUNDARY:
+        failures.append("payment_operator_setup_secret_boundary_mismatch")
+    enable_after = value.get("managed_runs_enable_after")
+    if not isinstance(enable_after, str) or "live Checkout proof" not in enable_after:
+        failures.append("payment_operator_setup_enable_gate_mismatch")
     return failures
 
 

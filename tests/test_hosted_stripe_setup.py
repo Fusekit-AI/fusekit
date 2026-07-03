@@ -8,6 +8,10 @@ from collections.abc import Mapping
 import pytest
 
 from fusekit.errors import FuseKitError
+from fusekit.hosted.billing import (
+    HOSTED_STRIPE_SETUP_SECRET_BOUNDARY,
+    HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY,
+)
 from fusekit.hosted.stripe_setup import (
     DEFAULT_MANAGED_RUN_PRODUCT_NAME,
     build_stripe_managed_run_price_plan,
@@ -78,6 +82,8 @@ def test_stripe_price_setup_dry_run_has_no_network_and_no_secret() -> None:
         "FUSEKIT_MANAGED_RUN_PRICE_LABEL": "Launch validation: $1.00 FuseKit managed run",
         "FUSEKIT_MANAGED_RUNS_ENABLED": "0",
     }
+    assert report["shared_account_boundary"] == HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY
+    assert report["secret_boundary"] == HOSTED_STRIPE_SETUP_SECRET_BOUNDARY
     assert opener.requests == []
     assert "sk_live_secret_value" not in serialized
     assert "card" not in serialized.lower()

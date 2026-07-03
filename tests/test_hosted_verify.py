@@ -9,6 +9,12 @@ import urllib.request
 import pytest
 
 from fusekit.errors import FuseKitError
+from fusekit.hosted.billing import (
+    HOSTED_STRIPE_PRICE_SETUP_HELPER,
+    HOSTED_STRIPE_PRICE_SETUP_REQUIRED_FLAGS,
+    HOSTED_STRIPE_SETUP_SECRET_BOUNDARY,
+    HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY,
+)
 from fusekit.hosted.lanes import (
     BYO_OCI_LANE,
     MANAGED_FUSEKIT_RUN_LANE,
@@ -759,6 +765,45 @@ def test_verify_hosted_deployment_requires_operator_setup_contract() -> None:
         "failures"
     ]
     assert "operator_setup_steps_mismatch" in checks["hosted.deployment"]["failures"]
+
+
+def test_verify_hosted_deployment_requires_payment_operator_setup_contract() -> None:
+    readiness = _readiness_contract()
+    payment = readiness["payment"]
+    assert isinstance(payment, dict)
+    operator_setup = payment["operator_setup"]
+    assert isinstance(operator_setup, dict)
+    operator_setup["helper_command"] = "stripe dashboard manual setup"
+    operator_setup["mutation_requires"] = ["--execute"]
+    operator_setup["shared_account_boundary"] = "May reuse existing Snowman AI products."
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            readiness,
+            _deployment_contract(),
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["hosted.readiness"]["status"] == "failed"
+    assert "payment_operator_setup_helper_mismatch" in checks["hosted.readiness"][
+        "failures"
+    ]
+    assert "payment_operator_setup_mutation_gate_mismatch" in checks["hosted.readiness"][
+        "failures"
+    ]
+    assert "payment_operator_setup_shared_account_boundary_mismatch" in checks[
+        "hosted.readiness"
+    ]["failures"]
 
 
 def test_verify_hosted_deployment_requires_github_app_token_boundary() -> None:
@@ -1808,6 +1853,14 @@ def _payment_contract() -> dict[str, object]:
                 "plan_fingerprint",
             ],
         },
+        "operator_setup": {
+            "helper_command": HOSTED_STRIPE_PRICE_SETUP_HELPER,
+            "dry_run_default": True,
+            "mutation_requires": list(HOSTED_STRIPE_PRICE_SETUP_REQUIRED_FLAGS),
+            "shared_account_boundary": HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY,
+            "secret_boundary": HOSTED_STRIPE_SETUP_SECRET_BOUNDARY,
+            "managed_runs_enable_after": "live Checkout proof and worker-dispatch acceptance pass",
+        },
     }
 
 
@@ -1827,9 +1880,14 @@ def _lane_readiness_contract() -> dict[str, object]:
                     "managed_run_price_label_required",
                 ],
                 "next_actions": [
-                    "Set FUSEKIT_STRIPE_PRICE_ID before enabling managed paid runs.",
                     (
-                        "Set FUSEKIT_MANAGED_RUN_PRICE_LABEL to the public price shown before "
+                        "Run fusekit-hosted-stripe-price --execute --confirm-shared-account "
+                        "to create a FuseKit-scoped Stripe Price, then set "
+                        "FUSEKIT_STRIPE_PRICE_ID."
+                    ),
+                    (
+                        "Use the fusekit-hosted-stripe-price output to set "
+                        "FUSEKIT_MANAGED_RUN_PRICE_LABEL to the public price shown before "
                         "Checkout."
                     ),
                 ],

@@ -488,19 +488,24 @@ HOSTED_READINESS_NEXT_ACTIONS: dict[str, str] = {
     "hosted_state_secret_too_short": "Use at least 16 characters for the hosted state secret.",
     "hosted_worker_secret_too_short": "Use at least 16 characters for the worker secret.",
     "stripe_secret_key_required_for_managed_runs": (
-        "Set FUSEKIT_STRIPE_SECRET_KEY before enabling managed paid runs."
+        "Store a live FUSEKIT_STRIPE_SECRET_KEY only in the hosted runtime secret file "
+        "before enabling managed paid runs."
     ),
     "stripe_live_secret_key_required_for_managed_runs": (
-        "Use a live-mode Stripe secret key before enabling public managed paid runs."
+        "Use a live-mode Stripe secret key; test-mode keys can stage Checkout but cannot "
+        "enable public managed paid runs."
     ),
     "stripe_price_id_required_for_managed_runs": (
-        "Set FUSEKIT_STRIPE_PRICE_ID before enabling managed paid runs."
+        "Run fusekit-hosted-stripe-price --execute --confirm-shared-account to create a "
+        "FuseKit-scoped Stripe Price, then set FUSEKIT_STRIPE_PRICE_ID."
     ),
     "managed_run_price_label_required": (
-        "Set FUSEKIT_MANAGED_RUN_PRICE_LABEL to the public price shown before Checkout."
+        "Use the fusekit-hosted-stripe-price output to set FUSEKIT_MANAGED_RUN_PRICE_LABEL "
+        "to the public price shown before Checkout."
     ),
     "managed_runs_not_enabled": (
-        "Set FUSEKIT_MANAGED_RUNS_ENABLED=1 only after Stripe Checkout is configured."
+        "Set FUSEKIT_MANAGED_RUNS_ENABLED=1 only after live Stripe Checkout proof and "
+        "worker-dispatch acceptance pass."
     ),
     "source_provenance_not_verified": (
         "Publish hosted source provenance for Fusekit-AI/fusekit from the deployment "

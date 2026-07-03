@@ -13,6 +13,12 @@ from typing import Any
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+from fusekit.hosted.billing import (
+    HOSTED_STRIPE_PRICE_SETUP_HELPER,
+    HOSTED_STRIPE_PRICE_SETUP_REQUIRED_FLAGS,
+    HOSTED_STRIPE_SETUP_SECRET_BOUNDARY,
+    HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY,
+)
 from fusekit.hosted.github_app import GitHubAppConfig
 from fusekit.hosted.job import create_hosted_job_token, with_hosted_job_payment_receipt
 from fusekit.hosted.lanes import BYO_OCI_LANE, MANAGED_FUSEKIT_RUN_LANE
@@ -766,6 +772,14 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
             "github_source_hash",
             "plan_fingerprint",
         ],
+    }
+    assert payload["payment"]["operator_setup"] == {
+        "helper_command": HOSTED_STRIPE_PRICE_SETUP_HELPER,
+        "dry_run_default": True,
+        "mutation_requires": list(HOSTED_STRIPE_PRICE_SETUP_REQUIRED_FLAGS),
+        "shared_account_boundary": HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY,
+        "secret_boundary": HOSTED_STRIPE_SETUP_SECRET_BOUNDARY,
+        "managed_runs_enable_after": "live Checkout proof and worker-dispatch acceptance pass",
     }
     lane_readiness = payload["lane_readiness"]["lanes"]
     assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["launchable"] is False
@@ -1682,7 +1696,10 @@ def test_hosted_plan_disables_managed_lane_until_payment_is_configured() -> None
 
     assert status == "200 OK"
     assert "Managed FuseKit run" in text
-    assert "Set FUSEKIT_MANAGED_RUNS_ENABLED=1 only after Stripe Checkout is configured." in text
+    assert (
+        "Set FUSEKIT_MANAGED_RUNS_ENABLED=1 only after live Stripe Checkout proof "
+        "and worker-dispatch acceptance pass."
+    ) in text
     assert f"lane={MANAGED_FUSEKIT_RUN_LANE}" not in text
     assert f"lane={BYO_OCI_LANE}" in text
     assert "Bring your own OCI" in text
@@ -1740,10 +1757,22 @@ def test_hosted_control_room_rejects_unlaunchable_managed_lane_before_github_wor
         "managed_run_price_label_required",
     ]
     assert payload["next_actions"] == [
-        "Set FUSEKIT_MANAGED_RUNS_ENABLED=1 only after Stripe Checkout is configured.",
-        "Set FUSEKIT_STRIPE_SECRET_KEY before enabling managed paid runs.",
-        "Set FUSEKIT_STRIPE_PRICE_ID before enabling managed paid runs.",
-        "Set FUSEKIT_MANAGED_RUN_PRICE_LABEL to the public price shown before Checkout.",
+        (
+            "Set FUSEKIT_MANAGED_RUNS_ENABLED=1 only after live Stripe Checkout proof "
+            "and worker-dispatch acceptance pass."
+        ),
+        (
+            "Store a live FUSEKIT_STRIPE_SECRET_KEY only in the hosted runtime secret "
+            "file before enabling managed paid runs."
+        ),
+        (
+            "Run fusekit-hosted-stripe-price --execute --confirm-shared-account to "
+            "create a FuseKit-scoped Stripe Price, then set FUSEKIT_STRIPE_PRICE_ID."
+        ),
+        (
+            "Use the fusekit-hosted-stripe-price output to set "
+            "FUSEKIT_MANAGED_RUN_PRICE_LABEL to the public price shown before Checkout."
+        ),
     ]
     assert opener.requests == []
     assert settings.hosted_jobs == {}

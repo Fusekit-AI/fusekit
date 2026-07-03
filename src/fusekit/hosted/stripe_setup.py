@@ -12,7 +12,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from fusekit.errors import FuseKitError
-from fusekit.hosted.billing import STRIPE_API_BASE, _stripe_account_mode, _valid_price_label
+from fusekit.hosted.billing import (
+    HOSTED_STRIPE_SETUP_SECRET_BOUNDARY,
+    HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY,
+    STRIPE_API_BASE,
+    _stripe_account_mode,
+    _valid_price_label,
+)
 from fusekit.hosted.github_app import UrlOpener
 from fusekit.hosted.lanes import MANAGED_FUSEKIT_RUN_LANE
 
@@ -62,15 +68,8 @@ class StripeManagedRunPricePlan:
                     price_label=self.price_label,
                 ),
             },
-            "shared_account_boundary": (
-                "Creates a new FuseKit-scoped Stripe Product and Price only. It does not "
-                "edit, archive, or reuse existing Snowman AI products, prices, customers, "
-                "subscriptions, payment links, or webhooks."
-            ),
-            "secret_boundary": (
-                "Stripe secret keys are read from the selected environment variable and are "
-                "never emitted in JSON output, docs, hosted pages, receipts, or logs."
-            ),
+            "shared_account_boundary": HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY,
+            "secret_boundary": HOSTED_STRIPE_SETUP_SECRET_BOUNDARY,
         }
 
 

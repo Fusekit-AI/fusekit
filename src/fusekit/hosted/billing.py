@@ -21,6 +21,20 @@ STRIPE_CHECKOUT_METADATA_KEYS = (
     "github_source_hash",
     "plan_fingerprint",
 )
+HOSTED_STRIPE_PRICE_SETUP_HELPER = "fusekit-hosted-stripe-price"
+HOSTED_STRIPE_PRICE_SETUP_REQUIRED_FLAGS = (
+    "--execute",
+    "--confirm-shared-account",
+)
+HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY = (
+    "Creates a new FuseKit-scoped Stripe Product and Price only. It does not edit, "
+    "archive, or reuse existing Snowman AI products, prices, customers, subscriptions, "
+    "payment links, or webhooks."
+)
+HOSTED_STRIPE_SETUP_SECRET_BOUNDARY = (
+    "Stripe secret keys are read from the selected environment variable and are never "
+    "emitted in JSON output, docs, hosted pages, receipts, or logs."
+)
 
 
 @dataclass(frozen=True)
@@ -75,6 +89,16 @@ class HostedPaymentConfig:
                     "client_reference_id",
                     *STRIPE_CHECKOUT_METADATA_KEYS,
                 ],
+            },
+            "operator_setup": {
+                "helper_command": HOSTED_STRIPE_PRICE_SETUP_HELPER,
+                "dry_run_default": True,
+                "mutation_requires": list(HOSTED_STRIPE_PRICE_SETUP_REQUIRED_FLAGS),
+                "shared_account_boundary": HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY,
+                "secret_boundary": HOSTED_STRIPE_SETUP_SECRET_BOUNDARY,
+                "managed_runs_enable_after": (
+                    "live Checkout proof and worker-dispatch acceptance pass"
+                ),
             },
             "secret_boundary": (
                 "Stripe secret keys stay server-side. FuseKit never collects or renders card "
