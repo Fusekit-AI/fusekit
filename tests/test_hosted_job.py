@@ -785,6 +785,54 @@ def test_hosted_byo_proof_bundle_verifier_redacts_mismatched_label_and_invalid_h
     assert "not-a-sha-label" not in serialized
 
 
+def test_hosted_byo_proof_bundle_verifier_blocks_empty_required_artifacts() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+    artifacts = bundle["artifacts"]
+    assert isinstance(artifacts, list)
+    artifact = next(
+        item
+        for item in artifacts
+        if isinstance(item, dict) and item["path"] == ".fusekit/run_record.json"
+    )
+    artifact["size_bytes"] = 0
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+
+    assert report["ready"] is False
+    assert "artifact_empty:.fusekit/run_record.json" in report["blockers"]
+
+
+def test_hosted_byo_proof_bundle_verifier_allows_empty_gate_event_stream() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+    artifacts = bundle["artifacts"]
+    assert isinstance(artifacts, list)
+    artifact = next(
+        item
+        for item in artifacts
+        if isinstance(item, dict) and item["path"] == ".fusekit/gate_events.jsonl"
+    )
+    artifact["size_bytes"] = 0
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+
+    assert report["ready"] is True
+    assert "artifact_empty:.fusekit/gate_events.jsonl" not in report["blockers"]
+
+
 def test_hosted_byo_proof_bundle_verifier_blocks_sidecar_fields() -> None:
     job = build_hosted_launch_job(
         _plan(),

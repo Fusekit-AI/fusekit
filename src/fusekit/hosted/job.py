@@ -60,6 +60,7 @@ HOSTED_BYO_OCI_REVERSIBILITY_SCHEMA_VERSION = "fusekit.hosted-byo-oci-reversibil
 HOSTED_BYO_OCI_PROOF_MANIFEST_SCHEMA_VERSION = "fusekit.hosted-byo-oci-proof-manifest.v1"
 HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION = "fusekit.hosted-byo-oci-proof-bundle.v1"
 HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION = "fusekit.hosted-byo-oci-proof-verify.v1"
+HOSTED_BYO_ZERO_BYTE_ALLOWED_ARTIFACTS = frozenset({".fusekit/gate_events.jsonl"})
 
 HOSTED_WORKER_PROOF_KEYS = HOSTED_COMPLETION_EVIDENCE_KEYS
 HOSTED_WORKER_MAINTENANCE_PROOF_KEYS = (
@@ -929,6 +930,9 @@ def verify_hosted_byo_oci_proof_bundle(
         if not _valid_sha256_label(str(artifact.get("sha256", ""))):
             blockers.append(f"artifact_sha256_invalid:{path}")
             artifact["sha256"] = ""
+        if path in required_artifacts and artifact.get("size_bytes") == 0:
+            if path not in HOSTED_BYO_ZERO_BYTE_ALLOWED_ARTIFACTS:
+                blockers.append(f"artifact_empty:{path}")
     evidence = _public_completion_evidence(bundle.get("completion_evidence"), blockers=blockers)
     missing_evidence = [key for key in HOSTED_WORKER_PROOF_KEYS if evidence.get(key) is not True]
     blockers.extend(f"missing_completion_evidence:{key}" for key in missing_evidence)
