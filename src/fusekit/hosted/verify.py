@@ -122,6 +122,21 @@ WORKER_DISPATCH_IDEMPOTENCY_KEYS = frozenset(
 WORKER_DISPATCH_IDEMPOTENCY_STORAGE_KEYS = frozenset(
     {"exists", "directory", "symlink", "mode", "private_enough", "writable"}
 )
+CLOUDFLARE_DNS_CONTRACT_KEYS = frozenset(
+    {"zone", "record_name", "record_type", "record_value", "dry_run_policy"}
+)
+CLOUDFLARE_DNS_DRY_RUN_POLICY_KEYS = frozenset(
+    {"allowed_actions", "allowed_fqdn", "forbidden_records", "requires_visible_approval"}
+)
+ROLLBACK_REQUIREMENTS_KEYS = frozenset(
+    {
+        "metadata_required_before_completion",
+        "execution_receipt_required_for_rollback_request",
+        "post_rollback_verification_required",
+        "provider_inventory_required",
+        "secret_boundary",
+    }
+)
 
 
 class UrlOpener(Protocol):
@@ -719,6 +734,10 @@ def _hosted_runtime_contract_failures(
     if not isinstance(cloudflare_dns, dict):
         failures.append("cloudflare_dns_contract_missing")
     else:
+        failures.extend(
+            f"cloudflare_dns_unexpected_field:{field}"
+            for field in _unexpected_keys(cloudflare_dns, CLOUDFLARE_DNS_CONTRACT_KEYS)
+        )
         if cloudflare_dns.get("zone") != "snowmanai.org":
             failures.append("cloudflare_zone_mismatch")
         if cloudflare_dns.get("record_name") != "fusekit":
@@ -734,10 +753,21 @@ def _hosted_runtime_contract_failures(
         }
         if dry_run_policy != expected_dry_run_policy:
             failures.append("cloudflare_dns_dry_run_policy_mismatch")
+        if isinstance(dry_run_policy, dict):
+            failures.extend(
+                f"cloudflare_dns_dry_run_policy_unexpected_field:{field}"
+                for field in _unexpected_keys(
+                    dry_run_policy, CLOUDFLARE_DNS_DRY_RUN_POLICY_KEYS
+                )
+            )
     rollback_requirements = payload.get("rollback_requirements")
     if not isinstance(rollback_requirements, dict):
         failures.append("rollback_requirements_missing")
     else:
+        failures.extend(
+            f"rollback_requirements_unexpected_field:{field}"
+            for field in _unexpected_keys(rollback_requirements, ROLLBACK_REQUIREMENTS_KEYS)
+        )
         expected_rollback_flags = {
             "metadata_required_before_completion": True,
             "execution_receipt_required_for_rollback_request": True,

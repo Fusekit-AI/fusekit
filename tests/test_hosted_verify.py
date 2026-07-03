@@ -946,6 +946,42 @@ def test_verify_hosted_deployment_requires_provider_permissions_and_rollback_con
     assert "rollback_requirements_secret_boundary_missing" in failures
 
 
+def test_verify_hosted_deployment_rejects_dns_and_rollback_sidecars() -> None:
+    contract = _deployment_contract()
+    cloudflare_dns = contract["cloudflare_dns"]
+    assert isinstance(cloudflare_dns, dict)
+    cloudflare_dns["zone_id"] = "redacted-zone-id-does-not-belong"
+    dry_run_policy = cloudflare_dns["dry_run_policy"]
+    assert isinstance(dry_run_policy, dict)
+    dry_run_policy["raw_diff"] = "would upsert fusekit.snowmanai.org"
+    rollback_requirements = contract["rollback_requirements"]
+    assert isinstance(rollback_requirements, dict)
+    rollback_requirements["raw_provider_inventory"] = "cloudflare zone export"
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            _readiness_contract(),
+            contract,
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["hosted.deployment"]["status"] == "failed"
+    failures = checks["hosted.deployment"]["failures"]
+    assert "cloudflare_dns_unexpected_field:zone_id" in failures
+    assert "cloudflare_dns_dry_run_policy_unexpected_field:raw_diff" in failures
+    assert "rollback_requirements_unexpected_field:raw_provider_inventory" in failures
+
+
 def test_hosted_deployment_contract_exposes_exact_provider_permission_copy() -> None:
     contract = _deployment_contract()
 
