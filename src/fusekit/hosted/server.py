@@ -1978,18 +1978,34 @@ def _hosted_payment_checkout_response(
     if job.launch_lane != MANAGED_FUSEKIT_RUN_LANE:
         return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "payment_not_required"})
     if not _hosted_action_origin_allowed(settings, environ):
-        return _response(start_response, HTTPStatus.FORBIDDEN, {"error": "invalid_control"})
+        return _response(
+            start_response,
+            HTTPStatus.FORBIDDEN,
+            _hosted_payment_error_payload("invalid_control"),
+        )
     try:
         form = _form_request_body(environ)
     except FuseKitError:
-        return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "missing_control"})
+        return _response(
+            start_response,
+            HTTPStatus.BAD_REQUEST,
+            _hosted_payment_error_payload("missing_control"),
+        )
     control_token = _first_query_value(form, "control")
     if not control_token:
-        return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "missing_control"})
+        return _response(
+            start_response,
+            HTTPStatus.BAD_REQUEST,
+            _hosted_payment_error_payload("missing_control"),
+        )
     try:
         _verify_hosted_control_token(settings, control_token, job=job, action="checkout")
     except FuseKitError:
-        return _response(start_response, HTTPStatus.FORBIDDEN, {"error": "invalid_control"})
+        return _response(
+            start_response,
+            HTTPStatus.FORBIDDEN,
+            _hosted_payment_error_payload("invalid_control"),
+        )
     job_token = create_hosted_job_token(settings.state_secret, job)
     try:
         receipt = create_stripe_checkout_session(
