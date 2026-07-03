@@ -122,6 +122,10 @@ OCI_HOST_POSTURE_RUNTIME_SECRET_VERIFY_KEYS = frozenset(
 OCI_HOST_POSTURE_PATCH_POSTURE_KEYS = frozenset(
     {"pending_security_updates", "reboot_required"}
 )
+OCI_HOST_POSTURE_CIS_BASELINE_KEYS = frozenset(
+    {"scanner", "status", "critical_findings", "high_findings"}
+)
+OCI_HOST_POSTURE_ROOTKIT_SCAN_KEYS = frozenset({"scanner", "status"})
 OCI_HOST_POSTURE_COLLECTION_KEYS = frozenset(
     {"mode", "mutates_oci", "mutates_host", "secret_boundary"}
 )
@@ -761,6 +765,20 @@ def _evidence_shape_check(evidence: Mapping[str, object]) -> dict[str, object]:
             evidence,
             "patch_posture",
             OCI_HOST_POSTURE_PATCH_POSTURE_KEYS,
+        )
+    )
+    unexpected.extend(
+        _unexpected_nested_keys(
+            evidence,
+            "cis_baseline",
+            OCI_HOST_POSTURE_CIS_BASELINE_KEYS,
+        )
+    )
+    unexpected.extend(
+        _unexpected_nested_keys(
+            evidence,
+            "rootkit_scan",
+            OCI_HOST_POSTURE_ROOTKIT_SCAN_KEYS,
         )
     )
     unexpected.extend(

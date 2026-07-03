@@ -374,6 +374,29 @@ def test_oci_host_posture_blocks_unknown_nested_systemd_fields() -> None:
     ]
 
 
+def test_oci_host_posture_blocks_unknown_nested_scanner_summary_fields() -> None:
+    evidence = _clean_evidence()
+    cis_baseline = evidence["cis_baseline"]
+    rootkit_scan = evidence["rootkit_scan"]
+    assert isinstance(cis_baseline, dict)
+    assert isinstance(rootkit_scan, dict)
+    cis_baseline["raw_lynis_log"] = "warning ids and package names belong in private logs"
+    rootkit_scan["raw_rkhunter_log"] = "checking system commands complete"
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["evidence.shape"]
+    shape_check = _check(report, "evidence.shape")
+    assert shape_check["failures"] == [
+        "oci_host_posture_evidence_has_unknown_fields"
+    ]
+    assert shape_check["unexpected_fields"] == [
+        "cis_baseline.raw_lynis_log",
+        "rootkit_scan.raw_rkhunter_log",
+    ]
+
+
 def test_oci_host_posture_blocks_unknown_nested_release_receipt_fields() -> None:
     evidence = _clean_evidence()
     release_receipt = evidence["release_receipt"]
