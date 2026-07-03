@@ -23,6 +23,14 @@ STRIPE_CHECKOUT_METADATA_KEYS = (
     "stripe_price_id_hash",
     "price_label_hash",
 )
+STRIPE_CHECKOUT_HASH_METADATA_KEYS = frozenset(
+    {
+        "github_source_hash",
+        "plan_fingerprint",
+        "stripe_price_id_hash",
+        "price_label_hash",
+    }
+)
 HOSTED_STRIPE_PRICE_SETUP_HELPER = "fusekit-hosted-stripe-price"
 HOSTED_STRIPE_PRICE_VERIFY_HELPER = "fusekit-hosted-stripe-price-verify"
 HOSTED_STRIPE_PRICE_SETUP_MODULE = "python -m fusekit.hosted.stripe_setup"
@@ -441,6 +449,8 @@ def _public_metadata(value: object) -> dict[str, str]:
                 raise FuseKitError("stripe_checkout_metadata_contains_secret_text")
             public = _public_identifier(metadata_value)
             if public:
+                if key in STRIPE_CHECKOUT_HASH_METADATA_KEYS and not _valid_sha256_label(public):
+                    raise FuseKitError("stripe_checkout_metadata_hash_invalid")
                 result[key] = public
     return result
 

@@ -62,8 +62,8 @@ def test_stripe_checkout_session_receipt_is_public_and_bound() -> None:
             "metadata": {
                 "job_id": "hosted-job",
                 "lane": "managed-fusekit-run",
-                "github_source_hash": "sha256:source",
-                "plan_fingerprint": "sha256:plan",
+                "github_source_hash": _sha256_label("source"),
+                "plan_fingerprint": _sha256_label("plan"),
             },
             "customer_email": "buyer@example.com",
         }
@@ -78,8 +78,8 @@ def test_stripe_checkout_session_receipt_is_public_and_bound() -> None:
     assert receipt["metadata"] == {
         "job_id": "hosted-job",
         "lane": "managed-fusekit-run",
-        "github_source_hash": "sha256:source",
-        "plan_fingerprint": "sha256:plan",
+        "github_source_hash": _sha256_label("source"),
+        "plan_fingerprint": _sha256_label("plan"),
     }
     assert "buyer@example.com" not in serialized
 
@@ -98,8 +98,8 @@ def test_stripe_checkout_session_receipt_rejects_boolean_amount_total() -> None:
             "metadata": {
                 "job_id": "hosted-job",
                 "lane": "managed-fusekit-run",
-                "github_source_hash": "sha256:source",
-                "plan_fingerprint": "sha256:plan",
+                "github_source_hash": _sha256_label("source"),
+                "plan_fingerprint": _sha256_label("plan"),
             },
         }
     )
@@ -121,11 +121,34 @@ def test_stripe_checkout_session_receipt_rejects_unexpected_metadata() -> None:
                 "metadata": {
                     "job_id": "hosted-job",
                     "lane": "managed-fusekit-run",
-                    "github_source_hash": "sha256:source",
-                    "plan_fingerprint": "sha256:plan",
-                    "stripe_price_id_hash": "sha256:price",
-                    "price_label_hash": "sha256:label",
+                    "github_source_hash": _sha256_label("source"),
+                    "plan_fingerprint": _sha256_label("plan"),
+                    "stripe_price_id_hash": _sha256_label("price"),
+                    "price_label_hash": _sha256_label("label"),
                     "provider_token": "not-allowed-here",
+                },
+            }
+        )
+
+
+def test_stripe_checkout_session_receipt_rejects_malformed_hash_metadata() -> None:
+    with pytest.raises(FuseKitError, match="stripe_checkout_metadata_hash_invalid"):
+        stripe_checkout_session_receipt(
+            {
+                "id": "cs_live_public",
+                "status": "complete",
+                "payment_status": "paid",
+                "mode": "payment",
+                "client_reference_id": "hosted-job",
+                "amount_total": 100,
+                "currency": "usd",
+                "metadata": {
+                    "job_id": "hosted-job",
+                    "lane": "managed-fusekit-run",
+                    "github_source_hash": _sha256_label("source"),
+                    "plan_fingerprint": "sha256:not-a-real-digest",
+                    "stripe_price_id_hash": _sha256_label("price"),
+                    "price_label_hash": _sha256_label("label"),
                 },
             }
         )

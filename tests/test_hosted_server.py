@@ -2111,7 +2111,7 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
     stripe_opener.payloads[2]["metadata"] = {
         "job_id": job_id,
         "lane": MANAGED_FUSEKIT_RUN_LANE,
-        "github_source_hash": "sha256:wrong-source",
+        "github_source_hash": "sha256:" + ("c" * 64),
         "plan_fingerprint": plan_fingerprint,
         "stripe_price_id_hash": price_id_hash,
         "price_label_hash": price_label_hash,
