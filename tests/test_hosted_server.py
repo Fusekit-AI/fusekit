@@ -1895,6 +1895,17 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
                 "object": "checkout.session",
                 "status": "complete",
                 "payment_status": "paid",
+                "mode": "setup",
+                "client_reference_id": "",
+                "amount_total": 4900,
+                "currency": "usd",
+                "metadata": {},
+            },
+            {
+                "id": "cs_test_123",
+                "object": "checkout.session",
+                "status": "complete",
+                "payment_status": "paid",
                 "mode": "payment",
                 "client_reference_id": "",
                 "amount_total": 4900,
@@ -1954,6 +1965,13 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
         "github_source_hash": github_source_hash,
         "plan_fingerprint": plan_fingerprint,
     }
+    stripe_opener.payloads[3]["client_reference_id"] = job_id
+    stripe_opener.payloads[3]["metadata"] = {
+        "job_id": job_id,
+        "lane": MANAGED_FUSEKIT_RUN_LANE,
+        "github_source_hash": github_source_hash,
+        "plan_fingerprint": plan_fingerprint,
+    }
     job_token = _job_token(text)
     checkout_control = _control_for_payment_checkout(text)
     start_control = create_hosted_state_token(
@@ -2001,6 +2019,15 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
     assert stripe_opener.bodies[0]["metadata[github_source_hash]"] == [github_source_hash]
     assert stripe_opener.bodies[0]["metadata[plan_fingerprint]"] == [plan_fingerprint]
     assert "sk_live" not in json.dumps(checkout)
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/payments/stripe-return",
+        query_string=f"job={checkout_job_token}&session_id=cs_test_123",
+        headers={"Accept": "text/html"},
+        settings=settings,
+    )
+    assert status == "403 Forbidden"
+    assert json.loads(body.decode("utf-8")) == {"error": "payment_binding_mismatch"}
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/payments/stripe-return",

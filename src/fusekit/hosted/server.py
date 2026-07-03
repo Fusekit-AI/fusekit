@@ -21,6 +21,8 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.billing import (
+    HOSTED_PAYMENT_SCHEMA_VERSION,
+    STRIPE_CHECKOUT_PROVIDER,
     HostedPaymentConfig,
     create_stripe_checkout_session,
     payment_required_receipt,
@@ -2544,6 +2546,8 @@ def _managed_payment_required(job: HostedLaunchJob) -> bool:
 
 
 def _payment_receipt_matches_job(receipt: dict[str, object], job: HostedLaunchJob) -> bool:
+    if not _payment_receipt_is_paid_checkout(receipt):
+        return False
     if receipt.get("client_reference_id") != job.job_id:
         return False
     metadata = receipt.get("metadata")
@@ -2559,6 +2563,27 @@ def _payment_receipt_matches_job(receipt: dict[str, object], job: HostedLaunchJo
         if metadata.get(key) != expected_value:
             return False
     return True
+
+
+def _payment_receipt_is_paid_checkout(receipt: dict[str, object]) -> bool:
+    session_id = receipt.get("checkout_session_id")
+    amount_total = receipt.get("amount_total")
+    currency = receipt.get("currency")
+    return (
+        receipt.get("schema_version") == HOSTED_PAYMENT_SCHEMA_VERSION
+        and receipt.get("provider") == STRIPE_CHECKOUT_PROVIDER
+        and receipt.get("mode") == "payment"
+        and receipt.get("status") == "complete"
+        and receipt.get("payment_status") == "paid"
+        and receipt.get("paid") is True
+        and isinstance(session_id, str)
+        and session_id.startswith("cs_")
+        and isinstance(amount_total, int)
+        and amount_total > 0
+        and isinstance(currency, str)
+        and currency.isalpha()
+        and len(currency) == 3
+    )
 
 
 def _payment_github_source_hash(github_source: str) -> str:
