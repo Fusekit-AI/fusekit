@@ -12,11 +12,14 @@ from fusekit.hosted.host_posture import (
     OCI_HOST_POSTURE_MAX_JSON_BYTES,
     OCI_HOST_POSTURE_REPORT_SCHEMA_VERSION,
     CommandResult,
+    _public_json,
     collect_oci_host_posture_evidence,
     evaluate_oci_host_posture,
     main,
 )
 from fusekit.security import contains_durable_secret_text
+
+HOSTED_COMMIT = "ca295a41d9f6d0ef5864f398d94f675a6c9eec11"
 
 
 def _clean_evidence() -> dict[str, object]:
@@ -145,12 +148,46 @@ def _clean_evidence() -> dict[str, object]:
         "hosted_verify": {
             "public_origin": "https://fusekit.snowmanai.org",
             "ready": True,
+            "source_provenance": {
+                "actual": {
+                    "commit_sha": HOSTED_COMMIT,
+                },
+            },
         },
         "dns_propagation": {
             "public_origin": "https://fusekit.snowmanai.org",
             "domain": "fusekit.snowmanai.org",
             "status": "propagated",
             "propagated": True,
+        },
+        "release_receipt": {
+            "schema_version": "fusekit.oci-hosted-release-receipt.v1",
+            "target": "fusekit.snowmanai.org",
+            "mutated_paths": [
+                "/opt/fusekit/current",
+                "/etc/fusekit/hosted-provenance.env",
+                "/var/lib/fusekit/release-receipts",
+            ],
+            "restarted_services": [
+                "fusekit-hosted.service",
+                "fusekit-worker-dispatch.service",
+            ],
+            "before_commit_sha": "",
+            "after_commit_sha": HOSTED_COMMIT,
+            "release_dir": f"/opt/fusekit/releases/{HOSTED_COMMIT}",
+            "rollback": {
+                "mode": "current_symlink_restore",
+                "previous_commit_sha": "",
+            },
+            "post_deploy_proof_command": (
+                "fusekit-hosted-verify --origin https://fusekit.snowmanai.org "
+                f"--expected-commit-sha {HOSTED_COMMIT}"
+            ),
+            "secret_boundary": (
+                "Receipt contains release paths, service names, and public git commits only. "
+                "Runtime secrets remain in /etc/fusekit/hosted-secrets.env and are not read or "
+                "emitted."
+            ),
         },
         "rollback_metadata": {
             "rollback": [
@@ -189,6 +226,25 @@ def test_oci_host_posture_accepts_redacted_amd_hardened_host_evidence() -> None:
     assert report["blocking_checks"] == []
     assert "OCI credentials" in report["public_summary"]["secret_boundary"]
     assert not contains_durable_secret_text(json.dumps(report))
+
+
+def test_oci_host_posture_public_json_preserves_valid_release_proof() -> None:
+    emitted = json.loads(_public_json(_clean_evidence()))
+
+    assert emitted["hosted_verify"]["source_provenance"]["actual"]["commit_sha"] == (
+        HOSTED_COMMIT
+    )
+    assert emitted["release_receipt"]["after_commit_sha"] == HOSTED_COMMIT
+    assert emitted["release_receipt"]["release_dir"] == (
+        f"/opt/fusekit/releases/{HOSTED_COMMIT}"
+    )
+    assert emitted["release_receipt"]["post_deploy_proof_command"].endswith(
+        HOSTED_COMMIT
+    )
+    assert evaluate_oci_host_posture(emitted)["ready"] is True
+    assert "sk_live_" not in _public_json(
+        {"operator_note": "Authorization: Bearer sk_live_" + ("a" * 24)}
+    )
 
 
 def test_oci_host_posture_blocks_unknown_top_level_evidence_fields() -> None:
@@ -243,6 +299,29 @@ def test_oci_host_posture_blocks_unknown_nested_systemd_fields() -> None:
     assert shape_check["unexpected_fields"] == [
         "systemd_units.debug-helper",
         "systemd_units.fusekit-hosted.raw_systemctl_show",
+    ]
+
+
+def test_oci_host_posture_blocks_unknown_nested_release_receipt_fields() -> None:
+    evidence = _clean_evidence()
+    release_receipt = evidence["release_receipt"]
+    assert isinstance(release_receipt, dict)
+    release_receipt["raw_systemctl_output"] = "would be noisy"
+    rollback = release_receipt["rollback"]
+    assert isinstance(rollback, dict)
+    rollback["raw_symlink_log"] = "/opt/fusekit/current -> old"
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["evidence.shape"]
+    shape_check = _check(report, "evidence.shape")
+    assert shape_check["failures"] == [
+        "oci_host_posture_evidence_has_unknown_fields"
+    ]
+    assert shape_check["unexpected_fields"] == [
+        "release_receipt.raw_systemctl_output",
+        "release_receipt.rollback.raw_symlink_log",
     ]
 
 
@@ -473,6 +552,49 @@ def test_oci_host_posture_blocks_missing_dns_and_rollback_proof() -> None:
     ]
 
 
+def test_oci_host_posture_blocks_missing_release_receipt() -> None:
+    evidence = _clean_evidence()
+    evidence["release_receipt"] = {}
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.release_receipt"]
+    release_check = _check(report, "host.release_receipt")
+    assert release_check["failures"] == [
+        "oci_host_release_receipt_missing",
+        "oci_host_release_receipt_schema_invalid",
+        "oci_host_release_receipt_target_mismatch",
+        "oci_host_release_receipt_mutated_paths_mismatch",
+        "oci_host_release_receipt_restarted_services_mismatch",
+        "oci_host_release_receipt_after_commit_invalid",
+        "oci_host_release_receipt_rollback_mode_mismatch",
+        "oci_host_release_receipt_secret_boundary_mismatch",
+    ]
+
+
+def test_oci_host_posture_blocks_release_receipt_commit_mismatch() -> None:
+    evidence = _clean_evidence()
+    receipt = evidence["release_receipt"]
+    assert isinstance(receipt, dict)
+    stale_commit = "df448c5982306823887c505d30335af7d02ffd2e"
+    receipt["after_commit_sha"] = stale_commit
+    receipt["release_dir"] = f"/opt/fusekit/releases/{stale_commit}"
+    receipt["post_deploy_proof_command"] = (
+        "fusekit-hosted-verify --origin https://fusekit.snowmanai.org "
+        f"--expected-commit-sha {stale_commit}"
+    )
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.release_receipt"]
+    release_check = _check(report, "host.release_receipt")
+    assert release_check["failures"] == [
+        "oci_host_release_receipt_commit_does_not_match_hosted_verify"
+    ]
+
+
 def test_oci_host_posture_preserves_hosted_expected_commit_blocker() -> None:
     evidence = _clean_evidence()
     evidence["hosted_verify"] = {
@@ -494,9 +616,13 @@ def test_oci_host_posture_preserves_hosted_expected_commit_blocker() -> None:
     web_check = _check(report, "host.web_verification")
 
     assert report["ready"] is False
-    assert report["blocking_checks"] == ["host.web_verification"]
+    assert report["blocking_checks"] == ["host.web_verification", "host.release_receipt"]
     assert web_check["hosted_verifier_blocking_checks"] == ["hosted.expected_commit"]
     assert "--expected-commit-sha" in web_check["next_action"]
+    release_check = _check(report, "host.release_receipt")
+    assert release_check["failures"] == [
+        "oci_host_release_receipt_commit_does_not_match_hosted_verify"
+    ]
     assert not contains_durable_secret_text(json.dumps(report))
 
 
@@ -926,6 +1052,11 @@ def test_oci_host_posture_collector_builds_validator_ready_redacted_evidence(
         hosted_verify_report={
             "public_origin": "https://fusekit.snowmanai.org",
             "ready": True,
+            "source_provenance": {
+                "actual": {
+                    "commit_sha": HOSTED_COMMIT,
+                },
+            },
         },
         dns_report={
             "public_origin": "https://fusekit.snowmanai.org",
@@ -939,6 +1070,7 @@ def test_oci_host_posture_collector_builds_validator_ready_redacted_evidence(
                 }
             ]
         },
+        release_receipt=_clean_evidence()["release_receipt"],
         cis_summary={
             "scanner": "lynis",
             "status": "pass",
@@ -1012,6 +1144,7 @@ def test_oci_host_posture_collector_builds_validator_ready_redacted_evidence(
     assert evidence["rollback_metadata"] == {
         "actions": [{"action": "cloudflare.dns.rollback", "status": "planned"}]
     }
+    assert evidence["release_receipt"] == _clean_evidence()["release_receipt"]
     assert report["ready"] is True
     assert not contains_durable_secret_text(json.dumps(evidence))
 

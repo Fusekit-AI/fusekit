@@ -33,6 +33,10 @@ sudo EXPECTED_COMMIT_SHA="$(git rev-parse HEAD)" \
   deploy/oci/release/fusekit-hosted-release.sh
 ```
 
+The script prints the release receipt path. Attach that receipt to the host
+posture collector after the outside-in verifier succeeds, for example
+`/var/lib/fusekit/release-receipts/release-<commit>.json`.
+
 After installing the units, collect and validate redacted host evidence:
 
 ```zsh
@@ -53,6 +57,7 @@ fusekit-oci-host-posture --collect \
   --ssh-ingress restricted \
   --hosted-verify-report hosted-verify.json \
   --dns-report dns-propagation.json \
+  --release-receipt /var/lib/fusekit/release-receipts/release-"$(git rev-parse HEAD)".json \
   --rollback-metadata rollback_plan.json \
   --cis-summary cis-summary.json \
   --rootkit-summary rootkit-summary.json \
@@ -60,7 +65,8 @@ fusekit-oci-host-posture --collect \
 fusekit-oci-host-posture --evidence posture.json
 ```
 
-The DNS and rollback files must be redacted public proof. The posture validator
-only needs to see that `fusekit.snowmanai.org` has propagated and that provider
-rollback actions are planned or complete; it must not receive provider tokens,
-private keys, vault material, or raw setup logs.
+The DNS, release receipt, and rollback files must be redacted public proof. The
+posture validator only needs to see that `fusekit.snowmanai.org` has propagated,
+that the release receipt commit matches the hosted verifier commit, and that
+provider rollback actions are planned or complete; it must not receive provider
+tokens, private keys, vault material, or raw setup logs.

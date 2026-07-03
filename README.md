@@ -475,9 +475,12 @@ that service with `/healthz` and `/readiness` before setting
 `https://fusekit.snowmanai.org` resolves through Cloudflare to the OCI-hosted
 launcher and the basic outside-in hosted verifier passes. Exact release proof
 with `--expected-commit-sha` must also pass before claiming the live URL serves
-current `main`; the paid Managed lane is still intentionally closed until
-complete Stripe runtime configuration, Stripe price verification, and a live
-paid Checkout proof exist.
+current `main`. The OCI host posture report must also attach the redacted
+release receipt from `/var/lib/fusekit/release-receipts` so the validator can
+match the moved `/opt/fusekit/current` symlink, restarted services, rollback
+commit, and post-deploy verifier command to the same hosted commit. The paid
+Managed lane is still intentionally closed until complete Stripe runtime
+configuration, Stripe price verification, and a live paid Checkout proof exist.
 
 For shared Snowman AI Stripe accounts, create hosted managed-run pricing with
 the repo-native helper so FuseKit only creates a FuseKit-scoped Product and

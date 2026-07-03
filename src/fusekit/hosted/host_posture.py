@@ -59,8 +59,44 @@ OCI_HOST_POSTURE_ALLOWED_EVIDENCE_KEYS = frozenset(
         "systemd_units",
         "hosted_verify",
         "dns_propagation",
+        "release_receipt",
         "rollback_metadata",
         "collection",
+    }
+)
+OCI_HOST_POSTURE_RELEASE_RECEIPT_SCHEMA_VERSION = "fusekit.oci-hosted-release-receipt.v1"
+OCI_HOST_POSTURE_RELEASE_RECEIPT_KEYS = frozenset(
+    {
+        "schema_version",
+        "target",
+        "mutated_paths",
+        "restarted_services",
+        "before_commit_sha",
+        "after_commit_sha",
+        "release_dir",
+        "rollback",
+        "post_deploy_proof_command",
+        "secret_boundary",
+    }
+)
+OCI_HOST_POSTURE_RELEASE_ROLLBACK_KEYS = frozenset({"mode", "previous_commit_sha"})
+OCI_HOST_POSTURE_RELEASE_MUTATED_PATHS = (
+    "/opt/fusekit/current",
+    "/etc/fusekit/hosted-provenance.env",
+    "/var/lib/fusekit/release-receipts",
+)
+OCI_HOST_POSTURE_RELEASE_RESTARTED_SERVICES = (
+    "fusekit-hosted.service",
+    "fusekit-worker-dispatch.service",
+)
+OCI_HOST_POSTURE_PUBLIC_GIT_SHA_KEYS = frozenset(
+    {
+        "actual_commit_sha",
+        "after_commit_sha",
+        "before_commit_sha",
+        "commit_sha",
+        "expected_commit_sha",
+        "previous_commit_sha",
     }
 )
 OCI_HOST_POSTURE_SECRET_METADATA_KEYS = frozenset({"path", "owner", "group", "mode"})
@@ -122,6 +158,7 @@ def collect_oci_host_posture_evidence(
     ssh_ingress: str = "",
     hosted_verify_report: Mapping[str, object] | None = None,
     dns_report: Mapping[str, object] | None = None,
+    release_receipt: Mapping[str, object] | None = None,
     rollback_metadata: Mapping[str, object] | None = None,
     cis_summary: Mapping[str, object] | None = None,
     rootkit_summary: Mapping[str, object] | None = None,
@@ -147,8 +184,9 @@ def collect_oci_host_posture_evidence(
         "cis_baseline": _sanitize_summary(cis_summary),
         "rootkit_scan": _sanitize_summary(rootkit_summary),
         "systemd_units": _collect_systemd_units(runner),
-        "hosted_verify": _sanitize_public_value(hosted_verify_report or {}),
+        "hosted_verify": _sanitize_posture_public_value(hosted_verify_report or {}),
         "dns_propagation": _sanitize_summary(dns_report),
+        "release_receipt": _sanitize_release_receipt(release_receipt),
         "rollback_metadata": _sanitize_summary(rollback_metadata),
         "collection": {
             "mode": "read_only_local_host",
@@ -181,6 +219,7 @@ def evaluate_oci_host_posture(evidence: Mapping[str, object]) -> dict[str, objec
         _systemd_check(evidence),
         _web_verification_check(evidence),
         _dns_propagation_check(evidence),
+        _release_receipt_check(evidence),
         _rollback_metadata_check(evidence),
         _collection_boundary_check(evidence),
     ]
@@ -228,6 +267,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ssh-ingress", default="", help="Public SSH ingress posture label")
     parser.add_argument("--hosted-verify-report", default="", help="Path to hosted verifier JSON")
     parser.add_argument("--dns-report", default="", help="Path to redacted DNS propagation JSON")
+    parser.add_argument("--release-receipt", default="", help="Path to OCI release receipt JSON")
     parser.add_argument(
         "--rollback-metadata",
         default="",
@@ -256,6 +296,10 @@ def main(argv: list[str] | None = None) -> int:
                 dns_report=_read_optional_json(
                     args.dns_report,
                     required=bool(args.dns_report),
+                ),
+                release_receipt=_read_optional_json(
+                    args.release_receipt,
+                    required=bool(args.release_receipt),
                 ),
                 rollback_metadata=_read_optional_json(
                     args.rollback_metadata,
@@ -394,7 +438,11 @@ def _emit_public_json(value: Mapping[str, object]) -> None:
 
 
 def _public_json(value: Mapping[str, object]) -> str:
-    return redact_public_text(json.dumps(value, indent=2, sort_keys=True))
+    return json.dumps(
+        _sanitize_posture_public_value(value),
+        indent=2,
+        sort_keys=True,
+    )
 
 
 def _collect_running_services(
@@ -684,6 +732,23 @@ def _evidence_shape_check(evidence: Mapping[str, object]) -> dict[str, object]:
             OCI_HOST_POSTURE_COLLECTION_KEYS,
         )
     )
+    unexpected.extend(
+        _unexpected_nested_keys(
+            evidence,
+            "release_receipt",
+            OCI_HOST_POSTURE_RELEASE_RECEIPT_KEYS,
+        )
+    )
+    release_receipt = evidence.get("release_receipt")
+    if isinstance(release_receipt, Mapping):
+        unexpected.extend(
+            _unexpected_nested_keys(
+                release_receipt,
+                "rollback",
+                OCI_HOST_POSTURE_RELEASE_ROLLBACK_KEYS,
+                prefix="release_receipt.rollback",
+            )
+        )
     unexpected.extend(_unexpected_systemd_unit_keys(evidence))
     unexpected = sorted(unexpected)
     if unexpected:
@@ -705,11 +770,14 @@ def _unexpected_nested_keys(
     evidence: Mapping[str, object],
     section: str,
     allowed: frozenset[str],
+    *,
+    prefix: str = "",
 ) -> list[str]:
     value = evidence.get(section)
     if not isinstance(value, Mapping):
         return []
-    return [f"{section}.{key}" for key in _unexpected_keys(value, allowed)]
+    label = prefix or section
+    return [f"{label}.{key}" for key in _unexpected_keys(value, allowed)]
 
 
 def _unexpected_systemd_unit_keys(evidence: Mapping[str, object]) -> list[str]:
@@ -1015,6 +1083,61 @@ def _dns_propagation_check(evidence: Mapping[str, object]) -> dict[str, object]:
     return _ok("host.dns_propagation", domain=domain or "fusekit.snowmanai.org")
 
 
+def _release_receipt_check(evidence: Mapping[str, object]) -> dict[str, object]:
+    receipt = _mapping(evidence.get("release_receipt"))
+    hosted_commit = _hosted_verify_commit_sha(_mapping(evidence.get("hosted_verify")))
+    failures: list[str] = []
+    if not receipt:
+        failures.append("oci_host_release_receipt_missing")
+    if receipt.get("schema_version") != OCI_HOST_POSTURE_RELEASE_RECEIPT_SCHEMA_VERSION:
+        failures.append("oci_host_release_receipt_schema_invalid")
+    if _public_str(receipt.get("target")) != "fusekit.snowmanai.org":
+        failures.append("oci_host_release_receipt_target_mismatch")
+    mutated_paths = _string_list(receipt.get("mutated_paths"))
+    if mutated_paths != list(OCI_HOST_POSTURE_RELEASE_MUTATED_PATHS):
+        failures.append("oci_host_release_receipt_mutated_paths_mismatch")
+    restarted_services = _string_list(receipt.get("restarted_services"))
+    if restarted_services != list(OCI_HOST_POSTURE_RELEASE_RESTARTED_SERVICES):
+        failures.append("oci_host_release_receipt_restarted_services_mismatch")
+    before_commit = _valid_git_sha(_raw_str(receipt.get("before_commit_sha")), allow_empty=True)
+    after_commit = _valid_git_sha(_raw_str(receipt.get("after_commit_sha")))
+    if before_commit is None:
+        failures.append("oci_host_release_receipt_before_commit_invalid")
+    if not after_commit:
+        failures.append("oci_host_release_receipt_after_commit_invalid")
+    if after_commit and hosted_commit and after_commit != hosted_commit:
+        failures.append("oci_host_release_receipt_commit_does_not_match_hosted_verify")
+    expected_release_dir = f"/opt/fusekit/releases/{after_commit}" if after_commit else ""
+    if _raw_str(receipt.get("release_dir")) != expected_release_dir:
+        failures.append("oci_host_release_receipt_release_dir_mismatch")
+    rollback = _mapping(receipt.get("rollback"))
+    if rollback.get("mode") != "current_symlink_restore":
+        failures.append("oci_host_release_receipt_rollback_mode_mismatch")
+    previous_commit = _valid_git_sha(
+        _raw_str(rollback.get("previous_commit_sha")),
+        allow_empty=True,
+    )
+    if previous_commit is None:
+        failures.append("oci_host_release_receipt_previous_commit_invalid")
+    proof_command = _raw_str(receipt.get("post_deploy_proof_command"))
+    if after_commit and proof_command != (
+        "fusekit-hosted-verify --origin https://fusekit.snowmanai.org "
+        f"--expected-commit-sha {after_commit}"
+    ):
+        failures.append("oci_host_release_receipt_post_deploy_command_mismatch")
+    boundary = _public_str(receipt.get("secret_boundary")).lower()
+    if "hosted-secrets.env" not in boundary or "not read or emitted" not in boundary:
+        failures.append("oci_host_release_receipt_secret_boundary_mismatch")
+    if failures:
+        return _fail(
+            "host.release_receipt",
+            failures,
+            "Attach the redacted OCI hosted release receipt emitted by the bundled "
+            "exact-commit release script after redeploy, and rerun hosted verification.",
+        )
+    return _ok("host.release_receipt", after_commit_sha=after_commit)
+
+
 def _rollback_metadata_check(evidence: Mapping[str, object]) -> dict[str, object]:
     metadata = _mapping(evidence.get("rollback_metadata"))
     actions = metadata.get("rollback", metadata.get("actions", []))
@@ -1079,6 +1202,28 @@ def _is_allowed_systemd_writable_path(path: str) -> bool:
     )
 
 
+def _hosted_verify_commit_sha(report: Mapping[str, object]) -> str:
+    for check in _mapping_list(report.get("checks")):
+        if check.get("id") == "hosted.expected_commit":
+            commit = _valid_git_sha(_raw_str(check.get("actual_commit_sha")))
+            if commit:
+                return commit
+    provenance = _mapping(report.get("source_provenance"))
+    actual = _mapping(provenance.get("actual"))
+    commit = _valid_git_sha(_raw_str(actual.get("commit_sha")))
+    if commit:
+        return commit
+    commit = _valid_git_sha(_raw_str(report.get("commit_sha")))
+    return commit or ""
+
+
+def _valid_git_sha(value: str, *, allow_empty: bool = False) -> str | None:
+    cleaned = value.strip().lower()
+    if allow_empty and not cleaned:
+        return ""
+    return cleaned if re.fullmatch(r"[0-9a-f]{40}", cleaned) else None
+
+
 def _ok(check_id: str, **extra: object) -> dict[str, object]:
     result: dict[str, object] = {"id": check_id, "status": "ok"}
     result.update(extra)
@@ -1110,6 +1255,12 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         return []
     return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _mapping_list(value: object) -> list[Mapping[str, object]]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return []
+    return [item for item in value if isinstance(item, Mapping)]
 
 
 def _public_string_list(value: object) -> list[str]:
@@ -1144,6 +1295,74 @@ def _non_negative_int(value: object) -> int | None:
 
 def _public_str(value: object) -> str:
     return redact_public_text(str(value or "").strip())
+
+
+def _raw_str(value: object) -> str:
+    return str(value or "").strip()
+
+
+def _sanitize_release_receipt(receipt: Mapping[str, object] | None) -> dict[str, object]:
+    if not receipt:
+        return {}
+    preserved_keys = {
+        "before_commit_sha",
+        "after_commit_sha",
+        "post_deploy_proof_command",
+        "release_dir",
+        "rollback",
+    }
+    sanitized: dict[str, object] = {}
+    for key, value in receipt.items():
+        key_text = redact_public_text(str(key))
+        if key in preserved_keys:
+            sanitized[key_text] = _sanitize_posture_public_value(value, key=str(key))
+        else:
+            sanitized[key_text] = _sanitize_public_value(value)
+    return sanitized
+
+
+def _sanitize_posture_public_value(value: object, *, key: str = "") -> object:
+    if isinstance(value, Mapping):
+        return {
+            redact_public_text(str(item_key)): _sanitize_posture_public_value(
+                item,
+                key=str(item_key),
+            )
+            for item_key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_sanitize_posture_public_value(item, key=key) for item in value]
+    if isinstance(value, tuple):
+        return [_sanitize_posture_public_value(item, key=key) for item in value]
+    if isinstance(value, str):
+        return _sanitize_posture_public_string(value, key=key)
+    return value
+
+
+def _sanitize_posture_public_string(value: str, *, key: str) -> str:
+    stripped = value.strip()
+    if key in OCI_HOST_POSTURE_PUBLIC_GIT_SHA_KEYS:
+        if not stripped:
+            return ""
+        commit = _valid_git_sha(stripped)
+        if commit:
+            return commit
+    if key == "release_dir":
+        match = re.fullmatch(r"/opt/fusekit/releases/(?P<commit>[0-9a-fA-F]{40})", stripped)
+        if match:
+            return f"/opt/fusekit/releases/{match.group('commit').lower()}"
+    if key == "post_deploy_proof_command":
+        match = re.fullmatch(
+            r"fusekit-hosted-verify --origin https://fusekit\.snowmanai\.org "
+            r"--expected-commit-sha (?P<commit>[0-9a-fA-F]{40})",
+            stripped,
+        )
+        if match:
+            return (
+                "fusekit-hosted-verify --origin https://fusekit.snowmanai.org "
+                f"--expected-commit-sha {match.group('commit').lower()}"
+            )
+    return redact_public_text(value)
 
 
 def _sanitize_public_value(value: object) -> object:
