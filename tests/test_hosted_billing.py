@@ -8,6 +8,7 @@ from fusekit.errors import FuseKitError
 from fusekit.hosted.billing import (
     HOSTED_PAYMENT_SCHEMA_VERSION,
     STRIPE_CHECKOUT_PROVIDER,
+    payment_required_receipt,
     stripe_checkout_session_receipt,
 )
 
@@ -103,6 +104,47 @@ def test_stripe_checkout_session_receipt_only_keeps_checkout_payment_urls() -> N
     )
 
     assert receipt["checkout_url"] == ""
+
+
+def test_payment_required_receipt_is_public_and_scanned() -> None:
+    receipt = payment_required_receipt(
+        lane="managed-fusekit-run",
+        price_label="Launch validation: $1.00 FuseKit managed run",
+    )
+
+    serialized = json.dumps(receipt)
+    assert receipt["schema_version"] == HOSTED_PAYMENT_SCHEMA_VERSION
+    assert receipt["provider"] == STRIPE_CHECKOUT_PROVIDER
+    assert receipt["status"] == "payment_required"
+    assert receipt["paid"] is False
+    assert receipt["price_label"] == "Launch validation: $1.00 FuseKit managed run"
+    assert receipt["cost_controls"] == {
+        "max_unverified_managed_spend_cents": 0,
+        "dispatch_requires_paid_checkout_session": True,
+        "reuse_across_jobs_allowed": False,
+    }
+    assert "Payment method details stay with Stripe Checkout" in receipt["secret_boundary"]
+    assert "sk_live" not in serialized
+    assert "client_secret" not in serialized
+
+
+def test_payment_required_receipt_rejects_secret_shaped_lane() -> None:
+    with pytest.raises(FuseKitError, match="stripe_checkout_receipt_contains_secret_text"):
+        payment_required_receipt(
+            lane="managed-fusekit-run sk_live_should_not_render",
+            price_label="Launch validation: $1.00 FuseKit managed run",
+        )
+
+
+def test_payment_required_receipt_redacts_secret_shaped_price_label() -> None:
+    receipt = payment_required_receipt(
+        lane="managed-fusekit-run",
+        price_label="Launch validation: $1.00 FuseKit managed run sk_live_should_not_render",
+    )
+
+    serialized = json.dumps(receipt)
+    assert receipt["price_label"] == ""
+    assert "sk_live_should_not_render" not in serialized
 
     receipt = stripe_checkout_session_receipt(
         {

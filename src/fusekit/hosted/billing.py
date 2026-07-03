@@ -240,7 +240,7 @@ def stripe_checkout_session_receipt(payload: dict[str, object]) -> dict[str, obj
 def payment_required_receipt(*, lane: str, price_label: str = "") -> dict[str, object]:
     """Return a public payment-required receipt."""
 
-    return {
+    receipt: dict[str, object] = {
         "schema_version": HOSTED_PAYMENT_SCHEMA_VERSION,
         "provider": STRIPE_CHECKOUT_PROVIDER,
         "lane": lane,
@@ -257,6 +257,8 @@ def payment_required_receipt(*, lane: str, price_label: str = "") -> dict[str, o
             "is recorded. Payment method details stay with Stripe Checkout."
         ),
     }
+    _assert_public_payment_receipt(receipt)
+    return receipt
 
 
 def _stripe_request(
