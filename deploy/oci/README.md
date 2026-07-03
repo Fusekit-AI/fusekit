@@ -52,6 +52,19 @@ fusekit-hosted-oci-access-plan \
   --ssh-probe-status permission_denied \
   --expected-commit-sha "$(git rev-parse HEAD)" \
   > oci-access-plan.json
+fusekit-hosted-oci-inventory \
+  --hosted-verify-report hosted-verify.json \
+  --ssh-probe-status permission_denied \
+  --expected-commit-sha "$(git rev-parse HEAD)" \
+  > hosted-oci-inventory.json
+fusekit-hosted-oci-replacement-plan \
+  --inventory-report hosted-oci-inventory.json \
+  --replacement-shape VM.Standard.E5.Flex \
+  --replacement-os 'Canonical Ubuntu' \
+  --replacement-os-version 24.04 \
+  --replacement-run-command-availability available_not_installed \
+  --expected-commit-sha "$(git rev-parse HEAD)" \
+  > hosted-oci-replacement-plan.json
 fusekit-oci-host-posture --collect \
   --shape VM.Standard.E5.Flex \
   --ssh-ingress restricted \
@@ -70,3 +83,12 @@ posture validator only needs to see that `fusekit.snowmanai.org` has propagated,
 that the release receipt commit matches the hosted verifier commit, and that
 provider rollback actions are planned or complete; it must not receive provider
 tokens, private keys, vault material, or raw setup logs.
+
+If the current image cannot support OCI Run Command and SSH release access is
+not ready, use `fusekit-hosted-oci-replacement-plan` before requesting any host
+replacement. The plan is non-mutating: it requires an AMD/x86_64 shape, supported
+Ubuntu image, a replacement deploy path through Run Command or approved SSH, and
+keeps the old host plus Cloudflare DNS unchanged until replacement verifier,
+posture, release receipt, DNS dry-run, and rollback proof all pass. It also
+forbids MailPilot/AWS, Stripe, generated-app/provider credentials, tenancy-wide
+policy broadening, and ARM/Ampere shapes in the repair path.

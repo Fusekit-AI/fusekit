@@ -410,6 +410,14 @@ The inventory command does not mutate OCI, Cloudflare, Stripe, MailPilot/AWS,
 host files, or generated-app resources, and it does not open SSH sessions or
 run host commands. It fails closed if zero or multiple FuseKit-tagged launcher
 instances are found.
+If the inventory/access proof shows that the current image cannot support OCI
+Run Command and SSH release access is not ready, use
+`fusekit-hosted-oci-replacement-plan` before requesting a replacement host. The
+replacement plan is also non-mutating: it requires an AMD/x86_64 candidate,
+supported Ubuntu image, replacement deploy path through Run Command or approved
+SSH, old-host preservation, proof-before-DNS cutover, rollback metadata, and
+forbids MailPilot/AWS, Stripe, generated-app/provider credentials, tenancy-wide
+policy broadening, and ARM/Ampere shapes.
 `fusekit-hosted-oci-access-plan` is the matching plan-only OCI redeploy/access
 preflight. It consumes redacted instance, VNIC, plugin, SSH probe, and hosted
 verifier evidence, confirms the target is the FuseKit-tagged AMD hosted
@@ -570,6 +578,22 @@ public label hash, and emits only redacted JSON. Keep
 and worker-dispatch acceptance have passed. Keep literal dollar-amount labels
 in single quotes, or use a currency-code label such as `USD 1.00`, so the shell
 cannot expand `$1` into an ambiguous `.00` public price.
+
+Current live Stripe setup proof from July 3, 2026:
+
+- `FUSEKIT_STRIPE_PRICE_ID=price_1ToydUPZlsTa6iL323anyggA`
+- `FUSEKIT_MANAGED_RUN_PRICE_LABEL=Launch validation: $1.00 FuseKit managed run`
+- `lookup_key=fusekit_managed_run_usd_100_5ac1e91d12201244`
+- Stripe Product id: `prod_Uobr8h5dUxv5vr`
+- Setup result: `mutated=true`, `reused_existing=false`
+- Verification result: active one-time live USD 100-cent Price, FuseKit-scoped
+  Product, matching lookup key, matching FuseKit metadata, and matching public
+  label hash.
+
+This proof does not enable paid managed runs by itself. The hosted runtime must
+store the live `FUSEKIT_STRIPE_SECRET_KEY`, the verified price id, and the public
+label in its secret/runtime environment, then keep `FUSEKIT_MANAGED_RUNS_ENABLED=0`
+until live Checkout proof and worker-dispatch acceptance pass.
 
 ## Real Provider Acceptance Run
 
