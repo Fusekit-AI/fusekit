@@ -49,6 +49,19 @@ def test_verify_hosted_worker_dispatch_accepts_signed_envelope_without_leaks() -
     assert dispatch.origin == "https://fusekit.snowmanai.org"
     assert dispatch.job_id == "hosted-test"
     assert dispatch.job_token == "signed-public-job-token"
+    assert dispatch.dispatch_binding == _dispatch_binding(action="start")
+
+
+def test_verify_hosted_worker_dispatch_rejects_binding_drift() -> None:
+    body = _dispatch_body(action="start", binding={"job_id": "hosted-other"})
+
+    with pytest.raises(FuseKitError, match="dispatch_binding_job_id_mismatch"):
+        verify_hosted_worker_dispatch(
+            body,
+            signature=_signature(body),
+            schema=HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+            secret=WORKER_SECRET,
+        )
 
 
 def test_hosted_worker_dispatch_readiness_reports_presence_without_secrets() -> None:
@@ -210,6 +223,7 @@ def test_accept_hosted_worker_dispatch_spawns_env_backed_worker_and_redacts_rece
     assert receipt["accepted"] is True
     assert receipt["duplicate"] is False
     assert receipt["action"] == "detonate"
+    assert receipt["dispatch_binding"] == _dispatch_binding(action="detonate")
     assert receipt["idempotency"] == {
         "mode": "process",
         "durable": False,
@@ -270,6 +284,7 @@ def test_accept_hosted_worker_dispatch_is_idempotent_per_job_action(tmp_path: Pa
     assert first["duplicate"] is False
     assert second["accepted"] is True
     assert second["duplicate"] is True
+    assert second["dispatch_binding"] == _dispatch_binding(action="start")
     assert second["spawned"] == {"pid": None}
     assert second["idempotency"] == {
         "mode": "dispatch-state-dir",
@@ -322,6 +337,7 @@ def test_accept_hosted_worker_dispatch_receipt_labels_workspace_idempotency(
     }
     assert str(tmp_path) not in serialized
     assert WORKER_SECRET not in serialized
+    assert "signed-public-job-token" not in serialized
 
 
 def test_hosted_worker_dispatch_wsgi_accepts_signed_post() -> None:
@@ -467,7 +483,11 @@ def _assert_dispatch_security_headers(headers: dict[str, str]) -> None:
     assert headers["X-Frame-Options"] == "DENY"
 
 
-def _dispatch_body(*, action: str) -> bytes:
+def _dispatch_body(
+    *,
+    action: str,
+    binding: dict[str, str] | None = None,
+) -> bytes:
     return json.dumps(
         {
             "schema_version": HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
@@ -475,10 +495,22 @@ def _dispatch_body(*, action: str) -> bytes:
             "origin": "https://fusekit.snowmanai.org",
             "job_id": "hosted-test",
             "job_token": "signed-public-job-token",
+            "dispatch_binding": _dispatch_binding(action=action) | (binding or {}),
         },
         separators=(",", ":"),
         sort_keys=True,
     ).encode("utf-8")
+
+
+def _dispatch_binding(*, action: str) -> dict[str, str]:
+    return {
+        "action": action,
+        "job_id": "hosted-test",
+        "lane": "managed-fusekit-run",
+        "payment_status": "paid",
+        "plan_fingerprint": "sha256:" + ("a" * 64),
+        "price_label_hash": "sha256:" + ("b" * 64),
+    }
 
 
 def _signature(body: bytes) -> str:

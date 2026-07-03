@@ -2613,6 +2613,7 @@ def _dispatch_hosted_worker(
         return {
             "schema_version": HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
             "action": action,
+            "dispatch_binding": _worker_dispatch_binding(settings, job, action=action),
             "dispatched": False,
             "reason": "worker_dispatch_url_not_configured",
         }
@@ -2624,6 +2625,7 @@ def _dispatch_hosted_worker(
         "origin": _public_origin_label(settings.public_origin),
         "job_id": job.job_id,
         "job_token": job_token,
+        "dispatch_binding": _worker_dispatch_binding(settings, job, action=action),
         "worker_command": [
             "fusekit-hosted-worker",
             "--origin",
@@ -2667,9 +2669,28 @@ def _dispatch_hosted_worker(
         "action": action,
         "dispatched": True,
         "dispatch_url": _public_url_label(settings.worker_dispatch_url),
+        "dispatch_binding": _worker_dispatch_binding(settings, job, action=action),
         "secret_boundary": (
             "Dispatch receipt omits the job token, worker secret, signature, provider "
             "tokens, and vault material."
+        ),
+    }
+
+
+def _worker_dispatch_binding(
+    settings: HostedSettings,
+    job: HostedLaunchJob,
+    *,
+    action: str,
+) -> dict[str, str]:
+    return {
+        "job_id": job.job_id,
+        "action": action,
+        "lane": job.launch_lane,
+        "plan_fingerprint": job.worker_contract.plan_fingerprint,
+        "payment_status": job.payment_status,
+        "price_label_hash": _payment_public_hash(
+            job.payment_price_label or settings.managed_run_price_label
         ),
     }
 

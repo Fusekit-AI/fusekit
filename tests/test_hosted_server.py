@@ -2110,6 +2110,14 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
     assert started["payment"]["price_label"] == MANAGED_PRICE_LABEL
     assert started["payment"]["receipt"]["price_label"] == MANAGED_PRICE_LABEL
     assert started["worker_dispatch"]["dispatched"] is True
+    assert started["worker_dispatch"]["dispatch_binding"] == {
+        "action": "start",
+        "job_id": job_id,
+        "lane": MANAGED_FUSEKIT_RUN_LANE,
+        "payment_status": "paid",
+        "plan_fingerprint": plan_fingerprint,
+        "price_label_hash": price_label_hash,
+    }
     assert len(dispatch_opener.requests) == 1
     assert "sk_live" not in serialized
     assert "PRIVATE KEY" not in serialized
@@ -2790,9 +2798,18 @@ def test_hosted_job_start_dispatches_signed_worker_envelope_when_configured() ->
 
     assert status == "200 OK"
     assert response["status"] == "waiting_for_provider_gates"
+    expected_binding = {
+        "action": "start",
+        "job_id": job_id,
+        "lane": MANAGED_FUSEKIT_RUN_LANE,
+        "payment_status": "paid",
+        "plan_fingerprint": response["worker_contract"]["plan_integrity"]["fingerprint"],
+        "price_label_hash": _payment_public_hash(MANAGED_PRICE_LABEL),
+    }
     assert response["worker_dispatch"] == {
         "schema_version": "fusekit.hosted-worker-dispatch.v1",
         "action": "start",
+        "dispatch_binding": expected_binding,
         "dispatched": True,
         "dispatch_url": "https://worker.snowmanai.org/dispatch",
         "secret_boundary": (
@@ -2805,6 +2822,7 @@ def test_hosted_job_start_dispatches_signed_worker_envelope_when_configured() ->
     assert dispatch_body["origin"] == "https://fusekit.snowmanai.org"
     assert dispatch_body["job_id"] == job_id
     assert dispatch_body["job_token"] == response["job_token"]
+    assert dispatch_body["dispatch_binding"] == expected_binding
     assert dispatch_body["worker_command"] == [
         "fusekit-hosted-worker",
         "--origin",

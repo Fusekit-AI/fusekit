@@ -165,6 +165,7 @@ class HostedWorkerDispatch:
     origin: str
     job_id: str
     job_token: str
+    dispatch_binding: dict[str, str]
 
     def command(self, settings: HostedWorkerDispatchSettings) -> tuple[str, ...]:
         """Build the private worker command. The worker secret stays in env."""
@@ -255,6 +256,7 @@ def accept_hosted_worker_dispatch(
             "duplicate": True,
             "action": dispatch.action,
             "job_id": dispatch.job_id,
+            "dispatch_binding": dispatch.dispatch_binding,
             "worker_id": settings.worker_id,
             "worker_command": dispatch.public_command(settings),
             "spawned": {"pid": None},
@@ -276,6 +278,7 @@ def accept_hosted_worker_dispatch(
         "duplicate": False,
         "action": dispatch.action,
         "job_id": dispatch.job_id,
+        "dispatch_binding": dispatch.dispatch_binding,
         "worker_id": settings.worker_id,
         "worker_command": dispatch.public_command(settings),
         "spawned": _public_spawn_label(spawned),
@@ -317,6 +320,7 @@ def verify_hosted_worker_dispatch(
     origin = _required_str(payload, "origin")
     job_id = _required_str(payload, "job_id")
     job_token = _required_str(payload, "job_token")
+    dispatch_binding = _dispatch_binding_from_payload(payload, action=action, job_id=job_id)
     if action not in {"start", "rollback", "detonate"}:
         raise FuseKitError("unsupported_dispatch_action")
     if not _valid_https_origin(origin):
@@ -328,6 +332,7 @@ def verify_hosted_worker_dispatch(
         origin=origin,
         job_id=job_id,
         job_token=job_token,
+        dispatch_binding=dispatch_binding,
     )
 
 
@@ -378,6 +383,7 @@ def _reserve_dispatch(
                     "schema_version": HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION,
                     "job_id": dispatch.job_id,
                     "action": dispatch.action,
+                    "dispatch_binding": dispatch.dispatch_binding,
                     "worker_id": settings.worker_id,
                 },
                 handle,
@@ -490,6 +496,55 @@ def _required_str(payload: dict[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value:
         raise FuseKitError(f"missing_dispatch_{key}")
     return value
+
+
+def _dispatch_binding_from_payload(
+    payload: dict[str, Any],
+    *,
+    action: str,
+    job_id: str,
+) -> dict[str, str]:
+    value = payload.get("dispatch_binding")
+    if not isinstance(value, dict):
+        raise FuseKitError("missing_dispatch_binding")
+    allowed = {
+        "job_id",
+        "action",
+        "lane",
+        "plan_fingerprint",
+        "payment_status",
+        "price_label_hash",
+    }
+    binding: dict[str, str] = {}
+    for key in allowed:
+        raw = value.get(key)
+        if not isinstance(raw, str) or not raw:
+            raise FuseKitError(f"missing_dispatch_binding_{key}")
+        if len(raw) > 256 or not all(ch.isprintable() for ch in raw):
+            raise FuseKitError(f"invalid_dispatch_binding_{key}")
+        binding[key] = raw
+    if binding["job_id"] != job_id:
+        raise FuseKitError("dispatch_binding_job_id_mismatch")
+    if binding["action"] != action:
+        raise FuseKitError("dispatch_binding_action_mismatch")
+    if binding["lane"] != "managed-fusekit-run":
+        raise FuseKitError("dispatch_binding_lane_mismatch")
+    if binding["payment_status"] != "paid":
+        raise FuseKitError("dispatch_binding_payment_not_paid")
+    if not _valid_sha256_label(binding["plan_fingerprint"]):
+        raise FuseKitError("invalid_dispatch_binding_plan_fingerprint")
+    if not _valid_sha256_label(binding["price_label_hash"]):
+        raise FuseKitError("invalid_dispatch_binding_price_label_hash")
+    return {key: binding[key] for key in sorted(binding)}
+
+
+def _valid_sha256_label(value: str) -> bool:
+    digest = value.removeprefix("sha256:")
+    return (
+        value.startswith("sha256:")
+        and len(digest) == 64
+        and all(character in "0123456789abcdef" for character in digest)
+    )
 
 
 def _valid_https_origin(value: str) -> bool:
