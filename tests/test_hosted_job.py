@@ -266,6 +266,14 @@ def test_hosted_proof_receipt_is_redacted_and_not_prematurely_complete() -> None
     assert "PRIVATE KEY" not in serialized
 
 
+def test_hosted_proof_receipt_rejects_private_material_drift() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    unsafe_job = replace(job, proof=("ghs_should_not_render_in_public_proof",))
+
+    with pytest.raises(FuseKitError, match="Hosted proof receipt contains private material"):
+        hosted_proof_receipt(unsafe_job)
+
+
 def test_hosted_byo_proof_receipt_keeps_user_owned_lane_boundary() -> None:
     job = build_hosted_launch_job(
         _plan(),

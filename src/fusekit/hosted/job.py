@@ -1207,6 +1207,12 @@ def _assert_public_worker_request(payload: dict[str, object]) -> None:
         raise FuseKitError("Hosted worker request contains private material.")
 
 
+def _assert_public_proof_receipt(payload: dict[str, object]) -> None:
+    serialized = json.dumps(payload, sort_keys=True)
+    if contains_durable_secret_text(serialized) or _contains_byo_private_marker(serialized):
+        raise FuseKitError("Hosted proof receipt contains private material.")
+
+
 def _byo_oci_launch_args(job: HostedLaunchJob) -> tuple[str, ...]:
     args = [
         "--oci-shape",
@@ -1787,7 +1793,7 @@ def hosted_proof_receipt(job: HostedLaunchJob) -> dict[str, object]:
     """Build a public redacted proof receipt for a hosted job."""
 
     completion_ready = _completion_ready(job)
-    return {
+    receipt = {
         "schema_version": HOSTED_PROOF_RECEIPT_SCHEMA_VERSION,
         "job_id": job.job_id,
         "app_name": job.app_name,
@@ -1826,6 +1832,8 @@ def hosted_proof_receipt(job: HostedLaunchJob) -> dict[str, object]:
         "required_artifacts": list(job.worker_contract.required_artifacts),
         "steps": [step.to_dict() for step in job.steps],
     }
+    _assert_public_proof_receipt(receipt)
+    return receipt
 
 
 def hosted_reversal_playbook(job: HostedLaunchJob) -> list[dict[str, str]]:
