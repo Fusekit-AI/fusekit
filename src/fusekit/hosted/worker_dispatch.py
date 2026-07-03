@@ -31,6 +31,19 @@ HOSTED_WORKER_DISPATCH_BINDING_FIELDS = (
     "plan_fingerprint",
     "price_label_hash",
 )
+HOSTED_WORKER_DISPATCH_ENVELOPE_FIELDS = frozenset(
+    {
+        "schema_version",
+        "action",
+        "origin",
+        "job_id",
+        "job_token",
+        "dispatch_binding",
+        "worker_command",
+        "worker_request_url",
+        "secret_boundary",
+    }
+)
 
 StartResponse = Callable[[str, list[tuple[str, str]]], object]
 
@@ -334,6 +347,11 @@ def verify_hosted_worker_dispatch(
         raise FuseKitError("invalid_dispatch_json") from exc
     if not isinstance(payload, dict):
         raise FuseKitError("invalid_dispatch_json")
+    unexpected = sorted(
+        str(key) for key in payload if key not in HOSTED_WORKER_DISPATCH_ENVELOPE_FIELDS
+    )
+    if unexpected:
+        raise FuseKitError("unexpected_dispatch_field")
     if payload.get("schema_version") != HOSTED_WORKER_DISPATCH_SCHEMA_VERSION:
         raise FuseKitError("unsupported_dispatch_schema")
     action = _required_str(payload, "action")
@@ -570,6 +588,11 @@ def _dispatch_binding_from_payload(
     value = payload.get("dispatch_binding")
     if not isinstance(value, dict):
         raise FuseKitError("missing_dispatch_binding")
+    unexpected = sorted(
+        str(key) for key in value if key not in HOSTED_WORKER_DISPATCH_BINDING_FIELDS
+    )
+    if unexpected:
+        raise FuseKitError("unexpected_dispatch_binding_field")
     binding: dict[str, str] = {}
     for key in HOSTED_WORKER_DISPATCH_BINDING_FIELDS:
         raw = value.get(key)

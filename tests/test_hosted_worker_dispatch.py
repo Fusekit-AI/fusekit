@@ -64,6 +64,36 @@ def test_verify_hosted_worker_dispatch_rejects_binding_drift() -> None:
         )
 
 
+def test_verify_hosted_worker_dispatch_rejects_unexpected_envelope_fields() -> None:
+    body = _dispatch_body(
+        action="start",
+        envelope={"provider_token": "ghs_should_not_be_in_dispatch"},
+    )
+
+    with pytest.raises(FuseKitError, match="unexpected_dispatch_field"):
+        verify_hosted_worker_dispatch(
+            body,
+            signature=_signature(body),
+            schema=HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+            secret=WORKER_SECRET,
+        )
+
+
+def test_verify_hosted_worker_dispatch_rejects_unexpected_binding_fields() -> None:
+    body = _dispatch_body(
+        action="start",
+        binding={"stripe_price_id": "price_should_not_be_in_dispatch"},
+    )
+
+    with pytest.raises(FuseKitError, match="unexpected_dispatch_binding_field"):
+        verify_hosted_worker_dispatch(
+            body,
+            signature=_signature(body),
+            schema=HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+            secret=WORKER_SECRET,
+        )
+
+
 def test_hosted_worker_dispatch_readiness_reports_presence_without_secrets() -> None:
     settings = HostedWorkerDispatchSettings(
         worker_secret=WORKER_SECRET,
@@ -546,6 +576,7 @@ def _dispatch_body(
     *,
     action: str,
     binding: dict[str, str] | None = None,
+    envelope: dict[str, object] | None = None,
 ) -> bytes:
     return json.dumps(
         {
@@ -555,7 +586,8 @@ def _dispatch_body(
             "job_id": "hosted-test",
             "job_token": "signed-public-job-token",
             "dispatch_binding": _dispatch_binding(action=action) | (binding or {}),
-        },
+        }
+        | (envelope or {}),
         separators=(",", ":"),
         sort_keys=True,
     ).encode("utf-8")
