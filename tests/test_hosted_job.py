@@ -2321,6 +2321,33 @@ def test_hosted_job_decode_normalizes_pending_boolean_paid_stub() -> None:
     assert decoded.payment_receipt["paid"] is False
 
 
+def test_hosted_job_decode_requires_payment_price_binding_for_payment_states() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=MANAGED_FUSEKIT_RUN_LANE,
+        payment_required=True,
+        payment_price_label=MANAGED_PRICE_LABEL,
+        payment_price_id_hash=MANAGED_PRICE_ID_HASH,
+        job_id="hosted-test",
+        now=1_700_000_000,
+    )
+    payload = job.to_dict()
+    payment = payload["payment"]
+    assert isinstance(payment, dict)
+    payment.pop("price_id_hash")
+
+    with pytest.raises(FuseKitError, match="payment price id hash is required"):
+        hosted_launch_job_from_dict(payload)
+
+    payload = job.to_dict()
+    payment = payload["payment"]
+    assert isinstance(payment, dict)
+    payment["status"] = "not_required"
+
+    with pytest.raises(FuseKitError, match="payment price is invalid for status"):
+        hosted_launch_job_from_dict(payload)
+
+
 def test_hosted_payment_receipt_rejects_unexpected_top_level_fields() -> None:
     job = build_hosted_launch_job(
         _plan(),

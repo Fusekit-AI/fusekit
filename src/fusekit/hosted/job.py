@@ -3151,6 +3151,13 @@ def _payment_from_payload(
         raise FuseKitError("Hosted launch payment status is invalid.")
     if status not in {"not_required", "payment_required", "checkout_pending", "paid"}:
         raise FuseKitError("Hosted launch payment status is unsupported.")
+    if status != "not_required":
+        if not price_label:
+            raise FuseKitError("Hosted launch payment price label is required.")
+        if not price_id_hash:
+            raise FuseKitError("Hosted launch payment price id hash is required.")
+    elif price_label or price_id_hash:
+        raise FuseKitError("Hosted launch payment price is invalid for status.")
     receipt = value.get("receipt")
     if receipt in (None, {}):
         if status == "paid":
