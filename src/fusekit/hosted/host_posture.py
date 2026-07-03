@@ -122,6 +122,10 @@ OCI_HOST_POSTURE_RUNTIME_SECRET_VERIFY_KEYS = frozenset(
         "secret_boundary",
     }
 )
+OCI_HOST_POSTURE_RUNTIME_SECRET_ENV_ROW_KEYS = frozenset({"present"})
+OCI_HOST_POSTURE_RUNTIME_SECRET_KEY_INVENTORY_KEYS = frozenset(
+    {"required_count", "present_required_count", "missing", "unexpected_keys"}
+)
 OCI_HOST_POSTURE_PATCH_POSTURE_KEYS = frozenset(
     {"pending_security_updates", "reboot_required"}
 )
@@ -763,6 +767,7 @@ def _evidence_shape_check(evidence: Mapping[str, object]) -> dict[str, object]:
             OCI_HOST_POSTURE_RUNTIME_SECRET_VERIFY_KEYS,
         )
     )
+    unexpected.extend(_unexpected_runtime_secret_verify_keys(evidence))
     unexpected.extend(
         _unexpected_nested_keys(
             evidence,
@@ -837,6 +842,42 @@ def _unexpected_nested_keys(
         return []
     label = prefix or section
     return [f"{label}.{key}" for key in _unexpected_keys(value, allowed)]
+
+
+def _unexpected_runtime_secret_verify_keys(evidence: Mapping[str, object]) -> list[str]:
+    report = evidence.get("runtime_secret_verify")
+    if not isinstance(report, Mapping):
+        return []
+    unexpected: list[str] = []
+    key_inventory = report.get("key_inventory")
+    if isinstance(key_inventory, Mapping):
+        unexpected.extend(
+            f"runtime_secret_verify.key_inventory.{key}"
+            for key in _unexpected_keys(
+                key_inventory,
+                OCI_HOST_POSTURE_RUNTIME_SECRET_KEY_INVENTORY_KEYS,
+            )
+        )
+    required_runtime_env = report.get("required_runtime_env")
+    if isinstance(required_runtime_env, Mapping):
+        unexpected.extend(
+            f"runtime_secret_verify.required_runtime_env.{key}"
+            for key in _unexpected_keys(
+                required_runtime_env,
+                frozenset(HOSTED_RUNTIME_REQUIRED_FILE_ENV),
+            )
+        )
+        for key in HOSTED_RUNTIME_REQUIRED_FILE_ENV:
+            row = required_runtime_env.get(key)
+            if isinstance(row, Mapping):
+                unexpected.extend(
+                    f"runtime_secret_verify.required_runtime_env.{key}.{row_key}"
+                    for row_key in _unexpected_keys(
+                        row,
+                        OCI_HOST_POSTURE_RUNTIME_SECRET_ENV_ROW_KEYS,
+                    )
+                )
+    return unexpected
 
 
 def _unexpected_systemd_unit_keys(evidence: Mapping[str, object]) -> list[str]:

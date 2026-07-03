@@ -388,6 +388,32 @@ def test_oci_host_posture_blocks_runtime_secret_required_env_presence_drift() ->
     ]
 
 
+def test_oci_host_posture_blocks_runtime_secret_nested_sidecars() -> None:
+    evidence = _clean_evidence()
+    verify_report = evidence["runtime_secret_verify"]
+    assert isinstance(verify_report, dict)
+    required_runtime_env = verify_report["required_runtime_env"]
+    key_inventory = verify_report["key_inventory"]
+    assert isinstance(required_runtime_env, dict)
+    assert isinstance(key_inventory, dict)
+    row = required_runtime_env["FUSEKIT_GITHUB_APP_PRIVATE_KEY"]
+    assert isinstance(row, dict)
+    row["raw_env_line"] = "FUSEKIT_GITHUB_APP_PRIVATE_KEY=secret"
+    required_runtime_env["OPENAI_API_KEY"] = {"present": True}
+    key_inventory["raw_diff"] = "OPENAI_API_KEY added manually"
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["evidence.shape"]
+    shape_check = _check(report, "evidence.shape")
+    assert shape_check["unexpected_fields"] == [
+        "runtime_secret_verify.key_inventory.raw_diff",
+        "runtime_secret_verify.required_runtime_env.FUSEKIT_GITHUB_APP_PRIVATE_KEY.raw_env_line",
+        "runtime_secret_verify.required_runtime_env.OPENAI_API_KEY",
+    ]
+
+
 def test_oci_host_posture_blocks_unknown_nested_systemd_fields() -> None:
     evidence = _clean_evidence()
     systemd_units = evidence["systemd_units"]
