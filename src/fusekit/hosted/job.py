@@ -1208,9 +1208,13 @@ def _assert_public_worker_request(payload: dict[str, object]) -> None:
 
 
 def _assert_public_proof_receipt(payload: dict[str, object]) -> None:
+    _assert_public_hosted_receipt(payload, "Hosted proof receipt")
+
+
+def _assert_public_hosted_receipt(payload: dict[str, object], label: str) -> None:
     serialized = json.dumps(payload, sort_keys=True)
     if contains_durable_secret_text(serialized) or _contains_byo_private_marker(serialized):
-        raise FuseKitError("Hosted proof receipt contains private material.")
+        raise FuseKitError(f"{label} contains private material.")
 
 
 def _byo_oci_launch_args(job: HostedLaunchJob) -> tuple[str, ...]:
@@ -1941,7 +1945,7 @@ def hosted_job_action_receipt(
     """Build a public redacted receipt for a protected hosted job action."""
 
     action_id = _public_action(action)
-    return {
+    receipt = {
         "schema_version": HOSTED_JOB_ACTION_RECEIPT_SCHEMA_VERSION,
         "job_id": job.job_id,
         "action": action_id,
@@ -1968,6 +1972,8 @@ def hosted_job_action_receipt(
             "GitHub installation tokens, vault material, or copy-once credentials."
         ),
     }
+    _assert_public_hosted_receipt(receipt, "Hosted action receipt")
+    return receipt
 
 
 def hosted_worker_claim_receipt(
@@ -1979,7 +1985,7 @@ def hosted_worker_claim_receipt(
     """Build a redacted receipt for a hosted worker claim."""
 
     claimed_at = int(time.time() if now is None else now)
-    return {
+    receipt = {
         "schema_version": HOSTED_WORKER_CLAIM_SCHEMA_VERSION,
         "job_id": job.job_id,
         "worker_id": _public_worker_id(worker_id),
@@ -1996,6 +2002,8 @@ def hosted_worker_claim_receipt(
             *HOSTED_WORKER_PROOF_KEYS,
         ],
     }
+    _assert_public_hosted_receipt(receipt, "Hosted worker claim receipt")
+    return receipt
 
 
 def hosted_worker_proof_receipt(
@@ -2061,6 +2069,7 @@ def hosted_worker_proof_receipt(
     }
     if byo_oci_proof:
         receipt["byo_oci_proof_bundle"] = byo_oci_proof
+    _assert_public_hosted_receipt(receipt, "Hosted worker proof receipt")
     return receipt
 
 

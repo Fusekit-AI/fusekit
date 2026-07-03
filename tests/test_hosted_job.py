@@ -1163,6 +1163,39 @@ def test_hosted_worker_id_redacts_secret_shaped_values() -> None:
     assert "ocid1." not in serialized
 
 
+def test_hosted_public_receipt_builders_reject_private_material_drift() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    started = advance_hosted_launch_job(job, "start", now=1_700_000_001)
+    claimed = claim_hosted_launch_job(started, worker_id="worker-01", now=1_700_000_002)
+
+    unsafe_started = replace(started, job_id="hosted-ghs_should_not_render")
+    unsafe_claimed = replace(claimed, job_id="hosted-ghs_should_not_render")
+
+    with pytest.raises(FuseKitError, match="Hosted action receipt contains private material"):
+        hosted_job_action_receipt(unsafe_started, action="start", now=1_700_000_003)
+
+    with pytest.raises(
+        FuseKitError,
+        match="Hosted worker claim receipt contains private material",
+    ):
+        hosted_worker_claim_receipt(
+            unsafe_claimed,
+            worker_id="worker-01",
+            now=1_700_000_004,
+        )
+
+    with pytest.raises(
+        FuseKitError,
+        match="Hosted worker proof receipt contains private material",
+    ):
+        hosted_worker_proof_receipt(
+            unsafe_claimed,
+            _proof_payload(complete=False, completed_artifacts=[".fusekit/run_record.json"]),
+            worker_id="worker-01",
+            now=1_700_000_005,
+        )
+
+
 def test_hosted_worker_claim_rejects_unstarted_or_terminal_jobs() -> None:
     job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
 
