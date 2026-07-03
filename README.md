@@ -398,6 +398,11 @@ credentials, or provider resources. Its release proof includes a redacted
 `release_action` block with the live commit, expected commit, commit state,
 allowed deploy paths, safe next action, and exact post-deploy verifier command,
 so stale-host repair has a concrete receipt before any host mutation happens.
+The matching OCI release template uses `/opt/fusekit/current` as the rollback
+symlink, installs exact commits under `/opt/fusekit/releases/<commit>`, writes
+only non-secret provenance to `/etc/fusekit/hosted-provenance.env`, restarts
+only the hosted launcher and worker-dispatch services, and emits a redacted
+release receipt.
 The verifier reports Cloudflare/hosted-origin HTTP failures,
 readiness mismatches, public DNS failures, homepage trust drift, hosted
 runtime/open-core/DNS drift, deployment trust-story drift, homepage completion

@@ -10,6 +10,9 @@ They are intentionally narrow:
 - runtime secrets live only in `/etc/fusekit/hosted-secrets.env` with
   `root:root` ownership and `0600` permissions, inside a root-owned
   `/etc/fusekit` directory;
+- non-secret release provenance lives in `/etc/fusekit/hosted-provenance.env`
+  so release automation can update the public commit proof without reading or
+  rewriting the secret runtime file;
 - mutable state is constrained to `/var/lib/fusekit`, `/var/log/fusekit`, and
   `/run/fusekit`;
 - the units use the `fusekit` system user with `NoNewPrivileges`, `PrivateTmp`,
@@ -17,6 +20,18 @@ They are intentionally narrow:
   bounding capabilities, restricted address families, owner-only umask,
   systemd-managed state/log/runtime directories, and a constrained writable
   path set.
+
+The release script is intentionally narrow and reviewable. It accepts one exact
+40-character commit SHA, clones only `https://github.com/Fusekit-AI/fusekit.git`,
+installs into `/opt/fusekit/releases/<commit>`, moves only the
+`/opt/fusekit/current` symlink, writes only the non-secret provenance file,
+restarts only `fusekit-hosted.service` and `fusekit-worker-dispatch.service`,
+and emits a redacted release receipt under `/var/lib/fusekit/release-receipts`.
+
+```zsh
+sudo EXPECTED_COMMIT_SHA="$(git rev-parse HEAD)" \
+  deploy/oci/release/fusekit-hosted-release.sh
+```
 
 After installing the units, collect and validate redacted host evidence:
 

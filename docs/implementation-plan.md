@@ -58,6 +58,7 @@
   OCI host posture now preserves the redacted hosted verifier blocker ids, including `hosted.expected_commit`, so stale release provenance is visible in posture evidence instead of collapsing into a generic web-verification failure.
   OCI hosted redeploy access is now plan-only and evidence-backed: `fusekit-hosted-oci-access-plan` checks the FuseKit-tagged AMD launcher instance, public VNIC, SSH probe status, OCI Run Command plugin status, and hosted expected-commit report without mutating OCI or host state, surfacing `oci_deploy_access_unavailable` before release claims.
   OCI hosted redeploy access now emits a redacted `release_action` receipt that names the live commit, expected commit, stale/current state, allowed deploy paths, safe next action, and post-deploy verifier command before any host mutation.
+  OCI hosted release templates now use `/opt/fusekit/current` as the rollback symlink, publish a narrow exact-commit release script, update only non-secret provenance outside the secret env file, restart only the two FuseKit services, and emit a redacted release receipt for post-deploy verification.
 - [x] Security invariants are enforced by tests.
 - [x] CLI defaults to real-provider execution; incomplete local rehearsals require explicit opt-in.
 - [x] FuseKit bootstraps its own runtime components instead of assuming Codex/OpenClaw is preinstalled.

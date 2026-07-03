@@ -8,12 +8,13 @@ Wants=network-online.target
 Type=simple
 User=fusekit
 Group=fusekit
-WorkingDirectory=/opt/fusekit
+WorkingDirectory=/opt/fusekit/current
 EnvironmentFile=/etc/fusekit/hosted-secrets.env
+EnvironmentFile=-/etc/fusekit/hosted-provenance.env
 Environment=FUSEKIT_HOSTED_WORKER_ID=hosted-worker-dispatch
 Environment=FUSEKIT_HOSTED_WORKER_WORKSPACE=/var/lib/fusekit/worker
 Environment=FUSEKIT_HOSTED_WORKER_DISPATCH_STATE_DIR=/var/lib/fusekit/dispatch-state
-ExecStart=/opt/fusekit/venv/bin/fusekit-hosted-worker-dispatch --host 127.0.0.1 --port 8766
+ExecStart=/opt/fusekit/current/.venv/bin/fusekit-hosted-worker-dispatch --host 127.0.0.1 --port 8766
 Restart=on-failure
 RestartSec=5s
 UMask=0077

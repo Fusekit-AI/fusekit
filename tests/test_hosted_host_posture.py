@@ -95,7 +95,8 @@ def _clean_evidence() -> dict[str, object]:
                     "FUSEKIT_HOSTED_BIND=127.0.0.1",
                     "FUSEKIT_HOSTED_PORT=8080",
                 ],
-                "exec_start": "/opt/fusekit/venv/bin/fusekit-hosted",
+                "exec_start": "/opt/fusekit/current/.venv/bin/fusekit-hosted",
+                "working_directory": "/opt/fusekit/current",
             },
             "fusekit-worker-dispatch": {
                 "user": "fusekit",
@@ -135,9 +136,10 @@ def _clean_evidence() -> dict[str, object]:
                     "FUSEKIT_HOSTED_WORKER_DISPATCH_STATE_DIR=/var/lib/fusekit/dispatch-state",
                 ],
                 "exec_start": (
-                    "/opt/fusekit/venv/bin/fusekit-hosted-worker-dispatch "
+                    "/opt/fusekit/current/.venv/bin/fusekit-hosted-worker-dispatch "
                     "--host 127.0.0.1 --port 8766"
                 ),
+                "working_directory": "/opt/fusekit/current",
             },
         },
         "hosted_verify": {
@@ -351,6 +353,8 @@ def test_oci_host_posture_blocks_missing_extended_systemd_sandboxing() -> None:
         "fusekit-hosted:logs_directory_mode_must_be_0750",
         "fusekit-hosted:runtime_directory_required",
         "fusekit-hosted:runtime_directory_mode_must_be_0750",
+        "fusekit-hosted:working_directory_must_use_current_symlink",
+        "fusekit-hosted:exec_start_must_use_current_release_venv",
         "fusekit-hosted:hosted_bind_must_be_loopback",
         "fusekit-hosted:hosted_port_must_be_internal_8080",
     ]
@@ -393,7 +397,7 @@ def test_oci_host_posture_blocks_systemd_network_binding_drift() -> None:
         "FUSEKIT_HOSTED_PORT=80",
     ]
     dispatch_unit["exec_start"] = (
-        "/opt/fusekit/venv/bin/fusekit-hosted-worker-dispatch "
+        "/opt/fusekit/current/.venv/bin/fusekit-hosted-worker-dispatch "
         "--host 0.0.0.0 --port 80"
     )
 
@@ -410,6 +414,37 @@ def test_oci_host_posture_blocks_systemd_network_binding_drift() -> None:
         "fusekit-worker-dispatch:dispatch_host_must_be_loopback",
         "fusekit-worker-dispatch:dispatch_port_must_be_internal_8766",
         "fusekit-worker-dispatch:exec_start_must_not_bind_wildcard",
+    ]
+
+
+def test_oci_host_posture_blocks_fixed_venv_release_path_drift() -> None:
+    evidence = _clean_evidence()
+    systemd_units = evidence["systemd_units"]
+    assert isinstance(systemd_units, dict)
+    hosted_unit = systemd_units["fusekit-hosted"]
+    dispatch_unit = systemd_units["fusekit-worker-dispatch"]
+    assert isinstance(hosted_unit, dict)
+    assert isinstance(dispatch_unit, dict)
+    hosted_unit["working_directory"] = "/opt/fusekit"
+    hosted_unit["exec_start"] = "/opt/fusekit/venv/bin/fusekit-hosted"
+    dispatch_unit["working_directory"] = "/opt/fusekit"
+    dispatch_unit["exec_start"] = (
+        "/opt/fusekit/venv/bin/fusekit-hosted-worker-dispatch "
+        "--host 127.0.0.1 --port 8766"
+    )
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.systemd_units"]
+    systemd_check = next(
+        check for check in report["checks"] if check["id"] == "host.systemd_units"
+    )
+    assert systemd_check["failures"] == [
+        "fusekit-hosted:working_directory_must_use_current_symlink",
+        "fusekit-hosted:exec_start_must_use_current_release_venv",
+        "fusekit-worker-dispatch:working_directory_must_use_current_symlink",
+        "fusekit-worker-dispatch:exec_start_must_use_current_release_venv",
     ]
 
 
@@ -834,15 +869,17 @@ def test_oci_host_posture_collector_builds_validator_ready_redacted_evidence(
             unit_specific = (
                 [
                     "Environment=FUSEKIT_HOSTED_BIND=127.0.0.1 FUSEKIT_HOSTED_PORT=8080",
-                    "ExecStart=/opt/fusekit/venv/bin/fusekit-hosted",
+                    "ExecStart=/opt/fusekit/current/.venv/bin/fusekit-hosted",
+                    "WorkingDirectory=/opt/fusekit/current",
                 ]
                 if unit_name == "fusekit-hosted.service"
                 else [
                     "Environment=FUSEKIT_HOSTED_WORKER_ID=hosted-worker-dispatch",
                     (
-                        "ExecStart=/opt/fusekit/venv/bin/fusekit-hosted-worker-dispatch "
+                        "ExecStart=/opt/fusekit/current/.venv/bin/fusekit-hosted-worker-dispatch "
                         "--host 127.0.0.1 --port 8766"
                     ),
+                    "WorkingDirectory=/opt/fusekit/current",
                 ]
             )
             return CommandResult(
@@ -962,9 +999,11 @@ def test_oci_host_posture_collector_builds_validator_ready_redacted_evidence(
         "FUSEKIT_HOSTED_BIND=127.0.0.1",
         "FUSEKIT_HOSTED_PORT=8080",
     ]
-    assert hosted_unit["exec_start"] == "/opt/fusekit/venv/bin/fusekit-hosted"
+    assert hosted_unit["working_directory"] == "/opt/fusekit/current"
+    assert hosted_unit["exec_start"] == "/opt/fusekit/current/.venv/bin/fusekit-hosted"
     dispatch_unit = systemd_units["fusekit-worker-dispatch"]
     assert isinstance(dispatch_unit, dict)
+    assert dispatch_unit["working_directory"] == "/opt/fusekit/current"
     assert dispatch_unit["exec_start"].endswith("--host 127.0.0.1 --port 8766")
     assert evidence["dns_propagation"] == {
         "public_origin": "https://fusekit.snowmanai.org",

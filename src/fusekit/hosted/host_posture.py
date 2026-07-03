@@ -101,6 +101,7 @@ OCI_HOST_POSTURE_SYSTEMD_UNIT_KEYS = frozenset(
         "read_write_paths",
         "environment",
         "exec_start",
+        "working_directory",
     }
 )
 
@@ -563,7 +564,7 @@ def _collect_systemd_units(
                 "RestrictAddressFamilies,"
                 "StateDirectory,StateDirectoryMode,LogsDirectory,LogsDirectoryMode,"
                 "RuntimeDirectory,RuntimeDirectoryMode,"
-                "ReadWritePaths,Environment,ExecStart",
+                "ReadWritePaths,Environment,ExecStart,WorkingDirectory",
                 "--no-pager",
             ]
         )
@@ -621,6 +622,7 @@ def _parse_systemd_show(output: str) -> dict[str, object]:
         ],
         "environment": _systemd_list(raw.get("Environment", "")),
         "exec_start": redact_public_text(raw.get("ExecStart", "")),
+        "working_directory": redact_public_text(raw.get("WorkingDirectory", "")),
     }
 
 
@@ -951,6 +953,11 @@ def _systemd_check(evidence: Mapping[str, object]) -> dict[str, object]:
             failures.append(f"{unit}:writable_paths_must_stay_under_fusekit_state")
         environment = set(_string_list(unit_config.get("environment")))
         exec_start = _public_str(unit_config.get("exec_start"))
+        working_directory = _public_str(unit_config.get("working_directory"))
+        if working_directory != "/opt/fusekit/current":
+            failures.append(f"{unit}:working_directory_must_use_current_symlink")
+        if "/opt/fusekit/current/.venv/bin/" not in exec_start:
+            failures.append(f"{unit}:exec_start_must_use_current_release_venv")
         if unit == "fusekit-hosted":
             if "FUSEKIT_HOSTED_BIND=127.0.0.1" not in environment:
                 failures.append(f"{unit}:hosted_bind_must_be_loopback")
