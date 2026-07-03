@@ -401,6 +401,7 @@ def _reserve_dispatch(
             json.dump(
                 {
                     "schema_version": HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION,
+                    "origin": dispatch.origin,
                     "job_id": dispatch.job_id,
                     "action": dispatch.action,
                     "dispatch_binding": dispatch.dispatch_binding,
@@ -412,6 +413,8 @@ def _reserve_dispatch(
             handle.write("\n")
         os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP)
     except FileExistsError:
+        if not _dispatch_marker_matches(path, dispatch=dispatch, settings=settings):
+            raise FuseKitError("hosted_worker_dispatch_marker_mismatch") from None
         duplicate = True
     except OSError as exc:
         raise FuseKitError("hosted_worker_dispatch_state_unavailable") from exc
@@ -424,6 +427,46 @@ def _reserve_dispatch(
         "duplicate": duplicate,
         "proof": proof,
     }
+
+
+def _dispatch_marker_matches(
+    path: Path,
+    *,
+    dispatch: HostedWorkerDispatch,
+    settings: HostedWorkerDispatchSettings,
+) -> bool:
+    try:
+        marker_stat = path.lstat()
+    except OSError:
+        return False
+    if not stat.S_ISREG(marker_stat.st_mode) or stat.S_ISLNK(marker_stat.st_mode):
+        return False
+    if marker_stat.st_size > HOSTED_WORKER_DISPATCH_MAX_BODY_BYTES:
+        return False
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        file_descriptor = os.open(path, flags)
+    except OSError:
+        return False
+    try:
+        with os.fdopen(file_descriptor, "r", encoding="utf-8") as handle:
+            file_descriptor = -1
+            marker = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return False
+    finally:
+        if file_descriptor >= 0:
+            os.close(file_descriptor)
+    if not isinstance(marker, dict):
+        return False
+    return (
+        marker.get("schema_version") == HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION
+        and marker.get("origin") == dispatch.origin
+        and marker.get("job_id") == dispatch.job_id
+        and marker.get("action") == dispatch.action
+        and marker.get("dispatch_binding") == dispatch.dispatch_binding
+        and marker.get("worker_id") == settings.worker_id
+    )
 
 
 def _prepare_dispatch_state_dir(path: Path) -> None:

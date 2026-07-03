@@ -299,6 +299,7 @@ def test_accept_hosted_worker_dispatch_is_idempotent_per_job_action(tmp_path: Pa
     second = accept_hosted_worker_dispatch(dispatch, settings=settings)
     serialized = json.dumps(second)
     markers = list((tmp_path / "dispatch-state").glob("*.json"))
+    marker_payload = json.loads(markers[0].read_text(encoding="utf-8"))
 
     assert first["duplicate"] is False
     assert second["accepted"] is True
@@ -317,10 +318,49 @@ def test_accept_hosted_worker_dispatch_is_idempotent_per_job_action(tmp_path: Pa
     }
     assert len(markers) == 1
     assert markers[0].stat().st_mode & 0o777 == 0o640
+    assert marker_payload["origin"] == "https://fusekit.snowmanai.org"
+    assert marker_payload["dispatch_binding"] == _dispatch_binding(action="start")
+    assert "signed-public-job-token" not in json.dumps(marker_payload)
     assert (tmp_path / "dispatch-state").stat().st_mode & 0o777 in {0o700, 0o750}
     assert len(spawner.calls) == 1
     assert WORKER_SECRET not in serialized
     assert "signed-public-job-token" not in serialized
+
+
+def test_accept_hosted_worker_dispatch_rejects_duplicate_marker_binding_drift(
+    tmp_path: Path,
+) -> None:
+    first_body = _dispatch_body(action="start")
+    drift_body = _dispatch_body(
+        action="start",
+        binding={"price_label_hash": "sha256:" + ("c" * 64)},
+    )
+    first_dispatch = verify_hosted_worker_dispatch(
+        first_body,
+        signature=_signature(first_body),
+        schema=HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+        secret=WORKER_SECRET,
+    )
+    drift_dispatch = verify_hosted_worker_dispatch(
+        drift_body,
+        signature=_signature(drift_body),
+        schema=HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+        secret=WORKER_SECRET,
+    )
+    spawner = FakeSpawner()
+    settings = HostedWorkerDispatchSettings(
+        worker_secret=WORKER_SECRET,
+        worker_id="worker-01",
+        dispatch_state_dir=tmp_path / "dispatch-state",
+        spawner=spawner,
+    )
+
+    first = accept_hosted_worker_dispatch(first_dispatch, settings=settings)
+    with pytest.raises(FuseKitError, match="hosted_worker_dispatch_marker_mismatch"):
+        accept_hosted_worker_dispatch(drift_dispatch, settings=settings)
+
+    assert first["duplicate"] is False
+    assert len(spawner.calls) == 1
 
 
 def test_accept_hosted_worker_dispatch_receipt_labels_workspace_idempotency(
