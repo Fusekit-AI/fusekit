@@ -23,6 +23,7 @@ from fusekit.hosted import (
     render_hosted_proof_receipt,
     verify_hosted_job_token,
 )
+from fusekit.hosted.job import with_hosted_job_payment_receipt
 from fusekit.hosted.lanes import BYO_OCI_LANE, MANAGED_FUSEKIT_RUN_LANE
 from fusekit.hosted.launcher import build_hosted_launch_plan
 from fusekit.manifest import ServiceRequirement, SetupManifest
@@ -834,6 +835,32 @@ def test_hosted_worker_contract_rejects_invalid_plan_integrity() -> None:
 
     with pytest.raises(FuseKitError, match="plan_integrity fingerprint is invalid"):
         hosted_launch_job_from_dict(payload)
+
+
+def test_hosted_job_rejects_ambiguous_payment_price_label() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    payload = job.to_dict()
+    payment = payload["payment"]
+    assert isinstance(payment, dict)
+    payment["price_label"] = "Launch validation: .00 FuseKit managed run"
+
+    with pytest.raises(FuseKitError, match="payment price label is invalid"):
+        hosted_launch_job_from_dict(payload)
+
+    with pytest.raises(FuseKitError, match="payment receipt price label is invalid"):
+        with_hosted_job_payment_receipt(
+            job,
+            {
+                "schema_version": "fusekit.hosted-payment.v1",
+                "provider": "stripe-checkout",
+                "checkout_session_id": "cs_test_123",
+                "status": "complete",
+                "payment_status": "paid",
+                "mode": "payment",
+                "paid": True,
+                "price_label": "Launch validation: .00 FuseKit managed run",
+            },
+        )
 
 
 def test_hosted_job_token_round_trips_redacted_public_job() -> None:

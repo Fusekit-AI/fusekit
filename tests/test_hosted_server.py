@@ -624,6 +624,36 @@ def test_hosted_readiness_reports_paid_managed_lane_when_stripe_is_configured() 
     assert "price_managed_run" not in serialized
 
 
+def test_hosted_readiness_rejects_ambiguous_managed_price_label() -> None:
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=_private_key_pem(),
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        managed_runs_enabled=True,
+        stripe_secret_key="sk_live_redacted",
+        stripe_price_id="price_managed_run",
+        managed_run_price_label="Launch validation: .00 FuseKit managed run",
+        **_vercel_provenance_kwargs(),
+    )
+
+    status, _headers, body = _call("/api/hosted/readiness", settings=settings)
+    payload = json.loads(body.decode("utf-8"))
+    managed = payload["lane_readiness"]["lanes"][MANAGED_FUSEKIT_RUN_LANE]
+
+    assert status == "200 OK"
+    assert payload["ready"] is False
+    assert payload["invalid"] == ["managed_run_price_label_required"]
+    assert payload["payment"]["enabled"] is False
+    assert payload["payment"]["price_label_configured"] is False
+    assert payload["payment"]["price_label"] == ""
+    assert managed["launchable"] is False
+    assert managed["blocking_checks"] == ["managed_run_price_label_required"]
+
+
 def test_hosted_readiness_rejects_test_mode_stripe_for_public_managed_lane() -> None:
     settings = HostedSettings(
         public_origin="https://fusekit.snowmanai.org",

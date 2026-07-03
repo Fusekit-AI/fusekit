@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from fusekit.errors import FuseKitError
+from fusekit.hosted.billing import _valid_price_label
 from fusekit.hosted.evidence import HOSTED_COMPLETION_EVIDENCE_KEYS
 from fusekit.hosted.lanes import (
     BYO_OCI_LANE,
@@ -2107,7 +2108,9 @@ def _payment_price_label_from_payload(value: object) -> str:
     price_label = value.get("price_label")
     if not isinstance(price_label, str):
         return ""
-    if len(price_label) > 120 or contains_durable_secret_text(price_label):
+    if price_label == "":
+        return ""
+    if not _valid_price_label(price_label):
         raise FuseKitError("Hosted launch payment price label is invalid.")
     return price_label
 
@@ -2135,6 +2138,8 @@ def _public_payment_receipt(receipt: dict[str, object]) -> dict[str, object]:
         if isinstance(value, str):
             if contains_durable_secret_text(value) or len(value) > 2048:
                 raise FuseKitError("Hosted launch payment receipt contains secret-looking text.")
+            if key == "price_label" and value and not _valid_price_label(value):
+                raise FuseKitError("Hosted launch payment receipt price label is invalid.")
             result[key] = value
         elif isinstance(value, bool) or isinstance(value, int) or value is None:
             result[key] = value

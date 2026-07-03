@@ -21,6 +21,7 @@ from fusekit.hosted.billing import (
     HOSTED_STRIPE_PRICE_SETUP_REQUIRED_FLAGS,
     HOSTED_STRIPE_SETUP_SECRET_BOUNDARY,
     HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY,
+    _valid_price_label,
 )
 from fusekit.hosted.evidence import HOSTED_COMPLETION_EVIDENCE_KEYS
 from fusekit.hosted.github_app import (
@@ -1333,13 +1334,7 @@ def _managed_lane_launchable(lane_readiness: object) -> bool | None:
 def _valid_public_price_label(value: object) -> bool:
     if not isinstance(value, str):
         return False
-    if not value or len(value) > 120:
-        return False
-    if contains_durable_secret_text(value):
-        return False
-    if "price_" in value or "sk_" in value or "pk_" in value:
-        return False
-    return any(ch.isdigit() for ch in value) and all(ch.isprintable() for ch in value)
+    return _valid_price_label(value)
 
 
 def _embedded_json_scripts(text: str) -> dict[str, str]:

@@ -35,6 +35,20 @@ HOSTED_STRIPE_SETUP_SECRET_BOUNDARY = (
     "Stripe secret keys are read from the selected environment variable and are never "
     "emitted in JSON output, docs, hosted pages, receipts, or logs."
 )
+PUBLIC_PRICE_LABEL_CURRENCY_CODES = frozenset(
+    {
+        "aud",
+        "cad",
+        "chf",
+        "eur",
+        "gbp",
+        "jpy",
+        "mxn",
+        "nzd",
+        "sgd",
+        "usd",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -302,7 +316,21 @@ def _valid_price_label(value: str) -> bool:
         return False
     if "price_" in value or "sk_" in value or "pk_" in value:
         return False
-    return all(ch.isprintable() for ch in value) and any(ch.isdigit() for ch in value)
+    return (
+        all(ch.isprintable() for ch in value)
+        and any(ch.isdigit() for ch in value)
+        and _has_public_currency_marker(value)
+    )
+
+
+def _has_public_currency_marker(value: str) -> bool:
+    if "$" in value:
+        return True
+    tokens = {
+        "".join(ch for ch in token.lower() if ch.isalpha())
+        for token in value.replace("/", " ").replace("-", " ").split()
+    }
+    return bool(tokens & PUBLIC_PRICE_LABEL_CURRENCY_CODES)
 
 
 def _stripe_account_mode(value: str) -> str:

@@ -579,6 +579,38 @@ def test_verify_hosted_deployment_allows_staged_managed_price_configuration() ->
     assert checks["hosted.readiness"]["status"] == "ok"
 
 
+def test_verify_hosted_deployment_rejects_ambiguous_payment_price_label() -> None:
+    readiness = _readiness_contract()
+    payment = readiness["payment"]
+    assert isinstance(payment, dict)
+    payment["secret_key_configured"] = True
+    payment["price_configured"] = True
+    payment["price_label_configured"] = True
+    payment["price_label"] = "Launch validation: .00 FuseKit managed run"
+    opener = SequenceOpener(
+        [
+            _home_html(readiness=readiness),
+            {"ok": True},
+            readiness,
+            _deployment_contract(),
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["hosted.readiness"]["status"] == "failed"
+    assert "payment_readiness_price_label_invalid" in checks["hosted.readiness"][
+        "failures"
+    ]
+
+
 def test_verify_hosted_deployment_rejects_non_origin_or_secret_url() -> None:
     with pytest.raises(FuseKitError, match="hosted_origin_must_be_https_origin"):
         verify_hosted_deployment(origin="https://user:pass@fusekit.snowmanai.org")

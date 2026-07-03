@@ -468,7 +468,7 @@ FUSEKIT_STRIPE_SECRET_KEY=sk_live_... \
   fusekit-hosted-stripe-price \
     --amount-cents 100 \
     --currency usd \
-    --label "Launch validation: $1.00 FuseKit managed run" \
+    --label 'Launch validation: $1.00 FuseKit managed run' \
     --execute \
     --confirm-shared-account
 ```
@@ -477,7 +477,9 @@ The command prints only redacted public JSON: the Stripe Product id, Stripe
 Price id, the public `FUSEKIT_MANAGED_RUN_PRICE_LABEL`, and next runtime
 environment actions. Omit `--execute` for a dry run. Keep
 `FUSEKIT_MANAGED_RUNS_ENABLED=0` until live Checkout proof and worker-dispatch
-acceptance have passed.
+acceptance have passed. Keep literal dollar-amount labels in single quotes, or
+use a currency-code label such as `USD 1.00`, so the shell cannot expand `$1`
+into an ambiguous `.00` public price.
 
 ## Real Provider Acceptance Run
 

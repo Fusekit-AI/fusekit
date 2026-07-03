@@ -175,6 +175,13 @@ def test_stripe_price_setup_rejects_ambiguous_or_secret_like_labels() -> None:
             currency="usd",
             price_label="Use price_123 for FuseKit",
         )
+    with pytest.raises(FuseKitError, match="price label"):
+        build_stripe_managed_run_price_plan(
+            stripe_secret_key="sk_live_secret_value",
+            amount_cents=100,
+            currency="usd",
+            price_label="Launch validation: .00 FuseKit managed run",
+        )
 
 
 def test_stripe_price_setup_main_reads_secret_from_env_and_redacts_output(
