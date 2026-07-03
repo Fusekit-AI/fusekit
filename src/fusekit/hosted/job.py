@@ -2899,6 +2899,9 @@ def _public_payment_receipt(receipt: dict[str, object]) -> dict[str, object]:
         "price_label",
         "secret_boundary",
     }
+    unexpected = sorted(str(key) for key in receipt if key not in allowed)
+    if unexpected:
+        raise FuseKitError("Hosted launch payment receipt contains unexpected field.")
     result: dict[str, object] = {}
     for key in allowed:
         value = receipt.get(key)

@@ -1478,6 +1478,25 @@ def test_hosted_payment_receipt_does_not_mark_paid_from_boolean_stub() -> None:
     assert updated.payment_receipt["checkout_session_id"] is None
 
 
+def test_hosted_payment_receipt_rejects_unexpected_top_level_fields() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=MANAGED_FUSEKIT_RUN_LANE,
+        payment_required=True,
+        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        job_id="hosted-test",
+        now=1_700_000_000,
+    )
+    receipt = _paid_checkout_receipt(job)
+    receipt["payment_method"] = "pm_should_not_be_persisted"
+
+    with pytest.raises(
+        FuseKitError,
+        match="Hosted launch payment receipt contains unexpected field",
+    ):
+        with_hosted_job_payment_receipt(job, receipt)
+
+
 def test_hosted_job_decode_rejects_paid_status_without_paid_checkout_receipt() -> None:
     job = build_hosted_launch_job(
         _plan(),
@@ -1496,6 +1515,30 @@ def test_hosted_job_decode_rejects_paid_status_without_paid_checkout_receipt() -
     receipt.pop("amount_total")
 
     with pytest.raises(FuseKitError, match="paid payment receipt is invalid"):
+        hosted_launch_job_from_dict(payload)
+
+
+def test_hosted_job_decode_rejects_unexpected_payment_receipt_fields() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=MANAGED_FUSEKIT_RUN_LANE,
+        payment_required=True,
+        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        job_id="hosted-test",
+        now=1_700_000_000,
+    )
+    paid = with_hosted_job_payment_receipt(job, _paid_checkout_receipt(job))
+    payload = paid.to_dict()
+    payment = payload["payment"]
+    assert isinstance(payment, dict)
+    receipt = payment["receipt"]
+    assert isinstance(receipt, dict)
+    receipt["payment_method"] = "pm_should_not_be_persisted"
+
+    with pytest.raises(
+        FuseKitError,
+        match="Hosted launch payment receipt contains unexpected field",
+    ):
         hosted_launch_job_from_dict(payload)
 
 
