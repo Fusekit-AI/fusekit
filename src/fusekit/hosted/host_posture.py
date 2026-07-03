@@ -979,11 +979,14 @@ def _systemd_check(evidence: Mapping[str, object]) -> dict[str, object]:
 def _web_verification_check(evidence: Mapping[str, object]) -> dict[str, object]:
     report = _mapping(evidence.get("hosted_verify"))
     if report.get("public_origin") != OCI_HOST_POSTURE_ORIGIN or report.get("ready") is not True:
+        hosted_blockers = _public_string_list(report.get("blocking_checks"))
         return _fail(
             "host.web_verification",
             "oci_hosted_verify_must_pass_for_canonical_origin",
-            "Run fusekit-hosted-verify --origin https://fusekit.snowmanai.org and attach "
-            "the redacted ready report.",
+            "Run fusekit-hosted-verify --origin https://fusekit.snowmanai.org "
+            '--expected-commit-sha "$(git rev-parse HEAD)" and attach the redacted '
+            "ready report.",
+            hosted_verifier_blocking_checks=hosted_blockers,
         )
     return _ok("host.web_verification")
 
@@ -1100,6 +1103,10 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         return []
     return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _public_string_list(value: object) -> list[str]:
+    return [redact_public_text(item) for item in _string_list(value)]
 
 
 def _port_list(value: object) -> list[int]:

@@ -438,6 +438,33 @@ def test_oci_host_posture_blocks_missing_dns_and_rollback_proof() -> None:
     ]
 
 
+def test_oci_host_posture_preserves_hosted_expected_commit_blocker() -> None:
+    evidence = _clean_evidence()
+    evidence["hosted_verify"] = {
+        "public_origin": "https://fusekit.snowmanai.org",
+        "ready": False,
+        "blocking_checks": ["hosted.expected_commit"],
+        "checks": [
+            {
+                "id": "hosted.expected_commit",
+                "status": "failed",
+                "actual_commit_sha": "0123456789abcdef0123456789abcdef01234567",
+                "expected_commit_sha": "fedcba9876543210fedcba9876543210fedcba98",
+                "failures": ["expected_commit_sha_mismatch"],
+            }
+        ],
+    }
+
+    report = evaluate_oci_host_posture(evidence)
+    web_check = _check(report, "host.web_verification")
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.web_verification"]
+    assert web_check["hosted_verifier_blocking_checks"] == ["hosted.expected_commit"]
+    assert "--expected-commit-sha" in web_check["next_action"]
+    assert not contains_durable_secret_text(json.dumps(report))
+
+
 def test_oci_host_posture_blocks_mutating_collection_boundary() -> None:
     evidence = _clean_evidence()
     evidence["collection"] = {

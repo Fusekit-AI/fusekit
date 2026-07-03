@@ -53,6 +53,7 @@
   Managed-run Stripe setup now rejects mutations when the public price label does not match the configured Stripe amount and currency, so the browser-visible cost disclosure cannot drift from the Checkout charge.
   The outside-in hosted verifier now validates lane readiness, including the recommended lane and launchable lane list, so public deployments fail verification if the BYO recommendation or paid-lane blocker state drifts.
   Release proof can now require an exact deployed commit with `fusekit-hosted-verify --expected-commit-sha`, so a healthy public OCI launcher still fails verification when it is serving stale source provenance.
+  OCI host posture now preserves the redacted hosted verifier blocker ids, including `hosted.expected_commit`, so stale release provenance is visible in posture evidence instead of collapsing into a generic web-verification failure.
 - [x] Security invariants are enforced by tests.
 - [x] CLI defaults to real-provider execution; incomplete local rehearsals require explicit opt-in.
 - [x] FuseKit bootstraps its own runtime components instead of assuming Codex/OpenClaw is preinstalled.

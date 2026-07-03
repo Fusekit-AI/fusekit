@@ -21,7 +21,10 @@ They are intentionally narrow:
 After installing the units, collect and validate redacted host evidence:
 
 ```zsh
-fusekit-hosted-verify --origin https://fusekit.snowmanai.org > hosted-verify.json
+fusekit-hosted-verify \
+  --origin https://fusekit.snowmanai.org \
+  --expected-commit-sha "$(git rev-parse HEAD)" \
+  > hosted-verify.json
 fusekit-oci-host-posture --collect \
   --shape VM.Standard.E5.Flex \
   --ssh-ingress restricted \
