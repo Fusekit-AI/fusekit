@@ -16,9 +16,9 @@ from fusekit.manifest import (
 )
 
 
-def _manifest() -> SetupManifest:
+def _manifest(app_name: str = "universal-demo") -> SetupManifest:
     return SetupManifest(
-        app_name="universal-demo",
+        app_name=app_name,
         app_path=".",
         required_env=("OPENAI_API_KEY", "RESEND_API_KEY", "WEBHOOK_SECRET"),
         services=(
@@ -117,6 +117,29 @@ def test_hosted_launch_plan_normalizes_public_github_source() -> None:
 
     assert plan.github_source == "https://github.com/example/any-app"
     assert "https://github.com/example/any-app.git" not in serialized
+
+
+def test_hosted_launch_plan_normalizes_public_app_name() -> None:
+    plan = build_hosted_launch_plan(
+        _manifest(app_name="  Universal   Demo_App.01  "),
+        github_source="https://github.com/example/any-app",
+    )
+
+    assert plan.app_name == "Universal Demo_App.01"
+
+
+def test_hosted_launch_plan_rejects_secret_or_markup_app_name() -> None:
+    with pytest.raises(FuseKitError, match="Hosted app name"):
+        build_hosted_launch_plan(
+            _manifest(app_name="sk_live_should_not_be_public"),
+            github_source="https://github.com/example/any-app",
+        )
+
+    with pytest.raises(FuseKitError, match="Hosted app name"):
+        build_hosted_launch_plan(
+            _manifest(app_name="demo<script>"),
+            github_source="https://github.com/example/any-app",
+        )
 
 
 def test_hosted_launch_plan_rejects_secret_or_non_github_source() -> None:

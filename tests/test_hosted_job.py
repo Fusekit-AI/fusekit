@@ -1609,6 +1609,15 @@ def test_hosted_job_decode_rejects_secret_bearing_github_source() -> None:
         hosted_launch_job_from_dict(payload)
 
 
+def test_hosted_job_decode_rejects_secret_shaped_app_name() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    payload = job.to_dict()
+    payload["app_name"] = "ghs_should_not_be_public"
+
+    with pytest.raises(FuseKitError, match="Hosted app name"):
+        hosted_launch_job_from_dict(payload)
+
+
 def test_hosted_payment_receipt_requires_full_checkout_shape_before_paid() -> None:
     job = build_hosted_launch_job(
         _plan(),

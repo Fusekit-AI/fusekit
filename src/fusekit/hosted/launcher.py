@@ -150,6 +150,7 @@ def build_hosted_launch_plan(
 ) -> HostedLaunchPlan:
     """Build the non-secret hosted launch plan shown before provider gates."""
 
+    public_app_name = public_hosted_app_name(manifest.app_name)
     public_github_source = public_hosted_github_source(github_source)
     plan = build_plan(manifest)
     providers = _provider_names(manifest)
@@ -180,13 +181,29 @@ def build_hosted_launch_plan(
         or ("Provider-owned login, MFA, billing, consent, and copy-once secret gates",),
     )
     return HostedLaunchPlan(
-        app_name=manifest.app_name,
+        app_name=public_app_name,
         github_source=public_github_source,
         providers=providers,
         required_env=tuple(sorted(manifest.required_env)),
         actions=plan.actions,
         trust=trust,
     )
+
+
+def public_hosted_app_name(value: str) -> str:
+    """Return the browser-safe app label for hosted launch surfaces."""
+
+    cleaned = " ".join(value.split())
+    if (
+        not cleaned
+        or len(cleaned) > 80
+        or contains_durable_secret_text(cleaned)
+        or _contains_hosted_private_marker(cleaned)
+    ):
+        raise FuseKitError("Hosted app name is invalid.")
+    if not all(character.isalnum() or character in {" ", "-", "_", "."} for character in cleaned):
+        raise FuseKitError("Hosted app name contains unsupported characters.")
+    return cleaned
 
 
 def public_hosted_github_source(value: str) -> str:
@@ -221,6 +238,11 @@ def _safe_github_slug_part(value: str) -> bool:
     return bool(value) and len(value) <= 100 and all(
         character.isalnum() or character in {"-", "_", "."} for character in value
     )
+
+
+def _contains_hosted_private_marker(value: str) -> bool:
+    forbidden = ("ghs_", "sk_live", "sk_test", "-----BEGIN", "ocid1.")
+    return any(token.lower() in value.lower() for token in forbidden)
 
 
 def render_hosted_launcher(
