@@ -1784,6 +1784,7 @@ def _github_control_room_response(
         launch_lane=launch_lane,
         payment_required=launch_lane == MANAGED_FUSEKIT_RUN_LANE,
         payment_price_label=settings.managed_run_price_label,
+        payment_price_id_hash=_payment_public_hash(settings.stripe_price_id),
     )
     settings.hosted_jobs[job.job_id] = job
     job_token = create_hosted_job_token(settings.state_secret, job)

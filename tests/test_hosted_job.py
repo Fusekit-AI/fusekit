@@ -115,7 +115,7 @@ def _paid_checkout_receipt(job) -> dict[str, object]:
             "lane": job.launch_lane,
             "github_source_hash": _public_hash(job.github_source),
             "plan_fingerprint": job.worker_contract.plan_fingerprint,
-            "stripe_price_id_hash": "sha256:" + ("b" * 64),
+            "stripe_price_id_hash": job.payment_price_id_hash or "sha256:" + ("b" * 64),
             "price_label_hash": _public_hash(job.payment_price_label),
         },
         "amount_total": 100,
@@ -1980,14 +1980,20 @@ def test_hosted_job_decode_rejects_secret_shaped_worker_contract_labels() -> Non
 
 
 def test_hosted_payment_receipt_requires_full_checkout_shape_before_paid() -> None:
+    price_id_hash = _public_hash("price_managed_run")
     job = build_hosted_launch_job(
         _plan(),
         launch_lane=MANAGED_FUSEKIT_RUN_LANE,
         payment_required=True,
         payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        payment_price_id_hash=price_id_hash,
         job_id="hosted-test",
         now=1_700_000_000,
     )
+    payload = job.to_dict()
+    payment = payload["payment"]
+    assert isinstance(payment, dict)
+    assert payment["price_id_hash"] == price_id_hash
 
     updated = with_hosted_job_payment_receipt(job, _paid_checkout_receipt(job))
 
@@ -2031,6 +2037,25 @@ def test_hosted_payment_receipt_rejects_paid_receipt_for_plan_or_label_drift() -
 
     receipt = _paid_checkout_receipt(job)
     receipt["price_label"] = "$2.00 FuseKit managed run"
+
+    with pytest.raises(FuseKitError, match="paid payment receipt does not match"):
+        with_hosted_job_payment_receipt(job, receipt)
+
+
+def test_hosted_payment_receipt_rejects_paid_receipt_for_price_hash_drift() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=MANAGED_FUSEKIT_RUN_LANE,
+        payment_required=True,
+        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        payment_price_id_hash=_public_hash("price_managed_run"),
+        job_id="hosted-test",
+        now=1_700_000_000,
+    )
+    receipt = _paid_checkout_receipt(job)
+    metadata = receipt["metadata"]
+    assert isinstance(metadata, dict)
+    metadata["stripe_price_id_hash"] = "sha256:" + ("0" * 64)
 
     with pytest.raises(FuseKitError, match="paid payment receipt does not match"):
         with_hosted_job_payment_receipt(job, receipt)
@@ -2172,6 +2197,31 @@ def test_hosted_job_decode_rejects_paid_receipt_binding_drift() -> None:
     metadata = receipt["metadata"]
     assert isinstance(metadata, dict)
     metadata["github_source_hash"] = "sha256:" + ("0" * 64)
+
+    with pytest.raises(FuseKitError, match="paid payment receipt does not match"):
+        hosted_launch_job_from_dict(payload)
+
+
+def test_hosted_job_decode_rejects_paid_receipt_price_hash_drift() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=MANAGED_FUSEKIT_RUN_LANE,
+        payment_required=True,
+        payment_price_label="Launch validation: $1.00 FuseKit managed run",
+        payment_price_id_hash=_public_hash("price_managed_run"),
+        job_id="hosted-test",
+        now=1_700_000_000,
+    )
+    paid = with_hosted_job_payment_receipt(job, _paid_checkout_receipt(job))
+    payload = paid.to_dict()
+    payment = payload["payment"]
+    assert isinstance(payment, dict)
+    assert payment["price_id_hash"] == _public_hash("price_managed_run")
+    receipt = payment["receipt"]
+    assert isinstance(receipt, dict)
+    metadata = receipt["metadata"]
+    assert isinstance(metadata, dict)
+    metadata["stripe_price_id_hash"] = "sha256:" + ("0" * 64)
 
     with pytest.raises(FuseKitError, match="paid payment receipt does not match"):
         hosted_launch_job_from_dict(payload)

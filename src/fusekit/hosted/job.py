@@ -301,6 +301,7 @@ class HostedLaunchJob:
     launch_lane: str = MANAGED_FUSEKIT_RUN_LANE
     payment_status: str = "not_required"
     payment_price_label: str = ""
+    payment_price_id_hash: str = ""
     payment_receipt: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
@@ -331,6 +332,7 @@ def build_hosted_launch_job(
     launch_lane: str = MANAGED_FUSEKIT_RUN_LANE,
     payment_required: bool = False,
     payment_price_label: str = "",
+    payment_price_id_hash: str = "",
     job_id: str | None = None,
     now: int | None = None,
 ) -> HostedLaunchJob:
@@ -349,6 +351,8 @@ def build_hosted_launch_job(
         if payment_required and lane == MANAGED_FUSEKIT_RUN_LANE
         else "not_required"
     )
+    if payment_price_id_hash and not _valid_sha256_label(payment_price_id_hash):
+        raise FuseKitError("Hosted launch payment price id hash is invalid.")
     worker_prepare_proof = (
         "Stripe Checkout authorization must complete before FuseKit-managed worker dispatch."
         if payment_status == "payment_required"
@@ -431,6 +435,11 @@ def build_hosted_launch_job(
         launch_lane=lane,
         payment_status=payment_status,
         payment_price_label=payment_price_label if payment_status == "payment_required" else "",
+        payment_price_id_hash=(
+            payment_price_id_hash
+            if payment_status == "payment_required"
+            else ""
+        ),
     )
 
 
@@ -443,6 +452,7 @@ def hosted_job_payment_status(job: HostedLaunchJob) -> dict[str, object]:
         and job.payment_status != "not_required",
         "status": job.payment_status,
         "price_label": job.payment_price_label,
+        "price_id_hash": job.payment_price_id_hash,
         "receipt": dict(receipt),
         "secret_boundary": (
             "Payment status contains only public Checkout Session state and never card "
@@ -1320,6 +1330,7 @@ def hosted_launch_job_from_dict(payload: dict[str, Any]) -> HostedLaunchJob:
     github_source = public_hosted_github_source(_required_str(payload, "github_source"))
     worker_contract_payload = _worker_contract_from_dict(worker_contract)
     payment_price_label = _payment_price_label_from_payload(payment)
+    payment_price_id_hash = _payment_price_id_hash_from_payload(payment)
     payment_status, payment_receipt = _payment_from_payload(
         payment,
         job_id=job_id,
@@ -1327,6 +1338,7 @@ def hosted_launch_job_from_dict(payload: dict[str, Any]) -> HostedLaunchJob:
         github_source=github_source,
         plan_fingerprint=worker_contract_payload.plan_fingerprint,
         price_label=payment_price_label,
+        price_id_hash=payment_price_id_hash,
     )
     return HostedLaunchJob(
         job_id=job_id,
@@ -1342,6 +1354,7 @@ def hosted_launch_job_from_dict(payload: dict[str, Any]) -> HostedLaunchJob:
         launch_lane=launch_lane,
         payment_status=payment_status,
         payment_price_label=payment_price_label,
+        payment_price_id_hash=payment_price_id_hash,
         payment_receipt=payment_receipt,
     )
 
@@ -2500,6 +2513,7 @@ def _replace_job(
         launch_lane=job.launch_lane,
         payment_status=payment_status or job.payment_status,
         payment_price_label=job.payment_price_label,
+        payment_price_id_hash=job.payment_price_id_hash,
         payment_receipt=payment_receipt if payment_receipt is not None else job.payment_receipt,
     )
 
@@ -3065,6 +3079,7 @@ def _payment_from_payload(
     github_source: str,
     plan_fingerprint: str,
     price_label: str,
+    price_id_hash: str,
 ) -> tuple[str, dict[str, object] | None]:
     if value is None:
         return "not_required", None
@@ -3093,6 +3108,7 @@ def _payment_from_payload(
             github_source=github_source,
             plan_fingerprint=plan_fingerprint,
             price_label=price_label,
+            price_id_hash=price_id_hash,
         ):
             raise FuseKitError("Hosted launch paid payment receipt does not match this job.")
     return status, public_receipt
@@ -3109,6 +3125,17 @@ def _payment_price_label_from_payload(value: object) -> str:
     if not _valid_price_label(price_label):
         raise FuseKitError("Hosted launch payment price label is invalid.")
     return price_label
+
+
+def _payment_price_id_hash_from_payload(value: object) -> str:
+    if not isinstance(value, dict):
+        return ""
+    price_id_hash = value.get("price_id_hash")
+    if not isinstance(price_id_hash, str) or price_id_hash == "":
+        return ""
+    if not _valid_sha256_label(price_id_hash):
+        raise FuseKitError("Hosted launch payment price id hash is invalid.")
+    return price_id_hash
 
 
 def _public_payment_receipt(receipt: dict[str, object]) -> dict[str, object]:
@@ -3200,6 +3227,7 @@ def _payment_receipt_matches_job(job: HostedLaunchJob, receipt: dict[str, object
         github_source=job.github_source,
         plan_fingerprint=job.worker_contract.plan_fingerprint,
         price_label=job.payment_price_label,
+        price_id_hash=job.payment_price_id_hash,
     )
 
 
@@ -3211,6 +3239,7 @@ def _payment_receipt_matches_public_job(
     github_source: str,
     plan_fingerprint: str,
     price_label: str,
+    price_id_hash: str,
 ) -> bool:
     if receipt.get("client_reference_id") != job_id:
         return False
@@ -3226,6 +3255,8 @@ def _payment_receipt_matches_public_job(
         "plan_fingerprint": plan_fingerprint,
         "price_label_hash": _public_hash(price_label),
     }
+    if price_id_hash:
+        expected["stripe_price_id_hash"] = price_id_hash
     return all(metadata.get(key) == expected_value for key, expected_value in expected.items())
 
 

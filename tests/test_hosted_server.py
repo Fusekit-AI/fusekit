@@ -2162,6 +2162,7 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
     assert status == "200 OK"
     assert "Authorize managed run payment" in text
     assert "Start worker" not in text
+    assert settings.hosted_jobs[job_id].payment_price_id_hash == price_id_hash
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
