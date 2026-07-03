@@ -2050,16 +2050,20 @@ def _hosted_payment_return_response(
         return _response(
             start_response,
             HTTPStatus.BAD_GATEWAY,
-            {"error": "payment_verification_failed"},
+            _hosted_payment_error_payload("payment_verification_failed"),
+        )
+    if receipt.get("paid") is not True:
+        return _response(
+            start_response,
+            HTTPStatus.PAYMENT_REQUIRED,
+            _hosted_payment_error_payload("payment_not_paid"),
         )
     if not _payment_receipt_matches_job(settings, receipt, job):
         return _response(
             start_response,
             HTTPStatus.FORBIDDEN,
-            {"error": "payment_binding_mismatch"},
+            _hosted_payment_error_payload("payment_binding_mismatch"),
         )
-    if receipt.get("paid") is not True:
-        return _response(start_response, HTTPStatus.PAYMENT_REQUIRED, {"error": "payment_not_paid"})
     updated = with_hosted_job_payment_receipt(job, receipt)
     settings.hosted_jobs[job.job_id] = updated
     job_token = create_hosted_job_token(settings.state_secret, updated)
@@ -2085,6 +2089,28 @@ def _hosted_payment_return_response(
             },
         ),
     )
+
+
+def _hosted_payment_error_payload(error: str) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "schema_version": "fusekit.hosted-payment-error.v1",
+        "error": error,
+        "action": "payment",
+        "dispatch_blocked": True,
+        "receipt_statement": (
+            "Stripe Checkout authorization has not been accepted for this managed run; "
+            "managed worker dispatch remains blocked."
+        ),
+        "next_required_proof": ["stripe_checkout_authorization"],
+        "secret_boundary": (
+            "Payment error receipts expose only the public failure label and blocked "
+            "dispatch state. They never include card data, payment method ids, billing "
+            "details, Stripe secret keys, client secrets, raw Checkout sessions, or "
+            "provider credentials."
+        ),
+    }
+    _assert_public_action_response_payload(payload)
+    return payload
 
 
 def _hosted_payment_cancel_response(

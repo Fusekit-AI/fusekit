@@ -1969,6 +1969,17 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
                 "id": "cs_test_123",
                 "object": "checkout.session",
                 "status": "complete",
+                "payment_status": "unpaid",
+                "mode": "payment",
+                "client_reference_id": "",
+                "amount_total": 4900,
+                "currency": "usd",
+                "metadata": {},
+            },
+            {
+                "id": "cs_test_123",
+                "object": "checkout.session",
+                "status": "complete",
                 "payment_status": "paid",
                 "mode": "payment",
                 "client_reference_id": "hosted-other-job",
@@ -2074,7 +2085,7 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
     stripe_opener.payloads[1]["metadata"] = {
         "job_id": job_id,
         "lane": MANAGED_FUSEKIT_RUN_LANE,
-        "github_source_hash": "sha256:wrong-source",
+        "github_source_hash": github_source_hash,
         "plan_fingerprint": plan_fingerprint,
         "stripe_price_id_hash": price_id_hash,
         "price_label_hash": price_label_hash,
@@ -2083,10 +2094,10 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
     stripe_opener.payloads[2]["metadata"] = {
         "job_id": job_id,
         "lane": MANAGED_FUSEKIT_RUN_LANE,
-        "github_source_hash": github_source_hash,
+        "github_source_hash": "sha256:wrong-source",
         "plan_fingerprint": plan_fingerprint,
-        "stripe_price_id_hash": "sha256:" + ("d" * 64),
-        "price_label_hash": "sha256:" + ("e" * 64),
+        "stripe_price_id_hash": price_id_hash,
+        "price_label_hash": price_label_hash,
     }
     stripe_opener.payloads[3]["client_reference_id"] = job_id
     stripe_opener.payloads[3]["metadata"] = {
@@ -2094,8 +2105,8 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
         "lane": MANAGED_FUSEKIT_RUN_LANE,
         "github_source_hash": github_source_hash,
         "plan_fingerprint": plan_fingerprint,
-        "stripe_price_id_hash": price_id_hash,
-        "price_label_hash": price_label_hash,
+        "stripe_price_id_hash": "sha256:" + ("d" * 64),
+        "price_label_hash": "sha256:" + ("e" * 64),
     }
     stripe_opener.payloads[4]["client_reference_id"] = job_id
     stripe_opener.payloads[4]["metadata"] = {
@@ -2104,9 +2115,18 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
         "github_source_hash": github_source_hash,
         "plan_fingerprint": plan_fingerprint,
         "stripe_price_id_hash": price_id_hash,
+        "price_label_hash": price_label_hash,
     }
     stripe_opener.payloads[5]["client_reference_id"] = job_id
     stripe_opener.payloads[5]["metadata"] = {
+        "job_id": job_id,
+        "lane": MANAGED_FUSEKIT_RUN_LANE,
+        "github_source_hash": github_source_hash,
+        "plan_fingerprint": plan_fingerprint,
+        "stripe_price_id_hash": price_id_hash,
+    }
+    stripe_opener.payloads[6]["client_reference_id"] = job_id
+    stripe_opener.payloads[6]["metadata"] = {
         "job_id": job_id,
         "lane": MANAGED_FUSEKIT_RUN_LANE,
         "github_source_hash": github_source_hash,
@@ -2180,8 +2200,10 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
         headers={"Accept": "text/html"},
         settings=settings,
     )
-    assert status == "403 Forbidden"
-    assert json.loads(body.decode("utf-8")) == {"error": "payment_binding_mismatch"}
+    assert status == "402 Payment Required"
+    _assert_public_payment_error(body, "payment_not_paid")
+    assert settings.hosted_jobs[job_id].payment_status == "checkout_pending"
+    assert len(dispatch_opener.requests) == 0
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/payments/stripe-return",
@@ -2190,7 +2212,7 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
         settings=settings,
     )
     assert status == "403 Forbidden"
-    assert json.loads(body.decode("utf-8")) == {"error": "payment_binding_mismatch"}
+    _assert_public_payment_error(body, "payment_binding_mismatch")
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/payments/stripe-return",
@@ -2199,7 +2221,7 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
         settings=settings,
     )
     assert status == "403 Forbidden"
-    assert json.loads(body.decode("utf-8")) == {"error": "payment_binding_mismatch"}
+    _assert_public_payment_error(body, "payment_binding_mismatch")
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/payments/stripe-return",
@@ -2208,7 +2230,16 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
         settings=settings,
     )
     assert status == "403 Forbidden"
-    assert json.loads(body.decode("utf-8")) == {"error": "payment_binding_mismatch"}
+    _assert_public_payment_error(body, "payment_binding_mismatch")
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/payments/stripe-return",
+        query_string=f"job={checkout_job_token}&session_id=cs_test_123",
+        headers={"Accept": "text/html"},
+        settings=settings,
+    )
+    assert status == "403 Forbidden"
+    _assert_public_payment_error(body, "payment_binding_mismatch")
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/payments/stripe-return",
@@ -4334,6 +4365,31 @@ def _match(text: str, pattern: str) -> str:
     match = re.search(pattern, text)
     assert match is not None
     return match.group(1) if match.groups() else match.group(0)
+
+
+def _assert_public_payment_error(body: bytes, error: str) -> None:
+    payload = json.loads(body.decode("utf-8"))
+    serialized = json.dumps(payload)
+    assert payload == {
+        "schema_version": "fusekit.hosted-payment-error.v1",
+        "error": error,
+        "action": "payment",
+        "dispatch_blocked": True,
+        "receipt_statement": (
+            "Stripe Checkout authorization has not been accepted for this managed run; "
+            "managed worker dispatch remains blocked."
+        ),
+        "next_required_proof": ["stripe_checkout_authorization"],
+        "secret_boundary": (
+            "Payment error receipts expose only the public failure label and blocked "
+            "dispatch state. They never include card data, payment method ids, billing "
+            "details, Stripe secret keys, client secrets, raw Checkout sessions, or "
+            "provider credentials."
+        ),
+    }
+    assert "sk_live" not in serialized
+    assert "client_secret" not in serialized
+    assert "payment_method" not in serialized
 
 
 def _control_for_action(text: str, action: str) -> str:
