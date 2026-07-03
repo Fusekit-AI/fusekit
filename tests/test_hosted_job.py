@@ -25,6 +25,7 @@ from fusekit.hosted import (
 )
 from fusekit.hosted.job import (
     HOSTED_BYO_OCI_HANDOFF_PREFLIGHT_SCHEMA_VERSION,
+    HOSTED_BYO_OCI_PROOF_MANIFEST_SCHEMA_VERSION,
     HOSTED_BYO_OCI_REVERSIBILITY_SCHEMA_VERSION,
     hosted_byo_oci_bootstrap,
     render_hosted_byo_oci_bootstrap,
@@ -255,6 +256,60 @@ def test_hosted_byo_bootstrap_publishes_preflight_and_reversibility_contract() -
     assert "disposable OCI compute instance" in bootstrap["reversibility"]["delete_targets"]
     assert "encrypted vault" in bootstrap["reversibility"]["survivors"]
     assert "workspace detonation proof" in bootstrap["reversibility"]["statement"]
+    assert bootstrap["proof_manifest"]["schema_version"] == (
+        HOSTED_BYO_OCI_PROOF_MANIFEST_SCHEMA_VERSION
+    )
+    assert bootstrap["proof_manifest"]["proof_bundle_root"] == ".fusekit/remote-artifacts"
+    assert bootstrap["proof_manifest"]["required_completion_evidence"] == [
+        "live_url",
+        "provider_verifiers",
+        "dns_propagation",
+        "rollback_metadata",
+        "retrieved_remote_artifacts",
+        "run_record",
+        "detonation_receipt",
+        "live_acceptance_report",
+        "recording",
+    ]
+    manifest_artifacts = bootstrap["proof_manifest"]["required_remote_artifacts"]
+    assert {
+        (artifact["path"], artifact["label"], artifact["secret_boundary"])
+        for artifact in manifest_artifacts
+    } >= {
+        (
+            ".fusekit/run_record.json",
+            "central Run Record",
+            "redacted_public_artifact_only",
+        ),
+        (
+            ".fusekit/rollback_plan.json",
+            "rollback metadata",
+            "redacted_public_artifact_only",
+        ),
+        (
+            ".fusekit/workspace_detonation.json",
+            "workspace detonation receipt",
+            "redacted_public_artifact_only",
+        ),
+        (
+            ".fusekit/acceptance_report.json",
+            "live acceptance report",
+            "redacted_public_artifact_only",
+        ),
+    }
+    assert all(artifact["required"] is True for artifact in manifest_artifacts)
+    assert bootstrap["proof_manifest"]["acceptance_gate"] == {
+        "mode": "live",
+        "remote_artifacts": ".fusekit/remote-artifacts",
+        "require_recording": True,
+        "command": (
+            "fusekit acceptance run <app> --mode live "
+            "--remote-artifacts <app>/.fusekit/remote-artifacts --require-recording"
+        ),
+    }
+    assert "worker-local paths are not allowed" in bootstrap["proof_manifest"][
+        "secret_boundary"
+    ]
     assert "ghs_" not in serialized
     assert "PRIVATE KEY" not in serialized
     assert "sk_live" not in serialized
@@ -276,6 +331,11 @@ def test_hosted_byo_bootstrap_renders_browser_handoff_page() -> None:
     assert "FuseKit fee: none_for_byo_oci" in html
     assert "Confirm the bootstrap uses the AMD/x86_64 runner profile." in html
     assert "workspace detonation proof" in html
+    assert "Proof Manifest" in html
+    assert ".fusekit/remote-artifacts" in html
+    assert "central Run Record" in html
+    assert "live acceptance report" in html
+    assert "redacted_public_artifact_only" in html
     assert "Download bootstrap JSON" in html
     assert "Back to control room" in html
     assert "fusekit.hosted-byo-oci-bootstrap.v1" in html

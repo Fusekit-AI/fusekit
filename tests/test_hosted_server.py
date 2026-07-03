@@ -27,6 +27,7 @@ from fusekit.hosted.github_app import GitHubAppConfig
 from fusekit.hosted.job import (
     HOSTED_BYO_OCI_HANDOFF_PREFLIGHT,
     HOSTED_BYO_OCI_HANDOFF_PREFLIGHT_SCHEMA_VERSION,
+    HOSTED_BYO_OCI_PROOF_MANIFEST_SCHEMA_VERSION,
     HOSTED_BYO_OCI_REVERSIBILITY_SCHEMA_VERSION,
     HOSTED_BYO_OCI_REVERSIBILITY_SURVIVORS,
     HOSTED_BYO_OCI_REVERSIBILITY_TARGETS,
@@ -2214,6 +2215,28 @@ def test_hosted_byo_oci_lane_starts_without_managed_worker_dispatch() -> None:
     assert "--require-recording" not in command
     assert "fusekit-hosted-worker" not in command
     assert bootstrap["proof_return"]["mode"] == "user_downloads_or_shares_redacted_artifacts"
+    assert bootstrap["proof_manifest"]["schema_version"] == (
+        HOSTED_BYO_OCI_PROOF_MANIFEST_SCHEMA_VERSION
+    )
+    assert bootstrap["proof_manifest"]["proof_bundle_root"] == ".fusekit/remote-artifacts"
+    assert bootstrap["proof_manifest"]["acceptance_gate"] == {
+        "mode": "live",
+        "remote_artifacts": ".fusekit/remote-artifacts",
+        "require_recording": True,
+        "command": (
+            "fusekit acceptance run <app> --mode live "
+            "--remote-artifacts <app>/.fusekit/remote-artifacts --require-recording"
+        ),
+    }
+    assert {
+        (artifact["path"], artifact["label"])
+        for artifact in bootstrap["proof_manifest"]["required_remote_artifacts"]
+    } >= {
+        (".fusekit/run_record.json", "central Run Record"),
+        (".fusekit/rollback_plan.json", "rollback metadata"),
+        (".fusekit/workspace_detonation.json", "workspace detonation receipt"),
+        (".fusekit/acceptance_report.json", "live acceptance report"),
+    }
     assert bootstrap["reversibility"] == {
         "schema_version": HOSTED_BYO_OCI_REVERSIBILITY_SCHEMA_VERSION,
         "detonation_required": True,
@@ -2249,6 +2272,9 @@ def test_hosted_byo_oci_lane_starts_without_managed_worker_dispatch() -> None:
     assert "Review Oracle Cloud billing status" in html
     assert "FuseKit fee: none_for_byo_oci" in html
     assert "workspace detonation proof" in html
+    assert "Proof Manifest" in html
+    assert "central Run Record" in html
+    assert "live acceptance report" in html
     assert "Download bootstrap JSON" in html
     assert "--oci-shape VM.Standard.E5.Flex" in html
     assert "ghs_fake" not in html

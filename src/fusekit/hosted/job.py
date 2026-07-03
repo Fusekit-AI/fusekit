@@ -46,6 +46,7 @@ HOSTED_BYO_OCI_BOOTSTRAP_SCHEMA_VERSION = "fusekit.hosted-byo-oci-bootstrap.v1"
 HOSTED_BYO_OCI_FUSEKIT_PACKAGE = "fusekit"
 HOSTED_BYO_OCI_HANDOFF_PREFLIGHT_SCHEMA_VERSION = "fusekit.hosted-byo-oci-preflight.v1"
 HOSTED_BYO_OCI_REVERSIBILITY_SCHEMA_VERSION = "fusekit.hosted-byo-oci-reversibility.v1"
+HOSTED_BYO_OCI_PROOF_MANIFEST_SCHEMA_VERSION = "fusekit.hosted-byo-oci-proof-manifest.v1"
 
 HOSTED_WORKER_PROOF_KEYS = HOSTED_COMPLETION_EVIDENCE_KEYS
 HOSTED_WORKER_MAINTENANCE_PROOF_KEYS = (
@@ -98,6 +99,21 @@ HOSTED_BYO_OCI_REVERSIBILITY_SURVIVORS = (
     "Run Record",
     "workspace detonation receipt",
 )
+HOSTED_BYO_OCI_PROOF_ARTIFACT_LABELS = {
+    ".fusekit/job.json": "durable hosted job snapshot",
+    ".fusekit/run_record.json": "central Run Record",
+    ".fusekit/verification_report.json": "provider verifier report",
+    ".fusekit/rollback_plan.json": "rollback metadata",
+    ".fusekit/setup_receipt.json": "redacted setup receipt",
+    ".fusekit/audit.jsonl": "redacted audit log",
+    ".fusekit/provider_strategies.json": "provider strategy proof",
+    ".fusekit/runner_readiness.json": "runner readiness proof",
+    ".fusekit/gates.json": "provider gate state",
+    ".fusekit/gate_events.jsonl": "provider gate event stream",
+    ".fusekit/llm_contract.json": "LLM/model contract",
+    ".fusekit/workspace_detonation.json": "workspace detonation receipt",
+    ".fusekit/acceptance_report.json": "live acceptance report",
+}
 HOSTED_PLAN_INTEGRITY_COVERAGE = (
     "app_name",
     "github_source",
@@ -479,6 +495,7 @@ def hosted_byo_oci_bootstrap(job: HostedLaunchJob) -> dict[str, object]:
             ),
             "not_hosted_complete_until": list(HOSTED_WORKER_PROOF_KEYS),
         },
+        "proof_manifest": _byo_oci_proof_manifest(job),
         "reversibility": {
             "schema_version": HOSTED_BYO_OCI_REVERSIBILITY_SCHEMA_VERSION,
             "detonation_required": True,
@@ -511,10 +528,12 @@ def render_hosted_byo_oci_bootstrap(job: HostedLaunchJob, *, job_token: str = ""
     bootstrap = hosted_byo_oci_bootstrap(job)
     cloud_shell = bootstrap.get("cloud_shell")
     proof_return = bootstrap.get("proof_return")
+    proof_manifest = bootstrap.get("proof_manifest")
     handoff = bootstrap.get("handoff_preflight")
     reversibility = bootstrap.get("reversibility")
     cloud_shell_data = cloud_shell if isinstance(cloud_shell, dict) else {}
     proof_data = proof_return if isinstance(proof_return, dict) else {}
+    proof_manifest_data = proof_manifest if isinstance(proof_manifest, dict) else {}
     handoff_data = handoff if isinstance(handoff, dict) else {}
     reversibility_data = reversibility if isinstance(reversibility, dict) else {}
     deeplink = _safe_cloud_shell_url(cloud_shell_data.get("deeplink_url"))
@@ -524,6 +543,13 @@ def render_hosted_byo_oci_bootstrap(job: HostedLaunchJob, *, job_token: str = ""
     human_gates = _list(_string_tuple(cloud_shell_data.get("human_gates")))
     required_artifacts = _list(_string_tuple(proof_data.get("required_artifacts")))
     not_complete_until = _list(_string_tuple(proof_data.get("not_hosted_complete_until")))
+    manifest_artifacts = _proof_artifact_cards(
+        proof_manifest_data.get("required_remote_artifacts")
+    )
+    manifest_evidence = _list(
+        _string_tuple(proof_manifest_data.get("required_completion_evidence"))
+    )
+    proof_bundle_root = html.escape(str(proof_manifest_data.get("proof_bundle_root", "")))
     preflight = _preflight_cards(handoff_data.get("checks"))
     cost_acknowledgement = _cost_acknowledgement_section(
         handoff_data.get("cost_acknowledgement")
@@ -693,6 +719,11 @@ def render_hosted_byo_oci_bootstrap(job: HostedLaunchJob, *, job_token: str = ""
         {not_complete_until}
         <h3>Acceptance Command</h3>
         <pre>{acceptance_command}</pre>
+        <h3>Proof Manifest</h3>
+        <p>Bundle root: {proof_bundle_root}</p>
+        {manifest_artifacts}
+        <h3>Completion Evidence</h3>
+        {manifest_evidence}
       </section>
       <aside aria-label="Reversible setup">
         <h2>Reversible Setup</h2>
@@ -714,6 +745,45 @@ def render_hosted_byo_oci_bootstrap(job: HostedLaunchJob, *, job_token: str = ""
 </body>
 </html>
 """
+
+
+def _byo_oci_proof_manifest(job: HostedLaunchJob) -> dict[str, object]:
+    return {
+        "schema_version": HOSTED_BYO_OCI_PROOF_MANIFEST_SCHEMA_VERSION,
+        "proof_bundle_root": ".fusekit/remote-artifacts",
+        "required_completion_evidence": list(HOSTED_WORKER_PROOF_KEYS),
+        "required_remote_artifacts": [
+            {
+                "path": artifact,
+                "label": HOSTED_BYO_OCI_PROOF_ARTIFACT_LABELS.get(
+                    artifact,
+                    "redacted FuseKit survivor artifact",
+                ),
+                "required": True,
+                "secret_boundary": "redacted_public_artifact_only",
+            }
+            for artifact in job.worker_contract.required_artifacts
+        ],
+        "acceptance_gate": {
+            "mode": "live",
+            "remote_artifacts": ".fusekit/remote-artifacts",
+            "require_recording": True,
+            "command": (
+                "fusekit acceptance run <app> --mode live "
+                "--remote-artifacts <app>/.fusekit/remote-artifacts --require-recording"
+            ),
+        },
+        "completion_claim_policy": (
+            "BYO OCI completion cannot be claimed until every required artifact is "
+            "retrieved from the user-owned worker, the live acceptance report passes with "
+            "remote artifacts and recording proof, and detonation proof is preserved."
+        ),
+        "secret_boundary": (
+            "The proof manifest contains public labels and artifact paths only; raw "
+            "provider credentials, session cookies, payment details, tokens, vault "
+            "plaintext, browser profiles, and worker-local paths are not allowed."
+        ),
+    }
 
 
 def _byo_oci_launch_args(job: HostedLaunchJob) -> tuple[str, ...]:
@@ -2041,6 +2111,29 @@ def _cost_acknowledgement_section(value: object) -> str:
           <small>Billing gate owner: {billing_owner}</small>
         </article>
 """
+
+
+def _proof_artifact_cards(value: object) -> str:
+    if not isinstance(value, list):
+        return ""
+    cards: list[str] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        path = html.escape(str(item.get("path", "")))
+        label = html.escape(str(item.get("label", "")))
+        boundary = html.escape(str(item.get("secret_boundary", "")))
+        required = "required" if item.get("required") is True else "optional"
+        cards.append(
+            f"""
+        <article class="done" aria-label="{path}">
+          <h3>{label}</h3>
+          <small>{html.escape(required)} / {path}</small>
+          <p>{boundary}</p>
+        </article>
+"""
+        )
+    return "\n".join(cards)
 
 
 def _worker_contract_section(contract: HostedWorkerContract) -> str:
