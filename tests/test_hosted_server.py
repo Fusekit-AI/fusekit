@@ -3709,6 +3709,7 @@ def test_hosted_worker_claim_requires_backend_auth_and_returns_redacted_receipt(
     assert STATE_SECRET not in serialized
     assert "ghs_fake" not in serialized
     assert "PRIVATE KEY" not in serialized
+    assert "public_worker_claim_payload_rejected" not in serialized
     assert "<script>" not in serialized
 
 
@@ -3838,6 +3839,7 @@ def test_hosted_worker_proof_submission_requires_backend_auth_and_redacted_evide
     assert "raw-provider-token" not in serialized
     assert "ghs_fake" not in serialized
     assert "PRIVATE KEY" not in serialized
+    assert "public_worker_proof_payload_rejected" not in serialized
 
 
 def test_hosted_worker_proof_submission_rejects_oversized_body_before_completion() -> None:

@@ -2312,6 +2312,14 @@ def _hosted_worker_claim_response(
         "worker_request": hosted_worker_request(updated),
         "claim_receipt": hosted_worker_claim_receipt(updated, worker_id=worker_id),
     }
+    try:
+        _assert_public_action_response_payload(payload)
+    except FuseKitError:
+        return _response(
+            start_response,
+            HTTPStatus.INTERNAL_SERVER_ERROR,
+            {"error": "public_worker_claim_payload_rejected"},
+        )
     return _response(start_response, HTTPStatus.OK, payload)
 
 
@@ -2344,6 +2352,14 @@ def _hosted_worker_proof_response(
         "job_token": create_hosted_job_token(settings.state_secret, updated),
         "proof_receipt": receipt,
     }
+    try:
+        _assert_public_action_response_payload(payload)
+    except FuseKitError:
+        return _response(
+            start_response,
+            HTTPStatus.INTERNAL_SERVER_ERROR,
+            {"error": "public_worker_proof_payload_rejected"},
+        )
     return _response(start_response, HTTPStatus.OK, payload)
 
 
