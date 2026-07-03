@@ -986,6 +986,7 @@ def _public_byo_job_binding(
     blockers: list[str],
 ) -> dict[str, str]:
     allowed = {"job_id", "lane", "github_source_hash", "plan_fingerprint"}
+    hash_keys = {"github_source_hash", "plan_fingerprint"}
     if not isinstance(value, dict):
         blockers.append("byo_oci_proof_bundle_job_binding_invalid")
         return {}
@@ -1001,6 +1002,9 @@ def _public_byo_job_binding(
             continue
         if contains_durable_secret_text(raw) or len(raw) > 256:
             blockers.append(f"byo_oci_proof_bundle_{key}_unsafe")
+            continue
+        if key in hash_keys and not _valid_sha256_label(raw):
+            blockers.append(f"byo_oci_proof_bundle_{key}_invalid")
             continue
         binding[key] = raw
     return binding

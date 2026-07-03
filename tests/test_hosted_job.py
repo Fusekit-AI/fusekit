@@ -640,6 +640,33 @@ def test_hosted_byo_proof_bundle_verifier_blocks_source_and_plan_drift() -> None
     assert "byo_oci_proof_bundle_plan_fingerprint_mismatch" in report["blockers"]
 
 
+def test_hosted_byo_proof_bundle_verifier_blocks_malformed_job_binding_hashes() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+    binding = bundle["job_binding"]
+    assert isinstance(binding, dict)
+    binding["github_source_hash"] = "sha256:not-a-real-digest"
+    binding["plan_fingerprint"] = "sha256:also-not-a-real-digest"
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+
+    assert report["ready"] is False
+    assert "byo_oci_proof_bundle_github_source_hash_invalid" in report["blockers"]
+    assert "byo_oci_proof_bundle_plan_fingerprint_invalid" in report["blockers"]
+    assert "byo_oci_proof_bundle_github_source_hash_mismatch" in report["blockers"]
+    assert "byo_oci_proof_bundle_plan_fingerprint_mismatch" in report["blockers"]
+    assert report["job_binding"] == {
+        "job_id": "hosted-byo",
+        "lane": BYO_OCI_LANE,
+    }
+
+
 def test_hosted_byo_proof_bundle_verifier_blocks_cost_and_security_drift() -> None:
     job = build_hosted_launch_job(
         _plan(),
