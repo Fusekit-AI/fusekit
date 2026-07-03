@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import io
 import json
@@ -1930,19 +1931,27 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
     )
     text = body.decode("utf-8")
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    github_source_hash = _payment_source_hash(settings.hosted_jobs[job_id].github_source)
     plan_fingerprint = settings.hosted_jobs[job_id].worker_contract.plan_fingerprint
     stripe_opener.payloads[0]["client_reference_id"] = job_id
     stripe_opener.payloads[0]["metadata"] = {
         "job_id": job_id,
         "lane": MANAGED_FUSEKIT_RUN_LANE,
-        "github_source_hash": "sha256:test",
+        "github_source_hash": github_source_hash,
+        "plan_fingerprint": plan_fingerprint,
+    }
+    stripe_opener.payloads[1]["client_reference_id"] = job_id
+    stripe_opener.payloads[1]["metadata"] = {
+        "job_id": job_id,
+        "lane": MANAGED_FUSEKIT_RUN_LANE,
+        "github_source_hash": "sha256:wrong-source",
         "plan_fingerprint": plan_fingerprint,
     }
     stripe_opener.payloads[2]["client_reference_id"] = job_id
     stripe_opener.payloads[2]["metadata"] = {
         "job_id": job_id,
         "lane": MANAGED_FUSEKIT_RUN_LANE,
-        "github_source_hash": "sha256:test",
+        "github_source_hash": github_source_hash,
         "plan_fingerprint": plan_fingerprint,
     }
     job_token = _job_token(text)
@@ -1989,6 +1998,7 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
     assert stripe_opener.bodies[0]["line_items[0][price]"] == ["price_managed_run"]
     assert stripe_opener.bodies[0]["metadata[job_id]"] == [job_id]
     assert stripe_opener.bodies[0]["metadata[lane]"] == [MANAGED_FUSEKIT_RUN_LANE]
+    assert stripe_opener.bodies[0]["metadata[github_source_hash]"] == [github_source_hash]
     assert stripe_opener.bodies[0]["metadata[plan_fingerprint]"] == [plan_fingerprint]
     assert "sk_live" not in json.dumps(checkout)
 
@@ -2001,13 +2011,6 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
     assert status == "403 Forbidden"
     assert json.loads(body.decode("utf-8")) == {"error": "payment_binding_mismatch"}
 
-    stripe_opener.payloads[0]["client_reference_id"] = job_id
-    stripe_opener.payloads[0]["metadata"] = {
-        "job_id": job_id,
-        "lane": MANAGED_FUSEKIT_RUN_LANE,
-        "github_source_hash": "sha256:test",
-        "plan_fingerprint": plan_fingerprint,
-    }
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/payments/stripe-return",
         query_string=f"job={checkout_job_token}&session_id=cs_test_123",
@@ -4044,6 +4047,10 @@ def _control_for_payment_checkout(text: str) -> str:
     )
 
 
+def _payment_source_hash(github_source: str) -> str:
+    return "sha256:" + hashlib.sha256(github_source.encode("utf-8")).hexdigest()
+
+
 def _paid_control_room_text(settings: HostedSettings, job_id: str) -> str:
     job = settings.hosted_jobs[job_id]
     receipt = {
@@ -4057,6 +4064,7 @@ def _paid_control_room_text(settings: HostedSettings, job_id: str) -> str:
         "metadata": {
             "job_id": job_id,
             "lane": MANAGED_FUSEKIT_RUN_LANE,
+            "github_source_hash": _payment_source_hash(job.github_source),
             "plan_fingerprint": job.worker_contract.plan_fingerprint,
         },
         "amount_total": 4900,

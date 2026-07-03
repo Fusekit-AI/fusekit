@@ -2552,12 +2552,17 @@ def _payment_receipt_matches_job(receipt: dict[str, object], job: HostedLaunchJo
     expected = {
         "job_id": job.job_id,
         "lane": job.launch_lane,
+        "github_source_hash": _payment_github_source_hash(job.github_source),
         "plan_fingerprint": job.worker_contract.plan_fingerprint,
     }
     for key, expected_value in expected.items():
         if metadata.get(key) != expected_value:
             return False
     return True
+
+
+def _payment_github_source_hash(github_source: str) -> str:
+    return "sha256:" + hashlib.sha256(github_source.encode("utf-8")).hexdigest()
 
 
 def _dispatch_hosted_worker(
