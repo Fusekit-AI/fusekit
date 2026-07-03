@@ -2006,14 +2006,21 @@ def _hosted_payment_checkout_response(
             HTTPStatus.SERVICE_UNAVAILABLE,
             {"error": "payment_not_ready"},
         )
+    checkout_url = receipt.get("checkout_url")
+    if not isinstance(checkout_url, str) or not checkout_url:
+        return _response(
+            start_response,
+            HTTPStatus.BAD_GATEWAY,
+            {"error": "payment_checkout_url_unavailable"},
+        )
     updated = with_hosted_job_payment_receipt(job, receipt)
     settings.hosted_jobs[job.job_id] = updated
     updated_token = create_hosted_job_token(settings.state_secret, updated)
     payload = updated.to_dict()
     payload["job_token"] = updated_token
     payload["payment"] = updated.to_dict()["payment"]
-    if _wants_html(environ) and isinstance(receipt.get("checkout_url"), str):
-        return _redirect_response(start_response, str(receipt["checkout_url"]))
+    if _wants_html(environ):
+        return _redirect_response(start_response, checkout_url)
     try:
         _assert_public_action_response_payload(payload)
     except FuseKitError:

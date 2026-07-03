@@ -2255,6 +2255,90 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
     assert "PRIVATE KEY" not in serialized
 
 
+def test_hosted_payment_checkout_rejects_missing_checkout_url_before_pending_state() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    github_opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    stripe_opener = FormSequenceOpener(
+        [
+            {
+                "id": "cs_test_123",
+                "object": "checkout.session",
+                "url": "https://checkout.stripe.com/not-a-pay-session",
+                "status": "open",
+                "payment_status": "unpaid",
+                "mode": "payment",
+                "client_reference_id": "",
+                "amount_total": 4900,
+                "currency": "usd",
+                "metadata": {},
+            },
+        ]
+    )
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=_private_key_pem(),
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        github_opener=github_opener,
+        stripe_opener=stripe_opener,
+        managed_runs_enabled=True,
+        stripe_secret_key="sk_live_redacted",
+        stripe_price_id="price_managed_run",
+        managed_run_price_label=MANAGED_PRICE_LABEL,
+        **_vercel_provenance_kwargs(),
+    )
+
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=(
+            f"installation_id=42&repo=example/one&state={state}"
+            f"&lane={MANAGED_FUSEKIT_RUN_LANE}"
+        ),
+        settings=settings,
+    )
+    text = body.decode("utf-8")
+    job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    checkout_control = _control_for_payment_checkout(text)
+    job_token = _job_token(text)
+
+    assert status == "200 OK"
+    assert settings.hosted_jobs[job_id].payment_status == "payment_required"
+
+    status, headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/payments/checkout",
+        method="POST",
+        query_string=f"job={job_token}",
+        headers={"Accept": "text/html"},
+        form_body={"control": checkout_control},
+        settings=settings,
+    )
+
+    assert status == "502 Bad Gateway"
+    assert json.loads(body.decode("utf-8")) == {"error": "payment_checkout_url_unavailable"}
+    assert "Location" not in headers
+    assert settings.hosted_jobs[job_id].payment_status == "payment_required"
+    assert len(stripe_opener.requests) == 1
+
+
 def test_hosted_byo_oci_lane_starts_without_managed_worker_dispatch() -> None:
     state = create_hosted_state_token(
         STATE_SECRET,
