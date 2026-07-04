@@ -337,22 +337,27 @@ def test_payment_required_receipt_is_public_and_scanned() -> None:
 
 
 def test_payment_required_receipt_rejects_secret_shaped_lane() -> None:
-    with pytest.raises(FuseKitError, match="stripe_checkout_receipt_contains_secret_text"):
+    with pytest.raises(FuseKitError, match="payment_required_lane_not_managed"):
         payment_required_receipt(
             lane="managed-fusekit-run sk_live_should_not_render",
             price_label="Launch validation: $1.00 FuseKit managed run",
         )
 
 
-def test_payment_required_receipt_redacts_secret_shaped_price_label() -> None:
-    receipt = payment_required_receipt(
-        lane="managed-fusekit-run",
-        price_label="Launch validation: $1.00 FuseKit managed run sk_live_should_not_render",
-    )
+def test_payment_required_receipt_rejects_non_managed_lane() -> None:
+    with pytest.raises(FuseKitError, match="payment_required_lane_not_managed"):
+        payment_required_receipt(
+            lane="byo-oci",
+            price_label="Launch validation: $1.00 FuseKit managed run",
+        )
 
-    serialized = json.dumps(receipt)
-    assert receipt["price_label"] == ""
-    assert "sk_live_should_not_render" not in serialized
+
+def test_payment_required_receipt_rejects_secret_shaped_price_label() -> None:
+    with pytest.raises(FuseKitError, match="payment_required_price_label_invalid"):
+        payment_required_receipt(
+            lane="managed-fusekit-run",
+            price_label="Launch validation: $1.00 FuseKit managed run sk_live_should_not_render",
+        )
 
     receipt = stripe_checkout_session_receipt(
         {

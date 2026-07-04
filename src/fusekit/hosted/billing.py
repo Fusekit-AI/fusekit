@@ -254,13 +254,17 @@ def stripe_checkout_session_receipt(payload: dict[str, object]) -> dict[str, obj
 def payment_required_receipt(*, lane: str, price_label: str = "") -> dict[str, object]:
     """Return a public payment-required receipt."""
 
+    if lane != MANAGED_FUSEKIT_RUN_LANE:
+        raise FuseKitError("payment_required_lane_not_managed")
+    if not _valid_price_label(price_label):
+        raise FuseKitError("payment_required_price_label_invalid")
     receipt: dict[str, object] = {
         "schema_version": HOSTED_PAYMENT_SCHEMA_VERSION,
         "provider": STRIPE_CHECKOUT_PROVIDER,
         "lane": lane,
         "status": "payment_required",
         "paid": False,
-        "price_label": price_label if _valid_price_label(price_label) else "",
+        "price_label": price_label,
         "cost_controls": {
             "max_unverified_managed_spend_cents": 0,
             "dispatch_requires_paid_checkout_session": True,
