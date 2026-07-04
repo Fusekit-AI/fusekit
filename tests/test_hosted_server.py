@@ -2684,6 +2684,14 @@ def test_hosted_byo_oci_lane_starts_without_managed_worker_dispatch() -> None:
         "arm_allowed": False,
         "visual_runner": "novnc",
     }
+    assert bootstrap["runner_shape_guard"] == {
+        "required_architecture": "amd64/x86_64",
+        "allowed_shape_prefixes": ["VM.Standard.E"],
+        "forbidden_shape_prefixes": ["VM.Standard.A"],
+        "forbidden_architectures": ["arm64", "aarch64"],
+        "arm_allowed": False,
+        "verified_shape": "VM.Standard.E5.Flex",
+    }
     assert bootstrap["open_core_execution"] == {
         "mode": "user-owned-oci-cloud-shell",
         "fusekit_package": "fusekit",
@@ -2729,6 +2737,7 @@ def test_hosted_byo_oci_lane_starts_without_managed_worker_dispatch() -> None:
             "arm_allowed": False,
             "visual_runner": "novnc",
         },
+        "runner_shape_guard": bootstrap["runner_shape_guard"],
         "human_gate_bypass_allowed": False,
         "completion_claim_requires": [
             "live_url",

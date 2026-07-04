@@ -9,6 +9,7 @@ from dataclasses import replace
 
 import pytest
 
+import fusekit.hosted.lanes as hosted_lanes
 from fusekit.errors import FuseKitError
 from fusekit.hosted import (
     advance_hosted_launch_job,
@@ -41,6 +42,7 @@ from fusekit.hosted.job import (
 from fusekit.hosted.lanes import (
     BYO_OCI_LANE,
     MANAGED_FUSEKIT_RUN_LANE,
+    byo_oci_runner_shape_guard,
     byo_oci_security_contract,
     byo_oci_user_owned_cost_boundary,
 )
@@ -340,6 +342,17 @@ def test_hosted_byo_bootstrap_publishes_preflight_and_reversibility_contract() -
     assert bootstrap["handoff_preflight"]["schema_version"] == (
         HOSTED_BYO_OCI_HANDOFF_PREFLIGHT_SCHEMA_VERSION
     )
+    assert bootstrap["runner_shape_guard"] == {
+        "required_architecture": "amd64/x86_64",
+        "allowed_shape_prefixes": ["VM.Standard.E"],
+        "forbidden_shape_prefixes": ["VM.Standard.A"],
+        "forbidden_architectures": ["arm64", "aarch64"],
+        "arm_allowed": False,
+        "verified_shape": "VM.Standard.E5.Flex",
+    }
+    assert bootstrap["byo_security_contract"]["runner_shape_guard"] == (
+        bootstrap["runner_shape_guard"]
+    )
     assert bootstrap["handoff_preflight"]["must_be_visible_before_cloud_shell"] is True
     assert bootstrap["handoff_preflight"]["cost_acknowledgement"] == {
         "required": True,
@@ -449,6 +462,17 @@ def test_hosted_byo_bootstrap_publishes_preflight_and_reversibility_contract() -
     assert "ghs_" not in serialized
     assert "PRIVATE KEY" not in serialized
     assert "sk_live" not in serialized
+
+
+def test_byo_oci_runner_shape_guard_rejects_arm_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(hosted_lanes.BYO_OCI_RUNNER_PROFILE, "shape", "VM.Standard.A1.Flex")
+    monkeypatch.setitem(hosted_lanes.BYO_OCI_RUNNER_PROFILE, "architecture", "arm64/aarch64")
+    monkeypatch.setitem(hosted_lanes.BYO_OCI_RUNNER_PROFILE, "arm_allowed", True)
+
+    with pytest.raises(FuseKitError, match="AMD/x86_64"):
+        byo_oci_runner_shape_guard()
 
 
 def test_hosted_byo_bootstrap_rejects_secret_text_in_public_handoff(

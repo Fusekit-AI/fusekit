@@ -20,6 +20,9 @@ BYO_OCI_RUNNER_PROFILE = {
     "arm_allowed": False,
     "visual_runner": "novnc",
 }
+BYO_OCI_ALLOWED_SHAPE_PREFIXES = ("VM.Standard.E",)
+BYO_OCI_FORBIDDEN_ARCHITECTURES = ("arm64", "aarch64")
+BYO_OCI_FORBIDDEN_SHAPE_PREFIXES = ("VM.Standard.A",)
 
 
 @dataclass(frozen=True)
@@ -101,8 +104,32 @@ def byo_oci_security_contract() -> dict[str, object]:
         "raw_provider_secrets_exported": False,
         "runner_architecture": "amd_x86_64_only",
         "runner_profile": dict(BYO_OCI_RUNNER_PROFILE),
+        "runner_shape_guard": byo_oci_runner_shape_guard(),
         "human_gate_bypass_allowed": False,
         "completion_claim_requires": list(HOSTED_COMPLETION_EVIDENCE_KEYS),
+    }
+
+
+def byo_oci_runner_shape_guard() -> dict[str, object]:
+    """Return the machine-checkable AMD-only BYO OCI runner guard."""
+
+    shape = str(BYO_OCI_RUNNER_PROFILE.get("shape", ""))
+    architecture = str(BYO_OCI_RUNNER_PROFILE.get("architecture", "")).lower()
+    arm_allowed = BYO_OCI_RUNNER_PROFILE.get("arm_allowed")
+    if (
+        not shape.startswith(BYO_OCI_ALLOWED_SHAPE_PREFIXES)
+        or shape.startswith(BYO_OCI_FORBIDDEN_SHAPE_PREFIXES)
+        or any(token in architecture for token in BYO_OCI_FORBIDDEN_ARCHITECTURES)
+        or arm_allowed is not False
+    ):
+        raise FuseKitError("BYO OCI runner profile must be AMD/x86_64 only.")
+    return {
+        "required_architecture": "amd64/x86_64",
+        "allowed_shape_prefixes": list(BYO_OCI_ALLOWED_SHAPE_PREFIXES),
+        "forbidden_shape_prefixes": list(BYO_OCI_FORBIDDEN_SHAPE_PREFIXES),
+        "forbidden_architectures": list(BYO_OCI_FORBIDDEN_ARCHITECTURES),
+        "arm_allowed": False,
+        "verified_shape": shape,
     }
 
 
