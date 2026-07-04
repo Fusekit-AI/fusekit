@@ -1780,7 +1780,8 @@ def test_hosted_github_control_room_fetches_source_and_renders_job() -> None:
     assert "Permission boundary" in text
     assert "contents:read" in text
     assert "Approved actions" in text
-    assert "vercel.deploy_verify" in text
+    assert "hosting.select_provider" in text
+    assert "vercel.deploy_verify" not in text
     assert "Provider gates" in text
     assert "human-owned" in text
     assert "Stop launch" in text

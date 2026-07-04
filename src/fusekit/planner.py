@@ -200,6 +200,19 @@ def build_plan(manifest: SetupManifest) -> SetupPlan:
                     risk="high",
                 )
             )
+        elif provider == "hosting" and service.kind == "deployment-choice":
+            actions.append(
+                SetupAction(
+                    id="hosting.select_provider",
+                    kind="user_required",
+                    provider="hosting",
+                    summary=(
+                        "Select the deployment host before FuseKit proposes provider-specific "
+                        "setup, DNS, or rollback steps."
+                    ),
+                    risk="medium",
+                )
+            )
         else:
             actions.append(
                 SetupAction(

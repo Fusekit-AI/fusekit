@@ -22,7 +22,10 @@ def test_scanner_detects_env_and_core_services(tmp_path) -> None:
     assert manifest.app_name == "rsvp-app"
     assert "SUPABASE_URL" in manifest.required_env
     assert any(service.provider == "github" for service in manifest.services)
-    assert any(service.provider == "vercel" for service in manifest.services)
+    assert not any(service.provider == "vercel" for service in manifest.services)
+    hosting = next(service for service in manifest.services if service.provider == "hosting")
+    assert hosting.kind == "deployment-choice"
+    assert hosting.settings["setup_lane"] == "provider-selection-required"
     assert manifest.webhooks[0].secret_name == "WEBHOOK_SECRET"
     supabase = next(service for service in manifest.services if service.provider == "supabase")
     assert "capability_pack" in supabase.capabilities
@@ -163,6 +166,7 @@ def test_plan_marks_dns_apply_as_approval_required(tmp_path) -> None:
     plan = build_plan(manifest)
 
     assert any(action.id == "github.configure_repo" for action in plan.actions)
+    assert any(action.id == "hosting.select_provider" for action in plan.actions)
     assert any(action.id == "detonate.worker_state" for action in plan.actions)
 
 
@@ -210,3 +214,18 @@ def test_scanner_uses_vercel_apex_dns_records(tmp_path) -> None:
     assert ("A", "moonlite.rsvp", "76.76.21.21") in apex_records
     assert ("CNAME", "www.moonlite.rsvp", "cname.vercel-dns.com") in apex_records
     assert subdomain_records == {("CNAME", "invite.moonlite.rsvp", "cname.vercel-dns.com")}
+
+
+def test_scanner_does_not_emit_vercel_dns_without_vercel_evidence(tmp_path) -> None:
+    (tmp_path / "package.json").write_text(json.dumps({"name": "domain-app"}), encoding="utf-8")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "config.ts").write_text(
+        "export const appUrl = 'https://launch.example.com';",
+        encoding="utf-8",
+    )
+
+    manifest = scan_repo(tmp_path)
+    domain = next(item for item in manifest.domains if item.domain == "launch.example.com")
+
+    assert domain.records == ()
+    assert manifest.metadata["deployment_provider_inference"] == "selection_required"

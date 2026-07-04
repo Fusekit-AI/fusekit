@@ -107,8 +107,12 @@ def scan_repo(path: Path) -> SetupManifest:
     route_paths = _find_routes(root)
     webhook_routes = _find_webhook_routes(route_paths, text_index)
     oauth_callbacks = _find_oauth_callbacks(route_paths, env_names, text_index)
-    domains = _find_domains(root, text_index)
     providers = _detect_providers(root, package, env_names)
+    domains = _find_domains(
+        root,
+        text_index,
+        deployment_provider=_inferred_deployment_provider(providers),
+    )
     services = list(providers)
     webhooks = _webhook_requirements(webhook_routes, env_names)
     if "WEBHOOK_SECRET" not in env_names and webhooks:
@@ -128,17 +132,16 @@ def scan_repo(path: Path) -> SetupManifest:
                 },
             )
         )
-    if not any(service.provider == "vercel" for service in services):
+    if not any(service.kind == "deployment" for service in services):
         services.append(
             ServiceRequirement(
-                provider="vercel",
-                kind="deployment",
-                name="web-deployment",
-                capabilities=("project", "env", "deploy", "verify", "capability_pack"),
-                secrets=("VERCEL_TOKEN",),
+                provider="hosting",
+                kind="deployment-choice",
+                name="web-deployment-choice",
+                capabilities=("choose_provider", "deployment_plan", "verify"),
+                secrets=(),
                 settings={
-                    "capability_pack": str(pack_default_path(root, "vercel").relative_to(root)),
-                    "setup_lane": "pack-runtime",
+                    "setup_lane": "provider-selection-required",
                 },
             )
         )
@@ -157,6 +160,8 @@ def scan_repo(path: Path) -> SetupManifest:
             "webhook_routes": ",".join(webhook_routes),
             "oauth_callbacks": ",".join(oauth_callbacks),
             "domain_candidates": ",".join(domain.domain for domain in domains),
+            "deployment_provider_inference": _inferred_deployment_provider(providers)
+            or "selection_required",
             "config_files": ",".join(_config_files(root)),
         },
     )
@@ -271,7 +276,12 @@ def _find_oauth_callbacks(
     return tuple(sorted(callbacks))
 
 
-def _find_domains(root: Path, text_index: dict[Path, str]) -> list[DomainRequirement]:
+def _find_domains(
+    root: Path,
+    text_index: dict[Path, str],
+    *,
+    deployment_provider: str,
+) -> list[DomainRequirement]:
     domains: set[str] = set()
     for text in text_index.values():
         for match in DOMAIN_PATTERN.finditer(text):
@@ -295,21 +305,34 @@ def _find_domains(root: Path, text_index: dict[Path, str]) -> list[DomainRequire
         DomainRequirement(
             domain=domain,
             provider="cloudflare",
-            records=_vercel_dns_records(domain),
+            records=_deployment_dns_records(domain, deployment_provider=deployment_provider),
         )
         for domain in sorted(domains)
     ]
 
 
-def _vercel_dns_records(domain: str) -> tuple[DnsRecord, ...]:
-    """Return Vercel-friendly DNS records for apex or subdomain targets."""
+def _deployment_dns_records(
+    domain: str,
+    *,
+    deployment_provider: str,
+) -> tuple[DnsRecord, ...]:
+    """Return DNS records only when the deployment provider is explicit."""
 
+    if deployment_provider != "vercel":
+        return ()
     if _looks_like_apex_domain(domain):
         return (
             DnsRecord(name=domain, type="A", value="76.76.21.21"),
             DnsRecord(name=f"www.{domain}", type="CNAME", value="cname.vercel-dns.com"),
         )
     return (DnsRecord(name=domain, type="CNAME", value="cname.vercel-dns.com"),)
+
+
+def _inferred_deployment_provider(services: tuple[ServiceRequirement, ...]) -> str:
+    for service in services:
+        if service.kind == "deployment":
+            return service.provider.lower()
+    return ""
 
 
 def _looks_like_apex_domain(domain: str) -> bool:

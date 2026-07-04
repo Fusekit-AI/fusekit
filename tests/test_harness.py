@@ -5137,6 +5137,10 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
         json.dumps({"name": "moonlite-rsvp", "dependencies": {"next": "latest"}}),
         encoding="utf-8",
     )
+    (app / "vercel.json").write_text(
+        json.dumps({"domains": ["moonlite.example"]}),
+        encoding="utf-8",
+    )
     (app / "index.js").write_text("console.log(process.env.WEBHOOK_SECRET)", encoding="utf-8")
 
     remote = tmp_path / "remote-artifacts"
@@ -5279,6 +5283,7 @@ def test_acceptance_live_ingests_retrieved_oci_artifacts(tmp_path) -> None:
                 "rollback": [
                     {"action": "rollback.github.secret", "status": "planned"},
                     {"action": "rollback.vercel.env", "status": "planned"},
+                    {"action": "rollback.cloudflare.dns", "status": "planned"},
                 ]
             }
         ),
