@@ -2252,8 +2252,8 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
         headers={"Accept": "text/html"},
         settings=settings,
     )
-    assert status == "403 Forbidden"
-    _assert_public_payment_error(body, "payment_binding_mismatch")
+    assert status == "502 Bad Gateway"
+    _assert_public_payment_error(body, "payment_verification_failed")
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/payments/stripe-return",
@@ -2261,8 +2261,8 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
         headers={"Accept": "text/html"},
         settings=settings,
     )
-    assert status == "403 Forbidden"
-    _assert_public_payment_error(body, "payment_binding_mismatch")
+    assert status == "502 Bad Gateway"
+    _assert_public_payment_error(body, "payment_verification_failed")
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/payments/stripe-return",

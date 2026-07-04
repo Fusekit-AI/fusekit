@@ -64,6 +64,8 @@ def test_stripe_checkout_session_receipt_is_public_and_bound() -> None:
                 "lane": "managed-fusekit-run",
                 "github_source_hash": _sha256_label("source"),
                 "plan_fingerprint": _sha256_label("plan"),
+                "stripe_price_id_hash": _sha256_label("price"),
+                "price_label_hash": _sha256_label("label"),
             },
             "customer_email": "buyer@example.com",
         }
@@ -80,31 +82,56 @@ def test_stripe_checkout_session_receipt_is_public_and_bound() -> None:
         "lane": "managed-fusekit-run",
         "github_source_hash": _sha256_label("source"),
         "plan_fingerprint": _sha256_label("plan"),
+        "stripe_price_id_hash": _sha256_label("price"),
+        "price_label_hash": _sha256_label("label"),
     }
     assert "buyer@example.com" not in serialized
 
 
 def test_stripe_checkout_session_receipt_rejects_boolean_amount_total() -> None:
-    receipt = stripe_checkout_session_receipt(
-        {
-            "id": "cs_live_public",
-            "url": "https://checkout.stripe.com/c/pay/cs_live_public",
-            "status": "complete",
-            "payment_status": "paid",
-            "mode": "payment",
-            "client_reference_id": "hosted-job",
-            "amount_total": True,
-            "currency": "usd",
-            "metadata": {
-                "job_id": "hosted-job",
-                "lane": "managed-fusekit-run",
-                "github_source_hash": _sha256_label("source"),
-                "plan_fingerprint": _sha256_label("plan"),
-            },
-        }
-    )
+    with pytest.raises(FuseKitError, match="stripe_checkout_paid_receipt_incomplete"):
+        stripe_checkout_session_receipt(
+            {
+                "id": "cs_live_public",
+                "url": "https://checkout.stripe.com/c/pay/cs_live_public",
+                "status": "complete",
+                "payment_status": "paid",
+                "mode": "payment",
+                "client_reference_id": "hosted-job",
+                "amount_total": True,
+                "currency": "usd",
+                "metadata": {
+                    "job_id": "hosted-job",
+                    "lane": "managed-fusekit-run",
+                    "github_source_hash": _sha256_label("source"),
+                    "plan_fingerprint": _sha256_label("plan"),
+                    "stripe_price_id_hash": _sha256_label("price"),
+                    "price_label_hash": _sha256_label("label"),
+                },
+            }
+        )
 
-    assert receipt["amount_total"] is None
+
+def test_stripe_checkout_session_receipt_rejects_incomplete_paid_metadata() -> None:
+    with pytest.raises(FuseKitError, match="stripe_checkout_paid_receipt_incomplete"):
+        stripe_checkout_session_receipt(
+            {
+                "id": "cs_live_public",
+                "url": "https://checkout.stripe.com/c/pay/cs_live_public",
+                "status": "complete",
+                "payment_status": "paid",
+                "mode": "payment",
+                "client_reference_id": "hosted-job",
+                "amount_total": 100,
+                "currency": "usd",
+                "metadata": {
+                    "job_id": "hosted-job",
+                    "lane": "managed-fusekit-run",
+                    "github_source_hash": _sha256_label("source"),
+                    "plan_fingerprint": _sha256_label("plan"),
+                },
+            }
+        )
 
 
 def test_stripe_checkout_session_receipt_rejects_unexpected_metadata() -> None:

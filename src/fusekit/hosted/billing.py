@@ -247,6 +247,8 @@ def stripe_checkout_session_receipt(payload: dict[str, object]) -> dict[str, obj
             "secret keys, and client secrets are not accepted into FuseKit receipts."
         ),
     }
+    if receipt["paid"] is True and not _paid_checkout_receipt_complete(receipt):
+        raise FuseKitError("stripe_checkout_paid_receipt_incomplete")
     _assert_public_payment_receipt(receipt)
     return receipt
 
@@ -457,6 +459,33 @@ def _public_metadata(value: object) -> dict[str, str]:
                     raise FuseKitError("stripe_checkout_metadata_hash_invalid")
                 result[key] = public
     return result
+
+
+def _paid_checkout_receipt_complete(receipt: dict[str, object]) -> bool:
+    metadata = receipt.get("metadata")
+    amount_total = receipt.get("amount_total")
+    currency = receipt.get("currency")
+    client_reference_id = receipt.get("client_reference_id")
+    return (
+        receipt.get("checkout_session_id") != ""
+        and receipt.get("status") == "complete"
+        and receipt.get("payment_status") == "paid"
+        and receipt.get("mode") == "payment"
+        and isinstance(client_reference_id, str)
+        and client_reference_id != ""
+        and isinstance(amount_total, int)
+        and amount_total > 0
+        and isinstance(currency, str)
+        and len(currency) == 3
+        and currency.isalpha()
+        and isinstance(metadata, dict)
+        and all(
+            isinstance(metadata.get(key), str) and metadata.get(key)
+            for key in STRIPE_CHECKOUT_METADATA_KEYS
+        )
+        and metadata.get("lane") == MANAGED_FUSEKIT_RUN_LANE
+        and metadata.get("job_id") == client_reference_id
+    )
 
 
 def _public_identifier(value: object) -> str:
