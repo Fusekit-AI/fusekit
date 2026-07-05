@@ -1227,6 +1227,7 @@ def _public_byo_artifact_inventory(
 
 def _public_completion_evidence(value: object, *, blockers: list[str]) -> dict[str, bool]:
     if not isinstance(value, dict):
+        blockers.append("completion_evidence_invalid")
         return {}
     unexpected = sorted(
         _public_byo_sidecar_field_name(key) for key in value if key not in HOSTED_WORKER_PROOF_KEYS

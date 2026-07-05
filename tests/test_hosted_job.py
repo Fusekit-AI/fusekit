@@ -1130,6 +1130,26 @@ def test_hosted_byo_proof_bundle_verifier_blocks_non_boolean_completion_evidence
     assert report["completion_evidence"]["run_record"] is False
 
 
+def test_hosted_byo_proof_bundle_verifier_blocks_invalid_completion_evidence_envelope() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+    bundle["completion_evidence"] = ["recording", "run_record"]
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+
+    assert report["ready"] is False
+    assert "completion_evidence_invalid" in report["blockers"]
+    assert "missing_completion_evidence:recording" in report["blockers"]
+    assert "missing_completion_evidence:run_record" in report["blockers"]
+    assert all(value is False for value in report["completion_evidence"].values())
+
+
 def test_hosted_byo_proof_bundle_verifier_blocks_unsafe_artifact_label_and_hash() -> None:
     job = build_hosted_launch_job(
         _plan(),
