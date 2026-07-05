@@ -408,6 +408,11 @@ def _assert_public_plan(plan: Mapping[str, object]) -> None:
         raise FuseKitError("hosted_oci_replacement_plan_contains_secret_text")
     forbidden_patterns = [
         r"ocid1\.(?:tenancy|user|compartment|vnic|image)\.",
+        r"ocid1_",
+        r"rk_live",
+        r"rk_test",
+        r"\bASIA",
+        r"aws_secret_access_key",
         r"-----BEGIN ",
         r"\bfingerprints?\b",
     ]

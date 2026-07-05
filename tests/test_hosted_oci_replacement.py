@@ -363,6 +363,55 @@ def test_oci_replacement_plan_rejects_nonpublic_identifiers() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "private_marker",
+    [
+        "ocid1_instance_oc1_not_public",
+        "ASIA_should_not_render",
+    ],
+)
+def test_oci_replacement_plan_blocks_expanded_private_markers(
+    private_marker: str,
+) -> None:
+    inventory = _inventory_report()
+    inventory["target"]["instance"]["display-name"] = private_marker
+
+    with pytest.raises(
+        FuseKitError,
+        match="hosted_oci_replacement_plan_contains_nonpublic_identifier",
+    ):
+        build_hosted_oci_replacement_plan(
+            inventory_report=inventory,
+            replacement_run_command_availability="running",
+            expected_commit_sha=EXPECTED_COMMIT,
+        )
+
+
+@pytest.mark.parametrize(
+    "private_marker",
+    [
+        "rk_live_should_not_render",
+        "rk_test_should_not_render",
+        "aws_secret_access_key_should_not_render",
+    ],
+)
+def test_oci_replacement_plan_redacts_expanded_private_markers(
+    private_marker: str,
+) -> None:
+    inventory = _inventory_report()
+    inventory["target"]["instance"]["display-name"] = private_marker
+
+    plan = build_hosted_oci_replacement_plan(
+        inventory_report=inventory,
+        replacement_run_command_availability="running",
+        expected_commit_sha=EXPECTED_COMMIT,
+    )
+    serialized = json.dumps(plan, sort_keys=True)
+
+    assert private_marker not in serialized
+    assert plan["current_host"]["display_name"] == "[redacted]"
+
+
 def test_oci_replacement_plan_cli_reads_inventory(tmp_path, capfd) -> None:
     inventory_path = tmp_path / "inventory.json"
     inventory_path.write_text(json.dumps(_inventory_report()), encoding="utf-8")
