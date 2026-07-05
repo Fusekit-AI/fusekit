@@ -334,13 +334,13 @@ def _require_checkout_binding(
 ) -> None:
     if lane != MANAGED_FUSEKIT_RUN_LANE:
         raise FuseKitError("stripe_checkout_lane_not_managed")
-    if contains_durable_secret_text(job_id):
+    if contains_durable_secret_text(job_id) or _contains_private_marker(job_id):
         raise FuseKitError("stripe_checkout_job_id_contains_secret_text")
     if _public_identifier(job_id) != job_id:
         raise FuseKitError("stripe_checkout_job_id_invalid")
     if not _valid_public_github_source(github_source):
         raise FuseKitError("stripe_checkout_github_source_invalid")
-    if contains_durable_secret_text(github_source):
+    if contains_durable_secret_text(github_source) or _contains_private_marker(github_source):
         raise FuseKitError("stripe_checkout_github_source_contains_secret_text")
     if not _valid_sha256_label(plan_fingerprint):
         raise FuseKitError("stripe_checkout_plan_fingerprint_invalid")

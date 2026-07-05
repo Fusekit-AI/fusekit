@@ -272,6 +272,10 @@ def test_stripe_checkout_session_receipt_only_keeps_checkout_payment_urls() -> N
             {"job_id": "sk_live_should_not_leave"},
             "stripe_checkout_job_id_contains_secret_text",
         ),
+        (
+            {"job_id": "hosted-ocid1.instance.oc1..not-public"},
+            "stripe_checkout_job_id_contains_secret_text",
+        ),
         ({"lane": "byo-oci"}, "stripe_checkout_lane_not_managed"),
         (
             {"github_source": "https://example.com/Fusekit-AI/fusekit"},
@@ -287,6 +291,10 @@ def test_stripe_checkout_session_receipt_only_keeps_checkout_payment_urls() -> N
         ),
         (
             {"github_source": "https://github.com/Fusekit-AI/sk_live_should_not_leave"},
+            "stripe_checkout_github_source_contains_secret_text",
+        ),
+        (
+            {"github_source": "https://github.com/Fusekit-AI/ocid1.instance.oc1..not-public"},
             "stripe_checkout_github_source_contains_secret_text",
         ),
         (
