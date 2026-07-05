@@ -3030,11 +3030,11 @@ def _completed_artifacts(
 
 def _public_note(value: object) -> str:
     raw = str(value or "")[:400]
-    if contains_durable_secret_text(raw):
-        raise ValueError("Hosted worker proof note contains credential-looking text.")
+    if contains_durable_secret_text(raw) or _contains_byo_private_marker(raw):
+        raise ValueError("Hosted worker proof note contains private material.")
     note = redact_public_text(raw)
-    if contains_durable_secret_text(note):
-        raise ValueError("Hosted worker proof note contains credential-looking text.")
+    if contains_durable_secret_text(note) or _contains_byo_private_marker(note):
+        raise ValueError("Hosted worker proof note contains private material.")
     return note
 
 

@@ -1741,6 +1741,16 @@ def test_hosted_worker_proof_rejects_unknown_artifact_and_secret_text() -> None:
             worker_id="worker-01",
         )
 
+    with pytest.raises(ValueError, match="proof note contains private material"):
+        hosted_worker_proof_receipt(
+            claimed,
+            _proof_payload(
+                complete=False,
+                note="OCI instance ocid1.instance.oc1..not-for-public-proof",
+            ),
+            worker_id="worker-01",
+        )
+
 
 def test_hosted_worker_proof_rejects_top_level_sidecar_fields() -> None:
     job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
