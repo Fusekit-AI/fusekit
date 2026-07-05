@@ -701,6 +701,37 @@ def test_hosted_byo_proof_bundle_verifier_accepts_complete_redacted_inventory() 
     assert "PRIVATE KEY" not in serialized
 
 
+def test_hosted_byo_proof_bundle_verifier_rejects_managed_lane_without_artifact_credit() -> None:
+    managed_job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=MANAGED_FUSEKIT_RUN_LANE,
+        job_id="hosted-managed",
+        now=1_700_000_000,
+    )
+    byo_job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="source-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(byo_job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+
+    report = verify_hosted_byo_oci_proof_bundle(managed_job, bundle)
+    serialized = json.dumps(report, sort_keys=True)
+
+    assert report["ready"] is False
+    assert report["blockers"] == ["byo_oci_proof_bundle_job_lane_mismatch"]
+    assert report["lane"] == MANAGED_FUSEKIT_RUN_LANE
+    assert report["job_binding"] == {}
+    assert report["artifact_summary"]["present_required_count"] == 0
+    assert report["artifact_summary"]["artifacts"] == []
+    assert all(value is False for value in report["completion_evidence"].values())
+    assert "source-byo" not in serialized
+    assert "ghs_" not in serialized
+    assert "PRIVATE KEY" not in serialized
+
+
 def test_hosted_byo_proof_bundle_verifier_blocks_missing_job_binding() -> None:
     job = build_hosted_launch_job(
         _plan(),

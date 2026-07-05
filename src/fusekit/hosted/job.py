@@ -923,6 +923,13 @@ def verify_hosted_byo_oci_proof_bundle(
 
     manifest = _byo_oci_proof_manifest(job)
     required_artifacts = _manifest_artifact_labels(manifest)
+    if job.launch_lane != BYO_OCI_LANE:
+        return _byo_oci_lane_mismatch_proof_report(
+            job,
+            bundle=bundle,
+            manifest=manifest,
+            required_artifacts=required_artifacts,
+        )
     blockers: list[str] = []
     allowed_bundle_fields = {
         "schema_version",
@@ -940,8 +947,6 @@ def verify_hosted_byo_oci_proof_bundle(
     blockers.extend(
         f"byo_oci_proof_bundle_unexpected_field:{key}" for key in unexpected_bundle_fields
     )
-    if job.launch_lane != BYO_OCI_LANE:
-        blockers.append("byo_oci_proof_bundle_job_lane_mismatch")
     if bundle.get("schema_version") != HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION:
         blockers.append("byo_oci_proof_bundle_schema_invalid")
     expected_binding = _byo_oci_proof_job_binding(job)
@@ -1032,6 +1037,47 @@ def verify_hosted_byo_oci_proof_bundle(
             "paths, labels, hashes, sizes, and completion booleans. It must not include "
             "OCI credentials, provider secrets, GitHub tokens, payment details, vault "
             "plaintext, browser profiles, raw logs, worker-local paths, or artifact contents."
+        ),
+    }
+    _assert_public_byo_proof_report(report)
+    return report
+
+
+def _byo_oci_lane_mismatch_proof_report(
+    job: HostedLaunchJob,
+    *,
+    bundle: dict[str, object],
+    manifest: dict[str, object],
+    required_artifacts: dict[str, str],
+) -> dict[str, object]:
+    report = {
+        "schema_version": HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION,
+        "input_schema_version": bundle.get("schema_version")
+        if isinstance(bundle.get("schema_version"), str)
+        else "",
+        "job_id": job.job_id,
+        "lane": job.launch_lane,
+        "job_binding": {},
+        "ready": False,
+        "blockers": ["byo_oci_proof_bundle_job_lane_mismatch"],
+        "proof_bundle_root": manifest["proof_bundle_root"],
+        "user_owned_cost_boundary": {},
+        "byo_security_contract": {},
+        "runner_shape_guard": {},
+        "artifact_summary": {
+            "required_count": len(required_artifacts),
+            "present_required_count": 0,
+            "missing": sorted(required_artifacts),
+            "unexpected": [],
+            "invalid_required": [],
+            "artifacts": [],
+        },
+        "completion_evidence": {key: False for key in HOSTED_WORKER_PROOF_KEYS},
+        "acceptance_gate": manifest["acceptance_gate"],
+        "secret_boundary": (
+            "BYO OCI proof verification is only valid for the BYO OCI launch lane. "
+            "Managed FuseKit Run jobs must prove completion through managed-worker "
+            "receipts and paid-run gates, not returned BYO artifact bundles."
         ),
     }
     _assert_public_byo_proof_report(report)
