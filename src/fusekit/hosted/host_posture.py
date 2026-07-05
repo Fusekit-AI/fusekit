@@ -348,11 +348,16 @@ def evaluate_oci_host_posture(evidence: Mapping[str, object]) -> dict[str, objec
         _rollback_metadata_check(evidence),
         _collection_boundary_check(evidence),
     ]
+    redaction_failures: list[str] = []
     if contains_durable_secret_text(serialized):
+        redaction_failures.append("evidence_contains_secret_text")
+    if _contains_private_marker(serialized):
+        redaction_failures.append("evidence_contains_private_marker")
+    if redaction_failures:
         checks.append(
             _fail(
                 "evidence.redaction",
-                "evidence_contains_secret_text",
+                redaction_failures,
                 "Remove raw secrets/tokens/keys from the posture evidence and rerun.",
             )
         )
@@ -1779,7 +1784,28 @@ def _runtime_secret_verify_file_ready(value: Mapping[str, object]) -> bool:
 
 
 def _public_str(value: object) -> str:
-    return redact_public_text(str(value or "").strip())
+    public = redact_public_text(str(value or "").strip())
+    return "[redacted]" if _contains_private_marker(public) else public
+
+
+def _contains_private_marker(value: str) -> bool:
+    forbidden = (
+        "ghs_",
+        "ghp_",
+        "github_pat_",
+        "sk_live",
+        "sk_test",
+        "rk_live",
+        "rk_test",
+        "-----BEGIN",
+        "PRIVATE KEY-----",
+        "ocid1.",
+        "ocid1_",
+        "AKIA",
+        "ASIA",
+        "aws_secret_access_key",
+    )
+    return any(token.lower() in value.lower() for token in forbidden)
 
 
 def _raw_str(value: object) -> str:

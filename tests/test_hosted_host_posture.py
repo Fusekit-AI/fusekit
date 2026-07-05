@@ -587,7 +587,7 @@ def test_oci_host_posture_blocks_runtime_secret_nested_sidecars() -> None:
     report = evaluate_oci_host_posture(evidence)
 
     assert report["ready"] is False
-    assert report["blocking_checks"] == ["evidence.shape"]
+    assert report["blocking_checks"] == ["evidence.shape", "evidence.redaction"]
     shape_check = _check(report, "evidence.shape")
     assert shape_check["unexpected_fields"] == [
         "runtime_secret_verify.key_inventory.raw_diff",
@@ -597,6 +597,8 @@ def test_oci_host_posture_blocks_runtime_secret_nested_sidecars() -> None:
         "runtime_secret_verify.stripe_runtime_env.FUSEKIT_STRIPE_SECRET_KEY.raw_value",
         "runtime_secret_verify.stripe_runtime_env.STRIPE_WEBHOOK_SECRET",
     ]
+    redaction_check = _check(report, "evidence.redaction")
+    assert redaction_check["failures"] == ["evidence_contains_private_marker"]
 
 
 def test_oci_host_posture_blocks_unknown_nested_systemd_fields() -> None:
@@ -879,6 +881,21 @@ def test_oci_host_posture_blocks_raw_secret_text_in_evidence() -> None:
     assert report["ready"] is False
     assert "evidence.redaction" in report["blocking_checks"]
     assert "ghp_aaaaaaaaaaaaaaaa" not in json.dumps(report)
+
+
+def test_oci_host_posture_blocks_private_markers_without_echoing_public_summary() -> None:
+    evidence = _clean_evidence()
+    evidence["shape"] = "ocid1_instance_oc1_not_public"
+
+    report = evaluate_oci_host_posture(evidence)
+    serialized = json.dumps(report, sort_keys=True)
+
+    assert report["ready"] is False
+    assert "evidence.redaction" in report["blocking_checks"]
+    redaction_check = _check(report, "evidence.redaction")
+    assert redaction_check["failures"] == ["evidence_contains_private_marker"]
+    assert report["public_summary"]["shape"] == "[redacted]"
+    assert "ocid1_instance" not in serialized
 
 
 def test_oci_host_posture_blocks_missing_dns_and_rollback_proof() -> None:
