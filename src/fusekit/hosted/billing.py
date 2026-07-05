@@ -371,7 +371,12 @@ def _payment_return_url(
 
 
 def _valid_stripe_checkout_session_id(value: str) -> bool:
-    return value.startswith("cs_") and all(ch.isalnum() or ch == "_" for ch in value)
+    return (
+        value.startswith("cs_")
+        and not contains_durable_secret_text(value)
+        and not _contains_private_marker(value)
+        and all(ch.isalnum() or ch == "_" for ch in value)
+    )
 
 
 def _valid_checkout_url(value: object) -> bool:
@@ -517,6 +522,7 @@ def _contains_private_marker(value: str) -> bool:
         "-----BEGIN",
         "PRIVATE KEY-----",
         "ocid1.",
+        "ocid1_",
         "AKIA",
     )
     return any(token.lower() in value.lower() for token in forbidden)

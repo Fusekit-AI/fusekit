@@ -12,6 +12,7 @@ from fusekit.hosted.billing import (
     HostedPaymentConfig,
     create_stripe_checkout_session,
     payment_required_receipt,
+    retrieve_stripe_checkout_session,
     stripe_checkout_session_receipt,
 )
 
@@ -371,6 +372,34 @@ def test_create_stripe_checkout_session_rejects_bad_return_origin_before_network
             lane="managed-fusekit-run",
             github_source="https://github.com/Fusekit-AI/fusekit",
             plan_fingerprint=_sha256_label("visible-plan"),
+        )
+
+    assert opener.requests == []
+
+
+@pytest.mark.parametrize(
+    "session_id",
+    [
+        "cs_sk_live_should_not_leave",
+        "cs_ocid1_instance_oc1__not_public",
+    ],
+)
+def test_retrieve_stripe_checkout_session_rejects_private_session_id_before_network(
+    session_id: str,
+) -> None:
+    opener = StripeCheckoutOpener()
+
+    with pytest.raises(FuseKitError, match="Stripe Checkout session id is invalid"):
+        retrieve_stripe_checkout_session(
+            HostedPaymentConfig(
+                enabled=True,
+                stripe_secret_key="sk_live_secret_value",
+                stripe_price_id="price_managed_run",
+                price_label="Launch validation: $1.00 FuseKit managed run",
+                public_origin="https://fusekit.snowmanai.org",
+                opener=opener,
+            ),
+            session_id=session_id,
         )
 
     assert opener.requests == []
