@@ -2061,6 +2061,17 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
                 "currency": "usd",
                 "metadata": {},
             },
+            {
+                "id": "cs_test_123",
+                "object": "checkout.session",
+                "status": "complete",
+                "payment_status": "paid",
+                "mode": "payment",
+                "client_reference_id": "",
+                "amount_total": 4900,
+                "currency": "usd",
+                "metadata": {},
+            },
         ]
     )
     settings = HostedSettings(
@@ -2150,6 +2161,15 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
     }
     stripe_opener.payloads[6]["client_reference_id"] = job_id
     stripe_opener.payloads[6]["metadata"] = {
+        "job_id": job_id,
+        "lane": MANAGED_FUSEKIT_RUN_LANE,
+        "github_source_hash": "sha256:not-a-real-digest",
+        "plan_fingerprint": plan_fingerprint,
+        "stripe_price_id_hash": price_id_hash,
+        "price_label_hash": price_label_hash,
+    }
+    stripe_opener.payloads[7]["client_reference_id"] = job_id
+    stripe_opener.payloads[7]["metadata"] = {
         "job_id": job_id,
         "lane": MANAGED_FUSEKIT_RUN_LANE,
         "github_source_hash": github_source_hash,
@@ -2259,6 +2279,15 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
     )
     assert status == "403 Forbidden"
     _assert_public_payment_error(body, "payment_binding_mismatch")
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/payments/stripe-return",
+        query_string=f"job={checkout_job_token}&session_id=cs_test_123",
+        headers={"Accept": "text/html"},
+        settings=settings,
+    )
+    assert status == "502 Bad Gateway"
+    _assert_public_payment_error(body, "payment_verification_failed")
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/payments/stripe-return",

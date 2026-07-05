@@ -2881,6 +2881,12 @@ def _payment_receipt_is_paid_checkout(receipt: dict[str, object]) -> bool:
     amount_total = receipt.get("amount_total")
     currency = receipt.get("currency")
     metadata = receipt.get("metadata")
+    hash_keys = {
+        "github_source_hash",
+        "plan_fingerprint",
+        "stripe_price_id_hash",
+        "price_label_hash",
+    }
     return (
         receipt.get("schema_version") == HOSTED_PAYMENT_SCHEMA_VERSION
         and receipt.get("provider") == STRIPE_CHECKOUT_PROVIDER
@@ -2902,6 +2908,7 @@ def _payment_receipt_is_paid_checkout(receipt: dict[str, object]) -> bool:
             isinstance(metadata.get(key), str) and metadata.get(key)
             for key in STRIPE_CHECKOUT_METADATA_KEYS
         )
+        and all(_valid_sha256_label(metadata[key]) for key in hash_keys)
     )
 
 
@@ -2911,6 +2918,17 @@ def _payment_github_source_hash(github_source: str) -> str:
 
 def _payment_public_hash(value: str) -> str:
     return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _valid_sha256_label(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    digest = value.removeprefix("sha256:")
+    return (
+        value.startswith("sha256:")
+        and len(digest) == 64
+        and all(character in "0123456789abcdef" for character in digest)
+    )
 
 
 def _dispatch_hosted_worker(
