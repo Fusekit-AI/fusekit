@@ -1232,7 +1232,15 @@ def _public_completion_evidence(value: object, *, blockers: list[str]) -> dict[s
         _public_byo_sidecar_field_name(key) for key in value if key not in HOSTED_WORKER_PROOF_KEYS
     )
     blockers.extend(f"completion_evidence_unexpected_field:{key}" for key in unexpected)
-    return {key: value.get(key) is True for key in HOSTED_WORKER_PROOF_KEYS}
+    evidence: dict[str, bool] = {}
+    for key in HOSTED_WORKER_PROOF_KEYS:
+        item = value.get(key)
+        if not isinstance(item, bool):
+            blockers.append(f"completion_evidence_invalid:{key}")
+            evidence[key] = False
+            continue
+        evidence[key] = item is True
+    return evidence
 
 
 def _public_byo_sidecar_field_name(value: object) -> str:
