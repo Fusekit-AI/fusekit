@@ -1229,7 +1229,7 @@ def _public_completion_evidence(value: object, *, blockers: list[str]) -> dict[s
     if not isinstance(value, dict):
         blockers.append("completion_evidence_invalid")
         return {}
-    serialized = json.dumps(value, sort_keys=True, default=str)
+    serialized = _private_marker_scan_text(value)
     if contains_durable_secret_text(serialized) or _contains_byo_private_marker(serialized):
         blockers.append("completion_evidence_unsafe")
     unexpected = sorted(
@@ -1245,6 +1245,13 @@ def _public_completion_evidence(value: object, *, blockers: list[str]) -> dict[s
             continue
         evidence[key] = item is True
     return evidence
+
+
+def _private_marker_scan_text(value: object) -> str:
+    try:
+        return json.dumps(value, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        return repr(value)
 
 
 def _public_byo_sidecar_field_name(value: object) -> str:

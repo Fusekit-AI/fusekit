@@ -1154,6 +1154,28 @@ def test_hosted_byo_proof_bundle_verifier_blocks_private_completion_evidence_val
     assert "ocid1_instance" not in serialized
 
 
+def test_hosted_byo_proof_bundle_verifier_blocks_malformed_private_completion_evidence() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+    evidence = bundle["completion_evidence"]
+    assert isinstance(evidence, dict)
+    evidence[1] = "ghp_not_real_token"
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+    serialized = json.dumps(report, sort_keys=True)
+
+    assert report["ready"] is False
+    assert "completion_evidence_unsafe" in report["blockers"]
+    assert "completion_evidence_unexpected_field:1" in report["blockers"]
+    assert "ghp_not_real_token" not in serialized
+
+
 def test_hosted_byo_proof_bundle_verifier_blocks_invalid_completion_evidence_envelope() -> None:
     job = build_hosted_launch_job(
         _plan(),
