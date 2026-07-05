@@ -3550,9 +3550,13 @@ def _public_payment_metadata(metadata: dict[str, object]) -> dict[str, str]:
         raise FuseKitError("Hosted launch payment metadata contains unexpected field.")
     result: dict[str, str] = {}
     for key in allowed:
+        if key not in metadata:
+            continue
         value = metadata.get(key)
         if not isinstance(value, str):
-            continue
+            raise FuseKitError("Hosted launch payment metadata value is invalid.")
+        if value != value.strip() or value == "":
+            raise FuseKitError("Hosted launch payment metadata value is invalid.")
         if (
             contains_durable_secret_text(value)
             or _contains_byo_private_marker(value)

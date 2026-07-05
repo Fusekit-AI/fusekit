@@ -191,6 +191,31 @@ def test_hosted_payment_receipt_rejects_unexpected_metadata() -> None:
         with_hosted_job_payment_receipt(job, receipt)
 
 
+def test_hosted_payment_receipt_rejects_malformed_allowed_metadata_values() -> None:
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    receipt = _paid_checkout_receipt(job)
+    metadata = receipt["metadata"]
+    assert isinstance(metadata, dict)
+    metadata["job_id"] = 123
+
+    with pytest.raises(
+        FuseKitError,
+        match="Hosted launch payment metadata value is invalid",
+    ):
+        with_hosted_job_payment_receipt(job, receipt)
+
+    receipt = _paid_checkout_receipt(job)
+    metadata = receipt["metadata"]
+    assert isinstance(metadata, dict)
+    metadata["lane"] = f" {MANAGED_FUSEKIT_RUN_LANE}"
+
+    with pytest.raises(
+        FuseKitError,
+        match="Hosted launch payment metadata value is invalid",
+    ):
+        with_hosted_job_payment_receipt(job, receipt)
+
+
 def test_hosted_worker_contract_rejects_unknown_lane() -> None:
     with pytest.raises(FuseKitError, match="Hosted launch lane is invalid"):
         build_hosted_worker_contract(
