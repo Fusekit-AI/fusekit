@@ -85,6 +85,7 @@ def _byo_proof_bundle_from_bootstrap(bootstrap: dict[str, object]) -> dict[str, 
         "job_binding": manifest["job_binding"],
         "user_owned_cost_boundary": manifest["user_owned_cost_boundary"],
         "byo_security_contract": manifest["byo_security_contract"],
+        "runner_shape_guard": manifest["runner_shape_guard"],
         "proof_bundle_root": manifest["proof_bundle_root"],
         "artifacts": [
             {
@@ -385,6 +386,7 @@ def test_hosted_byo_bootstrap_publishes_preflight_and_reversibility_contract() -
     assert bootstrap["proof_manifest"]["schema_version"] == (
         HOSTED_BYO_OCI_PROOF_MANIFEST_SCHEMA_VERSION
     )
+    assert bootstrap["proof_manifest"]["runner_shape_guard"] == bootstrap["runner_shape_guard"]
     assert bootstrap["proof_manifest"]["proof_bundle_root"] == ".fusekit/remote-artifacts"
     assert bootstrap["proof_manifest"]["required_completion_evidence"] == [
         "live_url",
@@ -599,6 +601,7 @@ def test_hosted_byo_proof_bundle_verifier_accepts_complete_redacted_inventory() 
     assert report["job_binding"] == bootstrap["proof_manifest"]["job_binding"]
     assert report["user_owned_cost_boundary"] == byo_oci_user_owned_cost_boundary()
     assert report["byo_security_contract"] == byo_oci_security_contract()
+    assert report["runner_shape_guard"] == byo_oci_runner_shape_guard()
     assert report["proof_bundle_root"] == ".fusekit/remote-artifacts"
     assert report["artifact_summary"]["missing"] == []
     assert report["artifact_summary"]["unexpected"] == []
@@ -715,18 +718,23 @@ def test_hosted_byo_proof_bundle_verifier_blocks_cost_and_security_drift() -> No
     bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
     cost_boundary = bundle["user_owned_cost_boundary"]
     security_contract = bundle["byo_security_contract"]
+    runner_shape_guard = bundle["runner_shape_guard"]
     assert isinstance(cost_boundary, dict)
     assert isinstance(security_contract, dict)
+    assert isinstance(runner_shape_guard, dict)
     cost_boundary["spend_owner"] = "fusekit_managed_infrastructure"
     security_contract["runner_architecture"] = "arm64"
+    runner_shape_guard["verified_shape"] = "VM.Standard.A1.Flex"
 
     report = verify_hosted_byo_oci_proof_bundle(job, bundle)
 
     assert report["ready"] is False
     assert "byo_oci_proof_bundle_user_owned_cost_boundary_mismatch" in report["blockers"]
     assert "byo_oci_proof_bundle_byo_security_contract_mismatch" in report["blockers"]
+    assert "byo_oci_proof_bundle_runner_shape_guard_mismatch" in report["blockers"]
     assert report["user_owned_cost_boundary"] == {}
     assert report["byo_security_contract"] == {}
+    assert report["runner_shape_guard"] == {}
 
 
 def test_hosted_byo_proof_bundle_verifier_strips_contract_sidecars() -> None:
@@ -740,10 +748,13 @@ def test_hosted_byo_proof_bundle_verifier_strips_contract_sidecars() -> None:
     bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
     cost_boundary = bundle["user_owned_cost_boundary"]
     security_contract = bundle["byo_security_contract"]
+    runner_shape_guard = bundle["runner_shape_guard"]
     assert isinstance(cost_boundary, dict)
     assert isinstance(security_contract, dict)
+    assert isinstance(runner_shape_guard, dict)
     cost_boundary["worker_region"] = "us-ashburn-1"
     security_contract["console_session_label"] = "operator-reviewed"
+    runner_shape_guard["instance_image_ocid"] = "ocid1.image.oc1..not-for-proof"
 
     report = verify_hosted_byo_oci_proof_bundle(job, bundle)
     serialized = json.dumps(report, sort_keys=True)
@@ -757,10 +768,16 @@ def test_hosted_byo_proof_bundle_verifier_strips_contract_sidecars() -> None:
         "byo_oci_proof_bundle_byo_security_contract_unexpected_field:console_session_label"
         in report["blockers"]
     )
+    assert (
+        "byo_oci_proof_bundle_runner_shape_guard_unexpected_field:instance_image_ocid"
+        in report["blockers"]
+    )
     assert report["user_owned_cost_boundary"] == byo_oci_user_owned_cost_boundary()
     assert report["byo_security_contract"] == byo_oci_security_contract()
+    assert report["runner_shape_guard"] == byo_oci_runner_shape_guard()
     assert "us-ashburn-1" not in serialized
     assert "operator-reviewed" not in serialized
+    assert "ocid1.image" not in serialized
 
 
 def test_hosted_byo_proof_bundle_verifier_blocks_missing_cost_and_security_contracts() -> None:
@@ -774,14 +791,17 @@ def test_hosted_byo_proof_bundle_verifier_blocks_missing_cost_and_security_contr
     bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
     bundle.pop("user_owned_cost_boundary")
     bundle.pop("byo_security_contract")
+    bundle.pop("runner_shape_guard")
 
     report = verify_hosted_byo_oci_proof_bundle(job, bundle)
 
     assert report["ready"] is False
     assert "byo_oci_proof_bundle_user_owned_cost_boundary_invalid" in report["blockers"]
     assert "byo_oci_proof_bundle_byo_security_contract_invalid" in report["blockers"]
+    assert "byo_oci_proof_bundle_runner_shape_guard_invalid" in report["blockers"]
     assert report["user_owned_cost_boundary"] == {}
     assert report["byo_security_contract"] == {}
+    assert report["runner_shape_guard"] == {}
 
 
 def test_hosted_byo_proof_bundle_verifier_blocks_missing_and_unsafe_inventory() -> None:

@@ -877,6 +877,7 @@ def _byo_oci_proof_manifest(job: HostedLaunchJob) -> dict[str, object]:
         "job_binding": _byo_oci_proof_job_binding(job),
         "user_owned_cost_boundary": byo_oci_user_owned_cost_boundary(),
         "byo_security_contract": byo_oci_security_contract(),
+        "runner_shape_guard": byo_oci_runner_shape_guard(),
         "proof_bundle_root": ".fusekit/remote-artifacts",
         "required_completion_evidence": list(HOSTED_WORKER_PROOF_KEYS),
         "required_remote_artifacts": [
@@ -927,6 +928,7 @@ def verify_hosted_byo_oci_proof_bundle(
         "job_binding",
         "user_owned_cost_boundary",
         "byo_security_contract",
+        "runner_shape_guard",
         "proof_bundle_root",
         "artifacts",
         "completion_evidence",
@@ -958,6 +960,12 @@ def verify_hosted_byo_oci_proof_bundle(
         bundle.get("byo_security_contract"),
         expected=byo_oci_security_contract(),
         name="byo_security_contract",
+        blockers=blockers,
+    )
+    runner_shape_guard = _public_byo_contract(
+        bundle.get("runner_shape_guard"),
+        expected=byo_oci_runner_shape_guard(),
+        name="runner_shape_guard",
         blockers=blockers,
     )
     artifacts = _public_byo_artifact_inventory(bundle.get("artifacts"), blockers=blockers)
@@ -998,6 +1006,7 @@ def verify_hosted_byo_oci_proof_bundle(
         "proof_bundle_root": manifest["proof_bundle_root"],
         "user_owned_cost_boundary": user_owned_cost_boundary,
         "byo_security_contract": byo_security_contract,
+        "runner_shape_guard": runner_shape_guard,
         "artifact_summary": {
             "required_count": len(required_artifacts),
             "present_required_count": len(required_artifacts) - len(missing),
