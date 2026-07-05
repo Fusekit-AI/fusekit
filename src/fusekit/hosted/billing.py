@@ -334,10 +334,10 @@ def _require_checkout_binding(
 ) -> None:
     if lane != MANAGED_FUSEKIT_RUN_LANE:
         raise FuseKitError("stripe_checkout_lane_not_managed")
-    if _public_identifier(job_id) != job_id:
-        raise FuseKitError("stripe_checkout_job_id_invalid")
     if contains_durable_secret_text(job_id):
         raise FuseKitError("stripe_checkout_job_id_contains_secret_text")
+    if _public_identifier(job_id) != job_id:
+        raise FuseKitError("stripe_checkout_job_id_invalid")
     if not _valid_public_github_source(github_source):
         raise FuseKitError("stripe_checkout_github_source_invalid")
     if contains_durable_secret_text(github_source):
@@ -348,7 +348,7 @@ def _require_checkout_binding(
 
 def _assert_public_payment_receipt(receipt: dict[str, object]) -> None:
     serialized = json.dumps(receipt, sort_keys=True)
-    if contains_durable_secret_text(serialized):
+    if contains_durable_secret_text(serialized) or _contains_private_marker(serialized):
         raise FuseKitError("stripe_checkout_receipt_contains_secret_text")
 
 
@@ -391,7 +391,7 @@ def _valid_price_label(value: str) -> bool:
         return False
     if len(value) > 120:
         return False
-    if contains_durable_secret_text(value):
+    if contains_durable_secret_text(value) or _contains_private_marker(value):
         return False
     if "price_" in value or "sk_" in value or "pk_" in value:
         return False
@@ -451,7 +451,9 @@ def _public_metadata(value: object) -> dict[str, str]:
     for key in STRIPE_CHECKOUT_METADATA_KEYS:
         metadata_value = value.get(key)
         if isinstance(metadata_value, str):
-            if contains_durable_secret_text(metadata_value):
+            if contains_durable_secret_text(metadata_value) or _contains_private_marker(
+                metadata_value
+            ):
                 raise FuseKitError("stripe_checkout_metadata_contains_secret_text")
             public = _public_identifier(metadata_value)
             if public:
@@ -494,9 +496,26 @@ def _public_identifier(value: object) -> str:
     cleaned = value.strip()
     if not cleaned or len(cleaned) > 160:
         return ""
+    if contains_durable_secret_text(cleaned) or _contains_private_marker(cleaned):
+        return ""
     if not all(ch.isalnum() or ch in {"_", "-", ".", ":"} for ch in cleaned):
         return ""
     return cleaned
+
+
+def _contains_private_marker(value: str) -> bool:
+    forbidden = (
+        "ghs_",
+        "ghp_",
+        "github_pat_",
+        "sk_live",
+        "sk_test",
+        "-----BEGIN",
+        "PRIVATE KEY-----",
+        "ocid1.",
+        "AKIA",
+    )
+    return any(token.lower() in value.lower() for token in forbidden)
 
 
 def _public_int(value: object) -> int | None:

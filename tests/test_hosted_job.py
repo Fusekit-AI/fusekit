@@ -2439,6 +2439,25 @@ def test_hosted_payment_receipt_rejects_malformed_hash_metadata() -> None:
         with_hosted_job_payment_receipt(job, receipt)
 
 
+def test_hosted_payment_receipt_rejects_private_marker_metadata() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=MANAGED_FUSEKIT_RUN_LANE,
+        payment_required=True,
+        payment_price_label=MANAGED_PRICE_LABEL,
+        payment_price_id_hash=MANAGED_PRICE_ID_HASH,
+        job_id="hosted-test",
+        now=1_700_000_000,
+    )
+    receipt = _paid_checkout_receipt(job)
+    metadata = receipt["metadata"]
+    assert isinstance(metadata, dict)
+    metadata["job_id"] = "hosted-ocid1.instance.oc1..not-public"
+
+    with pytest.raises(FuseKitError, match="payment metadata contains secret-looking text"):
+        with_hosted_job_payment_receipt(job, receipt)
+
+
 def test_hosted_payment_receipt_does_not_mark_paid_from_boolean_stub() -> None:
     job = build_hosted_launch_job(
         _plan(),

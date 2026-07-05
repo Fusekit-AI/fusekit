@@ -217,6 +217,25 @@ def test_stripe_checkout_session_receipt_rejects_secret_text_in_public_fields() 
         )
 
 
+def test_stripe_checkout_session_receipt_rejects_private_markers_in_metadata() -> None:
+    with pytest.raises(FuseKitError, match="stripe_checkout_metadata_contains_secret_text"):
+        stripe_checkout_session_receipt(
+            {
+                "id": "cs_live_public",
+                "status": "complete",
+                "payment_status": "paid",
+                "mode": "payment",
+                "client_reference_id": "hosted-job",
+                "amount_total": 100,
+                "currency": "usd",
+                "metadata": {
+                    "job_id": "hosted-ocid1.instance.oc1..not-public",
+                    "lane": "managed-fusekit-run",
+                },
+            }
+        )
+
+
 def test_stripe_checkout_session_receipt_only_keeps_checkout_payment_urls() -> None:
     receipt = stripe_checkout_session_receipt(
         {

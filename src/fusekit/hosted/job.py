@@ -3360,7 +3360,11 @@ def _public_payment_receipt(receipt: dict[str, object]) -> dict[str, object]:
                 result[key] = None
             continue
         if isinstance(value, str):
-            if contains_durable_secret_text(value) or len(value) > 2048:
+            if (
+                contains_durable_secret_text(value)
+                or _contains_byo_private_marker(value)
+                or len(value) > 2048
+            ):
                 raise FuseKitError("Hosted launch payment receipt contains secret-looking text.")
             if key == "price_label" and value and not _valid_price_label(value):
                 raise FuseKitError("Hosted launch payment receipt price label is invalid.")
@@ -3497,7 +3501,11 @@ def _public_payment_metadata(metadata: dict[str, object]) -> dict[str, str]:
         value = metadata.get(key)
         if not isinstance(value, str):
             continue
-        if contains_durable_secret_text(value) or len(value) > 256:
+        if (
+            contains_durable_secret_text(value)
+            or _contains_byo_private_marker(value)
+            or len(value) > 256
+        ):
             raise FuseKitError("Hosted launch payment metadata contains secret-looking text.")
         if key in hash_keys and not _valid_sha256_label(value):
             raise FuseKitError("Hosted launch payment metadata hash is invalid.")
