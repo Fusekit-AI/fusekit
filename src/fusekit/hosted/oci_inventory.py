@@ -680,6 +680,11 @@ def _assert_public_inventory(report: Mapping[str, object]) -> None:
         r"ocid1\.compartment\.",
         r"ocid1\.vnic\.",
         r"ocid1\.image\.",
+        r"ocid1_",
+        r"rk_live",
+        r"rk_test",
+        r"\bASIA",
+        r"aws_secret_access_key",
         r"-----BEGIN ",
         r"\bfingerprints?\b",
     ]

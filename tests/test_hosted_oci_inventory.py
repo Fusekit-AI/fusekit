@@ -268,6 +268,66 @@ def test_hosted_oci_inventory_blocks_raw_nonpublic_oci_identifiers() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "private_marker",
+    [
+        "ocid1_instance_oc1_not_public",
+        "ASIA_should_not_render",
+    ],
+)
+def test_hosted_oci_inventory_blocks_expanded_private_markers(
+    private_marker: str,
+) -> None:
+    with pytest.raises(FuseKitError, match="hosted_oci_inventory_contains_nonpublic_identifier"):
+        build_hosted_oci_inventory_report(
+            target_match_count=1,
+            instance=_instance(**{"display-name": private_marker}),
+            vnic={"public-ip": "129.153.118.11"},
+            plugins=[{"name": "Compute Instance Run Command", "status": "RUNNING"}],
+            available_plugins=[{"name": "Compute Instance Run Command"}],
+            image={
+                "display-name": "Canonical-Ubuntu-24.04-Minimal",
+                "operating-system": "Canonical Ubuntu",
+                "operating-system-version": "24.04",
+            },
+            hosted_verify_report=_hosted_verify(),
+            ssh_probe_status="permission_denied",
+            expected_commit_sha=EXPECTED_COMMIT,
+        )
+
+
+@pytest.mark.parametrize(
+    "private_marker",
+    [
+        "rk_live_should_not_render",
+        "rk_test_should_not_render",
+        "aws_secret_access_key_should_not_render",
+    ],
+)
+def test_hosted_oci_inventory_redacts_expanded_private_markers(
+    private_marker: str,
+) -> None:
+    report = build_hosted_oci_inventory_report(
+        target_match_count=1,
+        instance=_instance(**{"display-name": private_marker}),
+        vnic={"public-ip": "129.153.118.11"},
+        plugins=[{"name": "Compute Instance Run Command", "status": "RUNNING"}],
+        available_plugins=[{"name": "Compute Instance Run Command"}],
+        image={
+            "display-name": "Canonical-Ubuntu-24.04-Minimal",
+            "operating-system": "Canonical Ubuntu",
+            "operating-system-version": "24.04",
+        },
+        hosted_verify_report=_hosted_verify(),
+        ssh_probe_status="permission_denied",
+        expected_commit_sha=EXPECTED_COMMIT,
+    )
+    serialized = json.dumps(report, sort_keys=True)
+
+    assert private_marker not in serialized
+    assert report["target"]["instance"]["display-name"] == "[redacted]"
+
+
 def test_hosted_oci_inventory_cli_requires_config_before_collection(capfd) -> None:
     exit_code = main(["--config-file", "/definitely/not/a/config"])
     output = json.loads(capfd.readouterr().out)
