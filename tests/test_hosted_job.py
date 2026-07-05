@@ -2595,6 +2595,37 @@ def test_hosted_payment_receipt_does_not_mark_paid_from_malformed_session_id() -
     assert updated.payment_receipt["paid"] is False
 
 
+def test_hosted_payment_receipt_only_persists_bound_checkout_url() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=MANAGED_FUSEKIT_RUN_LANE,
+        payment_required=True,
+        payment_price_label=MANAGED_PRICE_LABEL,
+        payment_price_id_hash=MANAGED_PRICE_ID_HASH,
+        job_id="hosted-test",
+        now=1_700_000_000,
+    )
+    receipt = _paid_checkout_receipt(job)
+    receipt["checkout_url"] = "https://checkout.stripe.com/c/pay/cs_other"
+
+    updated = with_hosted_job_payment_receipt(job, receipt)
+
+    assert updated.payment_status == "paid"
+    assert updated.payment_receipt is not None
+    assert updated.payment_receipt["checkout_session_id"] == "cs_test_paid"
+    assert updated.payment_receipt["checkout_url"] == ""
+
+    receipt = _paid_checkout_receipt(job)
+    receipt["checkout_url"] = (
+        "https://checkout.stripe.com/c/pay/cs_test_paid?client_secret=not-public"
+    )
+
+    updated = with_hosted_job_payment_receipt(job, receipt)
+
+    assert updated.payment_receipt is not None
+    assert updated.payment_receipt["checkout_url"] == ""
+
+
 def test_hosted_job_decode_normalizes_pending_boolean_paid_stub() -> None:
     job = build_hosted_launch_job(
         _plan(),

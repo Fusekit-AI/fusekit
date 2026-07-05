@@ -3402,8 +3402,11 @@ def _public_payment_receipt(receipt: dict[str, object]) -> dict[str, object]:
     if unexpected:
         raise FuseKitError("Hosted launch payment receipt contains unexpected field.")
     result: dict[str, object] = {}
+    raw_checkout_url = receipt.get("checkout_url")
     for key in allowed:
         value = receipt.get(key)
+        if key == "checkout_url":
+            continue
         if key == "amount_total":
             if isinstance(value, bool):
                 result[key] = None
@@ -3421,14 +3424,51 @@ def _public_payment_receipt(receipt: dict[str, object]) -> dict[str, object]:
                 raise FuseKitError("Hosted launch payment receipt contains secret-looking text.")
             if key == "price_label" and value and not _valid_price_label(value):
                 raise FuseKitError("Hosted launch payment receipt price label is invalid.")
-            result[key] = value
+            if key == "checkout_session_id":
+                result[key] = value if _valid_stripe_checkout_session_id(value) else ""
+            else:
+                result[key] = value
         elif isinstance(value, bool) or isinstance(value, int) or value is None:
             result[key] = value
         elif key == "metadata" and isinstance(value, dict):
             result[key] = _public_payment_metadata(value)
+    session_id = result.get("checkout_session_id")
+    result["checkout_url"] = _public_payment_checkout_url(
+        raw_checkout_url,
+        session_id=session_id if isinstance(session_id, str) else "",
+    )
     if result.get("paid") is True and not _payment_receipt_is_paid_checkout(result):
         result["paid"] = False
     return result
+
+
+def _public_payment_checkout_url(value: object, *, session_id: str) -> str:
+    if not isinstance(value, str):
+        return ""
+    if (
+        contains_durable_secret_text(value)
+        or _contains_byo_private_marker(value)
+        or len(value) > 2048
+    ):
+        raise FuseKitError("Hosted launch payment receipt contains secret-looking text.")
+    if not session_id:
+        return ""
+    parsed = urllib.parse.urlparse(value)
+    if (
+        parsed.scheme != "https"
+        or parsed.netloc != "checkout.stripe.com"
+        or not parsed.path.startswith("/c/pay/")
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+        or parsed.username
+        or parsed.password
+    ):
+        return ""
+    checkout_id = parsed.path.removeprefix("/c/pay/")
+    if checkout_id != session_id:
+        return ""
+    return value
 
 
 def _payment_receipt_is_paid_checkout(receipt: dict[str, object]) -> bool:
