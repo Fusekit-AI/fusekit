@@ -1936,7 +1936,7 @@ def _hosted_job_action_response(
                 HTTPStatus.BAD_GATEWAY,
                 {"error": "worker_dispatch_failed"},
             )
-    if action == "start" and job.launch_lane == BYO_OCI_LANE:
+    if action in {"start", "rollback", "detonate"} and job.launch_lane == BYO_OCI_LANE:
         dispatch_receipt = {
             "schema_version": HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
             "action": action,

@@ -2973,6 +2973,46 @@ def test_hosted_byo_oci_lane_starts_without_managed_worker_dispatch() -> None:
     assert headers["Content-Type"] == "application/json; charset=utf-8"
     assert json_payload["schema_version"] == "fusekit.hosted-byo-oci-bootstrap.v1"
 
+    rollback_control = create_hosted_state_token(
+        STATE_SECRET,
+        return_path=f"/api/hosted/jobs/{job_id}/actions/rollback",
+        nonce="nonce-for-byo-rollback-control",
+    )
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/rollback",
+        method="POST",
+        query_string=f"job={started['job_token']}",
+        form_body={"control": rollback_control},
+        settings=settings,
+    )
+    rollback = json.loads(body.decode("utf-8"))
+    assert status == "200 OK"
+    assert rollback["status"] == "rollback_requested"
+    assert rollback["worker_dispatch"]["dispatched"] is False
+    assert rollback["worker_dispatch"]["action"] == "rollback"
+    assert rollback["worker_dispatch"]["reason"] == "byo_oci_user_owned_worker_lane"
+    assert len(dispatch_opener.requests) == 0
+
+    detonate_control = create_hosted_state_token(
+        STATE_SECRET,
+        return_path=f"/api/hosted/jobs/{job_id}/actions/detonate",
+        nonce="nonce-for-byo-detonate-control",
+    )
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/detonate",
+        method="POST",
+        query_string=f"job={rollback['job_token']}",
+        form_body={"control": detonate_control},
+        settings=settings,
+    )
+    detonation = json.loads(body.decode("utf-8"))
+    assert status == "200 OK"
+    assert detonation["status"] == "detonation_requested"
+    assert detonation["worker_dispatch"]["dispatched"] is False
+    assert detonation["worker_dispatch"]["action"] == "detonate"
+    assert detonation["worker_dispatch"]["reason"] == "byo_oci_user_owned_worker_lane"
+    assert len(dispatch_opener.requests) == 0
+
 
 def test_hosted_byo_oci_bootstrap_errors_keep_lane_boundary() -> None:
     state = create_hosted_state_token(
