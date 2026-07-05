@@ -752,6 +752,27 @@ def test_hosted_byo_proof_bundle_verifier_blocks_missing_job_binding() -> None:
     assert "byo_oci_proof_bundle_plan_fingerprint_mismatch" in report["blockers"]
 
 
+def test_hosted_byo_proof_bundle_verifier_redacts_invalid_schema_version() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+    bundle["schema_version"] = "sk_live_not_real_schema"
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+    serialized = json.dumps(report, sort_keys=True)
+
+    assert report["ready"] is False
+    assert "byo_oci_proof_bundle_schema_invalid" in report["blockers"]
+    assert report["input_schema_version"] == ""
+    assert "sk_live_not_real_schema" not in serialized
+    assert "sk_live" not in serialized
+
+
 def test_hosted_byo_proof_bundle_verifier_blocks_replayed_job_binding() -> None:
     job = build_hosted_launch_job(
         _plan(),

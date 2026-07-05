@@ -1006,9 +1006,9 @@ def verify_hosted_byo_oci_proof_bundle(
     )
     report = {
         "schema_version": HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION,
-        "input_schema_version": bundle.get("schema_version")
-        if isinstance(bundle.get("schema_version"), str)
-        else "",
+        "input_schema_version": _public_byo_input_schema_version(
+            bundle.get("schema_version")
+        ),
         "job_id": job.job_id,
         "lane": job.launch_lane,
         "job_binding": binding,
@@ -1052,9 +1052,9 @@ def _byo_oci_lane_mismatch_proof_report(
 ) -> dict[str, object]:
     report = {
         "schema_version": HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION,
-        "input_schema_version": bundle.get("schema_version")
-        if isinstance(bundle.get("schema_version"), str)
-        else "",
+        "input_schema_version": _public_byo_input_schema_version(
+            bundle.get("schema_version")
+        ),
         "job_id": job.job_id,
         "lane": job.launch_lane,
         "job_binding": {},
@@ -1082,6 +1082,12 @@ def _byo_oci_lane_mismatch_proof_report(
     }
     _assert_public_byo_proof_report(report)
     return report
+
+
+def _public_byo_input_schema_version(value: object) -> str:
+    if value == HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION:
+        return HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION
+    return ""
 
 
 def _byo_oci_proof_job_binding(job: HostedLaunchJob) -> dict[str, str]:
