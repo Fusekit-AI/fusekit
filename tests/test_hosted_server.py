@@ -2220,6 +2220,19 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/payments/stripe-return",
+        query_string=(
+            f"job={checkout_job_token}&session_id=cs_ocid1_instance_oc1__not_public"
+        ),
+        headers={"Accept": "text/html"},
+        settings=settings,
+    )
+    assert status == "502 Bad Gateway"
+    _assert_public_payment_error(body, "payment_verification_failed")
+    assert len(stripe_opener.requests) == 1
+    assert "ocid1" not in body.decode("utf-8")
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/payments/stripe-return",
         query_string=f"job={checkout_job_token}&session_id=cs_test_123",
         headers={"Accept": "text/html"},
         settings=settings,
