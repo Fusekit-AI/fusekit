@@ -25,6 +25,7 @@ from fusekit.hosted.billing import (
     STRIPE_CHECKOUT_METADATA_KEYS,
     STRIPE_CHECKOUT_PROVIDER,
     HostedPaymentConfig,
+    _valid_stripe_checkout_session_id,
     create_stripe_checkout_session,
     payment_required_receipt,
     retrieve_stripe_checkout_session,
@@ -2888,7 +2889,7 @@ def _payment_receipt_is_paid_checkout(receipt: dict[str, object]) -> bool:
         and receipt.get("payment_status") == "paid"
         and receipt.get("paid") is True
         and isinstance(session_id, str)
-        and session_id.startswith("cs_")
+        and _valid_stripe_checkout_session_id(session_id)
         and isinstance(amount_total, int)
         and not isinstance(amount_total, bool)
         and amount_total > 0
