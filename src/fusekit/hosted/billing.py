@@ -229,11 +229,11 @@ def stripe_checkout_session_receipt(payload: dict[str, object]) -> dict[str, obj
 
     session_id = _public_stripe_id(payload.get("id"))
     checkout_url = payload.get("url")
-    receipt = {
+    receipt: dict[str, object] = {
         "schema_version": HOSTED_PAYMENT_SCHEMA_VERSION,
         "provider": STRIPE_CHECKOUT_PROVIDER,
         "checkout_session_id": session_id,
-        "checkout_url": checkout_url if _valid_checkout_url(checkout_url) else "",
+        "checkout_url": _public_checkout_url(checkout_url, session_id=session_id),
         "status": _public_status(payload.get("status")),
         "payment_status": _public_status(payload.get("payment_status")),
         "mode": _public_status(payload.get("mode")) or "payment",
@@ -252,6 +252,17 @@ def stripe_checkout_session_receipt(payload: dict[str, object]) -> dict[str, obj
         raise FuseKitError("stripe_checkout_paid_receipt_incomplete")
     _assert_public_payment_receipt(receipt)
     return receipt
+
+
+def _public_checkout_url(value: object, *, session_id: str) -> str:
+    if not _valid_checkout_url(value) or not session_id:
+        return ""
+    assert isinstance(value, str)
+    parsed = urllib.parse.urlparse(value)
+    checkout_id = parsed.path.removeprefix("/c/pay/")
+    if checkout_id != session_id:
+        return ""
+    return value
 
 
 def payment_required_receipt(*, lane: str, price_label: str = "") -> dict[str, object]:

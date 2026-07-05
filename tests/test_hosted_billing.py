@@ -312,6 +312,34 @@ def test_stripe_checkout_session_receipt_only_keeps_checkout_payment_urls() -> N
     assert "client_secret" not in serialized
 
 
+def test_stripe_checkout_session_receipt_binds_checkout_url_to_session_id() -> None:
+    receipt = stripe_checkout_session_receipt(
+        {
+            "id": "cs_live_public",
+            "url": "https://checkout.stripe.com/c/pay/cs_live_other",
+            "status": "open",
+            "payment_status": "unpaid",
+            "mode": "payment",
+        }
+    )
+
+    assert receipt["checkout_session_id"] == "cs_live_public"
+    assert receipt["checkout_url"] == ""
+
+    receipt = stripe_checkout_session_receipt(
+        {
+            "id": "cs_live_public ",
+            "url": "https://checkout.stripe.com/c/pay/cs_live_public",
+            "status": "open",
+            "payment_status": "unpaid",
+            "mode": "payment",
+        }
+    )
+
+    assert receipt["checkout_session_id"] == ""
+    assert receipt["checkout_url"] == ""
+
+
 @pytest.mark.parametrize(
     ("override", "error"),
     [
