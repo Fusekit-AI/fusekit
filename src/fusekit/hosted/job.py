@@ -1257,10 +1257,15 @@ def _contains_byo_private_marker(value: str) -> bool:
         "github_pat_",
         "sk_live",
         "sk_test",
+        "rk_live",
+        "rk_test",
         "-----BEGIN",
         "PRIVATE KEY-----",
         "ocid1.",
+        "ocid1_",
         "AKIA",
+        "ASIA",
+        "aws_secret_access_key",
     )
     return any(token.lower() in value.lower() for token in forbidden)
 
@@ -1327,18 +1332,7 @@ def _assert_public_byo_proof_report(report: dict[str, object]) -> None:
 
 def _assert_public_byo_oci_bootstrap(payload: dict[str, object]) -> None:
     serialized = json.dumps(payload, sort_keys=True)
-    forbidden = (
-        "ghs_",
-        "ghp_",
-        "github_pat_",
-        "sk_live",
-        "sk_test",
-        "-----BEGIN",
-        "PRIVATE KEY-----",
-        "ocid1.",
-        "AKIA",
-    )
-    if any(token.lower() in serialized.lower() for token in forbidden):
+    if _contains_byo_private_marker(serialized):
         raise FuseKitError("Hosted BYO OCI bootstrap contains private material.")
     _assert_byo_oci_cloud_shell_handoff(
         payload.get("cloud_shell"),

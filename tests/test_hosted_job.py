@@ -48,7 +48,7 @@ from fusekit.hosted.lanes import (
 )
 from fusekit.hosted.launcher import build_hosted_launch_plan
 from fusekit.manifest import ServiceRequirement, SetupManifest
-from fusekit.runner.cloud_shell import CloudShellLaunchPlan
+from fusekit.runner.cloud_shell import CloudShellLaunchPlan, build_cloud_shell_launch_plan
 
 
 def _plan():
@@ -525,6 +525,35 @@ def test_hosted_byo_bootstrap_rejects_secret_text_in_public_handoff(
     monkeypatch.setattr(
         "fusekit.hosted.job.build_cloud_shell_launch_plan",
         secret_cloud_shell_plan,
+    )
+
+    with pytest.raises(FuseKitError, match="bootstrap contains private material"):
+        hosted_byo_oci_bootstrap(job)
+
+
+def test_hosted_byo_bootstrap_rejects_underscore_oci_marker_in_public_handoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+
+    def private_marker_cloud_shell_plan(**kwargs: object) -> CloudShellLaunchPlan:
+        plan = build_cloud_shell_launch_plan(**kwargs)
+        return replace(
+            plan,
+            fallback_steps=(
+                *plan.fallback_steps,
+                "Do not publish ocid1_instance_oc1_not_public in handoff proof.",
+            ),
+        )
+
+    monkeypatch.setattr(
+        "fusekit.hosted.job.build_cloud_shell_launch_plan",
+        private_marker_cloud_shell_plan,
     )
 
     with pytest.raises(FuseKitError, match="bootstrap contains private material"):
