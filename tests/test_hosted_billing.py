@@ -456,7 +456,9 @@ def test_create_stripe_checkout_session_rejects_bad_return_origin_before_network
     "session_id",
     [
         "cs_sk_live_should_not_leave",
+        "cs_rk_live_should_not_leave",
         "cs_ocid1_instance_oc1__not_public",
+        "cs_ASIA_should_not_leave",
     ],
 )
 def test_retrieve_stripe_checkout_session_rejects_private_session_id_before_network(
@@ -478,6 +480,35 @@ def test_retrieve_stripe_checkout_session_rejects_private_session_id_before_netw
         )
 
     assert opener.requests == []
+
+
+@pytest.mark.parametrize(
+    "private_value",
+    [
+        "rk_live_should_not_render",
+        "ASIA_should_not_render",
+        "aws_secret_access_key_should_not_render",
+    ],
+)
+def test_stripe_checkout_session_receipt_rejects_expanded_private_markers(
+    private_value: str,
+) -> None:
+    with pytest.raises(FuseKitError, match="stripe_checkout_metadata_contains_secret_text"):
+        stripe_checkout_session_receipt(
+            {
+                "id": "cs_live_public",
+                "status": "complete",
+                "payment_status": "paid",
+                "mode": "payment",
+                "client_reference_id": "hosted-job",
+                "amount_total": 100,
+                "currency": "usd",
+                "metadata": {
+                    "job_id": private_value,
+                    "lane": "managed-fusekit-run",
+                },
+            }
+        )
 
 
 def test_payment_required_receipt_is_public_and_scanned() -> None:

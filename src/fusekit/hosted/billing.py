@@ -536,11 +536,15 @@ def _contains_private_marker(value: str) -> bool:
         "github_pat_",
         "sk_live",
         "sk_test",
+        "rk_live",
+        "rk_test",
         "-----BEGIN",
         "PRIVATE KEY-----",
         "ocid1.",
         "ocid1_",
         "AKIA",
+        "ASIA",
+        "aws_secret_access_key",
     )
     return any(token.lower() in value.lower() for token in forbidden)
 
