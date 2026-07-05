@@ -276,6 +276,14 @@ def test_stripe_checkout_session_receipt_only_keeps_checkout_payment_urls() -> N
             {"job_id": "hosted-ocid1.instance.oc1..not-public"},
             "stripe_checkout_job_id_contains_secret_text",
         ),
+        (
+            {"job_token": "signed.sk_live_should_not_leave"},
+            "stripe_checkout_job_token_contains_secret_text",
+        ),
+        (
+            {"job_token": "signed.ocid1.instance.oc1..not-public"},
+            "stripe_checkout_job_token_contains_secret_text",
+        ),
         ({"lane": "byo-oci"}, "stripe_checkout_lane_not_managed"),
         (
             {"github_source": "https://example.com/Fusekit-AI/fusekit"},
