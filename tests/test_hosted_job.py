@@ -997,7 +997,7 @@ def test_hosted_byo_proof_bundle_verifier_strips_contract_sidecars() -> None:
     assert isinstance(runner_shape_guard, dict)
     cost_boundary["worker_region"] = "us-ashburn-1"
     security_contract["console_session_label"] = "operator-reviewed"
-    runner_shape_guard["instance_image_ocid"] = "ocid1.image.oc1..not-for-proof"
+    runner_shape_guard["instance_image_label"] = "operator-reviewed-image"
 
     report = verify_hosted_byo_oci_proof_bundle(job, bundle)
     serialized = json.dumps(report, sort_keys=True)
@@ -1012,7 +1012,7 @@ def test_hosted_byo_proof_bundle_verifier_strips_contract_sidecars() -> None:
         in report["blockers"]
     )
     assert (
-        "byo_oci_proof_bundle_runner_shape_guard_unexpected_field:instance_image_ocid"
+        "byo_oci_proof_bundle_runner_shape_guard_unexpected_field:instance_image_label"
         in report["blockers"]
     )
     assert report["user_owned_cost_boundary"] == byo_oci_user_owned_cost_boundary()
@@ -1020,7 +1020,29 @@ def test_hosted_byo_proof_bundle_verifier_strips_contract_sidecars() -> None:
     assert report["runner_shape_guard"] == byo_oci_runner_shape_guard()
     assert "us-ashburn-1" not in serialized
     assert "operator-reviewed" not in serialized
-    assert "ocid1.image" not in serialized
+    assert "operator-reviewed-image" not in serialized
+
+
+def test_hosted_byo_proof_bundle_verifier_rejects_private_contract_markers() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+    runner_shape_guard = bundle["runner_shape_guard"]
+    assert isinstance(runner_shape_guard, dict)
+    runner_shape_guard["operator_note"] = "created from ocid1_instance_oc1_not_public"
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+    serialized = json.dumps(report, sort_keys=True)
+
+    assert report["ready"] is False
+    assert "byo_oci_proof_bundle_runner_shape_guard_unsafe" in report["blockers"]
+    assert report["runner_shape_guard"] == {}
+    assert "ocid1_instance" not in serialized
 
 
 def test_hosted_byo_proof_bundle_verifier_blocks_missing_cost_and_security_contracts() -> None:

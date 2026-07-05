@@ -1140,7 +1140,8 @@ def _public_byo_contract(
     if not isinstance(value, dict):
         blockers.append(f"byo_oci_proof_bundle_{name}_invalid")
         return {}
-    if contains_durable_secret_text(json.dumps(value, sort_keys=True)):
+    serialized = json.dumps(value, sort_keys=True)
+    if contains_durable_secret_text(serialized) or _contains_byo_private_marker(serialized):
         blockers.append(f"byo_oci_proof_bundle_{name}_unsafe")
         return {}
     unexpected = sorted(_public_byo_sidecar_field_name(key) for key in value if key not in expected)
