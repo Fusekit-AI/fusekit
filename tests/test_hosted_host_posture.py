@@ -210,6 +210,7 @@ def _clean_evidence() -> dict[str, object]:
         "hosted_verify": {
             "schema_version": "fusekit.hosted-deployment-verification.v1",
             "public_origin": "https://fusekit.snowmanai.org",
+            "worker_dispatch_url": "https://worker.snowmanai.org/dispatch",
             "ready": True,
             "blocking_checks": [],
             "readiness_summary": {
@@ -225,13 +226,77 @@ def _clean_evidence() -> dict[str, object]:
             "next_actions": [],
             "checks": [
                 {
+                    "id": "hosted.dns",
+                    "status": "ok",
+                    "hostname": "fusekit.snowmanai.org",
+                    "addresses": ["203.0.113.10"],
+                },
+                {
+                    "id": "hosted.home",
+                    "url": "https://fusekit.snowmanai.org/",
+                    "status": "ok",
+                    "http_status": 200,
+                    "failures": [],
+                },
+                {
                     "id": "hosted.health",
                     "url": "https://fusekit.snowmanai.org/healthz",
                     "status": "ok",
                     "http_status": 200,
                     "schema_version": "",
                     "failures": [],
-                }
+                },
+                {
+                    "id": "hosted.readiness",
+                    "url": "https://fusekit.snowmanai.org/api/hosted/readiness",
+                    "status": "ok",
+                    "http_status": 200,
+                    "schema_version": "fusekit.hosted-readiness.v1",
+                    "failures": [],
+                },
+                {
+                    "id": "hosted.deployment",
+                    "url": "https://fusekit.snowmanai.org/api/hosted/deployment",
+                    "status": "ok",
+                    "http_status": 200,
+                    "schema_version": "fusekit.hosted-deployment.v1",
+                    "failures": [],
+                },
+                {
+                    "id": "hosted.expected_commit",
+                    "status": "ok",
+                    "expected_commit_sha": HOSTED_COMMIT,
+                    "actual_commit_sha": HOSTED_COMMIT,
+                    "failures": [],
+                },
+                {
+                    "id": "hosted.github_intake",
+                    "url": "https://fusekit.snowmanai.org/api/github/intake",
+                    "status": "ok",
+                    "http_status": 200,
+                    "failures": [],
+                },
+                {
+                    "id": "worker_dispatch.dns",
+                    "status": "ok",
+                    "hostname": "worker.snowmanai.org",
+                    "addresses": ["203.0.113.11"],
+                },
+                {
+                    "id": "worker_dispatch.health",
+                    "url": "https://worker.snowmanai.org/healthz",
+                    "status": "ok",
+                    "http_status": 200,
+                    "failures": [],
+                },
+                {
+                    "id": "worker_dispatch.readiness",
+                    "url": "https://worker.snowmanai.org/readiness",
+                    "status": "ok",
+                    "http_status": 200,
+                    "schema_version": "fusekit.hosted-worker-dispatch-readiness.v1",
+                    "failures": [],
+                },
             ],
             "source_provenance": {
                 "actual": {
@@ -977,6 +1042,7 @@ def test_oci_host_posture_blocks_hosted_verify_sidecars() -> None:
     ]
     web_check = _check(report, "host.web_verification")
     assert web_check["failures"] == [
+        "oci_hosted_verify_required_checks_missing",
         "oci_hosted_verify_readiness_summary_mismatch"
     ]
 
@@ -1052,7 +1118,10 @@ def test_oci_host_posture_blocks_failed_hosted_verify_check_rows() -> None:
     assert report["ready"] is False
     assert report["blocking_checks"] == ["host.web_verification"]
     web_check = _check(report, "host.web_verification")
-    assert web_check["failures"] == ["oci_hosted_verify_checks_not_ready"]
+    assert web_check["failures"] == [
+        "oci_hosted_verify_checks_not_ready",
+        "oci_hosted_verify_required_checks_missing",
+    ]
 
 
 def test_oci_host_posture_blocks_missing_release_receipt() -> None:
@@ -1164,6 +1233,52 @@ def test_oci_host_posture_preserves_hosted_expected_commit_blocker() -> None:
         "oci_host_release_receipt_commit_does_not_match_hosted_verify"
     ]
     assert not contains_durable_secret_text(json.dumps(report))
+
+
+def test_oci_host_posture_requires_complete_hosted_verifier_check_set() -> None:
+    evidence = _clean_evidence()
+    hosted_verify = evidence["hosted_verify"]
+    assert isinstance(hosted_verify, dict)
+    hosted_verify["checks"] = [
+        {
+            "id": "hosted.health",
+            "url": "https://fusekit.snowmanai.org/healthz",
+            "status": "ok",
+            "http_status": 200,
+            "schema_version": "",
+            "failures": [],
+        },
+        {
+            "id": "hosted.health",
+            "url": "https://fusekit.snowmanai.org/healthz",
+            "status": "ok",
+            "http_status": 200,
+            "schema_version": "",
+            "failures": [],
+        },
+    ]
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.web_verification"]
+    web_check = _check(report, "host.web_verification")
+    assert web_check["failures"] == [
+        "oci_hosted_verify_required_checks_missing",
+        "oci_hosted_verify_duplicate_check_ids",
+    ]
+    assert web_check["missing_hosted_verifier_checks"] == [
+        "hosted.dns",
+        "hosted.home",
+        "hosted.readiness",
+        "hosted.deployment",
+        "hosted.expected_commit",
+        "hosted.github_intake",
+        "worker_dispatch.dns",
+        "worker_dispatch.health",
+        "worker_dispatch.readiness",
+    ]
+    assert web_check["duplicate_hosted_verifier_check_ids"] == ["hosted.health"]
 
 
 def test_oci_host_posture_blocks_mutating_collection_boundary() -> None:
@@ -1610,43 +1725,7 @@ def test_oci_host_posture_collector_builds_validator_ready_redacted_evidence(
     evidence = collect_oci_host_posture_evidence(
         shape="VM.Standard.E5.Flex",
         ssh_ingress="restricted",
-        hosted_verify_report={
-            "schema_version": "fusekit.hosted-deployment-verification.v1",
-            "public_origin": "https://fusekit.snowmanai.org",
-            "ready": True,
-            "blocking_checks": [],
-            "readiness_summary": {
-                "launchable": True,
-                "blocking_count": 0,
-                "blockers": [],
-                "next_actions": [],
-                "secret_boundary": (
-                    "Readiness summary contains public check ids, failure codes, and "
-                    "redacted next actions only."
-                ),
-            },
-            "next_actions": [],
-            "checks": [
-                {
-                    "id": "hosted.health",
-                    "url": "https://fusekit.snowmanai.org/healthz",
-                    "status": "ok",
-                    "http_status": 200,
-                    "schema_version": "",
-                    "failures": [],
-                }
-            ],
-            "source_provenance": {
-                "actual": {
-                    "commit_sha": HOSTED_COMMIT,
-                },
-            },
-            "secret_boundary": (
-                "Hosted deployment verification fetches public HTML/JSON endpoints only. "
-                "It never requires or returns GitHub private keys, worker secrets, HMAC "
-                "signatures, provider credentials, signed job tokens, or vault material."
-            ),
-        },
+        hosted_verify_report=_clean_evidence()["hosted_verify"],
         dns_report={
             "public_origin": "https://fusekit.snowmanai.org",
             "domain": "fusekit.snowmanai.org",

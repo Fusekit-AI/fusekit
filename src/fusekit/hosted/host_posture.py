@@ -197,6 +197,18 @@ OCI_HOST_POSTURE_HOSTED_VERIFY_CHECK_KEYS = frozenset(
         "next_action",
     }
 )
+OCI_HOST_POSTURE_REQUIRED_HOSTED_VERIFY_CHECK_IDS = (
+    "hosted.dns",
+    "hosted.home",
+    "hosted.health",
+    "hosted.readiness",
+    "hosted.deployment",
+    "hosted.expected_commit",
+    "hosted.github_intake",
+    "worker_dispatch.dns",
+    "worker_dispatch.health",
+    "worker_dispatch.readiness",
+)
 OCI_HOST_POSTURE_HOSTED_VERIFY_READINESS_SUMMARY_KEYS = frozenset(
     {
         "launchable",
@@ -1422,6 +1434,17 @@ def _web_verification_check(evidence: Mapping[str, object]) -> dict[str, object]
         failures.append("oci_hosted_verify_blocking_checks_not_empty")
     if not _hosted_verify_checks_ready(report):
         failures.append("oci_hosted_verify_checks_not_ready")
+    check_ids = _hosted_verify_check_ids(report)
+    missing_checks = [
+        check_id
+        for check_id in OCI_HOST_POSTURE_REQUIRED_HOSTED_VERIFY_CHECK_IDS
+        if check_id not in check_ids
+    ]
+    duplicate_check_ids = _duplicate_hosted_verify_check_ids(report)
+    if missing_checks:
+        failures.append("oci_hosted_verify_required_checks_missing")
+    if duplicate_check_ids:
+        failures.append("oci_hosted_verify_duplicate_check_ids")
     summary = _mapping(report.get("readiness_summary"))
     blocking_count = _literal_non_negative_int(summary.get("blocking_count"))
     summary_blockers = _mapping_list(summary.get("blockers"))
@@ -1448,6 +1471,8 @@ def _web_verification_check(evidence: Mapping[str, object]) -> dict[str, object]
             '--expected-commit-sha "$(git rev-parse HEAD)" and attach the redacted '
             "ready report.",
             hosted_verifier_blocking_checks=hosted_blockers,
+            missing_hosted_verifier_checks=missing_checks,
+            duplicate_hosted_verifier_check_ids=duplicate_check_ids,
         )
     return _ok("host.web_verification")
 
@@ -1607,6 +1632,27 @@ def _hosted_verify_commit_sha(report: Mapping[str, object]) -> str:
 def _hosted_verify_checks_ready(report: Mapping[str, object]) -> bool:
     checks = _mapping_list(report.get("checks"))
     return bool(checks) and all(check.get("status") == "ok" for check in checks)
+
+
+def _hosted_verify_check_ids(report: Mapping[str, object]) -> set[str]:
+    return {
+        _public_str(check.get("id"))
+        for check in _mapping_list(report.get("checks"))
+        if _public_str(check.get("id"))
+    }
+
+
+def _duplicate_hosted_verify_check_ids(report: Mapping[str, object]) -> list[str]:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for check in _mapping_list(report.get("checks")):
+        check_id = _public_str(check.get("id"))
+        if not check_id:
+            continue
+        if check_id in seen:
+            duplicates.add(check_id)
+        seen.add(check_id)
+    return sorted(duplicates)
 
 
 def _valid_git_sha(value: str, *, allow_empty: bool = False) -> str | None:
