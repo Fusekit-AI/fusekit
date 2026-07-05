@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
+from fusekit.errors import FuseKitError
 from fusekit.hosted.oci_access import (
     HOSTED_OCI_ACCESS_PLAN_SCHEMA_VERSION,
     HOSTED_OCI_DEPLOY_ACCESS_REPAIR_SCHEMA_VERSION,
@@ -195,6 +198,55 @@ def test_hosted_oci_access_plan_allows_redeploy_when_run_command_ready() -> None
     assert plan["release_proof"]["release_action"]["safe_next_action"] == (
         "No redeploy needed; preserve this release proof with OCI posture evidence."
     )
+
+
+@pytest.mark.parametrize(
+    "private_marker",
+    [
+        "ocid1_instance_oc1_not_public",
+        "ASIA_should_not_render",
+    ],
+)
+def test_hosted_oci_access_plan_blocks_expanded_private_markers(
+    private_marker: str,
+) -> None:
+    with pytest.raises(
+        FuseKitError,
+        match="hosted_oci_access_plan_contains_nonpublic_identifier",
+    ):
+        build_hosted_oci_access_plan(
+            instance=_instance(**{"display-name": private_marker}),
+            vnic=_vnic(),
+            plugins=[{"name": "Compute Instance Run Command", "status": "RUNNING"}],
+            hosted_verify_report=_hosted_verify(),
+            ssh_probe_status="not_checked",
+            expected_commit_sha=EXPECTED_COMMIT,
+        )
+
+
+@pytest.mark.parametrize(
+    "private_marker",
+    [
+        "rk_live_should_not_render",
+        "rk_test_should_not_render",
+        "aws_secret_access_key_should_not_render",
+    ],
+)
+def test_hosted_oci_access_plan_redacts_expanded_private_markers(
+    private_marker: str,
+) -> None:
+    plan = build_hosted_oci_access_plan(
+        instance=_instance(**{"display-name": private_marker}),
+        vnic=_vnic(),
+        plugins=[{"name": "Compute Instance Run Command", "status": "RUNNING"}],
+        hosted_verify_report=_hosted_verify(),
+        ssh_probe_status="not_checked",
+        expected_commit_sha=EXPECTED_COMMIT,
+    )
+    serialized = json.dumps(plan, sort_keys=True)
+
+    assert private_marker not in serialized
+    assert plan["target"]["display_name"] == "[redacted]"
 
 
 def test_hosted_oci_access_plan_marks_run_command_unavailable_for_image() -> None:

@@ -171,9 +171,7 @@ def build_hosted_oci_access_plan(
             "private keys, GitHub App private keys, provider credentials, or vault material."
         ),
     }
-    serialized = json.dumps(plan, sort_keys=True)
-    if contains_durable_secret_text(serialized):
-        raise FuseKitError("hosted_oci_access_plan_contains_secret_text")
+    _assert_public_access_plan(plan)
     return plan
 
 
@@ -544,6 +542,24 @@ def _public_string_list(value: object) -> list[str]:
 
 def _public_str(value: object) -> str:
     return redact_public_text(str(value or "").strip())
+
+
+def _assert_public_access_plan(plan: Mapping[str, object]) -> None:
+    serialized = json.dumps(plan, sort_keys=True)
+    if contains_durable_secret_text(serialized):
+        raise FuseKitError("hosted_oci_access_plan_contains_secret_text")
+    forbidden_patterns = [
+        r"ocid1\.(?:tenancy|user|compartment|vnic|image)\.",
+        r"ocid1_",
+        r"rk_live",
+        r"rk_test",
+        r"\bASIA",
+        r"aws_secret_access_key",
+        r"-----BEGIN ",
+        r"\bfingerprints?\b",
+    ]
+    if any(re.search(pattern, serialized, re.IGNORECASE) for pattern in forbidden_patterns):
+        raise FuseKitError("hosted_oci_access_plan_contains_nonpublic_identifier")
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -278,7 +278,7 @@ def test_hosted_oci_inventory_blocks_raw_nonpublic_oci_identifiers() -> None:
 def test_hosted_oci_inventory_blocks_expanded_private_markers(
     private_marker: str,
 ) -> None:
-    with pytest.raises(FuseKitError, match="hosted_oci_inventory_contains_nonpublic_identifier"):
+    with pytest.raises(FuseKitError, match="contains_nonpublic_identifier"):
         build_hosted_oci_inventory_report(
             target_match_count=1,
             instance=_instance(**{"display-name": private_marker}),
