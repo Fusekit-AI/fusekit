@@ -1286,15 +1286,27 @@ def _assert_public_byo_oci_bootstrap(payload: dict[str, object]) -> None:
     )
     if any(token.lower() in serialized.lower() for token in forbidden):
         raise FuseKitError("Hosted BYO OCI bootstrap contains private material.")
-    _assert_byo_oci_cloud_shell_handoff(payload.get("cloud_shell"))
+    _assert_byo_oci_cloud_shell_handoff(
+        payload.get("cloud_shell"),
+        open_core_execution=payload.get("open_core_execution"),
+    )
 
 
-def _assert_byo_oci_cloud_shell_handoff(value: object) -> None:
+def _assert_byo_oci_cloud_shell_handoff(
+    value: object,
+    *,
+    open_core_execution: object,
+) -> None:
     if not isinstance(value, dict):
+        raise FuseKitError("Hosted BYO OCI bootstrap Cloud Shell handoff is invalid.")
+    if not isinstance(open_core_execution, dict):
         raise FuseKitError("Hosted BYO OCI bootstrap Cloud Shell handoff is invalid.")
     command = str(value.get("bootstrap_command") or "")
     deeplink_url = str(value.get("deeplink_url") or "")
     fallback_steps = value.get("fallback_steps")
+    fusekit_package = str(open_core_execution.get("fusekit_package") or "")
+    app_source = str(open_core_execution.get("app_source") or "")
+    repo_slug = _github_repo_slug_from_url(app_source)
     required_fragments = (
         "fusekit launch",
         "--runner oci-existing",
@@ -1302,6 +1314,7 @@ def _assert_byo_oci_cloud_shell_handoff(value: object) -> None:
         "--visual-runner novnc",
         "--fusekit-gates service-only",
         "--control-room --no-bootstrap",
+        f"fusekit_package={fusekit_package}",
     )
     forbidden_fragments = (
         "fusekit-hosted-worker",
@@ -1319,7 +1332,11 @@ def _assert_byo_oci_cloud_shell_handoff(value: object) -> None:
         raise FuseKitError("Hosted BYO OCI bootstrap Cloud Shell handoff is invalid.")
     if deeplink_url != "https://cloud.oracle.com/?cloudshell=true":
         raise FuseKitError("Hosted BYO OCI bootstrap Cloud Shell handoff is invalid.")
+    if fusekit_package != HOSTED_BYO_OCI_FUSEKIT_PACKAGE or not repo_slug:
+        raise FuseKitError("Hosted BYO OCI bootstrap Cloud Shell handoff is invalid.")
     if not command or any(fragment not in command for fragment in required_fragments):
+        raise FuseKitError("Hosted BYO OCI bootstrap Cloud Shell handoff is invalid.")
+    if f"--github-repo {repo_slug}" not in command:
         raise FuseKitError("Hosted BYO OCI bootstrap Cloud Shell handoff is invalid.")
     if any(fragment.lower() in command.lower() for fragment in forbidden_fragments):
         raise FuseKitError("Hosted BYO OCI bootstrap Cloud Shell handoff is invalid.")

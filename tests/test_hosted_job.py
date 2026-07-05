@@ -531,6 +531,20 @@ def test_hosted_byo_bootstrap_rejects_secret_text_in_public_handoff(
             "--control-room --no-bootstrap --oci-shape VM.Standard.A1.Flex "
             "--visual-runner novnc",
         ),
+        (
+            "https://cloud.oracle.com/?cloudshell=true",
+            "fusekit_package=evil-fusekit && fusekit launch app --runner oci-existing "
+            "--fusekit-gates service-only --control-room --no-bootstrap "
+            "--oci-shape VM.Standard.E5.Flex --visual-runner novnc "
+            "--github-repo example/job-demo",
+        ),
+        (
+            "https://cloud.oracle.com/?cloudshell=true",
+            "fusekit_package=fusekit && fusekit launch app --runner oci-existing "
+            "--fusekit-gates service-only --control-room --no-bootstrap "
+            "--oci-shape VM.Standard.E5.Flex --visual-runner novnc "
+            "--github-repo example/other",
+        ),
     ),
 )
 def test_hosted_byo_bootstrap_rejects_cloud_shell_handoff_drift(
