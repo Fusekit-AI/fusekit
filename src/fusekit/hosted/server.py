@@ -1887,7 +1887,7 @@ def _hosted_job_action_response(
         _verify_hosted_control_token(settings, control_token, job=job, action=action)
     except FuseKitError:
         return _response(start_response, HTTPStatus.FORBIDDEN, {"error": "invalid_control"})
-    if action == "start" and _managed_payment_required(job):
+    if _dispatch_action_requires_managed_payment(job, action):
         payload: dict[str, object] = {
             "error": "payment_required",
             "payment": payment_required_receipt(
@@ -2814,6 +2814,29 @@ def _worker_id(environ: dict[str, object]) -> str:
 
 def _managed_payment_required(job: HostedLaunchJob) -> bool:
     return job.launch_lane == MANAGED_FUSEKIT_RUN_LANE and job.payment_status != "paid"
+
+
+def _dispatch_action_requires_managed_payment(job: HostedLaunchJob, action: str) -> bool:
+    if not _managed_payment_required(job):
+        return False
+    if action == "start":
+        return job.status == "waiting_for_worker"
+    if action == "rollback":
+        return job.status in {
+            "waiting_for_provider_gates",
+            "worker_claimed",
+            "proof_submitted",
+            "complete",
+        }
+    if action == "detonate":
+        return job.status in {
+            "waiting_for_provider_gates",
+            "worker_claimed",
+            "proof_submitted",
+            "complete",
+            "rollback_requested",
+        }
+    return False
 
 
 def _payment_receipt_matches_job(

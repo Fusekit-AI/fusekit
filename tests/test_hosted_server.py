@@ -2314,6 +2314,83 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
     assert "PRIVATE KEY" not in serialized
 
 
+def test_hosted_managed_lane_requires_payment_before_rollback_or_detonation_dispatch() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    github_opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    dispatch_opener = SequenceOpener([{}, {}])
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=_private_key_pem(),
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        github_opener=github_opener,
+        worker_dispatch_opener=dispatch_opener,
+        managed_runs_enabled=True,
+        stripe_secret_key="sk_live_redacted",
+        stripe_price_id="price_managed_run",
+        managed_run_price_label=MANAGED_PRICE_LABEL,
+        **_vercel_provenance_kwargs(),
+    )
+
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=(
+            f"installation_id=42&repo=example/one&state={state}"
+            f"&lane={MANAGED_FUSEKIT_RUN_LANE}"
+        ),
+        settings=settings,
+    )
+    text = body.decode("utf-8")
+    job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    unpaid_started = replace(
+        settings.hosted_jobs[job_id],
+        status="waiting_for_provider_gates",
+    )
+    settings.hosted_jobs[job_id] = unpaid_started
+    job_token = create_hosted_job_token(STATE_SECRET, unpaid_started)
+    assert status == "200 OK"
+
+    for action in ("rollback", "detonate"):
+        control = create_hosted_state_token(
+            STATE_SECRET,
+            return_path=f"/api/hosted/jobs/{job_id}/actions/{action}",
+            nonce=f"nonce-for-unpaid-{action}-control-token",
+        )
+        status, _headers, body = _call(
+            f"/api/hosted/jobs/{job_id}/actions/{action}",
+            method="POST",
+            query_string=f"job={job_token}",
+            form_body={"control": control},
+            settings=settings,
+        )
+        blocked = json.loads(body.decode("utf-8"))
+
+        assert status == "402 Payment Required"
+        assert blocked["error"] == "payment_required"
+        assert blocked["payment"]["status"] == "payment_required"
+        assert settings.hosted_jobs[job_id].status == "waiting_for_provider_gates"
+        assert dispatch_opener.requests == []
+
+
 def test_hosted_payment_checkout_rejects_missing_checkout_url_before_pending_state() -> None:
     state = create_hosted_state_token(
         STATE_SECRET,
