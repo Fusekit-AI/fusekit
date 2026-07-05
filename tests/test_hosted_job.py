@@ -506,6 +506,64 @@ def test_hosted_byo_bootstrap_rejects_secret_text_in_public_handoff(
         hosted_byo_oci_bootstrap(job)
 
 
+@pytest.mark.parametrize(
+    ("deeplink_url", "bootstrap_command"),
+    (
+        (
+            "https://example.invalid/?cloudshell=true",
+            "fusekit launch app --runner oci-existing --fusekit-gates service-only "
+            "--control-room --no-bootstrap --oci-shape VM.Standard.E5.Flex "
+            "--visual-runner novnc",
+        ),
+        (
+            "https://cloud.oracle.com/?cloudshell=true",
+            "fusekit launch app --runner oci-existing --fusekit-gates service-only "
+            "--control-room --no-bootstrap --visual-runner novnc",
+        ),
+        (
+            "https://cloud.oracle.com/?cloudshell=true",
+            "fusekit-hosted-worker --origin https://fusekit.snowmanai.org "
+            "--oci-shape VM.Standard.E5.Flex",
+        ),
+        (
+            "https://cloud.oracle.com/?cloudshell=true",
+            "fusekit launch app --runner oci-existing --fusekit-gates service-only "
+            "--control-room --no-bootstrap --oci-shape VM.Standard.A1.Flex "
+            "--visual-runner novnc",
+        ),
+    ),
+)
+def test_hosted_byo_bootstrap_rejects_cloud_shell_handoff_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    deeplink_url: str,
+    bootstrap_command: str,
+) -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+
+    def drifted_cloud_shell_plan(**_kwargs: object) -> CloudShellLaunchPlan:
+        return CloudShellLaunchPlan(
+            app_source="https://github.com/example/one",
+            fusekit_package="fusekit",
+            launch_args=(),
+            deeplink_url=deeplink_url,
+            bootstrap_command=bootstrap_command,
+            fallback_steps=("Open Oracle Cloud Shell.",),
+        )
+
+    monkeypatch.setattr(
+        "fusekit.hosted.job.build_cloud_shell_launch_plan",
+        drifted_cloud_shell_plan,
+    )
+
+    with pytest.raises(FuseKitError, match="Cloud Shell handoff is invalid"):
+        hosted_byo_oci_bootstrap(job)
+
+
 def test_hosted_byo_bootstrap_renders_browser_handoff_page() -> None:
     job = build_hosted_launch_job(
         _plan(),
