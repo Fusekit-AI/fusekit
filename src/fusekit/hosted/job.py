@@ -3496,6 +3496,7 @@ def _payment_receipt_is_paid_checkout(receipt: dict[str, object]) -> bool:
         and amount_total > 0
         and isinstance(currency, str)
         and currency.isalpha()
+        and currency == currency.lower()
         and len(currency) == 3
         and isinstance(metadata, dict)
         and all(
