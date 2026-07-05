@@ -212,7 +212,7 @@ def public_hosted_github_source(value: str) -> str:
     """Return the browser-safe GitHub repository URL for hosted launch source."""
 
     raw = value.strip()
-    if not raw or contains_durable_secret_text(raw):
+    if not raw or contains_durable_secret_text(raw) or _contains_hosted_private_marker(raw):
         raise FuseKitError("Hosted GitHub source is invalid.")
     parsed = urllib.parse.urlparse(raw)
     if (
@@ -324,7 +324,22 @@ def _public_hosted_action_summary(value: str) -> str:
 
 
 def _contains_hosted_private_marker(value: str) -> bool:
-    forbidden = ("ghs_", "sk_live", "sk_test", "-----BEGIN", "ocid1.")
+    forbidden = (
+        "ghs_",
+        "ghp_",
+        "github_pat_",
+        "sk_live",
+        "sk_test",
+        "rk_live",
+        "rk_test",
+        "-----BEGIN",
+        "PRIVATE KEY-----",
+        "ocid1.",
+        "ocid1_",
+        "AKIA",
+        "ASIA",
+        "aws_secret_access_key",
+    )
     return any(token.lower() in value.lower() for token in forbidden)
 
 

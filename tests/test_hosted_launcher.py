@@ -142,6 +142,73 @@ def test_hosted_launch_plan_rejects_secret_or_markup_app_name() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "private_marker",
+    [
+        "rk_live_should_not_render",
+        "rk_test_should_not_render",
+        "ocid1_instance_oc1_not_public",
+        "ASIA_should_not_render",
+        "aws_secret_access_key_should_not_render",
+    ],
+)
+def test_hosted_launch_plan_rejects_expanded_private_markers_in_public_labels(
+    private_marker: str,
+) -> None:
+    with pytest.raises(FuseKitError, match="Hosted app name"):
+        build_hosted_launch_plan(
+            _manifest(app_name=f"demo {private_marker}"),
+            github_source="https://github.com/example/any-app",
+        )
+
+    with pytest.raises(FuseKitError, match="Hosted provider name"):
+        build_hosted_launch_plan(
+            SetupManifest(
+                app_name="clean-demo",
+                services=(
+                    ServiceRequirement(
+                        provider=private_marker,
+                        kind="api",
+                        name="bad-provider",
+                    ),
+                ),
+            ),
+            github_source="https://github.com/example/any-app",
+        )
+
+    with pytest.raises(FuseKitError, match="Hosted env name"):
+        build_hosted_launch_plan(
+            SetupManifest(
+                app_name="clean-demo",
+                required_env=(f"{private_marker}_KEY",),
+            ),
+            github_source="https://github.com/example/any-app",
+        )
+
+    with pytest.raises(FuseKitError, match="Hosted action summary"):
+        build_hosted_launch_plan(
+            SetupManifest(
+                app_name="clean-demo",
+                services=(
+                    ServiceRequirement(
+                        provider="github",
+                        kind="provider-pack",
+                        name="source",
+                        capabilities=("capability_pack",),
+                        settings={"capability_pack": private_marker},
+                    ),
+                ),
+            ),
+            github_source="https://github.com/example/any-app",
+        )
+
+    with pytest.raises(FuseKitError, match="Hosted GitHub source"):
+        build_hosted_launch_plan(
+            _manifest(),
+            github_source=f"https://github.com/example/{private_marker}",
+        )
+
+
 def test_hosted_launch_plan_rejects_secret_shaped_provider_or_env_labels() -> None:
     with pytest.raises(FuseKitError, match="Hosted provider name"):
         build_hosted_launch_plan(
