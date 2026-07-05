@@ -458,17 +458,23 @@ def _public_metadata(value: object) -> dict[str, str]:
         raise FuseKitError("stripe_checkout_metadata_unexpected_field")
     result: dict[str, str] = {}
     for key in STRIPE_CHECKOUT_METADATA_KEYS:
+        if key not in value:
+            continue
         metadata_value = value.get(key)
-        if isinstance(metadata_value, str):
-            if contains_durable_secret_text(metadata_value) or _contains_private_marker(
-                metadata_value
-            ):
-                raise FuseKitError("stripe_checkout_metadata_contains_secret_text")
-            public = _public_identifier(metadata_value)
-            if public:
-                if key in STRIPE_CHECKOUT_HASH_METADATA_KEYS and not _valid_sha256_label(public):
-                    raise FuseKitError("stripe_checkout_metadata_hash_invalid")
-                result[key] = public
+        if not isinstance(metadata_value, str):
+            raise FuseKitError("stripe_checkout_metadata_value_invalid")
+        if contains_durable_secret_text(metadata_value) or _contains_private_marker(
+            metadata_value
+        ):
+            raise FuseKitError("stripe_checkout_metadata_contains_secret_text")
+        if metadata_value != metadata_value.strip() or metadata_value == "":
+            raise FuseKitError("stripe_checkout_metadata_value_invalid")
+        public = _public_identifier(metadata_value)
+        if not public:
+            raise FuseKitError("stripe_checkout_metadata_value_invalid")
+        if key in STRIPE_CHECKOUT_HASH_METADATA_KEYS and not _valid_sha256_label(public):
+            raise FuseKitError("stripe_checkout_metadata_hash_invalid")
+        result[key] = public
     return result
 
 

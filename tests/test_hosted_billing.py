@@ -182,6 +182,53 @@ def test_stripe_checkout_session_receipt_rejects_malformed_hash_metadata() -> No
         )
 
 
+def test_stripe_checkout_session_receipt_rejects_malformed_metadata_values() -> None:
+    payload = {
+        "id": "cs_live_public",
+        "status": "complete",
+        "payment_status": "paid",
+        "mode": "payment",
+        "client_reference_id": "hosted-job",
+        "amount_total": 100,
+        "currency": "usd",
+        "metadata": {
+            "job_id": "hosted-job",
+            "lane": "managed-fusekit-run",
+            "github_source_hash": _sha256_label("source"),
+            "plan_fingerprint": _sha256_label("plan"),
+            "stripe_price_id_hash": _sha256_label("price"),
+            "price_label_hash": _sha256_label("label"),
+        },
+    }
+    metadata = payload["metadata"]
+    assert isinstance(metadata, dict)
+    metadata["job_id"] = 123
+
+    with pytest.raises(FuseKitError, match="stripe_checkout_metadata_value_invalid"):
+        stripe_checkout_session_receipt(payload)
+
+    payload = {
+        "id": "cs_live_public",
+        "status": "complete",
+        "payment_status": "paid",
+        "mode": "payment",
+        "client_reference_id": "hosted-job",
+        "amount_total": 100,
+        "currency": "usd",
+        "metadata": {
+            "job_id": "hosted-job",
+            "lane": "managed-fusekit-run ",
+            "github_source_hash": _sha256_label("source"),
+            "plan_fingerprint": _sha256_label("plan"),
+            "stripe_price_id_hash": _sha256_label("price"),
+            "price_label_hash": _sha256_label("label"),
+        },
+    }
+
+    with pytest.raises(FuseKitError, match="stripe_checkout_metadata_value_invalid"):
+        stripe_checkout_session_receipt(payload)
+
+
 def test_stripe_checkout_session_receipt_rejects_secret_text_in_public_fields() -> None:
     with pytest.raises(FuseKitError, match="stripe_checkout_metadata_contains_secret_text"):
         stripe_checkout_session_receipt(
