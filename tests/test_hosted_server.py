@@ -2741,6 +2741,17 @@ def test_hosted_byo_oci_lane_starts_without_managed_worker_dispatch() -> None:
     assert "Bring your own OCI" in text
 
     status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/payments/stripe-cancel",
+        query_string=f"job={job_token}",
+        headers={"Accept": "text/html"},
+        settings=settings,
+    )
+    assert status == "400 Bad Request"
+    _assert_public_payment_error(body, "payment_not_required")
+    assert settings.hosted_jobs[job_id].launch_lane == BYO_OCI_LANE
+    assert settings.hosted_jobs[job_id].payment_status == "not_required"
+
+    status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/actions/start",
         method="POST",
         query_string=f"job={job_token}",

@@ -2166,6 +2166,12 @@ def _hosted_payment_cancel_response(
     start_response: StartResponse,
     job: HostedLaunchJob,
 ) -> Iterable[bytes]:
+    if job.launch_lane != MANAGED_FUSEKIT_RUN_LANE:
+        return _response(
+            start_response,
+            HTTPStatus.BAD_REQUEST,
+            _hosted_payment_error_payload("payment_not_required"),
+        )
     job_token = create_hosted_job_token(settings.state_secret, job)
     return _html_response(
         start_response,
