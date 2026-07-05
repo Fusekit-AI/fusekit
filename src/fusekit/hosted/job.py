@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import html
 import json
+import re
 import secrets
 import time
 import urllib.parse
@@ -1314,7 +1315,6 @@ def _assert_byo_oci_cloud_shell_handoff(
         "--visual-runner novnc",
         "--fusekit-gates service-only",
         "--control-room --no-bootstrap",
-        f"fusekit_package={fusekit_package}",
     )
     forbidden_fragments = (
         "fusekit-hosted-worker",
@@ -1336,12 +1336,28 @@ def _assert_byo_oci_cloud_shell_handoff(
         raise FuseKitError("Hosted BYO OCI bootstrap Cloud Shell handoff is invalid.")
     if not command or any(fragment not in command for fragment in required_fragments):
         raise FuseKitError("Hosted BYO OCI bootstrap Cloud Shell handoff is invalid.")
-    if f"--github-repo {repo_slug}" not in command:
+    if not _command_has_shell_assignment(command, "fusekit_package", fusekit_package):
+        raise FuseKitError("Hosted BYO OCI bootstrap Cloud Shell handoff is invalid.")
+    if not _command_has_flag_value(command, "--github-repo", repo_slug):
         raise FuseKitError("Hosted BYO OCI bootstrap Cloud Shell handoff is invalid.")
     if any(fragment.lower() in command.lower() for fragment in forbidden_fragments):
         raise FuseKitError("Hosted BYO OCI bootstrap Cloud Shell handoff is invalid.")
     if not isinstance(fallback_steps, list) or not fallback_steps:
         raise FuseKitError("Hosted BYO OCI bootstrap Cloud Shell handoff is invalid.")
+
+
+def _command_has_shell_assignment(command: str, name: str, value: str) -> bool:
+    return re.search(
+        rf"(?:^|[\s;]){re.escape(name)}={re.escape(value)}(?:[\s;]|$)",
+        command,
+    ) is not None
+
+
+def _command_has_flag_value(command: str, flag: str, value: str) -> bool:
+    return re.search(
+        rf"{re.escape(flag)}\s+{re.escape(value)}(?:[\s;'\"]|$)",
+        command,
+    ) is not None
 
 
 def _assert_public_hosted_job(payload: dict[str, object]) -> None:
