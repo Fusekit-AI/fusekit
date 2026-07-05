@@ -1130,6 +1130,30 @@ def test_hosted_byo_proof_bundle_verifier_blocks_non_boolean_completion_evidence
     assert report["completion_evidence"]["run_record"] is False
 
 
+def test_hosted_byo_proof_bundle_verifier_blocks_private_completion_evidence_values() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+    evidence = bundle["completion_evidence"]
+    assert isinstance(evidence, dict)
+    evidence["recording"] = "ocid1_instance_oc1_not_public"
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+    serialized = json.dumps(report, sort_keys=True)
+
+    assert report["ready"] is False
+    assert "completion_evidence_unsafe" in report["blockers"]
+    assert "completion_evidence_invalid:recording" in report["blockers"]
+    assert "missing_completion_evidence:recording" in report["blockers"]
+    assert report["completion_evidence"]["recording"] is False
+    assert "ocid1_instance" not in serialized
+
+
 def test_hosted_byo_proof_bundle_verifier_blocks_invalid_completion_evidence_envelope() -> None:
     job = build_hosted_launch_job(
         _plan(),

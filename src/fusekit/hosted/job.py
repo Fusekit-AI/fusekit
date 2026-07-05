@@ -1229,6 +1229,9 @@ def _public_completion_evidence(value: object, *, blockers: list[str]) -> dict[s
     if not isinstance(value, dict):
         blockers.append("completion_evidence_invalid")
         return {}
+    serialized = json.dumps(value, sort_keys=True, default=str)
+    if contains_durable_secret_text(serialized) or _contains_byo_private_marker(serialized):
+        blockers.append("completion_evidence_unsafe")
     unexpected = sorted(
         _public_byo_sidecar_field_name(key) for key in value if key not in HOSTED_WORKER_PROOF_KEYS
     )
