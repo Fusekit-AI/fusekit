@@ -66,6 +66,10 @@ def build_hosted_oci_inventory_report(
         safe_running_instance_count,
         0,
     )
+    non_target_running_instances_seen = max(
+        running_instances_seen - safe_target_match_count,
+        0,
+    )
     inventory_blockers = inventory_count_blockers + _inventory_blockers(
         target_match_count=safe_target_match_count,
         instance=public_instance,
@@ -96,10 +100,7 @@ def build_hosted_oci_inventory_report(
             "scans_running_instances": True,
             "running_instances_seen": running_instances_seen,
             "target_match_count": safe_target_match_count,
-            "non_target_running_instances_seen": max(
-                running_instances_seen - safe_target_match_count,
-                0,
-            ),
+            "non_target_running_instances_seen": non_target_running_instances_seen,
             "target_selector": dict(HOSTED_OCI_ALLOWED_TARGET_TAGS),
             "uniqueness_required": True,
             "cost_visibility": (
@@ -108,6 +109,7 @@ def build_hosted_oci_inventory_report(
                 "collector and should be reviewed separately before broad cost claims."
             ),
         },
+        "cost_review": _oci_cost_review(non_target_running_instances_seen),
         "compartments_scanned": max(compartments_scanned, 0),
         "collection_failures": [_public_collection_failure(item) for item in collection_failures],
         "target": {
@@ -524,6 +526,26 @@ def _inventory_blockers(
     if not _target_tags_match(tags):
         return ["oci_hosted_launcher_target_tags_invalid"]
     return []
+
+
+def _oci_cost_review(non_target_running_instances_seen: int) -> dict[str, object]:
+    """Return read-only cost review proof without claiming ownership of other workloads."""
+
+    requires_review = non_target_running_instances_seen > 0
+    return {
+        "scope": "read_only_running_instance_count",
+        "non_target_running_instances_seen": non_target_running_instances_seen,
+        "requires_human_review": requires_review,
+        "can_claim_no_orphaned_running_instances": not requires_review,
+        "mutates_oci": False,
+        "does_not_stop_or_delete_non_target_resources": True,
+        "review_gate": (
+            "Review non-target running OCI instances in the OCI console before claiming "
+            "the tenancy has no unrelated, orphaned, or unnecessary running resources."
+            if requires_review
+            else "No non-target running OCI instances were seen by this read-only inventory."
+        ),
+    }
 
 
 def _public_nonnegative_count(value: object) -> int | None:

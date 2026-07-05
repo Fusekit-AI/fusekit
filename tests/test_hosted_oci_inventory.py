@@ -100,6 +100,17 @@ def test_hosted_oci_inventory_builds_redacted_access_plan() -> None:
             "collector and should be reviewed separately before broad cost claims."
         ),
     }
+    assert report["cost_review"] == {
+        "scope": "read_only_running_instance_count",
+        "non_target_running_instances_seen": 0,
+        "requires_human_review": False,
+        "can_claim_no_orphaned_running_instances": True,
+        "mutates_oci": False,
+        "does_not_stop_or_delete_non_target_resources": True,
+        "review_gate": (
+            "No non-target running OCI instances were seen by this read-only inventory."
+        ),
+    }
     assert report["compartments_scanned"] == 3
     assert report["collection_failures"] == []
     assert report["target"]["instance"]["freeform-tags"] == {
@@ -143,6 +154,18 @@ def test_hosted_oci_inventory_reports_non_target_running_instance_counts() -> No
     assert report["ready"] is True
     assert report["inventory_scope"]["running_instances_seen"] == 3
     assert report["inventory_scope"]["non_target_running_instances_seen"] == 2
+    assert report["cost_review"] == {
+        "scope": "read_only_running_instance_count",
+        "non_target_running_instances_seen": 2,
+        "requires_human_review": True,
+        "can_claim_no_orphaned_running_instances": False,
+        "mutates_oci": False,
+        "does_not_stop_or_delete_non_target_resources": True,
+        "review_gate": (
+            "Review non-target running OCI instances in the OCI console before claiming "
+            "the tenancy has no unrelated, orphaned, or unnecessary running resources."
+        ),
+    }
     assert "not stopped, deleted, or remediated" in report["inventory_scope"][
         "cost_visibility"
     ]
