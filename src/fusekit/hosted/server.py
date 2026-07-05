@@ -1983,7 +1983,11 @@ def _hosted_payment_checkout_response(
     job: HostedLaunchJob,
 ) -> Iterable[bytes]:
     if job.launch_lane != MANAGED_FUSEKIT_RUN_LANE:
-        return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "payment_not_required"})
+        return _response(
+            start_response,
+            HTTPStatus.BAD_REQUEST,
+            _hosted_payment_error_payload("payment_not_required"),
+        )
     if not _hosted_action_origin_allowed(settings, environ):
         return _response(
             start_response,
