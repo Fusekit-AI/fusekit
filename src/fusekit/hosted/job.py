@@ -1067,7 +1067,7 @@ def _public_byo_job_binding(
         if not isinstance(raw, str) or not raw:
             blockers.append(f"byo_oci_proof_bundle_{key}_missing")
             continue
-        if contains_durable_secret_text(raw) or len(raw) > 256:
+        if contains_durable_secret_text(raw) or _contains_byo_private_marker(raw) or len(raw) > 256:
             blockers.append(f"byo_oci_proof_bundle_{key}_unsafe")
             continue
         if key in hash_keys and not _valid_sha256_label(raw):
