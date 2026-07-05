@@ -1385,11 +1385,23 @@ def _assert_byo_oci_cloud_shell_handoff(
         raise FuseKitError("Hosted BYO OCI bootstrap Cloud Shell handoff is invalid.")
     if deeplink_url != "https://cloud.oracle.com/?cloudshell=true":
         raise FuseKitError("Hosted BYO OCI bootstrap Cloud Shell handoff is invalid.")
-    if fusekit_package != HOSTED_BYO_OCI_FUSEKIT_PACKAGE or not repo_slug:
+    try:
+        canonical_app_source = public_hosted_github_source(app_source)
+    except FuseKitError as exc:
+        raise FuseKitError(
+            "Hosted BYO OCI bootstrap Cloud Shell handoff is invalid."
+        ) from exc
+    if (
+        fusekit_package != HOSTED_BYO_OCI_FUSEKIT_PACKAGE
+        or app_source != canonical_app_source
+        or not repo_slug
+    ):
         raise FuseKitError("Hosted BYO OCI bootstrap Cloud Shell handoff is invalid.")
     if not command or any(fragment not in command for fragment in required_fragments):
         raise FuseKitError("Hosted BYO OCI bootstrap Cloud Shell handoff is invalid.")
     if not _command_has_shell_assignment(command, "fusekit_package", fusekit_package):
+        raise FuseKitError("Hosted BYO OCI bootstrap Cloud Shell handoff is invalid.")
+    if not _command_has_shell_assignment(command, "app_source", app_source):
         raise FuseKitError("Hosted BYO OCI bootstrap Cloud Shell handoff is invalid.")
     if not _command_has_flag_value(command, "--github-repo", repo_slug):
         raise FuseKitError("Hosted BYO OCI bootstrap Cloud Shell handoff is invalid.")
@@ -1454,7 +1466,7 @@ def _github_repo_slug_from_url(value: str) -> str:
     if parsed.scheme != "https" or parsed.netloc.lower() != "github.com":
         return ""
     parts = [part for part in parsed.path.split("/") if part]
-    if len(parts) < 2:
+    if len(parts) != 2:
         return ""
     owner = parts[0]
     repo = parts[1].removesuffix(".git")
