@@ -12,9 +12,12 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+from fusekit.errors import FuseKitError
+from fusekit.hosted import server as hosted_server
 from fusekit.hosted.billing import (
     HOSTED_STRIPE_PRICE_LOOKUP_POLICY,
     HOSTED_STRIPE_PRICE_SETUP_HELPER,
@@ -1238,6 +1241,32 @@ def test_hosted_deployment_contract_normalizes_worker_dispatch_receiver_checks()
         "health": "https://worker.snowmanai.org/healthz",
         "readiness": "https://worker.snowmanai.org/readiness",
     }
+
+
+@pytest.mark.parametrize(
+    "private_marker",
+    [
+        "rk_live_should_not_render",
+        "rk_test_should_not_render",
+        "ocid1_instance_oc1_not_public",
+        "ASIA_should_not_render",
+        "aws_secret_access_key_should_not_render",
+    ],
+)
+def test_hosted_action_response_self_scan_rejects_expanded_private_markers(
+    private_marker: str,
+) -> None:
+    with pytest.raises(
+        FuseKitError,
+        match="Hosted protected action response contains private material",
+    ):
+        hosted_server._assert_public_action_response_payload(
+            {
+                "schema_version": "fusekit.hosted-action-response.test",
+                "action": "test",
+                "receipt_statement": private_marker,
+            }
+        )
 
 
 def test_hosted_source_provenance_requires_expected_production_git_metadata() -> None:
