@@ -993,6 +993,11 @@ def verify_hosted_byo_oci_proof_bundle(
     evidence = _public_completion_evidence(bundle.get("completion_evidence"), blockers=blockers)
     missing_evidence = [key for key in HOSTED_WORKER_PROOF_KEYS if evidence.get(key) is not True]
     blockers.extend(f"missing_completion_evidence:{key}" for key in missing_evidence)
+    invalid_required_artifacts = _invalid_required_artifacts(
+        required_artifacts,
+        present_paths=present_paths,
+        blockers=blockers,
+    )
     report = {
         "schema_version": HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION,
         "input_schema_version": bundle.get("schema_version")
@@ -1009,9 +1014,12 @@ def verify_hosted_byo_oci_proof_bundle(
         "runner_shape_guard": runner_shape_guard,
         "artifact_summary": {
             "required_count": len(required_artifacts),
-            "present_required_count": len(required_artifacts) - len(missing),
+            "present_required_count": (
+                len(required_artifacts) - len(missing) - len(invalid_required_artifacts)
+            ),
             "missing": missing,
             "unexpected": unexpected,
+            "invalid_required": invalid_required_artifacts,
             "artifacts": artifacts,
         },
         "completion_evidence": {
@@ -1219,6 +1227,36 @@ def _valid_sha256_label(value: str) -> bool:
         and len(digest) == 64
         and all(character in "0123456789abcdef" for character in digest)
     )
+
+
+def _invalid_required_artifacts(
+    required_artifacts: dict[str, str],
+    *,
+    present_paths: set[str],
+    blockers: list[str],
+) -> list[str]:
+    invalid_prefixes = (
+        "artifact_label_mismatch:",
+        "artifact_not_marked_redacted:",
+        "artifact_sha256_invalid:",
+        "artifact_empty:",
+        "artifact_label_unsafe:",
+        "artifact_sha256_unsafe:",
+        "artifact_size_invalid:",
+        "duplicate_artifact:",
+    )
+    invalid_paths: set[str] = set()
+    for blocker in blockers:
+        for prefix in invalid_prefixes:
+            if blocker.startswith(prefix):
+                path = blocker.removeprefix(prefix)
+                if path in required_artifacts:
+                    invalid_paths.add(path)
+    return [
+        path
+        for path in required_artifacts
+        if path in present_paths and path in invalid_paths
+    ]
 
 
 def _github_source_hash(github_source: str) -> str:
@@ -2830,6 +2868,7 @@ def _byo_oci_worker_proof_report(
                 "present_required_count": 0,
                 "missing": list(job.worker_contract.required_artifacts),
                 "unexpected": [],
+                "invalid_required": [],
                 "artifacts": [],
             },
             "completion_evidence": {key: False for key in HOSTED_WORKER_PROOF_KEYS},

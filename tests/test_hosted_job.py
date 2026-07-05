@@ -605,6 +605,7 @@ def test_hosted_byo_proof_bundle_verifier_accepts_complete_redacted_inventory() 
     assert report["proof_bundle_root"] == ".fusekit/remote-artifacts"
     assert report["artifact_summary"]["missing"] == []
     assert report["artifact_summary"]["unexpected"] == []
+    assert report["artifact_summary"]["invalid_required"] == []
     assert report["artifact_summary"]["present_required_count"] == report[
         "artifact_summary"
     ]["required_count"]
@@ -899,6 +900,10 @@ def test_hosted_byo_proof_bundle_verifier_redacts_mismatched_label_and_invalid_h
     assert report["ready"] is False
     assert f"artifact_label_mismatch:{path}" in report["blockers"]
     assert f"artifact_sha256_invalid:{path}" in report["blockers"]
+    assert artifact_summary["invalid_required"] == [path]
+    assert artifact_summary["present_required_count"] == (
+        artifact_summary["required_count"] - 1
+    )
     assert public_artifact["label"] == ""
     assert public_artifact["sha256"] == ""
     assert "operator note with raw log summary" not in serialized
@@ -924,9 +929,15 @@ def test_hosted_byo_proof_bundle_verifier_blocks_empty_required_artifacts() -> N
     artifact["size_bytes"] = 0
 
     report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+    artifact_summary = report["artifact_summary"]
+    assert isinstance(artifact_summary, dict)
 
     assert report["ready"] is False
     assert "artifact_empty:.fusekit/run_record.json" in report["blockers"]
+    assert artifact_summary["invalid_required"] == [".fusekit/run_record.json"]
+    assert artifact_summary["present_required_count"] == (
+        artifact_summary["required_count"] - 1
+    )
 
 
 def test_hosted_byo_proof_bundle_verifier_rejects_boolean_artifact_size() -> None:
