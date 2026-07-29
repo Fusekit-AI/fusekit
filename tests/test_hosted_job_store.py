@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 from pathlib import Path
 
 import pytest
 
 from fusekit.errors import FuseKitError
+from fusekit.hosted import build_hosted_launch_job
 from fusekit.hosted.job_store import (
     HOSTED_JOB_STORE_MANAGED_START_RESPONSE_SCHEMA_VERSION,
     HOSTED_JOB_STORE_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION,
     HostedJobStore,
 )
+from fusekit.hosted.launcher import build_hosted_launch_plan
+from fusekit.manifest import ServiceRequirement, SetupManifest
 
 JOB_ID = "hosted-job-store-proof"
 PLAN_HASH = "sha256:" + ("a" * 64)
@@ -61,6 +65,44 @@ def test_hosted_job_store_rejects_unbound_webhook_receipt(tmp_path: Path) -> Non
         store.put_stripe_webhook_receipt(job_id=JOB_ID, receipt=receipt)
 
 
+def test_hosted_job_store_reads_only_bounded_regular_snapshots(tmp_path: Path) -> None:
+    store = HostedJobStore(tmp_path / "hosted-jobs")
+    job = build_hosted_launch_job(_plan(), job_id=JOB_ID, now=1_800_000_000)
+
+    store.put(job)
+    loaded = store.get(JOB_ID)
+
+    assert loaded is not None
+    assert loaded.job_id == JOB_ID
+
+
+def test_hosted_job_store_rejects_symlinked_job_snapshot(tmp_path: Path) -> None:
+    root = tmp_path / "hosted-jobs"
+    root.mkdir()
+    target = tmp_path / "outside.json"
+    target.write_text("{}", encoding="utf-8")
+    os.symlink(target, root / f"{JOB_ID}.json")
+    store = HostedJobStore(root)
+
+    with pytest.raises(FuseKitError, match="regular file"):
+        store.get(JOB_ID)
+
+
+def test_hosted_job_store_rejects_oversized_job_snapshot(tmp_path: Path) -> None:
+    root = tmp_path / "hosted-jobs"
+    root.mkdir()
+    (root / f"{JOB_ID}.json").write_text(
+        '{"schema_version":"fusekit.hosted-job-store.v1","padding":"'
+        + ("x" * 1_048_577)
+        + '"}',
+        encoding="utf-8",
+    )
+    store = HostedJobStore(root)
+
+    with pytest.raises(FuseKitError, match="too large"):
+        store.get(JOB_ID)
+
+
 def test_hosted_job_store_writes_redacted_managed_start_response(tmp_path: Path) -> None:
     store = HostedJobStore(tmp_path / "hosted-jobs")
 
@@ -96,6 +138,26 @@ def test_hosted_job_store_rejects_token_bearing_managed_start_response(
         store.put_managed_start_response(job_id=JOB_ID, response=response)
 
     assert not list((tmp_path / "hosted-jobs").glob("*.managed-start-response.json"))
+
+
+def _plan():
+    manifest = SetupManifest(
+        app_name="job-store-demo",
+        required_env=("RESEND_API_KEY",),
+        services=(
+            ServiceRequirement(
+                provider="github",
+                kind="repository",
+                name="source",
+                capabilities=("repo_secrets", "deploy_keys"),
+                secrets=("GITHUB_TOKEN",),
+            ),
+        ),
+    )
+    return build_hosted_launch_plan(
+        manifest,
+        github_source="https://github.com/example/job-store-demo",
+    )
 
 
 def _stripe_webhook_receipt() -> dict[str, object]:

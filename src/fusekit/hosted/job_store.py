@@ -53,6 +53,7 @@ HOSTED_JOB_STORE_MANAGED_START_RESPONSE_BOUNDARY = (
 _HOSTED_JOB_ID_RE = re.compile(r"\Ahosted-[A-Za-z0-9_-]{8,160}\Z")
 _OWNER_ONLY_DIR_MODE = stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR
 _OWNER_ONLY_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR
+_MAX_PUBLIC_JSON_BYTES = 1_048_576
 
 
 class HostedJobStore:
@@ -65,14 +66,10 @@ class HostedJobStore:
         """Return a validated stored job, or None when it is absent."""
 
         path = self._job_path(job_id)
-        if not path.exists():
-            return None
         try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise FuseKitError("Hosted job store snapshot is unreadable.") from exc
-        if not isinstance(payload, dict):
-            raise FuseKitError("Hosted job store snapshot is invalid.")
+            payload = _read_public_json_object(path)
+        except FileNotFoundError:
+            return None
         if payload.get("schema_version") != HOSTED_JOB_STORE_SCHEMA_VERSION:
             raise FuseKitError("Hosted job store snapshot schema is unsupported.")
         job_payload = payload.get("job")
@@ -171,14 +168,22 @@ class HostedJobStore:
         writable = False
         error = ""
         try:
-            self.root.mkdir(mode=_OWNER_ONLY_DIR_MODE, parents=True, exist_ok=True)
-            os.chmod(self.root, _OWNER_ONLY_DIR_MODE)
-            probe = self.root / ".fusekit-write-check"
-            probe.write_text("ok\n", encoding="utf-8")
+            _ensure_store_root(self.root)
+            fd, probe_name = tempfile.mkstemp(
+                prefix=".fusekit-write-check.",
+                suffix=".tmp",
+                dir=self.root,
+                text=True,
+            )
+            probe = Path(probe_name)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write("ok\n")
+                handle.flush()
+                os.fsync(handle.fileno())
             os.chmod(probe, _OWNER_ONLY_FILE_MODE)
-            probe.unlink()
+            probe.unlink(missing_ok=True)
             writable = True
-        except OSError as exc:
+        except (OSError, FuseKitError) as exc:
             error = exc.__class__.__name__
         return {
             "configured": configured,
@@ -240,6 +245,46 @@ def _assert_public_job_snapshot(payload: dict[str, Any]) -> None:
 def _assert_public_snapshot_text(text: str) -> None:
     if contains_durable_secret_text(text) or contains_private_marker_text(text):
         raise FuseKitError("Hosted job store snapshot contains private-looking text.")
+
+
+def _read_public_json_object(path: Path) -> dict[str, object]:
+    try:
+        file_stat = path.lstat()
+    except FileNotFoundError:
+        raise
+    except OSError as exc:
+        raise FuseKitError("Hosted job store snapshot is unreadable.") from exc
+    if stat.S_ISLNK(file_stat.st_mode):
+        raise FuseKitError("Hosted job store snapshot must be a regular file.")
+    if not stat.S_ISREG(file_stat.st_mode):
+        raise FuseKitError("Hosted job store snapshot must be a regular file.")
+    if file_stat.st_size > _MAX_PUBLIC_JSON_BYTES:
+        raise FuseKitError("Hosted job store snapshot is too large.")
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise FuseKitError("Hosted job store snapshot is unreadable.") from exc
+    try:
+        opened_stat = os.fstat(fd)
+        if not stat.S_ISREG(opened_stat.st_mode):
+            raise FuseKitError("Hosted job store snapshot must be a regular file.")
+        if opened_stat.st_size > _MAX_PUBLIC_JSON_BYTES:
+            raise FuseKitError("Hosted job store snapshot is too large.")
+        raw = os.read(fd, _MAX_PUBLIC_JSON_BYTES + 1)
+    finally:
+        os.close(fd)
+    if len(raw) > _MAX_PUBLIC_JSON_BYTES:
+        raise FuseKitError("Hosted job store snapshot is too large.")
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise FuseKitError("Hosted job store snapshot is unreadable.") from exc
+    if not isinstance(payload, dict):
+        raise FuseKitError("Hosted job store snapshot is invalid.")
+    return payload
 
 
 def _validate_stripe_webhook_receipt(
@@ -350,8 +395,7 @@ def _write_public_payload(
     _assert_public_snapshot_text(serialized)
     tmp_path: Path | None = None
     try:
-        root.mkdir(mode=_OWNER_ONLY_DIR_MODE, parents=True, exist_ok=True)
-        os.chmod(root, _OWNER_ONLY_DIR_MODE)
+        _ensure_store_root(root)
         fd, tmp_name = tempfile.mkstemp(
             prefix=f".{target.stem}.",
             suffix=".tmp",
@@ -371,3 +415,19 @@ def _write_public_payload(
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)
         raise FuseKitError(error) from exc
+
+
+def _ensure_store_root(root: Path) -> None:
+    try:
+        root.mkdir(mode=_OWNER_ONLY_DIR_MODE, parents=True, exist_ok=True)
+        root_stat = root.lstat()
+    except OSError as exc:
+        raise FuseKitError("Hosted job store root is unavailable.") from exc
+    if stat.S_ISLNK(root_stat.st_mode):
+        raise FuseKitError("Hosted job store root must not be a symlink.")
+    if not stat.S_ISDIR(root_stat.st_mode):
+        raise FuseKitError("Hosted job store root must be a directory.")
+    try:
+        os.chmod(root, _OWNER_ONLY_DIR_MODE)
+    except OSError as exc:
+        raise FuseKitError("Hosted job store root permissions could not be hardened.") from exc
