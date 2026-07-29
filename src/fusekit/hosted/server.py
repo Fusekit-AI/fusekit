@@ -2190,15 +2190,6 @@ def _hosted_stripe_webhook_response(
     environ: dict[str, object],
     start_response: StartResponse,
 ) -> Iterable[bytes]:
-    if (
-        not settings.managed_runs_enabled
-        or not _valid_stripe_webhook_secret(settings.stripe_webhook_secret)
-    ):
-        return _response(
-            start_response,
-            HTTPStatus.SERVICE_UNAVAILABLE,
-            _hosted_payment_error_payload("payment_not_ready"),
-        )
     try:
         raw_body = _request_body(environ, allow_empty=False)
     except FuseKitError:
@@ -2208,6 +2199,21 @@ def _hosted_stripe_webhook_response(
             _hosted_payment_error_payload("invalid_webhook"),
         )
     signature_header = str(environ.get("HTTP_STRIPE_SIGNATURE", "") or "")
+    if not signature_header:
+        return _response(
+            start_response,
+            HTTPStatus.FORBIDDEN,
+            _hosted_payment_error_payload("webhook_signature_invalid"),
+        )
+    if (
+        not settings.managed_runs_enabled
+        or not _valid_stripe_webhook_secret(settings.stripe_webhook_secret)
+    ):
+        return _response(
+            start_response,
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            _hosted_payment_error_payload("payment_not_ready"),
+        )
     try:
         event = verify_stripe_webhook_event(
             raw_body=raw_body,

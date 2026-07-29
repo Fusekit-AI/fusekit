@@ -3096,6 +3096,34 @@ def test_hosted_stripe_webhook_applies_bound_payment_without_dispatch() -> None:
     assert len(dispatch_opener.requests) == 1
 
 
+def test_hosted_stripe_webhook_rejects_unsigned_probe_before_enablement() -> None:
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=_private_key_pem(),
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        managed_runs_enabled=False,
+        stripe_secret_key="rk_live_redacted",
+        stripe_price_id="price_managed_run",
+        managed_run_price_label=MANAGED_PRICE_LABEL,
+        **_vercel_provenance_kwargs(),
+    )
+
+    status, _headers, body = _call(
+        "/api/hosted/payments/stripe-webhook",
+        method="POST",
+        raw_body=b"{}",
+        raw_content_type="application/json",
+        settings=settings,
+    )
+
+    assert status == "403 Forbidden"
+    _assert_public_payment_error(body, "webhook_signature_invalid")
+
+
 def test_hosted_stripe_webhook_rejects_bad_signature_without_unlocking_dispatch() -> None:
     settings, job_id, dispatch_opener = _managed_checkout_pending_fixture(
         stripe_session_id="cs_test_webhook_bad_sig"
