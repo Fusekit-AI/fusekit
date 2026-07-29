@@ -826,6 +826,7 @@
   Hosted managed-worker dispatch now requires an exact-shape, public-safe, binding-matched acceptance receipt with valid worker id, exact boundary copy, matching worker-command, spawn, and production durable idempotency proof from the dispatch receiver before the server marks a protected action as dispatched, so a generic 2xx, non-durable receiver response, malformed worker label, weakened boundary claim, or harmless-looking sidecar cannot fake worker wakeup proof.
   Hosted managed-lane enablement now reads live Checkout proof and verifier reports with no-follow, regular-file, non-symlink-parent, 1 MiB JSON object guards, so symlinked or oversized local proof artifacts cannot unlock paid managed runs.
   Hosted managed-lane runtime secret mutations now verify the EnvironmentFile metadata before parsing it, so symlinked or otherwise invalid hosted secret files are rejected before Stripe webhook setup or managed enablement reads secret material.
+  Hosted managed proof-token minting now also verifies the EnvironmentFile before parsing it and reads optional readiness reports with no-follow, regular-file, non-symlink-parent, 1 MiB JSON object guards, so unsafe local files cannot mint a supervised paid-run state token.
 
 ## North Star Audit Remediation
 
