@@ -21,6 +21,7 @@ from fusekit.hosted.job import (
     build_hosted_worker_contract,
     claim_hosted_launch_job,
     create_hosted_job_token,
+    create_hosted_payment_return_token,
     hosted_job_action_receipt,
     hosted_launch_job_from_dict,
     hosted_proof_receipt,
@@ -31,6 +32,7 @@ from fusekit.hosted.job import (
     render_hosted_proof_receipt,
     verify_hosted_byo_oci_proof_bundle,
     verify_hosted_job_token,
+    verify_hosted_payment_return_token,
 )
 from fusekit.hosted.launcher import (
     HostedLaunchPlan,
@@ -106,6 +108,7 @@ __all__ = [
     "claim_hosted_launch_job",
     "create_hosted_state_token",
     "create_hosted_job_token",
+    "create_hosted_payment_return_token",
     "exchange_installation_token",
     "github_app_install_url",
     "hosted_job_action_receipt",
@@ -123,6 +126,7 @@ __all__ = [
     "prepare_hosted_worker_execution",
     "run_hosted_worker_once",
     "verify_hosted_job_token",
+    "verify_hosted_payment_return_token",
     "verify_hosted_byo_oci_proof_bundle",
     "verify_hosted_worker_dispatch",
     "verify_hosted_state_token",

@@ -156,7 +156,8 @@ def create_stripe_checkout_session(
     config: HostedPaymentConfig,
     *,
     job_id: str,
-    job_token: str,
+    payment_return_token: str,
+    payment_cancel_token: str,
     lane: str,
     github_source: str,
     plan_fingerprint: str,
@@ -166,7 +167,8 @@ def create_stripe_checkout_session(
     _require_stripe_config(config)
     _require_checkout_binding(
         job_id=job_id,
-        job_token=job_token,
+        payment_return_token=payment_return_token,
+        payment_cancel_token=payment_cancel_token,
         lane=lane,
         github_source=github_source,
         plan_fingerprint=plan_fingerprint,
@@ -174,13 +176,13 @@ def create_stripe_checkout_session(
     success_url = _payment_return_url(
         config.public_origin,
         job_id=job_id,
-        job_token=job_token,
+        payment_return_token=payment_return_token,
         outcome="stripe-return",
     )
     cancel_url = _payment_return_url(
         config.public_origin,
         job_id=job_id,
-        job_token=job_token,
+        payment_return_token=payment_cancel_token,
         outcome="stripe-cancel",
     )
     form = {
@@ -391,7 +393,8 @@ def _require_stripe_config(config: HostedPaymentConfig) -> None:
 def _require_checkout_binding(
     *,
     job_id: str,
-    job_token: str,
+    payment_return_token: str,
+    payment_cancel_token: str,
     lane: str,
     github_source: str,
     plan_fingerprint: str,
@@ -402,8 +405,20 @@ def _require_checkout_binding(
         raise FuseKitError("stripe_checkout_job_id_contains_secret_text")
     if _public_identifier(job_id) != job_id:
         raise FuseKitError("stripe_checkout_job_id_invalid")
-    if contains_durable_secret_text(job_token) or _contains_private_marker(job_token):
-        raise FuseKitError("stripe_checkout_job_token_contains_secret_text")
+    if contains_durable_secret_text(payment_return_token) or _contains_private_marker(
+        payment_return_token
+    ):
+        raise FuseKitError("stripe_checkout_payment_return_token_contains_secret_text")
+    if not _valid_payment_return_token(payment_return_token):
+        raise FuseKitError("stripe_checkout_payment_return_token_invalid")
+    if contains_durable_secret_text(payment_cancel_token) or _contains_private_marker(
+        payment_cancel_token
+    ):
+        raise FuseKitError("stripe_checkout_payment_cancel_token_contains_secret_text")
+    if not _valid_payment_return_token(payment_cancel_token):
+        raise FuseKitError("stripe_checkout_payment_cancel_token_invalid")
+    if payment_cancel_token == payment_return_token:
+        raise FuseKitError("stripe_checkout_payment_tokens_must_be_action_scoped")
     if not _valid_public_github_source(github_source):
         raise FuseKitError("stripe_checkout_github_source_invalid")
     if contains_durable_secret_text(github_source) or _contains_private_marker(github_source):
@@ -422,13 +437,13 @@ def _payment_return_url(
     public_origin: str,
     *,
     job_id: str,
-    job_token: str,
+    payment_return_token: str,
     outcome: str,
 ) -> str:
     return (
         public_origin.rstrip("/")
         + f"/api/hosted/jobs/{urllib.parse.quote(job_id, safe='')}/payments/{outcome}?"
-        + urllib.parse.urlencode({"job": job_token})
+        + urllib.parse.urlencode({"payment": payment_return_token})
     )
 
 
@@ -438,6 +453,15 @@ def _valid_stripe_checkout_session_id(value: str) -> bool:
         and not contains_durable_secret_text(value)
         and not _contains_private_marker(value)
         and all(ch.isalnum() or ch == "_" for ch in value)
+    )
+
+
+def _valid_payment_return_token(value: str) -> bool:
+    return (
+        bool(value)
+        and len(value) <= 16_384
+        and value.count(".") == 1
+        and all(ch.isalnum() or ch in {"_", "-", "."} for ch in value)
     )
 
 

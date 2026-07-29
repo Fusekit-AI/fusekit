@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import urllib.parse
 
 import pytest
 
@@ -411,12 +412,20 @@ def test_stripe_checkout_session_receipt_binds_checkout_url_to_session_id() -> N
             "stripe_checkout_job_id_contains_secret_text",
         ),
         (
-            {"job_token": "signed.sk_live_should_not_leave"},
-            "stripe_checkout_job_token_contains_secret_text",
+            {"payment_return_token": "signed.sk_live_should_not_leave"},
+            "stripe_checkout_payment_return_token_contains_secret_text",
         ),
         (
-            {"job_token": "signed.ocid1.instance.oc1..not-public"},
-            "stripe_checkout_job_token_contains_secret_text",
+            {"payment_return_token": "signed.ocid1.instance.oc1..not-public"},
+            "stripe_checkout_payment_return_token_contains_secret_text",
+        ),
+        (
+            {"payment_cancel_token": "signed.sk_live_should_not_leave"},
+            "stripe_checkout_payment_cancel_token_contains_secret_text",
+        ),
+        (
+            {"payment_cancel_token": "signed_public.return"},
+            "stripe_checkout_payment_tokens_must_be_action_scoped",
         ),
         ({"lane": "byo-oci"}, "stripe_checkout_lane_not_managed"),
         (
@@ -452,7 +461,8 @@ def test_create_stripe_checkout_session_rejects_bad_binding_before_network(
     opener = StripeCheckoutOpener()
     kwargs = {
         "job_id": "hosted-job",
-        "job_token": "signed.public.job",
+        "payment_return_token": "signed_public.return",
+        "payment_cancel_token": "signed_public.cancel",
         "lane": "managed-fusekit-run",
         "github_source": "https://github.com/Fusekit-AI/fusekit",
         "plan_fingerprint": _sha256_label("visible-plan"),
@@ -501,13 +511,51 @@ def test_create_stripe_checkout_session_rejects_bad_return_origin_before_network
                 opener=opener,
             ),
             job_id="hosted-job",
-            job_token="signed.public.job",
+            payment_return_token="signed_public.return",
+            payment_cancel_token="signed_public.cancel",
             lane="managed-fusekit-run",
             github_source="https://github.com/Fusekit-AI/fusekit",
             plan_fingerprint=_sha256_label("visible-plan"),
         )
 
     assert opener.requests == []
+
+
+def test_create_stripe_checkout_session_uses_purpose_limited_payment_return_tokens() -> None:
+    opener = StripeCheckoutOpener()
+
+    receipt = create_stripe_checkout_session(
+        HostedPaymentConfig(
+            enabled=True,
+            stripe_secret_key="sk_live_secret_value",
+            stripe_price_id="price_managed_run",
+            price_label="Launch validation: $1.00 FuseKit managed run",
+            public_origin="https://fusekit.snowmanai.org",
+            opener=opener,
+        ),
+        job_id="hosted-job",
+        payment_return_token="signed_public.return",
+        payment_cancel_token="signed_public.cancel",
+        lane="managed-fusekit-run",
+        github_source="https://github.com/Fusekit-AI/fusekit",
+        plan_fingerprint=_sha256_label("visible-plan"),
+    )
+
+    body = urllib.parse.parse_qs((opener.requests[0].data or b"").decode("utf-8"))
+    success_query = urllib.parse.parse_qs(
+        urllib.parse.urlparse(body["success_url"][0]).query
+    )
+    cancel_query = urllib.parse.parse_qs(
+        urllib.parse.urlparse(body["cancel_url"][0]).query
+    )
+    assert receipt["checkout_session_id"] == "cs_live_public"
+    assert body["client_reference_id"] == ["hosted-job"]
+    assert body["metadata[job_id]"] == ["hosted-job"]
+    assert body["metadata[lane]"] == ["managed-fusekit-run"]
+    assert success_query["payment"] == ["signed_public.return"]
+    assert cancel_query["payment"] == ["signed_public.cancel"]
+    assert "job" not in success_query
+    assert "job" not in cancel_query
 
 
 def test_create_stripe_checkout_session_requires_bound_creation_receipt() -> None:
@@ -543,7 +591,8 @@ def test_create_stripe_checkout_session_requires_bound_creation_receipt() -> Non
                 opener=unbound_opener,
             ),
             job_id="hosted-job",
-            job_token="signed.public.job",
+            payment_return_token="signed_public.return",
+            payment_cancel_token="signed_public.cancel",
             lane="managed-fusekit-run",
             github_source="https://github.com/Fusekit-AI/fusekit",
             plan_fingerprint=_sha256_label("visible-plan"),
@@ -596,7 +645,8 @@ def test_create_stripe_checkout_session_rejects_creation_price_binding_mismatch(
                 opener=opener,
             ),
             job_id="hosted-job",
-            job_token="signed.public.job",
+            payment_return_token="signed_public.return",
+            payment_cancel_token="signed_public.cancel",
             lane="managed-fusekit-run",
             github_source="https://github.com/Fusekit-AI/fusekit",
             plan_fingerprint=_sha256_label("visible-plan"),

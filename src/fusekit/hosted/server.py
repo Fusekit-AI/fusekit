@@ -47,6 +47,7 @@ from fusekit.hosted.job import (
     build_hosted_launch_job,
     claim_hosted_launch_job,
     create_hosted_job_token,
+    create_hosted_payment_return_token,
     hosted_byo_oci_bootstrap,
     hosted_job_action_receipt,
     hosted_proof_receipt,
@@ -56,6 +57,7 @@ from fusekit.hosted.job import (
     render_hosted_control_room,
     render_hosted_proof_receipt,
     verify_hosted_job_token,
+    verify_hosted_payment_return_token,
     with_hosted_job_payment_receipt,
 )
 from fusekit.hosted.lanes import (
@@ -772,6 +774,7 @@ class HostedSettings:
                 "query_control_behavior": "rejected_as_missing_control",
                 "browser_origin_policy": "reject_cross_origin_when_origin_or_referer_present",
                 "job_token_transport": "signed_public_query_parameter",
+                "payment_return_token_transport": "signed_action_scoped_payment_query_parameter",
                 "binding": "job_id_and_action",
                 "token_lifetime": "short-lived",
                 "public_url_policy": "action URLs must not include control tokens",
@@ -780,7 +783,8 @@ class HostedSettings:
                     "Protected action receipts and public job tokens are redacted. Control "
                     "tokens are action-bound click capabilities, not provider credentials, "
                     "and must not appear in action URLs, deployment contracts, receipts, or "
-                    "logs."
+                    "logs. Stripe return/cancel URLs use purpose-limited payment tokens, "
+                    "not general job API tokens."
                 ),
             },
             "runtime": self.runtime_contract(),
@@ -1854,6 +1858,29 @@ def _hosted_job_api_response(
         return _response(start_response, HTTPStatus.NOT_FOUND, {"error": "not_found"})
     job_id = parts[3]
     query = urllib.parse.parse_qs(str(environ.get("QUERY_STRING", "")), keep_blank_values=True)
+    if (
+        len(parts) == 6
+        and parts[4] == "payments"
+        and parts[5] in {"stripe-return", "stripe-cancel"}
+        and method == "GET"
+    ):
+        try:
+            payment_job = _payment_job_from_query_token(
+                settings,
+                query,
+                job_id=job_id,
+                action=parts[5],
+            )
+        except FuseKitError:
+            return _response(
+                start_response,
+                HTTPStatus.FORBIDDEN,
+                _hosted_payment_error_payload("invalid_payment"),
+            )
+        job = settings.hosted_jobs.get(job_id) or payment_job
+        if parts[5] == "stripe-return":
+            return _hosted_payment_return_response(settings, environ, start_response, job=job)
+        return _hosted_payment_cancel_response(settings, start_response, job)
     try:
         token_job = _job_from_query_token(settings, query, job_id=job_id)
     except FuseKitError:
@@ -1877,20 +1904,6 @@ def _hosted_job_api_response(
         return _hosted_byo_oci_bootstrap_response(settings, environ, start_response, job, query)
     if len(parts) == 6 and parts[4] == "payments" and parts[5] == "checkout" and method == "POST":
         return _hosted_payment_checkout_response(settings, environ, start_response, job=job)
-    if (
-        len(parts) == 6
-        and parts[4] == "payments"
-        and parts[5] == "stripe-return"
-        and method == "GET"
-    ):
-        return _hosted_payment_return_response(settings, environ, start_response, job=job)
-    if (
-        len(parts) == 6
-        and parts[4] == "payments"
-        and parts[5] == "stripe-cancel"
-        and method == "GET"
-    ):
-        return _hosted_payment_cancel_response(settings, start_response, job)
     if len(parts) == 6 and parts[4] == "actions" and method == "POST":
         return _hosted_job_action_response(
             settings,
@@ -2057,12 +2070,22 @@ def _hosted_payment_checkout_response(
             HTTPStatus.FORBIDDEN,
             _hosted_payment_error_payload("invalid_control"),
         )
-    job_token = create_hosted_job_token(settings.state_secret, job)
+    payment_return_token = create_hosted_payment_return_token(
+        settings.state_secret,
+        job,
+        action="stripe-return",
+    )
+    payment_cancel_token = create_hosted_payment_return_token(
+        settings.state_secret,
+        job,
+        action="stripe-cancel",
+    )
     try:
         receipt = create_stripe_checkout_session(
             settings.payment_config(),
             job_id=job.job_id,
-            job_token=job_token,
+            payment_return_token=payment_return_token,
+            payment_cancel_token=payment_cancel_token,
             lane=job.launch_lane,
             github_source=job.github_source,
             plan_fingerprint=job.worker_contract.plan_fingerprint,
@@ -2441,6 +2464,24 @@ def _job_from_query_token(
     if job.job_id != job_id:
         raise FuseKitError("Hosted job token does not match route.")
     return job
+
+
+def _payment_job_from_query_token(
+    settings: HostedSettings,
+    query: dict[str, list[str]],
+    *,
+    job_id: str,
+    action: str,
+) -> HostedLaunchJob:
+    payment_token = _first_query_value(query, "payment")
+    if not payment_token:
+        raise FuseKitError("Hosted payment return token is required.")
+    return verify_hosted_payment_return_token(
+        settings.state_secret,
+        payment_token,
+        job_id=job_id,
+        action=action,
+    )
 
 
 def _verify_hosted_control_token(

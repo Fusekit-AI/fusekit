@@ -18,6 +18,7 @@ from fusekit.hosted import (
     build_hosted_worker_contract,
     claim_hosted_launch_job,
     create_hosted_job_token,
+    create_hosted_payment_return_token,
     hosted_job_action_receipt,
     hosted_launch_job_from_dict,
     hosted_proof_receipt,
@@ -27,6 +28,7 @@ from fusekit.hosted import (
     render_hosted_control_room,
     render_hosted_proof_receipt,
     verify_hosted_job_token,
+    verify_hosted_payment_return_token,
 )
 from fusekit.hosted.job import (
     HOSTED_BYO_OCI_HANDOFF_PREFLIGHT_SCHEMA_VERSION,
@@ -3219,6 +3221,110 @@ def test_hosted_job_token_rejects_signed_sidecar_fields() -> None:
         match="Hosted launcher job token payload has unexpected fields: private_note",
     ):
         verify_hosted_job_token("job-secret", token, now=1_700_000_002)
+
+
+def test_hosted_payment_return_token_is_action_scoped_and_not_a_job_token() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=MANAGED_FUSEKIT_RUN_LANE,
+        payment_required=True,
+        payment_price_label=MANAGED_PRICE_LABEL,
+        payment_price_id_hash=MANAGED_PRICE_ID_HASH,
+        job_id="hosted-test",
+        now=1_700_000_000,
+    )
+    token = create_hosted_payment_return_token(
+        "job-secret",
+        job,
+        action="stripe-return",
+        now=1_700_000_001,
+    )
+    verified = verify_hosted_payment_return_token(
+        "job-secret",
+        token,
+        job_id="hosted-test",
+        action="stripe-return",
+        now=1_700_000_002,
+    )
+
+    assert verified == job
+    with pytest.raises(FuseKitError, match="schema"):
+        verify_hosted_job_token("job-secret", token, now=1_700_000_002)
+    with pytest.raises(FuseKitError, match="action does not match route"):
+        verify_hosted_payment_return_token(
+            "job-secret",
+            token,
+            job_id="hosted-test",
+            action="stripe-cancel",
+            now=1_700_000_002,
+        )
+    with pytest.raises(FuseKitError, match="does not match route"):
+        verify_hosted_payment_return_token(
+            "job-secret",
+            token,
+            job_id="hosted-other",
+            action="stripe-return",
+            now=1_700_000_002,
+        )
+
+
+def test_hosted_payment_return_token_rejects_tampering_expiry_and_sidecar_fields() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=MANAGED_FUSEKIT_RUN_LANE,
+        payment_required=True,
+        payment_price_label=MANAGED_PRICE_LABEL,
+        payment_price_id_hash=MANAGED_PRICE_ID_HASH,
+        job_id="hosted-test",
+        now=1_700_000_000,
+    )
+    token = create_hosted_payment_return_token(
+        "job-secret",
+        job,
+        action="stripe-cancel",
+        now=1_700_000_001,
+    )
+    payload, signature = token.split(".", 1)
+
+    with pytest.raises(FuseKitError, match="signature"):
+        verify_hosted_payment_return_token(
+            "job-secret",
+            f"{payload}x.{signature}",
+            job_id="hosted-test",
+            action="stripe-cancel",
+            now=1_700_000_002,
+        )
+    with pytest.raises(FuseKitError, match="expired"):
+        verify_hosted_payment_return_token(
+            "job-secret",
+            token,
+            job_id="hosted-test",
+            action="stripe-cancel",
+            now=1_700_100_000,
+            ttl_seconds=60,
+        )
+
+    sidecar_token = _signed_job_token_payload(
+        "job-secret",
+        {
+            "schema_version": "fusekit.hosted-payment-return-token.v1",
+            "issued_at": 1_700_000_001,
+            "action": "stripe-cancel",
+            "job": job.to_dict(),
+            "private_note": "signed sidecar should not enter payment return token",
+        },
+    )
+    with pytest.raises(
+        FuseKitError,
+        match="Hosted launcher payment return token payload has unexpected fields",
+    ):
+        verify_hosted_payment_return_token(
+            "job-secret",
+            sidecar_token,
+            job_id="hosted-test",
+            action="stripe-cancel",
+            now=1_700_000_002,
+        )
 
 
 def _signed_job_token_payload(secret: str, payload: dict[str, object]) -> str:

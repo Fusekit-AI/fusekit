@@ -2743,6 +2743,7 @@ def _deployment_contract() -> dict[str, object]:
             "query_control_behavior": "rejected_as_missing_control",
             "browser_origin_policy": "reject_cross_origin_when_origin_or_referer_present",
             "job_token_transport": "signed_public_query_parameter",
+            "payment_return_token_transport": "signed_action_scoped_payment_query_parameter",
             "binding": "job_id_and_action",
             "token_lifetime": "short-lived",
             "public_url_policy": "action URLs must not include control tokens",
@@ -2751,7 +2752,8 @@ def _deployment_contract() -> dict[str, object]:
                 "Protected action receipts and public job tokens are redacted. Control "
                 "tokens are action-bound click capabilities, not provider credentials, "
                 "and must not appear in action URLs, deployment contracts, receipts, or "
-                "logs."
+                "logs. Stripe return/cancel URLs use purpose-limited payment tokens, "
+                "not general job API tokens."
             ),
         },
         "runtime": {

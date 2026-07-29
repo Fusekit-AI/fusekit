@@ -53,6 +53,8 @@ from fusekit.security.redaction import (
 HOSTED_JOB_SCHEMA_VERSION = "fusekit.hosted-job.v1"
 HOSTED_JOB_TOKEN_SCHEMA_VERSION = "fusekit.hosted-job-token.v1"
 HOSTED_JOB_TOKEN_TTL_SECONDS = 86_400
+HOSTED_PAYMENT_RETURN_TOKEN_SCHEMA_VERSION = "fusekit.hosted-payment-return-token.v1"
+HOSTED_PAYMENT_RETURN_TOKEN_TTL_SECONDS = 86_400
 HOSTED_PROOF_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-proof-receipt.v1"
 HOSTED_WORKER_CONTRACT_SCHEMA_VERSION = "fusekit.hosted-worker-contract.v1"
 HOSTED_WORKER_REQUEST_SCHEMA_VERSION = "fusekit.hosted-worker-request.v1"
@@ -179,6 +181,9 @@ HOSTED_JOB_PAYLOAD_KEYS = frozenset(
     }
 )
 HOSTED_JOB_TOKEN_KEYS = frozenset({"schema_version", "issued_at", "job"})
+HOSTED_PAYMENT_RETURN_TOKEN_KEYS = frozenset(
+    {"schema_version", "issued_at", "action", "job"}
+)
 HOSTED_JOB_STEP_KEYS = frozenset({"id", "label", "owner", "status", "proof"})
 HOSTED_PLAN_INTEGRITY_KEYS = frozenset(
     {"algorithm", "fingerprint", "covers", "secret_boundary"}
@@ -1546,6 +1551,82 @@ def verify_hosted_job_token(
     if not isinstance(job, dict):
         raise FuseKitError("Hosted launcher job token payload is invalid.")
     return hosted_launch_job_from_dict(job)
+
+
+def create_hosted_payment_return_token(
+    secret: str,
+    job: HostedLaunchJob,
+    *,
+    action: str,
+    now: int | None = None,
+) -> str:
+    """Create a purpose-limited token for Stripe return/cancel redirects."""
+
+    if not secret:
+        raise FuseKitError("Hosted launcher payment return token secret is required.")
+    if action not in {"stripe-return", "stripe-cancel"}:
+        raise FuseKitError("Hosted launcher payment return token action is unsupported.")
+    payload = _base64url_json(
+        {
+            "schema_version": HOSTED_PAYMENT_RETURN_TOKEN_SCHEMA_VERSION,
+            "issued_at": int(time.time() if now is None else now),
+            "action": action,
+            "job": job.to_dict(),
+        }
+    )
+    signature = _sign(secret, payload)
+    return f"{payload}.{signature}"
+
+
+def verify_hosted_payment_return_token(
+    secret: str,
+    token: str,
+    *,
+    job_id: str,
+    action: str,
+    now: int | None = None,
+    ttl_seconds: int = HOSTED_PAYMENT_RETURN_TOKEN_TTL_SECONDS,
+) -> HostedLaunchJob:
+    """Verify a purpose-limited Stripe return/cancel token."""
+
+    if not secret:
+        raise FuseKitError("Hosted launcher payment return token secret is required.")
+    if ttl_seconds <= 0:
+        raise FuseKitError("Hosted launcher payment return token ttl must be positive.")
+    if action not in {"stripe-return", "stripe-cancel"}:
+        raise FuseKitError("Hosted launcher payment return token action is unsupported.")
+    try:
+        payload, signature = token.split(".", 1)
+    except ValueError:
+        raise FuseKitError("Hosted launcher payment return token is malformed.") from None
+    expected = _sign(secret, payload)
+    if not hmac.compare_digest(signature, expected):
+        raise FuseKitError("Hosted launcher payment return token signature is invalid.")
+    raw = _decode_json(payload)
+    if raw.get("schema_version") != HOSTED_PAYMENT_RETURN_TOKEN_SCHEMA_VERSION:
+        raise FuseKitError("Hosted launcher payment return token schema is unsupported.")
+    _reject_unexpected_payload_keys(
+        raw,
+        HOSTED_PAYMENT_RETURN_TOKEN_KEYS,
+        "Hosted launcher payment return token payload",
+    )
+    issued_at = raw.get("issued_at")
+    if isinstance(issued_at, bool) or not isinstance(issued_at, int):
+        raise FuseKitError("Hosted launcher payment return token timestamp is invalid.")
+    current = int(time.time() if now is None else now)
+    if issued_at > current + 60:
+        raise FuseKitError("Hosted launcher payment return token timestamp is in the future.")
+    if current - issued_at > ttl_seconds:
+        raise FuseKitError("Hosted launcher payment return token expired.")
+    if raw.get("action") != action:
+        raise FuseKitError("Hosted launcher payment return token action does not match route.")
+    job = raw.get("job")
+    if not isinstance(job, dict):
+        raise FuseKitError("Hosted launcher payment return token payload is invalid.")
+    verified = hosted_launch_job_from_dict(job)
+    if verified.job_id != job_id:
+        raise FuseKitError("Hosted launcher payment return token does not match route.")
+    return verified
 
 
 def hosted_launch_job_from_dict(payload: dict[str, Any]) -> HostedLaunchJob:

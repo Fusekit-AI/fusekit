@@ -5,6 +5,7 @@ import importlib.util
 import io
 import json
 import re
+import urllib.parse
 import urllib.request
 import zipfile
 from collections.abc import Callable, Iterable
@@ -37,6 +38,7 @@ from fusekit.hosted.job import (
     HOSTED_BYO_OCI_REVERSIBILITY_SURVIVORS,
     HOSTED_BYO_OCI_REVERSIBILITY_TARGETS,
     create_hosted_job_token,
+    create_hosted_payment_return_token,
     with_hosted_job_payment_receipt,
 )
 from fusekit.hosted.lanes import (
@@ -1123,6 +1125,7 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
         "query_control_behavior": "rejected_as_missing_control",
         "browser_origin_policy": "reject_cross_origin_when_origin_or_referer_present",
         "job_token_transport": "signed_public_query_parameter",
+        "payment_return_token_transport": "signed_action_scoped_payment_query_parameter",
         "binding": "job_id_and_action",
         "token_lifetime": "short-lived",
         "public_url_policy": "action URLs must not include control tokens",
@@ -1131,7 +1134,8 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
             "Protected action receipts and public job tokens are redacted. Control "
             "tokens are action-bound click capabilities, not provider credentials, "
             "and must not appear in action URLs, deployment contracts, receipts, or "
-            "logs."
+            "logs. Stripe return/cancel URLs use purpose-limited payment tokens, "
+            "not general job API tokens."
         ),
     }
     assert payload["runtime"] == {
@@ -2512,12 +2516,17 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
     assert stripe_opener.bodies[0]["metadata[plan_fingerprint]"] == [plan_fingerprint]
     assert stripe_opener.bodies[0]["metadata[stripe_price_id_hash]"] == [price_id_hash]
     assert stripe_opener.bodies[0]["metadata[price_label_hash]"] == [price_label_hash]
+    payment_return_token = _payment_token_from_stripe_url(stripe_opener.bodies[0], "success_url")
+    payment_cancel_token = _payment_token_from_stripe_url(stripe_opener.bodies[0], "cancel_url")
+    assert payment_return_token != checkout_job_token
+    assert payment_cancel_token != checkout_job_token
+    assert payment_cancel_token != payment_return_token
     assert "sk_live" not in json.dumps(checkout)
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/payments/stripe-return",
         query_string=(
-            f"job={checkout_job_token}&session_id=cs_ocid1_instance_oc1__not_public"
+            f"payment={payment_return_token}&session_id=cs_ocid1_instance_oc1__not_public"
         ),
         headers={"Accept": "text/html"},
         settings=settings,
@@ -2529,7 +2538,7 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/payments/stripe-return",
-        query_string=f"job={checkout_job_token}&session_id=cs_test_123",
+        query_string=f"payment={payment_return_token}&session_id=cs_test_123",
         headers={"Accept": "text/html"},
         settings=settings,
     )
@@ -2540,7 +2549,7 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/payments/stripe-return",
-        query_string=f"job={checkout_job_token}&session_id=cs_test_123",
+        query_string=f"payment={payment_return_token}&session_id=cs_test_123",
         headers={"Accept": "text/html"},
         settings=settings,
     )
@@ -2549,7 +2558,7 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/payments/stripe-return",
-        query_string=f"job={checkout_job_token}&session_id=cs_test_123",
+        query_string=f"payment={payment_return_token}&session_id=cs_test_123",
         headers={"Accept": "text/html"},
         settings=settings,
     )
@@ -2558,7 +2567,7 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/payments/stripe-return",
-        query_string=f"job={checkout_job_token}&session_id=cs_test_123",
+        query_string=f"payment={payment_return_token}&session_id=cs_test_123",
         headers={"Accept": "text/html"},
         settings=settings,
     )
@@ -2567,7 +2576,7 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/payments/stripe-return",
-        query_string=f"job={checkout_job_token}&session_id=cs_test_123",
+        query_string=f"payment={payment_return_token}&session_id=cs_test_123",
         headers={"Accept": "text/html"},
         settings=settings,
     )
@@ -2576,7 +2585,7 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/payments/stripe-return",
-        query_string=f"job={checkout_job_token}&session_id=cs_test_123",
+        query_string=f"payment={payment_return_token}&session_id=cs_test_123",
         headers={"Accept": "text/html"},
         settings=settings,
     )
@@ -2585,7 +2594,7 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/payments/stripe-return",
-        query_string=f"job={checkout_job_token}&session_id=cs_test_123",
+        query_string=f"payment={payment_return_token}&session_id=cs_test_123",
         headers={"Accept": "text/html"},
         settings=settings,
     )
@@ -2719,6 +2728,8 @@ def test_hosted_managed_payment_dispatch_uses_job_price_binding_after_rotation()
     assert job_price_hash != rotated_price_hash
     assert stripe_opener.bodies[0]["line_items[0][price]"] == ["price_managed_run"]
     assert stripe_opener.bodies[0]["metadata[stripe_price_id_hash]"] == [job_price_hash]
+    payment_return_token = _payment_token_from_stripe_url(stripe_opener.bodies[0], "success_url")
+    assert payment_return_token != checkout_job_token
 
     stripe_opener.payloads.append(
         {
@@ -2744,7 +2755,7 @@ def test_hosted_managed_payment_dispatch_uses_job_price_binding_after_rotation()
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/payments/stripe-return",
-        query_string=f"job={checkout_job_token}&session_id=cs_test_rotated_price",
+        query_string=f"payment={payment_return_token}&session_id=cs_test_rotated_price",
         headers={"Accept": "text/html"},
         settings=rotated_settings,
     )
@@ -3123,9 +3134,14 @@ def test_hosted_payment_checkout_rejects_bad_controls_without_stripe_call() -> N
     assert settings.hosted_jobs[job_id].payment_status == "payment_required"
     assert stripe_opener.requests == []
 
+    cancel_token = create_hosted_payment_return_token(
+        STATE_SECRET,
+        settings.hosted_jobs[job_id],
+        action="stripe-cancel",
+    )
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/payments/stripe-cancel",
-        query_string=f"job={job_token}",
+        query_string=f"payment={cancel_token}",
         headers={"Accept": "text/html"},
         settings=settings,
     )
@@ -3209,8 +3225,8 @@ def test_hosted_byo_oci_lane_starts_without_managed_worker_dispatch() -> None:
         headers={"Accept": "text/html"},
         settings=settings,
     )
-    assert status == "400 Bad Request"
-    _assert_public_payment_error(body, "payment_not_required")
+    assert status == "403 Forbidden"
+    _assert_public_payment_error(body, "invalid_payment")
     assert settings.hosted_jobs[job_id].launch_lane == BYO_OCI_LANE
     assert settings.hosted_jobs[job_id].payment_status == "not_required"
 
@@ -5499,6 +5515,17 @@ def _bind_stripe_checkout_creation_payload(
         "stripe_price_id_hash": job.payment_price_id_hash,
         "price_label_hash": _payment_public_hash(job.payment_price_label),
     }
+
+
+def _payment_token_from_stripe_url(body: dict[str, list[str]], field: str) -> str:
+    values = body[field]
+    assert len(values) == 1
+    parsed = urllib.parse.urlparse(values[0])
+    query = urllib.parse.parse_qs(parsed.query)
+    assert "job" not in query
+    tokens = query["payment"]
+    assert len(tokens) == 1
+    return tokens[0]
 
 
 def _paid_control_room_text(settings: HostedSettings, job_id: str) -> str:

@@ -237,6 +237,10 @@ signed job token even when process memory already has the job, so a known
 `hosted-*` id cannot mint fresh controls by itself. Browser forms submit
 control tokens in URL-encoded POST fields instead of capability-bearing URLs,
 and query or JSON control parameters are rejected.
+Stripe Checkout success and cancel redirects use a separate signed
+payment-return token bound to the job and the specific return action, so Stripe
+URLs do not carry the broader job API token that can open the control room or
+protected job routes.
 If those control tokens are missing or expired, the control room shows disabled
 start/stop/rollback/detonation controls with a plain-language explanation
 instead of hiding the controls or rendering unsafe forms.
