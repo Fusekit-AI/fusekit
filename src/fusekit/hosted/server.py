@@ -61,6 +61,7 @@ from fusekit.hosted.job import (
 from fusekit.hosted.lanes import (
     BYO_OCI_LANE,
     MANAGED_FUSEKIT_RUN_LANE,
+    MANAGED_PAYMENT_PROOF_REQUIREMENTS,
     byo_oci_security_contract,
     byo_oci_user_owned_cost_boundary,
     hosted_launch_lane_contract,
@@ -872,6 +873,7 @@ class HostedSettings:
                 "launchable": not managed_blockers,
                 "requires_payment": True,
                 "managed_worker_dispatch_allowed": not managed_blockers,
+                "payment_proof_required": list(MANAGED_PAYMENT_PROOF_REQUIREMENTS),
                 "blocking_checks": managed_blockers,
                 "next_actions": _hosted_readiness_next_actions((), tuple(managed_blockers)),
             },

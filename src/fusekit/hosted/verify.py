@@ -37,6 +37,7 @@ from fusekit.hosted.github_app import (
 from fusekit.hosted.lanes import (
     BYO_OCI_LANE,
     MANAGED_FUSEKIT_RUN_LANE,
+    MANAGED_PAYMENT_PROOF_REQUIREMENTS,
     byo_oci_security_contract,
     byo_oci_user_owned_cost_boundary,
     hosted_launch_lane_contract,
@@ -167,6 +168,7 @@ MANAGED_LANE_READINESS_KEYS = frozenset(
         "launchable",
         "requires_payment",
         "managed_worker_dispatch_allowed",
+        "payment_proof_required",
         "blocking_checks",
         "next_actions",
     }
@@ -1602,6 +1604,8 @@ def _managed_lane_readiness_failures(
         failures.append("lane_readiness_managed_payment_not_required")
     if lane.get("managed_worker_dispatch_allowed") is not launchable:
         failures.append("lane_readiness_managed_dispatch_mismatch")
+    if lane.get("payment_proof_required") != list(MANAGED_PAYMENT_PROOF_REQUIREMENTS):
+        failures.append("lane_readiness_managed_payment_proof_mismatch")
     blockers = lane.get("blocking_checks")
     if not isinstance(blockers, list):
         failures.append("lane_readiness_managed_blockers_invalid")

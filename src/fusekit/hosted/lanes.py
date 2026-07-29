@@ -26,6 +26,12 @@ BYO_OCI_RUNNER_PROFILE = {
 BYO_OCI_ALLOWED_SHAPE_PREFIXES = ("VM.Standard.E",)
 BYO_OCI_FORBIDDEN_ARCHITECTURES = ("arm64", "aarch64")
 BYO_OCI_FORBIDDEN_SHAPE_PREFIXES = ("VM.Standard.A",)
+MANAGED_PAYMENT_PROOF_REQUIREMENTS = (
+    "stripe_checkout_authorization",
+    "paid_checkout_session_receipt",
+    "checkout_metadata_job_lane_source_plan_price_binding",
+    "worker_dispatch_receipt_after_payment",
+)
 
 
 @dataclass(frozen=True)

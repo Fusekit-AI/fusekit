@@ -21,6 +21,7 @@ from fusekit.hosted.billing import (
 from fusekit.hosted.lanes import (
     BYO_OCI_LANE,
     MANAGED_FUSEKIT_RUN_LANE,
+    MANAGED_PAYMENT_PROOF_REQUIREMENTS,
     byo_oci_security_contract,
     byo_oci_user_owned_cost_boundary,
     hosted_launch_lane_contract,
@@ -725,6 +726,42 @@ def test_verify_hosted_deployment_rejects_lane_readiness_sidecars() -> None:
     assert "lane_readiness_unexpected_lane:internal-preview" in failures
     assert "lane_readiness_managed_unexpected_field:stripe_price_id" in failures
     assert "lane_readiness_byo_unexpected_field:worker_ocid" in failures
+
+
+def test_verify_hosted_deployment_requires_managed_payment_proof_checklist() -> None:
+    readiness = _readiness_contract()
+    lane_readiness = readiness["lane_readiness"]
+    assert isinstance(lane_readiness, dict)
+    lanes = lane_readiness["lanes"]
+    assert isinstance(lanes, dict)
+    managed = lanes[MANAGED_FUSEKIT_RUN_LANE]
+    assert isinstance(managed, dict)
+    managed["payment_proof_required"] = [
+        "stripe_checkout_authorization",
+        "worker_dispatch_receipt_after_payment",
+    ]
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            readiness,
+            _deployment_contract(),
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["hosted.readiness"]["status"] == "failed"
+    assert "lane_readiness_managed_payment_proof_mismatch" in checks["hosted.readiness"][
+        "failures"
+    ]
 
 
 def test_verify_hosted_deployment_requires_payment_cost_control_contract() -> None:
@@ -2541,6 +2578,7 @@ def _lane_readiness_contract() -> dict[str, object]:
                 "launchable": False,
                 "requires_payment": True,
                 "managed_worker_dispatch_allowed": False,
+                "payment_proof_required": list(MANAGED_PAYMENT_PROOF_REQUIREMENTS),
                 "blocking_checks": [
                     "stripe_price_id_required_for_managed_runs",
                     "managed_run_price_label_required",

@@ -42,6 +42,7 @@ from fusekit.hosted.job import (
 from fusekit.hosted.lanes import (
     BYO_OCI_LANE,
     MANAGED_FUSEKIT_RUN_LANE,
+    MANAGED_PAYMENT_PROOF_REQUIREMENTS,
     byo_oci_security_contract,
     byo_oci_user_owned_cost_boundary,
 )
@@ -629,6 +630,9 @@ def test_hosted_readiness_endpoint_reports_ready_when_configured() -> None:
     lane_readiness = payload["lane_readiness"]["lanes"]
     assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["launchable"] is False
     assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["managed_worker_dispatch_allowed"] is False
+    assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["payment_proof_required"] == list(
+        MANAGED_PAYMENT_PROOF_REQUIREMENTS
+    )
     assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["blocking_checks"] == [
         "managed_runs_not_enabled",
         "stripe_secret_key_required_for_managed_runs",
@@ -727,6 +731,9 @@ def test_hosted_readiness_reports_paid_managed_lane_when_stripe_is_configured() 
     ]
     assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["launchable"] is True
     assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["managed_worker_dispatch_allowed"] is True
+    assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["payment_proof_required"] == list(
+        MANAGED_PAYMENT_PROOF_REQUIREMENTS
+    )
     assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["blocking_checks"] == []
     assert lane_readiness[BYO_OCI_LANE]["launchable"] is True
     assert lane_readiness[BYO_OCI_LANE]["security_contract"] == byo_oci_security_contract()
@@ -953,6 +960,9 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     }
     lane_readiness = payload["lane_readiness"]["lanes"]
     assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["launchable"] is False
+    assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["payment_proof_required"] == list(
+        MANAGED_PAYMENT_PROOF_REQUIREMENTS
+    )
     assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["blocking_checks"] == [
         "managed_runs_not_enabled",
         "stripe_secret_key_required_for_managed_runs",
