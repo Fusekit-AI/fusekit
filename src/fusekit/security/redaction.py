@@ -5,6 +5,23 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+PRIVATE_MARKER_TOKENS = (
+    "ghs_",
+    "ghp_",
+    "github_pat_",
+    "sk_live",
+    "sk_test",
+    "rk_live",
+    "rk_test",
+    "-----BEGIN",
+    "PRIVATE KEY-----",
+    "ocid1.",
+    "ocid1_",
+    "AKIA",
+    "ASIA",
+    "aws_secret_access_key",
+)
+
 
 def redact_public_text(value: object) -> str:
     """Redact token-like material while preserving useful text shape."""
@@ -47,6 +64,12 @@ def redact_public_path(value: object) -> str:
         index = parts.index(".fusekit")
         return str(Path(*parts[index:]))
     return path.name
+
+
+def contains_private_marker_text(value: str) -> bool:
+    """Return true when public proof contains marker-shaped private material."""
+
+    return any(token.lower() in value.lower() for token in PRIVATE_MARKER_TOKENS)
 
 
 def contains_durable_secret_text(value: str) -> bool:

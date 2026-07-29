@@ -34,6 +34,10 @@ from fusekit.hosted.job import (
     HOSTED_BYO_OCI_PROOF_MANIFEST_SCHEMA_VERSION,
     HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION,
     HOSTED_BYO_OCI_REVERSIBILITY_SCHEMA_VERSION,
+    HostedLaunchJobStep,
+    _proof_link,
+    _public_job_path_id,
+    _step_card,
     hosted_byo_oci_bootstrap,
     render_hosted_byo_oci_bootstrap,
     verify_hosted_byo_oci_proof_bundle,
@@ -42,9 +46,11 @@ from fusekit.hosted.job import (
 from fusekit.hosted.lanes import (
     BYO_OCI_LANE,
     MANAGED_FUSEKIT_RUN_LANE,
+    HostedLaunchLane,
     byo_oci_runner_shape_guard,
     byo_oci_security_contract,
     byo_oci_user_owned_cost_boundary,
+    hosted_launch_lane_contract,
 )
 from fusekit.hosted.launcher import build_hosted_launch_plan
 from fusekit.manifest import ServiceRequirement, SetupManifest
@@ -500,6 +506,71 @@ def test_byo_oci_runner_shape_guard_rejects_arm_profile(
 
     with pytest.raises(FuseKitError, match="AMD/x86_64"):
         byo_oci_runner_shape_guard()
+
+
+def test_hosted_launch_lane_rejects_private_marker_public_metadata() -> None:
+    lane = HostedLaunchLane(
+        lane_id="managed-fusekit-run",
+        label="Managed FuseKit run",
+        cost_owner="user-pays-fusekit",
+        worker_owner="fusekit-managed-infrastructure",
+        requires_payment=True,
+        requires_user_cloud_account=False,
+        managed_worker_dispatch_allowed=True,
+        summary="Dispatch only after ASIA_should_not_render.",
+        gates=("Stripe Checkout payment authorization",),
+        proof=("Redacted receipt",),
+        cost_controls=("Payment receipt must bind to the same job.",),
+    )
+
+    with pytest.raises(FuseKitError, match="Hosted launch lane contains private material"):
+        lane.to_dict()
+
+
+def test_hosted_launch_lane_contract_rejects_private_marker_nested_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        hosted_lanes,
+        "hosted_launch_lanes",
+        lambda: (
+            HostedLaunchLane(
+                lane_id="bring-your-own-oci",
+                label="Bring your own OCI",
+                cost_owner="user-pays-oracle-directly",
+                worker_owner="user-owned-oci-tenancy",
+                requires_payment=False,
+                requires_user_cloud_account=True,
+                managed_worker_dispatch_allowed=False,
+                summary="User-owned worker.",
+                gates=("Oracle Cloud login",),
+                proof=("Run Record",),
+                cost_controls=("No FuseKit-managed worker dispatch.",),
+                user_owned_cost_boundary={
+                    "statement": "Cost proof must not include sk_live_should_not_render."
+                },
+            ),
+        ),
+    )
+
+    with pytest.raises(FuseKitError, match="Hosted launch lane contains private material"):
+        hosted_launch_lane_contract()
+
+
+def test_byo_oci_security_contract_rejects_private_marker_completion_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        hosted_lanes,
+        "HOSTED_COMPLETION_EVIDENCE_KEYS",
+        ("live_url", "ASIA_should_not_render"),
+    )
+
+    with pytest.raises(
+        FuseKitError,
+        match="BYO OCI security contract contains private material",
+    ):
+        byo_oci_security_contract()
 
 
 def test_hosted_byo_bootstrap_rejects_secret_text_in_public_handoff(
@@ -2135,6 +2206,29 @@ def test_hosted_control_room_renders_real_controls_only_with_control_token() -> 
     assert 'disabled aria-disabled="true">Start worker</button>' not in html
     assert '<button type="submit">Start worker</button>' in html
     assert '<button type="submit">Stop launch</button>' in html
+
+
+def test_hosted_job_html_helpers_redact_private_markers_and_paths() -> None:
+    marker = "ASIA_hosted_should_not_render"
+    step = HostedLaunchJobStep(
+        id="source.scan",
+        label=f"Scan {marker}",
+        owner=f"FuseKit {marker}",
+        status="waiting",
+        proof=f"Proof waits for {marker}",
+    )
+    html = _step_card(step)
+
+    assert marker not in html
+    assert "[redacted]" in html
+
+    job = build_hosted_launch_job(_plan(), job_id="hosted-test", now=1_700_000_000)
+    unsafe_job = replace(job, job_id=f"hosted-{marker}")
+    link = _proof_link(unsafe_job, job_token="signed-public-job")
+
+    assert _public_job_path_id(unsafe_job) == "hosted-job"
+    assert marker not in link
+    assert "/api/hosted/jobs/hosted-job/proof?job=signed-public-job" in link
 
 
 def test_hosted_launch_job_actions_record_truthful_waiting_states() -> None:

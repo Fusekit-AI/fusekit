@@ -129,6 +129,21 @@ def test_provider_pack_round_trips_and_rejects_raw_secret(tmp_path) -> None:
         validate_provider_pack(bad)
 
 
+def test_provider_pack_public_serialization_rejects_private_markers(tmp_path) -> None:
+    pack = synthesize_provider_pack(
+        "plaid",
+        tmp_path,
+        evidence=ProviderEvidence(
+            dependencies=("plaid",),
+            env_names=("PLAID_CLIENT_ID", "PLAID_SECRET", "PLAID_ENV"),
+        ),
+    )
+    unsafe = replace(pack, evidence=("app-evidence:ASIA_should_not_render",))
+
+    with pytest.raises(ProviderError, match="private material"):
+        unsafe.to_dict()
+
+
 def test_provider_pack_rejects_bypass_instructions() -> None:
     bad = ProviderCapabilityPack(
         schema_version="fusekit.provider-pack.v1",

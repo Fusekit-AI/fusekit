@@ -19,6 +19,7 @@ from fusekit.harness.acceptance import (
     _check_runner_readiness,
     _check_vault,
     _check_visual_state,
+    _contains_secretish_audit_text,
     _gate_capture_audit_event_proves_vault_capture,
     _gate_open_audit_event_proves_vm_open,
     _gate_resume_audit_event_proves_finished_click,
@@ -29,6 +30,7 @@ from fusekit.harness.acceptance import (
     _rollback_provider_names,
     _run_record_runner_profile_consistency_failures,
     _run_record_shape_failures,
+    _standalone_artifact_public_safety_failures,
     _unguided_gates,
 )
 from fusekit.harness.ledger import HarnessLedger
@@ -1731,6 +1733,32 @@ def _provider_pack_api_setup_action(provider: str, recipe: str) -> dict[str, obj
             ],
         },
     }
+
+
+def test_public_artifact_safety_rejects_private_provider_markers() -> None:
+    failures = _standalone_artifact_public_safety_failures(
+        {
+            "stripe": "created restricted key rk_live_redacted",
+            "oci": "attached instance ocid1.instance.oc1.iad.raw",
+            "aws": "session ASIAIOSFODNN7EXAMPLE",
+            "pem": "-----BEGIN PRIVATE KEY-----",
+        },
+        "setup_receipt",
+    )
+
+    assert failures == [
+        "setup_receipt.stripe contains credential-looking text",
+        "setup_receipt.oci contains credential-looking text",
+        "setup_receipt.aws contains credential-looking text",
+        "setup_receipt.pem contains credential-looking text",
+    ]
+
+
+def test_audit_secretish_text_rejects_private_provider_markers() -> None:
+    assert _contains_secretish_audit_text("github_pat_redacted")
+    assert _contains_secretish_audit_text("aws_secret_access_key = redacted")
+    assert _contains_secretish_audit_text("-----BEGIN OPENSSH PRIVATE KEY-----")
+    assert _contains_secretish_audit_text("ocid1_instance_oc1_raw")
 
 
 def test_rollback_provider_names_accepts_current_and_legacy_dns_actions() -> None:

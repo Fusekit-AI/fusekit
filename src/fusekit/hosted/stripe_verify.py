@@ -25,7 +25,7 @@ from fusekit.hosted.stripe_setup import (
     _valid_fusekit_product_name,
     build_stripe_managed_run_price_plan,
 )
-from fusekit.security import contains_durable_secret_text
+from fusekit.security import contains_durable_secret_text, contains_private_marker_text
 
 STRIPE_MANAGED_PRICE_VERIFY_SCHEMA_VERSION = "fusekit.stripe-managed-price-verify.v1"
 
@@ -114,9 +114,7 @@ def verify_stripe_managed_run_price(
         "secret_boundary": HOSTED_STRIPE_SETUP_SECRET_BOUNDARY,
         "next_actions": _verification_next_actions(blockers),
     }
-    serialized = json.dumps(report, sort_keys=True)
-    if contains_durable_secret_text(serialized):
-        raise FuseKitError("stripe_price_verify_report_contains_secret_text")
+    _assert_public_price_verify_report(report)
     return report
 
 
@@ -281,7 +279,19 @@ def _public_stripe_id(value: object, *, prefix: str) -> str:
         return ""
     if not all(ch.isalnum() or ch == "_" for ch in value):
         return ""
+    if _contains_private_marker(value):
+        return ""
     return value
+
+
+def _assert_public_price_verify_report(report: Mapping[str, object]) -> None:
+    serialized = json.dumps(report, sort_keys=True)
+    if contains_durable_secret_text(serialized) or _contains_private_marker(serialized):
+        raise FuseKitError("stripe_price_verify_report_contains_secret_text")
+
+
+def _contains_private_marker(value: str) -> bool:
+    return contains_private_marker_text(value)
 
 
 if __name__ == "__main__":  # pragma: no cover

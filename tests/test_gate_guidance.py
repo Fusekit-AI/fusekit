@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import re
 
+import pytest
+
+import fusekit.runner.gate_guidance as gate_guidance_module
+from fusekit.errors import FuseKitError
 from fusekit.runner.control_room.events import SCRIPT
 from fusekit.runner.gate_guidance import (
+    GateGuidance,
     gate_guidance_payload,
     infer_gate_provider,
     provider_gate_guidance,
@@ -32,6 +37,36 @@ def test_live_control_room_guidance_uses_python_payload() -> None:
     assert providers["resend"]["title"] in SCRIPT
     assert providers["cloudflare"]["body"] in SCRIPT
     assert payload["generic"]["title"] in SCRIPT
+
+
+def test_gate_guidance_rejects_private_marker_public_copy() -> None:
+    guidance = GateGuidance(
+        title="Provider gate",
+        body="Wait for ASIA_should_not_render.",
+        actions=("Open the provider gate.",),
+        reassurance="FuseKit is waiting.",
+    )
+
+    with pytest.raises(FuseKitError, match="Gate guidance contains private material"):
+        guidance.to_dict()
+
+
+def test_gate_guidance_payload_rejects_private_marker_nested_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(
+        gate_guidance_module._PROVIDER_GUIDANCE,
+        "demo",
+        GateGuidance(
+            title="Demo provider",
+            body="Complete the provider-owned consent screen.",
+            actions=("Do not render sk_live_should_not_render.",),
+            reassurance="FuseKit waits.",
+        ),
+    )
+
+    with pytest.raises(FuseKitError, match="Gate guidance contains private material"):
+        gate_guidance_payload()
 
 
 def test_live_control_room_strategy_rows_normalize_generic_capture_copy() -> None:

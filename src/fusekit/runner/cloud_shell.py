@@ -5,9 +5,13 @@ from __future__ import annotations
 import html
 import json
 import shlex
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote, urlencode
+
+from fusekit.errors import FuseKitError
+from fusekit.security import contains_durable_secret_text, contains_private_marker_text
 
 OCI_CLOUD_SHELL_URL = "https://cloud.oracle.com/"
 
@@ -26,7 +30,7 @@ class CloudShellLaunchPlan:
     def to_dict(self) -> dict[str, object]:
         """Serialize the launch plan."""
 
-        return {
+        payload: dict[str, object] = {
             "app_source": self.app_source,
             "fusekit_package": self.fusekit_package,
             "launch_args": list(self.launch_args),
@@ -34,6 +38,8 @@ class CloudShellLaunchPlan:
             "bootstrap_command": self.bootstrap_command,
             "fallback_steps": list(self.fallback_steps),
         }
+        _assert_public_cloud_shell_payload(payload, "Cloud Shell launch plan")
+        return payload
 
 
 def build_cloud_shell_launch_plan(
@@ -254,6 +260,7 @@ def _source_fetch_args(launch_args: tuple[str, ...]) -> tuple[str, ...]:
 def cloud_shell_deeplink(command: str) -> str:
     """Build an OCI Console Cloud Shell deeplink with command fallback parameters."""
 
+    _require_public_cloud_shell_text(command, "Cloud Shell deeplink command")
     query = urlencode(
         {
             "cloudshell": "true",
@@ -816,7 +823,10 @@ def _launcher_summary_items(plan: CloudShellLaunchPlan) -> tuple[str, ...]:
             "Secret capture: exact env-named Capture buttons, for example "
             "Capture RESEND_API_KEY from VM clipboard, save directly to the encrypted vault"
         )
-    return tuple(items)
+    payload = tuple(items)
+    for item in payload:
+        _require_public_cloud_shell_text(item, "Cloud Shell launcher summary")
+    return payload
 
 
 def write_cloud_shell_launcher(plan: CloudShellLaunchPlan, path: Path) -> None:
@@ -824,3 +834,24 @@ def write_cloud_shell_launcher(plan: CloudShellLaunchPlan, path: Path) -> None:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(render_cloud_shell_launcher(plan), encoding="utf-8")
+
+
+def _assert_public_cloud_shell_payload(
+    payload: Mapping[str, object],
+    label: str,
+) -> None:
+    serialized = json.dumps(payload, sort_keys=True)
+    if _contains_cloud_shell_private_material(serialized):
+        raise FuseKitError(f"{label} contains private material.")
+
+
+def _require_public_cloud_shell_text(value: str, label: str) -> None:
+    if _contains_cloud_shell_private_material(value):
+        raise FuseKitError(f"{label} contains private material.")
+
+
+def _contains_cloud_shell_private_material(value: str) -> bool:
+    if contains_private_marker_text(value):
+        return True
+    prompt_safe = value.replace("Passphrase:", "Passphrase prompt")
+    return contains_durable_secret_text(prompt_safe)

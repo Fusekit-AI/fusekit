@@ -21,7 +21,7 @@ from fusekit.hosted.job import (
     hosted_worker_request,
 )
 from fusekit.hosted.launcher import build_hosted_launch_plan
-from fusekit.hosted.worker_client import run_hosted_worker_once
+from fusekit.hosted.worker_client import HostedWorkerRunResult, run_hosted_worker_once
 from fusekit.runner.remote_survivors import REMOTE_REQUIRED_SURVIVOR_FILES
 from fusekit.scanner import scan_repo
 
@@ -315,6 +315,59 @@ def test_run_hosted_worker_once_rejects_private_network_origin(tmp_path: Path) -
             github_config=_github_config(),
             workspace=tmp_path,
         )
+
+
+def test_run_hosted_worker_once_rejects_private_marker_public_labels_before_api(
+    tmp_path: Path,
+) -> None:
+    calls: list[tuple[str, dict[str, str], dict[str, object] | None]] = []
+
+    def post_json(
+        url: str,
+        headers: dict[str, str],
+        payload: dict[str, object] | None,
+    ) -> dict[str, Any]:
+        calls.append((url, headers, payload))
+        return {}
+
+    with pytest.raises(FuseKitError, match="Hosted worker id contains private material"):
+        run_hosted_worker_once(
+            origin="https://fusekit.snowmanai.org",
+            job_id="hosted-test",
+            job_token="job-token",
+            worker_secret=WORKER_SECRET,
+            worker_id="worker-ASIA_should_not_render",
+            github_config=_github_config(),
+            workspace=tmp_path,
+            post_json=post_json,
+        )
+
+    with pytest.raises(FuseKitError, match="Hosted worker job id contains private material"):
+        run_hosted_worker_once(
+            origin="https://fusekit.snowmanai.org",
+            job_id="hosted-ASIA_should_not_render",
+            job_token="job-token",
+            worker_secret=WORKER_SECRET,
+            github_config=_github_config(),
+            workspace=tmp_path,
+            post_json=post_json,
+        )
+
+    assert calls == []
+
+
+def test_hosted_worker_run_result_rejects_private_marker_proof_response() -> None:
+    result = HostedWorkerRunResult(
+        job_id="hosted-test",
+        launch_returncode=0,
+        acceptance_returncode=0,
+        invocation=None,
+        proof_payload={"schema_version": "fusekit.hosted-worker-proof.v1"},
+        proof_response={"proof_receipt": {"debug": "ASIA_should_not_render"}},
+    )
+
+    with pytest.raises(FuseKitError, match="Hosted worker run result contains private material"):
+        result.to_dict()
 
 
 def _claim_payload(tmp_path: Path) -> dict[str, object]:

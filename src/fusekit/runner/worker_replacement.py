@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from fusekit.security import contains_durable_secret_text
+from fusekit.security import contains_durable_secret_text, contains_private_marker_text
 
 WORKER_REPLACEMENT_DRILL_SCHEMA_VERSION = "fusekit.worker-replacement-drill.v1"
 WORKER_REPLACEMENT_SOURCE_IDS = (
@@ -192,10 +192,14 @@ def worker_replacement_drill_failures(payload: dict[str, Any]) -> list[str]:
     ):
         failures.append("worker replacement drill statement is incomplete")
     for path, value in _walk_json_strings(payload, path="worker replacement drill"):
-        if contains_durable_secret_text(value):
+        if _contains_public_credential_text(value):
             failures.append(f"{path} contains credential-looking text")
             break
     return failures
+
+
+def _contains_public_credential_text(value: str) -> bool:
+    return contains_durable_secret_text(value) or contains_private_marker_text(value)
 
 
 def _has_duplicate_strings(values: list[Any]) -> bool:

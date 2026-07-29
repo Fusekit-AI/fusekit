@@ -10,6 +10,7 @@ import subprocess
 import tarfile
 import threading
 import time
+from dataclasses import replace
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, cast
@@ -70,7 +71,9 @@ from fusekit.runner.automation_boundary import (
 )
 from fusekit.runner.broker import resolve_runner
 from fusekit.runner.cloud_shell import (
+    CloudShellLaunchPlan,
     build_cloud_shell_launch_plan,
+    cloud_shell_deeplink,
     render_cloud_shell_launcher,
 )
 from fusekit.runner.control_room import (
@@ -316,8 +319,13 @@ from fusekit.runner.worker_replacement import (
     WORKER_REPLACEMENT_DRILL_SCHEMA_VERSION,
     build_passed_worker_replacement_drill,
     build_worker_replacement_drill,
+    worker_replacement_drill_failures,
 )
-from fusekit.security import contains_durable_secret_text, scan_for_secret_leaks
+from fusekit.security import (
+    contains_durable_secret_text,
+    contains_private_marker_text,
+    scan_for_secret_leaks,
+)
 from fusekit.vault import Vault
 from fusekit.verification_report import (
     VERIFICATION_REPORT_CHECK_FIELD,
@@ -589,6 +597,15 @@ def test_worker_replacement_drill_surfaces_share_canonical_authority() -> None:
     assert acceptance.WORKER_REPLACEMENT_DRILL_SCHEMA_VERSION == (
         WORKER_REPLACEMENT_DRILL_SCHEMA_VERSION
     )
+
+
+def test_worker_replacement_drill_rejects_private_provider_markers() -> None:
+    drill = build_passed_worker_replacement_drill()
+    drill["pending_reason"] = "operator note ASIA_should_not_render"
+
+    assert worker_replacement_drill_failures(drill) == [
+        "worker replacement drill.pending_reason contains credential-looking text"
+    ]
 
 
 def test_setup_receipt_proof_surfaces_share_canonical_authority() -> None:
@@ -1140,6 +1157,31 @@ def test_control_room_security_surfaces_share_canonical_authority() -> None:
     assert preflight.CONTROL_ROOM_SECURITY_STATEMENT_TERMS is (
         CONTROL_ROOM_SECURITY_STATEMENT_TERMS
     )
+
+
+def test_public_control_room_security_surface_rejects_private_markers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fusekit.runner.control_room import surfaces
+
+    monkeypatch.setattr(
+        surfaces,
+        "CONTROL_ROOM_ROUTE_SURFACE",
+        (
+            {
+                "route": "/control/ASIA_should_not_render",
+                "methods": ("POST",),
+                "state_change": True,
+                "protection": "owner_action_token",
+            },
+        ),
+    )
+
+    with pytest.raises(
+        FuseKitError,
+        match="Control-room security surface contains private material",
+    ):
+        surfaces.public_control_room_security_surface()
 
 
 def _runner_binary_records() -> dict[str, dict[str, object]]:
@@ -2235,19 +2277,20 @@ def test_run_record_recomputes_acceptance_recordability_from_contract(
 def test_run_record_redacts_provider_gate_public_proof(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci")
     raw_token = "ghp_abcdefghijklmnopqrstuvwxyz1234567890"
+    provider_marker = "ASIA_should_not_render"
     callback = "https://provider.example/callback?code=provider-code-secret&state=ok"
     gate_service = GateService.load(tmp_path / "gates.json")
     gate = gate_service.wait(
         "provider.github.authorization",
         provider="github",
-        reason=f"provider returned {callback} token={raw_token}",
+        reason=f"provider returned {callback} token={raw_token} marker={provider_marker}",
         resume_url=f"https://github.com/settings/tokens?token={raw_token}&code=provider-code-secret",
         classification="provider-authorization",
         target="GITHUB_TOKEN",
         follow_steps=(f"Open provider gate in VM and copy callback {callback}",),
         success_criteria=(f"token accepted {raw_token}",),
         avoid_steps=(f"Do not paste bearer {raw_token}",),
-        next_action=f"capture api_key={raw_token}",
+        next_action=f"capture api_key={raw_token} then discard {provider_marker}",
         resume_hint=f"retry callback {callback}",
     )
     gate.last_opened_url = callback
@@ -2264,10 +2307,12 @@ def test_run_record_redacts_provider_gate_public_proof(tmp_path) -> None:
     assert gate_record["last_opened_url"] == "[redacted-url]"
     assert "Open provider gate in VM" in gate_record["follow_steps"][0]
     assert raw_token not in record_text
+    assert provider_marker not in record_text
     assert "provider-code-secret" not in record_text
     assert "https://provider.example" not in record_text
     assert "https://github.com/settings/tokens" not in record_text
     assert not contains_durable_secret_text(record_text)
+    assert not contains_private_marker_text(record_text)
 
 
 def test_run_record_canonicalizes_wake_event_public_proof(tmp_path) -> None:
@@ -6349,6 +6394,7 @@ def test_control_room_payload_includes_run_record(tmp_path) -> None:
 def test_control_room_redacts_run_record_public_payload(tmp_path) -> None:
     job = JobState.create("fk-test", tmp_path, "oci-free")
     raw_token = "ghp_abcdefghijklmnopqrstuvwxyz1234567890"
+    provider_marker = "ASIA_should_not_render"
     callback = "https://provider.example/callback?code=provider-code-secret&state=ok"
     run_record = tmp_path / "run_record.json"
     run_record.write_text(
@@ -6361,7 +6407,10 @@ def test_control_room_redacts_run_record_public_payload(tmp_path) -> None:
                     "recording_ready": False,
                     "checks": {"errors_empty": False},
                     "blockers": [f"token={raw_token}"],
-                    "statement": f"public demo callback {callback} token {raw_token}",
+                    "statement": (
+                        f"public demo callback {callback} token {raw_token} "
+                        f"marker {provider_marker}"
+                    ),
                 },
                 "errors": [
                     {
@@ -6377,6 +6426,7 @@ def test_control_room_redacts_run_record_public_payload(tmp_path) -> None:
                     "recording_file": str(tmp_path / "recordings" / "demo.webm"),
                 },
                 f"extra_{raw_token}": f"secret={raw_token}",
+                f"debug_{provider_marker}": f"public marker {provider_marker}",
             }
         ),
         encoding="utf-8",
@@ -6388,9 +6438,11 @@ def test_control_room_redacts_run_record_public_payload(tmp_path) -> None:
     run_record_text = json.dumps(payload["run_record"], sort_keys=True)
 
     assert raw_token not in run_record_text
+    assert provider_marker not in run_record_text
     assert "provider-code-secret" not in run_record_text
     assert str(tmp_path) not in run_record_text
     assert raw_token not in html
+    assert provider_marker not in html
     assert "provider-code-secret" not in html
     assert str(tmp_path) not in html
     assert payload["run_record"]["errors"][0]["trace_path"] == "trace.zip"
@@ -6400,8 +6452,31 @@ def test_control_room_redacts_run_record_public_payload(tmp_path) -> None:
     assert payload["run_record"]["evidence"]["recording_file"] == "demo.webm"
     assert "[redacted]" in run_record_text
     assert not contains_durable_secret_text(run_record_text)
+    assert not contains_private_marker_text(run_record_text)
     assert "publicRedactedText" in SCRIPT
     assert "return publicRedactedText(text);" in SCRIPT
+    assert "privateMarkerPatterns" in SCRIPT
+    assert "aws_secret_access_key" in SCRIPT
+    assert "ocid1[._]" in SCRIPT
+
+
+def test_control_room_static_html_redacts_private_marker_job_surfaces(tmp_path) -> None:
+    provider_marker = "ASIA_static_should_not_render"
+    app = tmp_path / f"app-{provider_marker}"
+    app.mkdir()
+    job = JobState.create(f"job-{provider_marker}", app, f"runner-{provider_marker}")
+    job.steps[0] = replace(
+        job.steps[0],
+        id=f"step-{provider_marker}",
+        label=f"Label {provider_marker}",
+        detail=f"Detail {provider_marker}",
+    )
+    job.add_artifact(f"artifact-{provider_marker}", app / f"artifact-{provider_marker}.json")
+
+    html = render_control_room(job, gate_path=tmp_path / "gates.json")
+
+    assert provider_marker not in html
+    assert "[redacted]" in html
 
 
 def test_control_room_redacts_job_run_state_and_llm_public_payload(tmp_path) -> None:
@@ -7196,6 +7271,41 @@ def test_cloud_shell_launcher_contains_deeplink_and_fallback_command() -> None:
     assert "Passphrase:" in plan.bootstrap_command
     assert "if [ -t 0 ]; then" in plan.bootstrap_command
     assert "stty -echo" in plan.bootstrap_command
+
+
+def test_cloud_shell_launch_plan_rejects_private_markers() -> None:
+    plan = CloudShellLaunchPlan(
+        app_source="https://github.com/example/ASIA_should_not_render",
+        fusekit_package="fusekit",
+        launch_args=(),
+        deeplink_url="https://cloud.oracle.com/?cloudshell=true",
+        bootstrap_command="fusekit launch",
+        fallback_steps=("Open OCI Cloud Shell.",),
+    )
+
+    with pytest.raises(FuseKitError, match="Cloud Shell launch plan contains private material"):
+        plan.to_dict()
+
+
+def test_cloud_shell_launcher_summary_rejects_private_marker_args() -> None:
+    plan = build_cloud_shell_launch_plan(
+        app_source="https://github.com/example/app.git",
+        launch_args=("--dns-zone", "sk_live_should_not_render.example"),
+    )
+
+    with pytest.raises(
+        FuseKitError,
+        match="Cloud Shell launch plan contains private material",
+    ):
+        render_cloud_shell_launcher(plan)
+
+
+def test_cloud_shell_deeplink_rejects_private_marker_command() -> None:
+    with pytest.raises(
+        FuseKitError,
+        match="Cloud Shell deeplink command contains private material",
+    ):
+        cloud_shell_deeplink("printf %s ASIA_should_not_render")
 
 
 def test_cloud_shell_launcher_source_update_keeps_shell_command_safe() -> None:

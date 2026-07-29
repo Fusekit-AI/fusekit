@@ -1243,6 +1243,31 @@ def test_hosted_deployment_contract_normalizes_worker_dispatch_receiver_checks()
     }
 
 
+def test_hosted_public_contracts_reject_private_marker_source_provenance() -> None:
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=_private_key_pem(),
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        **{
+            **_aws_provenance_kwargs(),
+            "aws_git_repo_owner": "ASIA_source_owner_should_not_render",
+        },
+    )
+
+    with pytest.raises(FuseKitError, match="Hosted readiness contains private material"):
+        settings.readiness()
+
+    with pytest.raises(
+        FuseKitError,
+        match="Hosted deployment contract contains private material",
+    ):
+        settings.deployment_contract()
+
+
 @pytest.mark.parametrize(
     "private_marker",
     [

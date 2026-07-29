@@ -10,7 +10,11 @@ from ipaddress import ip_address
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.server import HOSTED_CANONICAL_ORIGIN
-from fusekit.security import contains_durable_secret_text, redact_public_text
+from fusekit.security import (
+    contains_durable_secret_text,
+    contains_private_marker_text,
+    redact_public_text,
+)
 
 HOSTED_OCI_ACCESS_PLAN_SCHEMA_VERSION = "fusekit.hosted-oci-access-plan.v1"
 HOSTED_OCI_DEPLOY_ACCESS_REPAIR_SCHEMA_VERSION = "fusekit.hosted-oci-deploy-access-repair.v1"
@@ -548,18 +552,22 @@ def _assert_public_access_plan(plan: Mapping[str, object]) -> None:
     serialized = json.dumps(plan, sort_keys=True)
     if contains_durable_secret_text(serialized):
         raise FuseKitError("hosted_oci_access_plan_contains_secret_text")
-    forbidden_patterns = [
-        r"ocid1\.(?:tenancy|user|compartment|vnic|image)\.",
-        r"ocid1_",
-        r"rk_live",
-        r"rk_test",
-        r"\bASIA",
-        r"aws_secret_access_key",
-        r"-----BEGIN ",
+    if _contains_oci_private_marker(serialized) or re.search(
         r"\bfingerprints?\b",
-    ]
-    if any(re.search(pattern, serialized, re.IGNORECASE) for pattern in forbidden_patterns):
+        serialized,
+        re.IGNORECASE,
+    ):
         raise FuseKitError("hosted_oci_access_plan_contains_nonpublic_identifier")
+
+
+def _contains_oci_private_marker(value: str) -> bool:
+    text = re.sub(
+        r"ocid1\.instance\.<redacted:[^>]+>",
+        "oci-instance-redacted",
+        value,
+        flags=re.IGNORECASE,
+    )
+    return contains_private_marker_text(text)
 
 
 if __name__ == "__main__":  # pragma: no cover

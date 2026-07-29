@@ -28,7 +28,10 @@ from fusekit.runner.remote_survivors import (
     REMOTE_REQUIRED_SURVIVOR_FILES,
 )
 from fusekit.scanner import scan_repo
-from fusekit.security.redaction import contains_durable_secret_text
+from fusekit.security.redaction import (
+    contains_durable_secret_text,
+    contains_private_marker_text,
+)
 from fusekit.source import (
     SourceFetchResult,
     fetch_github_source_archive,
@@ -600,7 +603,10 @@ def _public_proof_artifact_safe(path: Path, *, allow_empty: bool = False) -> boo
         return False
     except UnicodeDecodeError:
         return False
-    return not contains_durable_secret_text(content)
+    return not (
+        contains_durable_secret_text(content)
+        or _contains_hosted_worker_private_marker(content)
+    )
 
 
 def _remote_artifacts_bundle_present(path: Path) -> bool:
@@ -739,7 +745,14 @@ def _provider_rollback_action_ready(action: object) -> bool:
 
 
 def _json_contains_secret_text(value: object) -> bool:
-    return contains_durable_secret_text(json.dumps(value, sort_keys=True))
+    serialized = json.dumps(value, sort_keys=True, default=str)
+    return contains_durable_secret_text(
+        serialized
+    ) or _contains_hosted_worker_private_marker(serialized)
+
+
+def _contains_hosted_worker_private_marker(value: str) -> bool:
+    return contains_private_marker_text(value)
 
 
 def _proof_note(

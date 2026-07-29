@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from dataclasses import dataclass
+
+from fusekit.errors import FuseKitError
+from fusekit.security import contains_durable_secret_text, contains_private_marker_text
 
 
 @dataclass(frozen=True)
@@ -19,7 +24,7 @@ class GateGuidance:
     def to_dict(self) -> dict[str, object]:
         """Serialize guidance for the live control-room browser script."""
 
-        return {
+        payload: dict[str, object] = {
             "title": self.title,
             "body": self.body,
             "actions": list(self.actions),
@@ -27,6 +32,8 @@ class GateGuidance:
             "success": list(self.success),
             "avoid": list(self.avoid),
         }
+        _assert_public_gate_guidance_payload(payload, "Gate guidance")
+        return payload
 
 
 _PROVIDER_GUIDANCE: dict[str, GateGuidance] = {
@@ -326,13 +333,15 @@ def provider_gate_guidance(provider: str) -> GateGuidance:
 def gate_guidance_payload() -> dict[str, object]:
     """Return provider guidance with one Python source of truth for all renderers."""
 
-    return {
+    payload: dict[str, object] = {
         "providers": {
             provider: guidance.to_dict()
             for provider, guidance in _PROVIDER_GUIDANCE.items()
         },
         "generic": _GENERIC.to_dict(),
     }
+    _assert_public_gate_guidance_payload(payload, "Gate guidance payload")
+    return payload
 
 
 def infer_gate_provider(text: str) -> str:
@@ -345,3 +354,12 @@ def infer_gate_provider(text: str) -> str:
     if "oracle" in lower or "cloud shell" in lower:
         return "oci"
     return ""
+
+
+def _assert_public_gate_guidance_payload(
+    payload: Mapping[str, object],
+    label: str,
+) -> None:
+    serialized = json.dumps(payload, sort_keys=True)
+    if contains_durable_secret_text(serialized) or contains_private_marker_text(serialized):
+        raise FuseKitError(f"{label} contains private material.")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import replace
 
 import pytest
 
@@ -334,6 +335,54 @@ def test_hosted_launcher_can_link_to_control_room_without_commands() -> None:
     assert "Start hosted launch" in html
     assert "source .venv" not in visible_text
     assert "fusekit launch" not in visible_text
+
+
+def test_hosted_launcher_rejects_private_marker_payload_drift() -> None:
+    plan = build_hosted_launch_plan(
+        _manifest(),
+        github_source="https://github.com/example/any-app",
+    )
+    unsafe_plan = replace(plan, app_name="ASIA_launcher_should_not_render")
+
+    with pytest.raises(FuseKitError, match="public payload contains private material"):
+        render_hosted_launcher(unsafe_plan)
+
+
+def test_public_plan_summary_rejects_private_marker_payload_drift() -> None:
+    plan = build_hosted_launch_plan(
+        _manifest(),
+        github_source="https://github.com/example/any-app",
+    )
+    unsafe_plan = replace(plan, github_source="https://github.com/example/ASIA_leak")
+
+    with pytest.raises(FuseKitError, match="public payload contains private material"):
+        public_plan_summary(unsafe_plan)
+
+
+def test_hosted_launcher_disables_secret_shaped_launch_urls() -> None:
+    plan = build_hosted_launch_plan(
+        _manifest(),
+        github_source="https://github.com/example/any-app",
+    )
+    html = render_hosted_launcher(
+        plan,
+        launch_url="/github/control-room?token=sk_live_should_not_render",
+        launch_urls={
+            "managed-fusekit-run": "javascript:alert(1)",
+            "byo-oci": "/github/control-room?job=ASIA_should_not_render",
+        },
+        lane_readiness={
+            "lanes": {
+                "managed-fusekit-run": {"launchable": True, "next_actions": []},
+                "byo-oci": {"launchable": True, "next_actions": []},
+            }
+        },
+    )
+
+    assert "sk_live_should_not_render" not in html
+    assert "ASIA_should_not_render" not in html
+    assert "javascript:alert" not in html
+    assert "Unavailable" in html
 
 
 def test_hosted_launcher_embeds_redacted_public_plan_json() -> None:

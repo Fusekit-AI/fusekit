@@ -353,6 +353,39 @@ def test_stripe_price_setup_rejects_secret_or_markup_public_product_fields() -> 
         )
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "failure"),
+    [
+        ("product_name", "FuseKit ASIA should not render", "product name"),
+        (
+            "product_description",
+            "FuseKit rk_live_should_not_render managed run",
+            "product description",
+        ),
+        (
+            "product_description",
+            "FuseKit aws_secret_access_key managed run",
+            "product description",
+        ),
+    ],
+)
+def test_stripe_price_setup_rejects_private_marker_public_product_fields(
+    field: str,
+    value: str,
+    failure: str,
+) -> None:
+    kwargs = {
+        "stripe_secret_key": "sk_live_secret_value",
+        "amount_cents": 100,
+        "currency": "usd",
+        "price_label": "Launch validation: $1.00 FuseKit managed run",
+        field: value,
+    }
+
+    with pytest.raises(FuseKitError, match=failure):
+        build_stripe_managed_run_price_plan(**kwargs)
+
+
 def test_stripe_price_setup_does_not_reuse_secret_shaped_product_name() -> None:
     plan = build_stripe_managed_run_price_plan(
         stripe_secret_key="sk_live_secret_value",
@@ -394,6 +427,32 @@ def test_stripe_price_setup_does_not_reuse_secret_shaped_product_name() -> None:
         )
 
     assert len(opener.requests) == 1
+
+
+def test_stripe_price_setup_rejects_private_marker_product_response_id() -> None:
+    class MarkerProductOpener(StripeSetupOpener):
+        def __call__(
+            self,
+            request: urllib.request.Request,
+            *,
+            timeout: float,
+        ) -> FakeResponse:
+            if request.full_url.endswith("/v1/products"):
+                self.requests.append(request)
+                self.bodies.append(urllib.parse.parse_qs((request.data or b"").decode("utf-8")))
+                return FakeResponse({"id": "prod_ASIA_should_not_render"})
+            return super().__call__(request, timeout=timeout)
+
+    with pytest.raises(FuseKitError, match="public product id"):
+        create_stripe_managed_run_price(
+            stripe_secret_key="sk_live_secret_value",
+            amount_cents=100,
+            currency="usd",
+            price_label="Launch validation: $1.00 FuseKit managed run",
+            execute=True,
+            confirm_shared_account=True,
+            opener=MarkerProductOpener(),
+        )
 
 
 def test_stripe_price_setup_refuses_mutation_without_shared_account_confirmation() -> None:

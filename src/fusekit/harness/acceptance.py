@@ -253,6 +253,7 @@ from fusekit.runner.worker_replacement import WORKER_REPLACEMENT_DRILL_KEYS
 from fusekit.scanner import scan_repo
 from fusekit.security import (
     contains_durable_secret_text,
+    contains_private_marker_text,
     redact_public_path,
     redact_public_text,
     scan_for_secret_leaks,
@@ -1431,7 +1432,7 @@ def _run_record_public_safety_failures(raw: dict[str, Any]) -> list[str]:
 
     failures: list[str] = []
     for path, value in _walk_run_record_strings(raw):
-        if contains_durable_secret_text(value):
+        if _contains_public_credential_text(value):
             failures.append(f"{path} contains credential-looking text")
             if len(failures) >= 20:
                 failures.append("run_record contains additional credential-looking text")
@@ -1449,7 +1450,7 @@ def _standalone_artifact_public_safety_failures(raw: dict[str, Any], label: str)
 
     failures: list[str] = []
     for path, value in _walk_run_record_strings(raw, label):
-        if contains_durable_secret_text(value):
+        if _contains_public_credential_text(value):
             failures.append(f"{path} contains credential-looking text")
         elif _contains_callback_url(value):
             failures.append(f"{path} contains callback URL")
@@ -1473,7 +1474,7 @@ def _setup_receipt_shape_failures(raw: dict[str, Any]) -> list[str]:
             failures.append(f"{label} must be a string")
         elif value != value.strip():
             failures.append(f"{label} must be trimmed")
-        elif contains_durable_secret_text(value):
+        elif _contains_public_credential_text(value):
             failures.append(f"{label} contains credential-looking text")
     actions = raw.get(SETUP_RECEIPT_ACTIONS_FIELD, [])
     if not isinstance(actions, list):
@@ -1496,9 +1497,13 @@ def _setup_receipt_shape_failures(raw: dict[str, Any]) -> list[str]:
                 failures.append(f"{field_label} is missing")
             elif value != value.strip():
                 failures.append(f"{field_label} must be trimmed")
-            elif contains_durable_secret_text(value):
+            elif _contains_public_credential_text(value):
                 failures.append(f"{field_label} contains credential-looking text")
     return failures
+
+
+def _contains_public_credential_text(value: str) -> bool:
+    return contains_durable_secret_text(value) or contains_private_marker_text(value)
 
 
 def _contains_callback_url(value: str) -> bool:
@@ -1538,7 +1543,7 @@ def _vault_summary_shape_failures(vault: dict[str, Any]) -> list[str]:
                 failures.append(f"{label}.{field_name} is missing")
             elif value != value.strip():
                 failures.append(f"{label}.{field_name} must be trimmed")
-            elif contains_durable_secret_text(value):
+            elif _contains_public_credential_text(value):
                 failures.append(
                     f"{label}.{field_name} contains credential-looking text"
                 )
@@ -1660,7 +1665,7 @@ def _provider_gate_record_shape_failures(
             failures.append(f"{field_label} must be text")
         elif value and value != value.strip():
             failures.append(f"{field_label} must be trimmed")
-        elif contains_durable_secret_text(value):
+        elif _contains_public_credential_text(value):
             failures.append(f"{field_label} contains credential-looking text")
     for key in ("captured_targets", "follow_steps", "success_criteria", "avoid_steps"):
         values = gate.get(key)
@@ -1676,7 +1681,7 @@ def _provider_gate_record_shape_failures(
                 failures.append(f"{item_label} must be text")
             elif value != value.strip():
                 failures.append(f"{item_label} must be trimmed")
-            elif contains_durable_secret_text(value):
+            elif _contains_public_credential_text(value):
                 failures.append(f"{item_label} contains credential-looking text")
     attempts = gate.get("attempts", 0)
     if not isinstance(attempts, int) or isinstance(attempts, bool) or attempts < 0:
@@ -1727,7 +1732,7 @@ def _wake_event_summary_shape_failures(wake_events: dict[str, Any]) -> list[str]
             failures.append("wake_events.event_counts key is missing")
         elif event_name != event_name.strip():
             failures.append(f"wake_events.event_counts.{event_name} must be trimmed")
-        elif contains_durable_secret_text(event_name):
+        elif _contains_public_credential_text(event_name):
             failures.append(
                 f"wake_events.event_counts.{event_name} contains credential-looking text"
             )
@@ -3379,7 +3384,7 @@ def _wake_event_record_shape_failures(event: dict[str, Any], label: str) -> list
             failures.append(f"{field_label} must be text")
         elif value and value != value.strip():
             failures.append(f"{field_label} must be trimmed")
-        elif value and contains_durable_secret_text(value):
+        elif value and _contains_public_credential_text(value):
             failures.append(f"{field_label} contains credential-looking text")
     if not event.get("schema_version"):
         failures.append(f"{label}.schema_version is missing")
@@ -3400,7 +3405,7 @@ def _wake_event_record_shape_failures(event: dict[str, Any], label: str) -> list
                 failures.append(f"{item_label} must be text")
             elif captured_target != captured_target.strip():
                 failures.append(f"{item_label} must be trimmed")
-            elif contains_durable_secret_text(captured_target):
+            elif _contains_public_credential_text(captured_target):
                 failures.append(f"{item_label} contains credential-looking text")
     created_at = event.get("created_at")
     if not isinstance(created_at, (int, float)) or isinstance(created_at, bool) or created_at < 0:
@@ -4355,6 +4360,8 @@ def _audit_category_has_source(
 
 
 def _contains_secretish_audit_text(value: str) -> bool:
+    if _contains_public_credential_text(value):
+        return True
     lowered = value.lower()
     if any(marker in lowered for marker in ("http://", "https://", "bearer ")):
         return True
@@ -4517,7 +4524,7 @@ def _workspace_detonation_receipt_shape_failures(
             failures.append(f"{field_label} must be a string")
         elif value != value.strip():
             failures.append(f"{field_label} must be trimmed")
-        elif contains_durable_secret_text(value):
+        elif _contains_public_credential_text(value):
             failures.append(f"{field_label} contains credential-looking text")
     for key in WORKSPACE_DETONATION_RECEIPT_LIST_FIELDS:
         _append_trimmed_public_list_failures(
@@ -4544,7 +4551,7 @@ def _workspace_detonation_receipt_shape_failures(
                 failures.append(f"{field_label} must be a string")
             elif value != value.strip():
                 failures.append(f"{field_label} must be trimmed")
-            elif contains_durable_secret_text(value):
+            elif _contains_public_credential_text(value):
                 failures.append(f"{field_label} contains credential-looking text")
         for key in WORKSPACE_DETONATION_RESOURCE_SUMMARY_LIST_FIELDS:
             _append_trimmed_public_list_failures(
@@ -4576,7 +4583,7 @@ def _append_trimmed_public_list_failures(
             failures.append(f"{item_label} must be a string")
         elif item != item.strip():
             failures.append(f"{item_label} must be trimmed")
-        elif contains_durable_secret_text(item):
+        elif _contains_public_credential_text(item):
             failures.append(f"{item_label} contains credential-looking text")
 
 
@@ -4598,7 +4605,7 @@ def _remote_worker_cleanup_receipt_shape_failures(
             failures.append(f"{field_label} must be a string")
         elif value != value.strip():
             failures.append(f"{field_label} must be trimmed")
-        elif contains_durable_secret_text(value):
+        elif _contains_public_credential_text(value):
             failures.append(f"{field_label} contains credential-looking text")
     for key in REMOTE_WORKER_CLEANUP_RECEIPT_LIST_FIELDS:
         _append_trimmed_public_list_failures(failures, raw.get(key, []), f"{label}.{key}")
@@ -5586,7 +5593,7 @@ def _vault_plaintext_marker_found(text: str) -> bool:
         "BEGIN OPENSSH PRIVATE KEY",
         "BEGIN RSA PRIVATE KEY",
     )
-    return any(marker in text for marker in markers) or contains_durable_secret_text(text)
+    return any(marker in text for marker in markers) or _contains_public_credential_text(text)
 
 
 def _check_receipt(
@@ -6839,7 +6846,7 @@ def _trimmed_public_string_failures(value: Any, label: str) -> list[str]:
         return [f"{label} must be text"]
     if value != value.strip():
         return [f"{label} must not have surrounding whitespace"]
-    if contains_durable_secret_text(value):
+    if _contains_public_credential_text(value):
         return [f"{label} contains credential-looking text"]
     return []
 
@@ -8385,7 +8392,7 @@ def _rollback_metadata_shape_failures(raw: dict[str, Any]) -> list[str]:
                     failures.append(f"{field_label} must be text")
                 elif value != value.strip():
                     failures.append(f"{field_label} must not have surrounding whitespace")
-                elif contains_durable_secret_text(value):
+                elif _contains_public_credential_text(value):
                     failures.append(f"{field_label} contains credential-looking text")
     return failures
 
@@ -9479,7 +9486,7 @@ def _visual_state_public_safety_failures(raw: dict[str, Any]) -> list[str]:
         if _contains_callback_url(value):
             failures.append(f"visual_state.{name} contains callback URL")
             continue
-        if name == "novnc_password" and contains_durable_secret_text(value):
+        if name == "novnc_password" and _contains_public_credential_text(value):
             failures.append(f"visual_state.{name} contains credential-looking text")
     extra = {key: value for key, value in raw.items() if key not in VISUAL_TRANSPORT_FIELDS}
     failures.extend(_standalone_artifact_public_safety_failures(extra, "visual_state"))

@@ -25,6 +25,7 @@ from fusekit.hosted.launcher import (
     NO_TERMINAL_PROMISE,
     TRUST_STORY,
 )
+from fusekit.security import contains_durable_secret_text, contains_private_marker_text
 
 GITHUB_APP_JWT_ALGORITHM = "RS256"
 GITHUB_APP_JWT_MAX_TTL_SECONDS = 600
@@ -68,11 +69,13 @@ class GitHubAppConfig:
     def public_dict(self) -> dict[str, str]:
         """Return browser-safe GitHub App metadata."""
 
-        return {
+        payload = {
             "app_id": self.app_id,
             "app_slug": self.app_slug,
             "install_url": github_app_install_url(self, state=""),
         }
+        _assert_public_github_payload(payload, "GitHub App public metadata")
+        return payload
 
 
 @dataclass(frozen=True)
@@ -87,12 +90,14 @@ class InstallationToken:
     def public_dict(self) -> dict[str, object]:
         """Return safe installation-token metadata."""
 
-        return {
+        payload: dict[str, object] = {
             "expires_at": self.expires_at,
             "permissions": dict(self.permissions),
             "repository_selection": self.repository_selection,
             "token_captured": bool(self.token),
         }
+        _assert_public_github_payload(payload, "GitHub installation token metadata")
+        return payload
 
 
 def require_hosted_installation_token_boundary(token: InstallationToken) -> None:
@@ -127,10 +132,14 @@ def github_app_install_url(config: GitHubAppConfig, *, state: str) -> str:
     """Return the hosted GitHub App installation URL."""
 
     base = config.web_url.rstrip("/")
+    _require_public_github_label(base, "GitHub App web URL")
+    _require_public_github_label(config.app_slug, "GitHub App slug")
     slug = urllib.parse.quote(config.app_slug.strip("/"), safe="")
     query = urllib.parse.urlencode({"state": state}) if state else ""
     suffix = f"?{query}" if query else ""
-    return f"{base}/apps/{slug}/installations/new{suffix}"
+    install_url = f"{base}/apps/{slug}/installations/new{suffix}"
+    _require_valid_public_github_install_url(install_url)
+    return install_url
 
 
 def build_github_app_jwt(
@@ -253,7 +262,7 @@ def hosted_github_intake_contract(
 ) -> dict[str, object]:
     """Return public GitHub intake text for the hosted launcher."""
 
-    return {
+    payload: dict[str, object] = {
         "provider": "github",
         "route": "github-app",
         "install_url": github_app_install_url(config, state=state),
@@ -282,6 +291,36 @@ def hosted_github_intake_contract(
             "the selected launch job. They are never embedded in hosted pages."
         ),
     }
+    _assert_public_github_payload(payload, "Hosted GitHub intake contract")
+    return payload
+
+
+def _require_valid_public_github_install_url(value: str) -> None:
+    parsed = urllib.parse.urlparse(value)
+    if (
+        parsed.scheme != "https"
+        or not parsed.netloc
+        or parsed.username
+        or parsed.password
+        or parsed.fragment
+    ):
+        raise FuseKitError("GitHub App install URL is invalid.")
+    _require_public_github_label(value, "GitHub App install URL")
+
+
+def _require_public_github_label(value: str, label: str) -> None:
+    if _contains_public_private_material(value):
+        raise FuseKitError(f"{label} contains private material.")
+
+
+def _assert_public_github_payload(payload: Mapping[str, object], label: str) -> None:
+    serialized = json.dumps(payload, sort_keys=True)
+    if _contains_public_private_material(serialized):
+        raise FuseKitError(f"{label} contains private material.")
+
+
+def _contains_public_private_material(value: str) -> bool:
+    return contains_durable_secret_text(value) or contains_private_marker_text(value)
 
 
 def _open_json(

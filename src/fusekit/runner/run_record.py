@@ -172,6 +172,7 @@ from fusekit.runner.verifier_summary import (
 )
 from fusekit.security import (
     contains_durable_secret_text,
+    contains_private_marker_text,
     redact_public_path,
     redact_public_text,
 )
@@ -215,6 +216,12 @@ RUN_RECORD_KEYS = frozenset(
         "recording_contract",
     }
 )
+
+
+def _contains_public_credential_text(value: str) -> bool:
+    return contains_durable_secret_text(value) or contains_private_marker_text(value)
+
+
 PUBLIC_PROVIDER_BROWSER_PROFILE = "shared-provider-browser-profile"
 PUBLIC_PLAYWRIGHT_BROWSERS_PATH = "playwright-browser-cache"
 WORKER_REPLACEMENT_DRILL_SCHEMA_VERSION = (
@@ -656,7 +663,7 @@ def _canonical_gate_record(gate: dict[str, Any]) -> dict[str, Any] | None:
 
 def _public_gate_text(value: object) -> str | None:
     text = _redacted_error_text(value).strip()
-    if not text or contains_durable_secret_text(text):
+    if not text or _contains_public_credential_text(text):
         return None
     return text
 
@@ -757,7 +764,7 @@ def _public_wake_text(value: object, *, fallback: str) -> str | None:
     lowered = text.lower()
     if any(marker in lowered for marker in ("token=", "password=", "secret=")):
         return None
-    if contains_durable_secret_text(text):
+    if _contains_public_credential_text(text):
         return None
     return text
 
@@ -1141,7 +1148,7 @@ def _public_artifact_name(value: object) -> str | None:
     lowered = text.lower()
     if any(marker in lowered for marker in ("token=", "password=", "secret=")):
         return None
-    if contains_durable_secret_text(text):
+    if _contains_public_credential_text(text):
         return None
     return text
 
@@ -1156,7 +1163,7 @@ def _safe_public_artifact_path(root: Path, path: Path) -> str | None:
     lowered = public_path.lower()
     if any(marker in lowered for marker in ("token=", "password=", "secret=")):
         return None
-    if contains_durable_secret_text(public_path):
+    if _contains_public_credential_text(public_path):
         return None
     return public_path
 
@@ -1357,7 +1364,7 @@ def _public_evidence_text(value: object) -> str | None:
     lowered = text.lower()
     if any(marker in lowered for marker in ("token=", "password=", "secret=")):
         return None
-    if contains_durable_secret_text(text):
+    if _contains_public_credential_text(text):
         return None
     return text
 
@@ -1641,7 +1648,7 @@ def _public_runner_text(value: object) -> str | None:
     text = _redacted_error_text(value).strip()
     if not text:
         return None
-    if contains_durable_secret_text(text):
+    if _contains_public_credential_text(text):
         return None
     return text
 
@@ -1715,7 +1722,7 @@ def _public_vault_field(value: object) -> str | None:
     lowered = text.lower()
     if any(marker in lowered for marker in ("token=", "password=", "secret=")):
         return None
-    if contains_durable_secret_text(text):
+    if _contains_public_credential_text(text):
         return None
     return text
 
@@ -1956,7 +1963,7 @@ def _public_provider_strategy_text(
         for marker in ("token=", "password=", "secret=", "api_key=")
     ) and not allow_redacted_secret_marker:
         return None
-    if contains_durable_secret_text(text):
+    if _contains_public_credential_text(text):
         return None
     return text
 
@@ -2043,7 +2050,7 @@ def _public_provider_playbook_text(
         for marker in ("token=", "password=", "secret=", "api_key=")
     ) and not allow_redacted_secret_marker:
         return None
-    if contains_durable_secret_text(text):
+    if _contains_public_credential_text(text):
         return None
     return text
 
@@ -2224,7 +2231,7 @@ def _public_automation_route_text(value: object) -> str | None:
     lowered = text.lower()
     if any(marker in lowered for marker in ("token=", "password=", "secret=", "api_key=")):
         return None
-    if contains_durable_secret_text(text):
+    if _contains_public_credential_text(text):
         return None
     return text
 
@@ -2322,7 +2329,7 @@ def _public_verifier_text(value: object, *, fallback: str = "") -> str | None:
     lowered = text.lower()
     if any(marker in lowered for marker in ("token=", "password=", "secret=", "api_key=")):
         return None
-    if contains_durable_secret_text(text):
+    if _contains_public_credential_text(text):
         return None
     return text
 
@@ -2679,7 +2686,7 @@ def _public_audit_text(value: object, *, fallback: str = "") -> str | None:
         text = fallback
     if not text:
         return None
-    if contains_durable_secret_text(text):
+    if _contains_public_credential_text(text):
         return None
     return text
 
@@ -2946,7 +2953,7 @@ def _public_detonation_text(
         for marker in ("token=", "password=", "secret=", "api_key=")
     ) and not allow_redacted_secret_marker:
         return None
-    if contains_durable_secret_text(text):
+    if _contains_public_credential_text(text):
         return None
     return text
 
@@ -3041,7 +3048,7 @@ def _recording_timeline_entries_ready(
                 return False
             if value and value != value.strip():
                 return False
-            if contains_durable_secret_text(value):
+            if _contains_public_credential_text(value):
                 return False
         updated_at = entry.get("updated_at", 0)
         if not isinstance(updated_at, int | float) or isinstance(updated_at, bool):
@@ -3078,7 +3085,7 @@ def _recording_artifacts_ready(record: dict[str, Any]) -> bool:
             return False
         if name in seen_names or path in seen_paths:
             return False
-        if contains_durable_secret_text(name):
+        if _contains_public_credential_text(name):
             return False
         if any(marker in name.lower() for marker in ("token=", "password=", "secret=")):
             return False
@@ -3111,7 +3118,7 @@ def _recording_vault_ready(record: dict[str, Any]) -> bool:
             value = vault_record.get(field, "")
             if not _recording_exact_nonempty_text(value):
                 return False
-            if contains_durable_secret_text(str(value)):
+            if _contains_public_credential_text(str(value)):
                 return False
         record_id = str(vault_record.get("id", ""))
         if not record_id or record_id in seen_record_ids:
@@ -3308,7 +3315,7 @@ def _recording_wake_event_exact(event: dict[str, Any]) -> bool:
             return False
         if value and value != value.strip():
             return False
-        if value and contains_durable_secret_text(value):
+        if value and _contains_public_credential_text(value):
             return False
     if not event.get("schema_version") or not event.get("event") or not event.get("gate_id"):
         return False
@@ -3321,7 +3328,7 @@ def _recording_wake_event_exact(event: dict[str, Any]) -> bool:
     if not all(
         isinstance(item, str)
         and item == item.strip()
-        and not contains_durable_secret_text(item)
+        and not _contains_public_credential_text(item)
         for item in captured_targets
     ):
         return False
@@ -3598,7 +3605,7 @@ def _recording_json_contains_public_unsafe_text(value: object) -> bool:
 def _recording_public_text_is_unsafe(value: str) -> bool:
     if re.search(r"https?://[^\s\"'<>]*callback[^\s\"'<>]*", value, re.IGNORECASE):
         return True
-    return contains_durable_secret_text(value)
+    return _contains_public_credential_text(value)
 
 
 def _recording_volatile_marker(value: object) -> str:
@@ -4312,7 +4319,7 @@ def _recording_public_model_text(
     text = str(value)
     if re.search(r"https?://[^\s\"'<>]*callback[^\s\"'<>]*", text, re.IGNORECASE):
         return False
-    return not (check_secretish and contains_durable_secret_text(text))
+    return not (check_secretish and _contains_public_credential_text(text))
 
 
 def _automation_route_signature(route: dict[str, Any]) -> str:
@@ -4564,7 +4571,7 @@ def _recording_audit_entry_exact(
         if value and value != value.strip():
             return False
     for key in ("summary", "action", "provider", "target", "resource"):
-        if contains_durable_secret_text(str(entry.get(key, "") or "")):
+        if _contains_public_credential_text(str(entry.get(key, "") or "")):
             return False
     source = str(entry.get("source", "") or "")
     if source == "audit.jsonl" and not _recording_positive_int(
@@ -4767,7 +4774,7 @@ def _recording_evidence_ready(record: dict[str, Any]) -> bool:
             source = item.get("source", "")
             if not _recording_exact_nonempty_text(source):
                 return False
-            if contains_durable_secret_text(source):
+            if _contains_public_credential_text(source):
                 return False
             if item.get("exists") is not True:
                 return False
@@ -4800,7 +4807,7 @@ def _recording_public_relative_path(value: object) -> bool:
         return False
     if any(marker in lowered for marker in ("token=", "password=", "secret=")):
         return False
-    return not contains_durable_secret_text(path)
+    return not _contains_public_credential_text(path)
 
 
 def _recording_screenshot_evidence_required(record: dict[str, Any]) -> bool:
@@ -4977,7 +4984,7 @@ def _recording_public_text_list(raw: object) -> bool:
         return False
     return all(
         _recording_exact_nonempty_text(item)
-        and not contains_durable_secret_text(str(item))
+        and not _contains_public_credential_text(str(item))
         for item in raw
     )
 

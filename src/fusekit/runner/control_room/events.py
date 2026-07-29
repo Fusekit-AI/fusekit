@@ -76,6 +76,14 @@ function publicCopy(value, captureTargetList = []) {
 
 function publicRedactedText(value) {
   let text = String(value || "");
+  const privateMarkerPatterns = [
+    /[A-Za-z0-9_.-]*(?:ghs_|ghp_|github_pat_|sk_live|sk_test|rk_live|rk_test|ocid1[._]|AKIA|ASIA|aws_secret_access_key)[A-Za-z0-9_.-]*/gi,
+    /-----BEGIN[^\n\r<>{}]*PRIVATE KEY-----/gi,
+    /PRIVATE KEY-----/gi,
+  ];
+  for (const pattern of privateMarkerPatterns) {
+    text = text.replace(pattern, "[redacted]");
+  }
   const patterns = [
     /sk-[A-Za-z0-9_-]{12,}/g,
     /sk_(?:live|test|prod)_[A-Za-z0-9_-]{12,}/g,

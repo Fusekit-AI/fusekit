@@ -26,6 +26,7 @@ from fusekit.hosted.worker import (
     build_hosted_worker_workspace_proof_payload,
     prepare_hosted_worker_execution,
 )
+from fusekit.security import contains_durable_secret_text, contains_private_marker_text
 from fusekit.security.url import require_safe_url
 
 JsonGet = Callable[[str, Mapping[str, str]], dict[str, Any]]
@@ -66,6 +67,7 @@ class HostedWorkerRunResult:
             payload["maintenance_invocation"] = self.maintenance_invocation.to_dict()
             payload["rollback_returncode"] = self.rollback_returncode
             payload["detonation_returncode"] = self.detonation_returncode
+        _assert_public_worker_client_payload(payload, "Hosted worker run result")
         return payload
 
 
@@ -86,7 +88,13 @@ def run_hosted_worker_once(
 ) -> HostedWorkerRunResult:
     """Claim one hosted job, run local worker commands, and submit redacted proof."""
 
-    _require_inputs(origin=origin, job_id=job_id, job_token=job_token, worker_secret=worker_secret)
+    _require_inputs(
+        origin=origin,
+        job_id=job_id,
+        job_token=job_token,
+        worker_secret=worker_secret,
+        worker_id=worker_id,
+    )
     if action != "start":
         return _run_hosted_worker_maintenance_once(
             origin=origin,
@@ -239,10 +247,13 @@ def _require_inputs(
     job_id: str,
     job_token: str,
     worker_secret: str,
+    worker_id: str,
 ) -> None:
     require_safe_url(origin, label="Hosted worker origin")
     if not job_id.startswith("hosted-"):
         raise FuseKitError("Hosted worker job id is required.")
+    _require_public_worker_client_label(job_id, "Hosted worker job id")
+    _require_public_worker_client_label(worker_id, "Hosted worker id")
     if not job_token:
         raise FuseKitError("Hosted worker job token is required.")
     if len(worker_secret) < 16:
@@ -264,11 +275,27 @@ def _job_status_url(origin: str, job_id: str, job_token: str) -> str:
 
 
 def _worker_headers(*, worker_secret: str, worker_id: str) -> dict[str, str]:
+    _require_public_worker_client_label(worker_id, "Hosted worker id")
     return {
         "Authorization": f"Bearer {worker_secret}",
         "Content-Type": "application/json",
         "X-FuseKit-Worker-Id": worker_id,
     }
+
+
+def _require_public_worker_client_label(value: str, label: str) -> None:
+    if _contains_public_private_material(value):
+        raise FuseKitError(f"{label} contains private material.")
+
+
+def _assert_public_worker_client_payload(payload: dict[str, object], label: str) -> None:
+    serialized = json.dumps(payload, sort_keys=True)
+    if _contains_public_private_material(serialized):
+        raise FuseKitError(f"{label} contains private material.")
+
+
+def _contains_public_private_material(value: str) -> bool:
+    return contains_durable_secret_text(value) or contains_private_marker_text(value)
 
 
 def _get_json(url: str, headers: Mapping[str, str]) -> dict[str, Any]:

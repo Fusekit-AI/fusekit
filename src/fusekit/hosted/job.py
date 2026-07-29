@@ -44,7 +44,11 @@ from fusekit.hosted.launcher import (
 )
 from fusekit.hosted.script_json import json_script_payload
 from fusekit.runner.cloud_shell import build_cloud_shell_launch_plan
-from fusekit.security.redaction import contains_durable_secret_text, redact_public_text
+from fusekit.security.redaction import (
+    contains_durable_secret_text,
+    contains_private_marker_text,
+    redact_public_text,
+)
 
 HOSTED_JOB_SCHEMA_VERSION = "fusekit.hosted-job.v1"
 HOSTED_JOB_TOKEN_SCHEMA_VERSION = "fusekit.hosted-job-token.v1"
@@ -675,21 +679,21 @@ def render_hosted_byo_oci_bootstrap(job: HostedLaunchJob, *, job_token: str = ""
     manifest_evidence = _list(
         _string_tuple(proof_manifest_data.get("required_completion_evidence"))
     )
-    proof_bundle_root = html.escape(str(proof_manifest_data.get("proof_bundle_root", "")))
+    proof_bundle_root = _html_public_text(proof_manifest_data.get("proof_bundle_root", ""))
     preflight = _preflight_cards(handoff_data.get("checks"))
     cost_acknowledgement = _cost_acknowledgement_section(
         handoff_data.get("cost_acknowledgement")
     )
     delete_targets = _list(_string_tuple(reversibility_data.get("delete_targets")))
     survivors = _list(_string_tuple(reversibility_data.get("survivors")))
-    acceptance_command = html.escape(str(proof_data.get("acceptance_command", "")))
+    acceptance_command = _html_public_text(proof_data.get("acceptance_command", ""))
     json_link = _byo_oci_json_link(job, job_token=job_token)
     control_room_link = _control_room_link(job, job_token=job_token)
-    app_name = html.escape(job.app_name)
-    github_source = html.escape(job.github_source)
-    job_id = html.escape(job.job_id)
+    app_name = _html_public_text(job.app_name)
+    github_source = _html_public_text(job.github_source)
+    job_id = _html_public_text(job.job_id)
     command_block = (
-        f"<pre>{html.escape(command)}</pre>"
+        f"<pre>{_html_public_text(command)}</pre>"
         if command
         else "<p>Bootstrap command is unavailable for this job.</p>"
     )
@@ -853,7 +857,7 @@ def render_hosted_byo_oci_bootstrap(job: HostedLaunchJob, *, job_token: str = ""
       </section>
       <aside aria-label="Reversible setup">
         <h2>Reversible Setup</h2>
-        <p>{html.escape(str(reversibility_data.get("statement", "")))}</p>
+        <p>{_html_public_text(reversibility_data.get("statement", ""))}</p>
         <h3>Delete Targets</h3>
         {delete_targets}
         <h3>Survivors</h3>
@@ -862,7 +866,7 @@ def render_hosted_byo_oci_bootstrap(job: HostedLaunchJob, *, job_token: str = ""
     </div>
     <section aria-label="Boundary">
       <h2>Secret Boundary</h2>
-      <p>{html.escape(str(bootstrap.get("secret_boundary", "")))}</p>
+      <p>{_html_public_text(bootstrap.get("secret_boundary", ""))}</p>
       {json_link}
       {control_room_link}
     </section>
@@ -1271,23 +1275,7 @@ def _public_byo_sidecar_field_name(value: object) -> str:
 
 
 def _contains_byo_private_marker(value: str) -> bool:
-    forbidden = (
-        "ghs_",
-        "ghp_",
-        "github_pat_",
-        "sk_live",
-        "sk_test",
-        "rk_live",
-        "rk_test",
-        "-----BEGIN",
-        "PRIVATE KEY-----",
-        "ocid1.",
-        "ocid1_",
-        "AKIA",
-        "ASIA",
-        "aws_secret_access_key",
-    )
-    return any(token.lower() in value.lower() for token in forbidden)
+    return contains_private_marker_text(value)
 
 
 def _safe_byo_artifact_path(path: str) -> bool:
@@ -1895,10 +1883,10 @@ def render_hosted_control_room(
     detonation = _list(job.detonation)
     reversal_playbook = _reversal_playbook_section(hosted_reversal_playbook(job))
     worker_contract = _worker_contract_section(job.worker_contract)
-    app_name = html.escape(job.app_name)
-    github_source = html.escape(job.github_source)
-    job_id = html.escape(job.job_id)
-    status = html.escape(job.status.replace("_", " "))
+    app_name = _html_public_text(job.app_name)
+    github_source = _html_public_text(job.github_source)
+    job_id = _html_public_text(job.job_id)
+    status = _html_public_text(job.status.replace("_", " "))
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -2003,7 +1991,7 @@ def render_hosted_control_room(
       <p class="source">{job_id} / {status}</p>
       <h1>Hosted launch control room.</h1>
       <p>
-        {app_name} is queued for {html.escape(hosted_launch_lane(job.launch_lane).label)}.
+        {app_name} is queued for {_html_public_text(hosted_launch_lane(job.launch_lane).label)}.
         Human gates stay visible, provider-owned, and reversible; raw secrets stay out
         of public pages.
       </p>
@@ -2334,11 +2322,11 @@ def render_hosted_proof_receipt(job: HostedLaunchJob, *, job_token: str = "") ->
 
     receipt = hosted_proof_receipt(job)
     payload = json_script_payload(receipt)
-    app_name = html.escape(job.app_name)
-    github_source = html.escape(job.github_source)
-    job_id = html.escape(job.job_id)
-    status = html.escape(job.status.replace("_", " "))
-    completion = html.escape(str(receipt["completion_statement"]))
+    app_name = _html_public_text(job.app_name)
+    github_source = _html_public_text(job.github_source)
+    job_id = _html_public_text(job.job_id)
+    status = _html_public_text(job.status.replace("_", " "))
+    completion = _html_public_text(receipt["completion_statement"])
     completion_requires = _list(HOSTED_WORKER_PROOF_KEYS)
     proof = _list(job.proof)
     rollback = _list(job.rollback)
@@ -2494,12 +2482,12 @@ def render_hosted_proof_receipt(job: HostedLaunchJob, *, job_token: str = "") ->
 
 
 def _step_card(step: HostedLaunchJobStep) -> str:
-    status = html.escape(step.status)
+    status = _html_public_text(step.status)
     return (
         f'<article class="step {status}">'
-        f"<h3>{html.escape(step.label)}</h3>"
-        f"<small>{html.escape(step.owner)} / {status}</small>"
-        f"<p>{html.escape(step.proof)}</p>"
+        f"<h3>{_html_public_text(step.label)}</h3>"
+        f"<small>{_html_public_text(step.owner)} / {status}</small>"
+        f"<p>{_html_public_text(step.proof)}</p>"
         "</article>"
     )
 
@@ -2510,8 +2498,8 @@ def _action_receipt_section(
 ) -> str:
     if action_receipt is None:
         return ""
-    action = html.escape(str(action_receipt.get("action", "action")))
-    statement = html.escape(str(action_receipt.get("receipt_statement", "")))
+    action = _html_public_text(action_receipt.get("action", "action"))
+    statement = _html_public_text(action_receipt.get("receipt_statement", ""))
     next_required = action_receipt.get("next_required_proof")
     proof_items = (
         tuple(str(item) for item in next_required)
@@ -2523,9 +2511,9 @@ def _action_receipt_section(
         dispatched = dispatch_receipt.get("dispatched")
         dispatch_status = "accepted" if dispatched is True else "not configured"
         reason = dispatch_receipt.get("reason")
-        reason_label = f" ({html.escape(str(reason))})" if isinstance(reason, str) else ""
+        reason_label = f" ({_html_public_text(reason)})" if isinstance(reason, str) else ""
         dispatch = (
-            f"<p>Worker dispatch: {html.escape(dispatch_status)}{reason_label}.</p>"
+            f"<p>Worker dispatch: {_html_public_text(dispatch_status)}{reason_label}.</p>"
         )
     return f"""
         <article class="step done" aria-label="Latest protected action receipt">
@@ -2559,7 +2547,7 @@ def _control_forms(
           <button type="button" disabled aria-disabled="true">Request detonation</button>
         </article>
 """
-    job_id = html.escape(job.job_id, quote=True)
+    job_id = _public_job_path_id(job)
     job_param = (
         "&amp;" + urllib.parse.urlencode({"job": job_token})
         if job_token
@@ -2618,7 +2606,7 @@ def _control_forms(
                 else "Authorize managed run payment"
             )
             price_line = (
-                f"<p>Managed run price: {html.escape(job.payment_price_label)}</p>"
+                f"<p>Managed run price: {_html_public_text(job.payment_price_label)}</p>"
                 if job.payment_price_label
                 else ""
             )
@@ -2635,7 +2623,7 @@ def _control_forms(
         {price_line}
         <form method="post" enctype="application/x-www-form-urlencoded" action="{checkout_action}">
           <input type="hidden" name="control" value="{_control_value(control_tokens, "checkout")}">
-          <button type="submit">{html.escape(payment_label)}</button>
+          <button type="submit">{_html_public_text(payment_label)}</button>
         </form>
         <form method="post" enctype="application/x-www-form-urlencoded" action="{stop_action}">
           <input type="hidden" name="control" value="{_control_value(control_tokens, "stop")}">
@@ -2678,7 +2666,7 @@ def _protected_action_url(
     if not control_token:
         return ""
     suffix = f"?{job_param.removeprefix('&amp;')}" if job_param else ""
-    return f"/api/hosted/jobs/{job_id}/{route_group}/{action}{suffix}"
+    return html.escape(f"/api/hosted/jobs/{job_id}/{route_group}/{action}{suffix}", quote=True)
 
 
 def _control_value(control_tokens: dict[str, str], action: str) -> str:
@@ -2688,8 +2676,9 @@ def _control_value(control_tokens: dict[str, str], action: str) -> str:
 def _proof_link(job: HostedLaunchJob, *, job_token: str) -> str:
     if not job_token:
         return ""
+    job_id = _public_job_path_id(job)
     href = html.escape(
-        f"/api/hosted/jobs/{urllib.parse.quote(job.job_id)}/proof?"
+        f"/api/hosted/jobs/{job_id}/proof?"
         + urllib.parse.urlencode({"job": job_token}),
         quote=True,
     )
@@ -2699,8 +2688,9 @@ def _proof_link(job: HostedLaunchJob, *, job_token: str) -> str:
 def _proof_json_link(job: HostedLaunchJob, *, job_token: str) -> str:
     if not job_token:
         return ""
+    job_id = _public_job_path_id(job)
     href = html.escape(
-        f"/api/hosted/jobs/{urllib.parse.quote(job.job_id)}/proof?"
+        f"/api/hosted/jobs/{job_id}/proof?"
         + urllib.parse.urlencode({"job": job_token, "format": "json"}),
         quote=True,
     )
@@ -2710,8 +2700,9 @@ def _proof_json_link(job: HostedLaunchJob, *, job_token: str) -> str:
 def _worker_request_link(job: HostedLaunchJob, *, job_token: str) -> str:
     if not job_token or job.status == "waiting_for_worker":
         return ""
+    job_id = _public_job_path_id(job)
     href = html.escape(
-        f"/api/hosted/jobs/{urllib.parse.quote(job.job_id)}/worker-request?"
+        f"/api/hosted/jobs/{job_id}/worker-request?"
         + urllib.parse.urlencode({"job": job_token}),
         quote=True,
     )
@@ -2721,8 +2712,9 @@ def _worker_request_link(job: HostedLaunchJob, *, job_token: str) -> str:
 def _byo_oci_bootstrap_link(job: HostedLaunchJob, *, job_token: str) -> str:
     if not job_token or job.status == "waiting_for_worker" or job.launch_lane != BYO_OCI_LANE:
         return ""
+    job_id = _public_job_path_id(job)
     href = html.escape(
-        f"/api/hosted/jobs/{urllib.parse.quote(job.job_id)}/byo-oci-bootstrap?"
+        f"/api/hosted/jobs/{job_id}/byo-oci-bootstrap?"
         + urllib.parse.urlencode({"job": job_token}),
         quote=True,
     )
@@ -2732,8 +2724,9 @@ def _byo_oci_bootstrap_link(job: HostedLaunchJob, *, job_token: str) -> str:
 def _byo_oci_json_link(job: HostedLaunchJob, *, job_token: str) -> str:
     if not job_token:
         return ""
+    job_id = _public_job_path_id(job)
     href = html.escape(
-        f"/api/hosted/jobs/{urllib.parse.quote(job.job_id)}/byo-oci-bootstrap?"
+        f"/api/hosted/jobs/{job_id}/byo-oci-bootstrap?"
         + urllib.parse.urlencode({"job": job_token, "format": "json"}),
         quote=True,
     )
@@ -2743,8 +2736,9 @@ def _byo_oci_json_link(job: HostedLaunchJob, *, job_token: str) -> str:
 def _control_room_link(job: HostedLaunchJob, *, job_token: str) -> str:
     if not job_token:
         return ""
+    job_id = _public_job_path_id(job)
     href = html.escape(
-        f"/api/hosted/jobs/{urllib.parse.quote(job.job_id)}?"
+        f"/api/hosted/jobs/{job_id}?"
         + urllib.parse.urlencode({"job": job_token}),
         quote=True,
     )
@@ -2802,7 +2796,26 @@ def _update_steps(
 
 
 def _list(items: tuple[str, ...]) -> str:
-    return "<ul>" + "\n".join(f"<li>{html.escape(item)}</li>" for item in items) + "</ul>"
+    return "<ul>" + "\n".join(f"<li>{_html_public_text(item)}</li>" for item in items) + "</ul>"
+
+
+def _html_public_text(value: object, *, quote: bool = True) -> str:
+    text = redact_public_text(value)
+    if contains_durable_secret_text(text) or _contains_byo_private_marker(text):
+        text = "[redacted]"
+    return html.escape(text, quote=quote)
+
+
+def _public_job_path_id(job: HostedLaunchJob) -> str:
+    text = redact_public_text(job.job_id).strip()
+    if (
+        not text
+        or text == "[redacted]"
+        or contains_durable_secret_text(text)
+        or _contains_byo_private_marker(text)
+    ):
+        text = "hosted-job"
+    return urllib.parse.quote(text, safe="")
 
 
 def _string_tuple(value: object) -> tuple[str, ...]:
@@ -2827,15 +2840,15 @@ def _preflight_cards(value: object) -> str:
     for item in value:
         if not isinstance(item, dict):
             continue
-        label = html.escape(str(item.get("label", "")))
-        proof = html.escape(str(item.get("proof", "")))
-        check_id = html.escape(str(item.get("id", "preflight")))
+        label = _html_public_text(item.get("label", ""))
+        proof = _html_public_text(item.get("proof", ""))
+        check_id = _html_public_text(item.get("id", "preflight"))
         required = "required" if item.get("required") is True else "optional"
         cards.append(
             f"""
         <article class="done" aria-label="{check_id}">
           <h3>{label}</h3>
-          <small>{html.escape(required)}</small>
+          <small>{_html_public_text(required)}</small>
           <p>{proof}</p>
         </article>
 """
@@ -2846,10 +2859,10 @@ def _preflight_cards(value: object) -> str:
 def _cost_acknowledgement_section(value: object) -> str:
     if not isinstance(value, dict):
         return ""
-    statement = html.escape(str(value.get("statement", "")))
-    spend_owner = html.escape(str(value.get("spend_owner", "")))
-    fusekit_fee = html.escape(str(value.get("fusekit_fee", "")))
-    billing_owner = html.escape(str(value.get("oracle_billing_gate_owner", "")))
+    statement = _html_public_text(value.get("statement", ""))
+    spend_owner = _html_public_text(value.get("spend_owner", ""))
+    fusekit_fee = _html_public_text(value.get("fusekit_fee", ""))
+    billing_owner = _html_public_text(value.get("oracle_billing_gate_owner", ""))
     return f"""
         <article class="done" aria-label="Cost acknowledgement">
           <h3>Cost acknowledgement</h3>
@@ -2868,15 +2881,15 @@ def _proof_artifact_cards(value: object) -> str:
     for item in value:
         if not isinstance(item, dict):
             continue
-        path = html.escape(str(item.get("path", "")))
-        label = html.escape(str(item.get("label", "")))
-        boundary = html.escape(str(item.get("secret_boundary", "")))
+        path = _html_public_text(item.get("path", ""))
+        label = _html_public_text(item.get("label", ""))
+        boundary = _html_public_text(item.get("secret_boundary", ""))
         required = "required" if item.get("required") is True else "optional"
         cards.append(
             f"""
         <article class="done" aria-label="{path}">
           <h3>{label}</h3>
-          <small>{html.escape(required)} / {path}</small>
+          <small>{_html_public_text(required)} / {path}</small>
           <p>{boundary}</p>
         </article>
 """
@@ -2896,7 +2909,7 @@ def _worker_contract_section(contract: HostedWorkerContract) -> str:
     return f"""
         <h2>Worker contract</h2>
         <p>
-          Lane: {html.escape(lane.label)}. FuseKit may not call this launch
+          Lane: {_html_public_text(lane.label)}. FuseKit may not call this launch
           complete until the hosted worker produces the required redacted
           artifacts and keeps these guarantees.
         </p>
@@ -2930,7 +2943,7 @@ def _plan_integrity_section(
 ) -> str:
     heading = f"h{heading_level}"
     integrity = contract.plan_integrity()
-    fingerprint = html.escape(str(integrity["fingerprint"]))
+    fingerprint = _html_public_text(integrity["fingerprint"])
     coverage = _list(tuple(str(item) for item in cast(list[object], integrity["covers"])))
     wrapper = "section" if heading_level == 2 else "div"
     return f"""
@@ -2950,16 +2963,28 @@ def _plan_integrity_section(
 def _reversal_playbook_section(playbook: list[dict[str, str]]) -> str:
     items = []
     for item in playbook:
-        control = html.escape(item["control"])
-        proof = html.escape(item["proof"])
-        action_url = item.get("action_url", "")
+        control = _html_public_text(item["control"])
+        proof = _html_public_text(item["proof"])
+        action_url = _safe_public_link_url(item.get("action_url", ""))
         action = (
-            f' <a href="{html.escape(action_url, quote=True)}">Open settings</a>'
+            f' <a href="{action_url}">Open settings</a>'
             if action_url
             else ""
         )
         items.append(f"<li><strong>{control}:</strong> {proof}{action}</li>")
     return "<ul>" + "".join(items) + "</ul>"
+
+
+def _safe_public_link_url(value: object) -> str:
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    text = redact_public_text(value).strip()
+    if contains_durable_secret_text(text) or _contains_byo_private_marker(text):
+        return ""
+    parsed = urllib.parse.urlparse(text)
+    if parsed.scheme != "https" or not parsed.netloc:
+        return ""
+    return html.escape(text, quote=True)
 
 
 def _trust_evidence_section(evidence: dict[str, object]) -> str:
@@ -2972,14 +2997,17 @@ def _trust_evidence_section(evidence: dict[str, object]) -> str:
     ):
         value = evidence.get(key)
         if isinstance(value, str) and value:
-            rows.append(f"<li><strong>{html.escape(key)}</strong>: {html.escape(value)}</li>")
+            rows.append(
+                f"<li><strong>{_html_public_text(key)}</strong>: "
+                f"{_html_public_text(value)}</li>"
+            )
     cannot = evidence.get("fusekit_cannot_do")
     if isinstance(cannot, list):
         labels = ", ".join(str(item) for item in cannot if isinstance(item, str))
         if labels:
             rows.append(
                 "<li><strong>fusekit_cannot_do</strong>: "
-                f"{html.escape(labels)}</li>"
+                f"{_html_public_text(labels)}</li>"
             )
     return f"""
     <section aria-label="Trust evidence">

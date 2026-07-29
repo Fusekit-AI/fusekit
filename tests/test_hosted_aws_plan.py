@@ -215,6 +215,28 @@ def test_cloudflare_dns_guard_rejects_non_cname_and_secret_like_targets() -> Non
         )
 
 
+@pytest.mark.parametrize(
+    "record_value",
+    [
+        "fusekit-ASIA-should-not-render.us-east-1.elasticbeanstalk.com",
+        "fusekit-rk_live-should-not-render.us-east-1.elasticbeanstalk.com",
+        "fusekit-ocid1_instance_oc1_not_public.us-east-1.elasticbeanstalk.com",
+        "fusekit-aws_secret_access_key.us-east-1.elasticbeanstalk.com",
+    ],
+)
+def test_cloudflare_dns_guard_rejects_private_marker_targets(record_value: str) -> None:
+    with pytest.raises(
+        FuseKitError,
+        match="cloudflare_dns_target_must_be_public_non_secret",
+    ):
+        validate_cloudflare_fusekit_dns_change(
+            zone="snowmanai.org",
+            record_name="fusekit",
+            record_type="CNAME",
+            record_value=record_value,
+        )
+
+
 def test_protected_aws_resource_findings_detect_mailpilot_name_without_secret_values() -> None:
     findings = protected_aws_resource_findings(
         [

@@ -16,7 +16,11 @@ from typing import cast
 from fusekit.errors import FuseKitError
 from fusekit.hosted.billing import _stripe_account_mode, _valid_price_label
 from fusekit.hosted.server import HOSTED_CANONICAL_ORIGIN, REQUIRED_HOSTED_ENV
-from fusekit.security import contains_durable_secret_text, redact_public_text
+from fusekit.security import (
+    contains_durable_secret_text,
+    contains_private_marker_text,
+    redact_public_text,
+)
 
 HOSTED_RUNTIME_SECRET_PLAN_SCHEMA_VERSION = "fusekit.hosted-runtime-secret-plan.v1"
 HOSTED_RUNTIME_SECRET_INSTALL_SCHEMA_VERSION = "fusekit.hosted-runtime-secret-install.v1"
@@ -553,7 +557,8 @@ def _runtime_env_source(name: str, *, generated: Mapping[str, bool]) -> str:
 
 
 def _public_env_name(value: str) -> str:
-    return redact_public_text(value)
+    public = redact_public_text(value)
+    return "[redacted]" if _contains_private_marker(public) else public
 
 
 def _next_actions(blockers: Sequence[str]) -> list[str]:
@@ -627,15 +632,12 @@ def _assert_public_runtime_plan(plan: Mapping[str, object]) -> None:
     serialized = json.dumps(plan, sort_keys=True)
     if contains_durable_secret_text(serialized):
         raise FuseKitError("hosted_runtime_secret_plan_contains_secret_text")
-    forbidden = [
-        r"sk_live_",
-        r"sk_test_",
-        r"-----BEGIN ",
-        r"-----END ",
-        r"ocid1\.",
-    ]
-    if any(re.search(pattern, serialized, re.IGNORECASE) for pattern in forbidden):
+    if contains_private_marker_text(serialized):
         raise FuseKitError("hosted_runtime_secret_plan_contains_private_material")
+
+
+def _contains_private_marker(value: str) -> bool:
+    return contains_private_marker_text(value)
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -13,7 +13,11 @@ from fusekit.hosted.oci_access import (
     HOSTED_OCI_ALLOWED_TARGET_TAGS,
     build_hosted_oci_access_plan,
 )
-from fusekit.security import contains_durable_secret_text, redact_public_text
+from fusekit.security import (
+    contains_durable_secret_text,
+    contains_private_marker_text,
+    redact_public_text,
+)
 
 HOSTED_OCI_INVENTORY_SCHEMA_VERSION = "fusekit.hosted-oci-inventory.v1"
 HOSTED_OCI_INVENTORY_MODE = "oci_sdk_read_only_inventory"
@@ -674,22 +678,22 @@ def _assert_public_inventory(report: Mapping[str, object]) -> None:
     serialized = json.dumps(report, sort_keys=True)
     if contains_durable_secret_text(serialized):
         raise FuseKitError("hosted_oci_inventory_contains_secret_text")
-    forbidden_patterns = [
-        r"ocid1\.tenancy\.",
-        r"ocid1\.user\.",
-        r"ocid1\.compartment\.",
-        r"ocid1\.vnic\.",
-        r"ocid1\.image\.",
-        r"ocid1_",
-        r"rk_live",
-        r"rk_test",
-        r"\bASIA",
-        r"aws_secret_access_key",
-        r"-----BEGIN ",
+    if _contains_oci_private_marker(serialized) or re.search(
         r"\bfingerprints?\b",
-    ]
-    if any(re.search(pattern, serialized, re.IGNORECASE) for pattern in forbidden_patterns):
+        serialized,
+        re.IGNORECASE,
+    ):
         raise FuseKitError("hosted_oci_inventory_contains_nonpublic_identifier")
+
+
+def _contains_oci_private_marker(value: str) -> bool:
+    text = re.sub(
+        r"ocid1\.instance\.<redacted:[^>]+>",
+        "oci-instance-redacted",
+        value,
+        flags=re.IGNORECASE,
+    )
+    return contains_private_marker_text(text)
 
 
 if __name__ == "__main__":  # pragma: no cover

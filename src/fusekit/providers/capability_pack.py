@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ from urllib.parse import urlparse
 from fusekit.errors import ProviderError
 from fusekit.providers.handoff import ProviderHandoff
 from fusekit.providers.secret_routing import classify_secret_name
+from fusekit.security import contains_durable_secret_text, contains_private_marker_text
 
 PROVIDER_ID_RE = re.compile(r"^[a-z][a-z0-9-]{1,62}$")
 ENV_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,127}$")
@@ -311,7 +313,7 @@ class ProviderCapabilityPack:
     def to_dict(self) -> dict[str, object]:
         """Serialize the pack."""
 
-        return {
+        payload: dict[str, object] = {
             "schema_version": self.schema_version,
             "provider": self.provider,
             "display_name": self.display_name,
@@ -330,6 +332,8 @@ class ProviderCapabilityPack:
             "tool_permissions": list(self.tool_permissions),
             "prohibited_actions": list(self.prohibited_actions),
         }
+        _assert_public_provider_pack(payload)
+        return payload
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> ProviderCapabilityPack:
@@ -773,6 +777,19 @@ def validate_provider_pack(pack: ProviderCapabilityPack) -> None:
         ).lower():
             raise ProviderError(f"Provider pack references {word} without a service gate.")
     _validate_launcher_capture_handoff(pack)
+
+
+def _assert_public_provider_pack(payload: Mapping[str, object]) -> None:
+    serialized = json.dumps(payload, sort_keys=True)
+    durable_scan_text = re.sub(
+        r"\$\{secret:[A-Z][A-Z0-9_]{1,127}\}",
+        "[redacted]",
+        serialized,
+    )
+    if contains_durable_secret_text(durable_scan_text) or contains_private_marker_text(
+        serialized
+    ):
+        raise ProviderError("Provider capability pack contains private material or raw secret.")
 
 
 def handoff_from_provider_pack(pack: ProviderCapabilityPack) -> ProviderHandoff:

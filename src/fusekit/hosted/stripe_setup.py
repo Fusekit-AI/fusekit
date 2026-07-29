@@ -23,7 +23,7 @@ from fusekit.hosted.billing import (
 )
 from fusekit.hosted.github_app import UrlOpener
 from fusekit.hosted.lanes import MANAGED_FUSEKIT_RUN_LANE
-from fusekit.security import contains_durable_secret_text
+from fusekit.security import contains_durable_secret_text, contains_private_marker_text
 
 STRIPE_MANAGED_PRICE_SETUP_SCHEMA_VERSION = "fusekit.stripe-managed-price-setup.v1"
 DEFAULT_MANAGED_RUN_PRODUCT_NAME = "FuseKit Managed Run"
@@ -313,6 +313,7 @@ def _stripe_setup_report(
             "Re-run with --execute --confirm-shared-account after reviewing this plan.",
             *next_actions,
         ]
+    _assert_public_stripe_setup_report(report)
     return report
 
 
@@ -508,7 +509,11 @@ def _public_stripe_product_name(value: str) -> str:
     cleaned = " ".join(value.split())
     if not cleaned or len(cleaned) > MAX_MANAGED_RUN_PRODUCT_NAME_LENGTH:
         return ""
-    if contains_durable_secret_text(cleaned) or any(ch in cleaned for ch in "<>{}"):
+    if (
+        contains_durable_secret_text(cleaned)
+        or _contains_private_marker(cleaned)
+        or any(ch in cleaned for ch in "<>{}")
+    ):
         return ""
     if not all(ch.isprintable() for ch in cleaned):
         return ""
@@ -519,7 +524,11 @@ def _public_stripe_product_description(value: str) -> str:
     cleaned = " ".join(value.split())
     if not cleaned or len(cleaned) > MAX_MANAGED_RUN_PRODUCT_DESCRIPTION_LENGTH:
         return ""
-    if contains_durable_secret_text(cleaned) or any(ch in cleaned for ch in "<>{}"):
+    if (
+        contains_durable_secret_text(cleaned)
+        or _contains_private_marker(cleaned)
+        or any(ch in cleaned for ch in "<>{}")
+    ):
         return ""
     if not all(ch.isprintable() for ch in cleaned):
         return ""
@@ -595,7 +604,19 @@ def _public_stripe_id(value: object, *, prefix: str) -> str:
         return ""
     if not all(ch.isalnum() or ch == "_" for ch in value):
         return ""
+    if _contains_private_marker(value):
+        return ""
     return value
+
+
+def _assert_public_stripe_setup_report(report: Mapping[str, object]) -> None:
+    serialized = json.dumps(report, sort_keys=True)
+    if contains_durable_secret_text(serialized) or _contains_private_marker(serialized):
+        raise FuseKitError("stripe_setup_report_contains_secret_text")
+
+
+def _contains_private_marker(value: str) -> bool:
+    return contains_private_marker_text(value)
 
 
 if __name__ == "__main__":  # pragma: no cover

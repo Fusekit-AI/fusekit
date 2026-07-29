@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.evidence import HOSTED_COMPLETION_EVIDENCE_KEYS
+from fusekit.security import contains_durable_secret_text, contains_private_marker_text
 
 HOSTED_LAUNCH_LANES_SCHEMA_VERSION = "fusekit.hosted-launch-lanes.v1"
 MANAGED_FUSEKIT_RUN_LANE = "managed-fusekit-run"
@@ -68,13 +71,14 @@ class HostedLaunchLane:
             payload["user_owned_cost_boundary"] = dict(self.user_owned_cost_boundary)
         if self.security_contract is not None:
             payload["security_contract"] = dict(self.security_contract)
+        _assert_public_lane_payload(payload, "Hosted launch lane")
         return payload
 
 
 def byo_oci_user_owned_cost_boundary() -> dict[str, object]:
     """Return the public BYO OCI cost boundary."""
 
-    return {
+    payload: dict[str, object] = {
         "spend_owner": "user_oci_tenancy",
         "fusekit_managed_infrastructure_spend": False,
         "payment_required_by_fusekit": False,
@@ -91,12 +95,14 @@ def byo_oci_user_owned_cost_boundary() -> dict[str, object]:
             "this lane."
         ),
     }
+    _assert_public_lane_payload(payload, "BYO OCI cost boundary")
+    return payload
 
 
 def byo_oci_security_contract() -> dict[str, object]:
     """Return the public BYO OCI security boundary."""
 
-    return {
+    payload: dict[str, object] = {
         "managed_worker_dispatch_allowed": False,
         "hosted_worker_secret_exported": False,
         "hosted_github_private_key_exported": False,
@@ -108,6 +114,8 @@ def byo_oci_security_contract() -> dict[str, object]:
         "human_gate_bypass_allowed": False,
         "completion_claim_requires": list(HOSTED_COMPLETION_EVIDENCE_KEYS),
     }
+    _assert_public_lane_payload(payload, "BYO OCI security contract")
+    return payload
 
 
 def byo_oci_runner_shape_guard() -> dict[str, object]:
@@ -123,7 +131,7 @@ def byo_oci_runner_shape_guard() -> dict[str, object]:
         or arm_allowed is not False
     ):
         raise FuseKitError("BYO OCI runner profile must be AMD/x86_64 only.")
-    return {
+    payload: dict[str, object] = {
         "required_architecture": "amd64/x86_64",
         "allowed_shape_prefixes": list(BYO_OCI_ALLOWED_SHAPE_PREFIXES),
         "forbidden_shape_prefixes": list(BYO_OCI_FORBIDDEN_SHAPE_PREFIXES),
@@ -131,12 +139,14 @@ def byo_oci_runner_shape_guard() -> dict[str, object]:
         "arm_allowed": False,
         "verified_shape": shape,
     }
+    _assert_public_lane_payload(payload, "BYO OCI runner shape guard")
+    return payload
 
 
 def hosted_launch_lane_contract() -> dict[str, object]:
     """Return the public dual-lane launch contract."""
 
-    return {
+    payload: dict[str, object] = {
         "schema_version": HOSTED_LAUNCH_LANES_SCHEMA_VERSION,
         "default_lane": MANAGED_FUSEKIT_RUN_LANE,
         "lanes": [lane.to_dict() for lane in hosted_launch_lanes()],
@@ -146,6 +156,8 @@ def hosted_launch_lane_contract() -> dict[str, object]:
             "own tenancy and do not dispatch a FuseKit-managed worker."
         ),
     }
+    _assert_public_lane_payload(payload, "Hosted launch lane contract")
+    return payload
 
 
 def hosted_launch_lanes() -> tuple[HostedLaunchLane, ...]:
@@ -229,3 +241,9 @@ def valid_hosted_launch_lane(lane_id: str) -> bool:
     """Return whether a lane id is supported."""
 
     return lane_id.strip().lower() in HOSTED_LAUNCH_LANES
+
+
+def _assert_public_lane_payload(payload: Mapping[str, object], label: str) -> None:
+    serialized = json.dumps(payload, sort_keys=True)
+    if contains_durable_secret_text(serialized) or contains_private_marker_text(serialized):
+        raise FuseKitError(f"{label} contains private material.")

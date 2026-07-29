@@ -19,7 +19,12 @@ from fusekit.runner.recording_contract import (
     RECORDING_CONTRACT_SCHEMA_VERSION,
 )
 from fusekit.runner.run_state import LaunchRunState
-from fusekit.security import contains_durable_secret_text, redact_public_path, redact_public_text
+from fusekit.security import (
+    contains_durable_secret_text,
+    contains_private_marker_text,
+    redact_public_path,
+    redact_public_text,
+)
 
 SAFE_URL_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,256}$")
 EXPECTED_NOVNC_PORT = 6080
@@ -242,22 +247,33 @@ def _redacted_public_value(value: Any, *, key: str = "") -> Any:
         return [_redacted_public_value(item, key=key) for item in value]
     if isinstance(value, str):
         redacted = (
-            redact_public_text(value)
-            if key in PUBLIC_TEXT_KEYS or contains_durable_secret_text(value)
+            _redact_public_text(value)
+            if key in PUBLIC_TEXT_KEYS or _contains_public_credential_text(value)
             else value
         )
         return redact_public_path(redacted) if _is_public_path_key(key) else redacted
     if isinstance(value, bool | int | float) or value is None:
         return value
-    return redact_public_text(value)
+    return _redact_public_text(value)
 
 
 def _redacted_public_key(value: Any) -> str:
     key = str(value)
     if any(pattern.fullmatch(key) for pattern in PUBLIC_STRUCTURAL_KEY_PATTERNS):
         return key
-    redacted = redact_public_text(key)
+    redacted = _redact_public_text(key)
     return redacted if "[redacted]" in redacted else key
+
+
+def _contains_public_credential_text(value: str) -> bool:
+    return contains_durable_secret_text(value) or contains_private_marker_text(value)
+
+
+def _redact_public_text(value: object) -> str:
+    redacted = redact_public_text(value)
+    if contains_private_marker_text(redacted):
+        return "[redacted]"
+    return redacted
 
 
 def _is_public_path_key(key: str) -> bool:

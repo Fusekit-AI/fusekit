@@ -91,6 +91,20 @@ def test_github_app_install_url_is_stateful_and_public() -> None:
     assert "PRIVATE KEY" not in json.dumps(public)
 
 
+def test_github_app_public_metadata_rejects_private_markers() -> None:
+    config = GitHubAppConfig(
+        app_id="12345",
+        app_slug="fusekit-ASIA_should_not_render",
+        private_key_pem=_config().private_key_pem,
+    )
+
+    with pytest.raises(FuseKitError, match="GitHub App slug contains private material"):
+        github_app_install_url(config, state="run")
+
+    with pytest.raises(FuseKitError, match="GitHub App slug contains private material"):
+        config.public_dict()
+
+
 def test_build_github_app_jwt_has_expected_claims() -> None:
     token = build_github_app_jwt(_config(), now=1_700_000_000, ttl_seconds=540)
     header_segment, payload_segment, signature_segment = token.split(".")
@@ -145,6 +159,21 @@ def test_exchange_installation_token_uses_scoped_request_body() -> None:
         "token_captured": True,
     }
     assert "ghs_fake" not in json.dumps(token.public_dict())
+
+
+def test_installation_token_public_metadata_rejects_private_markers() -> None:
+    token = InstallationToken(
+        token="ghs_fake_installation_token_for_test",
+        expires_at="2026-06-21T01:00:00Z",
+        permissions={"contents": "read", "note": "ASIA_should_not_render"},
+        repository_selection="selected",
+    )
+
+    with pytest.raises(
+        FuseKitError,
+        match="GitHub installation token metadata contains private material",
+    ):
+        token.public_dict()
 
 
 def test_hosted_installation_token_boundary_allows_selected_contents_read() -> None:
@@ -265,3 +294,14 @@ def test_hosted_github_intake_contract_has_no_secret_material() -> None:
     assert "GitHub sign-in" in contract["human_gates"]
     assert "PRIVATE KEY" not in serialized
     assert "ghs_" not in serialized
+
+
+def test_hosted_github_intake_contract_rejects_private_marker_public_fields() -> None:
+    with pytest.raises(
+        FuseKitError,
+        match="Hosted GitHub intake contract contains private material",
+    ):
+        hosted_github_intake_contract(
+            _config(),
+            source_repository="https://github.com/Fusekit-AI/ASIA_should_not_render",
+        )

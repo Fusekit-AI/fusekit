@@ -33,7 +33,7 @@ fi
   --severity-level medium \
   --confidence-level medium
 
-"$python_bin" -m pip_audit --progress-spinner off
+"$python_bin" -m pip_audit . --progress-spinner off --skip-editable
 
 semgrep scan \
   --config p/python \

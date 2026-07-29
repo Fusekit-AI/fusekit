@@ -191,6 +191,7 @@ from fusekit.runner.visual_state_proof import (
 from fusekit.runner.worker_replacement import worker_replacement_drill_failures
 from fusekit.security import (
     contains_durable_secret_text,
+    contains_private_marker_text,
     redact_public_path,
     scan_for_secret_leaks,
 )
@@ -468,6 +469,10 @@ def verification_report_allows_launch_progress(report: dict[str, Any]) -> bool:
     return not _verification_failures(report, allow_human_gate=True)
 
 
+def _contains_public_credential_text(value: str) -> bool:
+    return contains_durable_secret_text(value) or contains_private_marker_text(value)
+
+
 def _vault_survivor_failures(path: Path) -> list[str]:
     try:
         text = path.read_text(encoding="utf-8")
@@ -479,7 +484,7 @@ def _vault_survivor_failures(path: Path) -> list[str]:
         "BEGIN OPENSSH PRIVATE KEY",
         "BEGIN RSA PRIVATE KEY",
     )
-    if any(marker in text for marker in markers) or contains_durable_secret_text(text):
+    if any(marker in text for marker in markers) or _contains_public_credential_text(text):
         return ["encrypted vault contains plaintext or credential-looking markers"]
     return []
 
@@ -603,7 +608,7 @@ def _rollback_metadata_shape_failures(payload: dict[str, Any]) -> list[str]:
                     failures.append(f"{field_label} must be text")
                 elif value != value.strip():
                     failures.append(f"{field_label} must not have surrounding whitespace")
-                elif contains_durable_secret_text(value):
+                elif _contains_public_credential_text(value):
                     failures.append(f"{field_label} contains credential-looking text")
     return failures
 
@@ -756,7 +761,7 @@ def _run_record_failures(
     if isinstance(recording_contract, dict) and recording_contract:
         failures.extend(_recording_contract_preflight_failures(recording_contract, payload))
     for path, value in _walk_json_strings(payload, path="central run record"):
-        if contains_durable_secret_text(value):
+        if _contains_public_credential_text(value):
             failures.append(f"{path} contains credential-looking text")
             if len(failures) >= 20:
                 failures.append("central run record contains additional credential-looking text")
@@ -887,7 +892,7 @@ def _run_state_public_string_list_preflight_failures(value: Any, label: str) -> 
             failures.append(f"{item_label} must be text")
         elif item != item.strip():
             failures.append(f"{item_label} must not have surrounding whitespace")
-        elif contains_durable_secret_text(item):
+        elif _contains_public_credential_text(item):
             failures.append(f"{item_label} contains credential-looking text")
     return failures
 
@@ -1111,7 +1116,7 @@ def _public_json_survivor_failures(payload: dict[str, Any], label: str) -> list[
         return []
     failures: list[str] = []
     for path, value in _walk_json_strings(payload, path=label):
-        if contains_durable_secret_text(value):
+        if _contains_public_credential_text(value):
             failures.append(f"{path} contains credential-looking text")
         elif _contains_callback_url(value):
             failures.append(f"{path} contains callback URL")
@@ -1146,7 +1151,7 @@ def _receipt_shape_failures(payload: dict[str, Any]) -> list[str]:
             failures.append(f"{label} must be a string")
         elif value != value.strip():
             failures.append(f"{label} must be trimmed")
-        elif contains_durable_secret_text(value):
+        elif _contains_public_credential_text(value):
             failures.append(f"{label} contains credential-looking text")
     actions = payload.get(SETUP_RECEIPT_ACTIONS_FIELD, [])
     if not isinstance(actions, list):
@@ -1169,7 +1174,7 @@ def _receipt_shape_failures(payload: dict[str, Any]) -> list[str]:
                 failures.append(f"{field_label} is missing")
             elif value != value.strip():
                 failures.append(f"{field_label} must be trimmed")
-            elif contains_durable_secret_text(value):
+            elif _contains_public_credential_text(value):
                 failures.append(f"{field_label} contains credential-looking text")
     return failures
 
@@ -1194,7 +1199,7 @@ def _visual_state_public_safety_failures(
         if _contains_callback_url(value):
             failures.append(f"{label}.{name} contains callback URL")
             continue
-        if name == "novnc_password" and contains_durable_secret_text(value):
+        if name == "novnc_password" and _contains_public_credential_text(value):
             failures.append(f"{label}.{name} contains credential-looking text")
     extra = {key: value for key, value in payload.items() if key not in VISUAL_TRANSPORT_FIELDS}
     failures.extend(_public_json_survivor_failures(extra, label))
@@ -1364,7 +1369,7 @@ def _provider_gates_artifact_failures(payload: dict[str, Any]) -> list[str]:
                 failures.append(f"{field_label} is missing")
             elif value != value.strip():
                 failures.append(f"{field_label} must be trimmed")
-            elif contains_durable_secret_text(value):
+            elif _contains_public_credential_text(value):
                 failures.append(f"{field_label} contains credential-looking text")
     return failures
 
@@ -1545,7 +1550,7 @@ def _public_string_field_failures(value: Any, label: str) -> list[str]:
         return [f"{label} is missing"]
     if value != value.strip():
         return [f"{label} must not have surrounding whitespace"]
-    if contains_durable_secret_text(value):
+    if _contains_public_credential_text(value):
         return [f"{label} contains credential-looking text"]
     return []
 
@@ -2205,7 +2210,7 @@ def _llm_contract_lane_failures(
             failures.append(f"{label}.description is missing")
         elif raw_description != description:
             failures.append(f"{label}.description must not have surrounding whitespace")
-        elif contains_durable_secret_text(description) or _contains_callback_url(description):
+        elif _contains_public_credential_text(description) or _contains_callback_url(description):
             failures.append(f"{label}.description contains unsafe public text")
     default_lane = str(contract.get("default_lane", "") or "").strip()
     if not default_lane:
@@ -2266,7 +2271,7 @@ def _llm_public_string_preflight_failures(
     if raw != text:
         failures.append(f"{label} must not have surrounding whitespace")
     if _contains_callback_url(text) or (
-        check_secretish and contains_durable_secret_text(text)
+        check_secretish and _contains_public_credential_text(text)
     ):
         failures.append(f"{label} contains unsafe public text")
     return failures
@@ -2371,7 +2376,7 @@ def _provider_gates_preflight_failures(provider_gates: dict[str, Any]) -> list[s
             failures.append(f"{label} is missing")
         elif provider_value != provider_value.strip():
             failures.append(f"{label} must be trimmed")
-        elif contains_durable_secret_text(provider_value):
+        elif _contains_public_credential_text(provider_value):
             failures.append(f"{label} contains credential-looking text")
     for index, gate in enumerate(records):
         label = f"central run record provider gates records[{index}]"
@@ -2466,7 +2471,7 @@ def _provider_gate_record_shape_failures(
             failures.append(f"{field_label} must be text")
         elif value and value != value.strip():
             failures.append(f"{field_label} must be trimmed")
-        elif contains_durable_secret_text(value):
+        elif _contains_public_credential_text(value):
             failures.append(f"{field_label} contains credential-looking text")
     for key in ("captured_targets", "follow_steps", "success_criteria", "avoid_steps"):
         values = gate.get(key)
@@ -2482,7 +2487,7 @@ def _provider_gate_record_shape_failures(
                 failures.append(f"{item_label} must be text")
             elif value != value.strip():
                 failures.append(f"{item_label} must be trimmed")
-            elif contains_durable_secret_text(value):
+            elif _contains_public_credential_text(value):
                 failures.append(f"{item_label} contains credential-looking text")
     attempts = gate.get("attempts", 0)
     if not isinstance(attempts, int) or isinstance(attempts, bool) or attempts < 0:
@@ -2534,7 +2539,7 @@ def _wake_events_preflight_failures(wake_events: dict[str, Any]) -> list[str]:
             failures.append(f"{label}.event must be text")
         elif event_name != event_name.strip():
             failures.append(f"{label}.event must be trimmed")
-        elif contains_durable_secret_text(event_name):
+        elif _contains_public_credential_text(event_name):
             failures.append(f"{label}.event contains credential-looking text")
         else:
             actual_counts[event_name] = actual_counts.get(event_name, 0) + 1
@@ -2544,12 +2549,12 @@ def _wake_events_preflight_failures(wake_events: dict[str, Any]) -> list[str]:
             failures.append(f"{label}.gate_id must be text")
         elif gate_id != gate_id.strip():
             failures.append(f"{label}.gate_id must be trimmed")
-        elif contains_durable_secret_text(gate_id):
+        elif _contains_public_credential_text(gate_id):
             failures.append(f"{label}.gate_id contains credential-looking text")
         if isinstance(event_id, str) and event_id:
             if event_id != event_id.strip():
                 failures.append(f"{label}.id must be trimmed")
-            elif contains_durable_secret_text(event_id):
+            elif _contains_public_credential_text(event_id):
                 failures.append(f"{label}.id contains credential-looking text")
             elif event_id in seen_event_ids:
                 failures.append(f"{label}.id is duplicated")
@@ -2572,7 +2577,7 @@ def _wake_events_preflight_failures(wake_events: dict[str, Any]) -> list[str]:
             failures.append(
                 f"central run record wake event counts.{event_name} must be trimmed"
             )
-        elif contains_durable_secret_text(event_name):
+        elif _contains_public_credential_text(event_name):
             failures.append(
                 f"central run record wake event counts.{event_name} "
                 "contains credential-looking text"
@@ -2619,7 +2624,7 @@ def _wake_event_record_shape_failures(
             failures.append(f"{field_label} must be text")
         elif value and value != value.strip():
             failures.append(f"{field_label} must be trimmed")
-        elif value and contains_durable_secret_text(value):
+        elif value and _contains_public_credential_text(value):
             failures.append(f"{field_label} contains credential-looking text")
     if not event.get("schema_version"):
         failures.append(f"{label}.schema_version is missing")
@@ -2640,7 +2645,7 @@ def _wake_event_record_shape_failures(
                 failures.append(f"{item_label} must be text")
             elif captured_target != captured_target.strip():
                 failures.append(f"{item_label} must be trimmed")
-            elif contains_durable_secret_text(captured_target):
+            elif _contains_public_credential_text(captured_target):
                 failures.append(f"{item_label} contains credential-looking text")
     created_at = event.get("created_at", 0)
     if not isinstance(created_at, int | float) or isinstance(created_at, bool) or created_at < 0:
@@ -2737,7 +2742,7 @@ def _approval_summary_preflight_failures(
                 failures.append(f"{label}.{key} is missing")
             elif str(approval.get(key, "") or "") != value:
                 failures.append(f"{label}.{key} must not have surrounding whitespace")
-            if value and contains_durable_secret_text(value):
+            if value and _contains_public_credential_text(value):
                 failures.append(f"{label}.{key} contains credential-looking text")
         if status and status not in APPROVAL_SUMMARY_READY_STATUSES:
             failures.append(f"{label}.status is unsupported")
@@ -2778,7 +2783,7 @@ def _run_record_error_preflight_failures(errors: list[Any]) -> list[str]:
                 failures.append(f"{label}.{key} is missing")
             elif value != value.strip():
                 failures.append(f"{label}.{key} must not have surrounding whitespace")
-            elif contains_durable_secret_text(value):
+            elif _contains_public_credential_text(value):
                 failures.append(f"{label}.{key} contains credential-looking text")
         source = str(error.get("source", "") or "").strip()
         error_id = str(error.get("id", "") or "").strip()
@@ -3050,7 +3055,7 @@ def _vault_summary_preflight_failures(vault: dict[str, Any]) -> list[str]:
                 failures.append(f"{label}.{field} is missing")
             elif value != value.strip():
                 failures.append(f"{label}.{field} must be trimmed")
-            elif contains_durable_secret_text(value):
+            elif _contains_public_credential_text(value):
                 failures.append(f"{label}.{field} contains credential-looking text")
         record_id = record.get("id", "")
         if isinstance(record_id, str) and record_id:
@@ -3108,7 +3113,7 @@ def _timeline_preflight_failures(label: str, entries: list[Any]) -> list[str]:
                 continue
             if value != value.strip():
                 failures.append(f"{entry_label}.{key} must not have surrounding whitespace")
-            if contains_durable_secret_text(value):
+            if _contains_public_credential_text(value):
                 failures.append(f"{entry_label}.{key} contains credential-looking text")
         updated_at = entry.get(TIMELINE_TIMESTAMP_FIELD, 0)
         if (
@@ -3836,7 +3841,7 @@ def _audit_trail_preflight_failures(
             value = str(entry.get(field, "") or "")
             if field not in {"summary", "action"} and value and value != value.strip():
                 failures.append(f"{label}.{field} must not have surrounding whitespace")
-            if contains_durable_secret_text(value):
+            if _contains_public_credential_text(value):
                 failures.append(f"{label}.{field} contains credential-looking text")
         source = str(entry.get("source", "") or "").strip()
         if source == "audit.jsonl" and _safe_int(entry.get("audit_log_index"), 0) <= 0:

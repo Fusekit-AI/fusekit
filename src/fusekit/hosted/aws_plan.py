@@ -12,7 +12,7 @@ from fusekit.hosted.server import (
     HOSTED_AWS_SOURCE_PROVENANCE_ENV,
     REQUIRED_HOSTED_ENV,
 )
-from fusekit.security import contains_durable_secret_text
+from fusekit.security import contains_durable_secret_text, contains_private_marker_text
 
 HOSTED_AWS_PLAN_SCHEMA_VERSION = "fusekit.hosted-aws-plan.v1"
 HOSTED_AWS_DEFAULT_REGION = "us-east-1"
@@ -114,7 +114,11 @@ def validate_cloudflare_fusekit_dns_change(
         raise FuseKitError("cloudflare_dns_only_fusekit_subdomain_allowed")
     if normalized_type != HOSTED_AWS_DEFAULT_RECORD_TYPE:
         raise FuseKitError("cloudflare_dns_record_type_must_be_cname")
-    if not normalized_value or contains_durable_secret_text(normalized_value):
+    if (
+        not normalized_value
+        or contains_durable_secret_text(normalized_value)
+        or _contains_private_marker(normalized_value)
+    ):
         raise FuseKitError("cloudflare_dns_target_must_be_public_non_secret")
     if not _valid_dns_hostname(normalized_value):
         raise FuseKitError("cloudflare_dns_target_must_be_hostname")
@@ -290,13 +294,11 @@ def build_hosted_aws_plan(
             "aws_region_allowed": region in allowed_regions,
             "aws_origin_cname_matches_provider": _valid_elastic_beanstalk_cname(origin_cname),
             "no_dns_apex_or_www_change": True,
-            "no_secret_values_in_plan": not contains_durable_secret_text(
-                json.dumps(findings, sort_keys=True)
-            ),
+            "no_secret_values_in_plan": not _contains_secret_or_private_marker(findings),
         },
     }
     serialized = json.dumps(plan, sort_keys=True)
-    if contains_durable_secret_text(serialized):
+    if contains_durable_secret_text(serialized) or _contains_private_marker(serialized):
         raise FuseKitError("hosted_aws_plan_contains_secret_text")
     return plan
 
@@ -405,6 +407,15 @@ def _valid_dns_hostname(value: str) -> bool:
     ):
         return False
     return True
+
+
+def _contains_secret_or_private_marker(value: object) -> bool:
+    serialized = json.dumps(value, sort_keys=True, default=str)
+    return contains_durable_secret_text(serialized) or _contains_private_marker(serialized)
+
+
+def _contains_private_marker(value: str) -> bool:
+    return contains_private_marker_text(value)
 
 
 def _load_resource_tag_mappings(path: str | None) -> Sequence[Mapping[str, object]]:

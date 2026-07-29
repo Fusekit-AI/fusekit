@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import json
 import urllib.parse
 from dataclasses import dataclass
 from typing import Any
@@ -13,7 +14,7 @@ from fusekit.hosted.lanes import hosted_launch_lanes
 from fusekit.hosted.script_json import json_script_payload
 from fusekit.manifest import SetupManifest
 from fusekit.planner import SetupAction, build_plan
-from fusekit.security import contains_durable_secret_text
+from fusekit.security import contains_durable_secret_text, contains_private_marker_text
 
 HOSTED_LAUNCHER_SCHEMA_VERSION = "fusekit.hosted-launcher.v1"
 TRUST_CONTRACT_SCHEMA_VERSION = "fusekit.hosted-trust-contract.v1"
@@ -324,23 +325,7 @@ def _public_hosted_action_summary(value: str) -> str:
 
 
 def _contains_hosted_private_marker(value: str) -> bool:
-    forbidden = (
-        "ghs_",
-        "ghp_",
-        "github_pat_",
-        "sk_live",
-        "sk_test",
-        "rk_live",
-        "rk_test",
-        "-----BEGIN",
-        "PRIVATE KEY-----",
-        "ocid1.",
-        "ocid1_",
-        "AKIA",
-        "ASIA",
-        "aws_secret_access_key",
-    )
-    return any(token.lower() in value.lower() for token in forbidden)
+    return contains_private_marker_text(value)
 
 
 def render_hosted_launcher(
@@ -352,7 +337,9 @@ def render_hosted_launcher(
 ) -> str:
     """Render a no-terminal hosted launcher page for a universal GitHub app."""
 
-    payload = json_script_payload(plan.to_dict())
+    payload_dict = plan.to_dict()
+    _assert_public_launcher_payload(payload_dict)
+    payload = json_script_payload(payload_dict)
     providers = _list_markup(plan.providers)
     env_names = _list_markup(plan.required_env or ("No app env vars detected yet",))
     actions = "\n".join(_action_card(action) for action in plan.actions)
@@ -366,16 +353,16 @@ def render_hosted_launcher(
     launch_path = _ordered_list_markup(trust.launch_path)
     plain_language_journey = _ordered_list_markup(trust.plain_language_journey)
     story = " / ".join(TRUST_STORY)
-    title = html.escape(f"Launch {plan.app_name} with FuseKit")
-    source = html.escape(plan.github_source)
-    app_name = html.escape(plan.app_name)
+    title = _html_public_text(f"Launch {plan.app_name} with FuseKit")
+    source = _html_public_text(plan.github_source)
+    app_name = _html_public_text(plan.app_name)
     start_control = _lane_controls(
         launch_url=launch_url,
         launch_urls=launch_urls or {},
         lane_readiness=lane_readiness or {},
     )
-    secret_boundary = html.escape(trust.secret_boundary)
-    no_terminal = html.escape(NO_TERMINAL_PROMISE)
+    secret_boundary = _html_public_text(trust.secret_boundary)
+    no_terminal = _html_public_text(NO_TERMINAL_PROMISE)
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -566,7 +553,7 @@ def render_hosted_launcher(
       <div class="eyebrow">SnowmanAI / FuseKit hosted launcher</div>
       <h1>Launch any GitHub app with a supervised setup worker.</h1>
       <p class="lede">
-        {app_name} is ready for a visible launch plan. FuseKit uses {html.escape(story)}
+        {app_name} is ready for a visible launch plan. FuseKit uses {_html_public_text(story)}
         so a nontechnical user can click once, approve provider-owned gates, and receive
         live proof without running commands.
       </p>
@@ -648,8 +635,11 @@ def _lane_controls(
         </div>
 """
     if launch_url:
+        href = _safe_launch_href(launch_url)
+        if not href:
+            return '<span class="button disabled" aria-disabled="true">Start hosted launch</span>'
         return (
-            f'<a class="button" href="{html.escape(launch_url, quote=True)}">'
+            f'<a class="button" href="{href}">'
             "Start hosted launch</a>"
         )
     return '<span class="button disabled" aria-disabled="true">Start hosted launch</span>'
@@ -662,20 +652,21 @@ def _lane_control(
     lane_readiness: dict[str, object],
 ) -> str:
     lane = next(lane for lane in hosted_launch_lanes() if lane.lane_id == lane_id)
-    label = html.escape(lane.label)
-    summary = html.escape(lane.summary)
+    label = _html_public_text(lane.label)
+    summary = _html_public_text(lane.summary)
     ready = _lane_is_launchable(lane_readiness, lane_id)
     next_actions = _lane_next_actions(lane_readiness, lane_id)
     if launch_url and ready:
+        href = _safe_launch_href(launch_url)
         button = (
-            f'<a class="button" href="{html.escape(launch_url, quote=True)}">'
+            f'<a class="button" href="{href}">'
             f"{label}</a>"
-        )
+        ) if href else '<span class="button disabled" aria-disabled="true">Unavailable</span>'
     else:
         button = '<span class="button disabled" aria-disabled="true">Unavailable</span>'
     details = ""
     if next_actions:
-        details = f"<p>{html.escape(next_actions[0])}</p>"
+        details = f"<p>{_html_public_text(next_actions[0])}</p>"
     return f"""
           <article class="lane">
             <h3>{label}</h3>
@@ -751,29 +742,62 @@ def _permission_summary(providers: tuple[str, ...]) -> tuple[str, ...]:
 
 
 def _list_markup(items: tuple[str, ...]) -> str:
-    rows = "\n".join(f"<li>{html.escape(item)}</li>" for item in items)
+    rows = "\n".join(f"<li>{_html_public_text(item)}</li>" for item in items)
     return f"<ul>{rows}</ul>"
 
 
 def _ordered_list_markup(items: tuple[str, ...]) -> str:
-    rows = "\n".join(f"<li>{html.escape(item)}</li>" for item in items)
+    rows = "\n".join(f"<li>{_html_public_text(item)}</li>" for item in items)
     return f"<ol>{rows}</ol>"
 
 
 def _action_card(action: SetupAction) -> str:
+    kind = _html_public_text(action.kind)
     return (
-        f'<article class="action-card {html.escape(action.kind)}">'
-        f"<h3>{html.escape(action.summary)}</h3>"
-        f"<small>{html.escape(action.provider)} / {html.escape(action.kind)} / "
-        f"risk: {html.escape(action.risk)}</small>"
+        f'<article class="action-card {kind}">'
+        f"<h3>{_html_public_text(action.summary)}</h3>"
+        f"<small>{_html_public_text(action.provider)} / {kind} / "
+        f"risk: {_html_public_text(action.risk)}</small>"
         "</article>"
     )
+
+
+def _html_public_text(value: object, *, quote: bool = True) -> str:
+    text = str(value)
+    if contains_durable_secret_text(text) or _contains_hosted_private_marker(text):
+        text = "[redacted]"
+    return html.escape(text, quote=quote)
+
+
+def _safe_launch_href(value: str) -> str:
+    text = value.strip()
+    if (
+        not text
+        or contains_durable_secret_text(text)
+        or _contains_hosted_private_marker(text)
+    ):
+        return ""
+    parsed = urllib.parse.urlparse(text)
+    if parsed.scheme:
+        if parsed.scheme != "https" or not parsed.netloc:
+            return ""
+    elif not text.startswith("/") or text.startswith("//"):
+        return ""
+    return html.escape(text, quote=True)
+
+
+def _assert_public_launcher_payload(payload: dict[str, object]) -> None:
+    serialized = json.dumps(payload, sort_keys=True)
+    if contains_durable_secret_text(serialized) or _contains_hosted_private_marker(
+        serialized
+    ):
+        raise FuseKitError("Hosted launcher public payload contains private material.")
 
 
 def public_plan_summary(plan: HostedLaunchPlan) -> dict[str, Any]:
     """Return the small public summary a hosted API can expose."""
 
-    return {
+    payload: dict[str, Any] = {
         "schema_version": HOSTED_LAUNCHER_SCHEMA_VERSION,
         "app_name": plan.app_name,
         "github_source": plan.github_source,
@@ -787,3 +811,5 @@ def public_plan_summary(plan: HostedLaunchPlan) -> dict[str, Any]:
         "rollback": list(plan.trust.rollback),
         "prohibited": list(plan.trust.prohibited),
     }
+    _assert_public_launcher_payload(payload)
+    return payload

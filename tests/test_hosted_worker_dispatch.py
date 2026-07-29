@@ -254,12 +254,43 @@ def test_hosted_worker_dispatch_readiness_reports_shape_errors_only() -> None:
     assert '"short"' not in serialized
 
 
+def test_hosted_worker_dispatch_readiness_rejects_private_marker_worker_id() -> None:
+    readiness = HostedWorkerDispatchSettings(
+        worker_secret=WORKER_SECRET,
+        worker_id="worker-ASIA_should_not_render",
+    ).readiness()
+    serialized = json.dumps(readiness)
+
+    assert readiness["ready"] is False
+    assert readiness["invalid"] == ["hosted_worker_id_contains_private_material"]
+    assert "ASIA_should_not_render" not in serialized
+
+
 def test_verify_hosted_worker_dispatch_rejects_tampering() -> None:
     body = _dispatch_body(action="rollback")
 
     with pytest.raises(FuseKitError, match="invalid_dispatch_signature"):
         verify_hosted_worker_dispatch(
             body.replace(b"rollback", b"detonate"),
+            signature=_signature(body),
+            schema=HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+            secret=WORKER_SECRET,
+        )
+
+
+def test_verify_hosted_worker_dispatch_rejects_private_marker_job_id() -> None:
+    body = _dispatch_body(
+        action="start",
+        binding={"job_id": "hosted-ASIA_should_not_render"},
+        envelope={"job_id": "hosted-ASIA_should_not_render"},
+    )
+
+    with pytest.raises(
+        FuseKitError,
+        match="hosted_worker_dispatch_job_id_contains_private_material",
+    ):
+        verify_hosted_worker_dispatch(
+            body,
             signature=_signature(body),
             schema=HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
             secret=WORKER_SECRET,
@@ -336,6 +367,27 @@ def test_accept_hosted_worker_dispatch_spawns_env_backed_worker_and_redacts_rece
     assert WORKER_SECRET not in serialized
     assert "signed-public-job-token" not in serialized
     assert "sha256=" not in serialized
+
+
+def test_accept_hosted_worker_dispatch_rejects_private_marker_worker_id_before_spawn() -> None:
+    body = _dispatch_body(action="start")
+    dispatch = verify_hosted_worker_dispatch(
+        body,
+        signature=_signature(body),
+        schema=HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+        secret=WORKER_SECRET,
+    )
+    spawner = FakeSpawner()
+    settings = HostedWorkerDispatchSettings(
+        worker_secret=WORKER_SECRET,
+        worker_id="worker-ASIA_should_not_render",
+        spawner=spawner,
+    )
+
+    with pytest.raises(FuseKitError, match="hosted_worker_id_contains_private_material"):
+        accept_hosted_worker_dispatch(dispatch, settings=settings)
+
+    assert spawner.calls == []
 
 
 def test_accept_hosted_worker_dispatch_redacts_boolean_spawn_pid() -> None:

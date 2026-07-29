@@ -18,6 +18,7 @@ from typing import Any, Protocol, cast
 from wsgiref.simple_server import make_server
 
 from fusekit.errors import FuseKitError
+from fusekit.security import contains_durable_secret_text, contains_private_marker_text
 
 HOSTED_WORKER_DISPATCH_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch.v1"
 HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch-receipt.v1"
@@ -97,8 +98,10 @@ class HostedWorkerDispatchSettings:
             invalid.append("hosted_worker_secret_too_short")
         if not self.worker_id:
             invalid.append("hosted_worker_id_required")
+        elif _contains_public_private_material(self.worker_id):
+            invalid.append("hosted_worker_id_contains_private_material")
         idempotency_ready = idempotency.get("ready") is True
-        return {
+        payload: dict[str, object] = {
             "schema_version": HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION,
             "ready": bool(self.worker_secret) and bool(self.worker_id) and not invalid,
             "production_ready": (
@@ -141,6 +144,8 @@ class HostedWorkerDispatchSettings:
                 "provider credentials, GitHub installation tokens, or vault material."
             ),
         }
+        _assert_public_dispatch_payload(payload, "Hosted worker dispatch readiness")
+        return payload
 
     def idempotency_contract(self) -> dict[str, object]:
         """Return public dispatch idempotency metadata without exposing paths."""
@@ -286,9 +291,11 @@ def accept_hosted_worker_dispatch(
 
     if len(settings.worker_secret) < 16:
         raise FuseKitError("hosted_worker_secret_required")
+    _require_public_dispatch_label(settings.worker_id, "hosted_worker_id")
+    _require_public_dispatch_label(dispatch.job_id, "hosted_worker_dispatch_job_id")
     reservation = _reserve_dispatch(dispatch, settings=settings)
     if reservation["duplicate"]:
-        return {
+        payload: dict[str, object] = {
             "schema_version": HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION,
             "accepted": True,
             "duplicate": True,
@@ -304,13 +311,15 @@ def accept_hosted_worker_dispatch(
                 "provider credentials, GitHub installation tokens, and vault material."
             ),
         }
+        _assert_public_dispatch_payload(payload, "Hosted worker dispatch receipt")
+        return payload
     args = dispatch.command(settings)
     env = dict(os.environ)
     env["FUSEKIT_HOSTED_WORKER_SECRET"] = settings.worker_secret
     env["FUSEKIT_HOSTED_JOB_TOKEN"] = dispatch.job_token
     spawner = settings.spawner or _spawn_worker
     spawned = spawner(args, env)
-    return {
+    payload = {
         "schema_version": HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION,
         "accepted": True,
         "duplicate": False,
@@ -326,6 +335,8 @@ def accept_hosted_worker_dispatch(
             "provider credentials, GitHub installation tokens, and vault material."
         ),
     }
+    _assert_public_dispatch_payload(payload, "Hosted worker dispatch receipt")
+    return payload
 
 
 def verify_hosted_worker_dispatch(
@@ -370,6 +381,8 @@ def verify_hosted_worker_dispatch(
         raise FuseKitError("invalid_dispatch_origin")
     if not job_id.startswith("hosted-"):
         raise FuseKitError("invalid_dispatch_job_id")
+    _require_public_dispatch_label(origin, "hosted_worker_dispatch_origin")
+    _require_public_dispatch_label(job_id, "hosted_worker_dispatch_job_id")
     return HostedWorkerDispatch(
         action=action,
         origin=origin,
@@ -661,6 +674,21 @@ def _public_spawn_label(spawned: object) -> dict[str, object]:
             else None
         )
     }
+
+
+def _require_public_dispatch_label(value: str, label: str) -> None:
+    if _contains_public_private_material(value):
+        raise FuseKitError(f"{label}_contains_private_material")
+
+
+def _assert_public_dispatch_payload(payload: dict[str, object], label: str) -> None:
+    serialized = json.dumps(payload, sort_keys=True)
+    if _contains_public_private_material(serialized):
+        raise FuseKitError(f"{label} contains private material.")
+
+
+def _contains_public_private_material(value: str) -> bool:
+    return contains_durable_secret_text(value) or contains_private_marker_text(value)
 
 
 def _response(

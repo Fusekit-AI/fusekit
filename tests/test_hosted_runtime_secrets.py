@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from fusekit.hosted.runtime_secrets import (
     HOSTED_RUNTIME_SECRET_INSTALL_SCHEMA_VERSION,
     HOSTED_RUNTIME_SECRET_PLAN_SCHEMA_VERSION,
@@ -235,6 +237,43 @@ def test_runtime_secret_verifier_redacts_secret_shaped_unexpected_key_names(
 
     assert report["ready"] is False
     assert "SK_LIVE_FIELD_NAME_SHOULD_NOT_ECHO" not in serialized
+    assert not contains_durable_secret_text(serialized)
+    assert any(
+        blocker.startswith("runtime_secret_unexpected_key:")
+        and "redacted" in blocker.lower()
+        for blocker in report["blockers"]
+    )
+    assert all("redacted" in key.lower() for key in report["key_inventory"]["unexpected_keys"])
+
+
+@pytest.mark.parametrize(
+    "private_marker",
+    [
+        "RK_LIVE_FIELD_NAME_SHOULD_NOT_ECHO",
+        "RK_TEST_FIELD_NAME_SHOULD_NOT_ECHO",
+        "OCID1_INSTANCE_OC1_NOT_PUBLIC",
+        "ASIA_FIELD_NAME_SHOULD_NOT_ECHO",
+        "AWS_SECRET_ACCESS_KEY_SHOULD_NOT_ECHO",
+    ],
+)
+def test_runtime_secret_verifier_redacts_expanded_private_marker_key_names(
+    tmp_path,
+    private_marker: str,
+) -> None:
+    output_path = tmp_path / "hosted-secrets.env"
+    install_hosted_runtime_secret_file(
+        env=_env(),
+        output_path=str(output_path),
+        execute=True,
+    )
+    with output_path.open("a", encoding="utf-8") as handle:
+        handle.write(f"{private_marker}='public'\n")
+
+    report = verify_hosted_runtime_secret_file(path=str(output_path))
+    serialized = json.dumps(report, sort_keys=True)
+
+    assert report["ready"] is False
+    assert private_marker not in serialized
     assert not contains_durable_secret_text(serialized)
     assert any(
         blocker.startswith("runtime_secret_unexpected_key:")

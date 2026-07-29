@@ -2012,6 +2012,34 @@ def test_verify_hosted_deployment_rejects_credential_text_in_public_json() -> No
     assert "Authorization" not in serialized
 
 
+def test_verify_hosted_deployment_rejects_private_markers_in_public_json() -> None:
+    readiness = _readiness_contract()
+    readiness["debug"] = "ocid1_instance_oc1_not_public"
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            readiness,
+            _deployment_contract(),
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+    serialized = json.dumps(report)
+
+    assert report["ready"] is False
+    assert checks["hosted.readiness"]["failures"] == [
+        "public_json_contains_credential_text"
+    ]
+    assert "ocid1_instance" not in serialized
+
+
 def test_verify_hosted_deployment_requires_trustworthy_homepage() -> None:
     opener = SequenceOpener(
         [
@@ -2032,7 +2060,6 @@ def test_verify_hosted_deployment_requires_trustworthy_homepage() -> None:
         dns_resolver=_public_dns_resolver,
     )
     checks = {check["id"]: check for check in report["checks"]}
-    serialized = json.dumps(report)
 
     assert report["ready"] is False
     assert checks["hosted.home"]["status"] == "failed"
@@ -2048,6 +2075,30 @@ def test_verify_hosted_deployment_requires_trustworthy_homepage() -> None:
     assert "hosted_home_deployment_provenance_commit_missing" in checks["hosted.home"][
         "failures"
     ]
+
+
+def test_verify_hosted_deployment_rejects_private_markers_in_homepage() -> None:
+    opener = SequenceOpener(
+        [
+            "<html><body>Launch any GitHub app. ASIA_should_not_render</body></html>",
+            {"ok": True},
+            _readiness_contract(),
+            _deployment_contract(),
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+    serialized = json.dumps(report)
+
+    assert report["ready"] is False
+    assert "public_text_contains_credential_text" in checks["hosted.home"]["failures"]
+    assert "ASIA_should_not_render" not in serialized
     assert "hosted_home_completion_requirements_missing" in checks["hosted.home"][
         "failures"
     ]

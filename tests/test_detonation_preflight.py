@@ -1080,6 +1080,20 @@ def test_detonation_preflight_requires_central_run_record(tmp_path) -> None:
     assert any("missing central run record" in failure for failure in result.failures)
 
 
+def test_detonation_preflight_rejects_private_markers_in_vault_survivor(
+    tmp_path,
+) -> None:
+    fusekit = tmp_path / ".fusekit"
+    fusekit.mkdir()
+    survivors = _write_preflight_survivors(fusekit)
+    survivors["vault"].write_text("encrypted body ASIA_should_not_render", encoding="utf-8")
+
+    result = run_detonation_preflight(root=tmp_path, **survivors)
+
+    assert not result.ok
+    assert "encrypted vault contains plaintext or credential-looking markers" in result.failures
+
+
 def test_detonation_preflight_requires_embedded_acceptance_summary(
     tmp_path,
 ) -> None:
@@ -1114,6 +1128,25 @@ def test_detonation_preflight_rejects_loose_run_record_envelope(
     assert "central run record has unexpected fields: private_note" in result.failures
     assert "central run record created_at must be a non-negative number" in result.failures
     assert "central run record updated_at must be a non-negative number" in result.failures
+
+
+def test_detonation_preflight_rejects_private_markers_in_run_record(
+    tmp_path,
+) -> None:
+    fusekit = tmp_path / ".fusekit"
+    fusekit.mkdir()
+    survivors = _write_preflight_survivors(fusekit)
+    payload = _run_record_payload()
+    payload["llm_contract"]["next_action"] = "Inspect ASIA_should_not_render"
+    survivors["run_record"].write_text(json.dumps(payload), encoding="utf-8")
+
+    result = run_detonation_preflight(root=tmp_path, **survivors)
+
+    assert not result.ok
+    assert (
+        "central run record.llm_contract.next_action contains credential-looking text"
+        in result.failures
+    )
 
 
 def test_detonation_preflight_rejects_hollow_run_record_proof_sections(

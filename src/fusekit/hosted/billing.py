@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from fusekit.errors import FuseKitError
 from fusekit.hosted.github_app import UrlOpener
 from fusekit.hosted.lanes import MANAGED_FUSEKIT_RUN_LANE
-from fusekit.security import contains_durable_secret_text
+from fusekit.security import contains_durable_secret_text, contains_private_marker_text
 
 HOSTED_PAYMENT_SCHEMA_VERSION = "fusekit.hosted-payment.v1"
 STRIPE_CHECKOUT_PROVIDER = "stripe-checkout"
@@ -530,23 +530,7 @@ def _public_identifier(value: object) -> str:
 
 
 def _contains_private_marker(value: str) -> bool:
-    forbidden = (
-        "ghs_",
-        "ghp_",
-        "github_pat_",
-        "sk_live",
-        "sk_test",
-        "rk_live",
-        "rk_test",
-        "-----BEGIN",
-        "PRIVATE KEY-----",
-        "ocid1.",
-        "ocid1_",
-        "AKIA",
-        "ASIA",
-        "aws_secret_access_key",
-    )
-    return any(token.lower() in value.lower() for token in forbidden)
+    return contains_private_marker_text(value)
 
 
 def _public_int(value: object) -> int | None:

@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from typing import Any
 
+from fusekit.errors import FuseKitError
 from fusekit.runner.control_room_security import (
     CONTROL_ROOM_REQUIRED_POST_PROTECTION,
     CONTROL_ROOM_ROUTE_SURFACE,
     CONTROL_ROOM_SECURITY_SCHEMA_VERSION,
     CONTROL_ROOM_UNKNOWN_ROUTE_PROTECTION,
 )
+from fusekit.security import contains_durable_secret_text, contains_private_marker_text
 
 
 def public_control_room_security_surface() -> dict[str, Any]:
@@ -32,7 +36,7 @@ def public_control_room_security_surface() -> dict[str, Any]:
             }
         )
     state_changing = [route for route in routes if route["state_change"] is True]
-    return {
+    payload: dict[str, Any] = {
         "schema_version": CONTROL_ROOM_SECURITY_SCHEMA_VERSION,
         "routes": routes,
         "route_count": len(routes),
@@ -47,3 +51,11 @@ def public_control_room_security_surface() -> dict[str, Any]:
             "responses emit no CORS allow headers."
         ),
     }
+    _assert_public_control_room_surface(payload)
+    return payload
+
+
+def _assert_public_control_room_surface(payload: Mapping[str, object]) -> None:
+    serialized = json.dumps(payload, sort_keys=True)
+    if contains_durable_secret_text(serialized) or contains_private_marker_text(serialized):
+        raise FuseKitError("Control-room security surface contains private material.")

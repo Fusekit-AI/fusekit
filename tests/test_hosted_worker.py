@@ -383,6 +383,22 @@ def test_hosted_worker_proof_payload_rejects_secret_text_in_acceptance_output(
         build_hosted_worker_proof_payload(invocation)
 
 
+def test_hosted_worker_proof_payload_rejects_private_marker_in_acceptance_output(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True)
+    report_path = invocation.artifact_paths["acceptance_output"] / "report.json"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report["debug_field"] = "ocid1_instance_oc1_not_public"
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    with pytest.raises(FuseKitError, match="contains secret-looking text"):
+        build_hosted_worker_proof_payload(invocation)
+
+
 def test_hosted_worker_proof_payload_rejects_symlinked_acceptance_output(
     tmp_path: Path,
 ) -> None:
@@ -461,6 +477,26 @@ def test_hosted_worker_proof_payload_rejects_secret_text_in_public_artifact(
     receipt = invocation.execution.source_dir / ".fusekit/setup_receipt.json"
     receipt.write_text(
         '{"status":"ok","provider_token":"Bearer ghs_rawinstallationtoken123"}\n',
+        encoding="utf-8",
+    )
+
+    bundle = build_hosted_worker_proof_payload(invocation)
+
+    assert ".fusekit/setup_receipt.json" in bundle.missing_artifacts
+    assert ".fusekit/setup_receipt.json" not in bundle.completed_artifacts
+    assert bundle.payload["evidence"]["live_acceptance_report"] is False
+
+
+def test_hosted_worker_proof_payload_rejects_private_marker_in_public_artifact(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True)
+    receipt = invocation.execution.source_dir / ".fusekit/setup_receipt.json"
+    receipt.write_text(
+        '{"status":"ok","debug":"ASIA_should_not_render"}\n',
         encoding="utf-8",
     )
 
@@ -585,6 +621,24 @@ def test_hosted_worker_proof_payload_rejects_secret_text_in_remote_survivor(
     remote_fusekit = invocation.artifact_paths["remote_artifacts"] / ".fusekit"
     (remote_fusekit / "setup_receipt.json").write_text(
         '{"status":"ok","api_key":"sk-live-rawproviderkey12345"}\n',
+        encoding="utf-8",
+    )
+
+    bundle = build_hosted_worker_proof_payload(invocation)
+
+    assert bundle.payload["evidence"]["retrieved_remote_artifacts"] is False
+
+
+def test_hosted_worker_proof_payload_rejects_private_marker_in_remote_survivor(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True)
+    remote_fusekit = invocation.artifact_paths["remote_artifacts"] / ".fusekit"
+    (remote_fusekit / "setup_receipt.json").write_text(
+        '{"status":"ok","debug":"aws_secret_access_key_should_not_render"}\n',
         encoding="utf-8",
     )
 

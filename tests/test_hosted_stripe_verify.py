@@ -6,6 +6,9 @@ import urllib.parse
 import urllib.request
 from collections.abc import Mapping
 
+import pytest
+
+from fusekit.errors import FuseKitError
 from fusekit.hosted.stripe_verify import (
     STRIPE_MANAGED_PRICE_VERIFY_SCHEMA_VERSION,
     main,
@@ -241,6 +244,44 @@ def test_stripe_price_verify_blocks_secret_shaped_product_name() -> None:
         "FUSEKIT_MANAGED_RUN_PRICE_LABEL": "",
         "FUSEKIT_MANAGED_RUNS_ENABLED": "0",
     }
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [
+        "price_ocid1_instance_oc1_not_public",
+        "price_ASIA_should_not_render",
+        "price_rk_live_should_not_render",
+    ],
+)
+def test_stripe_price_verify_rejects_private_marker_price_ids(marker: str) -> None:
+    with pytest.raises(FuseKitError, match="Stripe price id is invalid"):
+        verify_stripe_managed_run_price(
+            stripe_secret_key="sk_live_secret_value",
+            price_id=marker,
+            amount_cents=100,
+            currency="usd",
+            price_label=PRICE_LABEL,
+            opener=StripeVerifyOpener(_price_payload()),
+        )
+
+
+def test_stripe_price_verify_redacts_private_marker_product_ids() -> None:
+    payload = _price_payload(product={"id": "prod_ASIA_should_not_render"})
+
+    report = verify_stripe_managed_run_price(
+        stripe_secret_key="sk_live_secret_value",
+        price_id="price_fusekit_managed_run",
+        amount_cents=100,
+        currency="usd",
+        price_label=PRICE_LABEL,
+        opener=StripeVerifyOpener(payload),
+    )
+
+    assert report["ready"] is False
+    assert report["product_id"] == ""
+    assert "stripe_product_id_invalid" in report["blockers"]
+    assert "ASIA_should_not_render" not in json.dumps(report)
 
 
 def test_stripe_price_verify_main_reads_env_and_redacts_output(

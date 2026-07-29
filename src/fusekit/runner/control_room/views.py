@@ -28,7 +28,11 @@ from fusekit.runner.control_room.snowman import (
 from fusekit.runner.control_room.state import control_room_payload
 from fusekit.runner.gate_guidance import GateGuidance, infer_gate_provider, provider_gate_guidance
 from fusekit.runner.job import JobState, JobStep
-from fusekit.security import redact_public_path, redact_public_text
+from fusekit.security import (
+    contains_private_marker_text,
+    redact_public_path,
+    redact_public_text,
+)
 
 
 def render_control_room(
@@ -101,16 +105,18 @@ def write_control_room(job: JobState, path: Path) -> None:
 
 
 def _render_header(job: JobState) -> str:
-    app_path = redact_public_path(redact_public_text(job.app_path))
+    app_path = _redact_public_path(job.app_path)
+    job_id = _redact_public_text(job.id)
+    runner = _redact_public_text(job.runner)
     return f"""
     <header class="hero">
       <div>
         {render_brand_lockup("control room")}
         <h1>{html.escape(_headline(job))}</h1>
         <p>
-          Job <code>{html.escape(job.id)}</code> is wiring
+          Job <code>{html.escape(job_id)}</code> is wiring
           <code>{html.escape(app_path)}</code> through the
-          <code>{html.escape(job.runner)}</code> lane.
+          <code>{html.escape(runner)}</code> lane.
         </p>
       </div>
       <div class="status-stack" aria-label="Job status">
@@ -166,8 +172,12 @@ def _render_focus(job: JobState, payload: dict[str, Any]) -> str:
     current_mascot_state = mascot_state(current, job)
     focus_label = html.escape(_focus_kicker(current))
     focus_status = html.escape(current.status if current else job.status)
-    current_label = html.escape(current.label if current else "Launch complete")
-    next_label = html.escape(next_step.label if next_step else "Artifacts and audit review")
+    current_label = html.escape(
+        _redact_public_text(current.label if current else "Launch complete")
+    )
+    next_label = html.escape(
+        _redact_public_text(next_step.label if next_step else "Artifacts and audit review")
+    )
     return f"""
       <article class="focus-panel{gate_class}" data-focus-panel>
         <div class="panel-top">
@@ -206,10 +216,10 @@ def _render_step(step: JobStep, index: int) -> str:
     status = html.escape(step.status)
     step_status_label = html.escape(status_label(step.status))
     return f"""
-          <li class="step-card {status}" data-step-id="{html.escape(step.id)}">
+          <li class="step-card {status}" data-step-id="{html.escape(_redact_public_text(step.id))}">
             <span class="step-number">{index:02d}</span>
             <div class="step-copy">
-              <strong>{html.escape(step.label)}</strong>
+              <strong>{html.escape(_redact_public_text(step.label))}</strong>
               <span>{html.escape(_step_detail(step))}</span>
             </div>
             <span class="badge {status}">{step_status_label}</span>
@@ -242,7 +252,18 @@ def _public_copy(value: Any, capture_targets: Iterable[str] = ()) -> str:
     )
     for old, new in replacements:
         text = text.replace(old, new)
-    return redact_public_text(text)
+    return _redact_public_text(text)
+
+
+def _redact_public_text(value: Any) -> str:
+    redacted = redact_public_text(value)
+    if contains_private_marker_text(redacted):
+        return "[redacted]"
+    return redacted
+
+
+def _redact_public_path(value: Any) -> str:
+    return redact_public_path(_redact_public_text(value))
 
 
 def _public_capture_instruction(capture_targets: Iterable[str]) -> str:
@@ -278,7 +299,7 @@ def _public_payload(value: Any) -> Any:
 
 def _render_artifacts(job: JobState) -> str:
     artifacts = {
-        name: redact_public_path(redact_public_text(path))
+        _redact_public_text(name): _redact_public_path(path)
         for name, path in sorted(job.artifacts.items())
     }
     rows = "\n".join(

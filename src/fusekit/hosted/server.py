@@ -81,7 +81,10 @@ from fusekit.hosted.launcher import (
 from fusekit.hosted.script_json import json_script_payload
 from fusekit.hosted.session import create_hosted_state_token, verify_hosted_state_token
 from fusekit.scanner import scan_repo
-from fusekit.security.redaction import contains_durable_secret_text
+from fusekit.security.redaction import (
+    contains_durable_secret_text,
+    contains_private_marker_text,
+)
 from fusekit.source import (
     UrlOpener as SourceUrlOpener,
 )
@@ -663,7 +666,7 @@ class HostedSettings:
         invalid = _hosted_config_errors(self) if not missing else ()
         blocking_checks = _hosted_readiness_blocking_checks(missing, invalid)
         required_source_env = self.required_source_provenance_env()
-        return {
+        payload: dict[str, object] = {
             "schema_version": HOSTED_READINESS_SCHEMA_VERSION,
             "ready": not missing and not invalid,
             "public_origin": _public_origin_label(self.public_origin),
@@ -683,6 +686,8 @@ class HostedSettings:
                 "state secrets, installation tokens, and provider credentials are never rendered."
             ),
         }
+        _assert_public_server_payload(payload, "Hosted readiness")
+        return payload
 
     def deployment_contract(self) -> dict[str, object]:
         """Return public hosted deployment metadata for operator verification."""
@@ -691,7 +696,7 @@ class HostedSettings:
         dispatch_url = _public_url_label(self.worker_dispatch_url)
         dispatch_receiver_base = _worker_dispatch_receiver_base_url(self.worker_dispatch_url)
         deployment_provider = self.hosted_deployment_provider()
-        return {
+        payload: dict[str, object] = {
             "schema_version": HOSTED_DEPLOYMENT_SCHEMA_VERSION,
             "canonical_origin": HOSTED_CANONICAL_ORIGIN,
             "public_origin": public_origin,
@@ -854,6 +859,8 @@ class HostedSettings:
                 "credentials."
             ),
         }
+        _assert_public_server_payload(payload, "Hosted deployment contract")
+        return payload
 
     def lane_readiness(self) -> dict[str, object]:
         """Return public, redacted per-lane launch readiness."""
@@ -3046,24 +3053,14 @@ def _assert_public_action_response_payload(payload: dict[str, object]) -> None:
         raise FuseKitError("Hosted protected action response contains private material.")
 
 
+def _assert_public_server_payload(payload: dict[str, object], label: str) -> None:
+    serialized = json.dumps(payload, sort_keys=True)
+    if contains_durable_secret_text(serialized) or _contains_private_marker(serialized):
+        raise FuseKitError(f"{label} contains private material.")
+
+
 def _contains_private_marker(value: str) -> bool:
-    forbidden = (
-        "ghs_",
-        "ghp_",
-        "github_pat_",
-        "sk_live",
-        "sk_test",
-        "rk_live",
-        "rk_test",
-        "-----BEGIN",
-        "PRIVATE KEY-----",
-        "ocid1.",
-        "ocid1_",
-        "AKIA",
-        "ASIA",
-        "aws_secret_access_key",
-    )
-    return any(token.lower() in value.lower() for token in forbidden)
+    return contains_private_marker_text(value)
 
 
 def _json_request_body(environ: dict[str, object]) -> dict[str, object]:

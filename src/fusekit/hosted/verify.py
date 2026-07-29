@@ -80,7 +80,11 @@ from fusekit.hosted.worker_dispatch import (
     HOSTED_WORKER_DISPATCH_BINDING_FIELDS,
     HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION,
 )
-from fusekit.security import contains_durable_secret_text, redact_public_text
+from fusekit.security import (
+    contains_durable_secret_text,
+    contains_private_marker_text,
+    redact_public_text,
+)
 
 HOSTED_DEPLOYMENT_VERIFICATION_SCHEMA_VERSION = "fusekit.hosted-deployment-verification.v1"
 HomeContractValidator = Callable[[dict[str, Any]], list[str]]
@@ -1280,15 +1284,19 @@ def _protected_controls_contract_failures(payload: object) -> list[str]:
 
 def _public_payload_secret_failures(payload: dict[str, Any]) -> list[str]:
     serialized = json.dumps(payload, sort_keys=True)
-    if contains_durable_secret_text(serialized):
+    if contains_durable_secret_text(serialized) or _contains_private_marker(serialized):
         return ["public_json_contains_credential_text"]
     return []
 
 
 def _public_text_secret_failures(text: str) -> list[str]:
-    if contains_durable_secret_text(text):
+    if contains_durable_secret_text(text) or _contains_private_marker(text):
         return ["public_text_contains_credential_text"]
     return []
+
+
+def _contains_private_marker(value: str) -> bool:
+    return contains_private_marker_text(value)
 
 
 def _hosted_home_failures(
