@@ -298,6 +298,16 @@ VOLATILE_DURABLE_STATE_MARKERS = tuple(
 EXPECTED_DURABLE_STATE_SOURCE_PATHS = {
     source_id: path for source_id, path, _role, _secret in DURABLE_STATE_SOURCES
 }
+REMOTE_SURVIVOR_DEFAULT_MAX_BYTES = 1_048_576
+REMOTE_SURVIVOR_MAX_BYTES = {
+    "audit.jsonl": 2 * 1_048_576,
+    "gate_events.jsonl": 2 * 1_048_576,
+    "fusekit.vault.json": 2 * 1_048_576,
+    "run_record.json": 4 * 1_048_576,
+    "setup_receipt.md": 262_144,
+}
+
+
 @dataclass(frozen=True)
 class AcceptanceCheck:
     """One launch-readiness assertion."""
@@ -421,7 +431,8 @@ def run_acceptance(
     missing: list[str] = []
     ledger.record("acceptance.started", {"mode": mode, "app_path": redact_public_path(app_path)})
     if remote_fusekit_dir is not None:
-        _record_remote_artifacts(remote_fusekit_dir, checks, ledger)
+        if not _record_remote_artifacts(remote_fusekit_dir, checks, ledger):
+            evidence_fusekit_dir = fusekit_dir
     recording_contract = _check_run_record(
         evidence_fusekit_dir / "run_record.json",
         evidence_fusekit_dir / "job.json",
@@ -684,7 +695,7 @@ def _record_remote_artifacts(
     remote_fusekit_dir: Path,
     checks: list[AcceptanceCheck],
     ledger: HarnessLedger,
-) -> None:
+) -> bool:
     inventory = {
         name: _remote_survivor_inventory_entry(remote_fusekit_dir / name)
         for name in REMOTE_ALLOWED_SURVIVOR_FILES
@@ -707,8 +718,14 @@ def _record_remote_artifacts(
         for name, details in inventory.items()
         if details["present"] and details["empty"] and name != "gate_events.jsonl"
     ]
+    too_large_files = [
+        name for name, details in inventory.items() if details.get("too_large") is True
+    ]
     unexpected_entries = _remote_unexpected_artifact_entries(remote_fusekit_dir)
-    public_safety_failures = _remote_survivor_public_safety_failures(remote_fusekit_dir)
+    public_safety_failures = _remote_survivor_public_safety_failures(
+        remote_fusekit_dir,
+        inventory,
+    )
     snapshot = ledger.snapshot_json(
         "remote-artifact-inventory",
         {
@@ -724,6 +741,7 @@ def _record_remote_artifacts(
             or linked_files
             or non_files
             or empty_files
+            or too_large_files
             or unexpected_entries
             or public_safety_failures
         )
@@ -738,6 +756,8 @@ def _record_remote_artifacts(
         detail_parts.append("non-file survivors " + ", ".join(non_files))
     if empty_files:
         detail_parts.append("empty survivors " + ", ".join(empty_files))
+    if too_large_files:
+        detail_parts.append("oversized survivors " + ", ".join(too_large_files))
     if unexpected_entries:
         detail_parts.append("unexpected survivors " + ", ".join(unexpected_entries))
     if public_safety_failures:
@@ -757,6 +777,7 @@ def _record_remote_artifacts(
             str(snapshot),
         )
     )
+    return not too_large_files
 
 
 def _remote_unexpected_artifact_entries(remote_fusekit_dir: Path) -> list[str]:
@@ -782,16 +803,26 @@ def _remote_survivor_inventory_entry(path: Path) -> dict[str, Any]:
     exists = path.exists() or is_link
     is_file = path.is_file() if exists and not is_link else False
     size = path.stat().st_size if is_file else 0
+    max_bytes = _remote_survivor_max_bytes(path.name)
     return {
         "exists": exists,
         "present": is_file,
         "linked": is_link,
         "bytes": size,
+        "max_bytes": max_bytes,
         "empty": is_file and size == 0,
+        "too_large": is_file and size > max_bytes,
     }
 
 
-def _remote_survivor_public_safety_failures(remote_fusekit_dir: Path) -> list[str]:
+def _remote_survivor_max_bytes(name: str) -> int:
+    return REMOTE_SURVIVOR_MAX_BYTES.get(name, REMOTE_SURVIVOR_DEFAULT_MAX_BYTES)
+
+
+def _remote_survivor_public_safety_failures(
+    remote_fusekit_dir: Path,
+    inventory: dict[str, dict[str, Any]],
+) -> list[str]:
     """Reject unsafe public text in non-secret durable survivors read by inventory."""
 
     failures: list[str] = []
@@ -801,6 +832,9 @@ def _remote_survivor_public_safety_failures(remote_fusekit_dir: Path) -> list[st
     for source_id, label in REMOTE_PUBLIC_SURVIVOR_JSON_LABELS.items():
         filename = sources_by_id.get(source_id)
         if not filename:
+            continue
+        if inventory.get(filename, {}).get("too_large") is True:
+            failures.append(f"{filename} is too large for public-safety scan")
             continue
         path = remote_fusekit_dir / filename
         if path.is_symlink():

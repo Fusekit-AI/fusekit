@@ -11,6 +11,7 @@ from fusekit.errors import FuseKitError
 from fusekit.harness import run_acceptance
 from fusekit.harness.acceptance import (
     REMOTE_ALLOWED_SURVIVOR_FILES,
+    REMOTE_SURVIVOR_MAX_BYTES,
     AcceptanceCheck,
     AcceptanceReport,
     _acceptance_blockers,
@@ -6472,6 +6473,43 @@ def test_live_acceptance_inventory_allows_empty_gate_events_for_no_gate_runs(
     remote_inventory = json.loads(Path(remote_check.artifact).read_text(encoding="utf-8"))
     assert remote_inventory["files"]["gate_events.jsonl"]["present"] is True
     assert remote_inventory["files"]["gate_events.jsonl"]["empty"] is True
+
+
+def test_live_acceptance_rejects_oversized_remote_survivor_before_trusting_bundle(
+    tmp_path,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    _write_resend_vercel_manifest(app)
+    remote = tmp_path / "remote-artifacts"
+    remote_fusekit = remote / ".fusekit"
+    remote_fusekit.mkdir(parents=True)
+    vault = Vault.empty()
+    vault.save(remote_fusekit / "fusekit.vault.json", "passphrase")
+    _write_minimum_resend_vercel_live_artifacts(remote_fusekit)
+    huge_run_record = " " * (REMOTE_SURVIVOR_MAX_BYTES["run_record.json"] + 1)
+    (remote_fusekit / "run_record.json").write_text(huge_run_record, encoding="utf-8")
+
+    report = run_acceptance(
+        app,
+        mode="live",
+        passphrase="passphrase",
+        remote_artifacts_path=remote,
+    )
+
+    remote_check = next(check for check in report.checks if check.id == "remote_artifacts.loaded")
+    assert report.launch_ready is False
+    assert report.remote_artifacts_ready is False
+    assert remote_check.status == "failed"
+    assert "oversized survivors run_record.json" in remote_check.detail
+    remote_inventory = json.loads(Path(remote_check.artifact).read_text(encoding="utf-8"))
+    assert remote_inventory["files"]["run_record.json"]["too_large"] is True
+    assert remote_inventory["files"]["run_record.json"]["bytes"] == len(huge_run_record)
+    assert remote_inventory["files"]["run_record.json"]["max_bytes"] == (
+        REMOTE_SURVIVOR_MAX_BYTES["run_record.json"]
+    )
+    run_record_check = next(check for check in report.checks if check.id == "run_record.complete")
+    assert run_record_check.status == "missing"
 
 
 def test_live_acceptance_rejects_run_state_callback_url_survivor(tmp_path) -> None:
