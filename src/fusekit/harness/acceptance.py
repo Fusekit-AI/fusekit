@@ -777,7 +777,7 @@ def _record_remote_artifacts(
             str(snapshot),
         )
     )
-    return not too_large_files
+    return not linked_files and not too_large_files
 
 
 def _remote_unexpected_artifact_entries(remote_fusekit_dir: Path) -> list[str]:

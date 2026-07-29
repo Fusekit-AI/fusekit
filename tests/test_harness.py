@@ -6409,6 +6409,8 @@ def test_live_acceptance_fails_remote_artifact_inventory_when_survivor_is_linked
     assert remote_inventory["files"]["run_state.json"]["present"] is False
     assert remote_inventory["files"]["run_state.json"]["linked"] is True
     assert remote_inventory["files"]["run_state.json"]["bytes"] == 0
+    run_record_check = next(check for check in report.checks if check.id == "run_record.complete")
+    assert run_record_check.status == "missing"
 
 
 def test_live_acceptance_fails_remote_artifact_inventory_when_survivor_is_empty(
