@@ -342,6 +342,13 @@ def _clean_evidence() -> dict[str, object]:
                 "mode": "current_symlink_restore",
                 "previous_commit_sha": "",
             },
+            "release_retention": {
+                "mode": "keep-current-rollback-and-recent",
+                "minimum_retained_releases": 3,
+                "retained_release_count": 3,
+                "removed_release_count": 1,
+                "removed_commit_shas": ["0" * 40],
+            },
             "post_deploy_proof_command": (
                 "fusekit-hosted-verify --origin https://fusekit.snowmanai.org "
                 f"--expected-commit-sha {HOSTED_COMMIT}"
@@ -434,6 +441,13 @@ def test_oci_host_posture_public_json_preserves_valid_release_proof() -> None:
     assert emitted["release_receipt"]["post_deploy_proof_command"].endswith(
         HOSTED_COMMIT
     )
+    assert emitted["release_receipt"]["release_retention"] == {
+        "minimum_retained_releases": 3,
+        "mode": "keep-current-rollback-and-recent",
+        "removed_commit_shas": ["0" * 40],
+        "removed_release_count": 1,
+        "retained_release_count": 3,
+    }
     assert evaluate_oci_host_posture(emitted)["ready"] is True
     assert "sk_live_" not in _public_json(
         {"operator_note": "Authorization: Bearer sk_live_" + ("a" * 24)}
@@ -859,6 +873,9 @@ def test_oci_host_posture_blocks_unknown_nested_release_receipt_fields() -> None
     rollback = release_receipt["rollback"]
     assert isinstance(rollback, dict)
     rollback["raw_symlink_log"] = "/opt/fusekit/current -> old"
+    retention = release_receipt["release_retention"]
+    assert isinstance(retention, dict)
+    retention["raw_du_output"] = "44G"
 
     report = evaluate_oci_host_posture(evidence)
 
@@ -870,6 +887,7 @@ def test_oci_host_posture_blocks_unknown_nested_release_receipt_fields() -> None
     ]
     assert shape_check["unexpected_fields"] == [
         "release_receipt.raw_systemctl_output",
+        "release_receipt.release_retention.raw_du_output",
         "release_receipt.rollback.raw_symlink_log",
     ]
 
@@ -1398,6 +1416,10 @@ def test_oci_host_posture_blocks_missing_release_receipt() -> None:
         "oci_host_release_receipt_restarted_services_mismatch",
         "oci_host_release_receipt_after_commit_invalid",
         "oci_host_release_receipt_rollback_mode_mismatch",
+        "oci_host_release_retention_mode_mismatch",
+        "oci_host_release_retention_minimum_invalid",
+        "oci_host_release_retention_retained_count_invalid",
+        "oci_host_release_retention_removed_count_mismatch",
         "oci_host_release_receipt_secret_boundary_mismatch",
     ]
 
@@ -1473,6 +1495,39 @@ def test_oci_host_posture_blocks_release_receipt_rollback_commit_mismatch() -> N
     release_check = _check(report, "host.release_receipt")
     assert release_check["failures"] == [
         "oci_host_release_receipt_rollback_previous_commit_mismatch"
+    ]
+
+
+def test_oci_host_posture_blocks_invalid_release_retention_receipt() -> None:
+    evidence = _clean_evidence()
+    receipt = evidence["release_receipt"]
+    assert isinstance(receipt, dict)
+    before_commit = "5f5bda2fa77cb629962a0a11eaea3d595865a27f"
+    receipt["before_commit_sha"] = before_commit
+    rollback = receipt["rollback"]
+    assert isinstance(rollback, dict)
+    rollback["previous_commit_sha"] = before_commit
+    retention = receipt["release_retention"]
+    assert isinstance(retention, dict)
+    retention["mode"] = "delete-everything"
+    retention["minimum_retained_releases"] = 1
+    retention["retained_release_count"] = 0
+    retention["removed_release_count"] = 2
+    retention["removed_commit_shas"] = [HOSTED_COMMIT, before_commit, "not-a-sha"]
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.release_receipt"]
+    release_check = _check(report, "host.release_receipt")
+    assert release_check["failures"] == [
+        "oci_host_release_retention_mode_mismatch",
+        "oci_host_release_retention_minimum_invalid",
+        "oci_host_release_retention_retained_count_invalid",
+        "oci_host_release_retention_removed_count_mismatch",
+        "oci_host_release_retention_removed_commit_invalid",
+        "oci_host_release_retention_removed_active_release",
+        "oci_host_release_retention_removed_rollback_release",
     ]
 
 

@@ -831,6 +831,7 @@
   Hosted managed-lane runtime secret mutations now verify the EnvironmentFile metadata before parsing it, so symlinked or otherwise invalid hosted secret files are rejected before Stripe webhook setup or managed enablement reads secret material.
   Hosted managed proof-token minting now also verifies the EnvironmentFile before parsing it and reads optional readiness reports with no-follow, regular-file, non-symlink-parent, 1 MiB JSON object guards, so unsafe local files cannot mint a supervised paid-run state token.
   Hosted OCI access and replacement planning now read local OCI inventory, plugin, hosted-verify, and runtime-secret report inputs with no-follow, regular-file, non-symlink-parent, 1 MiB JSON guards, so unsafe local proof files cannot shape redeploy, repair, or DNS-cutover plans.
+  OCI hosted releases now enforce bounded retention after post-deploy health checks, keeping the active commit, rollback commit, and recent release window while writing redacted retention proof into the release receipt, so Python virtualenv release directories cannot grow until the boot volume fills again.
 
 ## North Star Audit Remediation
 

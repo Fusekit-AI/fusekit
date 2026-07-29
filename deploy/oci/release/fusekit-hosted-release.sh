@@ -10,9 +10,15 @@ RECEIPT_DIR="${FUSEKIT_RELEASE_RECEIPT_DIR:-/var/lib/fusekit/release-receipts}"
 PROVENANCE_FILE="${FUSEKIT_HOSTED_PROVENANCE_FILE:-/etc/fusekit/hosted-provenance.env}"
 HOSTED_SERVICE="${FUSEKIT_HOSTED_SERVICE:-fusekit-hosted.service}"
 DISPATCH_SERVICE="${FUSEKIT_DISPATCH_SERVICE:-fusekit-worker-dispatch.service}"
+RELEASE_RETENTION_COUNT="${FUSEKIT_RELEASE_RETENTION_COUNT:-3}"
 
 if [[ ! "${EXPECTED_COMMIT_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
   echo "expected commit must be a 40-character lowercase git sha" >&2
+  exit 64
+fi
+
+if [[ ! "${RELEASE_RETENTION_COUNT}" =~ ^[0-9]+$ ]] || (( RELEASE_RETENTION_COUNT < 2 )); then
+  echo "release retention count must be an integer greater than or equal to 2" >&2
   exit 64
 fi
 
@@ -26,7 +32,7 @@ if [[ "$(id -u)" != "0" ]]; then
   exit 77
 fi
 
-for command in git systemctl install ln mv readlink rm; do
+for command in awk chmod chown find git install ln mktemp mv readlink rm rmdir sort systemctl; do
   if ! command -v "${command}" >/dev/null 2>&1; then
     echo "missing required command: ${command}" >&2
     exit 69
@@ -122,13 +128,63 @@ if [[ "${AFTER_COMMIT}" != "${EXPECTED_COMMIT_SHA}" ]]; then
   exit 70
 fi
 
+RETENTION_REMOVED=()
+RETENTION_RETAINED=()
+cleanup_old_releases() {
+  local retain_count="${1}"
+  local protected_sha="${2}"
+  local previous_sha="${3}"
+  local release_name
+  local -a ordered=()
+  local -A keep=()
+  keep["${protected_sha}"]=1
+  if [[ "${previous_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+    keep["${previous_sha}"]=1
+  fi
+  while IFS= read -r release_name; do
+    [[ "${release_name}" =~ ^[0-9a-f]{40}$ ]] || continue
+    ordered+=("${release_name}")
+  done < <(
+    find "${RELEASE_ROOT}" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %f\n' \
+      | sort -rn \
+      | awk '{print $2}'
+  )
+  local index=0
+  for release_name in "${ordered[@]}"; do
+    if (( index < retain_count )); then
+      keep["${release_name}"]=1
+    fi
+    index=$((index + 1))
+  done
+  for release_name in "${ordered[@]}"; do
+    if [[ -n "${keep[${release_name}]:-}" ]]; then
+      RETENTION_RETAINED+=("${release_name}")
+      continue
+    fi
+    rm -rf --one-file-system "${RELEASE_ROOT}/${release_name}"
+    RETENTION_REMOVED+=("${release_name}")
+  done
+}
+
+cleanup_old_releases "${RELEASE_RETENTION_COUNT}" "${EXPECTED_COMMIT_SHA}" "${BEFORE_COMMIT}"
+
 RECEIPT_PATH="${RECEIPT_DIR}/release-${EXPECTED_COMMIT_SHA}.json"
-"${PYTHON_BIN}" - "${RECEIPT_PATH}" "${BEFORE_COMMIT}" "${AFTER_COMMIT}" "${RELEASE_DIR}" <<'PY'
+"${PYTHON_BIN}" - "${RECEIPT_PATH}" "${BEFORE_COMMIT}" "${AFTER_COMMIT}" "${RELEASE_DIR}" "${RELEASE_RETENTION_COUNT}" "${RETENTION_RETAINED[*]:-}" "${RETENTION_REMOVED[*]:-}" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-receipt_path, before_commit, after_commit, release_dir = sys.argv[1:5]
+(
+    receipt_path,
+    before_commit,
+    after_commit,
+    release_dir,
+    retention_count,
+    retained_raw,
+    removed_raw,
+) = sys.argv[1:8]
+retained = [value for value in retained_raw.split() if value]
+removed = [value for value in removed_raw.split() if value]
 payload = {
     "schema_version": "fusekit.oci-hosted-release-receipt.v1",
     "target": "fusekit.snowmanai.org",
@@ -147,6 +203,13 @@ payload = {
     "rollback": {
         "mode": "current_symlink_restore",
         "previous_commit_sha": before_commit,
+    },
+    "release_retention": {
+        "mode": "keep-current-rollback-and-recent",
+        "minimum_retained_releases": int(retention_count),
+        "retained_release_count": len(retained),
+        "removed_release_count": len(removed),
+        "removed_commit_shas": removed,
     },
     "post_deploy_proof_command": (
         "fusekit-hosted-verify --origin https://fusekit.snowmanai.org "

@@ -92,11 +92,21 @@ OCI_HOST_POSTURE_RELEASE_RECEIPT_KEYS = frozenset(
         "after_commit_sha",
         "release_dir",
         "rollback",
+        "release_retention",
         "post_deploy_proof_command",
         "secret_boundary",
     }
 )
 OCI_HOST_POSTURE_RELEASE_ROLLBACK_KEYS = frozenset({"mode", "previous_commit_sha"})
+OCI_HOST_POSTURE_RELEASE_RETENTION_KEYS = frozenset(
+    {
+        "mode",
+        "minimum_retained_releases",
+        "retained_release_count",
+        "removed_release_count",
+        "removed_commit_shas",
+    }
+)
 OCI_HOST_POSTURE_RELEASE_MUTATED_PATHS = (
     "/opt/fusekit/current",
     "/etc/fusekit/hosted-provenance.env",
@@ -113,6 +123,7 @@ OCI_HOST_POSTURE_PUBLIC_GIT_SHA_KEYS = frozenset(
         "before_commit_sha",
         "commit_sha",
         "expected_commit_sha",
+        "removed_commit_shas",
         "previous_commit_sha",
     }
 )
@@ -999,6 +1010,14 @@ def _evidence_shape_check(evidence: Mapping[str, object]) -> dict[str, object]:
                 prefix="release_receipt.rollback",
             )
         )
+        unexpected.extend(
+            _unexpected_nested_keys(
+                release_receipt,
+                "release_retention",
+                OCI_HOST_POSTURE_RELEASE_RETENTION_KEYS,
+                prefix="release_receipt.release_retention",
+            )
+        )
     unexpected.extend(_unexpected_systemd_unit_keys(evidence))
     unexpected = sorted(unexpected)
     if unexpected:
@@ -1704,6 +1723,25 @@ def _release_receipt_check(evidence: Mapping[str, object]) -> dict[str, object]:
         and before_commit != previous_commit
     ):
         failures.append("oci_host_release_receipt_rollback_previous_commit_mismatch")
+    retention = _mapping(receipt.get("release_retention"))
+    if retention.get("mode") != "keep-current-rollback-and-recent":
+        failures.append("oci_host_release_retention_mode_mismatch")
+    minimum_retained = _literal_non_negative_int(retention.get("minimum_retained_releases"))
+    retained_count = _literal_non_negative_int(retention.get("retained_release_count"))
+    removed_count = _literal_non_negative_int(retention.get("removed_release_count"))
+    removed_commits = _string_list(retention.get("removed_commit_shas"))
+    if minimum_retained is None or minimum_retained < 2:
+        failures.append("oci_host_release_retention_minimum_invalid")
+    if retained_count is None or retained_count < 1:
+        failures.append("oci_host_release_retention_retained_count_invalid")
+    if removed_count is None or removed_count != len(removed_commits):
+        failures.append("oci_host_release_retention_removed_count_mismatch")
+    if any(_valid_git_sha(commit) is None for commit in removed_commits):
+        failures.append("oci_host_release_retention_removed_commit_invalid")
+    if after_commit and after_commit in removed_commits:
+        failures.append("oci_host_release_retention_removed_active_release")
+    if before_commit and before_commit in removed_commits:
+        failures.append("oci_host_release_retention_removed_rollback_release")
     proof_command = _raw_str(receipt.get("post_deploy_proof_command"))
     if after_commit and proof_command != (
         "fusekit-hosted-verify --origin https://fusekit.snowmanai.org "
@@ -2002,6 +2040,7 @@ def _sanitize_release_receipt(receipt: Mapping[str, object] | None) -> dict[str,
         "after_commit_sha",
         "post_deploy_proof_command",
         "release_dir",
+        "release_retention",
         "rollback",
     }
     sanitized: dict[str, object] = {}
