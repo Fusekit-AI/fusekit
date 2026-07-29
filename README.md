@@ -619,6 +619,12 @@ acceptance all completed, use the guarded enablement helper instead of editing
 the runtime secret file by hand:
 
 ```zsh
+sudo fusekit-hosted-live-checkout-proof \
+  --webhook-receipt /var/lib/fusekit/posture/stripe-webhook-applied.json \
+  --start-action-response /var/lib/fusekit/posture/managed-start-response.json \
+  --expected-commit-sha "$(git rev-parse HEAD)" \
+  > /var/lib/fusekit/posture/live-checkout-proof.json
+
 sudo fusekit-hosted-managed-enable \
   --runtime-secret-file /etc/fusekit/hosted-secrets.env \
   --runtime-secret-verify-report /var/lib/fusekit/posture/hosted-runtime-secret-verify.json \

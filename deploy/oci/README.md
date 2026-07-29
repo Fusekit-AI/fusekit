@@ -147,6 +147,9 @@ Keep paid managed runs disabled until the redacted enablement bundle is complete
 hosted verifier, runtime-secret verifier, Stripe Price verifier, Stripe webhook
 verifier, public hosted readiness with writable job-store proof, and live
 managed Checkout proof that includes paid Checkout, webhook application, and
-worker-dispatch acceptance. Then run `fusekit-hosted-managed-enable` as a dry
-run first, and only rerun it with `--execute --confirm-managed-enablement` if
-the report says `ready_to_enable: true`.
+worker-dispatch acceptance. Build that last proof with
+`fusekit-hosted-live-checkout-proof --webhook-receipt ... --start-action-response ...`
+from the redacted Stripe webhook applied receipt and paid managed `start`
+response. Then run `fusekit-hosted-managed-enable` as a dry run first, and only
+rerun it with `--execute --confirm-managed-enablement` if the report says
+`ready_to_enable: true`.
