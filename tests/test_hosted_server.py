@@ -918,6 +918,38 @@ def test_hosted_readiness_rejects_malformed_managed_price_id() -> None:
     assert managed["blocking_checks"] == ["stripe_price_id_required_for_managed_runs"]
 
 
+def test_hosted_readiness_rejects_malformed_managed_stripe_secret_key() -> None:
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=_private_key_pem(),
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        managed_runs_enabled=True,
+        stripe_secret_key="sk_live_bad/url",
+        stripe_price_id="price_managed_run",
+        managed_run_price_label=MANAGED_PRICE_LABEL,
+        **_vercel_provenance_kwargs(),
+    )
+
+    status, _headers, body = _call("/api/hosted/readiness", settings=settings)
+    payload = json.loads(body.decode("utf-8"))
+    serialized = json.dumps(payload)
+    managed = payload["lane_readiness"]["lanes"][MANAGED_FUSEKIT_RUN_LANE]
+
+    assert status == "200 OK"
+    assert payload["ready"] is False
+    assert payload["invalid"] == ["stripe_secret_key_required_for_managed_runs"]
+    assert payload["payment"]["enabled"] is False
+    assert payload["payment"]["secret_key_configured"] is False
+    assert payload["payment"]["account_mode"] == "unknown"
+    assert managed["launchable"] is False
+    assert managed["blocking_checks"] == ["stripe_secret_key_required_for_managed_runs"]
+    assert "sk_live" not in serialized
+
+
 def test_hosted_readiness_rejects_test_mode_stripe_for_public_managed_lane() -> None:
     settings = HostedSettings(
         public_origin="https://fusekit.snowmanai.org",
@@ -980,7 +1012,7 @@ def test_hosted_readiness_test_mode_override_rejects_unknown_stripe_key_shape() 
     assert payload["payment"]["account_mode"] == "unknown"
     assert payload["payment"]["test_mode_allowed"] is True
     assert managed["launchable"] is False
-    assert "stripe_live_secret_key_required_for_managed_runs" in managed["blocking_checks"]
+    assert "stripe_secret_key_required_for_managed_runs" in managed["blocking_checks"]
 
 
 def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets() -> None:

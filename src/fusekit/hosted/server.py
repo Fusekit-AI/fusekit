@@ -27,6 +27,7 @@ from fusekit.hosted.billing import (
     HostedPaymentConfig,
     _valid_stripe_checkout_session_id,
     _valid_stripe_price_id,
+    _valid_stripe_secret_key,
     create_stripe_checkout_session,
     payment_required_receipt,
     retrieve_stripe_checkout_session,
@@ -2790,15 +2791,19 @@ def _hosted_config_errors(settings: HostedSettings) -> tuple[str, ...]:
         errors.append("hosted_state_secret_too_short")
     if len(settings.worker_secret) < 16:
         errors.append("hosted_worker_secret_too_short")
-    if settings.managed_runs_enabled and not settings.stripe_secret_key.startswith("sk_"):
+    payment_readiness = settings.payment_config().public_dict()
+    if settings.managed_runs_enabled and not _valid_stripe_secret_key(
+        settings.stripe_secret_key,
+        allowed_prefixes=("sk_live_", "sk_test_"),
+    ):
         errors.append("stripe_secret_key_required_for_managed_runs")
     if (
         settings.managed_runs_enabled
-        and settings.stripe_secret_key.startswith("sk_")
-        and not settings.payment_config().public_dict().get("live_mode_configured")
+        and payment_readiness.get("secret_key_configured") is True
+        and not payment_readiness.get("live_mode_configured")
         and not (
             settings.stripe_test_mode_allowed
-            and settings.payment_config().public_dict().get("account_mode") == "test"
+            and payment_readiness.get("account_mode") == "test"
         )
     ):
         errors.append("stripe_live_secret_key_required_for_managed_runs")
@@ -2815,15 +2820,19 @@ def _hosted_config_errors(settings: HostedSettings) -> tuple[str, ...]:
 
 def _managed_lane_blockers(settings: HostedSettings) -> list[str]:
     blockers: list[str] = []
+    payment_readiness = settings.payment_config().public_dict()
     if not settings.managed_runs_enabled:
         blockers.append("managed_runs_not_enabled")
-    if not settings.stripe_secret_key.startswith("sk_"):
+    if not _valid_stripe_secret_key(
+        settings.stripe_secret_key,
+        allowed_prefixes=("sk_live_", "sk_test_"),
+    ):
         blockers.append("stripe_secret_key_required_for_managed_runs")
     elif (
-        settings.payment_config().public_dict().get("live_mode_configured") is not True
+        payment_readiness.get("live_mode_configured") is not True
         and not (
             settings.stripe_test_mode_allowed
-            and settings.payment_config().public_dict().get("account_mode") == "test"
+            and payment_readiness.get("account_mode") == "test"
         )
     ):
         blockers.append("stripe_live_secret_key_required_for_managed_runs")

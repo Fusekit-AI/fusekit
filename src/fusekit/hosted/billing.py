@@ -92,7 +92,10 @@ class HostedPaymentConfig:
     def public_dict(self) -> dict[str, object]:
         """Return redacted hosted payment readiness."""
 
-        secret_key_configured = self.stripe_secret_key.startswith("sk_")
+        secret_key_configured = _valid_stripe_secret_key(
+            self.stripe_secret_key,
+            allowed_prefixes=("sk_live_", "sk_test_"),
+        )
         account_mode = _stripe_account_mode(self.stripe_secret_key)
         live_mode_configured = account_mode == "live"
         live_or_allowed_test_mode = live_mode_configured or (
@@ -377,10 +380,19 @@ def _stripe_request(
 def _require_stripe_config(config: HostedPaymentConfig) -> None:
     if not config.enabled:
         raise FuseKitError("Managed run billing is not enabled.")
-    if not config.stripe_secret_key or not config.stripe_secret_key.startswith("sk_"):
+    if not _valid_stripe_secret_key(
+        config.stripe_secret_key,
+        allowed_prefixes=("sk_live_", "sk_test_"),
+    ):
         raise FuseKitError("Stripe secret key is not configured.")
-    test_key_allowed = config.test_mode_allowed and config.stripe_secret_key.startswith("sk_test_")
-    if not config.stripe_secret_key.startswith("sk_live_") and not test_key_allowed:
+    test_key_allowed = (
+        config.test_mode_allowed
+        and _valid_stripe_secret_key(config.stripe_secret_key, allowed_prefixes=("sk_test_",))
+    )
+    if not _valid_stripe_secret_key(
+        config.stripe_secret_key,
+        allowed_prefixes=("sk_live_",),
+    ) and not test_key_allowed:
         raise FuseKitError("Managed run billing requires a live Stripe secret key.")
     if not _valid_stripe_price_id(config.stripe_price_id):
         raise FuseKitError("Stripe price id is not configured.")
@@ -520,13 +532,30 @@ def _has_public_currency_marker(value: str) -> bool:
 
 
 def _stripe_account_mode(value: str) -> str:
-    if value.startswith("sk_live_"):
+    if _valid_stripe_secret_key(value, allowed_prefixes=("sk_live_",)):
         return "live"
-    if value.startswith("sk_test_"):
+    if _valid_stripe_secret_key(value, allowed_prefixes=("sk_test_",)):
         return "test"
     if value.startswith("sk_"):
         return "unknown"
     return "unconfigured"
+
+
+def _valid_stripe_secret_key(
+    value: str,
+    *,
+    allowed_prefixes: tuple[str, ...],
+) -> bool:
+    if not isinstance(value, str):
+        return False
+    if not allowed_prefixes:
+        return False
+    if len(value) > 512:
+        return False
+    matched_prefix = next((prefix for prefix in allowed_prefixes if value.startswith(prefix)), "")
+    if not matched_prefix or len(value) <= len(matched_prefix):
+        return False
+    return all(ch.isalnum() or ch == "_" for ch in value)
 
 
 def _public_stripe_id(value: object) -> str:

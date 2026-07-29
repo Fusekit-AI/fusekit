@@ -114,6 +114,22 @@ def test_stripe_price_verify_accepts_fusekit_scoped_price() -> None:
     assert "card" not in serialized.lower()
 
 
+def test_stripe_price_verify_rejects_malformed_secret_key_before_network() -> None:
+    opener = StripeVerifyOpener(_price_payload())
+
+    with pytest.raises(FuseKitError, match="Stripe secret key mode is unknown"):
+        verify_stripe_managed_run_price(
+            stripe_secret_key="sk_live_bad/url",
+            price_id="price_fusekit_managed_run",
+            amount_cents=100,
+            currency="usd",
+            price_label=PRICE_LABEL,
+            opener=opener,
+        )
+
+    assert opener.requests == []
+
+
 def test_stripe_price_verify_rejects_boolean_unit_amount() -> None:
     price_label = "Launch validation: $0.01 FuseKit managed run"
     metadata = {

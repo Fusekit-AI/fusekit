@@ -18,6 +18,7 @@ from fusekit.hosted.billing import (
     _stripe_account_mode,
     _valid_price_label,
     _valid_stripe_price_id,
+    _valid_stripe_secret_key,
 )
 from fusekit.hosted.server import HOSTED_CANONICAL_ORIGIN, REQUIRED_HOSTED_ENV
 from fusekit.security import (
@@ -510,7 +511,10 @@ def _stripe_runtime_status(env: Mapping[str, str]) -> dict[str, object]:
     enabled = env.get("FUSEKIT_MANAGED_RUNS_ENABLED", "0")
     account_mode = _stripe_account_mode(secret_key)
     blockers: list[str] = []
-    if secret_key and account_mode != "live":
+    if secret_key and not _valid_stripe_secret_key(
+        secret_key,
+        allowed_prefixes=("sk_live_",),
+    ):
         blockers.append("stripe_secret_key_must_be_live")
     if price_id and not _valid_stripe_price_id(price_id):
         blockers.append("stripe_price_id_invalid")

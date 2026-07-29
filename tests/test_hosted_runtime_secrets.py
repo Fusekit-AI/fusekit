@@ -126,6 +126,20 @@ def test_runtime_secret_plan_blocks_malformed_stripe_price_id() -> None:
     }
 
 
+def test_runtime_secret_plan_blocks_malformed_stripe_secret_key() -> None:
+    plan = build_hosted_runtime_secret_plan(
+        env=_env(FUSEKIT_STRIPE_SECRET_KEY="sk_live_bad/url")
+    )
+
+    assert plan["ready_to_write_secret_file"] is False
+    assert plan["ready_for_managed_payment_staging"] is False
+    assert "stripe_secret_key_must_be_live" in plan["blockers"]
+    assert plan["stripe_runtime_env"]["FUSEKIT_STRIPE_SECRET_KEY"] == {
+        "configured": True,
+        "account_mode": "unknown",
+    }
+
+
 def test_runtime_secret_plan_cli_reads_env_json(tmp_path, capfd) -> None:
     env_path = tmp_path / "env.json"
     env_path.write_text(json.dumps(_env()), encoding="utf-8")
@@ -264,6 +278,35 @@ def test_runtime_secret_verifier_blocks_malformed_stripe_price_id(
     assert report["stripe_runtime_env"]["FUSEKIT_STRIPE_PRICE_ID"] == {
         "configured": True,
         "public_id": "",
+    }
+
+
+def test_runtime_secret_verifier_blocks_malformed_stripe_secret_key(
+    tmp_path,
+) -> None:
+    output_path = tmp_path / "hosted-secrets.env"
+    install_hosted_runtime_secret_file(
+        env=_env(),
+        output_path=str(output_path),
+        execute=True,
+    )
+    text = output_path.read_text(encoding="utf-8")
+    output_path.write_text(
+        text.replace(
+            f"FUSEKIT_STRIPE_SECRET_KEY='{LIVE_STRIPE_SECRET_FIXTURE}'",
+            "FUSEKIT_STRIPE_SECRET_KEY='sk_" "live_bad/url'",
+        ),
+        encoding="utf-8",
+    )
+
+    report = verify_hosted_runtime_secret_file(path=str(output_path))
+
+    assert report["ready"] is False
+    assert report["ready_for_managed_payment_staging"] is False
+    assert "stripe_secret_key_must_be_live" in report["blockers"]
+    assert report["stripe_runtime_env"]["FUSEKIT_STRIPE_SECRET_KEY"] == {
+        "configured": True,
+        "account_mode": "unknown",
     }
 
 

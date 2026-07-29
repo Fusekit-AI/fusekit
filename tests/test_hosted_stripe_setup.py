@@ -119,6 +119,23 @@ def test_stripe_price_setup_rejects_boolean_amount() -> None:
         )
 
 
+def test_stripe_price_setup_rejects_malformed_secret_key_before_network() -> None:
+    opener = StripeSetupOpener()
+
+    with pytest.raises(FuseKitError, match="Stripe secret key mode is unknown"):
+        create_stripe_managed_run_price(
+            stripe_secret_key="sk_live_bad/url",
+            amount_cents=100,
+            currency="usd",
+            price_label="Launch validation: $1.00 FuseKit managed run",
+            execute=True,
+            confirm_shared_account=True,
+            opener=opener,
+        )
+
+    assert opener.requests == []
+
+
 def test_stripe_price_setup_execute_creates_fusekit_scoped_product_and_price() -> None:
     opener = StripeSetupOpener()
 
