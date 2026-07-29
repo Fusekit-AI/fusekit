@@ -51,7 +51,7 @@ RELEASE_DIR="${RELEASE_ROOT}/${EXPECTED_COMMIT_SHA}"
 BEFORE_TARGET="$(readlink -f "${CURRENT_LINK}" 2>/dev/null || true)"
 BEFORE_COMMIT=""
 if [[ -n "${BEFORE_TARGET}" && -d "${BEFORE_TARGET}/.git" ]]; then
-  BEFORE_COMMIT="$(git -C "${BEFORE_TARGET}" rev-parse HEAD 2>/dev/null || true)"
+  BEFORE_COMMIT="$(git -c "safe.directory=${BEFORE_TARGET}" -C "${BEFORE_TARGET}" rev-parse HEAD 2>/dev/null || true)"
 fi
 
 ROLLBACK_NEEDED=1

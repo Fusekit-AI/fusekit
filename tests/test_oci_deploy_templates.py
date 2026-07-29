@@ -124,6 +124,7 @@ def test_oci_release_script_is_narrow_and_reviewable() -> None:
     assert 'CURRENT_LINK="${FUSEKIT_CURRENT_LINK:-/opt/fusekit/current}"' in script
     assert "ln -sfn" in script
     assert "mv -Tf" in script
+    assert 'git -c "safe.directory=${BEFORE_TARGET}"' in script
     assert '"${PYTHON_BIN}" -m venv "${RELEASE_DIR}/.venv"' in script
     assert '"${INCOMING}/repo/.venv"' not in script
     assert "/etc/fusekit/hosted-provenance.env" in script
