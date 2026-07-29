@@ -496,6 +496,11 @@ HOSTED_WORKER_DISPATCH_RECEIPT_IDEMPOTENCY_FIELDS = frozenset(
     {"mode", "durable", "scope", "duplicate", "proof"}
 )
 HOSTED_WORKER_DISPATCH_RECEIPT_SPAWNED_FIELDS = frozenset({"pid"})
+HOSTED_WORKER_DISPATCH_RECEIPT_SECRET_BOUNDARY = (
+    "Dispatch receipts omit job tokens, worker secrets, HMAC signatures, provider "
+    "credentials, GitHub installation tokens, and vault material."
+)
+HOSTED_WORKER_DISPATCH_PUBLIC_ID_MAX_LENGTH = 128
 HOSTED_WORKER_DISPATCH_BINDING_FIELDS = (
     "job_id",
     "action",
@@ -3122,7 +3127,7 @@ def _verified_worker_dispatch_receipt(
     if receipt.get("dispatch_binding") != dispatch_binding:
         raise FuseKitError("Hosted worker dispatch receipt binding mismatch.")
     worker_id = receipt.get("worker_id")
-    if not isinstance(worker_id, str) or not worker_id:
+    if not isinstance(worker_id, str) or not _valid_worker_dispatch_public_id(worker_id):
         raise FuseKitError("Hosted worker dispatch receipt worker id is invalid.")
     expected_worker_command = [
         "<fusekit-hosted-worker>",
@@ -3187,8 +3192,19 @@ def _verified_worker_dispatch_receipt(
         raise FuseKitError("Hosted worker dispatch receipt idempotency proof is invalid.")
     if "before worker spawn" not in proof:
         raise FuseKitError("Hosted worker dispatch receipt idempotency proof is not production.")
+    if receipt.get("secret_boundary") != HOSTED_WORKER_DISPATCH_RECEIPT_SECRET_BOUNDARY:
+        raise FuseKitError("Hosted worker dispatch receipt secret boundary mismatch.")
     _assert_public_server_payload(receipt, "Hosted worker dispatch receipt")
     return receipt
+
+
+def _valid_worker_dispatch_public_id(value: str) -> bool:
+    return (
+        bool(value)
+        and len(value) <= HOSTED_WORKER_DISPATCH_PUBLIC_ID_MAX_LENGTH
+        and value[0].isalnum()
+        and all(character.isalnum() or character in "._:-" for character in value)
+    )
 
 
 def _worker_dispatch_binding(

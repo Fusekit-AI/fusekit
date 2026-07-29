@@ -292,6 +292,33 @@ def _dispatch_acceptance_with_malformed_spawn_proof(
     return receipt
 
 
+def _dispatch_acceptance_with_malformed_worker_id(
+    request_body: dict[str, Any],
+) -> dict[str, object]:
+    receipt = _dispatch_acceptance_response(request_body)
+    receipt["worker_id"] = "worker id"
+    receipt["worker_command"] = [
+        "<fusekit-hosted-worker>",
+        "--origin",
+        request_body["origin"],
+        "--job-id",
+        request_body["job_id"],
+        "--action",
+        request_body["action"],
+        "--worker-id",
+        "worker id",
+    ]
+    return receipt
+
+
+def _dispatch_acceptance_with_weakened_secret_boundary(
+    request_body: dict[str, Any],
+) -> dict[str, object]:
+    receipt = _dispatch_acceptance_response(request_body)
+    receipt["secret_boundary"] = "Dispatch was accepted."
+    return receipt
+
+
 class FormSequenceOpener:
     def __init__(self, payloads: list[dict[str, object]]) -> None:
         self.payloads = payloads
@@ -4021,6 +4048,8 @@ def test_hosted_job_start_dispatches_signed_worker_envelope_when_configured() ->
         _dispatch_acceptance_with_process_idempotency,
         _dispatch_acceptance_with_public_sidecar,
         _dispatch_acceptance_with_malformed_spawn_proof,
+        _dispatch_acceptance_with_malformed_worker_id,
+        _dispatch_acceptance_with_weakened_secret_boundary,
     ],
 )
 def test_hosted_job_start_rejects_nonproduction_or_sidecar_worker_dispatch_receipt(
