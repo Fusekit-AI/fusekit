@@ -31,6 +31,8 @@ from fusekit.hosted import (
     verify_hosted_payment_return_token,
 )
 from fusekit.hosted.job import (
+    HOSTED_BYO_MAX_ARTIFACT_BYTES,
+    HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES,
     HOSTED_BYO_OCI_HANDOFF_PREFLIGHT_SCHEMA_VERSION,
     HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION,
     HOSTED_BYO_OCI_PROOF_MANIFEST_SCHEMA_VERSION,
@@ -422,6 +424,10 @@ def test_hosted_byo_bootstrap_publishes_preflight_and_reversibility_contract() -
     )
     assert bootstrap["proof_manifest"]["runner_shape_guard"] == bootstrap["runner_shape_guard"]
     assert bootstrap["proof_manifest"]["proof_bundle_root"] == ".fusekit/remote-artifacts"
+    assert bootstrap["proof_manifest"]["max_artifact_bytes"] == HOSTED_BYO_MAX_ARTIFACT_BYTES
+    assert bootstrap["proof_manifest"]["max_total_artifact_bytes"] == (
+        HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES
+    )
     assert bootstrap["proof_manifest"]["required_completion_evidence"] == [
         "live_url",
         "provider_verifiers",
@@ -491,6 +497,9 @@ def test_hosted_byo_bootstrap_publishes_preflight_and_reversibility_contract() -
         "requires_redacted_artifacts": True,
         "requires_regular_file_artifacts": True,
         "requires_non_placeholder_artifact_hashes": True,
+        "requires_bounded_artifact_sizes": True,
+        "max_artifact_bytes": HOSTED_BYO_MAX_ARTIFACT_BYTES,
+        "max_total_artifact_bytes": HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES,
         "requires_completion_evidence": [
             "live_url",
             "provider_verifiers",
@@ -880,6 +889,13 @@ def test_hosted_byo_proof_bundle_verifier_accepts_complete_redacted_inventory() 
     assert report["artifact_summary"]["missing"] == []
     assert report["artifact_summary"]["unexpected"] == []
     assert report["artifact_summary"]["invalid_required"] == []
+    assert report["artifact_summary"]["total_artifact_bytes"] == (
+        report["artifact_summary"]["required_count"] * 1024
+    )
+    assert report["artifact_summary"]["max_artifact_bytes"] == HOSTED_BYO_MAX_ARTIFACT_BYTES
+    assert report["artifact_summary"]["max_total_artifact_bytes"] == (
+        HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES
+    )
     assert report["artifact_summary"]["present_required_count"] == report[
         "artifact_summary"
     ]["required_count"]
@@ -1533,6 +1549,66 @@ def test_hosted_byo_proof_bundle_verifier_rejects_boolean_artifact_size() -> Non
     assert report["ready"] is False
     assert "artifact_size_invalid:.fusekit/run_record.json" in report["blockers"]
     assert "artifact_empty:.fusekit/run_record.json" in report["blockers"]
+
+
+def test_hosted_byo_proof_bundle_verifier_blocks_oversized_artifacts() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+    artifacts = bundle["artifacts"]
+    assert isinstance(artifacts, list)
+    artifact = next(
+        item
+        for item in artifacts
+        if isinstance(item, dict) and item["path"] == ".fusekit/run_record.json"
+    )
+    artifact["size_bytes"] = HOSTED_BYO_MAX_ARTIFACT_BYTES + 1
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+    artifact_summary = report["artifact_summary"]
+    assert isinstance(artifact_summary, dict)
+
+    assert report["ready"] is False
+    assert "artifact_too_large:.fusekit/run_record.json" in report["blockers"]
+    assert "artifact_total_size_too_large" not in report["blockers"]
+    assert artifact_summary["invalid_required"] == [".fusekit/run_record.json"]
+    assert artifact_summary["total_artifact_bytes"] == (
+        HOSTED_BYO_MAX_ARTIFACT_BYTES + 1 + (len(artifacts) - 1) * 1024
+    )
+
+
+def test_hosted_byo_proof_bundle_verifier_blocks_oversized_artifact_bundle() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+    artifacts = bundle["artifacts"]
+    assert isinstance(artifacts, list)
+    for artifact in artifacts:
+        assert isinstance(artifact, dict)
+        artifact["size_bytes"] = HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES // len(artifacts) + 1
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+    artifact_summary = report["artifact_summary"]
+    assert isinstance(artifact_summary, dict)
+
+    assert report["ready"] is False
+    assert "artifact_total_size_too_large" in report["blockers"]
+    assert all(
+        not str(blocker).startswith("artifact_too_large:")
+        for blocker in report["blockers"]
+    )
+    assert artifact_summary["invalid_required"] == []
+    assert artifact_summary["total_artifact_bytes"] > HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES
 
 
 def test_hosted_byo_proof_bundle_verifier_allows_empty_gate_event_stream() -> None:

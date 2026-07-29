@@ -71,6 +71,8 @@ HOSTED_BYO_OCI_PROOF_MANIFEST_SCHEMA_VERSION = "fusekit.hosted-byo-oci-proof-man
 HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION = "fusekit.hosted-byo-oci-proof-bundle.v1"
 HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION = "fusekit.hosted-byo-oci-proof-verify.v1"
 HOSTED_BYO_ZERO_BYTE_ALLOWED_ARTIFACTS = frozenset({".fusekit/gate_events.jsonl"})
+HOSTED_BYO_MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
+HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES = 256 * 1024 * 1024
 
 HOSTED_WORKER_PROOF_KEYS = HOSTED_COMPLETION_EVIDENCE_KEYS
 HOSTED_WORKER_MAINTENANCE_PROOF_KEYS = (
@@ -628,6 +630,9 @@ def hosted_byo_oci_bootstrap(job: HostedLaunchJob) -> dict[str, object]:
                 "requires_redacted_artifacts": True,
                 "requires_regular_file_artifacts": True,
                 "requires_non_placeholder_artifact_hashes": True,
+                "requires_bounded_artifact_sizes": True,
+                "max_artifact_bytes": HOSTED_BYO_MAX_ARTIFACT_BYTES,
+                "max_total_artifact_bytes": HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES,
                 "requires_completion_evidence": list(HOSTED_WORKER_PROOF_KEYS),
             },
         },
@@ -893,6 +898,8 @@ def _byo_oci_proof_manifest(job: HostedLaunchJob) -> dict[str, object]:
         "byo_security_contract": byo_oci_security_contract(),
         "runner_shape_guard": byo_oci_runner_shape_guard(),
         "proof_bundle_root": ".fusekit/remote-artifacts",
+        "max_artifact_bytes": HOSTED_BYO_MAX_ARTIFACT_BYTES,
+        "max_total_artifact_bytes": HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES,
         "required_completion_evidence": list(HOSTED_WORKER_PROOF_KEYS),
         "required_remote_artifacts": [
             {
@@ -994,8 +1001,12 @@ def verify_hosted_byo_oci_proof_bundle(
     unexpected = [path for path in present_paths if path not in required_artifacts]
     blockers.extend(f"missing_artifact:{path}" for path in missing)
     blockers.extend(f"unexpected_artifact:{path}" for path in unexpected)
+    total_artifact_bytes = 0
     for artifact in artifacts:
         path = str(artifact["path"])
+        size_bytes = artifact.get("size_bytes")
+        if isinstance(size_bytes, int) and not isinstance(size_bytes, bool):
+            total_artifact_bytes += size_bytes
         expected_label = required_artifacts.get(path)
         if expected_label is None:
             artifact["label"] = ""
@@ -1007,9 +1018,18 @@ def verify_hosted_byo_oci_proof_bundle(
         if not _valid_byo_artifact_sha256_label(str(artifact.get("sha256", ""))):
             blockers.append(f"artifact_sha256_invalid:{path}")
             artifact["sha256"] = ""
+        if (
+            path in required_artifacts
+            and isinstance(size_bytes, int)
+            and not isinstance(size_bytes, bool)
+            and size_bytes > HOSTED_BYO_MAX_ARTIFACT_BYTES
+        ):
+            blockers.append(f"artifact_too_large:{path}")
         if path in required_artifacts and artifact.get("size_bytes") == 0:
             if path not in HOSTED_BYO_ZERO_BYTE_ALLOWED_ARTIFACTS:
                 blockers.append(f"artifact_empty:{path}")
+    if total_artifact_bytes > HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES:
+        blockers.append("artifact_total_size_too_large")
     evidence = _public_completion_evidence(bundle.get("completion_evidence"), blockers=blockers)
     missing_evidence = [key for key in HOSTED_WORKER_PROOF_KEYS if evidence.get(key) is not True]
     blockers.extend(f"missing_completion_evidence:{key}" for key in missing_evidence)
@@ -1040,6 +1060,9 @@ def verify_hosted_byo_oci_proof_bundle(
             "missing": missing,
             "unexpected": unexpected,
             "invalid_required": invalid_required_artifacts,
+            "total_artifact_bytes": total_artifact_bytes,
+            "max_artifact_bytes": HOSTED_BYO_MAX_ARTIFACT_BYTES,
+            "max_total_artifact_bytes": HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES,
             "artifacts": artifacts,
         },
         "completion_evidence": {
@@ -1334,6 +1357,7 @@ def _invalid_required_artifacts(
         "artifact_label_mismatch:",
         "artifact_not_marked_redacted:",
         "artifact_sha256_invalid:",
+        "artifact_too_large:",
         "artifact_empty:",
         "artifact_label_unsafe:",
         "artifact_sha256_unsafe:",
