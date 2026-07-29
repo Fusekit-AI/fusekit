@@ -51,6 +51,7 @@ from fusekit.hosted.lanes import (
     BYO_OCI_LANE,
     MANAGED_FUSEKIT_RUN_LANE,
     HostedLaunchLane,
+    byo_oci_proof_policy,
     byo_oci_runner_shape_guard,
     byo_oci_security_contract,
     byo_oci_user_owned_cost_boundary,
@@ -357,6 +358,10 @@ def test_hosted_byo_proof_receipt_keeps_user_owned_lane_boundary() -> None:
     assert (
         receipt["lane_contract"]["security_contract"]["hosted_worker_secret_exported"]
         is False
+    )
+    assert receipt["lane_contract"]["proof_policy"] == byo_oci_proof_policy()
+    assert receipt["lane_contract"]["proof_policy"]["max_total_artifact_bytes"] == (
+        HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES
     )
     assert "live_acceptance_report" in receipt["lane_contract"]["security_contract"][
         "completion_claim_requires"

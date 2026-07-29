@@ -48,12 +48,6 @@ from fusekit.hosted.github_app import (
     require_hosted_installation_token_boundary,
 )
 from fusekit.hosted.job import (
-    HOSTED_BYO_MAX_ARTIFACT_BYTES,
-    HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES,
-    HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION,
-    HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION,
-    HOSTED_BYO_ZERO_BYTE_ALLOWED_ARTIFACTS,
-    HOSTED_WORKER_PROOF_KEYS,
     HostedLaunchJob,
     advance_hosted_launch_job,
     apply_hosted_worker_proof,
@@ -78,6 +72,7 @@ from fusekit.hosted.lanes import (
     BYO_OCI_LANE,
     MANAGED_FUSEKIT_RUN_LANE,
     MANAGED_PAYMENT_PROOF_REQUIREMENTS,
+    byo_oci_proof_policy,
     byo_oci_security_contract,
     byo_oci_user_owned_cost_boundary,
     hosted_launch_lane_contract,
@@ -952,7 +947,7 @@ class HostedSettings:
                 "requires_user_cloud_account": True,
                 "user_owned_cost_boundary": byo_oci_user_owned_cost_boundary(),
                 "security_contract": byo_oci_security_contract(),
-                "proof_policy": _public_byo_oci_proof_policy(),
+                "proof_policy": byo_oci_proof_policy(),
                 "blocking_checks": byo_blockers,
                 "next_actions": _hosted_readiness_next_actions((), tuple(byo_blockers)),
             },
@@ -3243,25 +3238,6 @@ def _public_managed_proof_run_contract() -> dict[str, object]:
             "URL, Stripe keys, webhook secrets, GitHub private keys, OCI credentials, "
             "provider credentials, worker secrets, vault material, card data, or raw "
             "provider logs."
-        ),
-    }
-
-
-def _public_byo_oci_proof_policy() -> dict[str, object]:
-    return {
-        "proof_bundle_root": ".fusekit/remote-artifacts",
-        "input_schema": HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION,
-        "output_schema": HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION,
-        "max_artifact_bytes": HOSTED_BYO_MAX_ARTIFACT_BYTES,
-        "max_total_artifact_bytes": HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES,
-        "zero_byte_allowed_artifacts": sorted(HOSTED_BYO_ZERO_BYTE_ALLOWED_ARTIFACTS),
-        "requires_regular_file_artifacts": True,
-        "requires_redacted_artifacts": True,
-        "requires_completion_evidence": list(HOSTED_WORKER_PROOF_KEYS),
-        "secret_boundary": (
-            "BYO OCI readiness publishes artifact labels, schemas, and byte ceilings "
-            "only. It never includes artifact contents, OCI identifiers, provider "
-            "credentials, vault material, worker secrets, or raw setup logs."
         ),
     }
 

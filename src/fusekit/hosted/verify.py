@@ -40,18 +40,11 @@ from fusekit.hosted.github_app import (
     HOSTED_GITHUB_INTAKE_PERMISSIONS,
     hosted_github_public_token_boundary,
 )
-from fusekit.hosted.job import (
-    HOSTED_BYO_MAX_ARTIFACT_BYTES,
-    HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES,
-    HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION,
-    HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION,
-    HOSTED_BYO_ZERO_BYTE_ALLOWED_ARTIFACTS,
-    HOSTED_WORKER_PROOF_KEYS,
-)
 from fusekit.hosted.lanes import (
     BYO_OCI_LANE,
     MANAGED_FUSEKIT_RUN_LANE,
     MANAGED_PAYMENT_PROOF_REQUIREMENTS,
+    byo_oci_proof_policy,
     byo_oci_security_contract,
     byo_oci_user_owned_cost_boundary,
     hosted_launch_lane_contract,
@@ -1865,25 +1858,26 @@ def _byo_lane_proof_policy_failures(value: object) -> list[str]:
         f"lane_readiness_byo_proof_policy_unexpected_field:{field}"
         for field in _unexpected_keys(value, BYO_LANE_PROOF_POLICY_KEYS)
     )
-    if value.get("proof_bundle_root") != ".fusekit/remote-artifacts":
+    expected = byo_oci_proof_policy()
+    if value.get("proof_bundle_root") != expected["proof_bundle_root"]:
         failures.append("lane_readiness_byo_proof_policy_root_mismatch")
-    if value.get("input_schema") != HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION:
+    if value.get("input_schema") != expected["input_schema"]:
         failures.append("lane_readiness_byo_proof_policy_input_schema_mismatch")
-    if value.get("output_schema") != HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION:
+    if value.get("output_schema") != expected["output_schema"]:
         failures.append("lane_readiness_byo_proof_policy_output_schema_mismatch")
-    if value.get("max_artifact_bytes") != HOSTED_BYO_MAX_ARTIFACT_BYTES:
+    if value.get("max_artifact_bytes") != expected["max_artifact_bytes"]:
         failures.append("lane_readiness_byo_proof_policy_max_artifact_bytes_mismatch")
-    if value.get("max_total_artifact_bytes") != HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES:
+    if value.get("max_total_artifact_bytes") != expected["max_total_artifact_bytes"]:
         failures.append("lane_readiness_byo_proof_policy_max_total_artifact_bytes_mismatch")
-    if value.get("zero_byte_allowed_artifacts") != sorted(
-        HOSTED_BYO_ZERO_BYTE_ALLOWED_ARTIFACTS
-    ):
+    if value.get("zero_byte_allowed_artifacts") != expected["zero_byte_allowed_artifacts"]:
         failures.append("lane_readiness_byo_proof_policy_zero_byte_allowed_artifacts_mismatch")
-    if value.get("requires_regular_file_artifacts") is not True:
+    if value.get("requires_regular_file_artifacts") != expected[
+        "requires_regular_file_artifacts"
+    ]:
         failures.append("lane_readiness_byo_proof_policy_regular_file_required_mismatch")
-    if value.get("requires_redacted_artifacts") is not True:
+    if value.get("requires_redacted_artifacts") != expected["requires_redacted_artifacts"]:
         failures.append("lane_readiness_byo_proof_policy_redacted_required_mismatch")
-    if value.get("requires_completion_evidence") != list(HOSTED_WORKER_PROOF_KEYS):
+    if value.get("requires_completion_evidence") != expected["requires_completion_evidence"]:
         failures.append("lane_readiness_byo_proof_policy_completion_evidence_mismatch")
     if not _contains_all_markers(
         value.get("secret_boundary"),

@@ -23,10 +23,15 @@ from fusekit.hosted.billing import (
     _valid_price_label,
     _valid_stripe_checkout_session_id,
 )
-from fusekit.hosted.evidence import HOSTED_COMPLETION_EVIDENCE_KEYS
 from fusekit.hosted.lanes import (
     BYO_OCI_LANE,
     BYO_OCI_RUNNER_PROFILE,
+    HOSTED_BYO_MAX_ARTIFACT_BYTES,
+    HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES,
+    HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION,
+    HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION,
+    HOSTED_BYO_ZERO_BYTE_ALLOWED_ARTIFACTS,
+    HOSTED_WORKER_PROOF_KEYS,
     MANAGED_FUSEKIT_RUN_LANE,
     byo_oci_runner_shape_guard,
     byo_oci_security_contract,
@@ -68,13 +73,7 @@ HOSTED_BYO_OCI_FUSEKIT_PACKAGE = "fusekit"
 HOSTED_BYO_OCI_HANDOFF_PREFLIGHT_SCHEMA_VERSION = "fusekit.hosted-byo-oci-preflight.v1"
 HOSTED_BYO_OCI_REVERSIBILITY_SCHEMA_VERSION = "fusekit.hosted-byo-oci-reversibility.v1"
 HOSTED_BYO_OCI_PROOF_MANIFEST_SCHEMA_VERSION = "fusekit.hosted-byo-oci-proof-manifest.v1"
-HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION = "fusekit.hosted-byo-oci-proof-bundle.v1"
-HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION = "fusekit.hosted-byo-oci-proof-verify.v1"
-HOSTED_BYO_ZERO_BYTE_ALLOWED_ARTIFACTS = frozenset({".fusekit/gate_events.jsonl"})
-HOSTED_BYO_MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
-HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES = 256 * 1024 * 1024
 
-HOSTED_WORKER_PROOF_KEYS = HOSTED_COMPLETION_EVIDENCE_KEYS
 HOSTED_WORKER_MAINTENANCE_PROOF_KEYS = (
     "rollback_execution_receipt",
     "post_rollback_verification",

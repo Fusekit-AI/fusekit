@@ -16,12 +16,12 @@ from fusekit.hosted.github_app import (
     require_hosted_installation_token_boundary,
 )
 from fusekit.hosted.job import (
-    HOSTED_WORKER_PROOF_KEYS,
     HOSTED_WORKER_PROOF_SCHEMA_VERSION,
     HostedLaunchJob,
     HostedWorkerContract,
     build_hosted_worker_contract,
 )
+from fusekit.hosted.lanes import HOSTED_WORKER_PROOF_KEYS
 from fusekit.hosted.launcher import build_hosted_launch_plan
 from fusekit.runner.remote_survivors import (
     REMOTE_ALLOWED_SURVIVOR_FILE_SET,

@@ -32,6 +32,12 @@ MANAGED_PAYMENT_PROOF_REQUIREMENTS = (
     "checkout_metadata_job_lane_source_plan_price_binding",
     "worker_dispatch_receipt_after_payment",
 )
+HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION = "fusekit.hosted-byo-oci-proof-bundle.v1"
+HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION = "fusekit.hosted-byo-oci-proof-verify.v1"
+HOSTED_BYO_ZERO_BYTE_ALLOWED_ARTIFACTS = frozenset({".fusekit/gate_events.jsonl"})
+HOSTED_BYO_MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
+HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES = 256 * 1024 * 1024
+HOSTED_WORKER_PROOF_KEYS = HOSTED_COMPLETION_EVIDENCE_KEYS
 
 
 @dataclass(frozen=True)
@@ -51,6 +57,7 @@ class HostedLaunchLane:
     cost_controls: tuple[str, ...]
     user_owned_cost_boundary: dict[str, object] | None = None
     security_contract: dict[str, object] | None = None
+    proof_policy: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Serialize browser-safe lane metadata."""
@@ -68,15 +75,17 @@ class HostedLaunchLane:
             "proof": list(self.proof),
             "cost_controls": list(self.cost_controls),
             "secret_boundary": (
-                "Lane contracts expose ownership, gates, and proof labels only. They never "
-                "include cloud credentials, payment method details, provider tokens, or vault "
-                "material."
+                "Lane contracts expose ownership, gates, proof labels, and public artifact "
+                "policy only. They never include cloud credentials, payment method details, "
+                "provider tokens, or vault material."
             ),
         }
         if self.user_owned_cost_boundary is not None:
             payload["user_owned_cost_boundary"] = dict(self.user_owned_cost_boundary)
         if self.security_contract is not None:
             payload["security_contract"] = dict(self.security_contract)
+        if self.proof_policy is not None:
+            payload["proof_policy"] = dict(self.proof_policy)
         _assert_public_lane_payload(payload, "Hosted launch lane")
         return payload
 
@@ -121,6 +130,29 @@ def byo_oci_security_contract() -> dict[str, object]:
         "completion_claim_requires": list(HOSTED_COMPLETION_EVIDENCE_KEYS),
     }
     _assert_public_lane_payload(payload, "BYO OCI security contract")
+    return payload
+
+
+def byo_oci_proof_policy() -> dict[str, object]:
+    """Return the public BYO OCI proof-size and redaction policy."""
+
+    payload: dict[str, object] = {
+        "proof_bundle_root": ".fusekit/remote-artifacts",
+        "input_schema": HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION,
+        "output_schema": HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION,
+        "max_artifact_bytes": HOSTED_BYO_MAX_ARTIFACT_BYTES,
+        "max_total_artifact_bytes": HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES,
+        "zero_byte_allowed_artifacts": sorted(HOSTED_BYO_ZERO_BYTE_ALLOWED_ARTIFACTS),
+        "requires_regular_file_artifacts": True,
+        "requires_redacted_artifacts": True,
+        "requires_completion_evidence": list(HOSTED_WORKER_PROOF_KEYS),
+        "secret_boundary": (
+            "BYO OCI readiness publishes artifact labels, schemas, and byte ceilings "
+            "only. It never includes artifact contents, OCI identifiers, provider "
+            "credentials, vault material, worker secrets, or raw setup logs."
+        ),
+    }
+    _assert_public_lane_payload(payload, "BYO OCI proof policy")
     return payload
 
 
@@ -229,6 +261,7 @@ def hosted_launch_lanes() -> tuple[HostedLaunchLane, ...]:
             ),
             user_owned_cost_boundary=byo_oci_user_owned_cost_boundary(),
             security_contract=byo_oci_security_contract(),
+            proof_policy=byo_oci_proof_policy(),
         ),
     )
 

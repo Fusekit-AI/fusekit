@@ -59,6 +59,7 @@ from fusekit.hosted.lanes import (
     BYO_OCI_LANE,
     MANAGED_FUSEKIT_RUN_LANE,
     MANAGED_PAYMENT_PROOF_REQUIREMENTS,
+    byo_oci_proof_policy,
     byo_oci_security_contract,
     byo_oci_user_owned_cost_boundary,
 )
@@ -1208,6 +1209,10 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     assert byo_lane["security_contract"]["hosted_worker_secret_exported"] is False
     assert byo_lane["security_contract"]["hosted_github_private_key_exported"] is False
     assert byo_lane["security_contract"]["runner_architecture"] == "amd_x86_64_only"
+    assert byo_lane["proof_policy"] == byo_oci_proof_policy()
+    assert byo_lane["proof_policy"]["max_total_artifact_bytes"] == (
+        HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES
+    )
     assert byo_lane["security_contract"]["runner_profile"] == {
         "provider": "oracle-cloud-infrastructure",
         "runner": "oci-existing",
