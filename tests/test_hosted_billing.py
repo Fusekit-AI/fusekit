@@ -278,6 +278,51 @@ def test_stripe_checkout_session_receipt_rejects_secret_text_in_public_fields() 
         )
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("client_secret", "cs_secret_should_not_be_accepted"),
+        ("payment_method", "pm_should_not_be_accepted"),
+        ("payment_method_details", {"card": {"last4": "4242"}}),
+    ],
+)
+def test_stripe_checkout_session_receipt_rejects_sensitive_top_level_fields(
+    field: str,
+    value: object,
+) -> None:
+    payload: dict[str, object] = {
+        "id": "cs_live_public",
+        "status": "open",
+        "payment_status": "unpaid",
+        "mode": "payment",
+        field: value,
+    }
+
+    with pytest.raises(
+        FuseKitError,
+        match="stripe_checkout_payload_contains_sensitive_field",
+    ):
+        stripe_checkout_session_receipt(payload)
+
+
+def test_stripe_checkout_session_receipt_ignores_non_sensitive_extra_fields() -> None:
+    receipt = stripe_checkout_session_receipt(
+        {
+            "id": "cs_live_public",
+            "url": "https://checkout.stripe.com/c/pay/cs_live_public",
+            "status": "open",
+            "payment_status": "unpaid",
+            "mode": "payment",
+            "customer_email": "buyer@example.com",
+        }
+    )
+
+    serialized = json.dumps(receipt)
+    assert receipt["checkout_session_id"] == "cs_live_public"
+    assert "buyer@example.com" not in serialized
+    assert "customer_email" not in serialized
+
+
 def test_stripe_checkout_session_receipt_rejects_private_markers_in_metadata() -> None:
     with pytest.raises(FuseKitError, match="stripe_checkout_metadata_contains_secret_text"):
         stripe_checkout_session_receipt(

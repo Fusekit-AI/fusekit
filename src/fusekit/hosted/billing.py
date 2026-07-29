@@ -31,6 +31,13 @@ STRIPE_CHECKOUT_HASH_METADATA_KEYS = frozenset(
         "price_label_hash",
     }
 )
+SENSITIVE_STRIPE_CHECKOUT_PAYLOAD_FIELDS = frozenset(
+    {
+        "client_secret",
+        "payment_method",
+        "payment_method_details",
+    }
+)
 HOSTED_STRIPE_PRICE_SETUP_HELPER = "fusekit-hosted-stripe-price"
 HOSTED_STRIPE_PRICE_VERIFY_HELPER = "fusekit-hosted-stripe-price-verify"
 HOSTED_STRIPE_PRICE_SETUP_MODULE = "python -m fusekit.hosted.stripe_setup"
@@ -235,6 +242,7 @@ def retrieve_stripe_checkout_session(
 def stripe_checkout_session_receipt(payload: dict[str, object]) -> dict[str, object]:
     """Return a browser-safe Checkout Session receipt."""
 
+    _reject_sensitive_checkout_payload_fields(payload)
     session_id = _public_stripe_id(payload.get("id"))
     checkout_url = payload.get("url")
     receipt: dict[str, object] = {
@@ -260,6 +268,13 @@ def stripe_checkout_session_receipt(payload: dict[str, object]) -> dict[str, obj
         raise FuseKitError("stripe_checkout_paid_receipt_incomplete")
     _assert_public_payment_receipt(receipt)
     return receipt
+
+
+def _reject_sensitive_checkout_payload_fields(payload: dict[str, object]) -> None:
+    for key in SENSITIVE_STRIPE_CHECKOUT_PAYLOAD_FIELDS:
+        value = payload.get(key)
+        if value not in (None, "", {}, []):
+            raise FuseKitError("stripe_checkout_payload_contains_sensitive_field")
 
 
 def _public_checkout_url(value: object, *, session_id: str) -> str:
