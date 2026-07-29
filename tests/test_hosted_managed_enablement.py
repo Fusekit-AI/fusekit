@@ -115,6 +115,40 @@ def test_managed_enablement_can_write_enabled_flag_with_complete_proof(tmp_path:
     assert "whsec" not in serialized
 
 
+def test_managed_enablement_execute_rejects_symlinked_runtime_file_before_parse(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    runtime_file = tmp_path / "hosted-secrets.env"
+    runtime_link = tmp_path / "hosted-secrets-link.env"
+    _write_runtime_file(runtime_file)
+    runtime_link.symlink_to(runtime_file)
+
+    def fail_parse(_path: Path) -> tuple[dict[str, str], list[str]]:
+        raise AssertionError("runtime file should not be parsed before preflight")
+
+    monkeypatch.setattr(
+        "fusekit.hosted.managed_enablement._parse_systemd_env_file",
+        fail_parse,
+    )
+
+    report = enable_hosted_managed_runs(
+        runtime_secret_file=str(runtime_link),
+        runtime_secret_verify=verify_hosted_runtime_secret_file(path=str(runtime_file)),
+        hosted_verify=_hosted_verify_report(),
+        stripe_price_verify=_stripe_price_verify_report(),
+        stripe_webhook_verify=_stripe_webhook_verify_report(),
+        hosted_readiness=_hosted_readiness_report(),
+        live_checkout_proof=_live_checkout_proof(),
+        execute=True,
+        confirm_managed_enablement=True,
+    )
+
+    assert report["written"] is False
+    assert report["ready_to_enable"] is False
+    assert "runtime_secret_file_preflight_not_ready" in report["blockers"]
+
+
 def test_managed_enablement_main_reports_incomplete_proof(tmp_path: Path, capsys) -> None:
     paths = _proof_files(tmp_path)
     live_checkout = json.loads(paths["live_checkout"].read_text(encoding="utf-8"))

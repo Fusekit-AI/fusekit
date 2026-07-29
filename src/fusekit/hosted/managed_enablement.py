@@ -119,13 +119,19 @@ def enable_hosted_managed_runs(
         blockers.append("enablement_proof_not_ready")
     written = False
     if execute and not blockers:
-        material, parse_failures = _parse_systemd_env_file(Path(runtime_secret_file))
-        if parse_failures:
-            blockers.extend(f"runtime_secret_{failure}" for failure in parse_failures)
         preflight = verify_hosted_runtime_secret_file(path=runtime_secret_file)
         if preflight.get("ready") is not True:
             blockers.append("runtime_secret_file_preflight_not_ready")
-        if material.get("FUSEKIT_MANAGED_RUNS_ENABLED") not in {"", "0", "false", "False"}:
+        material: dict[str, str] = {}
+        if not blockers:
+            material, parse_failures = _parse_systemd_env_file(Path(runtime_secret_file))
+            if parse_failures:
+                blockers.extend(f"runtime_secret_{failure}" for failure in parse_failures)
+        if (
+            material
+            and material.get("FUSEKIT_MANAGED_RUNS_ENABLED")
+            not in {"", "0", "false", "False"}
+        ):
             blockers.append("managed_runs_already_enabled_or_ambiguous")
         if not blockers:
             material["FUSEKIT_MANAGED_RUNS_ENABLED"] = "1"

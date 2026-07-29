@@ -30,6 +30,7 @@ from fusekit.hosted.runtime_secrets import (
     HOSTED_RUNTIME_SECRET_FILE,
     _parse_systemd_env_file,
     install_hosted_runtime_secret_file,
+    verify_hosted_runtime_secret_file,
 )
 from fusekit.hosted.server import HOSTED_CANONICAL_ORIGIN
 from fusekit.security import contains_durable_secret_text, contains_private_marker_text
@@ -431,6 +432,9 @@ def _runtime_secret_file_env(runtime_secret_file: str) -> dict[str, str]:
 
 def _read_runtime_secret_env(runtime_secret_file: str) -> tuple[dict[str, str], list[str]]:
     path = runtime_secret_file.strip() or HOSTED_RUNTIME_SECRET_FILE
+    preflight = verify_hosted_runtime_secret_file(path=path)
+    if preflight.get("ready") is not True:
+        return {}, ["runtime_secret_file_preflight_not_ready"]
     try:
         return _parse_systemd_env_file(Path(path))
     except OSError:

@@ -239,6 +239,32 @@ def test_stripe_webhook_setup_can_install_returned_secret_without_emitting_it(tm
     assert LIVE_STRIPE_SECRET not in serialized
 
 
+def test_stripe_webhook_runtime_file_read_rejects_symlink_before_parse(
+    monkeypatch,
+    tmp_path,
+    capsys,
+) -> None:
+    runtime_file = tmp_path / "hosted-secrets.env"
+    runtime_link = tmp_path / "hosted-secrets-link.env"
+    _write_runtime_secret_file(runtime_file)
+    runtime_link.symlink_to(runtime_file)
+
+    def fail_parse(_path):
+        raise AssertionError("runtime file should not be parsed before preflight")
+
+    monkeypatch.setattr(
+        "fusekit.hosted.stripe_webhook._parse_systemd_env_file",
+        fail_parse,
+    )
+
+    exit_code = main(["--runtime-secret-file", str(runtime_link)])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 2
+    assert payload["ready"] is False
+    assert payload["error"] == "Runtime secret file is not readable or parseable."
+
+
 def test_stripe_webhook_setup_refuses_secret_file_install_without_confirmation(tmp_path) -> None:
     runtime_file = tmp_path / "hosted-secrets.env"
     _write_runtime_secret_file(runtime_file)
