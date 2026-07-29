@@ -127,12 +127,13 @@ that the release receipt commit matches the hosted verifier commit, and that
 provider rollback actions are planned or complete. Port 22 is allowed only when
 the attached SSH ingress label proves restricted operator access; nonstandard
 public listeners still block posture. The collector also emits
-bounded storage footprint proof for `/`, `/opt/fusekit/releases`, and the root
-pip cache so release virtualenvs or package caches cannot quietly consume the
-boot volume again; it records numeric counts and byte totals only, not raw
-`df`/`du` output. Root filesystem posture fails closed when usage exceeds 85%,
-free space falls below 5 GiB, retained releases exceed the configured release
-window, release storage exceeds 12 GiB, pip cache exceeds 256 MiB, or the boot
+bounded storage footprint proof for `/`, `/opt/fusekit/releases`, each retained
+release directory, and the root pip cache so release virtualenvs or package
+caches cannot quietly consume the boot volume again; it records numeric counts
+and byte totals only, not raw `df`/`du` output. Root filesystem posture fails
+closed when usage exceeds 85%, free space falls below 5 GiB, retained releases
+exceed the configured release window, total release storage exceeds 12 GiB, a
+single retained release exceeds 4 GiB, pip cache exceeds 256 MiB, or the boot
 volume is over 64 GiB. Current Ubuntu/OCI images may create a roughly 45 GiB
 root disk; that is not FuseKit source bloat, but any larger permanent host
 should be treated as overallocated until a right-sized replacement plan is

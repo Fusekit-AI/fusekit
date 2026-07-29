@@ -67,6 +67,7 @@ OCI_HOST_POSTURE_MAX_ROOT_USED_PERCENT = 85
 OCI_HOST_POSTURE_MIN_ROOT_AVAILABLE_BYTES = 5 * 1024 * 1024 * 1024
 OCI_HOST_POSTURE_MAX_ROOT_TOTAL_BYTES = 64 * 1024 * 1024 * 1024
 OCI_HOST_POSTURE_MAX_RELEASE_STORE_BYTES = 12 * 1024 * 1024 * 1024
+OCI_HOST_POSTURE_MAX_SINGLE_RELEASE_BYTES = 4 * 1024 * 1024 * 1024
 OCI_HOST_POSTURE_MAX_PACKAGE_CACHE_BYTES = 256 * 1024 * 1024
 OCI_HOST_POSTURE_ALLOWED_EVIDENCE_KEYS = frozenset(
     {
@@ -146,7 +147,7 @@ OCI_HOST_POSTURE_STORAGE_ROOT_KEYS = frozenset(
     {"mount", "total_bytes", "used_bytes", "available_bytes", "used_percent"}
 )
 OCI_HOST_POSTURE_STORAGE_RELEASE_KEYS = frozenset(
-    {"path", "exists", "used_bytes", "release_count"}
+    {"path", "exists", "used_bytes", "release_count", "largest_release_bytes"}
 )
 OCI_HOST_POSTURE_STORAGE_PACKAGE_CACHE_KEYS = frozenset(
     {"path", "exists", "used_bytes"}
@@ -913,6 +914,24 @@ def _collect_directory_footprint(
             if count_result.returncode == 0
             else None
         )
+        largest_release_bytes: int | None = None
+        if count_result.returncode == 0:
+            for line in count_result.stdout.splitlines():
+                release_name = line.strip()
+                if not re.fullmatch(r"[0-9a-f]{40}", release_name):
+                    continue
+                release_size = runner(["du", "-sb", f"{path}/{release_name}"])
+                if release_size.returncode != 0:
+                    largest_release_bytes = None
+                    break
+                release_bytes = _parse_decimal_int(
+                    release_size.stdout.strip().split(maxsplit=1)[0]
+                )
+                if release_bytes is None:
+                    largest_release_bytes = None
+                    break
+                largest_release_bytes = max(largest_release_bytes or 0, release_bytes)
+        payload["largest_release_bytes"] = largest_release_bytes
     return payload
 
 
@@ -1534,6 +1553,7 @@ def _storage_footprint_check(evidence: Mapping[str, object]) -> dict[str, object
     root_used = _literal_non_negative_int(root.get("used_bytes"))
     release_used = _literal_non_negative_int(release_store.get("used_bytes"))
     release_count = _literal_non_negative_int(release_store.get("release_count"))
+    largest_release = _literal_non_negative_int(release_store.get("largest_release_bytes"))
     package_cache_used = _literal_non_negative_int(package_cache.get("used_bytes"))
     retention = _mapping(_mapping(evidence.get("release_receipt")).get("release_retention"))
     minimum_retained = _literal_non_negative_int(retention.get("minimum_retained_releases"))
@@ -1567,6 +1587,11 @@ def _storage_footprint_check(evidence: Mapping[str, object]) -> dict[str, object
         failures.append("oci_host_storage_release_count_exceeds_retention")
     if release_used is None or release_used > OCI_HOST_POSTURE_MAX_RELEASE_STORE_BYTES:
         failures.append("oci_host_storage_release_store_too_large")
+    if (
+        largest_release is None
+        or largest_release > OCI_HOST_POSTURE_MAX_SINGLE_RELEASE_BYTES
+    ):
+        failures.append("oci_host_storage_single_release_too_large")
     if package_cache.get("path") != OCI_HOST_POSTURE_PIP_CACHE:
         failures.append("oci_host_storage_package_cache_path_mismatch")
     if package_cache.get("exists") is True and (
@@ -1585,6 +1610,7 @@ def _storage_footprint_check(evidence: Mapping[str, object]) -> dict[str, object
             root_available_bytes=root_available,
             release_count=release_count,
             release_store_bytes=release_used,
+            largest_release_bytes=largest_release,
             package_cache_bytes=package_cache_used,
         )
     return _ok(
@@ -1592,6 +1618,7 @@ def _storage_footprint_check(evidence: Mapping[str, object]) -> dict[str, object
         root_total_bytes=root_total,
         root_used_percent=root_used_percent,
         release_count=release_count,
+        largest_release_bytes=largest_release,
     )
 
 
