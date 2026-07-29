@@ -408,6 +408,29 @@ def test_oci_host_posture_public_json_preserves_valid_release_proof() -> None:
     )
 
 
+def test_oci_host_posture_allows_hosted_verify_public_proof_labels() -> None:
+    evidence = _clean_evidence()
+    hosted_verify = evidence["hosted_verify"]
+    assert isinstance(hosted_verify, dict)
+    checks = hosted_verify["checks"]
+    assert isinstance(checks, list)
+    checks.append(
+        {
+            "id": "hosted.stripe_webhook_fail_closed",
+            "url": "https://fusekit.snowmanai.org/api/hosted/payments/stripe-webhook",
+            "status": "ok",
+            "http_status": 403,
+            "schema_version": "fusekit.hosted-payment-error.v1",
+            "failures": [],
+            "proof": "stripe_webhook_requires_valid_signature",
+        }
+    )
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is True
+
+
 def test_oci_host_posture_blocks_unknown_top_level_evidence_fields() -> None:
     evidence = _clean_evidence()
     evidence["raw_audit_excerpt"] = "public-looking log line that does not belong"

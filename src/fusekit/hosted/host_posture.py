@@ -215,6 +215,7 @@ OCI_HOST_POSTURE_HOSTED_VERIFY_CHECK_KEYS = frozenset(
         "actual_commit_sha",
         "diagnosis",
         "next_action",
+        "proof",
     }
 )
 OCI_HOST_POSTURE_REQUIRED_HOSTED_VERIFY_CHECK_IDS = (
