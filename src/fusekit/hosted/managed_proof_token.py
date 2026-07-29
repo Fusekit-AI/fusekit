@@ -9,42 +9,58 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from fusekit.errors import FuseKitError
+from fusekit.hosted.github_app import GitHubAppConfig, github_app_install_url
 from fusekit.hosted.runtime_secrets import (
     HOSTED_RUNTIME_SECRET_FILE,
     _parse_systemd_env_file,
 )
 from fusekit.hosted.session import (
-    HOSTED_MANAGED_PROOF_QUERY_PARAM,
-    HOSTED_MANAGED_PROOF_TOKEN_TTL_SECONDS,
-    create_hosted_managed_proof_token,
+    HOSTED_STATE_TTL_SECONDS,
+    create_hosted_state_token,
 )
 
 HOSTED_MANAGED_PROOF_TOKEN_REPORT_SCHEMA_VERSION = (
     "fusekit.hosted-managed-proof-token-report.v1"
 )
 HOSTED_MANAGED_PROOF_TOKEN_SECRET_BOUNDARY = (
-    "The managed proof token is a short-lived operator click capability for one "
-    "supervised Checkout proof collection path. It is not a Stripe key, webhook "
-    "secret, GitHub private key, worker secret, OCI credential, provider credential, "
-    "or vault secret. Do not store it in docs, logs, or durable receipts."
+    "The managed proof state is the normal short-lived GitHub OAuth state token "
+    "with an operator-only proof purpose. It is not a Stripe key, webhook secret, "
+    "GitHub private key, worker secret, OCI credential, provider credential, or "
+    "vault secret. Do not store it in docs, logs, or durable receipts."
 )
 
 
 def build_hosted_managed_proof_token_report(
     *,
     state_secret: str,
+    github_app_slug: str = "",
 ) -> dict[str, object]:
     """Return an operator-use token report without exposing raw runtime secrets."""
 
-    token = create_hosted_managed_proof_token(state_secret)
+    state_token = create_hosted_state_token(
+        state_secret,
+        return_path="/",
+        managed_proof=True,
+    )
+    install_url = ""
+    if github_app_slug:
+        install_url = github_app_install_url(
+            GitHubAppConfig(
+                app_id="0",
+                app_slug=github_app_slug,
+                private_key_pem="",
+            ),
+            state=state_token,
+        )
     return {
         "schema_version": HOSTED_MANAGED_PROOF_TOKEN_REPORT_SCHEMA_VERSION,
-        "query_param": HOSTED_MANAGED_PROOF_QUERY_PARAM,
-        "token": token,
-        "expires_in_seconds": HOSTED_MANAGED_PROOF_TOKEN_TTL_SECONDS,
+        "query_param": "state",
+        "state_token": state_token,
+        "install_url": install_url,
+        "expires_in_seconds": HOSTED_STATE_TTL_SECONDS,
         "operator_use": (
-            "Append this token as managed_proof=<token> to a managed-lane "
-            "GitHub control-room URL only for the supervised live Checkout proof run."
+            "Visit install_url when present, or use state=<state_token> in the "
+            "GitHub App install URL for the supervised managed Checkout proof run."
         ),
         "public_managed_runs_enabled": False,
         "mutates_host": False,
@@ -62,12 +78,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         state_secret = os.environ.get(args.state_secret_env, "")
+        github_app_slug = os.environ.get("FUSEKIT_GITHUB_APP_SLUG", "")
         if not state_secret:
             material, failures = _parse_systemd_env_file(Path(args.runtime_secret_file))
             if failures:
                 raise FuseKitError("managed_proof_token_runtime_secret_file_invalid")
             state_secret = material.get("FUSEKIT_HOSTED_STATE_SECRET", "")
-        report = build_hosted_managed_proof_token_report(state_secret=state_secret)
+            github_app_slug = github_app_slug or material.get("FUSEKIT_GITHUB_APP_SLUG", "")
+        report = build_hosted_managed_proof_token_report(
+            state_secret=state_secret,
+            github_app_slug=github_app_slug,
+        )
     except (FuseKitError, OSError) as exc:
         report = {
             "schema_version": HOSTED_MANAGED_PROOF_TOKEN_REPORT_SCHEMA_VERSION,

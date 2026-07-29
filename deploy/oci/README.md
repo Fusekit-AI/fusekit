@@ -156,7 +156,7 @@ if the report says `ready_to_enable: true`.
 
 While `FUSEKIT_MANAGED_RUNS_ENABLED=0`, the public managed lane stays
 non-launchable. To collect the one supervised live proof run without opening the
-lane to everyone, create a short-lived operator token on the VM:
+lane to everyone, create a proof-purpose GitHub `state` token on the VM:
 
 ```zsh
 sudo fusekit-hosted-managed-proof-token \
@@ -164,7 +164,6 @@ sudo fusekit-hosted-managed-proof-token \
   > /tmp/fusekit-managed-proof-token.json
 ```
 
-Append the returned `managed_proof` query value only to the managed-lane
-`/github/control-room` URL for that proof run. Do not put the token in run
-records or durable receipts; it is a temporary click capability, not a provider
-credential.
+Use the returned `state` query value in the GitHub App install URL for that
+proof run. Do not put the state token in run records or durable receipts; it is
+a temporary click capability, not a provider credential.

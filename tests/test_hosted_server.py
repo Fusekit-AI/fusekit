@@ -68,11 +68,7 @@ from fusekit.hosted.server import (
     hosted_application,
     render_hosted_home,
 )
-from fusekit.hosted.session import (
-    HOSTED_MANAGED_PROOF_QUERY_PARAM,
-    create_hosted_managed_proof_token,
-    create_hosted_state_token,
-)
+from fusekit.hosted.session import create_hosted_state_token
 
 FAKE_PRIVATE_KEY = "not-a-pem-private-key"
 STATE_SECRET = "hosted-state-secret"
@@ -2258,7 +2254,7 @@ def test_hosted_control_room_rejects_unlaunchable_managed_lane_before_github_wor
         "stripe_price_id_required_for_managed_runs",
         "managed_run_price_label_required",
     ]
-    assert payload["proof_launch_blocking_checks"] == ["managed_proof_token_required"]
+    assert payload["proof_launch_blocking_checks"] == ["managed_proof_state_required"]
     assert payload["next_actions"] == [
         (
             "Set FUSEKIT_MANAGED_RUNS_ENABLED=1 only after live Stripe Checkout, webhook, "
@@ -2282,16 +2278,67 @@ def test_hosted_control_room_rejects_unlaunchable_managed_lane_before_github_wor
     assert "ghs_fake" not in serialized
 
 
+def test_hosted_control_room_ignores_appended_managed_proof_query_token() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            }
+        ]
+    )
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=_private_key_pem(),
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        github_opener=opener,
+        managed_runs_enabled=False,
+        stripe_secret_key="sk_live_redacted",
+        stripe_price_id="price_managed_run",
+        stripe_webhook_secret="whsec_redacted",
+        managed_run_price_label=MANAGED_PRICE_LABEL,
+        **_vercel_provenance_kwargs(),
+    )
+
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=(
+            f"installation_id=42&repo=example/one&state={state}"
+            f"&lane={MANAGED_FUSEKIT_RUN_LANE}"
+            "&managed_proof=old-extra-query-token"
+        ),
+        settings=settings,
+    )
+    payload = json.loads(body.decode("utf-8"))
+    serialized = json.dumps(payload)
+
+    assert status == "409 Conflict"
+    assert payload["error"] == "lane_not_launchable"
+    assert payload["proof_launch_blocking_checks"] == ["managed_proof_state_required"]
+    assert opener.requests == []
+    assert settings.hosted_jobs == {}
+    assert "old-extra-query-token" not in serialized
+    assert "ghs_fake" not in serialized
+
+
 def test_hosted_control_room_allows_operator_proof_managed_checkout_while_disabled(
     tmp_path: Path,
 ) -> None:
     state = create_hosted_state_token(
         STATE_SECRET,
         return_path="/",
-        nonce="nonce-for-hosted-state",
-    )
-    proof_token = create_hosted_managed_proof_token(
-        STATE_SECRET,
+        managed_proof=True,
         nonce="nonce-for-managed-proof",
     )
     github_opener = SequenceOpener(
@@ -2349,7 +2396,6 @@ def test_hosted_control_room_allows_operator_proof_managed_checkout_while_disabl
         query_string=(
             f"installation_id=42&repo=example/one&state={state}"
             f"&lane={MANAGED_FUSEKIT_RUN_LANE}"
-            f"&{HOSTED_MANAGED_PROOF_QUERY_PARAM}={proof_token}"
         ),
         settings=settings,
     )
@@ -2365,7 +2411,7 @@ def test_hosted_control_room_allows_operator_proof_managed_checkout_while_disabl
     assert job.payment_status == "payment_required"
     assert settings.lane_readiness()["lanes"][MANAGED_FUSEKIT_RUN_LANE]["launchable"] is False
     assert "ghs_fake" not in text
-    assert proof_token not in text
+    assert state not in text
 
     status, _headers, body = _call(
         f"/api/hosted/jobs/{job_id}/payments/checkout",

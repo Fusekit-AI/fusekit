@@ -614,9 +614,10 @@ label in its secret/runtime environment, then keep `FUSEKIT_MANAGED_RUNS_ENABLED
 until live Checkout proof and worker-dispatch acceptance pass.
 
 Because public paid managed runs remain disabled until that proof exists, the
-single supervised proof collection run uses a short-lived operator capability
-instead of enabling the public lane. Generate it on the hosted VM immediately
-before the final managed-lane click:
+single supervised proof collection run uses the normal short-lived GitHub
+`state` token with an operator-only proof purpose instead of enabling the public
+lane or appending a second control-room query token. Generate it on the hosted VM
+immediately before the final managed-lane click:
 
 ```zsh
 sudo fusekit-hosted-managed-proof-token \
@@ -624,14 +625,13 @@ sudo fusekit-hosted-managed-proof-token \
   > /tmp/fusekit-managed-proof-token.json
 ```
 
-Append the returned `managed_proof` query value only to the managed-lane
-`/github/control-room` URL used for the live proof run. The token expires
-quickly, is not a provider credential, and must not be stored in docs, logs, run
-records, or durable proof artifacts. Public readiness should still report the
-managed lane as blocked by `managed_runs_not_enabled`; the proof token only
-allows the operator to create the one paid Checkout job, accept Stripe's signed
-webhook for that job, and collect the durable worker-dispatch proof required by
-`fusekit-hosted-managed-enable`.
+Use the returned `state` query value in the GitHub App install URL for that live
+proof run. The state expires quickly, is not a provider credential, and must not
+be stored in docs, run records, or durable proof artifacts. Public readiness
+should still report the managed lane as blocked by `managed_runs_not_enabled`;
+the proof-purpose state only allows the operator to create the one paid Checkout
+job, accept Stripe's signed webhook for that job, and collect the durable
+worker-dispatch proof required by `fusekit-hosted-managed-enable`.
 
 After the live managed Checkout walkthrough has produced redacted proof that a
 paid Checkout session, Stripe webhook application, and worker-dispatch

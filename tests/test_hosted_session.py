@@ -9,11 +9,9 @@ import pytest
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.session import (
-    HOSTED_MANAGED_PROOF_TOKEN_SCHEMA_VERSION,
+    HOSTED_STATE_MANAGED_PROOF_PURPOSE,
     HOSTED_STATE_SCHEMA_VERSION,
-    create_hosted_managed_proof_token,
     create_hosted_state_token,
-    verify_hosted_managed_proof_token,
     verify_hosted_state_token,
 )
 
@@ -101,26 +99,28 @@ def test_hosted_state_token_requires_secret() -> None:
         verify_hosted_state_token("", token, now=1_700_000_001)
 
 
-def test_hosted_managed_proof_token_is_short_lived_and_purpose_bound() -> None:
-    token = create_hosted_managed_proof_token(
+def test_hosted_state_token_can_carry_short_lived_managed_proof_purpose() -> None:
+    token = create_hosted_state_token(
         "test-secret",
+        managed_proof=True,
         now=1_700_000_000,
         nonce="nonce-for-managed-proof",
     )
 
-    verify_hosted_managed_proof_token("test-secret", token, now=1_700_000_120)
+    state = verify_hosted_state_token("test-secret", token, now=1_700_000_120)
 
     encoded_payload = token.split(".", 1)[0]
     padding = "=" * (-len(encoded_payload) % 4)
     payload = json.loads(
         base64.urlsafe_b64decode((encoded_payload + padding).encode("ascii")).decode("utf-8")
     )
-    assert payload["schema_version"] == HOSTED_MANAGED_PROOF_TOKEN_SCHEMA_VERSION
-    assert payload["purpose"] == "managed-checkout-proof"
+    assert state.managed_proof is True
+    assert payload["schema_version"] == HOSTED_STATE_SCHEMA_VERSION
+    assert payload["purpose"] == HOSTED_STATE_MANAGED_PROOF_PURPOSE
     with pytest.raises(FuseKitError, match="expired"):
-        verify_hosted_managed_proof_token("test-secret", token, now=1_700_001_000)
+        verify_hosted_state_token("test-secret", token, now=1_700_001_000)
     with pytest.raises(FuseKitError, match="signature"):
-        verify_hosted_managed_proof_token("wrong-secret", token, now=1_700_000_120)
+        verify_hosted_state_token("wrong-secret", token, now=1_700_000_120)
 
 
 def _signed_state_token_payload(secret: str, payload: dict[str, object]) -> str:

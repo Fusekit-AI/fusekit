@@ -90,9 +90,8 @@ from fusekit.hosted.launcher import (
 )
 from fusekit.hosted.script_json import json_script_payload
 from fusekit.hosted.session import (
-    HOSTED_MANAGED_PROOF_QUERY_PARAM,
+    HostedLaunchState,
     create_hosted_state_token,
-    verify_hosted_managed_proof_token,
     verify_hosted_state_token,
 )
 from fusekit.scanner import scan_repo
@@ -1831,11 +1830,11 @@ def _github_control_room_response(
     if not valid_hosted_launch_lane(launch_lane):
         return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "invalid_launch_lane"})
     try:
-        verify_hosted_state_token(settings.state_secret, state_token)
+        verified_state = verify_hosted_state_token(settings.state_secret, state_token)
     except FuseKitError:
         return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "invalid_state"})
     lane_readiness = _hosted_lane_readiness(settings, launch_lane)
-    proof_launch_blockers = _managed_proof_launch_blockers(settings, query, launch_lane)
+    proof_launch_blockers = _managed_proof_launch_blockers(settings, verified_state, launch_lane)
     proof_launch_allowed = (
         lane_readiness.get("launchable") is not True and not proof_launch_blockers
     )
@@ -3217,20 +3216,15 @@ def _managed_lane_blockers(settings: HostedSettings) -> list[str]:
 
 def _managed_proof_launch_blockers(
     settings: HostedSettings,
-    query: dict[str, list[str]],
+    state: HostedLaunchState,
     lane_id: str,
 ) -> list[str]:
     if lane_id != MANAGED_FUSEKIT_RUN_LANE:
         return ["managed_proof_only_available_for_managed_lane"]
     if settings.managed_runs_enabled:
         return ["managed_proof_only_available_before_public_enablement"]
-    proof_token = _first_query_value(query, HOSTED_MANAGED_PROOF_QUERY_PARAM)
-    if not proof_token:
-        return ["managed_proof_token_required"]
-    try:
-        verify_hosted_managed_proof_token(settings.state_secret, proof_token)
-    except FuseKitError:
-        return ["managed_proof_token_invalid"]
+    if not state.managed_proof:
+        return ["managed_proof_state_required"]
     return _managed_payment_staging_blockers(settings)
 
 
