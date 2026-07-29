@@ -13,8 +13,9 @@ They are intentionally narrow:
 - non-secret release provenance lives in `/etc/fusekit/hosted-provenance.env`
   so release automation can update the public commit proof without reading or
   rewriting the secret runtime file;
-- mutable state is constrained to `/var/lib/fusekit`, `/var/log/fusekit`, and
-  `/run/fusekit`;
+- mutable persistent state is constrained to `/var/lib/fusekit` and
+  `/var/log/fusekit`, while `/run/fusekit` is managed by systemd
+  `RuntimeDirectory`;
 - worker dispatch duplicate-click state lives in
   `/var/lib/fusekit/dispatch-state`, created by tmpfiles as a private
   non-symlink directory before `/readiness` can report production-ready worker

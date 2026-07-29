@@ -59,7 +59,7 @@ def test_oci_systemd_units_match_host_posture_hardening_contract() -> None:
         assert unit["LogsDirectoryMode"] == ["0750"]
         assert unit["RuntimeDirectory"] == ["fusekit"]
         assert unit["RuntimeDirectoryMode"] == ["0750"]
-        assert unit["ReadWritePaths"] == ["/var/lib/fusekit /var/log/fusekit /run/fusekit"]
+        assert unit["ReadWritePaths"] == ["/var/lib/fusekit /var/log/fusekit"]
         writable = unit["ReadWritePaths"][0].split()
         assert "/" not in writable
         assert "/etc" not in writable
@@ -120,6 +120,8 @@ def test_oci_release_script_is_narrow_and_reviewable() -> None:
     assert 'CURRENT_LINK="${FUSEKIT_CURRENT_LINK:-/opt/fusekit/current}"' in script
     assert "ln -sfn" in script
     assert "mv -Tf" in script
+    assert '"${PYTHON_BIN}" -m venv "${RELEASE_DIR}/.venv"' in script
+    assert '"${INCOMING}/repo/.venv"' not in script
     assert "/etc/fusekit/hosted-provenance.env" in script
     assert "/etc/fusekit/hosted-secrets.env" in script
     assert "cat /etc/fusekit/hosted-secrets.env" not in script

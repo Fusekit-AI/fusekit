@@ -43,7 +43,7 @@ if [[ -z "${PYTHON_BIN}" ]]; then
 fi
 
 umask 077
-install -d -o root -g root -m 0750 "${RELEASE_ROOT}"
+install -d -o root -g fusekit -m 0750 "${RELEASE_ROOT}"
 install -d -o fusekit -g fusekit -m 0750 "${RECEIPT_DIR}"
 install -d -o root -g root -m 0750 "$(dirname "${PROVENANCE_FILE}")"
 
@@ -79,15 +79,15 @@ if [[ ! -d "${RELEASE_DIR}" ]]; then
     echo "checkout commit mismatch" >&2
     exit 70
   fi
-  "${PYTHON_BIN}" -m venv "${INCOMING}/repo/.venv"
-  "${INCOMING}/repo/.venv/bin/python" -m pip install --upgrade pip
-  "${INCOMING}/repo/.venv/bin/python" -m pip install "${INCOMING}/repo"
-  chown -R fusekit:fusekit "${INCOMING}/repo"
   mv "${INCOMING}/repo" "${RELEASE_DIR}"
   rmdir "${INCOMING}"
   INCOMING=""
+  "${PYTHON_BIN}" -m venv "${RELEASE_DIR}/.venv"
+  "${RELEASE_DIR}/.venv/bin/python" -m pip install --upgrade pip
+  "${RELEASE_DIR}/.venv/bin/python" -m pip install "${RELEASE_DIR}"
+  chown -R fusekit:fusekit "${RELEASE_DIR}"
 else
-  ACTUAL_COMMIT="$(git -C "${RELEASE_DIR}" rev-parse HEAD)"
+  ACTUAL_COMMIT="$(git -c "safe.directory=${RELEASE_DIR}" -C "${RELEASE_DIR}" rev-parse HEAD)"
   if [[ "${ACTUAL_COMMIT}" != "${EXPECTED_COMMIT_SHA}" ]]; then
     echo "existing release commit mismatch" >&2
     exit 70
@@ -96,6 +96,7 @@ fi
 
 cat > "${PROVENANCE_FILE}.tmp" <<EOF
 FUSEKIT_HOSTED_DEPLOYMENT_PROVIDER=oci
+FUSEKIT_HOSTED_DEPLOYMENT_ENV=production
 FUSEKIT_HOSTED_DEPLOYMENT_URL=https://fusekit.snowmanai.org
 FUSEKIT_HOSTED_GIT_PROVIDER=github
 FUSEKIT_HOSTED_GIT_REPO_OWNER=Fusekit-AI
@@ -113,7 +114,8 @@ systemctl daemon-reload
 systemctl restart "${HOSTED_SERVICE}" "${DISPATCH_SERVICE}"
 systemctl is-active --quiet "${HOSTED_SERVICE}"
 systemctl is-active --quiet "${DISPATCH_SERVICE}"
-AFTER_COMMIT="$(git -C "$(readlink -f "${CURRENT_LINK}")" rev-parse HEAD)"
+CURRENT_TARGET="$(readlink -f "${CURRENT_LINK}")"
+AFTER_COMMIT="$(git -c "safe.directory=${CURRENT_TARGET}" -C "${CURRENT_TARGET}" rev-parse HEAD)"
 
 if [[ "${AFTER_COMMIT}" != "${EXPECTED_COMMIT_SHA}" ]]; then
   echo "post-release commit mismatch" >&2
