@@ -30,6 +30,12 @@ from fusekit.hosted.billing import (
     HOSTED_STRIPE_PRICE_VERIFY_MODULE,
     HOSTED_STRIPE_SETUP_SECRET_BOUNDARY,
     HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY,
+    HOSTED_STRIPE_WEBHOOK_LOOKUP_POLICY,
+    HOSTED_STRIPE_WEBHOOK_SETUP_HELPER,
+    HOSTED_STRIPE_WEBHOOK_SETUP_MODULE,
+    HOSTED_STRIPE_WEBHOOK_SETUP_REQUIRED_FLAGS,
+    HOSTED_STRIPE_WEBHOOK_VERIFY_HELPER,
+    HOSTED_STRIPE_WEBHOOK_VERIFY_MODULE,
 )
 from fusekit.hosted.github_app import GitHubAppConfig
 from fusekit.hosted.job import (
@@ -1199,6 +1205,12 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
         "dry_run_default": True,
         "mutation_requires": list(HOSTED_STRIPE_PRICE_SETUP_REQUIRED_FLAGS),
         "lookup_key_policy": HOSTED_STRIPE_PRICE_LOOKUP_POLICY,
+        "webhook_helper_command": HOSTED_STRIPE_WEBHOOK_SETUP_HELPER,
+        "webhook_verification_command": HOSTED_STRIPE_WEBHOOK_VERIFY_HELPER,
+        "webhook_module_fallback": HOSTED_STRIPE_WEBHOOK_SETUP_MODULE,
+        "webhook_verification_module_fallback": HOSTED_STRIPE_WEBHOOK_VERIFY_MODULE,
+        "webhook_mutation_requires": list(HOSTED_STRIPE_WEBHOOK_SETUP_REQUIRED_FLAGS),
+        "webhook_lookup_policy": HOSTED_STRIPE_WEBHOOK_LOOKUP_POLICY,
         "shared_account_boundary": HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY,
         "secret_boundary": HOSTED_STRIPE_SETUP_SECRET_BOUNDARY,
         "managed_runs_enable_after": "live Checkout proof and worker-dispatch acceptance pass",

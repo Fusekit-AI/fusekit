@@ -17,6 +17,12 @@ from fusekit.hosted.billing import (
     HOSTED_STRIPE_PRICE_VERIFY_MODULE,
     HOSTED_STRIPE_SETUP_SECRET_BOUNDARY,
     HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY,
+    HOSTED_STRIPE_WEBHOOK_LOOKUP_POLICY,
+    HOSTED_STRIPE_WEBHOOK_SETUP_HELPER,
+    HOSTED_STRIPE_WEBHOOK_SETUP_MODULE,
+    HOSTED_STRIPE_WEBHOOK_SETUP_REQUIRED_FLAGS,
+    HOSTED_STRIPE_WEBHOOK_VERIFY_HELPER,
+    HOSTED_STRIPE_WEBHOOK_VERIFY_MODULE,
 )
 from fusekit.hosted.lanes import (
     BYO_OCI_LANE,
@@ -1312,6 +1318,14 @@ def test_verify_hosted_deployment_requires_payment_operator_setup_contract() -> 
     operator_setup["verification_module_fallback"] = "python -m snowman.shared_stripe_verify"
     operator_setup["mutation_requires"] = ["--execute"]
     operator_setup["lookup_key_policy"] = "Manual dashboard search is enough."
+    operator_setup["webhook_helper_command"] = "stripe dashboard manual webhook"
+    operator_setup["webhook_verification_command"] = "stripe dashboard webhook check"
+    operator_setup["webhook_module_fallback"] = "python -m snowman.shared_webhook"
+    operator_setup["webhook_verification_module_fallback"] = (
+        "python -m snowman.shared_webhook_verify"
+    )
+    operator_setup["webhook_mutation_requires"] = ["--execute"]
+    operator_setup["webhook_lookup_policy"] = "Any webhook endpoint for this URL is fine."
     operator_setup["shared_account_boundary"] = "May reuse existing Snowman AI products."
     opener = SequenceOpener(
         [
@@ -1348,6 +1362,24 @@ def test_verify_hosted_deployment_requires_payment_operator_setup_contract() -> 
         "failures"
     ]
     assert "payment_operator_setup_lookup_key_policy_mismatch" in checks[
+        "hosted.readiness"
+    ]["failures"]
+    assert "payment_operator_setup_webhook_helper_mismatch" in checks["hosted.readiness"][
+        "failures"
+    ]
+    assert "payment_operator_setup_webhook_verification_helper_mismatch" in checks[
+        "hosted.readiness"
+    ]["failures"]
+    assert "payment_operator_setup_webhook_module_fallback_mismatch" in checks[
+        "hosted.readiness"
+    ]["failures"]
+    assert "payment_operator_setup_webhook_verification_module_mismatch" in checks[
+        "hosted.readiness"
+    ]["failures"]
+    assert "payment_operator_setup_webhook_mutation_gate_mismatch" in checks[
+        "hosted.readiness"
+    ]["failures"]
+    assert "payment_operator_setup_webhook_lookup_policy_mismatch" in checks[
         "hosted.readiness"
     ]["failures"]
     assert "payment_operator_setup_shared_account_boundary_mismatch" in checks[
@@ -2659,6 +2691,12 @@ def _payment_contract() -> dict[str, object]:
             "dry_run_default": True,
             "mutation_requires": list(HOSTED_STRIPE_PRICE_SETUP_REQUIRED_FLAGS),
             "lookup_key_policy": HOSTED_STRIPE_PRICE_LOOKUP_POLICY,
+            "webhook_helper_command": HOSTED_STRIPE_WEBHOOK_SETUP_HELPER,
+            "webhook_verification_command": HOSTED_STRIPE_WEBHOOK_VERIFY_HELPER,
+            "webhook_module_fallback": HOSTED_STRIPE_WEBHOOK_SETUP_MODULE,
+            "webhook_verification_module_fallback": HOSTED_STRIPE_WEBHOOK_VERIFY_MODULE,
+            "webhook_mutation_requires": list(HOSTED_STRIPE_WEBHOOK_SETUP_REQUIRED_FLAGS),
+            "webhook_lookup_policy": HOSTED_STRIPE_WEBHOOK_LOOKUP_POLICY,
             "shared_account_boundary": HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY,
             "secret_boundary": HOSTED_STRIPE_SETUP_SECRET_BOUNDARY,
             "managed_runs_enable_after": "live Checkout proof and worker-dispatch acceptance pass",

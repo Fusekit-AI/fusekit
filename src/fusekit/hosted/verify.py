@@ -25,6 +25,12 @@ from fusekit.hosted.billing import (
     HOSTED_STRIPE_PRICE_VERIFY_MODULE,
     HOSTED_STRIPE_SETUP_SECRET_BOUNDARY,
     HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY,
+    HOSTED_STRIPE_WEBHOOK_LOOKUP_POLICY,
+    HOSTED_STRIPE_WEBHOOK_SETUP_HELPER,
+    HOSTED_STRIPE_WEBHOOK_SETUP_MODULE,
+    HOSTED_STRIPE_WEBHOOK_SETUP_REQUIRED_FLAGS,
+    HOSTED_STRIPE_WEBHOOK_VERIFY_HELPER,
+    HOSTED_STRIPE_WEBHOOK_VERIFY_MODULE,
     STRIPE_CHECKOUT_METADATA_KEYS,
     STRIPE_CHECKOUT_PROVIDER,
     _valid_price_label,
@@ -222,6 +228,12 @@ PAYMENT_OPERATOR_SETUP_KEYS = frozenset(
         "dry_run_default",
         "mutation_requires",
         "lookup_key_policy",
+        "webhook_helper_command",
+        "webhook_verification_command",
+        "webhook_module_fallback",
+        "webhook_verification_module_fallback",
+        "webhook_mutation_requires",
+        "webhook_lookup_policy",
         "shared_account_boundary",
         "secret_boundary",
         "managed_runs_enable_after",
@@ -1823,6 +1835,23 @@ def _payment_operator_setup_failures(value: object) -> list[str]:
         failures.append("payment_operator_setup_mutation_gate_mismatch")
     if value.get("lookup_key_policy") != HOSTED_STRIPE_PRICE_LOOKUP_POLICY:
         failures.append("payment_operator_setup_lookup_key_policy_mismatch")
+    if value.get("webhook_helper_command") != HOSTED_STRIPE_WEBHOOK_SETUP_HELPER:
+        failures.append("payment_operator_setup_webhook_helper_mismatch")
+    if value.get("webhook_verification_command") != HOSTED_STRIPE_WEBHOOK_VERIFY_HELPER:
+        failures.append("payment_operator_setup_webhook_verification_helper_mismatch")
+    if value.get("webhook_module_fallback") != HOSTED_STRIPE_WEBHOOK_SETUP_MODULE:
+        failures.append("payment_operator_setup_webhook_module_fallback_mismatch")
+    if (
+        value.get("webhook_verification_module_fallback")
+        != HOSTED_STRIPE_WEBHOOK_VERIFY_MODULE
+    ):
+        failures.append("payment_operator_setup_webhook_verification_module_mismatch")
+    if value.get("webhook_mutation_requires") != list(
+        HOSTED_STRIPE_WEBHOOK_SETUP_REQUIRED_FLAGS
+    ):
+        failures.append("payment_operator_setup_webhook_mutation_gate_mismatch")
+    if value.get("webhook_lookup_policy") != HOSTED_STRIPE_WEBHOOK_LOOKUP_POLICY:
+        failures.append("payment_operator_setup_webhook_lookup_policy_mismatch")
     if value.get("shared_account_boundary") != HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY:
         failures.append("payment_operator_setup_shared_account_boundary_mismatch")
     if value.get("secret_boundary") != HOSTED_STRIPE_SETUP_SECRET_BOUNDARY:

@@ -33,6 +33,14 @@ provider callback route for paid managed runs:
 | --- | --- | --- | --- |
 | `/api/hosted/payments/stripe-webhook` | `POST` | State-changing only for pending Managed FuseKit jobs: a signed Stripe `checkout.session.completed` event can mark the stored job payment proof as paid. | Requires managed runs to be enabled and `FUSEKIT_STRIPE_WEBHOOK_SECRET` to have a valid `whsec_...` shape; reads the bounded raw request body and verifies Stripe's timestamped HMAC signature before JSON parsing; ignores signed non-Checkout-completion events with no payment mutation; rejects malformed, unsigned, stale, or unbound events; binds paid Checkout receipts to the pending job id, lane, GitHub source hash, plan fingerprint, Stripe Price hash, and public price-label hash; emits only redacted event/job/payment labels; never returns raw payloads, card data, payment-method ids, client secrets, Stripe API keys, webhook signing secrets, or provider credentials; never dispatches a managed worker from the webhook itself. |
 
+The Stripe webhook operator helpers are also part of the public payment surface:
+`fusekit-hosted-stripe-webhook` is dry-run by default, mutates only with
+`--execute --confirm-shared-account`, creates or reuses only a FuseKit-scoped
+endpoint for the canonical hosted webhook URL, and reports only endpoint ids,
+events, metadata checks, and booleans. It never prints `whsec_...` signing
+secrets; those remain write-only runtime material for
+`/etc/fusekit/hosted-secrets.env`.
+
 The route inventory uses these protection class labels:
 
 - `local-or-remote-token` for read-only routes that are local-only by default and
