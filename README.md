@@ -613,6 +613,27 @@ store the live `FUSEKIT_STRIPE_SECRET_KEY`, the verified price id, and the publi
 label in its secret/runtime environment, then keep `FUSEKIT_MANAGED_RUNS_ENABLED=0`
 until live Checkout proof and worker-dispatch acceptance pass.
 
+After the live managed Checkout walkthrough has produced redacted proof that a
+paid Checkout session, Stripe webhook application, and worker-dispatch
+acceptance all completed, use the guarded enablement helper instead of editing
+the runtime secret file by hand:
+
+```zsh
+sudo fusekit-hosted-managed-enable \
+  --runtime-secret-file /etc/fusekit/hosted-secrets.env \
+  --runtime-secret-verify-report /var/lib/fusekit/posture/hosted-runtime-secret-verify.json \
+  --hosted-verify-report /var/lib/fusekit/posture/hosted-verify.json \
+  --stripe-price-verify-report /var/lib/fusekit/posture/stripe-price-verify.json \
+  --stripe-webhook-verify-report /var/lib/fusekit/posture/stripe-webhook-verify.json \
+  --hosted-readiness-report /var/lib/fusekit/posture/hosted-readiness.json \
+  --live-checkout-proof /var/lib/fusekit/posture/live-checkout-proof.json
+```
+
+That dry run must report `ready_to_enable: true`. Only then rerun with
+`--execute --confirm-managed-enablement`; the helper writes only
+`FUSEKIT_MANAGED_RUNS_ENABLED=1`, emits no secret values, and still requires the
+BYO OCI lane and durable public job store to be healthy.
+
 ## Real Provider Acceptance Run
 
 The V1 real path is GitHub + Resend + a supported hosted deployment provider + Cloudflare DNS. The hosted launcher currently proves the OCI permanent-host path, while Vercel remains a supported deployment adapter rather than a required product dependency. FuseKit uses OpenClaw computer use to navigate provider websites and run supervised account/token/project handoff playbooks in the shared VM browser. It will not bypass login, MFA, CAPTCHA, billing, payment verification, provider fraud controls, or consent screens. Create or sign in to the provider account, pass the real human gate, copy any one-time provider token inside the VM browser, then click the exact env-named FuseKit control such as `Capture RESEND_API_KEY from VM clipboard` so the approved value lands directly in the encrypted vault.

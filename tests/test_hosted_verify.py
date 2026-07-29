@@ -917,6 +917,38 @@ def test_verify_hosted_deployment_requires_payment_cost_control_contract() -> No
     assert "payment_operator_setup_unexpected_field:stripe_dashboard_url" in failures
 
 
+def test_verify_hosted_deployment_requires_job_store_contract() -> None:
+    readiness = _readiness_contract()
+    job_store = readiness["job_store"]
+    assert isinstance(job_store, dict)
+    job_store["writable"] = False
+    job_store["path"] = "/var/lib/fusekit/hosted-jobs"
+    job_store["secret_boundary"] = "Hosted jobs are persisted."
+    opener = SequenceOpener(
+        [
+            _home_html(readiness=readiness),
+            {"ok": True},
+            readiness,
+            _deployment_contract(),
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+    failures = checks["hosted.readiness"]["failures"]
+
+    assert report["ready"] is False
+    assert checks["hosted.readiness"]["status"] == "failed"
+    assert "job_store_readiness_writable_not_true" in failures
+    assert "job_store_readiness_unexpected_field:path" in failures
+    assert "job_store_readiness_secret_boundary_missing" in failures
+
+
 def test_verify_hosted_deployment_rejects_managed_lane_without_price_label() -> None:
     readiness = _readiness_contract()
     lane_readiness = readiness["lane_readiness"]
@@ -2651,6 +2683,21 @@ def _readiness_contract() -> dict[str, object]:
         "source_provenance": _source_provenance_contract(),
         "lane_readiness": _lane_readiness_contract(),
         "payment": _payment_contract(),
+        "job_store": _job_store_contract(),
+    }
+
+
+def _job_store_contract() -> dict[str, object]:
+    return {
+        "configured": True,
+        "writable": True,
+        "path_configured": True,
+        "stores_public_snapshots_only": True,
+        "secret_boundary": (
+            "Hosted job snapshots contain public job state, lane contracts, public payment "
+            "receipt labels, and hashes only. They must not contain Stripe keys, GitHub "
+            "installation tokens, provider credentials, worker secrets, or vault material."
+        ),
     }
 
 

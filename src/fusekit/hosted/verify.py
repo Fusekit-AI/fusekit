@@ -239,6 +239,15 @@ PAYMENT_OPERATOR_SETUP_KEYS = frozenset(
         "managed_runs_enable_after",
     }
 )
+JOB_STORE_READINESS_KEYS = frozenset(
+    {
+        "configured",
+        "writable",
+        "path_configured",
+        "stores_public_snapshots_only",
+        "secret_boundary",
+    }
+)
 
 
 class UrlOpener(Protocol):
@@ -1593,6 +1602,30 @@ def _hosted_home_readiness_failures(payload: dict[str, Any]) -> list[str]:
         lane_readiness = payload.get("lane_readiness")
         failures.extend(_lane_readiness_failures(lane_readiness))
         failures.extend(_payment_readiness_failures(payload.get("payment"), lane_readiness))
+        failures.extend(_job_store_readiness_failures(payload.get("job_store")))
+    return failures
+
+
+def _job_store_readiness_failures(value: object) -> list[str]:
+    if not isinstance(value, dict):
+        return ["job_store_readiness_missing"]
+    failures: list[str] = []
+    failures.extend(
+        f"job_store_readiness_unexpected_field:{field}"
+        for field in _unexpected_keys(value, JOB_STORE_READINESS_KEYS)
+    )
+    for key in ("configured", "writable", "path_configured", "stores_public_snapshots_only"):
+        if value.get(key) is not True:
+            failures.append(f"job_store_readiness_{key}_not_true")
+    boundary = value.get("secret_boundary")
+    if (
+        not isinstance(boundary, str)
+        or "public job state" not in boundary
+        or "Stripe keys" not in boundary
+        or "provider credentials" not in boundary
+        or "vault material" not in boundary
+    ):
+        failures.append("job_store_readiness_secret_boundary_missing")
     return failures
 
 

@@ -142,3 +142,11 @@ must prove the file is private, regular, not a symlink, has the required hosted
 env names, keeps managed runs disabled, and can stage the verified Stripe Price
 without emitting the live Stripe secret, GitHub App private key, hosted state
 secret, worker secret, OCI credentials, or vault material.
+
+Keep paid managed runs disabled until the redacted enablement bundle is complete:
+hosted verifier, runtime-secret verifier, Stripe Price verifier, Stripe webhook
+verifier, public hosted readiness with writable job-store proof, and live
+managed Checkout proof that includes paid Checkout, webhook application, and
+worker-dispatch acceptance. Then run `fusekit-hosted-managed-enable` as a dry
+run first, and only rerun it with `--execute --confirm-managed-enablement` if
+the report says `ready_to_enable: true`.
