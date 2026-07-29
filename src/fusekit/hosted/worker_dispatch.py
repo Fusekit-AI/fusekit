@@ -680,11 +680,10 @@ def _validate_public_dispatch_hints(
     origin: str,
     job_id: str,
 ) -> None:
-    public_hints = {
-        key: payload[key]
-        for key in ("worker_command", "worker_request_url", "secret_boundary")
-        if key in payload
-    }
+    public_hints: dict[str, object] = {}
+    for key in ("worker_command", "worker_request_url", "secret_boundary"):
+        if key in payload:
+            public_hints[key] = payload[key]
     if public_hints:
         _assert_public_dispatch_payload(
             public_hints,
