@@ -356,6 +356,45 @@ def test_run_hosted_worker_once_rejects_private_marker_public_labels_before_api(
     assert calls == []
 
 
+def test_run_hosted_worker_once_rejects_malformed_public_labels_before_api(
+    tmp_path: Path,
+) -> None:
+    calls: list[tuple[str, dict[str, str], dict[str, object] | None]] = []
+
+    def post_json(
+        url: str,
+        headers: dict[str, str],
+        payload: dict[str, object] | None,
+    ) -> dict[str, Any]:
+        calls.append((url, headers, payload))
+        return {}
+
+    with pytest.raises(FuseKitError, match="Hosted worker id is invalid"):
+        run_hosted_worker_once(
+            origin="https://fusekit.snowmanai.org",
+            job_id="hosted-test",
+            job_token="job-token",
+            worker_secret=WORKER_SECRET,
+            worker_id="worker 01",
+            github_config=_github_config(),
+            workspace=tmp_path,
+            post_json=post_json,
+        )
+
+    with pytest.raises(FuseKitError, match="Hosted worker job id is invalid"):
+        run_hosted_worker_once(
+            origin="https://fusekit.snowmanai.org",
+            job_id="hosted-test with-space",
+            job_token="job-token",
+            worker_secret=WORKER_SECRET,
+            github_config=_github_config(),
+            workspace=tmp_path,
+            post_json=post_json,
+        )
+
+    assert calls == []
+
+
 def test_hosted_worker_run_result_rejects_private_marker_proof_response() -> None:
     result = HostedWorkerRunResult(
         job_id="hosted-test",

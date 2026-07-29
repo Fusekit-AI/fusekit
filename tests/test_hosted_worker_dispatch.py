@@ -266,6 +266,16 @@ def test_hosted_worker_dispatch_readiness_rejects_private_marker_worker_id() -> 
     assert "ASIA_should_not_render" not in serialized
 
 
+def test_hosted_worker_dispatch_readiness_rejects_malformed_worker_id() -> None:
+    readiness = HostedWorkerDispatchSettings(
+        worker_secret=WORKER_SECRET,
+        worker_id="worker 01",
+    ).readiness()
+
+    assert readiness["ready"] is False
+    assert readiness["invalid"] == ["hosted_worker_id_invalid"]
+
+
 def test_verify_hosted_worker_dispatch_rejects_tampering() -> None:
     body = _dispatch_body(action="rollback")
 
@@ -289,6 +299,22 @@ def test_verify_hosted_worker_dispatch_rejects_private_marker_job_id() -> None:
         FuseKitError,
         match="hosted_worker_dispatch_job_id_contains_private_material",
     ):
+        verify_hosted_worker_dispatch(
+            body,
+            signature=_signature(body),
+            schema=HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+            secret=WORKER_SECRET,
+        )
+
+
+def test_verify_hosted_worker_dispatch_rejects_malformed_job_id() -> None:
+    body = _dispatch_body(
+        action="start",
+        binding={"job_id": "hosted-test with-space"},
+        envelope={"job_id": "hosted-test with-space"},
+    )
+
+    with pytest.raises(FuseKitError, match="hosted_worker_dispatch_job_id_invalid"):
         verify_hosted_worker_dispatch(
             body,
             signature=_signature(body),
@@ -385,6 +411,27 @@ def test_accept_hosted_worker_dispatch_rejects_private_marker_worker_id_before_s
     )
 
     with pytest.raises(FuseKitError, match="hosted_worker_id_contains_private_material"):
+        accept_hosted_worker_dispatch(dispatch, settings=settings)
+
+    assert spawner.calls == []
+
+
+def test_accept_hosted_worker_dispatch_rejects_malformed_worker_id_before_spawn() -> None:
+    body = _dispatch_body(action="start")
+    dispatch = verify_hosted_worker_dispatch(
+        body,
+        signature=_signature(body),
+        schema=HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+        secret=WORKER_SECRET,
+    )
+    spawner = FakeSpawner()
+    settings = HostedWorkerDispatchSettings(
+        worker_secret=WORKER_SECRET,
+        worker_id="worker 01",
+        spawner=spawner,
+    )
+
+    with pytest.raises(FuseKitError, match="hosted_worker_id_invalid"):
         accept_hosted_worker_dispatch(dispatch, settings=settings)
 
     assert spawner.calls == []

@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import stat
 import subprocess
 import threading
@@ -24,6 +25,8 @@ HOSTED_WORKER_DISPATCH_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch.v1"
 HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch-receipt.v1"
 HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch-readiness.v1"
 HOSTED_WORKER_DISPATCH_MAX_BODY_BYTES = 16_384
+HOSTED_WORKER_DISPATCH_PUBLIC_ID_MAX_LENGTH = 128
+HOSTED_WORKER_DISPATCH_PUBLIC_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
 HOSTED_WORKER_DISPATCH_BINDING_FIELDS = (
     "job_id",
     "action",
@@ -100,6 +103,8 @@ class HostedWorkerDispatchSettings:
             invalid.append("hosted_worker_id_required")
         elif _contains_public_private_material(self.worker_id):
             invalid.append("hosted_worker_id_contains_private_material")
+        elif not _valid_public_dispatch_identifier(self.worker_id):
+            invalid.append("hosted_worker_id_invalid")
         idempotency_ready = idempotency.get("ready") is True
         payload: dict[str, object] = {
             "schema_version": HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION,
@@ -291,8 +296,11 @@ def accept_hosted_worker_dispatch(
 
     if len(settings.worker_secret) < 16:
         raise FuseKitError("hosted_worker_secret_required")
-    _require_public_dispatch_label(settings.worker_id, "hosted_worker_id")
-    _require_public_dispatch_label(dispatch.job_id, "hosted_worker_dispatch_job_id")
+    _require_public_dispatch_identifier(settings.worker_id, "hosted_worker_id")
+    _require_public_dispatch_identifier(
+        dispatch.job_id,
+        "hosted_worker_dispatch_job_id",
+    )
     reservation = _reserve_dispatch(dispatch, settings=settings)
     if reservation["duplicate"]:
         payload: dict[str, object] = {
@@ -382,7 +390,7 @@ def verify_hosted_worker_dispatch(
     if not job_id.startswith("hosted-"):
         raise FuseKitError("invalid_dispatch_job_id")
     _require_public_dispatch_label(origin, "hosted_worker_dispatch_origin")
-    _require_public_dispatch_label(job_id, "hosted_worker_dispatch_job_id")
+    _require_public_dispatch_identifier(job_id, "hosted_worker_dispatch_job_id")
     return HostedWorkerDispatch(
         action=action,
         origin=origin,
@@ -679,6 +687,20 @@ def _public_spawn_label(spawned: object) -> dict[str, object]:
 def _require_public_dispatch_label(value: str, label: str) -> None:
     if _contains_public_private_material(value):
         raise FuseKitError(f"{label}_contains_private_material")
+
+
+def _require_public_dispatch_identifier(value: str, label: str) -> None:
+    _require_public_dispatch_label(value, label)
+    if not _valid_public_dispatch_identifier(value):
+        raise FuseKitError(f"{label}_invalid")
+
+
+def _valid_public_dispatch_identifier(value: str) -> bool:
+    return (
+        bool(value)
+        and len(value) <= HOSTED_WORKER_DISPATCH_PUBLIC_ID_MAX_LENGTH
+        and bool(HOSTED_WORKER_DISPATCH_PUBLIC_ID_PATTERN.fullmatch(value))
+    )
 
 
 def _assert_public_dispatch_payload(payload: dict[str, object], label: str) -> None:

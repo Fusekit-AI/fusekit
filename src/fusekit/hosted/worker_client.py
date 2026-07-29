@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import tempfile
 import urllib.parse
@@ -32,6 +33,8 @@ from fusekit.security.url import require_safe_url
 JsonGet = Callable[[str, Mapping[str, str]], dict[str, Any]]
 JsonPost = Callable[[str, Mapping[str, str], dict[str, object] | None], dict[str, Any]]
 CommandRunner = Callable[[tuple[str, ...]], int]
+HOSTED_WORKER_CLIENT_PUBLIC_ID_MAX_LENGTH = 128
+HOSTED_WORKER_CLIENT_PUBLIC_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
 
 
 @dataclass(frozen=True)
@@ -252,8 +255,8 @@ def _require_inputs(
     require_safe_url(origin, label="Hosted worker origin")
     if not job_id.startswith("hosted-"):
         raise FuseKitError("Hosted worker job id is required.")
-    _require_public_worker_client_label(job_id, "Hosted worker job id")
-    _require_public_worker_client_label(worker_id, "Hosted worker id")
+    _require_public_worker_client_identifier(job_id, "Hosted worker job id")
+    _require_public_worker_client_identifier(worker_id, "Hosted worker id")
     if not job_token:
         raise FuseKitError("Hosted worker job token is required.")
     if len(worker_secret) < 16:
@@ -275,7 +278,7 @@ def _job_status_url(origin: str, job_id: str, job_token: str) -> str:
 
 
 def _worker_headers(*, worker_secret: str, worker_id: str) -> dict[str, str]:
-    _require_public_worker_client_label(worker_id, "Hosted worker id")
+    _require_public_worker_client_identifier(worker_id, "Hosted worker id")
     return {
         "Authorization": f"Bearer {worker_secret}",
         "Content-Type": "application/json",
@@ -286,6 +289,20 @@ def _worker_headers(*, worker_secret: str, worker_id: str) -> dict[str, str]:
 def _require_public_worker_client_label(value: str, label: str) -> None:
     if _contains_public_private_material(value):
         raise FuseKitError(f"{label} contains private material.")
+
+
+def _require_public_worker_client_identifier(value: str, label: str) -> None:
+    _require_public_worker_client_label(value, label)
+    if not _valid_public_worker_client_identifier(value):
+        raise FuseKitError(f"{label} is invalid.")
+
+
+def _valid_public_worker_client_identifier(value: str) -> bool:
+    return (
+        bool(value)
+        and len(value) <= HOSTED_WORKER_CLIENT_PUBLIC_ID_MAX_LENGTH
+        and bool(HOSTED_WORKER_CLIENT_PUBLIC_ID_PATTERN.fullmatch(value))
+    )
 
 
 def _assert_public_worker_client_payload(payload: dict[str, object], label: str) -> None:
