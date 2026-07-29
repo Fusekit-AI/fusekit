@@ -5,8 +5,10 @@ import json
 from pathlib import Path
 
 from fusekit.hosted.job_store import (
+    HOSTED_JOB_STORE_MANAGED_START_RESPONSE_BOUNDARY,
     HOSTED_JOB_STORE_MANAGED_START_RESPONSE_SCHEMA_VERSION,
     HOSTED_JOB_STORE_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION,
+    HOSTED_JOB_STORE_WEBHOOK_RECEIPT_BOUNDARY,
 )
 from fusekit.hosted.live_checkout_proof import (
     HOSTED_LIVE_CHECKOUT_PROOF_MAX_JSON_BYTES,
@@ -334,6 +336,58 @@ def test_live_checkout_proof_cli_rejects_tampered_start_wrapper_hash(
     assert payload["error"] == "live_checkout_proof_start_response_hash_mismatch"
 
 
+def test_live_checkout_proof_cli_rejects_webhook_wrapper_sidecars(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    webhook_path = tmp_path / "webhook-wrapper.json"
+    start_path = tmp_path / "start.json"
+    wrapper = _webhook_receipt_wrapper()
+    wrapper["raw_payload_path"] = "/var/log/fusekit/stripe-webhook.jsonl"
+    webhook_path.write_text(json.dumps(wrapper), encoding="utf-8")
+    start_path.write_text(json.dumps(_start_action_response()), encoding="utf-8")
+
+    exit_code = main(
+        [
+            "--webhook-receipt",
+            str(webhook_path),
+            "--start-action-response",
+            str(start_path),
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 2
+    assert payload["ready"] is False
+    assert payload["error"] == "live_checkout_proof_webhook_receipt_wrapper_shape_mismatch"
+
+
+def test_live_checkout_proof_cli_rejects_start_wrapper_boundary_drift(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    webhook_path = tmp_path / "webhook.json"
+    start_path = tmp_path / "start-wrapper.json"
+    wrapper = _start_action_response_wrapper()
+    wrapper["secret_boundary"] = "Signed job token may be stored for operator recovery."
+    webhook_path.write_text(json.dumps(_webhook_receipt()), encoding="utf-8")
+    start_path.write_text(json.dumps(wrapper), encoding="utf-8")
+
+    exit_code = main(
+        [
+            "--webhook-receipt",
+            str(webhook_path),
+            "--start-action-response",
+            str(start_path),
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 2
+    assert payload["ready"] is False
+    assert payload["error"] == "live_checkout_proof_start_response_boundary_mismatch"
+
+
 def test_live_checkout_proof_cli_rejects_symlinked_artifact(
     tmp_path: Path,
     capsys,
@@ -491,6 +545,7 @@ def _webhook_receipt_wrapper() -> dict[str, object]:
         "receipt_schema_version": "fusekit.hosted-stripe-webhook.v1",
         "receipt_sha256": _payload_hash(receipt),
         "receipt": receipt,
+        "secret_boundary": HOSTED_JOB_STORE_WEBHOOK_RECEIPT_BOUNDARY,
     }
 
 
@@ -502,6 +557,7 @@ def _start_action_response_wrapper() -> dict[str, object]:
         "response_schema_version": "fusekit.hosted-job.v1",
         "response_sha256": _payload_hash(response),
         "response": response,
+        "secret_boundary": HOSTED_JOB_STORE_MANAGED_START_RESPONSE_BOUNDARY,
     }
 
 

@@ -22,8 +22,10 @@ from fusekit.hosted.billing import (
     _valid_stripe_checkout_session_id,
 )
 from fusekit.hosted.job_store import (
+    HOSTED_JOB_STORE_MANAGED_START_RESPONSE_BOUNDARY,
     HOSTED_JOB_STORE_MANAGED_START_RESPONSE_SCHEMA_VERSION,
     HOSTED_JOB_STORE_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION,
+    HOSTED_JOB_STORE_WEBHOOK_RECEIPT_BOUNDARY,
 )
 from fusekit.hosted.lanes import MANAGED_FUSEKIT_RUN_LANE
 from fusekit.hosted.managed_enablement import (
@@ -63,6 +65,26 @@ HOSTED_LIVE_CHECKOUT_DISPATCH_HASH_FIELDS = (
     "plan_fingerprint",
     "stripe_price_id_hash",
     "price_label_hash",
+)
+HOSTED_LIVE_CHECKOUT_WEBHOOK_WRAPPER_KEYS = frozenset(
+    {
+        "schema_version",
+        "job_id",
+        "receipt_schema_version",
+        "receipt_sha256",
+        "receipt",
+        "secret_boundary",
+    }
+)
+HOSTED_LIVE_CHECKOUT_START_WRAPPER_KEYS = frozenset(
+    {
+        "schema_version",
+        "job_id",
+        "response_schema_version",
+        "response_sha256",
+        "response",
+        "secret_boundary",
+    }
 )
 
 
@@ -398,6 +420,15 @@ def _read_webhook_receipt_json(path: str) -> Mapping[str, Any]:
         payload.get("schema_version")
         == HOSTED_JOB_STORE_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION
     ):
+        _require_exact_wrapper_keys(
+            payload,
+            expected=HOSTED_LIVE_CHECKOUT_WEBHOOK_WRAPPER_KEYS,
+            error="live_checkout_proof_webhook_receipt_wrapper_shape_mismatch",
+        )
+        if payload.get("secret_boundary") != HOSTED_JOB_STORE_WEBHOOK_RECEIPT_BOUNDARY:
+            raise FuseKitError(
+                "live_checkout_proof_webhook_receipt_boundary_mismatch"
+            )
         receipt = payload.get("receipt")
         if not isinstance(receipt, Mapping):
             raise FuseKitError("live_checkout_proof_webhook_receipt_missing")
@@ -417,6 +448,16 @@ def _read_start_action_response_json(path: str) -> Mapping[str, Any]:
         payload.get("schema_version")
         == HOSTED_JOB_STORE_MANAGED_START_RESPONSE_SCHEMA_VERSION
     ):
+        _require_exact_wrapper_keys(
+            payload,
+            expected=HOSTED_LIVE_CHECKOUT_START_WRAPPER_KEYS,
+            error="live_checkout_proof_start_response_wrapper_shape_mismatch",
+        )
+        if (
+            payload.get("secret_boundary")
+            != HOSTED_JOB_STORE_MANAGED_START_RESPONSE_BOUNDARY
+        ):
+            raise FuseKitError("live_checkout_proof_start_response_boundary_mismatch")
         response = payload.get("response")
         if not isinstance(response, Mapping):
             raise FuseKitError("live_checkout_proof_start_response_missing")
@@ -428,6 +469,16 @@ def _read_start_action_response_json(path: str) -> Mapping[str, Any]:
             raise FuseKitError("live_checkout_proof_start_response_hash_mismatch")
         return response
     return payload
+
+
+def _require_exact_wrapper_keys(
+    payload: Mapping[str, Any],
+    *,
+    expected: frozenset[str],
+    error: str,
+) -> None:
+    if set(str(key) for key in payload) != expected:
+        raise FuseKitError(error)
 
 
 def _payload_hash(value: Mapping[str, Any]) -> str:
