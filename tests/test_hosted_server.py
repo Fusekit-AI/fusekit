@@ -262,6 +262,20 @@ def _dispatch_acceptance_without_idempotency_proof(
     return receipt
 
 
+def _dispatch_acceptance_with_process_idempotency(
+    request_body: dict[str, Any],
+) -> dict[str, object]:
+    receipt = _dispatch_acceptance_response(request_body)
+    receipt["idempotency"] = {
+        "mode": "process",
+        "durable": False,
+        "scope": "process",
+        "duplicate": False,
+        "proof": "in-process dispatch guard accepted this job/action once.",
+    }
+    return receipt
+
+
 class FormSequenceOpener:
     def __init__(self, payloads: list[dict[str, object]]) -> None:
         self.payloads = payloads
@@ -3984,7 +3998,16 @@ def test_hosted_job_start_dispatches_signed_worker_envelope_when_configured() ->
     assert "PRIVATE KEY" not in serialized
 
 
-def test_hosted_job_start_rejects_incomplete_worker_dispatch_acceptance_receipt() -> None:
+@pytest.mark.parametrize(
+    "dispatch_acceptance",
+    [
+        _dispatch_acceptance_without_idempotency_proof,
+        _dispatch_acceptance_with_process_idempotency,
+    ],
+)
+def test_hosted_job_start_rejects_nonproduction_worker_dispatch_acceptance_receipt(
+    dispatch_acceptance: Callable[[dict[str, Any]], dict[str, object]],
+) -> None:
     state = create_hosted_state_token(
         STATE_SECRET,
         return_path="/",
@@ -4003,7 +4026,7 @@ def test_hosted_job_start_rejects_incomplete_worker_dispatch_acceptance_receipt(
             _github_zip(),
         ]
     )
-    dispatch_opener = SequenceOpener([_dispatch_acceptance_without_idempotency_proof])
+    dispatch_opener = SequenceOpener([dispatch_acceptance])
     config = GitHubAppConfig(
         app_id="12345",
         app_slug="fusekit-launcher",
