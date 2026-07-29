@@ -6,6 +6,7 @@ import pytest
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.oci_access import (
+    HOSTED_OCI_ACCESS_MAX_JSON_BYTES,
     HOSTED_OCI_ACCESS_PLAN_SCHEMA_VERSION,
     HOSTED_OCI_DEPLOY_ACCESS_REPAIR_SCHEMA_VERSION,
     build_hosted_oci_access_plan,
@@ -387,3 +388,24 @@ def test_hosted_oci_access_plan_cli_reads_wrapped_oci_exports(tmp_path, capfd) -
     assert output["ready_to_redeploy"] is True
     assert output["access"]["allowed_deploy_paths"] == ["oci_run_command_release"]
     assert output["access"]["oci_run_command_availability"] == "running"
+
+
+def test_hosted_oci_access_plan_cli_rejects_symlinked_input(tmp_path) -> None:
+    instance_path = tmp_path / "instance.json"
+    instance_link = tmp_path / "instance-link.json"
+    instance_path.write_text(json.dumps({"data": _instance()}), encoding="utf-8")
+    instance_link.symlink_to(instance_path)
+
+    with pytest.raises(FuseKitError, match="oci_access_input_symlink"):
+        main(["--instance-json", str(instance_link)])
+
+
+def test_hosted_oci_access_plan_cli_rejects_oversized_input(tmp_path) -> None:
+    instance_path = tmp_path / "instance.json"
+    instance_path.write_text(
+        " " * (HOSTED_OCI_ACCESS_MAX_JSON_BYTES + 1),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(FuseKitError, match="oci_access_input_too_large"):
+        main(["--instance-json", str(instance_path)])

@@ -8,6 +8,7 @@ from fusekit.errors import FuseKitError
 from fusekit.hosted.oci_access import build_hosted_oci_access_plan
 from fusekit.hosted.oci_inventory import build_hosted_oci_inventory_report
 from fusekit.hosted.oci_replacement import (
+    HOSTED_OCI_REPLACEMENT_MAX_JSON_BYTES,
     HOSTED_OCI_REPLACEMENT_PLAN_SCHEMA_VERSION,
     build_hosted_oci_replacement_plan,
     main,
@@ -434,3 +435,32 @@ def test_oci_replacement_plan_cli_reads_inventory(tmp_path, capfd) -> None:
     assert output["replacement_candidate"]["deploy_access"]["allowed_deploy_paths"] == [
         "oci_run_command_release"
     ]
+
+
+def test_oci_replacement_plan_cli_rejects_symlinked_inventory(tmp_path, capfd) -> None:
+    inventory_path = tmp_path / "inventory.json"
+    inventory_link = tmp_path / "inventory-link.json"
+    inventory_path.write_text(json.dumps(_inventory_report()), encoding="utf-8")
+    inventory_link.symlink_to(inventory_path)
+
+    exit_code = main(["--inventory-report", str(inventory_link)])
+    output = json.loads(capfd.readouterr().out)
+
+    assert exit_code == 2
+    assert output["ready_to_create_replacement"] is False
+    assert output["error"] == "oci_replacement_input_symlink"
+
+
+def test_oci_replacement_plan_cli_rejects_oversized_inventory(tmp_path, capfd) -> None:
+    inventory_path = tmp_path / "inventory.json"
+    inventory_path.write_text(
+        " " * (HOSTED_OCI_REPLACEMENT_MAX_JSON_BYTES + 1),
+        encoding="utf-8",
+    )
+
+    exit_code = main(["--inventory-report", str(inventory_path)])
+    output = json.loads(capfd.readouterr().out)
+
+    assert exit_code == 2
+    assert output["ready_to_create_replacement"] is False
+    assert output["error"] == "oci_replacement_input_too_large"

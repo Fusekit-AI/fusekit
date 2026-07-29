@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import stat
 from collections.abc import Mapping, Sequence
 from ipaddress import ip_address
+from pathlib import Path
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.server import HOSTED_CANONICAL_ORIGIN
@@ -46,6 +49,7 @@ HOSTED_OCI_SSH_BLOCKED_STATUSES = {
     "not_configured",
     "not_checked",
 }
+HOSTED_OCI_ACCESS_MAX_JSON_BYTES = 1_048_576
 
 
 def build_hosted_oci_access_plan(
@@ -236,13 +240,41 @@ def _read_sequence(path: str) -> Sequence[Mapping[str, object]]:
 
 
 def _read_json(path: str) -> object:
+    candidate = Path(path)
+    if candidate.is_symlink():
+        raise FuseKitError("oci_access_input_symlink")
+    _reject_symlinked_parents(candidate)
     try:
-        with open(path, encoding="utf-8") as handle:
-            return json.load(handle)
+        return _read_json_no_follow(candidate)
     except OSError as exc:
         raise FuseKitError("oci_access_input_unreadable") from exc
     except json.JSONDecodeError as exc:
         raise FuseKitError("oci_access_input_invalid_json") from exc
+
+
+def _reject_symlinked_parents(candidate: Path) -> None:
+    for parent in candidate.parents:
+        if parent == Path("."):
+            continue
+        if parent.is_symlink():
+            raise FuseKitError("oci_access_input_parent_symlink")
+
+
+def _read_json_no_follow(candidate: Path) -> object:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    file_descriptor = os.open(candidate, flags)
+    try:
+        file_status = os.fstat(file_descriptor)
+        if not stat.S_ISREG(file_status.st_mode):
+            raise FuseKitError("oci_access_input_not_file")
+        if file_status.st_size > HOSTED_OCI_ACCESS_MAX_JSON_BYTES:
+            raise FuseKitError("oci_access_input_too_large")
+        with os.fdopen(file_descriptor, "r", encoding="utf-8") as handle:
+            file_descriptor = -1
+            return json.load(handle)
+    finally:
+        if file_descriptor >= 0:
+            os.close(file_descriptor)
 
 
 def _normalize_tags(value: object) -> dict[str, str]:
