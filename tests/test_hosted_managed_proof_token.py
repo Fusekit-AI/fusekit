@@ -22,6 +22,8 @@ def test_managed_proof_helper_emits_purpose_bound_state_token() -> None:
     assert report["ready"] is True
     assert report["blockers"] == []
     assert report["query_param"] == "state"
+    assert report["state_token_present"] is True
+    assert report["install_url_present"] is True
     assert "state_token" in report
     assert str(report["install_url"]).startswith(
         "https://github.com/apps/fusekit-launcher/installations/new?state="
@@ -35,6 +37,24 @@ def test_managed_proof_helper_emits_purpose_bound_state_token() -> None:
     assert state.managed_proof is True
     assert state.return_path == "/"
     assert "Stripe key" in str(report["secret_boundary"])
+
+
+def test_managed_proof_helper_can_emit_redacted_preflight_without_click_token() -> None:
+    report = build_hosted_managed_proof_token_report(
+        state_secret="hosted-state-secret",
+        github_app_slug="fusekit-launcher",
+        runtime_secret_verify=_runtime_secret_verify(),
+        hosted_readiness=_hosted_readiness(),
+        include_token=False,
+    )
+    serialized = json.dumps(report)
+
+    assert report["ready"] is True
+    assert report["state_token_present"] is True
+    assert report["install_url_present"] is True
+    assert "state_token" not in report
+    assert "install_url" not in report
+    assert "hosted-state-secret" not in serialized
 
 
 def test_managed_proof_helper_refuses_state_when_webhook_is_not_ready() -> None:
@@ -55,6 +75,8 @@ def test_managed_proof_helper_refuses_state_when_webhook_is_not_ready() -> None:
     )
 
     assert report["ready"] is False
+    assert report["state_token_present"] is False
+    assert report["install_url_present"] is False
     assert report["state_token"] == ""
     assert report["install_url"] == ""
     assert report["blockers"] == ["stripe_webhook_secret_required_for_managed_proof"]

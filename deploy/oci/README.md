@@ -170,3 +170,16 @@ lane, and the managed-disabled state all pass. Use the returned `install_url`, o
 its `state` query value, for that proof run. Do not put the state token in run
 records or durable receipts; it is a temporary click capability, not a provider
 credential.
+
+For durable OCI posture evidence, write the same preflight without the temporary
+click token:
+
+```zsh
+sudo fusekit-hosted-managed-proof-token \
+  --runtime-secret-file /etc/fusekit/hosted-secrets.env \
+  --redacted \
+  > /var/lib/fusekit/posture/managed-proof-preflight.json
+sudo fusekit-oci-host-posture --collect \
+  --managed-proof-preflight-report /var/lib/fusekit/posture/managed-proof-preflight.json \
+  ...
+```

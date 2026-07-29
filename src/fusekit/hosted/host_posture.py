@@ -16,6 +16,9 @@ from pathlib import Path
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.billing import _valid_stripe_price_id
+from fusekit.hosted.managed_proof_token import (
+    HOSTED_MANAGED_PROOF_TOKEN_REPORT_SCHEMA_VERSION,
+)
 from fusekit.hosted.runtime_secrets import (
     HOSTED_RUNTIME_REQUIRED_FILE_ENV,
     HOSTED_RUNTIME_SECRET_VERIFY_SCHEMA_VERSION,
@@ -66,6 +69,7 @@ OCI_HOST_POSTURE_ALLOWED_EVIDENCE_KEYS = frozenset(
         "runtime_secret_dir",
         "runtime_secret_file",
         "runtime_secret_verify",
+        "managed_proof_preflight",
         "patch_posture",
         "cis_baseline",
         "rootkit_scan",
@@ -162,6 +166,32 @@ OCI_HOST_POSTURE_STRIPE_RUNTIME_ENV_ROW_KEYS = {
         {"configured", "valid_shape", "required_before_enablement"}
     ),
 }
+OCI_HOST_POSTURE_MANAGED_PROOF_PREFLIGHT_KEYS = frozenset(
+    {
+        "schema_version",
+        "query_param",
+        "state_token_present",
+        "install_url_present",
+        "ready",
+        "blockers",
+        "expires_in_seconds",
+        "preflight",
+        "operator_use",
+        "public_managed_runs_enabled",
+        "mutates_host",
+        "mutates_provider",
+        "secret_boundary",
+    }
+)
+OCI_HOST_POSTURE_MANAGED_PROOF_PREFLIGHT_ROW_KEYS = frozenset(
+    {
+        "runtime_secret_verify_ready",
+        "hosted_readiness_ready",
+        "job_store_ready",
+        "managed_lane_disabled_for_enablement",
+        "byo_lane_launchable",
+    }
+)
 OCI_HOST_POSTURE_PATCH_POSTURE_KEYS = frozenset(
     {"pending_security_updates", "reboot_required"}
 )
@@ -303,6 +333,7 @@ def collect_oci_host_posture_evidence(
     dns_report: Mapping[str, object] | None = None,
     release_receipt: Mapping[str, object] | None = None,
     runtime_secret_verify_report: Mapping[str, object] | None = None,
+    managed_proof_preflight_report: Mapping[str, object] | None = None,
     rollback_metadata: Mapping[str, object] | None = None,
     cis_summary: Mapping[str, object] | None = None,
     rootkit_summary: Mapping[str, object] | None = None,
@@ -325,6 +356,9 @@ def collect_oci_host_posture_evidence(
         "runtime_secret_dir": _collect_runtime_secret_dir(runner),
         "runtime_secret_file": _collect_runtime_secret_file(runner),
         "runtime_secret_verify": _sanitize_summary(runtime_secret_verify_report),
+        "managed_proof_preflight": _sanitize_managed_proof_preflight(
+            managed_proof_preflight_report
+        ),
         "patch_posture": _collect_patch_posture(runner, exists),
         "cis_baseline": _sanitize_summary(cis_summary),
         "rootkit_scan": _sanitize_summary(rootkit_summary),
@@ -359,6 +393,7 @@ def evaluate_oci_host_posture(evidence: Mapping[str, object]) -> dict[str, objec
         _runtime_secret_dir_check(evidence),
         _runtime_secret_file_check(evidence),
         _runtime_secret_verify_check(evidence),
+        _managed_proof_preflight_check(evidence),
         _patch_check(evidence),
         _baseline_check(evidence),
         _rootkit_check(evidence),
@@ -425,6 +460,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Path to redacted fusekit-hosted-runtime-secret-plan --verify-file JSON",
     )
     parser.add_argument(
+        "--managed-proof-preflight-report",
+        default="",
+        help="Path to redacted fusekit-hosted-managed-proof-token --redacted JSON",
+    )
+    parser.add_argument(
         "--rollback-metadata",
         default="",
         help="Path to redacted rollback metadata JSON",
@@ -460,6 +500,10 @@ def main(argv: list[str] | None = None) -> int:
                 runtime_secret_verify_report=_read_optional_json(
                     args.runtime_secret_verify_report,
                     required=bool(args.runtime_secret_verify_report),
+                ),
+                managed_proof_preflight_report=_read_optional_json(
+                    args.managed_proof_preflight_report,
+                    required=bool(args.managed_proof_preflight_report),
                 ),
                 rollback_metadata=_read_optional_json(
                     args.rollback_metadata,
@@ -889,6 +933,14 @@ def _evidence_shape_check(evidence: Mapping[str, object]) -> dict[str, object]:
     unexpected.extend(
         _unexpected_nested_keys(
             evidence,
+            "managed_proof_preflight",
+            OCI_HOST_POSTURE_MANAGED_PROOF_PREFLIGHT_KEYS,
+        )
+    )
+    unexpected.extend(_unexpected_managed_proof_preflight_keys(evidence))
+    unexpected.extend(
+        _unexpected_nested_keys(
+            evidence,
             "patch_posture",
             OCI_HOST_POSTURE_PATCH_POSTURE_KEYS,
         )
@@ -1059,6 +1111,22 @@ def _unexpected_rollback_metadata_keys(evidence: Mapping[str, object]) -> list[s
                 for key in _unexpected_keys(row, OCI_HOST_POSTURE_ROLLBACK_ACTION_KEYS)
             )
     return unexpected
+
+
+def _unexpected_managed_proof_preflight_keys(evidence: Mapping[str, object]) -> list[str]:
+    report = evidence.get("managed_proof_preflight")
+    if not isinstance(report, Mapping):
+        return []
+    preflight = report.get("preflight")
+    if not isinstance(preflight, Mapping):
+        return []
+    return [
+        f"managed_proof_preflight.preflight.{key}"
+        for key in _unexpected_keys(
+            preflight,
+            OCI_HOST_POSTURE_MANAGED_PROOF_PREFLIGHT_ROW_KEYS,
+        )
+    ]
 
 
 def _unexpected_hosted_verify_keys(evidence: Mapping[str, object]) -> list[str]:
@@ -1292,6 +1360,62 @@ def _runtime_secret_verify_check(evidence: Mapping[str, object]) -> dict[str, ob
             unexpected_keys=_public_string_list(unexpected_keys),
         )
     return _ok("host.runtime_secret_verify")
+
+
+def _managed_proof_preflight_check(evidence: Mapping[str, object]) -> dict[str, object]:
+    report = _mapping(evidence.get("managed_proof_preflight"))
+    preflight = _mapping(report.get("preflight"))
+    failures: list[str] = []
+    if report.get("schema_version") != HOSTED_MANAGED_PROOF_TOKEN_REPORT_SCHEMA_VERSION:
+        failures.append("oci_host_managed_proof_preflight_schema_invalid")
+    if report.get("ready") is not True:
+        failures.append("oci_host_managed_proof_preflight_not_ready")
+    if _string_list(report.get("blockers")):
+        failures.append("oci_host_managed_proof_preflight_has_blockers")
+    if report.get("query_param") != "state":
+        failures.append("oci_host_managed_proof_preflight_state_param_mismatch")
+    if report.get("state_token_present") is not True:
+        failures.append("oci_host_managed_proof_state_token_not_mintable")
+    if report.get("install_url_present") is not True:
+        failures.append("oci_host_managed_proof_install_url_not_mintable")
+    ttl = _literal_non_negative_int(report.get("expires_in_seconds"))
+    if ttl is None or ttl <= 0 or ttl > 900:
+        failures.append("oci_host_managed_proof_ttl_invalid")
+    for key in OCI_HOST_POSTURE_MANAGED_PROOF_PREFLIGHT_ROW_KEYS:
+        if preflight.get(key) is not True:
+            failures.append(f"oci_host_managed_proof_preflight_{key}_not_true")
+    if report.get("public_managed_runs_enabled") is not False:
+        failures.append("oci_host_managed_proof_public_managed_runs_must_be_disabled")
+    if report.get("mutates_host") is not False:
+        failures.append("oci_host_managed_proof_preflight_must_not_mutate_host")
+    if report.get("mutates_provider") is not False:
+        failures.append("oci_host_managed_proof_preflight_must_not_mutate_provider")
+    operator_use = _public_str(report.get("operator_use")).lower()
+    if "install_url" not in operator_use or "checkout proof" not in operator_use:
+        failures.append("oci_host_managed_proof_operator_use_mismatch")
+    boundary = _public_str(report.get("secret_boundary")).lower()
+    for marker in (
+        "not a stripe key",
+        "webhook secret",
+        "github private key",
+        "worker secret",
+        "oci credential",
+        "provider credential",
+        "vault secret",
+    ):
+        if marker not in boundary:
+            failures.append("oci_host_managed_proof_secret_boundary_mismatch")
+            break
+    if failures:
+        return _fail(
+            "host.managed_proof_preflight",
+            failures,
+            "Generate a redacted managed-proof preflight with "
+            "fusekit-hosted-managed-proof-token --redacted after runtime secrets, "
+            "hosted readiness, job-store proof, and webhook staging are ready.",
+            managed_proof_blockers=_public_string_list(report.get("blockers")),
+        )
+    return _ok("host.managed_proof_preflight")
 
 
 def _patch_check(evidence: Mapping[str, object]) -> dict[str, object]:
@@ -1889,8 +2013,43 @@ def _sanitize_release_receipt(receipt: Mapping[str, object] | None) -> dict[str,
     return sanitized
 
 
+def _sanitize_managed_proof_preflight(report: Mapping[str, object] | None) -> dict[str, object]:
+    if not report:
+        return {}
+    sanitized: dict[str, object] = {}
+    for key, value in report.items():
+        key_text = str(key)
+        if key_text in {"state_token", "install_url"}:
+            continue
+        public_key = (
+            key_text
+            if key_text in OCI_HOST_POSTURE_MANAGED_PROOF_PREFLIGHT_KEYS
+            else redact_public_text(key_text)
+        )
+        if key_text == "preflight" and isinstance(value, Mapping):
+            sanitized[public_key] = {
+                (
+                    str(row_key)
+                    if str(row_key) in OCI_HOST_POSTURE_MANAGED_PROOF_PREFLIGHT_ROW_KEYS
+                    else redact_public_text(str(row_key))
+                ): _sanitize_public_value(row_value)
+                for row_key, row_value in value.items()
+            }
+        else:
+            sanitized[public_key] = _sanitize_public_value(value)
+    sanitized["state_token_present"] = bool(
+        report.get("state_token_present") is True or _raw_str(report.get("state_token"))
+    )
+    sanitized["install_url_present"] = bool(
+        report.get("install_url_present") is True or _raw_str(report.get("install_url"))
+    )
+    return sanitized
+
+
 def _sanitize_posture_public_value(value: object, *, key: str = "") -> object:
     if isinstance(value, Mapping):
+        if key == "managed_proof_preflight":
+            return _sanitize_managed_proof_preflight(value)
         return {
             redact_public_text(str(item_key)): _sanitize_posture_public_value(
                 item,

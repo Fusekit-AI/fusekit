@@ -43,6 +43,7 @@ def build_hosted_managed_proof_token_report(
     github_app_slug: str = "",
     runtime_secret_verify: Mapping[str, object] | None = None,
     hosted_readiness: Mapping[str, object] | None = None,
+    include_token: bool = True,
 ) -> dict[str, object]:
     """Return an operator-use token report without exposing raw runtime secrets."""
 
@@ -70,11 +71,11 @@ def build_hosted_managed_proof_token_report(
             ),
             state=state_token,
         )
-    return {
+    report: dict[str, object] = {
         "schema_version": HOSTED_MANAGED_PROOF_TOKEN_REPORT_SCHEMA_VERSION,
         "query_param": "state",
-        "state_token": state_token,
-        "install_url": install_url,
+        "state_token_present": bool(state_token),
+        "install_url_present": bool(install_url),
         "ready": ready,
         "blockers": blockers,
         "expires_in_seconds": HOSTED_STATE_TTL_SECONDS,
@@ -96,6 +97,10 @@ def build_hosted_managed_proof_token_report(
         "mutates_provider": False,
         "secret_boundary": HOSTED_MANAGED_PROOF_TOKEN_SECRET_BOUNDARY,
     }
+    if include_token:
+        report["state_token"] = state_token
+        report["install_url"] = install_url
+    return report
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -105,6 +110,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--runtime-secret-file", default=HOSTED_RUNTIME_SECRET_FILE)
     parser.add_argument("--state-secret-env", default="FUSEKIT_HOSTED_STATE_SECRET")
     parser.add_argument("--hosted-readiness-report", default="")
+    parser.add_argument(
+        "--redacted",
+        action="store_true",
+        help="Emit durable preflight proof without the short-lived state token or install URL.",
+    )
     args = parser.parse_args(argv)
     try:
         state_secret = os.environ.get(args.state_secret_env, "")
@@ -125,6 +135,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             github_app_slug=github_app_slug,
             runtime_secret_verify=runtime_secret_verify,
             hosted_readiness=hosted_readiness,
+            include_token=not args.redacted,
         )
     except (FuseKitError, OSError) as exc:
         report = {

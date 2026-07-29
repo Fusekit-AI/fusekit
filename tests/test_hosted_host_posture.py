@@ -66,8 +66,8 @@ def _runtime_secret_verify_report() -> dict[str, object]:
                 "enabled": False,
             },
             "FUSEKIT_STRIPE_WEBHOOK_SECRET": {
-                "configured": False,
-                "valid_shape": False,
+                "configured": True,
+                "valid_shape": True,
                 "required_before_enablement": True,
             },
         },
@@ -114,6 +114,7 @@ def _clean_evidence() -> dict[str, object]:
             "mode": "0600",
         },
         "runtime_secret_verify": _runtime_secret_verify_report(),
+        "managed_proof_preflight": _managed_proof_preflight_report(),
         "patch_posture": {
             "pending_security_updates": 0,
             "reboot_required": False,
@@ -371,6 +372,36 @@ def _clean_evidence() -> dict[str, object]:
     }
 
 
+def _managed_proof_preflight_report() -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.hosted-managed-proof-token-report.v1",
+        "query_param": "state",
+        "state_token_present": True,
+        "install_url_present": True,
+        "ready": True,
+        "blockers": [],
+        "expires_in_seconds": 900,
+        "preflight": {
+            "runtime_secret_verify_ready": True,
+            "hosted_readiness_ready": True,
+            "job_store_ready": True,
+            "managed_lane_disabled_for_enablement": True,
+            "byo_lane_launchable": True,
+        },
+        "operator_use": (
+            "Visit install_url for the supervised managed Checkout proof run."
+        ),
+        "public_managed_runs_enabled": False,
+        "mutates_host": False,
+        "mutates_provider": False,
+        "secret_boundary": (
+            "The managed proof state is not a Stripe key, webhook secret, GitHub "
+            "private key, worker secret, OCI credential, provider credential, or "
+            "vault secret."
+        ),
+    }
+
+
 def _check(report: dict[str, object], check_id: str) -> dict[str, object]:
     checks = report["checks"]
     assert isinstance(checks, list)
@@ -510,6 +541,44 @@ def test_oci_host_posture_blocks_runtime_secret_verifier_drift() -> None:
         "runtime_secret_unexpected_key:OPENAI_API_KEY"
     ]
     assert verify_check["unexpected_keys"] == ["OPENAI_API_KEY"]
+
+
+def test_oci_host_posture_blocks_managed_proof_preflight_drift() -> None:
+    evidence = _clean_evidence()
+    preflight = evidence["managed_proof_preflight"]
+    assert isinstance(preflight, dict)
+    preflight["ready"] = False
+    preflight["blockers"] = ["hosted_job_store_not_ready"]
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert "host.managed_proof_preflight" in report["blocking_checks"]
+    check = _check(report, "host.managed_proof_preflight")
+    assert "oci_host_managed_proof_preflight_not_ready" in check["failures"]
+    assert "oci_host_managed_proof_preflight_has_blockers" in check["failures"]
+
+
+def test_oci_host_posture_redacts_raw_managed_proof_click_token() -> None:
+    evidence = _clean_evidence()
+    preflight = evidence["managed_proof_preflight"]
+    assert isinstance(preflight, dict)
+    preflight.pop("state_token_present")
+    preflight.pop("install_url_present")
+    preflight["state_token"] = "signed-state-token-fixture"
+    preflight["install_url"] = (
+        "https://github.com/apps/fusekit-launcher/installations/new"
+        "?state=signed-state-token-fixture"
+    )
+
+    emitted = json.loads(_public_json(evidence))
+
+    assert emitted["managed_proof_preflight"]["state_token_present"] is True
+    assert emitted["managed_proof_preflight"]["install_url_present"] is True
+    assert "state_token" not in emitted["managed_proof_preflight"]
+    assert "install_url" not in emitted["managed_proof_preflight"]
+    assert "signed-state-token-fixture" not in json.dumps(emitted)
+    assert evaluate_oci_host_posture(emitted)["ready"] is True
 
 
 def test_oci_host_posture_redacts_private_runtime_secret_blocker_values() -> None:
@@ -1952,6 +2021,7 @@ def test_oci_host_posture_collector_builds_validator_ready_redacted_evidence(
         },
         release_receipt=_clean_evidence()["release_receipt"],
         runtime_secret_verify_report=_runtime_secret_verify_report(),
+        managed_proof_preflight_report=_managed_proof_preflight_report(),
         cis_summary={
             "scanner": "lynis",
             "status": "pass",
@@ -2035,6 +2105,7 @@ def test_oci_host_posture_collector_builds_validator_ready_redacted_evidence(
         ]
     }
     assert evidence["release_receipt"] == _clean_evidence()["release_receipt"]
+    assert evidence["managed_proof_preflight"] == _managed_proof_preflight_report()
     assert report["ready"] is True
     assert not contains_durable_secret_text(json.dumps(evidence))
 
