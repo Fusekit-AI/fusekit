@@ -2709,6 +2709,7 @@ def _payment_contract() -> dict[str, object]:
         "managed_runs_enabled": False,
         "secret_key_configured": True,
         "account_mode": "test",
+        "key_scope": "standard",
         "live_mode_configured": False,
         "test_mode_allowed": False,
         "price_configured": False,

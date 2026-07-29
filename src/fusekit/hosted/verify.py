@@ -199,6 +199,7 @@ PAYMENT_READINESS_KEYS = frozenset(
         "managed_runs_enabled",
         "secret_key_configured",
         "account_mode",
+        "key_scope",
         "live_mode_configured",
         "test_mode_allowed",
         "price_configured",
@@ -1784,6 +1785,9 @@ def _payment_readiness_failures(value: object, lane_readiness: object) -> list[s
         failures.append("payment_readiness_required_lanes_mismatch")
     enabled = value.get("enabled")
     managed_launchable = _managed_lane_launchable(lane_readiness)
+    key_scope = value.get("key_scope")
+    if key_scope not in {"restricted", "standard", "unknown", "unconfigured"}:
+        failures.append("payment_readiness_key_scope_invalid")
     if managed_launchable is True and enabled is not True:
         failures.append("payment_readiness_disabled_for_launchable_managed_lane")
     if enabled is True and managed_launchable is not True:
@@ -1801,6 +1805,8 @@ def _payment_readiness_failures(value: object, lane_readiness: object) -> list[s
                 failures.append(f"payment_readiness_{key}_false_when_enabled")
         if value.get("account_mode") != "live":
             failures.append("payment_readiness_account_mode_not_live")
+        if key_scope not in {"restricted", "standard"}:
+            failures.append("payment_readiness_key_scope_not_usable")
         if label_configured is not True:
             failures.append("payment_readiness_price_label_not_configured")
         if not _valid_public_price_label(label):
