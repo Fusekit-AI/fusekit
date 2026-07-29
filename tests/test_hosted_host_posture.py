@@ -483,6 +483,30 @@ def test_oci_host_posture_blocks_runtime_secret_verifier_drift() -> None:
     assert verify_check["unexpected_keys"] == ["OPENAI_API_KEY"]
 
 
+def test_oci_host_posture_redacts_private_runtime_secret_blocker_values() -> None:
+    evidence = _clean_evidence()
+    verify_report = evidence["runtime_secret_verify"]
+    assert isinstance(verify_report, dict)
+    verify_report["ready"] = False
+    verify_report["blockers"] = [
+        "runtime_secret_unexpected_key:ocid1_instance_oc1_not_public"
+    ]
+    key_inventory = verify_report["key_inventory"]
+    assert isinstance(key_inventory, dict)
+    key_inventory["unexpected_keys"] = ["ocid1_instance_oc1_not_public"]
+
+    report = evaluate_oci_host_posture(evidence)
+    serialized = json.dumps(report, sort_keys=True)
+
+    assert report["ready"] is False
+    assert "host.runtime_secret_verify" in report["blocking_checks"]
+    assert "evidence.redaction" in report["blocking_checks"]
+    assert "ocid1_instance_oc1_not_public" not in serialized
+    verify_check = _check(report, "host.runtime_secret_verify")
+    assert verify_check["runtime_secret_blockers"] == ["[redacted]"]
+    assert verify_check["unexpected_keys"] == ["[redacted]"]
+
+
 def test_oci_host_posture_blocks_runtime_secret_inventory_count_drift() -> None:
     evidence = _clean_evidence()
     verify_report = evidence["runtime_secret_verify"]

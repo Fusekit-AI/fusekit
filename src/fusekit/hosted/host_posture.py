@@ -1717,7 +1717,7 @@ def _mapping_list(value: object) -> list[Mapping[str, object]]:
 
 
 def _public_string_list(value: object) -> list[str]:
-    return [redact_public_text(item) for item in _string_list(value)]
+    return [_public_str(item) for item in _string_list(value)]
 
 
 def _port_list(value: object) -> list[int]:
