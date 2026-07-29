@@ -110,7 +110,7 @@ fusekit-hosted-oci-replacement-plan \
   > hosted-oci-replacement-plan.json
 fusekit-oci-host-posture --collect \
   --shape VM.Standard.E5.Flex \
-  --ssh-ingress restricted \
+  --ssh-ingress operator-only \
   --hosted-verify-report hosted-verify.json \
   --dns-report dns-propagation.json \
   --release-receipt /var/lib/fusekit/release-receipts/release-"$(git rev-parse HEAD)".json \
@@ -124,7 +124,9 @@ fusekit-oci-host-posture --evidence posture.json
 The DNS, release receipt, and rollback files must be redacted public proof. The
 posture validator only needs to see that `fusekit.snowmanai.org` has propagated,
 that the release receipt commit matches the hosted verifier commit, and that
-provider rollback actions are planned or complete. The collector also emits
+provider rollback actions are planned or complete. Port 22 is allowed only when
+the attached SSH ingress label proves restricted operator access; nonstandard
+public listeners still block posture. The collector also emits
 bounded storage footprint proof for `/`, `/opt/fusekit/releases`, and the root
 pip cache so release virtualenvs or package caches cannot quietly consume the
 boot volume again; it records numeric counts and byte totals only, not raw

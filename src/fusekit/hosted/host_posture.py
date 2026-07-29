@@ -1454,23 +1454,36 @@ def _public_ports_check(evidence: Mapping[str, object]) -> dict[str, object]:
     ports = _port_list(evidence.get("public_ports"))
     ssh_ingress = _public_str(evidence.get("ssh_ingress")).lower()
     restricted_ssh = ssh_ingress in {"restricted", "operator-only", "vpn-only"}
-    allowed_ports = set(OCI_HOST_POSTURE_ALLOWED_PUBLIC_PORTS)
-    if restricted_ssh:
-        allowed_ports.add(22)
-    unexpected = [port for port in ports if port not in allowed_ports]
+    ssh_listening = 22 in ports
+    unexpected = [
+        port
+        for port in ports
+        if port not in {*OCI_HOST_POSTURE_ALLOWED_PUBLIC_PORTS, 22}
+    ]
     failures = []
     if unexpected:
-        failures.append("oci_host_public_ports_must_be_80_443_only")
+        failures.append("oci_host_public_ports_must_be_80_443_or_restricted_22")
+    if ssh_listening and ssh_ingress == "disabled":
+        failures.append("oci_host_ssh_ingress_label_conflicts_with_port_22")
+    elif ssh_listening and not restricted_ssh:
+        failures.append("oci_host_ssh_ingress_proof_required_for_port_22")
     if ssh_ingress not in {"restricted", "operator-only", "vpn-only", "disabled"}:
         failures.append("oci_host_ssh_ingress_must_be_restricted")
     if failures:
         return _fail(
             "host.public_ports",
             failures,
-            "Limit public ingress to 80/443 and keep SSH restricted to operator access.",
+            "Limit public ingress to 80/443, or attach restricted operator SSH proof "
+            "when port 22 is intentionally listening for release access.",
             unexpected_ports=unexpected,
+            ssh_port_listening=ssh_listening,
         )
-    return _ok("host.public_ports", public_ports=ports, ssh_ingress=ssh_ingress)
+    return _ok(
+        "host.public_ports",
+        public_ports=ports,
+        ssh_ingress=ssh_ingress,
+        ssh_port_listening=ssh_listening,
+    )
 
 
 def _runtime_secret_dir_check(evidence: Mapping[str, object]) -> dict[str, object]:

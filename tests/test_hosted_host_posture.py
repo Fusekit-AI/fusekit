@@ -1085,6 +1085,10 @@ def test_oci_host_posture_blocks_arm_public_ssh_and_weak_systemd() -> None:
         "oci_host_architecture_must_be_amd_x86_64",
         "oci_host_shape_must_not_be_arm",
     ]
+    assert _check(report, "host.public_ports")["failures"] == [
+        "oci_host_ssh_ingress_proof_required_for_port_22",
+        "oci_host_ssh_ingress_must_be_restricted",
+    ]
 
 
 def test_oci_host_posture_allows_restricted_operator_ssh() -> None:
@@ -1098,6 +1102,41 @@ def test_oci_host_posture_allows_restricted_operator_ssh() -> None:
     public_ports = _check(report, "host.public_ports")
     assert public_ports["public_ports"] == [22, 80, 443]
     assert public_ports["ssh_ingress"] == "operator-only"
+    assert public_ports["ssh_port_listening"] is True
+
+
+def test_oci_host_posture_blocks_disabled_ssh_label_when_port_22_listens() -> None:
+    evidence = _clean_evidence()
+    evidence["public_ports"] = [22, 80, 443]
+    evidence["ssh_ingress"] = "disabled"
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.public_ports"]
+    public_ports = _check(report, "host.public_ports")
+    assert public_ports["failures"] == [
+        "oci_host_ssh_ingress_label_conflicts_with_port_22"
+    ]
+    assert public_ports["unexpected_ports"] == []
+    assert public_ports["ssh_port_listening"] is True
+
+
+def test_oci_host_posture_blocks_nonstandard_public_ports_even_with_restricted_ssh() -> None:
+    evidence = _clean_evidence()
+    evidence["public_ports"] = [22, 80, 443, 8443]
+    evidence["ssh_ingress"] = "operator-only"
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.public_ports"]
+    public_ports = _check(report, "host.public_ports")
+    assert public_ports["failures"] == [
+        "oci_host_public_ports_must_be_80_443_or_restricted_22"
+    ]
+    assert public_ports["unexpected_ports"] == [8443]
+    assert public_ports["ssh_port_listening"] is True
 
 
 def test_oci_host_posture_blocks_missing_extended_systemd_sandboxing() -> None:
