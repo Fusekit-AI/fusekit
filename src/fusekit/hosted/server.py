@@ -474,6 +474,10 @@ HOSTED_READINESS_SCHEMA_VERSION = "fusekit.hosted-readiness.v1"
 HOSTED_DEPLOYMENT_SCHEMA_VERSION = "fusekit.hosted-deployment.v1"
 HOSTED_LANE_READINESS_SCHEMA_VERSION = "fusekit.hosted-lane-readiness.v1"
 HOSTED_WORKER_DISPATCH_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch.v1"
+HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch-receipt.v1"
+HOSTED_WORKER_DISPATCH_IDEMPOTENCY_MODES = frozenset(
+    {"dispatch-state-dir", "workspace", "process"}
+)
 HOSTED_WORKER_DISPATCH_BINDING_FIELDS = (
     "job_id",
     "action",
@@ -3032,19 +3036,76 @@ def _dispatch_hosted_worker(
     opener = settings.worker_dispatch_opener or urllib.request.urlopen
     with opener(request, timeout=30.0) as response:
         status = int(getattr(response, "status", 200))
+        raw_receipt = cast(Any, response).read(HOSTED_MAX_POST_BODY_BYTES + 1)
     if status >= 400:
         raise FuseKitError(f"Hosted worker dispatch returned HTTP {status}.")
+    receipt = _verified_worker_dispatch_receipt(
+        raw_receipt,
+        job=job,
+        action=action,
+        dispatch_binding=_worker_dispatch_binding(settings, job, action=action),
+    )
     return {
         "schema_version": HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
         "action": action,
         "dispatched": True,
         "dispatch_url": _public_url_label(settings.worker_dispatch_url),
         "dispatch_binding": _worker_dispatch_binding(settings, job, action=action),
+        "accepted": receipt["accepted"],
+        "duplicate": receipt["duplicate"],
+        "receiver_schema_version": receipt["schema_version"],
+        "idempotency": receipt["idempotency"],
         "secret_boundary": (
-            "Dispatch receipt omits the job token, worker secret, signature, provider "
-            "tokens, and vault material."
+            "Dispatch receipt is accepted only after the worker-dispatch receiver returns "
+            "a public schema-valid, binding-matched acceptance receipt. It omits the job "
+            "token, worker secret, signature, provider tokens, and vault material."
         ),
     }
+
+
+def _verified_worker_dispatch_receipt(
+    raw_receipt: bytes,
+    *,
+    job: HostedLaunchJob,
+    action: str,
+    dispatch_binding: dict[str, str],
+) -> dict[str, object]:
+    if len(raw_receipt) > HOSTED_MAX_POST_BODY_BYTES:
+        raise FuseKitError("Hosted worker dispatch receipt is too large.")
+    try:
+        payload = json.loads(raw_receipt.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise FuseKitError("Hosted worker dispatch receipt must be JSON.") from exc
+    if not isinstance(payload, dict):
+        raise FuseKitError("Hosted worker dispatch receipt must be an object.")
+    receipt = cast(dict[str, object], payload)
+    if receipt.get("schema_version") != HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION:
+        raise FuseKitError("Hosted worker dispatch receipt schema mismatch.")
+    if receipt.get("accepted") is not True:
+        raise FuseKitError("Hosted worker dispatch was not accepted.")
+    if not isinstance(receipt.get("duplicate"), bool):
+        raise FuseKitError("Hosted worker dispatch receipt duplicate flag is invalid.")
+    if receipt.get("action") != action:
+        raise FuseKitError("Hosted worker dispatch receipt action mismatch.")
+    if receipt.get("job_id") != job.job_id:
+        raise FuseKitError("Hosted worker dispatch receipt job mismatch.")
+    if receipt.get("dispatch_binding") != dispatch_binding:
+        raise FuseKitError("Hosted worker dispatch receipt binding mismatch.")
+    idempotency = receipt.get("idempotency")
+    if not isinstance(idempotency, dict):
+        raise FuseKitError("Hosted worker dispatch receipt idempotency proof missing.")
+    if idempotency.get("mode") not in HOSTED_WORKER_DISPATCH_IDEMPOTENCY_MODES:
+        raise FuseKitError("Hosted worker dispatch receipt idempotency mode is invalid.")
+    if not isinstance(idempotency.get("durable"), bool):
+        raise FuseKitError("Hosted worker dispatch receipt idempotency durability is invalid.")
+    if idempotency.get("duplicate") != receipt["duplicate"]:
+        raise FuseKitError("Hosted worker dispatch receipt idempotency duplicate mismatch.")
+    if not isinstance(idempotency.get("scope"), str) or not idempotency["scope"]:
+        raise FuseKitError("Hosted worker dispatch receipt idempotency scope is invalid.")
+    if not isinstance(idempotency.get("proof"), str) or not idempotency["proof"]:
+        raise FuseKitError("Hosted worker dispatch receipt idempotency proof is invalid.")
+    _assert_public_server_payload(receipt, "Hosted worker dispatch receipt")
+    return receipt
 
 
 def _worker_dispatch_binding(

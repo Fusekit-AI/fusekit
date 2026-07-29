@@ -7,10 +7,10 @@ import json
 import re
 import urllib.request
 import zipfile
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from cryptography.hazmat.primitives import serialization
@@ -65,6 +65,7 @@ STATE_SECRET = "hosted-state-secret"
 WORKER_SECRET = "hosted-worker-secret"
 VERCEL_COMMIT_SHA = "0123456789abcdef0123456789abcdef01234567"
 MANAGED_PRICE_LABEL = "$49 one-time managed FuseKit run"
+DISPATCH_ACCEPTANCE = {"__fusekit_test_dispatch_acceptance__": True}
 
 
 def _vercel_provenance_kwargs() -> dict[str, str]:
@@ -179,14 +180,19 @@ class FakeResponse:
     def __exit__(self, *_exc: object) -> None:
         return None
 
-    def read(self) -> bytes:
+    def read(self, size: int = -1) -> bytes:
         if isinstance(self._payload, bytes):
-            return self._payload
-        return json.dumps(self._payload).encode("utf-8")
+            raw = self._payload
+        else:
+            raw = json.dumps(self._payload).encode("utf-8")
+        return raw if size is None or size < 0 else raw[:size]
+
+
+FakeResponsePayload = dict[str, object] | bytes | Callable[[dict[str, Any]], dict[str, object]]
 
 
 class SequenceOpener:
-    def __init__(self, payloads: list[dict[str, object] | bytes]) -> None:
+    def __init__(self, payloads: list[FakeResponsePayload]) -> None:
         self.payloads = payloads
         self.requests: list[urllib.request.Request] = []
         self.bodies: list[dict[str, Any]] = []
@@ -200,7 +206,60 @@ class SequenceOpener:
         self.requests.append(request)
         self.bodies.append(json.loads((request.data or b"{}").decode("utf-8")))
         assert timeout in {30.0, 90.0}
-        return FakeResponse(self.payloads.pop(0))
+        payload = self.payloads.pop(0)
+        if payload == DISPATCH_ACCEPTANCE:
+            payload = _dispatch_acceptance_response(self.bodies[-1])
+        if callable(payload):
+            payload = payload(self.bodies[-1])
+        return FakeResponse(payload)
+
+
+def _dispatch_acceptance_response(request_body: dict[str, Any]) -> dict[str, object]:
+    return {
+        "schema_version": "fusekit.hosted-worker-dispatch-receipt.v1",
+        "accepted": True,
+        "duplicate": False,
+        "action": request_body["action"],
+        "job_id": request_body["job_id"],
+        "dispatch_binding": request_body["dispatch_binding"],
+        "worker_id": "hosted-worker-dispatch",
+        "worker_command": [
+            "<fusekit-hosted-worker>",
+            "--origin",
+            request_body["origin"],
+            "--job-id",
+            request_body["job_id"],
+            "--action",
+            request_body["action"],
+            "--worker-id",
+            "hosted-worker-dispatch",
+        ],
+        "spawned": {"pid": 4242},
+        "idempotency": {
+            "mode": "dispatch-state-dir",
+            "durable": True,
+            "scope": "worker deployment",
+            "duplicate": False,
+            "proof": (
+                "non-secret worker dispatch marker recorded in the configured state "
+                "directory before worker spawn."
+            ),
+        },
+        "secret_boundary": (
+            "Dispatch receipts omit job tokens, worker secrets, HMAC signatures, provider "
+            "credentials, GitHub installation tokens, and vault material."
+        ),
+    }
+
+
+def _dispatch_acceptance_without_idempotency_proof(
+    request_body: dict[str, Any],
+) -> dict[str, object]:
+    receipt = _dispatch_acceptance_response(request_body)
+    idempotency = dict(cast(dict[str, object], receipt["idempotency"]))
+    idempotency.pop("proof")
+    receipt["idempotency"] = idempotency
+    return receipt
 
 
 class FormSequenceOpener:
@@ -246,7 +305,7 @@ def _settings_with_github(opener: SequenceOpener) -> HostedSettings:
         worker_secret=WORKER_SECRET,
         worker_dispatch_url="https://worker.snowmanai.org/dispatch",
         github_opener=opener,
-        worker_dispatch_opener=SequenceOpener([{} for _ in range(8)]),
+        worker_dispatch_opener=SequenceOpener([DISPATCH_ACCEPTANCE for _ in range(8)]),
         managed_runs_enabled=True,
         stripe_secret_key="sk_live_redacted",
         stripe_price_id="price_managed_run",
@@ -2133,7 +2192,7 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
             _github_zip(),
         ]
     )
-    dispatch_opener = SequenceOpener([{}])
+    dispatch_opener = SequenceOpener([DISPATCH_ACCEPTANCE])
     stripe_opener = FormSequenceOpener(
         [
             {
@@ -2535,7 +2594,7 @@ def test_hosted_managed_payment_dispatch_uses_job_price_binding_after_rotation()
             _github_zip(),
         ]
     )
-    dispatch_opener = SequenceOpener([{}])
+    dispatch_opener = SequenceOpener([DISPATCH_ACCEPTANCE])
     stripe_opener = FormSequenceOpener(
         [
             {
@@ -2677,7 +2736,7 @@ def test_hosted_managed_lane_requires_payment_before_rollback_or_detonation_disp
             _github_zip(),
         ]
     )
-    dispatch_opener = SequenceOpener([{}, {}])
+    dispatch_opener = SequenceOpener([DISPATCH_ACCEPTANCE, DISPATCH_ACCEPTANCE])
     settings = HostedSettings(
         public_origin="https://fusekit.snowmanai.org",
         github_app_id="12345",
@@ -3045,7 +3104,7 @@ def test_hosted_byo_oci_lane_starts_without_managed_worker_dispatch() -> None:
             _github_zip(),
         ]
     )
-    dispatch_opener = SequenceOpener([{}])
+    dispatch_opener = SequenceOpener([DISPATCH_ACCEPTANCE])
     settings = HostedSettings(
         public_origin="https://fusekit.snowmanai.org",
         github_app_id="12345",
@@ -3814,7 +3873,7 @@ def test_hosted_job_start_dispatches_signed_worker_envelope_when_configured() ->
             _github_zip(),
         ]
     )
-    dispatch_opener = SequenceOpener([{}])
+    dispatch_opener = SequenceOpener([DISPATCH_ACCEPTANCE])
     config = GitHubAppConfig(
         app_id="12345",
         app_slug="fusekit-launcher",
@@ -3877,9 +3936,23 @@ def test_hosted_job_start_dispatches_signed_worker_envelope_when_configured() ->
         "dispatch_binding": expected_binding,
         "dispatched": True,
         "dispatch_url": "https://worker.snowmanai.org/dispatch",
+        "accepted": True,
+        "duplicate": False,
+        "receiver_schema_version": "fusekit.hosted-worker-dispatch-receipt.v1",
+        "idempotency": {
+            "mode": "dispatch-state-dir",
+            "durable": True,
+            "scope": "worker deployment",
+            "duplicate": False,
+            "proof": (
+                "non-secret worker dispatch marker recorded in the configured state "
+                "directory before worker spawn."
+            ),
+        },
         "secret_boundary": (
-            "Dispatch receipt omits the job token, worker secret, signature, provider "
-            "tokens, and vault material."
+            "Dispatch receipt is accepted only after the worker-dispatch receiver returns "
+            "a public schema-valid, binding-matched acceptance receipt. It omits the job "
+            "token, worker secret, signature, provider tokens, and vault material."
         ),
     }
     assert dispatch_body["schema_version"] == "fusekit.hosted-worker-dispatch.v1"
@@ -3911,6 +3984,78 @@ def test_hosted_job_start_dispatches_signed_worker_envelope_when_configured() ->
     assert "PRIVATE KEY" not in serialized
 
 
+def test_hosted_job_start_rejects_incomplete_worker_dispatch_acceptance_receipt() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    github_opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    dispatch_opener = SequenceOpener([_dispatch_acceptance_without_idempotency_proof])
+    config = GitHubAppConfig(
+        app_id="12345",
+        app_slug="fusekit-launcher",
+        private_key_pem=_private_key_pem(),
+    )
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id=config.app_id,
+        github_app_slug=config.app_slug,
+        github_private_key_pem=config.private_key_pem,
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        github_opener=github_opener,
+        worker_dispatch_opener=dispatch_opener,
+        managed_runs_enabled=True,
+        stripe_secret_key="sk_live_redacted",
+        stripe_price_id="price_managed_run",
+        managed_run_price_label=MANAGED_PRICE_LABEL,
+        **_vercel_provenance_kwargs(),
+    )
+
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=f"installation_id=42&repo=example/one&state={state}",
+        settings=settings,
+    )
+    assert status == "200 OK"
+    text = body.decode("utf-8")
+    job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    text = _paid_control_room_text(settings, job_id)
+    control = _control_for_action(text, "start")
+    job_token = _match(text, r"job=([A-Za-z0-9_.-]+)")
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/start",
+        method="POST",
+        query_string=f"job={job_token}",
+        form_body={"control": control},
+        settings=settings,
+    )
+
+    response = json.loads(body.decode("utf-8"))
+    serialized = json.dumps(response) + json.dumps(dispatch_opener.bodies[0])
+    assert status == "502 Bad Gateway"
+    assert response == {"error": "worker_dispatch_failed"}
+    assert len(dispatch_opener.requests) == 1
+    assert WORKER_SECRET not in serialized
+    assert "ghs_fake" not in serialized
+    assert "PRIVATE KEY" not in serialized
+
+
 def test_hosted_job_actions_reject_duplicate_start_without_second_dispatch() -> None:
     state = create_hosted_state_token(
         STATE_SECRET,
@@ -3930,7 +4075,7 @@ def test_hosted_job_actions_reject_duplicate_start_without_second_dispatch() -> 
             _github_zip(),
         ]
     )
-    dispatch_opener = SequenceOpener([{}, {}])
+    dispatch_opener = SequenceOpener([DISPATCH_ACCEPTANCE, DISPATCH_ACCEPTANCE])
     config = GitHubAppConfig(
         app_id="12345",
         app_slug="fusekit-launcher",
