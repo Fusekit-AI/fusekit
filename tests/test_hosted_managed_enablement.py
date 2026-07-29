@@ -43,6 +43,8 @@ def test_managed_enablement_report_accepts_complete_redacted_proof() -> None:
     assert report["blockers"] == []
     assert report["proof_summary"]["job_store_ready"] is True
     assert report["proof_summary"]["live_checkout_ready"] is True
+    assert report["proof_summary"]["live_checkout_bound_to_current_deployment"] is True
+    assert report["enablement_contract"]["requires_current_deployment_commit_binding"] is True
     assert "sk_live" not in serialized
     assert "whsec" not in serialized
     assert "card_number" not in serialized.lower()
@@ -67,6 +69,48 @@ def test_managed_enablement_report_requires_live_checkout_and_job_store_proof() 
     assert report["ready_to_enable"] is False
     assert "hosted_job_store_not_ready" in report["blockers"]
     assert "live_checkout_worker_dispatch_acceptance_not_true" in report["blockers"]
+
+
+def test_managed_enablement_report_rejects_stale_live_checkout_commit() -> None:
+    live_checkout = _live_checkout_proof()
+    live_checkout["expected_commit_sha"] = "0" * 40
+
+    report = build_hosted_managed_enablement_report(
+        runtime_secret_verify=_runtime_secret_verify_report(),
+        hosted_verify=_hosted_verify_report(),
+        stripe_price_verify=_stripe_price_verify_report(),
+        stripe_webhook_verify=_stripe_webhook_verify_report(),
+        hosted_readiness=_hosted_readiness_report(),
+        live_checkout_proof=live_checkout,
+    )
+
+    assert report["ready_to_enable"] is False
+    assert report["proof_summary"]["live_checkout_bound_to_current_deployment"] is False
+    assert "live_checkout_expected_commit_sha_mismatch" in report["blockers"]
+
+
+def test_managed_enablement_report_requires_hosted_expected_commit_proof() -> None:
+    hosted_verify = _hosted_verify_report()
+    checks = hosted_verify["checks"]
+    assert isinstance(checks, list)
+    hosted_verify["checks"] = [
+        check
+        for check in checks
+        if isinstance(check, dict) and check.get("id") != "hosted.expected_commit"
+    ]
+
+    report = build_hosted_managed_enablement_report(
+        runtime_secret_verify=_runtime_secret_verify_report(),
+        hosted_verify=hosted_verify,
+        stripe_price_verify=_stripe_price_verify_report(),
+        stripe_webhook_verify=_stripe_webhook_verify_report(),
+        hosted_readiness=_hosted_readiness_report(),
+        live_checkout_proof=_live_checkout_proof(),
+    )
+
+    assert report["ready_to_enable"] is False
+    assert report["proof_summary"]["live_checkout_bound_to_current_deployment"] is False
+    assert "hosted.expected_commit_not_ok" in report["blockers"]
 
 
 def test_managed_enablement_write_requires_confirmation(tmp_path: Path) -> None:
@@ -310,6 +354,12 @@ def _hosted_verify_report() -> dict[str, object]:
             {"id": "hosted.health", "status": "ok"},
             {"id": "hosted.readiness", "status": "ok"},
             {"id": "hosted.deployment", "status": "ok"},
+            {
+                "id": "hosted.expected_commit",
+                "status": "ok",
+                "expected_commit_sha": COMMIT_SHA,
+                "actual_commit_sha": COMMIT_SHA,
+            },
             {"id": "hosted.github_intake", "status": "ok"},
             {"id": "hosted.stripe_webhook_fail_closed", "status": "ok"},
             {"id": "worker_dispatch.health", "status": "ok"},

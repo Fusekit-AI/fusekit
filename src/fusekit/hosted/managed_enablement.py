@@ -56,7 +56,7 @@ def build_hosted_managed_enablement_report(
     blockers.extend(_stripe_price_verify_blockers(stripe_price_verify))
     blockers.extend(_stripe_webhook_verify_blockers(stripe_webhook_verify))
     blockers.extend(_hosted_readiness_blockers(hosted_readiness))
-    blockers.extend(_live_checkout_proof_blockers(live_checkout_proof))
+    blockers.extend(_live_checkout_proof_blockers(live_checkout_proof, hosted_verify))
     blockers = _unique(blockers)
     report: dict[str, object] = {
         "schema_version": HOSTED_MANAGED_ENABLEMENT_SCHEMA_VERSION,
@@ -71,6 +71,9 @@ def build_hosted_managed_enablement_report(
             "stripe_webhook_ready": stripe_webhook_verify.get("ready") is True,
             "job_store_ready": _job_store_ready(hosted_readiness),
             "live_checkout_ready": live_checkout_proof.get("ready") is True,
+            "live_checkout_bound_to_current_deployment": (
+                _live_checkout_bound_to_hosted_commit(live_checkout_proof, hosted_verify)
+            ),
             "managed_runs_currently_disabled": _managed_runs_disabled(hosted_readiness),
             "byo_lane_launchable": _byo_lane_launchable(hosted_readiness),
         },
@@ -82,6 +85,7 @@ def build_hosted_managed_enablement_report(
             "requires_worker_dispatch_acceptance": True,
             "requires_durable_public_job_store": True,
             "requires_byo_lane_still_launchable": True,
+            "requires_current_deployment_commit_binding": True,
         },
         "next_actions": _next_actions(blockers),
         "secret_boundary": HOSTED_MANAGED_ENABLEMENT_SECRET_BOUNDARY,
@@ -234,6 +238,7 @@ def _hosted_verify_blockers(report: Mapping[str, Any]) -> list[str]:
         "hosted.deployment",
         "hosted.github_intake",
         "hosted.stripe_webhook_fail_closed",
+        "hosted.expected_commit",
         "worker_dispatch.health",
         "worker_dispatch.readiness",
     ):
@@ -312,7 +317,9 @@ def _hosted_readiness_blockers(report: Mapping[str, Any]) -> list[str]:
     return blockers
 
 
-def _live_checkout_proof_blockers(report: Mapping[str, Any]) -> list[str]:
+def _live_checkout_proof_blockers(
+    report: Mapping[str, Any], hosted_verify: Mapping[str, Any]
+) -> list[str]:
     blockers: list[str] = []
     if report.get("schema_version") != HOSTED_MANAGED_LIVE_CHECKOUT_PROOF_SCHEMA_VERSION:
         blockers.append("live_checkout_proof_schema_mismatch")
@@ -330,6 +337,12 @@ def _live_checkout_proof_blockers(report: Mapping[str, Any]) -> list[str]:
             blockers.append(f"live_checkout_{key}_not_true")
     if report.get("payment_status") != "paid":
         blockers.append("live_checkout_payment_status_not_paid")
+    proof_commit = _valid_git_sha(str(report.get("expected_commit_sha") or ""))
+    hosted_commit = _hosted_verified_commit(hosted_verify)
+    if not proof_commit:
+        blockers.append("live_checkout_expected_commit_sha_missing")
+    elif hosted_commit and proof_commit != hosted_commit:
+        blockers.append("live_checkout_expected_commit_sha_mismatch")
     boundary = report.get("secret_boundary")
     if (
         not isinstance(boundary, str)
@@ -340,6 +353,29 @@ def _live_checkout_proof_blockers(report: Mapping[str, Any]) -> list[str]:
     ):
         blockers.append("live_checkout_secret_boundary_missing")
     return blockers
+
+
+def _live_checkout_bound_to_hosted_commit(
+    live_checkout_proof: Mapping[str, Any], hosted_verify: Mapping[str, Any]
+) -> bool:
+    proof_commit = _valid_git_sha(str(live_checkout_proof.get("expected_commit_sha") or ""))
+    hosted_commit = _hosted_verified_commit(hosted_verify)
+    return bool(proof_commit and hosted_commit and proof_commit == hosted_commit)
+
+
+def _hosted_verified_commit(report: Mapping[str, Any]) -> str:
+    check = _mapping(_checks_by_id(report.get("checks")).get("hosted.expected_commit"))
+    if check.get("status") != "ok":
+        return ""
+    expected = _valid_git_sha(str(check.get("expected_commit_sha") or ""))
+    actual = _valid_git_sha(str(check.get("actual_commit_sha") or ""))
+    if not expected or expected != actual:
+        return ""
+    return actual
+
+
+def _valid_git_sha(value: str) -> str:
+    return value if len(value) == 40 and all(char in "0123456789abcdef" for char in value) else ""
 
 
 def _job_store_ready(report: Mapping[str, Any]) -> bool:
