@@ -2361,6 +2361,16 @@ def _hosted_stripe_webhook_response(
         event_type=event_type,
         job=updated,
     )
+    store = _hosted_job_store(settings)
+    if store is not None:
+        try:
+            store.put_stripe_webhook_receipt(job_id=updated.job_id, receipt=payload)
+        except FuseKitError:
+            return _response(
+                start_response,
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                _hosted_payment_error_payload("hosted_job_store_unavailable"),
+            )
     return _response(start_response, HTTPStatus.OK, payload)
 
 

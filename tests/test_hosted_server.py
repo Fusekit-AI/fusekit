@@ -3109,9 +3109,10 @@ def test_hosted_stripe_webhook_applies_bound_payment_without_dispatch() -> None:
 
 
 def test_hosted_stripe_webhook_applies_bound_payment_after_restart(tmp_path: Path) -> None:
+    job_store_dir = tmp_path / "hosted-jobs"
     settings, job_id, dispatch_opener = _managed_checkout_pending_fixture(
         stripe_session_id="cs_test_webhook_restart",
-        job_store_dir=str(tmp_path / "hosted-jobs"),
+        job_store_dir=str(job_store_dir),
     )
     job = settings.hosted_jobs[job_id]
     event = _stripe_checkout_completed_event(
@@ -3141,6 +3142,19 @@ def test_hosted_stripe_webhook_applies_bound_payment_after_restart(tmp_path: Pat
     assert "whsec" not in serialized
     assert "sk_live" not in serialized
     assert "client_secret" not in serialized
+
+    artifact_path = job_store_dir / f"{job_id}.stripe-webhook-receipt.json"
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    artifact_text = json.dumps(artifact)
+    assert artifact["schema_version"] == "fusekit.hosted-job-store-stripe-webhook-receipt.v1"
+    assert artifact["job_id"] == job_id
+    assert artifact["receipt"]["schema_version"] == "fusekit.hosted-stripe-webhook.v1"
+    assert artifact["receipt"]["job_id"] == job_id
+    assert artifact["receipt"]["payment_applied"] is True
+    assert artifact["receipt"]["worker_dispatch_sent"] is False
+    assert "whsec" not in artifact_text
+    assert "sk_live" not in artifact_text
+    assert "payment_method" not in artifact_text
 
 
 def test_hosted_stripe_webhook_rejects_unsigned_probe_before_enablement() -> None:

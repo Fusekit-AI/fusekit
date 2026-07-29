@@ -620,7 +620,7 @@ the runtime secret file by hand:
 
 ```zsh
 sudo fusekit-hosted-live-checkout-proof \
-  --webhook-receipt /var/lib/fusekit/posture/stripe-webhook-applied.json \
+  --webhook-receipt /var/lib/fusekit/hosted-jobs/<job-id>.stripe-webhook-receipt.json \
   --start-action-response /var/lib/fusekit/posture/managed-start-response.json \
   --expected-commit-sha "$(git rev-parse HEAD)" \
   > /var/lib/fusekit/posture/live-checkout-proof.json
@@ -634,6 +634,12 @@ sudo fusekit-hosted-managed-enable \
   --hosted-readiness-report /var/lib/fusekit/posture/hosted-readiness.json \
   --live-checkout-proof /var/lib/fusekit/posture/live-checkout-proof.json
 ```
+
+The webhook receipt path above is written by the hosted Stripe webhook after a
+valid signed `checkout.session.completed` event is bound to the managed job. It
+is a redacted, hash-wrapped public proof artifact; it does not contain Stripe
+keys, webhook signing secrets, raw webhook payloads, card data, payment method
+ids, provider credentials, worker secrets, or vault material.
 
 That dry run must report `ready_to_enable: true`. Only then rerun with
 `--execute --confirm-managed-enablement`; the helper writes only

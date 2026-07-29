@@ -19,10 +19,20 @@ from fusekit.security.redaction import (
 )
 
 HOSTED_JOB_STORE_SCHEMA_VERSION = "fusekit.hosted-job-store.v1"
+HOSTED_JOB_STORE_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION = (
+    "fusekit.hosted-job-store-stripe-webhook-receipt.v1"
+)
+HOSTED_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-stripe-webhook.v1"
 HOSTED_JOB_STORE_SECRET_BOUNDARY = (
     "Hosted job snapshots contain public job state, lane contracts, public payment "
     "receipt labels, and hashes only. They must not contain Stripe keys, GitHub "
     "installation tokens, provider credentials, worker secrets, or vault material."
+)
+HOSTED_JOB_STORE_WEBHOOK_RECEIPT_BOUNDARY = (
+    "Hosted Stripe webhook proof artifacts contain only the redacted webhook receipt, "
+    "public job id, receipt hash, and schema labels. They must not contain Stripe keys, "
+    "webhook signing secrets, raw payloads, card data, payment method ids, provider "
+    "credentials, worker secrets, or vault material."
 )
 
 _HOSTED_JOB_ID_RE = re.compile(r"\Ahosted-[A-Za-z0-9_-]{8,160}\Z")
@@ -69,39 +79,47 @@ class HostedJobStore:
         job_payload = job.to_dict()
         hosted_launch_job_from_dict(job_payload)
         _assert_public_job_snapshot(job_payload)
-        payload = {
+        payload: dict[str, object] = {
             "schema_version": HOSTED_JOB_STORE_SCHEMA_VERSION,
             "job_id": job.job_id,
             "job_sha256": _job_payload_hash(job_payload),
             "job": job_payload,
             "secret_boundary": HOSTED_JOB_STORE_SECRET_BOUNDARY,
         }
-        serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-        _assert_public_snapshot_text(serialized)
-        self.root.mkdir(mode=_OWNER_ONLY_DIR_MODE, parents=True, exist_ok=True)
-        os.chmod(self.root, _OWNER_ONLY_DIR_MODE)
-        target = self._job_path(job.job_id)
-        fd, tmp_name = tempfile.mkstemp(
-            prefix=f".{job.job_id}.",
-            suffix=".tmp",
-            dir=self.root,
-            text=True,
+        _write_public_payload(
+            self.root,
+            self._job_path(job.job_id),
+            payload,
+            error="Hosted job store snapshot could not be written.",
         )
-        tmp_path = Path(tmp_name)
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                handle.write(serialized)
-                handle.write("\n")
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.chmod(tmp_path, _OWNER_ONLY_FILE_MODE)
-            os.replace(tmp_path, target)
-            os.chmod(target, _OWNER_ONLY_FILE_MODE)
-        except OSError as exc:
-            try:
-                tmp_path.unlink(missing_ok=True)
-            finally:
-                raise FuseKitError("Hosted job store snapshot could not be written.") from exc
+
+    def put_stripe_webhook_receipt(
+        self,
+        *,
+        job_id: str,
+        receipt: dict[str, object],
+    ) -> Path:
+        """Atomically write the redacted Stripe webhook receipt for live proof."""
+
+        _validated_job_id(job_id)
+        _validate_stripe_webhook_receipt(job_id=job_id, receipt=receipt)
+        _assert_public_snapshot_text(json.dumps(receipt, sort_keys=True))
+        payload = {
+            "schema_version": HOSTED_JOB_STORE_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION,
+            "job_id": job_id,
+            "receipt_schema_version": receipt.get("schema_version"),
+            "receipt_sha256": _job_payload_hash(receipt),
+            "receipt": receipt,
+            "secret_boundary": HOSTED_JOB_STORE_WEBHOOK_RECEIPT_BOUNDARY,
+        }
+        target = self.stripe_webhook_receipt_path(job_id)
+        _write_public_payload(
+            self.root,
+            target,
+            payload,
+            error="Hosted Stripe webhook receipt could not be written.",
+        )
+        return target
 
     def status(self) -> dict[str, object]:
         """Return public readiness for the configured job store."""
@@ -130,6 +148,9 @@ class HostedJobStore:
 
     def _job_path(self, job_id: str) -> Path:
         return self.root / f"{_validated_job_id(job_id)}.json"
+
+    def stripe_webhook_receipt_path(self, job_id: str) -> Path:
+        return self.root / f"{_validated_job_id(job_id)}.stripe-webhook-receipt.json"
 
 
 def hosted_job_store_status(root: str) -> dict[str, object]:
@@ -173,3 +194,62 @@ def _assert_public_job_snapshot(payload: dict[str, Any]) -> None:
 def _assert_public_snapshot_text(text: str) -> None:
     if contains_durable_secret_text(text) or contains_private_marker_text(text):
         raise FuseKitError("Hosted job store snapshot contains private-looking text.")
+
+
+def _validate_stripe_webhook_receipt(
+    *,
+    job_id: str,
+    receipt: dict[str, object],
+) -> None:
+    if receipt.get("schema_version") != HOSTED_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION:
+        raise FuseKitError("Hosted Stripe webhook receipt schema is unsupported.")
+    if receipt.get("action") != "payment_webhook":
+        raise FuseKitError("Hosted Stripe webhook receipt action is invalid.")
+    if receipt.get("event_type") != "checkout.session.completed":
+        raise FuseKitError("Hosted Stripe webhook receipt event type is invalid.")
+    if receipt.get("accepted") is not True:
+        raise FuseKitError("Hosted Stripe webhook receipt was not accepted.")
+    if receipt.get("payment_applied") is not True:
+        raise FuseKitError("Hosted Stripe webhook receipt did not apply payment.")
+    if receipt.get("job_id") != job_id:
+        raise FuseKitError("Hosted Stripe webhook receipt job id mismatch.")
+    if receipt.get("payment_status") != "paid":
+        raise FuseKitError("Hosted Stripe webhook receipt payment status is invalid.")
+    if receipt.get("managed_worker_dispatch_unlocked") is not True:
+        raise FuseKitError("Hosted Stripe webhook receipt did not unlock dispatch.")
+    if receipt.get("worker_dispatch_sent") is not False:
+        raise FuseKitError("Hosted Stripe webhook receipt must not dispatch workers.")
+
+
+def _write_public_payload(
+    root: Path,
+    target: Path,
+    payload: dict[str, object],
+    *,
+    error: str,
+) -> None:
+    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    _assert_public_snapshot_text(serialized)
+    tmp_path: Path | None = None
+    try:
+        root.mkdir(mode=_OWNER_ONLY_DIR_MODE, parents=True, exist_ok=True)
+        os.chmod(root, _OWNER_ONLY_DIR_MODE)
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=f".{target.stem}.",
+            suffix=".tmp",
+            dir=root,
+            text=True,
+        )
+        tmp_path = Path(tmp_name)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(serialized)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(tmp_path, _OWNER_ONLY_FILE_MODE)
+        os.replace(tmp_path, target)
+        os.chmod(target, _OWNER_ONLY_FILE_MODE)
+    except OSError as exc:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
+        raise FuseKitError(error) from exc

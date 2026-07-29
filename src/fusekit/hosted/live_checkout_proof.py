@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from fusekit.errors import FuseKitError
+from fusekit.hosted.job_store import HOSTED_JOB_STORE_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION
 from fusekit.hosted.lanes import MANAGED_FUSEKIT_RUN_LANE
 from fusekit.hosted.managed_enablement import (
     HOSTED_MANAGED_ENABLEMENT_SECRET_BOUNDARY,
@@ -110,7 +111,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         proof = build_hosted_managed_live_checkout_proof(
-            webhook_receipt=_read_json(args.webhook_receipt),
+            webhook_receipt=_read_webhook_receipt_json(args.webhook_receipt),
             start_action_response=_read_json(args.start_action_response),
             expected_commit_sha=args.expected_commit_sha,
         )
@@ -261,6 +262,19 @@ def _read_json(path: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise FuseKitError("live_checkout_proof_input_must_be_object")
     return value
+
+
+def _read_webhook_receipt_json(path: str) -> Mapping[str, Any]:
+    payload = _read_json(path)
+    if (
+        payload.get("schema_version")
+        == HOSTED_JOB_STORE_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION
+    ):
+        receipt = payload.get("receipt")
+        if not isinstance(receipt, Mapping):
+            raise FuseKitError("live_checkout_proof_webhook_receipt_missing")
+        return receipt
+    return payload
 
 
 def _unique(values: Sequence[str]) -> list[str]:
