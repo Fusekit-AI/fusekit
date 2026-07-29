@@ -64,6 +64,11 @@ def test_oci_systemd_units_match_host_posture_hardening_contract() -> None:
         assert unit["ReadWritePaths"] == [
             "/var/lib/fusekit /var/log/fusekit /run/fusekit"
         ]
+        if unit_name == "fusekit-hosted.service":
+            assert (
+                "FUSEKIT_HOSTED_JOB_STORE_DIR=/var/lib/fusekit/hosted-jobs"
+                in unit["Environment"]
+            )
         writable = unit["ReadWritePaths"][0].split()
         assert "/" not in writable
         assert "/etc" not in writable
@@ -78,6 +83,7 @@ def test_oci_systemd_units_bind_only_to_loopback_ports() -> None:
     assert hosted["Environment"] == [
         "FUSEKIT_HOSTED_BIND=127.0.0.1",
         "FUSEKIT_HOSTED_PORT=8080",
+        "FUSEKIT_HOSTED_JOB_STORE_DIR=/var/lib/fusekit/hosted-jobs",
     ]
     assert "FUSEKIT_HOSTED_BIND=127.0.0.1" in (
         SYSTEMD_DIR / "fusekit-hosted.service"

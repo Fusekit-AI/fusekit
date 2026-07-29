@@ -66,6 +66,7 @@ from fusekit.hosted.job import (
     verify_hosted_payment_return_token,
     with_hosted_job_payment_receipt,
 )
+from fusekit.hosted.job_store import HostedJobStore, hosted_job_store_status
 from fusekit.hosted.lanes import (
     BYO_OCI_LANE,
     MANAGED_FUSEKIT_RUN_LANE,
@@ -635,6 +636,7 @@ class HostedSettings:
     stripe_webhook_secret: str = ""
     managed_run_price_label: str = ""
     stripe_test_mode_allowed: bool = False
+    hosted_job_store_dir: str = ""
     hosted_jobs: MutableMapping[str, HostedLaunchJob] = field(default_factory=dict)
 
     @classmethod
@@ -670,6 +672,7 @@ class HostedSettings:
             stripe_webhook_secret=os.environ.get("FUSEKIT_STRIPE_WEBHOOK_SECRET", ""),
             managed_run_price_label=os.environ.get("FUSEKIT_MANAGED_RUN_PRICE_LABEL", ""),
             stripe_test_mode_allowed=_env_flag("FUSEKIT_STRIPE_TEST_MODE_ALLOWED"),
+            hosted_job_store_dir=os.environ.get("FUSEKIT_HOSTED_JOB_STORE_DIR", ""),
         )
 
     def github_config(self) -> GitHubAppConfig:
@@ -718,6 +721,7 @@ class HostedSettings:
             "github_app_slug": _github_app_slug_label(self.github_app_slug),
             "configured": configured,
             "payment": self.payment_config().public_dict(),
+            "job_store": hosted_job_store_status(self.hosted_job_store_dir),
             "lane_readiness": self.lane_readiness(),
             "missing": list(missing),
             "invalid": list(invalid),
@@ -750,6 +754,7 @@ class HostedSettings:
             "trust_contract": dict(HOSTED_PUBLIC_TRUST_CONTRACT),
             "launch_lanes": hosted_launch_lane_contract(),
             "payment": self.payment_config().public_dict(),
+            "job_store": hosted_job_store_status(self.hosted_job_store_dir),
             "lane_readiness": self.lane_readiness(),
             "capability_vault_boundary": dict(HOSTED_CAPABILITY_VAULT_BOUNDARY),
             "provider_permissions": dict(HOSTED_PROVIDER_PERMISSION_COPY),
@@ -1769,6 +1774,32 @@ def _github_plan_response(
     return _html_response(start_response, body)
 
 
+def _hosted_job_store(settings: HostedSettings) -> HostedJobStore | None:
+    if not settings.hosted_job_store_dir.strip():
+        return None
+    return HostedJobStore(settings.hosted_job_store_dir)
+
+
+def _lookup_hosted_job(settings: HostedSettings, job_id: str) -> HostedLaunchJob | None:
+    job = settings.hosted_jobs.get(job_id)
+    if job is not None:
+        return job
+    store = _hosted_job_store(settings)
+    if store is None:
+        return None
+    loaded = store.get(job_id)
+    if loaded is not None:
+        settings.hosted_jobs[loaded.job_id] = loaded
+    return loaded
+
+
+def _remember_hosted_job(settings: HostedSettings, job: HostedLaunchJob) -> None:
+    settings.hosted_jobs[job.job_id] = job
+    store = _hosted_job_store(settings)
+    if store is not None:
+        store.put(job)
+
+
 def _github_control_room_response(
     settings: HostedSettings,
     environ: dict[str, object],
@@ -1852,7 +1883,14 @@ def _github_control_room_response(
         payment_price_label=settings.managed_run_price_label,
         payment_price_id_hash=_payment_public_hash(settings.stripe_price_id),
     )
-    settings.hosted_jobs[job.job_id] = job
+    try:
+        _remember_hosted_job(settings, job)
+    except FuseKitError:
+        return _response(
+            start_response,
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            {"error": "hosted_job_store_unavailable"},
+        )
     job_token = create_hosted_job_token(settings.state_secret, job)
     body = render_hosted_control_room(
         job,
@@ -1894,7 +1932,17 @@ def _hosted_job_api_response(
                 HTTPStatus.FORBIDDEN,
                 _hosted_payment_error_payload("invalid_payment"),
             )
-        job = settings.hosted_jobs.get(job_id) or payment_job
+        stored_job = _lookup_hosted_job(settings, job_id)
+        job = stored_job or payment_job
+        if stored_job is None:
+            try:
+                _remember_hosted_job(settings, job)
+            except FuseKitError:
+                return _response(
+                    start_response,
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                    _hosted_payment_error_payload("hosted_job_store_unavailable"),
+                )
         if parts[5] == "stripe-return":
             return _hosted_payment_return_response(settings, environ, start_response, job=job)
         return _hosted_payment_cancel_response(settings, start_response, job)
@@ -1904,7 +1952,17 @@ def _hosted_job_api_response(
         return _response(start_response, HTTPStatus.FORBIDDEN, {"error": "invalid_job"})
     if token_job is None:
         return _response(start_response, HTTPStatus.FORBIDDEN, {"error": "invalid_job"})
-    job = settings.hosted_jobs.get(job_id) or token_job
+    stored_job = _lookup_hosted_job(settings, job_id)
+    job = stored_job or token_job
+    if stored_job is None:
+        try:
+            _remember_hosted_job(settings, job)
+        except FuseKitError:
+            return _response(
+                start_response,
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                {"error": "hosted_job_store_unavailable"},
+            )
     if len(parts) == 4 and method == "GET" and _wants_html(environ):
         return _hosted_job_html_response(settings, start_response, job)
     if len(parts) == 4 and method == "GET":
@@ -2017,7 +2075,14 @@ def _hosted_job_action_response(
                 "user-owned OCI bootstrap exposes only redacted public job metadata."
             ),
         }
-    settings.hosted_jobs[job.job_id] = updated
+    try:
+        _remember_hosted_job(settings, updated)
+    except FuseKitError:
+        return _response(
+            start_response,
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            {"error": "hosted_job_store_unavailable"},
+        )
     if _wants_html(environ):
         return _html_response(
             start_response,
@@ -2121,7 +2186,14 @@ def _hosted_payment_checkout_response(
             _hosted_payment_error_payload("payment_checkout_url_unavailable"),
         )
     updated = with_hosted_job_payment_receipt(job, receipt)
-    settings.hosted_jobs[job.job_id] = updated
+    try:
+        _remember_hosted_job(settings, updated)
+    except FuseKitError:
+        return _response(
+            start_response,
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            _hosted_payment_error_payload("hosted_job_store_unavailable"),
+        )
     updated_token = create_hosted_job_token(settings.state_secret, updated)
     payload = updated.to_dict()
     payload["job_token"] = updated_token
@@ -2172,7 +2244,14 @@ def _hosted_payment_return_response(
             _hosted_payment_error_payload("payment_binding_mismatch"),
         )
     updated = with_hosted_job_payment_receipt(job, receipt)
-    settings.hosted_jobs[job.job_id] = updated
+    try:
+        _remember_hosted_job(settings, updated)
+    except FuseKitError:
+        return _response(
+            start_response,
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            _hosted_payment_error_payload("hosted_job_store_unavailable"),
+        )
     job_token = create_hosted_job_token(settings.state_secret, updated)
     return _html_response(
         start_response,
@@ -2249,7 +2328,7 @@ def _hosted_stripe_webhook_response(
             _hosted_payment_error_payload("invalid_webhook"),
         )
     job_id = _stripe_webhook_job_id(receipt)
-    job = settings.hosted_jobs.get(job_id)
+    job = _lookup_hosted_job(settings, job_id)
     if job is None:
         return _response(
             start_response,
@@ -2270,7 +2349,14 @@ def _hosted_stripe_webhook_response(
             _hosted_payment_error_payload("payment_binding_mismatch"),
         )
     updated = with_hosted_job_payment_receipt(job, receipt)
-    settings.hosted_jobs[job.job_id] = updated
+    try:
+        _remember_hosted_job(settings, updated)
+    except FuseKitError:
+        return _response(
+            start_response,
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            _hosted_payment_error_payload("hosted_job_store_unavailable"),
+        )
     payload = _hosted_stripe_webhook_applied_receipt(
         event_type=event_type,
         job=updated,
@@ -2578,7 +2664,14 @@ def _hosted_worker_claim_response(
         updated = claim_hosted_launch_job(job, worker_id=worker_id)
     except ValueError:
         return _response(start_response, HTTPStatus.CONFLICT, {"error": "worker_claim_rejected"})
-    settings.hosted_jobs[job.job_id] = updated
+    try:
+        _remember_hosted_job(settings, updated)
+    except FuseKitError:
+        return _response(
+            start_response,
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            {"error": "hosted_job_store_unavailable"},
+        )
     payload: dict[str, object] = {
         "job": updated.to_dict(),
         "job_token": create_hosted_job_token(settings.state_secret, updated),
@@ -2619,7 +2712,14 @@ def _hosted_worker_proof_response(
         )
     except (FuseKitError, ValueError, json.JSONDecodeError):
         return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "invalid_worker_proof"})
-    settings.hosted_jobs[job.job_id] = updated
+    try:
+        _remember_hosted_job(settings, updated)
+    except FuseKitError:
+        return _response(
+            start_response,
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            {"error": "hosted_job_store_unavailable"},
+        )
     payload: dict[str, object] = {
         "job": updated.to_dict(),
         "job_token": create_hosted_job_token(settings.state_secret, updated),

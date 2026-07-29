@@ -3108,6 +3108,41 @@ def test_hosted_stripe_webhook_applies_bound_payment_without_dispatch() -> None:
     assert len(dispatch_opener.requests) == 1
 
 
+def test_hosted_stripe_webhook_applies_bound_payment_after_restart(tmp_path: Path) -> None:
+    settings, job_id, dispatch_opener = _managed_checkout_pending_fixture(
+        stripe_session_id="cs_test_webhook_restart",
+        job_store_dir=str(tmp_path / "hosted-jobs"),
+    )
+    job = settings.hosted_jobs[job_id]
+    event = _stripe_checkout_completed_event(
+        job=job,
+        stripe_session_id="cs_test_webhook_restart",
+    )
+    raw_body, signature = _signed_stripe_webhook("whsec_redacted", event)
+    restarted_settings = replace(settings, hosted_jobs={})
+
+    status, _headers, body = _call(
+        "/api/hosted/payments/stripe-webhook",
+        method="POST",
+        raw_body=raw_body,
+        raw_content_type="application/json",
+        headers={"Stripe-Signature": signature},
+        settings=restarted_settings,
+    )
+    payload = json.loads(body.decode("utf-8"))
+    serialized = json.dumps(payload)
+
+    assert status == "200 OK"
+    assert payload["payment_applied"] is True
+    assert payload["job_id"] == job_id
+    assert restarted_settings.hosted_jobs[job_id].payment_status == "paid"
+    assert settings.hosted_jobs[job_id].payment_status == "checkout_pending"
+    assert len(dispatch_opener.requests) == 0
+    assert "whsec" not in serialized
+    assert "sk_live" not in serialized
+    assert "client_secret" not in serialized
+
+
 def test_hosted_stripe_webhook_rejects_unsigned_probe_before_enablement() -> None:
     settings = HostedSettings(
         public_origin="https://fusekit.snowmanai.org",
@@ -6007,6 +6042,7 @@ def _paid_control_room_text(settings: HostedSettings, job_id: str) -> str:
 def _managed_checkout_pending_fixture(
     *,
     stripe_session_id: str,
+    job_store_dir: str = "",
 ) -> tuple[HostedSettings, str, SequenceOpener]:
     state = create_hosted_state_token(
         STATE_SECRET,
@@ -6055,6 +6091,7 @@ def _managed_checkout_pending_fixture(
         stripe_price_id="price_managed_run",
         stripe_webhook_secret="whsec_redacted",
         managed_run_price_label=MANAGED_PRICE_LABEL,
+        hosted_job_store_dir=job_store_dir,
         **_vercel_provenance_kwargs(),
     )
     status, _headers, body = _call(
