@@ -12,6 +12,7 @@ from fusekit.hosted.billing import (
     HOSTED_PAYMENT_SCHEMA_VERSION,
     STRIPE_CHECKOUT_PROVIDER,
     HostedPaymentConfig,
+    _price_label_matches_checkout_receipt,
     create_stripe_checkout_session,
     payment_required_receipt,
     retrieve_stripe_checkout_session,
@@ -793,6 +794,48 @@ def test_create_stripe_checkout_session_rejects_creation_price_binding_mismatch(
 
 
 @pytest.mark.parametrize(
+    ("label", "amount_total", "currency"),
+    [
+        ("Launch validation: $1.00 FuseKit managed run", 100, "usd"),
+        ("Launch validation: USD 1.00 FuseKit managed run", 100, "usd"),
+        ("Launch validation: CAD $1.00 FuseKit managed run", 100, "cad"),
+    ],
+)
+def test_price_label_matches_checkout_receipt_amount_and_currency(
+    label: str,
+    amount_total: int,
+    currency: str,
+) -> None:
+    assert _price_label_matches_checkout_receipt(
+        label,
+        amount_total=amount_total,
+        currency=currency,
+    )
+
+
+@pytest.mark.parametrize(
+    ("label", "amount_total", "currency"),
+    [
+        ("Launch validation: $1.00 FuseKit managed run", 200, "usd"),
+        ("Launch validation: $1.00 FuseKit managed run", 100, "cad"),
+        ("Launch validation: CAD $1.00 FuseKit managed run", 100, "usd"),
+        ("Launch validation: USD 1.00 FuseKit managed run", True, "usd"),
+        ("Launch validation: USD 1.00 FuseKit managed run", 100, "USD"),
+    ],
+)
+def test_price_label_rejects_checkout_receipt_amount_or_currency_drift(
+    label: str,
+    amount_total: object,
+    currency: object,
+) -> None:
+    assert not _price_label_matches_checkout_receipt(
+        label,
+        amount_total=amount_total,
+        currency=currency,
+    )
+
+
+@pytest.mark.parametrize(
     "session_id",
     [
         "cs_sk_live_should_not_leave",
@@ -867,6 +910,7 @@ def test_payment_required_receipt_is_public_and_scanned() -> None:
         "max_unverified_managed_spend_cents": 0,
         "dispatch_requires_paid_checkout_session": True,
         "reuse_across_jobs_allowed": False,
+        "receipt_amount_currency_must_match_price_label": True,
     }
     assert "Payment method details stay with Stripe Checkout" in receipt["secret_boundary"]
     assert "sk_live" not in serialized

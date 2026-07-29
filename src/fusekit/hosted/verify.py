@@ -235,6 +235,7 @@ PAYMENT_COST_CONTROL_KEYS = frozenset(
         "max_unverified_managed_spend_cents",
         "dispatch_requires_paid_checkout_session",
         "reuse_across_jobs_allowed",
+        "receipt_amount_currency_must_match_price_label",
         "session_binding",
     }
 )
@@ -1912,6 +1913,8 @@ def _payment_cost_control_failures(value: object) -> list[str]:
         failures.append("payment_cost_controls_paid_checkout_required_mismatch")
     if value.get("reuse_across_jobs_allowed") is not False:
         failures.append("payment_cost_controls_reuse_policy_mismatch")
+    if value.get("receipt_amount_currency_must_match_price_label") is not True:
+        failures.append("payment_cost_controls_amount_currency_match_mismatch")
     expected_binding = ["client_reference_id", *STRIPE_CHECKOUT_METADATA_KEYS]
     if value.get("session_binding") != expected_binding:
         failures.append("payment_cost_controls_session_binding_mismatch")

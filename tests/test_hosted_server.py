@@ -1199,6 +1199,7 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
         "max_unverified_managed_spend_cents": 0,
         "dispatch_requires_paid_checkout_session": True,
         "reuse_across_jobs_allowed": False,
+        "receipt_amount_currency_must_match_price_label": True,
         "session_binding": [
             "client_reference_id",
             "job_id",
@@ -3338,6 +3339,46 @@ def test_hosted_stripe_webhook_applies_bound_payment_without_dispatch() -> None:
     assert started["payment"]["status"] == "paid"
     assert started["worker_dispatch"]["dispatched"] is True
     assert len(dispatch_opener.requests) == 1
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("amount_total", 100),
+        ("currency", "cad"),
+    ],
+)
+def test_hosted_stripe_webhook_rejects_amount_or_currency_drift(
+    field: str,
+    value: object,
+) -> None:
+    settings, job_id, dispatch_opener = _managed_checkout_pending_fixture(
+        stripe_session_id="cs_test_webhook_cost_drift"
+    )
+    job = settings.hosted_jobs[job_id]
+    event = _stripe_checkout_completed_event(
+        job=job,
+        stripe_session_id="cs_test_webhook_cost_drift",
+    )
+    checkout_session = event["data"]["object"]
+    assert isinstance(checkout_session, dict)
+    checkout_session[field] = value
+    raw_body, signature = _signed_stripe_webhook("whsec_redacted", event)
+
+    status, _headers, body = _call(
+        "/api/hosted/payments/stripe-webhook",
+        method="POST",
+        raw_body=raw_body,
+        raw_content_type="application/json",
+        headers={"Stripe-Signature": signature},
+        settings=settings,
+    )
+
+    assert status == "403 Forbidden"
+    _assert_public_payment_error(body, "payment_binding_mismatch")
+    assert settings.hosted_jobs[job_id].payment_status == "checkout_pending"
+    assert len(dispatch_opener.requests) == 0
+    assert "sk_live" not in body.decode("utf-8")
 
 
 def test_hosted_stripe_webhook_applies_bound_payment_after_restart(tmp_path: Path) -> None:

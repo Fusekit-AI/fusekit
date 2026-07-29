@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import decimal
 import hashlib
 import hmac
 import json
+import re
 import time
 import urllib.parse
 import urllib.request
@@ -153,6 +155,7 @@ class HostedPaymentConfig:
                 "max_unverified_managed_spend_cents": 0,
                 "dispatch_requires_paid_checkout_session": True,
                 "reuse_across_jobs_allowed": False,
+                "receipt_amount_currency_must_match_price_label": True,
                 "session_binding": [
                     "client_reference_id",
                     *STRIPE_CHECKOUT_METADATA_KEYS,
@@ -401,6 +404,7 @@ def payment_required_receipt(*, lane: str, price_label: str = "") -> dict[str, o
             "max_unverified_managed_spend_cents": 0,
             "dispatch_requires_paid_checkout_session": True,
             "reuse_across_jobs_allowed": False,
+            "receipt_amount_currency_must_match_price_label": True,
         },
         "secret_boundary": (
             "Managed worker dispatch is blocked until server-side payment authorization "
@@ -617,11 +621,94 @@ def _valid_price_label(value: str) -> bool:
 def _has_public_currency_marker(value: str) -> bool:
     if "$" in value:
         return True
-    tokens = {
+    return bool(_public_currency_markers(value))
+
+
+def _price_label_matches_checkout_receipt(
+    value: str,
+    *,
+    amount_total: object,
+    currency: object,
+) -> bool:
+    if isinstance(amount_total, bool) or not isinstance(amount_total, int):
+        return False
+    if amount_total <= 0:
+        return False
+    if not isinstance(currency, str):
+        return False
+    normalized_currency = currency.strip().lower()
+    if currency != normalized_currency:
+        return False
+    if len(normalized_currency) != 3 or not normalized_currency.isalpha():
+        return False
+    return _price_label_matches_amount(
+        value,
+        amount_cents=amount_total,
+        currency=normalized_currency,
+    )
+
+
+def _price_label_matches_amount(
+    value: str,
+    *,
+    amount_cents: int,
+    currency: str,
+) -> bool:
+    normalized = " ".join(value.split())
+    currency_marker = currency.lower()
+    amounts = set(_currency_amount_matches(normalized, currency_marker))
+    if "$" in normalized:
+        explicit_markers = _public_currency_markers(normalized)
+        if currency_marker != "usd" and currency_marker not in explicit_markers:
+            return False
+        if currency_marker == "usd" and (explicit_markers - {"usd"}):
+            return False
+        amounts.update(_dollar_amount_matches(normalized))
+    expected = decimal.Decimal(amount_cents) / decimal.Decimal(100)
+    return expected in amounts
+
+
+def _public_currency_markers(value: str) -> set[str]:
+    return {
         "".join(ch for ch in token.lower() if ch.isalpha())
         for token in value.replace("/", " ").replace("-", " ").split()
-    }
-    return bool(tokens & PUBLIC_PRICE_LABEL_CURRENCY_CODES)
+    } & PUBLIC_PRICE_LABEL_CURRENCY_CODES
+
+
+def _currency_amount_matches(value: str, currency: str) -> list[decimal.Decimal]:
+    pattern = re.compile(
+        rf"(?:\b{re.escape(currency)}\b\s*)"
+        r"(?P<after>\d[\d,]*(?:\.\d{1,2})?)"
+        r"|(?P<before>\d[\d,]*(?:\.\d{1,2})?)"
+        rf"\s*(?:\b{re.escape(currency)}\b)",
+        re.IGNORECASE,
+    )
+    amounts: list[decimal.Decimal] = []
+    for match in pattern.finditer(value):
+        raw = match.group("after") or match.group("before")
+        amount = _public_decimal_amount(raw)
+        if amount is not None:
+            amounts.append(amount)
+    return amounts
+
+
+def _dollar_amount_matches(value: str) -> list[decimal.Decimal]:
+    amounts: list[decimal.Decimal] = []
+    for match in re.finditer(r"\$\s*(?P<amount>\d[\d,]*(?:\.\d{1,2})?)", value):
+        amount = _public_decimal_amount(match.group("amount"))
+        if amount is not None:
+            amounts.append(amount)
+    return amounts
+
+
+def _public_decimal_amount(value: str) -> decimal.Decimal | None:
+    try:
+        amount = decimal.Decimal(value.replace(",", ""))
+    except decimal.InvalidOperation:
+        return None
+    if amount <= 0:
+        return None
+    return amount.quantize(decimal.Decimal("0.01"))
 
 
 def _stripe_account_mode(value: str) -> str:

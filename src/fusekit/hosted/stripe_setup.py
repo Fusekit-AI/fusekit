@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import argparse
-import decimal
 import hashlib
 import json
 import os
-import re
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping
@@ -18,6 +16,7 @@ from fusekit.hosted.billing import (
     HOSTED_STRIPE_SETUP_SECRET_BOUNDARY,
     HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY,
     STRIPE_API_BASE,
+    _price_label_matches_amount,
     _stripe_account_mode,
     _valid_price_label,
 )
@@ -538,59 +537,6 @@ def _public_stripe_product_description(value: str) -> str:
 def _managed_run_lookup_key(*, amount_cents: int, currency: str, price_label: str) -> str:
     digest = _public_hash(f"{amount_cents}:{currency}:{price_label}")[:16]
     return f"fusekit_managed_run_{currency}_{amount_cents}_{digest}"
-
-
-def _price_label_matches_amount(
-    value: str,
-    *,
-    amount_cents: int,
-    currency: str,
-) -> bool:
-    normalized = " ".join(value.split())
-    currency_marker = currency.lower()
-    amounts = set(_currency_amount_matches(normalized, currency_marker))
-    if "$" in normalized:
-        if currency_marker != "usd" and currency_marker not in normalized.lower():
-            return False
-        amounts.update(_dollar_amount_matches(normalized))
-    expected = decimal.Decimal(amount_cents) / decimal.Decimal(100)
-    return expected in amounts
-
-
-def _currency_amount_matches(value: str, currency: str) -> list[decimal.Decimal]:
-    pattern = re.compile(
-        rf"(?:\b{re.escape(currency)}\b\s*)"
-        r"(?P<after>\d[\d,]*(?:\.\d{1,2})?)"
-        r"|(?P<before>\d[\d,]*(?:\.\d{1,2})?)"
-        rf"\s*(?:\b{re.escape(currency)}\b)",
-        re.IGNORECASE,
-    )
-    amounts: list[decimal.Decimal] = []
-    for match in pattern.finditer(value):
-        raw = match.group("after") or match.group("before")
-        amount = _public_decimal_amount(raw)
-        if amount is not None:
-            amounts.append(amount)
-    return amounts
-
-
-def _dollar_amount_matches(value: str) -> list[decimal.Decimal]:
-    amounts: list[decimal.Decimal] = []
-    for match in re.finditer(r"\$\s*(?P<amount>\d[\d,]*(?:\.\d{1,2})?)", value):
-        amount = _public_decimal_amount(match.group("amount"))
-        if amount is not None:
-            amounts.append(amount)
-    return amounts
-
-
-def _public_decimal_amount(value: str) -> decimal.Decimal | None:
-    try:
-        amount = decimal.Decimal(value.replace(",", ""))
-    except decimal.InvalidOperation:
-        return None
-    if amount <= 0:
-        return None
-    return amount.quantize(decimal.Decimal("0.01"))
 
 
 def _public_hash(value: str) -> str:

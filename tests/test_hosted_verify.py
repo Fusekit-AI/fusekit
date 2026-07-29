@@ -959,6 +959,7 @@ def test_verify_hosted_deployment_requires_payment_cost_control_contract() -> No
     cost_controls["max_unverified_managed_spend_cents"] = 100
     cost_controls["dispatch_requires_paid_checkout_session"] = False
     cost_controls["reuse_across_jobs_allowed"] = True
+    cost_controls["receipt_amount_currency_must_match_price_label"] = False
     cost_controls["session_binding"] = ["client_reference_id", "job_id"]
     cost_controls["raw_checkout_session"] = "cs_live_not-for-readiness"
     operator_setup = payment["operator_setup"]
@@ -990,6 +991,7 @@ def test_verify_hosted_deployment_requires_payment_cost_control_contract() -> No
     assert "payment_cost_controls_unverified_spend_mismatch" in failures
     assert "payment_cost_controls_paid_checkout_required_mismatch" in failures
     assert "payment_cost_controls_reuse_policy_mismatch" in failures
+    assert "payment_cost_controls_amount_currency_match_mismatch" in failures
     assert "payment_cost_controls_session_binding_mismatch" in failures
     assert "payment_operator_setup_unexpected_field:stripe_dashboard_url" in failures
 
@@ -2798,6 +2800,7 @@ def _payment_contract() -> dict[str, object]:
             "max_unverified_managed_spend_cents": 0,
             "dispatch_requires_paid_checkout_session": True,
             "reuse_across_jobs_allowed": False,
+            "receipt_amount_currency_must_match_price_label": True,
             "session_binding": [
                 "client_reference_id",
                 "job_id",

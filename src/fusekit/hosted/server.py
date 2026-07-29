@@ -26,6 +26,7 @@ from fusekit.hosted.billing import (
     STRIPE_CHECKOUT_PROVIDER,
     STRIPE_SECRET_KEY_PREFIXES,
     HostedPaymentConfig,
+    _price_label_matches_checkout_receipt,
     _valid_stripe_checkout_session_id,
     _valid_stripe_price_id,
     _valid_stripe_secret_key,
@@ -3418,6 +3419,12 @@ def _payment_receipt_matches_job(
         return False
     expected_price_label = job.payment_price_label or settings.managed_run_price_label
     if receipt.get("price_label") != expected_price_label:
+        return False
+    if not _price_label_matches_checkout_receipt(
+        expected_price_label,
+        amount_total=receipt.get("amount_total"),
+        currency=receipt.get("currency"),
+    ):
         return False
     metadata = receipt.get("metadata")
     if not isinstance(metadata, dict):

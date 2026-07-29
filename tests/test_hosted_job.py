@@ -2843,6 +2843,18 @@ def test_hosted_payment_receipt_rejects_paid_receipt_for_plan_or_label_drift() -
     with pytest.raises(FuseKitError, match="paid payment receipt does not match"):
         with_hosted_job_payment_receipt(job, receipt)
 
+    receipt = _paid_checkout_receipt(job)
+    receipt["amount_total"] = 200
+
+    with pytest.raises(FuseKitError, match="paid payment receipt does not match"):
+        with_hosted_job_payment_receipt(job, receipt)
+
+    receipt = _paid_checkout_receipt(job)
+    receipt["currency"] = "cad"
+
+    with pytest.raises(FuseKitError, match="paid payment receipt does not match"):
+        with_hosted_job_payment_receipt(job, receipt)
+
 
 def test_hosted_payment_receipt_rejects_paid_receipt_for_price_hash_drift() -> None:
     job = build_hosted_launch_job(

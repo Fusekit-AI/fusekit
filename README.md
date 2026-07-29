@@ -595,7 +595,10 @@ public label hash, and emits only redacted JSON. Keep
 `FUSEKIT_MANAGED_RUNS_ENABLED=0` until the price verifier, live Checkout proof,
 and worker-dispatch acceptance have passed. Keep literal dollar-amount labels
 in single quotes, or use a currency-code label such as `USD 1.00`, so the shell
-cannot expand `$1` into an ambiguous `.00` public price.
+cannot expand `$1` into an ambiguous `.00` public price. The hosted runtime
+re-checks the same public label against the observed Checkout `amount_total` and
+lowercase currency on payment return and webhook receipt before any managed
+worker dispatch can unlock.
 
 Current live Stripe setup proof from July 3, 2026:
 
