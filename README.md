@@ -625,11 +625,15 @@ sudo fusekit-hosted-managed-proof-token \
   > /tmp/fusekit-managed-proof-token.json
 ```
 
-Use the returned `state` query value in the GitHub App install URL for that live
-proof run. The state expires quickly, is not a provider credential, and must not
-be stored in docs, run records, or durable proof artifacts. Public readiness
-should still report the managed lane as blocked by `managed_runs_not_enabled`;
-the proof-purpose state only allows the operator to create the one paid Checkout
+The helper first checks the hosted runtime secret verifier, the live Stripe
+webhook secret shape, public hosted readiness, the writable public job store, the
+BYO lane, and the managed lane's disabled-for-enablement state. It returns a
+ready report and install URL only when those preflight checks pass. Use the
+returned `install_url`, or its `state` query value, for that live proof run. The
+state expires quickly, is not a provider credential, and must not be stored in
+docs, run records, or durable proof artifacts. Public readiness should still
+report the managed lane as blocked by `managed_runs_not_enabled`; the
+proof-purpose state only allows the operator to create the one paid Checkout
 job, accept Stripe's signed webhook for that job, and collect the durable
 worker-dispatch proof required by `fusekit-hosted-managed-enable`.
 

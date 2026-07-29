@@ -164,6 +164,9 @@ sudo fusekit-hosted-managed-proof-token \
   > /tmp/fusekit-managed-proof-token.json
 ```
 
-Use the returned `state` query value in the GitHub App install URL for that
-proof run. Do not put the state token in run records or durable receipts; it is
-a temporary click capability, not a provider credential.
+The helper refuses to emit a state token unless runtime secrets, Stripe webhook
+proof staging, public hosted readiness, the writable hosted job store, the BYO
+lane, and the managed-disabled state all pass. Use the returned `install_url`, or
+its `state` query value, for that proof run. Do not put the state token in run
+records or durable receipts; it is a temporary click capability, not a provider
+credential.
