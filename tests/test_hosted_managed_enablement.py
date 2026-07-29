@@ -89,6 +89,42 @@ def test_managed_enablement_report_rejects_stale_live_checkout_commit() -> None:
     assert "live_checkout_expected_commit_sha_mismatch" in report["blockers"]
 
 
+def test_managed_enablement_report_rejects_live_checkout_sidecars() -> None:
+    live_checkout = _live_checkout_proof()
+    live_checkout["operator_note"] = "cached proof from supervised run"
+
+    report = build_hosted_managed_enablement_report(
+        runtime_secret_verify=_runtime_secret_verify_report(),
+        hosted_verify=_hosted_verify_report(),
+        stripe_price_verify=_stripe_price_verify_report(),
+        stripe_webhook_verify=_stripe_webhook_verify_report(),
+        hosted_readiness=_hosted_readiness_report(),
+        live_checkout_proof=live_checkout,
+    )
+
+    assert report["ready_to_enable"] is False
+    assert "live_checkout_proof_unexpected_fields" in report["blockers"]
+
+
+def test_managed_enablement_report_rejects_live_checkout_proof_input_sidecars() -> None:
+    live_checkout = _live_checkout_proof()
+    proof_inputs = live_checkout["proof_inputs"]
+    assert isinstance(proof_inputs, dict)
+    proof_inputs["start_response_path"] = "/var/lib/fusekit/hosted-jobs/start.json"
+
+    report = build_hosted_managed_enablement_report(
+        runtime_secret_verify=_runtime_secret_verify_report(),
+        hosted_verify=_hosted_verify_report(),
+        stripe_price_verify=_stripe_price_verify_report(),
+        stripe_webhook_verify=_stripe_webhook_verify_report(),
+        hosted_readiness=_hosted_readiness_report(),
+        live_checkout_proof=live_checkout,
+    )
+
+    assert report["ready_to_enable"] is False
+    assert "live_checkout_proof_inputs_unexpected_fields" in report["blockers"]
+
+
 def test_managed_enablement_report_requires_hosted_expected_commit_proof() -> None:
     hosted_verify = _hosted_verify_report()
     checks = hosted_verify["checks"]
@@ -443,7 +479,9 @@ def _hosted_readiness_report() -> dict[str, object]:
 def _live_checkout_proof() -> dict[str, object]:
     return {
         "schema_version": HOSTED_MANAGED_LIVE_CHECKOUT_PROOF_SCHEMA_VERSION,
+        "input_schema_version": "fusekit.hosted-managed-live-checkout-proof-input.v1",
         "ready": True,
+        "blockers": [],
         "lane": "managed-fusekit-run",
         "job_id": "hosted-live-checkout-proof",
         "payment_status": "paid",
@@ -452,6 +490,14 @@ def _live_checkout_proof() -> dict[str, object]:
         "worker_dispatch_acceptance": True,
         "dispatch_requires_paid_checkout_session": True,
         "expected_commit_sha": COMMIT_SHA,
+        "proof_inputs": {
+            "webhook_receipt_schema": "fusekit.hosted-stripe-webhook.v1",
+            "start_action_schema": "fusekit.hosted-job.v1",
+            "worker_dispatch_schema": "fusekit.hosted-worker-dispatch.v1",
+            "worker_dispatch_receiver_schema": (
+                "fusekit.hosted-worker-dispatch-receipt.v1"
+            ),
+        },
         "secret_boundary": (
             "Live Checkout proof contains no card data, Stripe keys, webhook signing "
             "secrets, worker secrets, provider credentials, or vault material."

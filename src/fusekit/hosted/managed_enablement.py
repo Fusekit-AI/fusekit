@@ -37,6 +37,32 @@ HOSTED_MANAGED_ENABLEMENT_SECRET_BOUNDARY = (
     "vault material."
 )
 HOSTED_MANAGED_ENABLEMENT_MAX_JSON_BYTES = 1_048_576
+HOSTED_MANAGED_LIVE_CHECKOUT_PROOF_KEYS = frozenset(
+    {
+        "schema_version",
+        "input_schema_version",
+        "ready",
+        "blockers",
+        "lane",
+        "job_id",
+        "payment_status",
+        "checkout_session_paid",
+        "webhook_applied",
+        "worker_dispatch_acceptance",
+        "dispatch_requires_paid_checkout_session",
+        "expected_commit_sha",
+        "proof_inputs",
+        "secret_boundary",
+    }
+)
+HOSTED_MANAGED_LIVE_CHECKOUT_PROOF_INPUTS_KEYS = frozenset(
+    {
+        "webhook_receipt_schema",
+        "start_action_schema",
+        "worker_dispatch_schema",
+        "worker_dispatch_receiver_schema",
+    }
+)
 
 
 def build_hosted_managed_enablement_report(
@@ -321,6 +347,7 @@ def _live_checkout_proof_blockers(
     report: Mapping[str, Any], hosted_verify: Mapping[str, Any]
 ) -> list[str]:
     blockers: list[str] = []
+    blockers.extend(_live_checkout_proof_shape_blockers(report))
     if report.get("schema_version") != HOSTED_MANAGED_LIVE_CHECKOUT_PROOF_SCHEMA_VERSION:
         blockers.append("live_checkout_proof_schema_mismatch")
     if report.get("ready") is not True:
@@ -352,6 +379,27 @@ def _live_checkout_proof_blockers(
         or "provider credentials" not in boundary
     ):
         blockers.append("live_checkout_secret_boundary_missing")
+    return blockers
+
+
+def _live_checkout_proof_shape_blockers(report: Mapping[str, Any]) -> list[str]:
+    blockers: list[str] = []
+    unexpected = sorted(
+        str(key) for key in report if str(key) not in HOSTED_MANAGED_LIVE_CHECKOUT_PROOF_KEYS
+    )
+    if unexpected:
+        blockers.append("live_checkout_proof_unexpected_fields")
+    proof_inputs = report.get("proof_inputs")
+    if not isinstance(proof_inputs, Mapping):
+        blockers.append("live_checkout_proof_inputs_missing")
+        return blockers
+    unexpected_inputs = sorted(
+        str(key)
+        for key in proof_inputs
+        if str(key) not in HOSTED_MANAGED_LIVE_CHECKOUT_PROOF_INPUTS_KEYS
+    )
+    if unexpected_inputs:
+        blockers.append("live_checkout_proof_inputs_unexpected_fields")
     return blockers
 
 
