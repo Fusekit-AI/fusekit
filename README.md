@@ -620,8 +620,7 @@ the runtime secret file by hand:
 
 ```zsh
 sudo fusekit-hosted-live-checkout-proof \
-  --webhook-receipt /var/lib/fusekit/hosted-jobs/<job-id>.stripe-webhook-receipt.json \
-  --start-action-response /var/lib/fusekit/hosted-jobs/<job-id>.managed-start-response.json \
+  --job-id <job-id> \
   --expected-commit-sha "$(git rev-parse HEAD)" \
   > /var/lib/fusekit/posture/live-checkout-proof.json
 
@@ -635,11 +634,14 @@ sudo fusekit-hosted-managed-enable \
   --live-checkout-proof /var/lib/fusekit/posture/live-checkout-proof.json
 ```
 
-The webhook receipt path above is written by the hosted Stripe webhook after a
-valid signed `checkout.session.completed` event is bound to the managed job. It
-is a redacted, hash-wrapped public proof artifact; it does not contain Stripe
-keys, webhook signing secrets, raw webhook payloads, card data, payment method
-ids, provider credentials, worker secrets, or vault material.
+The `--job-id` form reads the two default durable artifacts from
+`/var/lib/fusekit/hosted-jobs`: `<job-id>.stripe-webhook-receipt.json` and
+`<job-id>.managed-start-response.json`. The webhook receipt is written by the
+hosted Stripe webhook after a valid signed `checkout.session.completed` event is
+bound to the managed job. It is a redacted, hash-wrapped public proof artifact;
+it does not contain Stripe keys, webhook signing secrets, raw webhook payloads,
+card data, payment method ids, provider credentials, worker secrets, or vault
+material.
 
 The managed start response path is written after a paid managed `start` action
 gets durable worker-dispatch acceptance. It is also redacted and hash-wrapped,

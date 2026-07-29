@@ -181,6 +181,67 @@ def test_live_checkout_proof_cli_accepts_job_store_managed_start_response_wrappe
     assert payload["proof_inputs"]["start_action_schema"] == "fusekit.hosted-job.v1"
 
 
+def test_live_checkout_proof_cli_derives_job_store_artifacts_from_job_id(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    job_store = tmp_path / "hosted-jobs"
+    job_store.mkdir()
+    (job_store / f"{JOB_ID}.stripe-webhook-receipt.json").write_text(
+        json.dumps(
+            {
+                "schema_version": HOSTED_JOB_STORE_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION,
+                "job_id": JOB_ID,
+                "receipt_schema_version": "fusekit.hosted-stripe-webhook.v1",
+                "receipt_sha256": "sha256:" + ("f" * 64),
+                "receipt": _webhook_receipt(),
+            }
+        ),
+        encoding="utf-8",
+    )
+    (job_store / f"{JOB_ID}.managed-start-response.json").write_text(
+        json.dumps(
+            {
+                "schema_version": HOSTED_JOB_STORE_MANAGED_START_RESPONSE_SCHEMA_VERSION,
+                "job_id": JOB_ID,
+                "response_schema_version": "fusekit.hosted-job.v1",
+                "response_sha256": "sha256:" + ("f" * 64),
+                "response": _start_action_response(),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "--job-id",
+            JOB_ID,
+            "--job-store-dir",
+            str(job_store),
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["ready"] is True
+    assert payload["job_id"] == JOB_ID
+
+
+def test_live_checkout_proof_cli_rejects_partial_explicit_artifact_paths(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    webhook_path = tmp_path / "webhook.json"
+    webhook_path.write_text(json.dumps(_webhook_receipt()), encoding="utf-8")
+
+    exit_code = main(["--webhook-receipt", str(webhook_path)])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 2
+    assert payload["ready"] is False
+    assert payload["error"] == "live_checkout_proof_requires_both_artifact_paths"
+
+
 def _webhook_receipt() -> dict[str, object]:
     return {
         "schema_version": "fusekit.hosted-stripe-webhook.v1",

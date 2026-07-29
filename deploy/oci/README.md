@@ -148,11 +148,8 @@ hosted verifier, runtime-secret verifier, Stripe Price verifier, Stripe webhook
 verifier, public hosted readiness with writable job-store proof, and live
 managed Checkout proof that includes paid Checkout, webhook application, and
 worker-dispatch acceptance. Build that last proof with
-`fusekit-hosted-live-checkout-proof --webhook-receipt ... --start-action-response ...`
-from the hash-wrapped redacted Stripe webhook receipt under
-`/var/lib/fusekit/hosted-jobs/<job-id>.stripe-webhook-receipt.json` and the paid
-managed `start` response under
-`/var/lib/fusekit/hosted-jobs/<job-id>.managed-start-response.json`. Then run
-`fusekit-hosted-managed-enable` as a dry run first, and only rerun it with
-`--execute --confirm-managed-enablement` if the report says
-`ready_to_enable: true`.
+`fusekit-hosted-live-checkout-proof --job-id <job-id>` so the command reads the
+hash-wrapped redacted webhook and managed-start artifacts from
+`/var/lib/fusekit/hosted-jobs`. Then run `fusekit-hosted-managed-enable` as a
+dry run first, and only rerun it with `--execute --confirm-managed-enablement`
+if the report says `ready_to_enable: true`.

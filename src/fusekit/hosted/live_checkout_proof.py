@@ -30,6 +30,7 @@ HOSTED_MANAGED_LIVE_CHECKOUT_PROOF_INPUT_SCHEMA_VERSION = (
 )
 HOSTED_MANAGED_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-stripe-webhook.v1"
 HOSTED_JOB_ID_PATTERN = re.compile(r"\Ahosted-[A-Za-z0-9_-]{8,160}\Z")
+DEFAULT_HOSTED_JOB_STORE_DIR = "/var/lib/fusekit/hosted-jobs"
 
 
 def build_hosted_managed_live_checkout_proof(
@@ -108,15 +109,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Build redacted live managed Checkout proof from hosted receipts."
     )
-    parser.add_argument("--webhook-receipt", required=True)
-    parser.add_argument("--start-action-response", required=True)
+    parser.add_argument("--webhook-receipt")
+    parser.add_argument("--start-action-response")
+    parser.add_argument("--job-id", default="")
+    parser.add_argument("--job-store-dir", default=DEFAULT_HOSTED_JOB_STORE_DIR)
     parser.add_argument("--expected-commit-sha", default="")
     args = parser.parse_args(argv)
     try:
+        webhook_receipt_path, start_action_response_path = _input_paths(
+            webhook_receipt=args.webhook_receipt or "",
+            start_action_response=args.start_action_response or "",
+            job_id=args.job_id,
+            job_store_dir=args.job_store_dir,
+        )
         proof = build_hosted_managed_live_checkout_proof(
-            webhook_receipt=_read_webhook_receipt_json(args.webhook_receipt),
+            webhook_receipt=_read_webhook_receipt_json(webhook_receipt_path),
             start_action_response=_read_start_action_response_json(
-                args.start_action_response
+                start_action_response_path
             ),
             expected_commit_sha=args.expected_commit_sha,
         )
@@ -267,6 +276,29 @@ def _read_json(path: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise FuseKitError("live_checkout_proof_input_must_be_object")
     return value
+
+
+def _input_paths(
+    *,
+    webhook_receipt: str,
+    start_action_response: str,
+    job_id: str,
+    job_store_dir: str,
+) -> tuple[str, str]:
+    if webhook_receipt and start_action_response:
+        return webhook_receipt, start_action_response
+    if webhook_receipt or start_action_response:
+        raise FuseKitError("live_checkout_proof_requires_both_artifact_paths")
+    public_job_id = _public_job_id(job_id)
+    if not public_job_id:
+        raise FuseKitError("live_checkout_proof_job_id_required")
+    root = Path(job_store_dir)
+    if not str(root).strip() or not root.is_absolute():
+        raise FuseKitError("live_checkout_proof_job_store_dir_must_be_absolute")
+    return (
+        str(root / f"{public_job_id}.stripe-webhook-receipt.json"),
+        str(root / f"{public_job_id}.managed-start-response.json"),
+    )
 
 
 def _read_webhook_receipt_json(path: str) -> Mapping[str, Any]:
