@@ -1151,7 +1151,7 @@ def _public_byo_contract(
     if not isinstance(value, dict):
         blockers.append(f"byo_oci_proof_bundle_{name}_invalid")
         return {}
-    serialized = json.dumps(value, sort_keys=True)
+    serialized = _private_marker_scan_text(value)
     if contains_durable_secret_text(serialized) or _contains_byo_private_marker(serialized):
         blockers.append(f"byo_oci_proof_bundle_{name}_unsafe")
         return {}

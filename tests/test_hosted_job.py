@@ -1162,6 +1162,26 @@ def test_hosted_byo_proof_bundle_verifier_rejects_private_contract_markers() -> 
     assert "ocid1_instance" not in serialized
 
 
+def test_hosted_byo_proof_bundle_verifier_fail_closes_on_malformed_contract_values() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+    user_owned_cost_boundary = bundle["user_owned_cost_boundary"]
+    assert isinstance(user_owned_cost_boundary, dict)
+    user_owned_cost_boundary["spend_owner"] = object()
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+
+    assert report["ready"] is False
+    assert "byo_oci_proof_bundle_user_owned_cost_boundary_mismatch" in report["blockers"]
+    assert report["user_owned_cost_boundary"] == {}
+
+
 def test_hosted_byo_proof_bundle_verifier_blocks_missing_cost_and_security_contracts() -> None:
     job = build_hosted_launch_job(
         _plan(),

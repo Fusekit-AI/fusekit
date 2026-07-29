@@ -21,6 +21,7 @@ RSA_PRIVATE_KEY_FIXTURE = (
     "-----END " "RSA PRIVATE KEY-----"
 )
 LIVE_STRIPE_SECRET_FIXTURE = "sk_" "live_secretfixture"
+RESTRICTED_LIVE_STRIPE_SECRET_FIXTURE = "rk_" "live_restrictedfixture"
 TARGET_STRIPE_SECRET_FIXTURE = "sk_" "live_targetsecret"
 
 
@@ -73,6 +74,23 @@ def test_runtime_secret_plan_reports_readiness_without_secret_values() -> None:
     assert "worker-secret-value" not in serialized
     assert "BEGIN RSA PRIVATE KEY" not in serialized
     assert not contains_durable_secret_text(serialized)
+
+
+def test_runtime_secret_plan_accepts_restricted_live_stripe_key() -> None:
+    plan = build_hosted_runtime_secret_plan(
+        env=_env(FUSEKIT_STRIPE_SECRET_KEY=RESTRICTED_LIVE_STRIPE_SECRET_FIXTURE)
+    )
+    serialized = json.dumps(plan, sort_keys=True)
+
+    assert plan["ready_to_write_secret_file"] is True
+    assert plan["ready_for_managed_payment_staging"] is True
+    assert plan["blockers"] == []
+    assert plan["stripe_runtime_env"]["FUSEKIT_STRIPE_SECRET_KEY"] == {
+        "configured": True,
+        "account_mode": "live",
+    }
+    assert RESTRICTED_LIVE_STRIPE_SECRET_FIXTURE not in serialized
+    assert "restrictedfixture" not in serialized
 
 
 def test_runtime_secret_plan_can_treat_state_secrets_as_host_generated() -> None:

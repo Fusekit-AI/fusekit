@@ -24,6 +24,7 @@ from fusekit.hosted.billing import (
     HOSTED_PAYMENT_SCHEMA_VERSION,
     STRIPE_CHECKOUT_METADATA_KEYS,
     STRIPE_CHECKOUT_PROVIDER,
+    STRIPE_SECRET_KEY_PREFIXES,
     HostedPaymentConfig,
     _valid_stripe_checkout_session_id,
     _valid_stripe_price_id,
@@ -2794,7 +2795,7 @@ def _hosted_config_errors(settings: HostedSettings) -> tuple[str, ...]:
     payment_readiness = settings.payment_config().public_dict()
     if settings.managed_runs_enabled and not _valid_stripe_secret_key(
         settings.stripe_secret_key,
-        allowed_prefixes=("sk_live_", "sk_test_"),
+        allowed_prefixes=STRIPE_SECRET_KEY_PREFIXES,
     ):
         errors.append("stripe_secret_key_required_for_managed_runs")
     if (
@@ -2825,7 +2826,7 @@ def _managed_lane_blockers(settings: HostedSettings) -> list[str]:
         blockers.append("managed_runs_not_enabled")
     if not _valid_stripe_secret_key(
         settings.stripe_secret_key,
-        allowed_prefixes=("sk_live_", "sk_test_"),
+        allowed_prefixes=STRIPE_SECRET_KEY_PREFIXES,
     ):
         blockers.append("stripe_secret_key_required_for_managed_runs")
     elif (

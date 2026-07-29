@@ -574,6 +574,35 @@ def test_create_stripe_checkout_session_rejects_malformed_secret_key_before_netw
     assert opener.requests == []
 
 
+def test_create_stripe_checkout_session_accepts_restricted_live_key() -> None:
+    opener = StripeCheckoutOpener()
+    restricted_key = "rk_live_restricted_value"
+
+    receipt = create_stripe_checkout_session(
+        HostedPaymentConfig(
+            enabled=True,
+            stripe_secret_key=restricted_key,
+            stripe_price_id="price_managed_run",
+            price_label="Launch validation: $1.00 FuseKit managed run",
+            public_origin="https://fusekit.snowmanai.org",
+            opener=opener,
+        ),
+        job_id="hosted-job",
+        payment_return_token="signed_public.return",
+        payment_cancel_token="signed_public.cancel",
+        lane="managed-fusekit-run",
+        github_source="https://github.com/Fusekit-AI/fusekit",
+        plan_fingerprint=_sha256_label("visible-plan"),
+    )
+    request = opener.requests[0]
+
+    assert receipt["provider"] == STRIPE_CHECKOUT_PROVIDER
+    assert receipt["payment_status"] == "unpaid"
+    assert receipt["paid"] is False
+    assert request.headers["Authorization"] == "Bearer " + restricted_key
+    assert restricted_key not in json.dumps(receipt, sort_keys=True)
+
+
 def test_create_stripe_checkout_session_uses_purpose_limited_payment_return_tokens() -> None:
     opener = StripeCheckoutOpener()
 

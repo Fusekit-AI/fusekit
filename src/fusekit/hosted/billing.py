@@ -15,6 +15,9 @@ from fusekit.security import contains_durable_secret_text, contains_private_mark
 HOSTED_PAYMENT_SCHEMA_VERSION = "fusekit.hosted-payment.v1"
 STRIPE_CHECKOUT_PROVIDER = "stripe-checkout"
 STRIPE_API_BASE = "https://api.stripe.com"
+STRIPE_LIVE_SECRET_KEY_PREFIXES = ("sk_live_", "rk_live_")
+STRIPE_TEST_SECRET_KEY_PREFIXES = ("sk_test_",)
+STRIPE_SECRET_KEY_PREFIXES = (*STRIPE_LIVE_SECRET_KEY_PREFIXES, *STRIPE_TEST_SECRET_KEY_PREFIXES)
 STRIPE_CHECKOUT_METADATA_KEYS = (
     "job_id",
     "lane",
@@ -94,7 +97,7 @@ class HostedPaymentConfig:
 
         secret_key_configured = _valid_stripe_secret_key(
             self.stripe_secret_key,
-            allowed_prefixes=("sk_live_", "sk_test_"),
+            allowed_prefixes=STRIPE_SECRET_KEY_PREFIXES,
         )
         account_mode = _stripe_account_mode(self.stripe_secret_key)
         live_mode_configured = account_mode == "live"
@@ -382,16 +385,19 @@ def _require_stripe_config(config: HostedPaymentConfig) -> None:
         raise FuseKitError("Managed run billing is not enabled.")
     if not _valid_stripe_secret_key(
         config.stripe_secret_key,
-        allowed_prefixes=("sk_live_", "sk_test_"),
+        allowed_prefixes=STRIPE_SECRET_KEY_PREFIXES,
     ):
         raise FuseKitError("Stripe secret key is not configured.")
     test_key_allowed = (
         config.test_mode_allowed
-        and _valid_stripe_secret_key(config.stripe_secret_key, allowed_prefixes=("sk_test_",))
+        and _valid_stripe_secret_key(
+            config.stripe_secret_key,
+            allowed_prefixes=STRIPE_TEST_SECRET_KEY_PREFIXES,
+        )
     )
     if not _valid_stripe_secret_key(
         config.stripe_secret_key,
-        allowed_prefixes=("sk_live_",),
+        allowed_prefixes=STRIPE_LIVE_SECRET_KEY_PREFIXES,
     ) and not test_key_allowed:
         raise FuseKitError("Managed run billing requires a live Stripe secret key.")
     if not _valid_stripe_price_id(config.stripe_price_id):
@@ -532,11 +538,11 @@ def _has_public_currency_marker(value: str) -> bool:
 
 
 def _stripe_account_mode(value: str) -> str:
-    if _valid_stripe_secret_key(value, allowed_prefixes=("sk_live_",)):
+    if _valid_stripe_secret_key(value, allowed_prefixes=STRIPE_LIVE_SECRET_KEY_PREFIXES):
         return "live"
-    if _valid_stripe_secret_key(value, allowed_prefixes=("sk_test_",)):
+    if _valid_stripe_secret_key(value, allowed_prefixes=STRIPE_TEST_SECRET_KEY_PREFIXES):
         return "test"
-    if value.startswith("sk_"):
+    if value.startswith(("sk_", "rk_")):
         return "unknown"
     return "unconfigured"
 

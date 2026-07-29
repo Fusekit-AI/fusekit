@@ -15,6 +15,7 @@ from typing import cast
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.billing import (
+    STRIPE_LIVE_SECRET_KEY_PREFIXES,
     _stripe_account_mode,
     _valid_price_label,
     _valid_stripe_price_id,
@@ -513,7 +514,7 @@ def _stripe_runtime_status(env: Mapping[str, str]) -> dict[str, object]:
     blockers: list[str] = []
     if secret_key and not _valid_stripe_secret_key(
         secret_key,
-        allowed_prefixes=("sk_live_",),
+        allowed_prefixes=STRIPE_LIVE_SECRET_KEY_PREFIXES,
     ):
         blockers.append("stripe_secret_key_must_be_live")
     if price_id and not _valid_stripe_price_id(price_id):
