@@ -14,9 +14,12 @@ from typing import Any
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.billing import (
+    HOSTED_PAYMENT_SCHEMA_VERSION,
+    STRIPE_CHECKOUT_PROVIDER,
     _price_label_matches_checkout_receipt,
     _valid_price_label,
     _valid_sha256_label,
+    _valid_stripe_checkout_session_id,
 )
 from fusekit.hosted.job_store import (
     HOSTED_JOB_STORE_MANAGED_START_RESPONSE_SCHEMA_VERSION,
@@ -224,6 +227,13 @@ def _payment_blockers(value: object) -> list[str]:
         blockers.append("live_checkout_price_label_mismatch")
     if payment.get("price_id_hash") != metadata.get("stripe_price_id_hash"):
         blockers.append("live_checkout_price_id_hash_mismatch")
+    if receipt.get("schema_version") != HOSTED_PAYMENT_SCHEMA_VERSION:
+        blockers.append("live_checkout_payment_schema_mismatch")
+    if receipt.get("provider") != STRIPE_CHECKOUT_PROVIDER:
+        blockers.append("live_checkout_payment_provider_mismatch")
+    session_id = receipt.get("checkout_session_id")
+    if not isinstance(session_id, str) or not _valid_stripe_checkout_session_id(session_id):
+        blockers.append("live_checkout_checkout_session_id_invalid")
     if receipt.get("paid") is not True:
         blockers.append("live_checkout_checkout_session_paid_not_true")
     if receipt.get("status") != "complete":

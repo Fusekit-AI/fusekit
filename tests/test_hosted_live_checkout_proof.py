@@ -86,6 +86,27 @@ def test_live_checkout_proof_rejects_price_label_amount_mismatch() -> None:
     assert "live_checkout_price_label_amount_currency_mismatch" in proof["blockers"]
 
 
+def test_live_checkout_proof_rejects_invalid_payment_identity_fields() -> None:
+    start = _start_action_response()
+    payment = start["payment"]
+    assert isinstance(payment, dict)
+    receipt = payment["receipt"]
+    assert isinstance(receipt, dict)
+    receipt["schema_version"] = "fusekit.hosted-payment.v0"
+    receipt["provider"] = "manual-proof"
+    receipt["checkout_session_id"] = "not-a-checkout-session"
+
+    proof = build_hosted_managed_live_checkout_proof(
+        webhook_receipt=_webhook_receipt(),
+        start_action_response=start,
+    )
+
+    assert proof["ready"] is False
+    assert "live_checkout_payment_schema_mismatch" in proof["blockers"]
+    assert "live_checkout_payment_provider_mismatch" in proof["blockers"]
+    assert "live_checkout_checkout_session_id_invalid" in proof["blockers"]
+
+
 def test_live_checkout_proof_rejects_malformed_hash_proof() -> None:
     start = _start_action_response()
     payment = start["payment"]
