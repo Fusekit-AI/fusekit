@@ -13,6 +13,11 @@ from pathlib import Path
 from typing import Any
 
 from fusekit.errors import FuseKitError
+from fusekit.hosted.billing import (
+    _price_label_matches_checkout_receipt,
+    _valid_price_label,
+    _valid_sha256_label,
+)
 from fusekit.hosted.job_store import (
     HOSTED_JOB_STORE_MANAGED_START_RESPONSE_SCHEMA_VERSION,
     HOSTED_JOB_STORE_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION,
@@ -35,6 +40,27 @@ HOSTED_MANAGED_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-stripe-we
 HOSTED_JOB_ID_PATTERN = re.compile(r"\Ahosted-[A-Za-z0-9_-]{8,160}\Z")
 DEFAULT_HOSTED_JOB_STORE_DIR = "/var/lib/fusekit/hosted-jobs"
 HOSTED_LIVE_CHECKOUT_PROOF_MAX_JSON_BYTES = 1_048_576
+HOSTED_LIVE_CHECKOUT_METADATA_FIELDS = (
+    "job_id",
+    "lane",
+    "github_source_hash",
+    "plan_fingerprint",
+    "stripe_price_id_hash",
+    "price_label_hash",
+)
+HOSTED_LIVE_CHECKOUT_HASH_FIELDS = frozenset(
+    {
+        "github_source_hash",
+        "plan_fingerprint",
+        "stripe_price_id_hash",
+        "price_label_hash",
+    }
+)
+HOSTED_LIVE_CHECKOUT_DISPATCH_HASH_FIELDS = (
+    "plan_fingerprint",
+    "stripe_price_id_hash",
+    "price_label_hash",
+)
 
 
 def build_hosted_managed_live_checkout_proof(
@@ -188,11 +214,16 @@ def _start_action_response_blockers(response: Mapping[str, Any]) -> list[str]:
 def _payment_blockers(value: object) -> list[str]:
     payment = _mapping(value)
     receipt = _mapping(payment.get("receipt"))
+    metadata = _mapping(receipt.get("metadata"))
     blockers: list[str] = []
     if payment.get("required") is not True:
         blockers.append("live_checkout_payment_not_required")
     if payment.get("status") != "paid":
         blockers.append("live_checkout_payment_status_not_paid")
+    if payment.get("price_label") != receipt.get("price_label"):
+        blockers.append("live_checkout_price_label_mismatch")
+    if payment.get("price_id_hash") != metadata.get("stripe_price_id_hash"):
+        blockers.append("live_checkout_price_id_hash_mismatch")
     if receipt.get("paid") is not True:
         blockers.append("live_checkout_checkout_session_paid_not_true")
     if receipt.get("status") != "complete":
@@ -206,14 +237,28 @@ def _payment_blockers(value: object) -> list[str]:
     currency = receipt.get("currency")
     if not isinstance(currency, str) or len(currency) != 3:
         blockers.append("live_checkout_checkout_currency_invalid")
-    for field in ("job_id", "lane", "plan_fingerprint", "stripe_price_id_hash", "price_label_hash"):
-        if field not in _mapping(receipt.get("metadata")):
+    price_label = receipt.get("price_label")
+    if not isinstance(price_label, str) or not _valid_price_label(price_label):
+        blockers.append("live_checkout_price_label_invalid")
+    elif not _price_label_matches_checkout_receipt(
+        price_label,
+        amount_total=receipt.get("amount_total"),
+        currency=receipt.get("currency"),
+    ):
+        blockers.append("live_checkout_price_label_amount_currency_mismatch")
+    for field in HOSTED_LIVE_CHECKOUT_METADATA_FIELDS:
+        if field not in metadata:
             blockers.append(f"live_checkout_checkout_metadata_{field}_missing")
+        elif field in HOSTED_LIVE_CHECKOUT_HASH_FIELDS and not _valid_sha256_label(
+            str(metadata.get(field) or "")
+        ):
+            blockers.append(f"live_checkout_checkout_metadata_{field}_invalid")
     return blockers
 
 
 def _worker_dispatch_blockers(value: object) -> list[str]:
     dispatch = _mapping(value)
+    dispatch_binding = _mapping(dispatch.get("dispatch_binding"))
     idempotency = _mapping(dispatch.get("idempotency"))
     blockers: list[str] = []
     if dispatch.get("schema_version") != HOSTED_WORKER_DISPATCH_SCHEMA_VERSION:
@@ -226,6 +271,9 @@ def _worker_dispatch_blockers(value: object) -> list[str]:
         blockers.append("live_checkout_worker_dispatch_not_accepted")
     if dispatch.get("receiver_schema_version") != HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION:
         blockers.append("live_checkout_worker_dispatch_receiver_schema_mismatch")
+    for field in HOSTED_LIVE_CHECKOUT_DISPATCH_HASH_FIELDS:
+        if not _valid_sha256_label(str(dispatch_binding.get(field) or "")):
+            blockers.append(f"live_checkout_worker_dispatch_{field}_invalid")
     if idempotency.get("mode") != "dispatch-state-dir":
         blockers.append("live_checkout_worker_dispatch_idempotency_mode_mismatch")
     if idempotency.get("durable") is not True:

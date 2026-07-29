@@ -69,6 +69,51 @@ def test_live_checkout_proof_rejects_binding_mismatch() -> None:
     assert "live_checkout_stripe_price_id_hash_binding_mismatch" in proof["blockers"]
 
 
+def test_live_checkout_proof_rejects_price_label_amount_mismatch() -> None:
+    start = _start_action_response()
+    payment = start["payment"]
+    assert isinstance(payment, dict)
+    receipt = payment["receipt"]
+    assert isinstance(receipt, dict)
+    receipt["amount_total"] = 500
+
+    proof = build_hosted_managed_live_checkout_proof(
+        webhook_receipt=_webhook_receipt(),
+        start_action_response=start,
+    )
+
+    assert proof["ready"] is False
+    assert "live_checkout_price_label_amount_currency_mismatch" in proof["blockers"]
+
+
+def test_live_checkout_proof_rejects_malformed_hash_proof() -> None:
+    start = _start_action_response()
+    payment = start["payment"]
+    dispatch = start["worker_dispatch"]
+    assert isinstance(payment, dict)
+    assert isinstance(dispatch, dict)
+    receipt = payment["receipt"]
+    dispatch_binding = dispatch["dispatch_binding"]
+    assert isinstance(receipt, dict)
+    assert isinstance(dispatch_binding, dict)
+    metadata = receipt["metadata"]
+    assert isinstance(metadata, dict)
+    metadata["github_source_hash"] = "not-a-sha-label"
+    metadata["stripe_price_id_hash"] = "not-a-sha-label"
+    payment["price_id_hash"] = "not-a-sha-label"
+    dispatch_binding["stripe_price_id_hash"] = "not-a-sha-label"
+
+    proof = build_hosted_managed_live_checkout_proof(
+        webhook_receipt=_webhook_receipt(),
+        start_action_response=start,
+    )
+
+    assert proof["ready"] is False
+    assert "live_checkout_checkout_metadata_github_source_hash_invalid" in proof["blockers"]
+    assert "live_checkout_checkout_metadata_stripe_price_id_hash_invalid" in proof["blockers"]
+    assert "live_checkout_worker_dispatch_stripe_price_id_hash_invalid" in proof["blockers"]
+
+
 def test_live_checkout_proof_rejects_unpaid_or_undispatched_start() -> None:
     start = _start_action_response()
     payment = start["payment"]
