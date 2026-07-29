@@ -17,6 +17,9 @@ from pathlib import Path
 from fusekit.errors import FuseKitError
 from fusekit.hosted.billing import _valid_stripe_price_id
 from fusekit.hosted.managed_proof_token import (
+    HOSTED_MANAGED_PROOF_BROWSER_STEPS,
+    HOSTED_MANAGED_PROOF_DURABLE_ARTIFACTS,
+    HOSTED_MANAGED_PROOF_FORBIDDEN_ACTIONS,
     HOSTED_MANAGED_PROOF_TOKEN_REPORT_SCHEMA_VERSION,
 )
 from fusekit.hosted.runtime_secrets import (
@@ -207,9 +210,21 @@ OCI_HOST_POSTURE_MANAGED_PROOF_PREFLIGHT_KEYS = frozenset(
         "expires_in_seconds",
         "preflight",
         "operator_use",
+        "proof_run_contract",
         "public_managed_runs_enabled",
         "mutates_host",
         "mutates_provider",
+        "secret_boundary",
+    }
+)
+OCI_HOST_POSTURE_MANAGED_PROOF_CONTRACT_KEYS = frozenset(
+    {
+        "mode",
+        "browser_steps",
+        "durable_artifacts",
+        "forbidden_actions",
+        "enablement_command",
+        "live_proof_command",
         "secret_boundary",
     }
 )
@@ -1105,6 +1120,16 @@ def _evidence_shape_check(evidence: Mapping[str, object]) -> dict[str, object]:
             OCI_HOST_POSTURE_MANAGED_PROOF_PREFLIGHT_KEYS,
         )
     )
+    managed_preflight = evidence.get("managed_proof_preflight")
+    if isinstance(managed_preflight, Mapping):
+        unexpected.extend(
+            _unexpected_nested_keys(
+                managed_preflight,
+                "proof_run_contract",
+                OCI_HOST_POSTURE_MANAGED_PROOF_CONTRACT_KEYS,
+                prefix="managed_proof_preflight.proof_run_contract",
+            )
+        )
     unexpected.extend(_unexpected_managed_proof_preflight_keys(evidence))
     unexpected.extend(
         _unexpected_nested_keys(
@@ -1608,6 +1633,7 @@ def _runtime_secret_verify_check(evidence: Mapping[str, object]) -> dict[str, ob
 def _managed_proof_preflight_check(evidence: Mapping[str, object]) -> dict[str, object]:
     report = _mapping(evidence.get("managed_proof_preflight"))
     preflight = _mapping(report.get("preflight"))
+    proof_contract = _mapping(report.get("proof_run_contract"))
     failures: list[str] = []
     if report.get("schema_version") != HOSTED_MANAGED_PROOF_TOKEN_REPORT_SCHEMA_VERSION:
         failures.append("oci_host_managed_proof_preflight_schema_invalid")
@@ -1636,6 +1662,7 @@ def _managed_proof_preflight_check(evidence: Mapping[str, object]) -> dict[str, 
     operator_use = _public_str(report.get("operator_use")).lower()
     if "install_url" not in operator_use or "checkout proof" not in operator_use:
         failures.append("oci_host_managed_proof_operator_use_mismatch")
+    failures.extend(_managed_proof_contract_failures(proof_contract))
     boundary = _public_str(report.get("secret_boundary")).lower()
     for marker in (
         "not a stripe key",
@@ -1659,6 +1686,49 @@ def _managed_proof_preflight_check(evidence: Mapping[str, object]) -> dict[str, 
             managed_proof_blockers=_public_string_list(report.get("blockers")),
         )
     return _ok("host.managed_proof_preflight")
+
+
+def _managed_proof_contract_failures(contract: Mapping[str, object]) -> list[str]:
+    failures: list[str] = []
+    browser_steps = _string_list(contract.get("browser_steps"))
+    artifacts = _string_list(contract.get("durable_artifacts"))
+    forbidden = _string_list(contract.get("forbidden_actions"))
+    boundary = _public_str(contract.get("secret_boundary")).lower()
+    if contract.get("mode") != "supervised_browser_only":
+        failures.append("oci_host_managed_proof_contract_mode_mismatch")
+    if browser_steps != list(HOSTED_MANAGED_PROOF_BROWSER_STEPS):
+        failures.append("oci_host_managed_proof_contract_browser_steps_mismatch")
+    if artifacts != list(HOSTED_MANAGED_PROOF_DURABLE_ARTIFACTS):
+        failures.append("oci_host_managed_proof_contract_artifacts_mismatch")
+    if forbidden != list(HOSTED_MANAGED_PROOF_FORBIDDEN_ACTIONS):
+        failures.append("oci_host_managed_proof_contract_forbidden_actions_mismatch")
+    if contract.get("enablement_command") != "fusekit-hosted-managed-enable":
+        failures.append("oci_host_managed_proof_contract_enablement_command_mismatch")
+    if (
+        contract.get("live_proof_command")
+        != "fusekit-hosted-live-checkout-proof --job-id <job-id>"
+    ):
+        failures.append("oci_host_managed_proof_contract_live_proof_command_mismatch")
+    for marker in (
+        "state tokens",
+        "install urls",
+        "stripe keys",
+        "webhook secrets",
+        "github private keys",
+        "oci credentials",
+        "provider credentials",
+        "worker secrets",
+        "vault material",
+        "card data",
+        "raw provider logs",
+    ):
+        if marker not in boundary:
+            failures.append("oci_host_managed_proof_contract_secret_boundary_mismatch")
+            break
+    serialized = json.dumps(contract, sort_keys=True)
+    if contains_durable_secret_text(serialized) or _contains_private_marker(serialized):
+        failures.append("oci_host_managed_proof_contract_contains_secret_text")
+    return failures
 
 
 def _patch_check(evidence: Mapping[str, object]) -> dict[str, object]:
@@ -2295,6 +2365,15 @@ def _sanitize_managed_proof_preflight(report: Mapping[str, object] | None) -> di
                 (
                     str(row_key)
                     if str(row_key) in OCI_HOST_POSTURE_MANAGED_PROOF_PREFLIGHT_ROW_KEYS
+                    else redact_public_text(str(row_key))
+                ): _sanitize_public_value(row_value)
+                for row_key, row_value in value.items()
+            }
+        elif key_text == "proof_run_contract" and isinstance(value, Mapping):
+            sanitized[public_key] = {
+                (
+                    str(row_key)
+                    if str(row_key) in OCI_HOST_POSTURE_MANAGED_PROOF_CONTRACT_KEYS
                     else redact_public_text(str(row_key))
                 ): _sanitize_public_value(row_value)
                 for row_key, row_value in value.items()

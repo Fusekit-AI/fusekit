@@ -4,6 +4,9 @@ import json
 from pathlib import Path
 
 from fusekit.hosted.managed_proof_token import (
+    HOSTED_MANAGED_PROOF_BROWSER_STEPS,
+    HOSTED_MANAGED_PROOF_DURABLE_ARTIFACTS,
+    HOSTED_MANAGED_PROOF_FORBIDDEN_ACTIONS,
     HOSTED_MANAGED_PROOF_TOKEN_MAX_JSON_BYTES,
     HOSTED_MANAGED_PROOF_TOKEN_REPORT_SCHEMA_VERSION,
     build_hosted_managed_proof_token_report,
@@ -47,6 +50,7 @@ def test_managed_proof_helper_emits_purpose_bound_state_token() -> None:
     assert state.managed_proof is True
     assert state.return_path == "/"
     assert "Stripe key" in str(report["secret_boundary"])
+    assert report["proof_run_contract"] == _proof_run_contract()
 
 
 def test_managed_proof_helper_can_emit_redacted_preflight_without_click_token() -> None:
@@ -65,6 +69,8 @@ def test_managed_proof_helper_can_emit_redacted_preflight_without_click_token() 
     assert "state_token" not in report
     assert "install_url" not in report
     assert "hosted-state-secret" not in serialized
+    assert report["proof_run_contract"] == _proof_run_contract()
+    assert "installations/new" not in serialized
 
 
 def test_managed_proof_helper_refuses_state_when_webhook_is_not_ready() -> None:
@@ -248,4 +254,21 @@ def _hosted_readiness() -> dict[str, object]:
                 },
             },
         },
+    }
+
+
+def _proof_run_contract() -> dict[str, object]:
+    return {
+        "mode": "supervised_browser_only",
+        "browser_steps": list(HOSTED_MANAGED_PROOF_BROWSER_STEPS),
+        "durable_artifacts": list(HOSTED_MANAGED_PROOF_DURABLE_ARTIFACTS),
+        "forbidden_actions": list(HOSTED_MANAGED_PROOF_FORBIDDEN_ACTIONS),
+        "enablement_command": "fusekit-hosted-managed-enable",
+        "live_proof_command": "fusekit-hosted-live-checkout-proof --job-id <job-id>",
+        "secret_boundary": (
+            "The proof run contract contains browser steps, artifact names, and "
+            "command labels only. It excludes state tokens, install URLs, Stripe "
+            "keys, webhook secrets, GitHub private keys, OCI credentials, provider "
+            "credentials, worker secrets, vault material, card data, and raw provider logs."
+        ),
     }

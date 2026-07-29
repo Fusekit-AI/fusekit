@@ -17,6 +17,11 @@ from fusekit.hosted.host_posture import (
     evaluate_oci_host_posture,
     main,
 )
+from fusekit.hosted.managed_proof_token import (
+    HOSTED_MANAGED_PROOF_BROWSER_STEPS,
+    HOSTED_MANAGED_PROOF_DURABLE_ARTIFACTS,
+    HOSTED_MANAGED_PROOF_FORBIDDEN_ACTIONS,
+)
 from fusekit.hosted.runtime_secrets import HOSTED_RUNTIME_REQUIRED_FILE_ENV
 from fusekit.security import contains_durable_secret_text
 
@@ -419,6 +424,19 @@ def _managed_proof_preflight_report() -> dict[str, object]:
         "operator_use": (
             "Visit install_url for the supervised managed Checkout proof run."
         ),
+        "proof_run_contract": {
+            "mode": "supervised_browser_only",
+            "browser_steps": list(HOSTED_MANAGED_PROOF_BROWSER_STEPS),
+            "durable_artifacts": list(HOSTED_MANAGED_PROOF_DURABLE_ARTIFACTS),
+            "forbidden_actions": list(HOSTED_MANAGED_PROOF_FORBIDDEN_ACTIONS),
+            "enablement_command": "fusekit-hosted-managed-enable",
+            "live_proof_command": "fusekit-hosted-live-checkout-proof --job-id <job-id>",
+            "secret_boundary": (
+                "The proof run contract excludes state tokens, install URLs, Stripe "
+                "keys, webhook secrets, GitHub private keys, OCI credentials, provider "
+                "credentials, worker secrets, vault material, card data, and raw provider logs."
+            ),
+        },
         "public_managed_runs_enabled": False,
         "mutates_host": False,
         "mutates_provider": False,
@@ -621,6 +639,54 @@ def test_oci_host_posture_blocks_managed_proof_preflight_drift() -> None:
     check = _check(report, "host.managed_proof_preflight")
     assert "oci_host_managed_proof_preflight_not_ready" in check["failures"]
     assert "oci_host_managed_proof_preflight_has_blockers" in check["failures"]
+
+
+def test_oci_host_posture_blocks_managed_proof_contract_drift() -> None:
+    evidence = _clean_evidence()
+    preflight = evidence["managed_proof_preflight"]
+    assert isinstance(preflight, dict)
+    contract = preflight["proof_run_contract"]
+    assert isinstance(contract, dict)
+    contract["mode"] = "operator-terminal"
+    contract["browser_steps"] = ["Run a terminal command"]
+    contract["durable_artifacts"] = ["raw-stripe-session.json"]
+    contract["forbidden_actions"] = []
+    contract["enablement_command"] = "edit-env-file"
+    contract["live_proof_command"] = "cat raw-webhook.log"
+    contract["secret_boundary"] = "May include Stripe payloads."
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.managed_proof_preflight"]
+    check = _check(report, "host.managed_proof_preflight")
+    assert check["failures"] == [
+        "oci_host_managed_proof_contract_mode_mismatch",
+        "oci_host_managed_proof_contract_browser_steps_mismatch",
+        "oci_host_managed_proof_contract_artifacts_mismatch",
+        "oci_host_managed_proof_contract_forbidden_actions_mismatch",
+        "oci_host_managed_proof_contract_enablement_command_mismatch",
+        "oci_host_managed_proof_contract_live_proof_command_mismatch",
+        "oci_host_managed_proof_contract_secret_boundary_mismatch",
+    ]
+
+
+def test_oci_host_posture_blocks_managed_proof_contract_sidecars() -> None:
+    evidence = _clean_evidence()
+    preflight = evidence["managed_proof_preflight"]
+    assert isinstance(preflight, dict)
+    contract = preflight["proof_run_contract"]
+    assert isinstance(contract, dict)
+    contract["raw_checkout_session"] = "cs_live_should_not_be_public"
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["evidence.shape"]
+    shape_check = _check(report, "evidence.shape")
+    assert shape_check["unexpected_fields"] == [
+        "managed_proof_preflight.proof_run_contract.raw_checkout_session"
+    ]
 
 
 def test_oci_host_posture_redacts_raw_managed_proof_click_token() -> None:
