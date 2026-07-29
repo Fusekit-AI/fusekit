@@ -57,6 +57,36 @@ HOSTED_WORKER_ARTIFACTS = {
     "acceptance_output": ".fusekit/acceptance",
 }
 PUBLIC_PROOF_ARTIFACT_MAX_BYTES = 1_000_000
+HOSTED_ACCEPTANCE_REPORT_FIELDS = frozenset(
+    {
+        "mode",
+        "app_path",
+        "launch_ready",
+        "public_launch_ready",
+        "remote_artifacts_ready",
+        "recording_proof_ready",
+        "recording_ready",
+        "checks",
+        "missing",
+        "blockers",
+        "recording_contract",
+        "ledger_path",
+        "report_path",
+        "created_at",
+        "error",
+    }
+)
+HOSTED_ACCEPTANCE_READY_FIELDS = frozenset(
+    {
+        "launch_ready",
+        "public_launch_ready",
+        "remote_artifacts_ready",
+        "recording_proof_ready",
+        "recording_ready",
+    }
+)
+HOSTED_ACCEPTANCE_CHECK_FIELDS = frozenset({"id", "status", "detail", "artifact"})
+HOSTED_ACCEPTANCE_BLOCKER_FIELDS = frozenset({"item", "category", "next_action", "detail"})
 ENCRYPTED_VAULT_ARTIFACT_LABELS = {
     ".fusekit/fusekit.vault.json",
     "fusekit.vault.json",
@@ -547,7 +577,62 @@ def _read_acceptance_report(path: Path) -> dict[str, Any]:
         raise FuseKitError("Hosted worker acceptance report must be a JSON object.")
     if _json_contains_secret_text(raw):
         raise FuseKitError("Hosted worker acceptance report contains secret-looking text.")
+    _require_public_acceptance_report_shape(raw)
     return raw
+
+
+def _require_public_acceptance_report_shape(report: dict[str, Any]) -> None:
+    unexpected = sorted(set(report) - HOSTED_ACCEPTANCE_REPORT_FIELDS)
+    if unexpected:
+        raise FuseKitError("Hosted worker acceptance report has unexpected fields.")
+    mode = report.get("mode")
+    if mode not in {"live", "rehearsal", None}:
+        raise FuseKitError("Hosted worker acceptance report mode is invalid.")
+    for field in HOSTED_ACCEPTANCE_READY_FIELDS:
+        if field in report and not isinstance(report.get(field), bool):
+            raise FuseKitError("Hosted worker acceptance report readiness fields must be boolean.")
+    checks = report.get("checks", [])
+    if not isinstance(checks, list):
+        raise FuseKitError("Hosted worker acceptance report checks must be a list.")
+    for item in checks:
+        _require_public_acceptance_check_shape(item)
+    missing = report.get("missing", [])
+    if not isinstance(missing, list) or not all(isinstance(item, str) for item in missing):
+        raise FuseKitError("Hosted worker acceptance report missing entries must be strings.")
+    blockers = report.get("blockers", [])
+    if not isinstance(blockers, list):
+        raise FuseKitError("Hosted worker acceptance report blockers must be a list.")
+    for blocker in blockers:
+        _require_public_acceptance_blocker_shape(blocker)
+    if "error" in report and not isinstance(report.get("error"), str):
+        raise FuseKitError("Hosted worker acceptance report error must be a string.")
+
+
+def _require_public_acceptance_check_shape(item: object) -> None:
+    if not isinstance(item, dict):
+        raise FuseKitError("Hosted worker acceptance report checks must be objects.")
+    if sorted(set(item) - HOSTED_ACCEPTANCE_CHECK_FIELDS):
+        raise FuseKitError("Hosted worker acceptance report check has unexpected fields.")
+    for field in ("id", "status"):
+        if not isinstance(item.get(field), str) or not item.get(field):
+            raise FuseKitError("Hosted worker acceptance report check fields are invalid.")
+    for field in ("detail", "artifact"):
+        if field in item and not isinstance(item.get(field), str):
+            raise FuseKitError("Hosted worker acceptance report check fields are invalid.")
+
+
+def _require_public_acceptance_blocker_shape(item: object) -> None:
+    if isinstance(item, str):
+        return
+    if not isinstance(item, dict):
+        raise FuseKitError("Hosted worker acceptance report blockers must be objects.")
+    if sorted(set(item) - HOSTED_ACCEPTANCE_BLOCKER_FIELDS):
+        raise FuseKitError("Hosted worker acceptance report blocker has unexpected fields.")
+    for field in ("item", "category", "next_action"):
+        if field in item and not isinstance(item.get(field), str):
+            raise FuseKitError("Hosted worker acceptance report blocker fields are invalid.")
+    if "detail" in item and not isinstance(item.get("detail"), str):
+        raise FuseKitError("Hosted worker acceptance report blocker fields are invalid.")
 
 
 def _artifact_completion(

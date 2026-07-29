@@ -399,6 +399,54 @@ def test_hosted_worker_proof_payload_rejects_private_marker_in_acceptance_output
         build_hosted_worker_proof_payload(invocation)
 
 
+def test_hosted_worker_proof_payload_rejects_acceptance_report_sidecars(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True)
+    report_path = invocation.artifact_paths["acceptance_output"] / "report.json"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report["raw_provider_debug"] = "status=ok"
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    with pytest.raises(FuseKitError, match="unexpected fields"):
+        build_hosted_worker_proof_payload(invocation)
+
+
+def test_hosted_worker_proof_payload_rejects_acceptance_check_sidecars(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True)
+    report_path = invocation.artifact_paths["acceptance_output"] / "report.json"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report["checks"][0]["raw_response"] = "200 ok"
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    with pytest.raises(FuseKitError, match="check has unexpected fields"):
+        build_hosted_worker_proof_payload(invocation)
+
+
+def test_hosted_worker_proof_payload_rejects_malformed_acceptance_ready_fields(
+    tmp_path: Path,
+) -> None:
+    execution = _prepared_execution(tmp_path)
+    invocation = build_hosted_worker_launch_invocation(execution)
+    _write_required_artifacts(invocation)
+    _write_acceptance_report(invocation, recording_ready=True)
+    report_path = invocation.artifact_paths["acceptance_output"] / "report.json"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report["recording_ready"] = "yes"
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    with pytest.raises(FuseKitError, match="readiness fields must be boolean"):
+        build_hosted_worker_proof_payload(invocation)
+
+
 def test_hosted_worker_proof_payload_rejects_symlinked_acceptance_output(
     tmp_path: Path,
 ) -> None:

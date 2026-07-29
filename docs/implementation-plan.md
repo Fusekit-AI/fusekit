@@ -792,6 +792,7 @@
   GitHub supply-chain CI now keeps fixture secrets out of source instead of allowlisting whole test files: Stripe/private-key test fixtures are assembled from split runtime constants, Python bytecode caches are excluded from Gitleaks, and local Gitleaks 8.30.1 runs clean, preserving secret-scanner signal while still testing redaction boundaries.
   GitHub Security and CI are now green for the live deployed commit after refreshing the Moonlite RSVP example lockfile from vulnerable `postcss@8.5.16` to `8.5.24`; the permanent OCI host serves that exact commit and `fusekit-hosted-verify --expected-commit-sha` passes against `https://fusekit.snowmanai.org`.
   Managed-lane readiness now publishes a fixed `payment_proof_required` checklist for Stripe Checkout authorization, paid Checkout receipt, metadata binding, and post-payment worker dispatch receipt; the outside-in hosted verifier fails if that checklist is missing or weakened, so "payment before FuseKit-managed infrastructure" remains visible and machine-checkable even before the live paid run is completed.
+  Hosted worker acceptance-report ingestion now rejects unexpected top-level, check, and blocker sidecars and requires readiness fields to be booleans before proof assembly, so returned live acceptance artifacts cannot carry hidden provider diagnostics or relabel readiness through public report fields.
 
 ## North Star Audit Remediation
 
