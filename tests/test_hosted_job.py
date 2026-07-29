@@ -99,7 +99,7 @@ def _byo_proof_bundle_from_bootstrap(bootstrap: dict[str, object]) -> dict[str, 
             {
                 "path": artifact["path"],
                 "label": artifact["label"],
-                "sha256": "sha256:" + ("a" * 64),
+                "sha256": _public_hash(f"artifact:{artifact['path']}"),
                 "size_bytes": 1024,
                 "redacted": True,
                 "artifact_type": "regular_file",
@@ -490,6 +490,7 @@ def test_hosted_byo_bootstrap_publishes_preflight_and_reversibility_contract() -
         ],
         "requires_redacted_artifacts": True,
         "requires_regular_file_artifacts": True,
+        "requires_non_placeholder_artifact_hashes": True,
         "requires_completion_evidence": [
             "live_url",
             "provider_verifiers",
@@ -1400,6 +1401,39 @@ def test_hosted_byo_proof_bundle_verifier_redacts_mismatched_label_and_invalid_h
     assert public_artifact["sha256"] == ""
     assert "operator note with raw log summary" not in serialized
     assert "not-a-sha-label" not in serialized
+
+
+def test_hosted_byo_proof_bundle_verifier_blocks_placeholder_artifact_hash() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+    artifacts = bundle["artifacts"]
+    assert isinstance(artifacts, list)
+    artifact = artifacts[0]
+    assert isinstance(artifact, dict)
+    path = str(artifact["path"])
+    artifact["sha256"] = "sha256:" + ("a" * 64)
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+    serialized = json.dumps(report, sort_keys=True)
+    artifact_summary = report["artifact_summary"]
+    assert isinstance(artifact_summary, dict)
+    public_artifacts = artifact_summary["artifacts"]
+    assert isinstance(public_artifacts, list)
+    public_artifact = next(
+        item for item in public_artifacts if isinstance(item, dict) and item["path"] == path
+    )
+
+    assert report["ready"] is False
+    assert f"artifact_sha256_invalid:{path}" in report["blockers"]
+    assert artifact_summary["invalid_required"] == [path]
+    assert public_artifact["sha256"] == ""
+    assert "a" * 64 not in serialized
 
 
 def test_hosted_byo_proof_bundle_verifier_blocks_empty_required_artifacts() -> None:

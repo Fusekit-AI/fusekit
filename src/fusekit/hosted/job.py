@@ -627,6 +627,7 @@ def hosted_byo_oci_bootstrap(job: HostedLaunchJob) -> dict[str, object]:
                 ],
                 "requires_redacted_artifacts": True,
                 "requires_regular_file_artifacts": True,
+                "requires_non_placeholder_artifact_hashes": True,
                 "requires_completion_evidence": list(HOSTED_WORKER_PROOF_KEYS),
             },
         },
@@ -1003,7 +1004,7 @@ def verify_hosted_byo_oci_proof_bundle(
             artifact["label"] = ""
         if artifact.get("redacted") is not True:
             blockers.append(f"artifact_not_marked_redacted:{path}")
-        if not _valid_sha256_label(str(artifact.get("sha256", ""))):
+        if not _valid_byo_artifact_sha256_label(str(artifact.get("sha256", ""))):
             blockers.append(f"artifact_sha256_invalid:{path}")
             artifact["sha256"] = ""
         if path in required_artifacts and artifact.get("size_bytes") == 0:
@@ -1314,6 +1315,13 @@ def _valid_sha256_label(value: str) -> bool:
         and len(digest) == 64
         and all(character in "0123456789abcdef" for character in digest)
     )
+
+
+def _valid_byo_artifact_sha256_label(value: str) -> bool:
+    if not _valid_sha256_label(value):
+        return False
+    digest = value.removeprefix("sha256:")
+    return len(set(digest)) > 1
 
 
 def _invalid_required_artifacts(

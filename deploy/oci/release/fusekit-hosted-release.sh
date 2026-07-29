@@ -10,7 +10,7 @@ RECEIPT_DIR="${FUSEKIT_RELEASE_RECEIPT_DIR:-/var/lib/fusekit/release-receipts}"
 PROVENANCE_FILE="${FUSEKIT_HOSTED_PROVENANCE_FILE:-/etc/fusekit/hosted-provenance.env}"
 HOSTED_SERVICE="${FUSEKIT_HOSTED_SERVICE:-fusekit-hosted.service}"
 DISPATCH_SERVICE="${FUSEKIT_DISPATCH_SERVICE:-fusekit-worker-dispatch.service}"
-RELEASE_RETENTION_COUNT="${FUSEKIT_RELEASE_RETENTION_COUNT:-3}"
+RELEASE_RETENTION_COUNT="${FUSEKIT_RELEASE_RETENTION_COUNT:-2}"
 
 if [[ ! "${EXPECTED_COMMIT_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
   echo "expected commit must be a 40-character lowercase git sha" >&2

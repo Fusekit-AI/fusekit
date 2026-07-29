@@ -1524,7 +1524,7 @@ def _storage_footprint_check(evidence: Mapping[str, object]) -> dict[str, object
     package_cache_used = _literal_non_negative_int(package_cache.get("used_bytes"))
     retention = _mapping(_mapping(evidence.get("release_receipt")).get("release_retention"))
     minimum_retained = _literal_non_negative_int(retention.get("minimum_retained_releases"))
-    allowed_release_count = (minimum_retained if minimum_retained is not None else 3) + 2
+    allowed_release_count = (minimum_retained if minimum_retained is not None else 2) + 2
     failures: list[str] = []
     if (
         root.get("mount") != "/"
