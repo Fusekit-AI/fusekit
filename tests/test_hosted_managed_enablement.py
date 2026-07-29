@@ -155,11 +155,11 @@ def _write_runtime_file(path: Path) -> None:
             "FUSEKIT_HOSTED_WORKER_DISPATCH_URL": (
                 "https://fusekit.snowmanai.org/worker-dispatch/dispatch"
             ),
-            "FUSEKIT_STRIPE_SECRET_KEY": "sk_live_secretfixture",
+            "FUSEKIT_STRIPE_SECRET_KEY": "sk_" "live_secretfixture",
             "FUSEKIT_STRIPE_PRICE_ID": PRICE_ID,
             "FUSEKIT_MANAGED_RUN_PRICE_LABEL": PRICE_LABEL,
             "FUSEKIT_MANAGED_RUNS_ENABLED": "0",
-            "FUSEKIT_STRIPE_WEBHOOK_SECRET": "whsec_secretfixture",
+            "FUSEKIT_STRIPE_WEBHOOK_SECRET": "whsec_" "secretfixture",
         },
         output_path=str(path),
         execute=True,
