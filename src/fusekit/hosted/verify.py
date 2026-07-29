@@ -1265,6 +1265,7 @@ def _protected_controls_contract_failures(payload: object) -> list[str]:
         "query_control_behavior": "rejected_as_missing_control",
         "browser_origin_policy": "reject_cross_origin_when_origin_or_referer_present",
         "job_token_transport": "signed_public_query_parameter",
+        "payment_return_token_transport": "signed_action_scoped_payment_query_parameter",
         "binding": "job_id_and_action",
         "token_lifetime": "short-lived",
         "public_url_policy": "action URLs must not include control tokens",
@@ -1277,7 +1278,12 @@ def _protected_controls_contract_failures(payload: object) -> list[str]:
     if not isinstance(boundary, str):
         failures.append("protected_controls_secret_boundary_missing")
     else:
-        for required in ("action-bound", "must not appear in action URLs"):
+        for required in (
+            "action-bound",
+            "must not appear in action URLs",
+            "purpose-limited payment tokens",
+            "not general job API tokens",
+        ):
             if required not in boundary:
                 failures.append("protected_controls_secret_boundary_missing")
                 break

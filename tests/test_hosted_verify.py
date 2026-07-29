@@ -1930,6 +1930,7 @@ def test_verify_hosted_deployment_requires_protected_controls_contract() -> None
     protected["content_type"] = "application/json"
     protected["query_control_behavior"] = "accepted"
     protected["browser_origin_policy"] = "not_checked"
+    protected["payment_return_token_transport"] = "signed_public_query_parameter"
     protected["binding"] = "job_id"
     protected["public_url_policy"] = "control tokens may appear in action URLs"
     protected["secret_boundary"] = "Protected controls are public links."
@@ -1957,6 +1958,7 @@ def test_verify_hosted_deployment_requires_protected_controls_contract() -> None
     assert "protected_controls_content_type_mismatch" in failures
     assert "protected_controls_query_control_behavior_mismatch" in failures
     assert "protected_controls_browser_origin_policy_mismatch" in failures
+    assert "protected_controls_payment_return_token_transport_mismatch" in failures
     assert "protected_controls_binding_mismatch" in failures
     assert "protected_controls_public_url_policy_mismatch" in failures
     assert "protected_controls_secret_boundary_missing" in failures
