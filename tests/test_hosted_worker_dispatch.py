@@ -61,6 +61,22 @@ def test_verify_hosted_worker_dispatch_accepts_signed_envelope_without_leaks() -
     assert dispatch.dispatch_binding == _dispatch_binding(action="start")
 
 
+def test_verify_hosted_worker_dispatch_accepts_canonical_public_hints() -> None:
+    body = _dispatch_body(
+        action="start",
+        envelope=_public_dispatch_hints(action="start", job_id="hosted-test"),
+    )
+    dispatch = verify_hosted_worker_dispatch(
+        body,
+        signature=_signature(body),
+        schema=HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+        secret=WORKER_SECRET,
+    )
+
+    assert dispatch.action == "start"
+    assert dispatch.job_id == "hosted-test"
+
+
 def test_verify_hosted_worker_dispatch_rejects_binding_drift() -> None:
     body = _dispatch_body(action="start", binding={"job_id": "hosted-other"})
 
@@ -95,6 +111,65 @@ def test_verify_hosted_worker_dispatch_rejects_unexpected_envelope_fields() -> N
     )
 
     with pytest.raises(FuseKitError, match="unexpected_dispatch_field"):
+        verify_hosted_worker_dispatch(
+            body,
+            signature=_signature(body),
+            schema=HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+            secret=WORKER_SECRET,
+        )
+
+
+def test_verify_hosted_worker_dispatch_rejects_secret_shaped_public_hints() -> None:
+    hints = _public_dispatch_hints(action="start", job_id="hosted-test")
+    hints["worker_command"] = [
+        "fusekit-hosted-worker",
+        "--job-token",
+        "sk_live_should_not_render",
+    ]
+    body = _dispatch_body(action="start", envelope=hints)
+
+    with pytest.raises(
+        FuseKitError,
+        match="Hosted worker dispatch public hints contains private material",
+    ):
+        verify_hosted_worker_dispatch(
+            body,
+            signature=_signature(body),
+            schema=HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+            secret=WORKER_SECRET,
+        )
+
+
+def test_verify_hosted_worker_dispatch_rejects_public_hint_drift() -> None:
+    hints = _public_dispatch_hints(action="start", job_id="hosted-test")
+    hints["worker_request_url"] = (
+        "https://fusekit.snowmanai.org/api/hosted/jobs/hosted-other/worker-request"
+    )
+    body = _dispatch_body(action="start", envelope=hints)
+
+    with pytest.raises(FuseKitError, match="invalid_dispatch_worker_request_url"):
+        verify_hosted_worker_dispatch(
+            body,
+            signature=_signature(body),
+            schema=HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
+            secret=WORKER_SECRET,
+        )
+
+    hints = _public_dispatch_hints(action="start", job_id="hosted-test")
+    hints["worker_command"] = [
+        "fusekit-hosted-worker",
+        "--origin",
+        "https://fusekit.snowmanai.org",
+        "--job-id",
+        "hosted-test",
+        "--job-token",
+        "<signed-public-job-token>",
+        "--action",
+        "detonate",
+    ]
+    body = _dispatch_body(action="start", envelope=hints)
+
+    with pytest.raises(FuseKitError, match="invalid_dispatch_worker_command"):
         verify_hosted_worker_dispatch(
             body,
             signature=_signature(body),
@@ -750,6 +825,30 @@ def _dispatch_binding(*, action: str) -> dict[str, str]:
         "plan_fingerprint": "sha256:" + ("a" * 64),
         "stripe_price_id_hash": "sha256:" + ("c" * 64),
         "price_label_hash": "sha256:" + ("b" * 64),
+    }
+
+
+def _public_dispatch_hints(*, action: str, job_id: str) -> dict[str, object]:
+    return {
+        "worker_command": [
+            "fusekit-hosted-worker",
+            "--origin",
+            "https://fusekit.snowmanai.org",
+            "--job-id",
+            job_id,
+            "--job-token",
+            "<signed-public-job-token>",
+            "--action",
+            action,
+        ],
+        "worker_request_url": (
+            f"https://fusekit.snowmanai.org/api/hosted/jobs/{job_id}/worker-request"
+        ),
+        "secret_boundary": (
+            "Dispatch contains a signed public job token only. The worker secret, "
+            "GitHub installation token, provider credentials, and vault material stay "
+            "inside backend runtime."
+        ),
     }
 
 

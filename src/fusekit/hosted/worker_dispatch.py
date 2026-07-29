@@ -391,6 +391,12 @@ def verify_hosted_worker_dispatch(
         raise FuseKitError("invalid_dispatch_job_id")
     _require_public_dispatch_label(origin, "hosted_worker_dispatch_origin")
     _require_public_dispatch_identifier(job_id, "hosted_worker_dispatch_job_id")
+    _validate_public_dispatch_hints(
+        payload,
+        action=action,
+        origin=origin,
+        job_id=job_id,
+    )
     return HostedWorkerDispatch(
         action=action,
         origin=origin,
@@ -664,6 +670,73 @@ def _valid_https_origin(value: str) -> bool:
         and not parsed.fragment
         and not parsed.username
         and not parsed.password
+    )
+
+
+def _validate_public_dispatch_hints(
+    payload: dict[str, Any],
+    *,
+    action: str,
+    origin: str,
+    job_id: str,
+) -> None:
+    public_hints = {
+        key: payload[key]
+        for key in ("worker_command", "worker_request_url", "secret_boundary")
+        if key in payload
+    }
+    if public_hints:
+        _assert_public_dispatch_payload(
+            public_hints,
+            "Hosted worker dispatch public hints",
+        )
+    worker_command = payload.get("worker_command")
+    if worker_command is not None and worker_command != _expected_worker_command_hint(
+        action=action,
+        origin=origin,
+        job_id=job_id,
+    ):
+        raise FuseKitError("invalid_dispatch_worker_command")
+    worker_request_url = payload.get("worker_request_url")
+    if worker_request_url is not None and worker_request_url != _expected_worker_request_url(
+        origin=origin,
+        job_id=job_id,
+    ):
+        raise FuseKitError("invalid_dispatch_worker_request_url")
+    secret_boundary = payload.get("secret_boundary")
+    if secret_boundary is not None:
+        if not isinstance(secret_boundary, str):
+            raise FuseKitError("invalid_dispatch_secret_boundary")
+        boundary = secret_boundary.lower()
+        required = (
+            "signed public job token",
+            "worker secret",
+            "github installation token",
+            "provider credentials",
+            "vault material",
+        )
+        if not all(fragment in boundary for fragment in required):
+            raise FuseKitError("invalid_dispatch_secret_boundary")
+
+
+def _expected_worker_command_hint(*, action: str, origin: str, job_id: str) -> list[str]:
+    return [
+        "fusekit-hosted-worker",
+        "--origin",
+        origin,
+        "--job-id",
+        job_id,
+        "--job-token",
+        "<signed-public-job-token>",
+        "--action",
+        action,
+    ]
+
+
+def _expected_worker_request_url(*, origin: str, job_id: str) -> str:
+    return (
+        f"{origin.rstrip('/')}/api/hosted/jobs/"
+        f"{urllib.parse.quote(job_id, safe='')}/worker-request"
     )
 
 

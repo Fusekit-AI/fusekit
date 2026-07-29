@@ -798,6 +798,7 @@
   Hosted worker acceptance-report ingestion now rejects unexpected top-level, check, and blocker sidecars and requires readiness fields to be booleans before proof assembly, so returned live acceptance artifacts cannot carry hidden provider diagnostics or relabel readiness through public report fields.
   Hosted Checkout creation now refuses to store a pending managed-run payment receipt unless Stripe echoes the exact public job id, managed lane, GitHub source hash, visible-plan fingerprint, Stripe Price hash, and price-label hash that FuseKit sent, so the pre-payment job state is bound to the approved cost/control story before any later paid receipt can unlock worker dispatch.
   Hosted worker dispatch and worker-client labels now require bounded public identifier shape before worker spawn, API calls, receipt rendering, command labels, headers, or durable dispatch markers, so malformed public job/worker ids cannot cross the hosted trust boundary even when they are not secret-shaped.
+  Hosted worker dispatch receivers now validate signed public hint fields before accepting an envelope: worker command labels, worker request URLs, and dispatch secret-boundary copy must match the job/action/origin contract and stay secret-scan clean, so proof metadata cannot drift or carry hidden token-shaped sidecars into a worker spawn.
 
 ## North Star Audit Remediation
 
