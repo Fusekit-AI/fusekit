@@ -6,6 +6,8 @@ ROOT = Path(__file__).parents[1]
 SYSTEMD_DIR = ROOT / "deploy/oci/systemd"
 TMPFILES = ROOT / "deploy/oci/tmpfiles/fusekit.conf"
 RELEASE_SCRIPT = ROOT / "deploy/oci/release/fusekit-hosted-release.sh"
+NGINX_TEMPLATE = ROOT / "deploy/oci/nginx/fusekit-hosted.conf"
+FIREWALL_SCRIPT = ROOT / "deploy/oci/firewall/fusekit-hosted-firewall.sh"
 
 
 def _unit(name: str) -> dict[str, list[str]]:
@@ -134,5 +136,45 @@ def test_oci_release_script_is_narrow_and_reviewable() -> None:
     assert "fusekit-worker-dispatch.service" in script
     assert "fusekit.oci-hosted-release-receipt.v1" in script
     assert "fusekit-hosted-verify --origin https://fusekit.snowmanai.org" in script
+    assert "cloudflare" not in script.lower()
+    assert "mailpilot" not in script.lower()
+
+
+def test_oci_nginx_template_keeps_public_edge_on_80_443_and_apps_loopback() -> None:
+    template = NGINX_TEMPLATE.read_text(encoding="utf-8")
+
+    assert "listen 80 default_server;" in template
+    assert "listen [::]:80 default_server;" in template
+    assert "listen 443 ssl default_server;" in template
+    assert "listen [::]:443 ssl default_server;" in template
+    assert "server_name fusekit.snowmanai.org _;" in template
+    assert "ssl_certificate /etc/fusekit/tls/fusekit-origin.crt;" in template
+    assert "ssl_certificate_key /etc/fusekit/tls/fusekit-origin.key;" in template
+    assert "ssl_protocols TLSv1.2 TLSv1.3;" in template
+    assert "proxy_pass http://127.0.0.1:8080;" in template
+    assert "proxy_pass http://127.0.0.1:8766/;" in template
+    assert "proxy_pass http://0.0.0.0" not in template
+    assert "listen 8080" not in template
+    assert "listen 8766" not in template
+    assert "/worker-dispatch/" in template
+    assert "proxy_set_header X-Forwarded-Proto https;" in template
+    assert "ssl_certificate_key" in template
+    assert "BEGIN PRIVATE KEY" not in template
+
+
+def test_oci_firewall_script_allows_only_http_https_before_default_reject() -> None:
+    script = FIREWALL_SCRIPT.read_text(encoding="utf-8")
+    mode = FIREWALL_SCRIPT.stat().st_mode
+
+    assert mode & 0o111
+    assert '[[ "$(id -u)" != "0" ]]' in script
+    assert "-m multiport --dports 80,443" in script
+    assert "iptables -I INPUT 5" in script
+    assert "netfilter-persistent save" in script
+    assert "iptables-save > /etc/iptables/rules.v4" in script
+    assert "--dports 0:65535" not in script
+    assert "--dport 8080" not in script
+    assert "--dport 8766" not in script
+    assert "ufw allow" not in script
     assert "cloudflare" not in script.lower()
     assert "mailpilot" not in script.lower()

@@ -7,6 +7,14 @@ They are intentionally narrow:
 
 - both services bind to loopback and are expected to sit behind an HTTPS reverse
   proxy;
+- the nginx reverse proxy exposes only public ports 80/443, proxies the hosted
+  app to loopback `127.0.0.1:8080`, proxies worker dispatch under
+  `/worker-dispatch/` to loopback `127.0.0.1:8766`, and expects origin TLS
+  material at `/etc/fusekit/tls/fusekit-origin.crt` plus
+  `/etc/fusekit/tls/fusekit-origin.key`;
+- the host firewall helper inserts only a TCP 80/443 accept rule ahead of the
+  OCI image default reject and persists it with `netfilter-persistent` or
+  `/etc/iptables/rules.v4`;
 - runtime secrets live only in `/etc/fusekit/hosted-secrets.env` with
   `root:root` ownership and `0600` permissions, inside a root-owned
   `/etc/fusekit` directory;
@@ -34,11 +42,25 @@ restarts only `fusekit-hosted.service` and `fusekit-worker-dispatch.service`,
 and emits a redacted release receipt under `/var/lib/fusekit/release-receipts`.
 
 ```zsh
+sudo install -d -o root -g root -m 0755 /etc/fusekit/tls
+sudo install -o root -g root -m 0644 fusekit-origin.crt \
+  /etc/fusekit/tls/fusekit-origin.crt
+sudo install -o root -g root -m 0600 fusekit-origin.key \
+  /etc/fusekit/tls/fusekit-origin.key
+sudo install -o root -g root -m 0644 deploy/oci/nginx/fusekit-hosted.conf \
+  /etc/nginx/sites-available/fusekit-hosted
+sudo ln -sfn /etc/nginx/sites-available/fusekit-hosted \
+  /etc/nginx/sites-enabled/fusekit-hosted
+sudo deploy/oci/firewall/fusekit-hosted-firewall.sh
+sudo nginx -t
+sudo systemctl restart nginx
 sudo EXPECTED_COMMIT_SHA="$(git rev-parse HEAD)" \
   deploy/oci/release/fusekit-hosted-release.sh
 ```
 
-The script prints the release receipt path. Attach that receipt to the host
+The release script prints the release receipt path. The nginx TLS key and
+runtime secret file are host-only secrets and must not be pasted into docs,
+logs, receipts, or public artifacts. Attach the release receipt to the host
 posture collector after the outside-in verifier succeeds, for example
 `/var/lib/fusekit/release-receipts/release-<commit>.json`.
 
