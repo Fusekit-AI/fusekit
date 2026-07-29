@@ -276,6 +276,22 @@ def _dispatch_acceptance_with_process_idempotency(
     return receipt
 
 
+def _dispatch_acceptance_with_public_sidecar(
+    request_body: dict[str, Any],
+) -> dict[str, object]:
+    receipt = _dispatch_acceptance_response(request_body)
+    receipt["raw_log_excerpt"] = "worker accepted the request"
+    return receipt
+
+
+def _dispatch_acceptance_with_malformed_spawn_proof(
+    request_body: dict[str, Any],
+) -> dict[str, object]:
+    receipt = _dispatch_acceptance_response(request_body)
+    receipt["spawned"] = {"pid": True}
+    return receipt
+
+
 class FormSequenceOpener:
     def __init__(self, payloads: list[dict[str, object]]) -> None:
         self.payloads = payloads
@@ -4003,9 +4019,11 @@ def test_hosted_job_start_dispatches_signed_worker_envelope_when_configured() ->
     [
         _dispatch_acceptance_without_idempotency_proof,
         _dispatch_acceptance_with_process_idempotency,
+        _dispatch_acceptance_with_public_sidecar,
+        _dispatch_acceptance_with_malformed_spawn_proof,
     ],
 )
-def test_hosted_job_start_rejects_nonproduction_worker_dispatch_acceptance_receipt(
+def test_hosted_job_start_rejects_nonproduction_or_sidecar_worker_dispatch_receipt(
     dispatch_acceptance: Callable[[dict[str, Any]], dict[str, object]],
 ) -> None:
     state = create_hosted_state_token(

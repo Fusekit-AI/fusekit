@@ -477,6 +477,25 @@ HOSTED_WORKER_DISPATCH_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch.v1"
 HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch-receipt.v1"
 HOSTED_WORKER_DISPATCH_IDEMPOTENCY_MODE = "dispatch-state-dir"
 HOSTED_WORKER_DISPATCH_IDEMPOTENCY_SCOPE = "worker deployment"
+HOSTED_WORKER_DISPATCH_RECEIPT_FIELDS = frozenset(
+    {
+        "schema_version",
+        "accepted",
+        "duplicate",
+        "action",
+        "job_id",
+        "dispatch_binding",
+        "worker_id",
+        "worker_command",
+        "spawned",
+        "idempotency",
+        "secret_boundary",
+    }
+)
+HOSTED_WORKER_DISPATCH_RECEIPT_IDEMPOTENCY_FIELDS = frozenset(
+    {"mode", "durable", "scope", "duplicate", "proof"}
+)
+HOSTED_WORKER_DISPATCH_RECEIPT_SPAWNED_FIELDS = frozenset({"pid"})
 HOSTED_WORKER_DISPATCH_BINDING_FIELDS = (
     "job_id",
     "action",
@@ -3042,6 +3061,7 @@ def _dispatch_hosted_worker(
         raw_receipt,
         job=job,
         action=action,
+        origin=_public_origin_label(settings.public_origin),
         dispatch_binding=_worker_dispatch_binding(settings, job, action=action),
     )
     return {
@@ -3067,6 +3087,7 @@ def _verified_worker_dispatch_receipt(
     *,
     job: HostedLaunchJob,
     action: str,
+    origin: str,
     dispatch_binding: dict[str, str],
 ) -> dict[str, object]:
     if len(raw_receipt) > HOSTED_MAX_POST_BODY_BYTES:
@@ -3078,6 +3099,16 @@ def _verified_worker_dispatch_receipt(
     if not isinstance(payload, dict):
         raise FuseKitError("Hosted worker dispatch receipt must be an object.")
     receipt = cast(dict[str, object], payload)
+    unexpected_fields = sorted(
+        str(key) for key in receipt if key not in HOSTED_WORKER_DISPATCH_RECEIPT_FIELDS
+    )
+    if unexpected_fields:
+        raise FuseKitError("Hosted worker dispatch receipt has unexpected fields.")
+    missing_fields = sorted(
+        field for field in HOSTED_WORKER_DISPATCH_RECEIPT_FIELDS if field not in receipt
+    )
+    if missing_fields:
+        raise FuseKitError("Hosted worker dispatch receipt is incomplete.")
     if receipt.get("schema_version") != HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION:
         raise FuseKitError("Hosted worker dispatch receipt schema mismatch.")
     if receipt.get("accepted") is not True:
@@ -3090,9 +3121,59 @@ def _verified_worker_dispatch_receipt(
         raise FuseKitError("Hosted worker dispatch receipt job mismatch.")
     if receipt.get("dispatch_binding") != dispatch_binding:
         raise FuseKitError("Hosted worker dispatch receipt binding mismatch.")
+    worker_id = receipt.get("worker_id")
+    if not isinstance(worker_id, str) or not worker_id:
+        raise FuseKitError("Hosted worker dispatch receipt worker id is invalid.")
+    expected_worker_command = [
+        "<fusekit-hosted-worker>",
+        "--origin",
+        origin,
+        "--job-id",
+        job.job_id,
+        "--action",
+        action,
+        "--worker-id",
+        worker_id,
+    ]
+    if receipt.get("worker_command") != expected_worker_command:
+        raise FuseKitError("Hosted worker dispatch receipt worker command mismatch.")
+    spawned = receipt.get("spawned")
+    if not isinstance(spawned, dict):
+        raise FuseKitError("Hosted worker dispatch receipt spawn proof missing.")
+    spawned_missing_fields = sorted(
+        field for field in HOSTED_WORKER_DISPATCH_RECEIPT_SPAWNED_FIELDS if field not in spawned
+    )
+    if spawned_missing_fields:
+        raise FuseKitError("Hosted worker dispatch receipt spawn proof is incomplete.")
+    spawned_unexpected_fields = sorted(
+        str(key)
+        for key in spawned
+        if key not in HOSTED_WORKER_DISPATCH_RECEIPT_SPAWNED_FIELDS
+    )
+    if spawned_unexpected_fields:
+        raise FuseKitError("Hosted worker dispatch receipt spawn proof has unexpected fields.")
+    pid = spawned.get("pid")
+    if pid is not None and (not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0):
+        raise FuseKitError("Hosted worker dispatch receipt spawn proof is invalid.")
     idempotency = receipt.get("idempotency")
     if not isinstance(idempotency, dict):
         raise FuseKitError("Hosted worker dispatch receipt idempotency proof missing.")
+    idempotency_missing_fields = sorted(
+        field
+        for field in HOSTED_WORKER_DISPATCH_RECEIPT_IDEMPOTENCY_FIELDS
+        if field not in idempotency
+    )
+    if idempotency_missing_fields:
+        raise FuseKitError("Hosted worker dispatch receipt idempotency proof is incomplete.")
+    idempotency_unexpected_fields = sorted(
+        str(key)
+        for key in idempotency
+        if key not in HOSTED_WORKER_DISPATCH_RECEIPT_IDEMPOTENCY_FIELDS
+    )
+    if idempotency_unexpected_fields:
+        raise FuseKitError(
+            "Hosted worker dispatch receipt idempotency proof has unexpected fields."
+        )
     if idempotency.get("mode") != HOSTED_WORKER_DISPATCH_IDEMPOTENCY_MODE:
         raise FuseKitError("Hosted worker dispatch receipt idempotency mode is not production.")
     if idempotency.get("durable") is not True:
