@@ -17,6 +17,7 @@ from fusekit.errors import FuseKitError
 from fusekit.hosted.billing import (
     STRIPE_LIVE_SECRET_KEY_PREFIXES,
     _stripe_account_mode,
+    _stripe_secret_key_scope,
     _valid_price_label,
     _valid_stripe_price_id,
     _valid_stripe_secret_key,
@@ -551,6 +552,7 @@ def _stripe_runtime_status(env: Mapping[str, str]) -> dict[str, object]:
             "FUSEKIT_STRIPE_SECRET_KEY": {
                 "configured": bool(secret_key),
                 "account_mode": account_mode,
+                "key_scope": _stripe_secret_key_scope(secret_key),
             },
             "FUSEKIT_STRIPE_PRICE_ID": {
                 "configured": bool(price_id),

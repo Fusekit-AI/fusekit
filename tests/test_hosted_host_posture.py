@@ -51,6 +51,7 @@ def _runtime_secret_verify_report() -> dict[str, object]:
             "FUSEKIT_STRIPE_SECRET_KEY": {
                 "configured": True,
                 "account_mode": "live",
+                "key_scope": "restricted",
             },
             "FUSEKIT_STRIPE_PRICE_ID": {
                 "configured": True,

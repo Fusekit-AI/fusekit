@@ -286,7 +286,11 @@ def _runtime_secret_verify_report() -> dict[str, object]:
                 "enabled": False,
                 "must_remain_disabled": True,
             },
-            "FUSEKIT_STRIPE_SECRET_KEY": {"configured": True, "account_mode": "live"},
+            "FUSEKIT_STRIPE_SECRET_KEY": {
+                "configured": True,
+                "account_mode": "live",
+                "key_scope": "restricted",
+            },
             "FUSEKIT_STRIPE_WEBHOOK_SECRET": {
                 "configured": True,
                 "valid_shape": True,

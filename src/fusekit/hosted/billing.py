@@ -120,6 +120,7 @@ class HostedPaymentConfig:
             allowed_prefixes=STRIPE_SECRET_KEY_PREFIXES,
         )
         account_mode = _stripe_account_mode(self.stripe_secret_key)
+        key_scope = _stripe_secret_key_scope(self.stripe_secret_key)
         live_mode_configured = account_mode == "live"
         live_or_allowed_test_mode = live_mode_configured or (
             account_mode == "test" and self.test_mode_allowed
@@ -140,6 +141,7 @@ class HostedPaymentConfig:
             "managed_runs_enabled": self.enabled,
             "secret_key_configured": secret_key_configured,
             "account_mode": account_mode,
+            "key_scope": key_scope,
             "live_mode_configured": live_mode_configured,
             "test_mode_allowed": self.test_mode_allowed,
             "price_configured": price_configured,
@@ -628,6 +630,16 @@ def _stripe_account_mode(value: str) -> str:
     if _valid_stripe_secret_key(value, allowed_prefixes=STRIPE_TEST_SECRET_KEY_PREFIXES):
         return "test"
     if value.startswith(("sk_", "rk_")):
+        return "unknown"
+    return "unconfigured"
+
+
+def _stripe_secret_key_scope(value: str) -> str:
+    if _valid_stripe_secret_key(value, allowed_prefixes=("rk_live_",)):
+        return "restricted"
+    if _valid_stripe_secret_key(value, allowed_prefixes=("sk_live_", "sk_test_")):
+        return "standard"
+    if isinstance(value, str) and value.startswith(("sk_", "rk_")):
         return "unknown"
     return "unconfigured"
 

@@ -64,6 +64,7 @@ def test_runtime_secret_plan_reports_readiness_without_secret_values() -> None:
     assert plan["stripe_runtime_env"]["FUSEKIT_STRIPE_SECRET_KEY"] == {
         "configured": True,
         "account_mode": "live",
+        "key_scope": "standard",
     }
     assert plan["stripe_runtime_env"]["FUSEKIT_STRIPE_PRICE_ID"]["public_id"] == (
         "price_1ToydUPZlsTa6iL323anyggA"
@@ -93,6 +94,7 @@ def test_runtime_secret_plan_accepts_restricted_live_stripe_key() -> None:
     assert plan["stripe_runtime_env"]["FUSEKIT_STRIPE_SECRET_KEY"] == {
         "configured": True,
         "account_mode": "live",
+        "key_scope": "restricted",
     }
     assert RESTRICTED_LIVE_STRIPE_SECRET_FIXTURE not in serialized
     assert "restrictedfixture" not in serialized
@@ -192,6 +194,7 @@ def test_runtime_secret_plan_blocks_malformed_stripe_secret_key() -> None:
     assert plan["stripe_runtime_env"]["FUSEKIT_STRIPE_SECRET_KEY"] == {
         "configured": True,
         "account_mode": "unknown",
+        "key_scope": "unknown",
     }
 
 
@@ -362,6 +365,7 @@ def test_runtime_secret_verifier_blocks_malformed_stripe_secret_key(
     assert report["stripe_runtime_env"]["FUSEKIT_STRIPE_SECRET_KEY"] == {
         "configured": True,
         "account_mode": "unknown",
+        "key_scope": "unknown",
     }
 
 

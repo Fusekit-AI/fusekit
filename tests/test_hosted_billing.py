@@ -618,6 +618,7 @@ def test_create_stripe_checkout_session_rejects_malformed_secret_key_before_netw
 
     assert config.public_dict()["secret_key_configured"] is False
     assert config.public_dict()["account_mode"] == "unknown"
+    assert config.public_dict()["key_scope"] == "unknown"
     assert opener.requests == []
 
 
@@ -647,6 +648,13 @@ def test_create_stripe_checkout_session_accepts_restricted_live_key() -> None:
     assert receipt["payment_status"] == "unpaid"
     assert receipt["paid"] is False
     assert request.headers["Authorization"] == "Bearer " + restricted_key
+    assert HostedPaymentConfig(
+        enabled=True,
+        stripe_secret_key=restricted_key,
+        stripe_price_id="price_managed_run",
+        price_label="Launch validation: $1.00 FuseKit managed run",
+        public_origin="https://fusekit.snowmanai.org",
+    ).public_dict()["key_scope"] == "restricted"
     assert restricted_key not in json.dumps(receipt, sort_keys=True)
 
 

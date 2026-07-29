@@ -847,6 +847,7 @@ def test_hosted_readiness_reports_paid_managed_lane_when_stripe_is_configured() 
     assert payload["payment"]["managed_runs_enabled"] is True
     assert payload["payment"]["secret_key_configured"] is True
     assert payload["payment"]["account_mode"] == "live"
+    assert payload["payment"]["key_scope"] == "standard"
     assert payload["payment"]["live_mode_configured"] is True
     assert payload["payment"]["test_mode_allowed"] is False
     assert payload["payment"]["price_configured"] is True
@@ -891,6 +892,7 @@ def test_hosted_readiness_requires_webhook_secret_before_managed_enablement() ->
 
     assert status == "200 OK"
     assert payload["ready"] is False
+    assert payload["payment"]["key_scope"] == "restricted"
     assert "stripe_webhook_secret_required_for_managed_runs" in payload["invalid"]
     assert "stripe_webhook_secret_required_for_managed_runs" in managed["blocking_checks"]
     assert managed["launchable"] is False
@@ -1015,6 +1017,7 @@ def test_hosted_readiness_rejects_malformed_managed_stripe_secret_key() -> None:
     assert payload["payment"]["enabled"] is False
     assert payload["payment"]["secret_key_configured"] is False
     assert payload["payment"]["account_mode"] == "unknown"
+    assert payload["payment"]["key_scope"] == "unknown"
     assert managed["launchable"] is False
     assert managed["blocking_checks"] == ["stripe_secret_key_required_for_managed_runs"]
     assert "sk_live" not in serialized
@@ -1048,6 +1051,7 @@ def test_hosted_readiness_rejects_test_mode_stripe_for_public_managed_lane() -> 
     assert payload["payment"]["managed_runs_enabled"] is True
     assert payload["payment"]["secret_key_configured"] is True
     assert payload["payment"]["account_mode"] == "test"
+    assert payload["payment"]["key_scope"] == "standard"
     assert payload["payment"]["live_mode_configured"] is False
     assert payload["payment"]["test_mode_allowed"] is False
     assert managed["launchable"] is False

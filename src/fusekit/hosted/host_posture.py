@@ -156,7 +156,7 @@ OCI_HOST_POSTURE_STRIPE_RUNTIME_ENV_KEYS = frozenset(
     (*HOSTED_RUNTIME_STRIPE_ENV, *HOSTED_RUNTIME_STRIPE_OPTIONAL_ENV)
 )
 OCI_HOST_POSTURE_STRIPE_RUNTIME_ENV_ROW_KEYS = {
-    "FUSEKIT_STRIPE_SECRET_KEY": frozenset({"configured", "account_mode"}),
+    "FUSEKIT_STRIPE_SECRET_KEY": frozenset({"configured", "account_mode", "key_scope"}),
     "FUSEKIT_STRIPE_PRICE_ID": frozenset({"configured", "public_id"}),
     "FUSEKIT_MANAGED_RUN_PRICE_LABEL": frozenset({"configured", "public_label"}),
     "FUSEKIT_MANAGED_RUNS_ENABLED": frozenset(
@@ -1950,6 +1950,7 @@ def _stripe_runtime_env_ready(value: Mapping[str, object]) -> bool:
     return (
         secret_key.get("configured") is True
         and secret_key.get("account_mode") == "live"
+        and secret_key.get("key_scope") in {"restricted", "standard"}
         and price_id.get("configured") is True
         and _valid_stripe_price_id(_public_str(price_id.get("public_id")))
         and price_label.get("configured") is True
