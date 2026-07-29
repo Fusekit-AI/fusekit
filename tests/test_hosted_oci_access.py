@@ -187,7 +187,7 @@ def test_hosted_oci_access_plan_allows_redeploy_when_run_command_ready() -> None
     assert plan["access"]["allowed_deploy_paths"] == ["oci_run_command_release"]
     assert plan["access"]["repair_contract"]["repair_needed"] is False
     assert plan["access"]["repair_contract"]["run_command_availability"] == "running"
-    assert plan["access"]["repair_contract"]["allowed_repairs"][0]["current_status"] == "RUNNING"
+    assert plan["access"]["repair_contract"]["allowed_repairs"] == []
     assert "Do not broaden OCI tenancy-wide admin policy" in " ".join(
         plan["access"]["repair_contract"]["forbidden_repairs"]
     )
@@ -316,6 +316,8 @@ def test_hosted_oci_access_plan_allows_redeploy_when_ssh_ready() -> None:
 
     assert plan["ready_to_redeploy"] is True
     assert plan["access"]["allowed_deploy_paths"] == ["ssh_release"]
+    assert plan["access"]["repair_contract"]["repair_needed"] is False
+    assert plan["access"]["repair_contract"]["allowed_repairs"] == []
 
 
 def test_hosted_oci_access_plan_blocks_wrong_target_and_arm_shape() -> None:

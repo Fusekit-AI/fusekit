@@ -785,6 +785,7 @@
   The hosted browser UI now also shows the reversal playbook in both the control room and proof receipt so the one-click launcher remains reversible without a terminal workflow.
   The live OCI permanent host now has post-reboot posture evidence for the active AMD/x86_64 origin: expected public ports only, current patch state, passing Lynis CIS summary, completed chkrootkit rootkit summary with no infection findings, hardened systemd unit proof, DNS propagation proof, release receipt, rollback metadata, hosted verifier proof, and redaction proof all pass. The remaining host-posture blocker is the missing live `FUSEKIT_STRIPE_SECRET_KEY`, so paid Managed FuseKit Runs remain fail-closed while BYO OCI stays the recommended launchable lane.
   The OCI inventory/cost review is now clean after terminating the old FuseKit-tagged rollback host with boot-volume preservation disabled: read-only SDK inventory reports exactly one running FuseKit hosted-launcher target, zero non-target running instances, no blockers, and the narrow SSH release path ready. OCI inventory and access-plan redaction now preserve stable public `ocid1.instance.<redacted:...>` labels without double-redacting already safe labels into ambiguous strings.
+  OCI deploy-access repair contracts now suppress repair menus when an approved deploy path is already ready, so public proof does not simultaneously say `repair_needed=false` and invite SSH-key or replacement-host repairs.
 
 ## North Star Audit Remediation
 

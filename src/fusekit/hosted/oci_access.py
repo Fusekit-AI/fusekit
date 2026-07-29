@@ -360,11 +360,12 @@ def _deploy_access_repair_contract(
         run_command_status=run_command_status,
         run_command_availability=run_command_availability,
     )
+    repair_needed = not deploy_paths
     return {
         "schema_version": HOSTED_OCI_DEPLOY_ACCESS_REPAIR_SCHEMA_VERSION,
-        "repair_needed": not deploy_paths,
+        "repair_needed": repair_needed,
         "run_command_availability": run_command_availability,
-        "allowed_repairs": allowed_repairs,
+        "allowed_repairs": allowed_repairs if repair_needed else [],
         "forbidden_repairs": [
             "Do not change Cloudflare DNS while restoring deploy access.",
             "Do not add MailPilot, AWS, billing, generated-app, or provider credentials.",
