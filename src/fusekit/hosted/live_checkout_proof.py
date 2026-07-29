@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -342,6 +343,12 @@ def _read_webhook_receipt_json(path: str) -> Mapping[str, Any]:
         receipt = payload.get("receipt")
         if not isinstance(receipt, Mapping):
             raise FuseKitError("live_checkout_proof_webhook_receipt_missing")
+        if payload.get("job_id") != receipt.get("job_id"):
+            raise FuseKitError("live_checkout_proof_webhook_receipt_job_id_mismatch")
+        if payload.get("receipt_schema_version") != receipt.get("schema_version"):
+            raise FuseKitError("live_checkout_proof_webhook_receipt_schema_mismatch")
+        if payload.get("receipt_sha256") != _payload_hash(receipt):
+            raise FuseKitError("live_checkout_proof_webhook_receipt_hash_mismatch")
         return receipt
     return payload
 
@@ -355,8 +362,19 @@ def _read_start_action_response_json(path: str) -> Mapping[str, Any]:
         response = payload.get("response")
         if not isinstance(response, Mapping):
             raise FuseKitError("live_checkout_proof_start_response_missing")
+        if payload.get("job_id") != response.get("job_id"):
+            raise FuseKitError("live_checkout_proof_start_response_job_id_mismatch")
+        if payload.get("response_schema_version") != response.get("schema_version"):
+            raise FuseKitError("live_checkout_proof_start_response_schema_mismatch")
+        if payload.get("response_sha256") != _payload_hash(response):
+            raise FuseKitError("live_checkout_proof_start_response_hash_mismatch")
         return response
     return payload
+
+
+def _payload_hash(value: Mapping[str, Any]) -> str:
+    serialized = json.dumps(value, sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 def _unique(values: Sequence[str]) -> list[str]:

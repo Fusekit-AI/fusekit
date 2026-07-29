@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -117,15 +118,7 @@ def test_live_checkout_proof_cli_accepts_job_store_webhook_receipt_wrapper(
     webhook_path = tmp_path / "webhook-wrapper.json"
     start_path = tmp_path / "start.json"
     webhook_path.write_text(
-        json.dumps(
-            {
-                "schema_version": HOSTED_JOB_STORE_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION,
-                "job_id": JOB_ID,
-                "receipt_schema_version": "fusekit.hosted-stripe-webhook.v1",
-                "receipt_sha256": "sha256:" + ("f" * 64),
-                "receipt": _webhook_receipt(),
-            }
-        ),
+        json.dumps(_webhook_receipt_wrapper()),
         encoding="utf-8",
     )
     start_path.write_text(json.dumps(_start_action_response()), encoding="utf-8")
@@ -155,15 +148,7 @@ def test_live_checkout_proof_cli_accepts_job_store_managed_start_response_wrappe
     start_path = tmp_path / "start-wrapper.json"
     webhook_path.write_text(json.dumps(_webhook_receipt()), encoding="utf-8")
     start_path.write_text(
-        json.dumps(
-            {
-                "schema_version": HOSTED_JOB_STORE_MANAGED_START_RESPONSE_SCHEMA_VERSION,
-                "job_id": JOB_ID,
-                "response_schema_version": "fusekit.hosted-job.v1",
-                "response_sha256": "sha256:" + ("f" * 64),
-                "response": _start_action_response(),
-            }
-        ),
+        json.dumps(_start_action_response_wrapper()),
         encoding="utf-8",
     )
 
@@ -189,27 +174,11 @@ def test_live_checkout_proof_cli_derives_job_store_artifacts_from_job_id(
     job_store = tmp_path / "hosted-jobs"
     job_store.mkdir()
     (job_store / f"{JOB_ID}.stripe-webhook-receipt.json").write_text(
-        json.dumps(
-            {
-                "schema_version": HOSTED_JOB_STORE_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION,
-                "job_id": JOB_ID,
-                "receipt_schema_version": "fusekit.hosted-stripe-webhook.v1",
-                "receipt_sha256": "sha256:" + ("f" * 64),
-                "receipt": _webhook_receipt(),
-            }
-        ),
+        json.dumps(_webhook_receipt_wrapper()),
         encoding="utf-8",
     )
     (job_store / f"{JOB_ID}.managed-start-response.json").write_text(
-        json.dumps(
-            {
-                "schema_version": HOSTED_JOB_STORE_MANAGED_START_RESPONSE_SCHEMA_VERSION,
-                "job_id": JOB_ID,
-                "response_schema_version": "fusekit.hosted-job.v1",
-                "response_sha256": "sha256:" + ("f" * 64),
-                "response": _start_action_response(),
-            }
-        ),
+        json.dumps(_start_action_response_wrapper()),
         encoding="utf-8",
     )
 
@@ -241,6 +210,62 @@ def test_live_checkout_proof_cli_rejects_partial_explicit_artifact_paths(
     assert exit_code == 2
     assert payload["ready"] is False
     assert payload["error"] == "live_checkout_proof_requires_both_artifact_paths"
+
+
+def test_live_checkout_proof_cli_rejects_tampered_webhook_wrapper_hash(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    webhook_path = tmp_path / "webhook-wrapper.json"
+    start_path = tmp_path / "start.json"
+    wrapper = _webhook_receipt_wrapper()
+    receipt = wrapper["receipt"]
+    assert isinstance(receipt, dict)
+    receipt["payment_applied"] = False
+    webhook_path.write_text(json.dumps(wrapper), encoding="utf-8")
+    start_path.write_text(json.dumps(_start_action_response()), encoding="utf-8")
+
+    exit_code = main(
+        [
+            "--webhook-receipt",
+            str(webhook_path),
+            "--start-action-response",
+            str(start_path),
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 2
+    assert payload["ready"] is False
+    assert payload["error"] == "live_checkout_proof_webhook_receipt_hash_mismatch"
+
+
+def test_live_checkout_proof_cli_rejects_tampered_start_wrapper_hash(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    webhook_path = tmp_path / "webhook.json"
+    start_path = tmp_path / "start-wrapper.json"
+    wrapper = _start_action_response_wrapper()
+    response = wrapper["response"]
+    assert isinstance(response, dict)
+    response["status"] = "proof_submitted"
+    webhook_path.write_text(json.dumps(_webhook_receipt()), encoding="utf-8")
+    start_path.write_text(json.dumps(wrapper), encoding="utf-8")
+
+    exit_code = main(
+        [
+            "--webhook-receipt",
+            str(webhook_path),
+            "--start-action-response",
+            str(start_path),
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 2
+    assert payload["ready"] is False
+    assert payload["error"] == "live_checkout_proof_start_response_hash_mismatch"
 
 
 def test_live_checkout_proof_cli_rejects_symlinked_artifact(
@@ -390,3 +415,30 @@ def _metadata() -> dict[str, str]:
         "stripe_price_id_hash": PRICE_HASH,
         "price_label_hash": LABEL_HASH,
     }
+
+
+def _webhook_receipt_wrapper() -> dict[str, object]:
+    receipt = _webhook_receipt()
+    return {
+        "schema_version": HOSTED_JOB_STORE_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION,
+        "job_id": JOB_ID,
+        "receipt_schema_version": "fusekit.hosted-stripe-webhook.v1",
+        "receipt_sha256": _payload_hash(receipt),
+        "receipt": receipt,
+    }
+
+
+def _start_action_response_wrapper() -> dict[str, object]:
+    response = _start_action_response()
+    return {
+        "schema_version": HOSTED_JOB_STORE_MANAGED_START_RESPONSE_SCHEMA_VERSION,
+        "job_id": JOB_ID,
+        "response_schema_version": "fusekit.hosted-job.v1",
+        "response_sha256": _payload_hash(response),
+        "response": response,
+    }
+
+
+def _payload_hash(value: dict[str, object]) -> str:
+    serialized = json.dumps(value, sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(serialized.encode("utf-8")).hexdigest()
