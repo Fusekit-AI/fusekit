@@ -29,6 +29,7 @@ from fusekit.hosted.billing import (
     _valid_stripe_checkout_session_id,
     _valid_stripe_price_id,
     _valid_stripe_secret_key,
+    _valid_stripe_webhook_secret,
     create_stripe_checkout_session,
     payment_required_receipt,
     retrieve_stripe_checkout_session,
@@ -571,6 +572,13 @@ HOSTED_READINESS_NEXT_ACTIONS: dict[str, str] = {
         "Use the fusekit-hosted-stripe-price output to set FUSEKIT_MANAGED_RUN_PRICE_LABEL "
         "to the public price shown before Checkout."
     ),
+    "stripe_webhook_secret_required_for_managed_runs": (
+        "Store the Stripe webhook signing secret as FUSEKIT_STRIPE_WEBHOOK_SECRET before "
+        "enabling public managed paid runs."
+    ),
+    "stripe_webhook_secret_invalid": (
+        "Use the Stripe webhook signing secret value that starts with whsec_."
+    ),
     "hosted_deployment_provider_required": (
         "Set FUSEKIT_HOSTED_DEPLOYMENT_PROVIDER to oci-compute, aws-elastic-beanstalk, "
         "or vercel before relying on provider-specific setup instructions."
@@ -580,8 +588,8 @@ HOSTED_READINESS_NEXT_ACTIONS: dict[str, str] = {
         "or vercel."
     ),
     "managed_runs_not_enabled": (
-        "Set FUSEKIT_MANAGED_RUNS_ENABLED=1 only after live Stripe Checkout proof and "
-        "worker-dispatch acceptance pass."
+        "Set FUSEKIT_MANAGED_RUNS_ENABLED=1 only after live Stripe Checkout, webhook, "
+        "and worker-dispatch acceptance proof pass."
     ),
     "source_provenance_not_verified": (
         "Publish hosted source provenance for Fusekit-AI/fusekit from the deployment "
@@ -622,6 +630,7 @@ class HostedSettings:
     managed_runs_enabled: bool = False
     stripe_secret_key: str = ""
     stripe_price_id: str = ""
+    stripe_webhook_secret: str = ""
     managed_run_price_label: str = ""
     stripe_test_mode_allowed: bool = False
     hosted_jobs: MutableMapping[str, HostedLaunchJob] = field(default_factory=dict)
@@ -656,6 +665,7 @@ class HostedSettings:
             managed_runs_enabled=_env_flag("FUSEKIT_MANAGED_RUNS_ENABLED"),
             stripe_secret_key=os.environ.get("FUSEKIT_STRIPE_SECRET_KEY", ""),
             stripe_price_id=os.environ.get("FUSEKIT_STRIPE_PRICE_ID", ""),
+            stripe_webhook_secret=os.environ.get("FUSEKIT_STRIPE_WEBHOOK_SECRET", ""),
             managed_run_price_label=os.environ.get("FUSEKIT_MANAGED_RUN_PRICE_LABEL", ""),
             stripe_test_mode_allowed=_env_flag("FUSEKIT_STRIPE_TEST_MODE_ALLOWED"),
         )
@@ -2810,6 +2820,14 @@ def _hosted_config_errors(settings: HostedSettings) -> tuple[str, ...]:
         errors.append("stripe_live_secret_key_required_for_managed_runs")
     if settings.managed_runs_enabled and not _valid_stripe_price_id(settings.stripe_price_id):
         errors.append("stripe_price_id_required_for_managed_runs")
+    if settings.stripe_webhook_secret and not _valid_stripe_webhook_secret(
+        settings.stripe_webhook_secret
+    ):
+        errors.append("stripe_webhook_secret_invalid")
+    if settings.managed_runs_enabled and not _valid_stripe_webhook_secret(
+        settings.stripe_webhook_secret
+    ):
+        errors.append("stripe_webhook_secret_required_for_managed_runs")
     if settings.managed_runs_enabled and not settings.payment_config().public_dict().get(
         "price_label_configured"
     ):
@@ -2841,6 +2859,14 @@ def _managed_lane_blockers(settings: HostedSettings) -> list[str]:
         blockers.append("stripe_price_id_required_for_managed_runs")
     if not settings.payment_config().public_dict().get("price_label_configured"):
         blockers.append("managed_run_price_label_required")
+    if settings.stripe_webhook_secret and not _valid_stripe_webhook_secret(
+        settings.stripe_webhook_secret
+    ):
+        blockers.append("stripe_webhook_secret_invalid")
+    if settings.managed_runs_enabled and not _valid_stripe_webhook_secret(
+        settings.stripe_webhook_secret
+    ):
+        blockers.append("stripe_webhook_secret_required_for_managed_runs")
     if not settings.worker_secret:
         blockers.append("FUSEKIT_HOSTED_WORKER_SECRET")
     elif len(settings.worker_secret) < 16:

@@ -20,6 +20,7 @@ from fusekit.hosted.billing import (
     _valid_price_label,
     _valid_stripe_price_id,
     _valid_stripe_secret_key,
+    _valid_stripe_webhook_secret,
 )
 from fusekit.hosted.server import HOSTED_CANONICAL_ORIGIN, REQUIRED_HOSTED_ENV
 from fusekit.security import (
@@ -42,7 +43,12 @@ HOSTED_RUNTIME_STRIPE_ENV = (
     "FUSEKIT_MANAGED_RUN_PRICE_LABEL",
     "FUSEKIT_MANAGED_RUNS_ENABLED",
 )
+HOSTED_RUNTIME_STRIPE_OPTIONAL_ENV = ("FUSEKIT_STRIPE_WEBHOOK_SECRET",)
 HOSTED_RUNTIME_REQUIRED_FILE_ENV = (*REQUIRED_HOSTED_ENV, *HOSTED_RUNTIME_STRIPE_ENV)
+HOSTED_RUNTIME_ALLOWED_FILE_ENV = (
+    *HOSTED_RUNTIME_REQUIRED_FILE_ENV,
+    *HOSTED_RUNTIME_STRIPE_OPTIONAL_ENV,
+)
 
 
 def build_hosted_runtime_secret_plan(
@@ -185,7 +191,7 @@ def verify_hosted_runtime_secret_file(
     if stripe["ready_for_managed_payment_staging"] is not True:
         blockers.append("runtime_secret_payment_staging_not_ready")
     unexpected_keys = [
-        name for name in sorted(material) if name not in HOSTED_RUNTIME_REQUIRED_FILE_ENV
+        name for name in sorted(material) if name not in HOSTED_RUNTIME_ALLOWED_FILE_ENV
     ]
     public_unexpected_keys = [_public_env_name(name) for name in unexpected_keys]
     blockers.extend(f"runtime_secret_unexpected_key:{name}" for name in public_unexpected_keys)
@@ -316,7 +322,7 @@ def _runtime_secret_material(
             value = secrets.token_urlsafe(48)
         if value:
             material[name] = value
-    for name in HOSTED_RUNTIME_STRIPE_ENV:
+    for name in (*HOSTED_RUNTIME_STRIPE_ENV, *HOSTED_RUNTIME_STRIPE_OPTIONAL_ENV):
         value = env.get(name, "")
         if name == "FUSEKIT_MANAGED_RUNS_ENABLED":
             value = "0"
@@ -510,6 +516,7 @@ def _stripe_runtime_status(env: Mapping[str, str]) -> dict[str, object]:
     price_id = env.get("FUSEKIT_STRIPE_PRICE_ID", "")
     label = env.get("FUSEKIT_MANAGED_RUN_PRICE_LABEL", "")
     enabled = env.get("FUSEKIT_MANAGED_RUNS_ENABLED", "0")
+    webhook_secret = env.get("FUSEKIT_STRIPE_WEBHOOK_SECRET", "")
     account_mode = _stripe_account_mode(secret_key)
     blockers: list[str] = []
     if secret_key and not _valid_stripe_secret_key(
@@ -521,14 +528,21 @@ def _stripe_runtime_status(env: Mapping[str, str]) -> dict[str, object]:
         blockers.append("stripe_price_id_invalid")
     if label and not _valid_price_label(label):
         blockers.append("managed_run_price_label_invalid")
+    if webhook_secret and not _valid_stripe_webhook_secret(webhook_secret):
+        blockers.append("stripe_webhook_secret_invalid")
+    if enabled in {"1", "true", "True", "TRUE"} and not _valid_stripe_webhook_secret(
+        webhook_secret
+    ):
+        blockers.append("stripe_webhook_secret_required_for_managed_runs")
     if enabled not in {"", "0", "false", "False", "FALSE"}:
-        blockers.append("managed_runs_must_stay_disabled_until_checkout_proof")
+        blockers.append("managed_runs_must_stay_disabled_until_checkout_and_webhook_proof")
     ready_for_staging = bool(
         account_mode == "live"
         and _valid_stripe_price_id(price_id)
         and label
         and _valid_price_label(label)
-        and "managed_runs_must_stay_disabled_until_checkout_proof" not in blockers
+        and "stripe_webhook_secret_invalid" not in blockers
+        and "managed_runs_must_stay_disabled_until_checkout_and_webhook_proof" not in blockers
     )
     return {
         "ready_for_managed_payment_staging": ready_for_staging,
@@ -555,6 +569,13 @@ def _stripe_runtime_status(env: Mapping[str, str]) -> dict[str, object]:
                 "must_remain_disabled": True,
                 "enabled": enabled in {"1", "true", "True", "TRUE"},
             },
+            "FUSEKIT_STRIPE_WEBHOOK_SECRET": {
+                "configured": bool(webhook_secret),
+                "valid_shape": bool(
+                    webhook_secret and _valid_stripe_webhook_secret(webhook_secret)
+                ),
+                "required_before_enablement": True,
+            },
         },
     }
 
@@ -576,7 +597,7 @@ def _next_actions(blockers: Sequence[str]) -> list[str]:
     if not blockers:
         return [
             "Write the secret values to /etc/fusekit/hosted-secrets.env as root:root mode 0600.",
-            "Keep FUSEKIT_MANAGED_RUNS_ENABLED=0 until live Checkout proof passes.",
+            "Keep FUSEKIT_MANAGED_RUNS_ENABLED=0 until live Checkout and webhook proof pass.",
             "Run hosted verifier, OCI inventory, replacement plan, and host posture before "
             "DNS cutover.",
         ]
@@ -584,8 +605,8 @@ def _next_actions(blockers: Sequence[str]) -> list[str]:
         "Collect the missing hosted runtime values without pasting them into docs or logs.",
         "Generate hosted state/worker secrets only on the replacement host when explicitly "
         "allowed.",
-        "Keep managed paid runs disabled until live Checkout proof and worker-dispatch "
-        "acceptance pass.",
+        "Keep managed paid runs disabled until live Checkout, webhook, and "
+        "worker-dispatch acceptance proof pass.",
     ]
 
 

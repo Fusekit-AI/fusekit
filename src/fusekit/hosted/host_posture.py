@@ -20,6 +20,7 @@ from fusekit.hosted.runtime_secrets import (
     HOSTED_RUNTIME_REQUIRED_FILE_ENV,
     HOSTED_RUNTIME_SECRET_VERIFY_SCHEMA_VERSION,
     HOSTED_RUNTIME_STRIPE_ENV,
+    HOSTED_RUNTIME_STRIPE_OPTIONAL_ENV,
 )
 from fusekit.hosted.verify import HOSTED_DEPLOYMENT_VERIFICATION_SCHEMA_VERSION
 from fusekit.security import (
@@ -147,13 +148,18 @@ OCI_HOST_POSTURE_RUNTIME_SECRET_ENV_ROW_KEYS = frozenset({"present"})
 OCI_HOST_POSTURE_RUNTIME_SECRET_KEY_INVENTORY_KEYS = frozenset(
     {"required_count", "present_required_count", "missing", "unexpected_keys"}
 )
-OCI_HOST_POSTURE_STRIPE_RUNTIME_ENV_KEYS = frozenset(HOSTED_RUNTIME_STRIPE_ENV)
+OCI_HOST_POSTURE_STRIPE_RUNTIME_ENV_KEYS = frozenset(
+    (*HOSTED_RUNTIME_STRIPE_ENV, *HOSTED_RUNTIME_STRIPE_OPTIONAL_ENV)
+)
 OCI_HOST_POSTURE_STRIPE_RUNTIME_ENV_ROW_KEYS = {
     "FUSEKIT_STRIPE_SECRET_KEY": frozenset({"configured", "account_mode"}),
     "FUSEKIT_STRIPE_PRICE_ID": frozenset({"configured", "public_id"}),
     "FUSEKIT_MANAGED_RUN_PRICE_LABEL": frozenset({"configured", "public_label"}),
     "FUSEKIT_MANAGED_RUNS_ENABLED": frozenset(
         {"configured", "must_remain_disabled", "enabled"}
+    ),
+    "FUSEKIT_STRIPE_WEBHOOK_SECRET": frozenset(
+        {"configured", "valid_shape", "required_before_enablement"}
     ),
 }
 OCI_HOST_POSTURE_PATCH_POSTURE_KEYS = frozenset(
@@ -1815,6 +1821,7 @@ def _stripe_runtime_env_ready(value: Mapping[str, object]) -> bool:
     price_id = _mapping(value.get("FUSEKIT_STRIPE_PRICE_ID"))
     price_label = _mapping(value.get("FUSEKIT_MANAGED_RUN_PRICE_LABEL"))
     managed_runs = _mapping(value.get("FUSEKIT_MANAGED_RUNS_ENABLED"))
+    webhook_secret = _mapping(value.get("FUSEKIT_STRIPE_WEBHOOK_SECRET"))
     return (
         secret_key.get("configured") is True
         and secret_key.get("account_mode") == "live"
@@ -1825,6 +1832,11 @@ def _stripe_runtime_env_ready(value: Mapping[str, object]) -> bool:
         and managed_runs.get("configured") is True
         and managed_runs.get("must_remain_disabled") is True
         and managed_runs.get("enabled") is False
+        and webhook_secret.get("required_before_enablement") is True
+        and (
+            webhook_secret.get("configured") is not True
+            or webhook_secret.get("valid_shape") is True
+        )
     )
 
 

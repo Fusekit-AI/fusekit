@@ -226,8 +226,8 @@ def _verification_next_actions(blockers: list[str]) -> list[str]:
         return [
             "Store the verified FUSEKIT_STRIPE_PRICE_ID and "
             "FUSEKIT_MANAGED_RUN_PRICE_LABEL in the hosted runtime secret file.",
-            "Keep FUSEKIT_MANAGED_RUNS_ENABLED=0 until live Checkout proof and "
-            "worker-dispatch acceptance pass.",
+            "Keep FUSEKIT_MANAGED_RUNS_ENABLED=0 until live Checkout, webhook, and "
+            "worker-dispatch acceptance proof pass.",
         ]
     return [
         "Do not enable managed paid runs with this Stripe Price.",

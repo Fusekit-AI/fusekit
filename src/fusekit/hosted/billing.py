@@ -18,6 +18,7 @@ STRIPE_API_BASE = "https://api.stripe.com"
 STRIPE_LIVE_SECRET_KEY_PREFIXES = ("sk_live_", "rk_live_")
 STRIPE_TEST_SECRET_KEY_PREFIXES = ("sk_test_",)
 STRIPE_SECRET_KEY_PREFIXES = (*STRIPE_LIVE_SECRET_KEY_PREFIXES, *STRIPE_TEST_SECRET_KEY_PREFIXES)
+STRIPE_WEBHOOK_SECRET_PREFIX = "whsec_"
 STRIPE_CHECKOUT_METADATA_KEYS = (
     "job_id",
     "lane",
@@ -560,6 +561,18 @@ def _valid_stripe_secret_key(
         return False
     matched_prefix = next((prefix for prefix in allowed_prefixes if value.startswith(prefix)), "")
     if not matched_prefix or len(value) <= len(matched_prefix):
+        return False
+    return all(ch.isalnum() or ch == "_" for ch in value)
+
+
+def _valid_stripe_webhook_secret(value: str) -> bool:
+    if not isinstance(value, str):
+        return False
+    if len(value) > 512:
+        return False
+    if not value.startswith(STRIPE_WEBHOOK_SECRET_PREFIX):
+        return False
+    if len(value) <= len(STRIPE_WEBHOOK_SECRET_PREFIX):
         return False
     return all(ch.isalnum() or ch == "_" for ch in value)
 

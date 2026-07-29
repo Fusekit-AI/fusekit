@@ -68,6 +68,11 @@ def test_runtime_secret_plan_reports_readiness_without_secret_values() -> None:
     assert plan["stripe_runtime_env"]["FUSEKIT_STRIPE_PRICE_ID"]["public_id"] == (
         "price_1ToydUPZlsTa6iL323anyggA"
     )
+    assert plan["stripe_runtime_env"]["FUSEKIT_STRIPE_WEBHOOK_SECRET"] == {
+        "configured": False,
+        "valid_shape": False,
+        "required_before_enablement": True,
+    }
     assert LIVE_STRIPE_SECRET_FIXTURE not in serialized
     assert "secretfixture" not in serialized
     assert "state-secret-value" not in serialized
@@ -127,7 +132,39 @@ def test_runtime_secret_plan_blocks_missing_required_values_and_managed_enabled(
     assert plan["ready_for_managed_payment_staging"] is False
     assert "FUSEKIT_GITHUB_APP_PRIVATE_KEY" in plan["blockers"]
     assert "hosted_worker_dispatch_url_must_be_https_without_credentials" in plan["blockers"]
-    assert "managed_runs_must_stay_disabled_until_checkout_proof" in plan["blockers"]
+    assert "stripe_webhook_secret_required_for_managed_runs" in plan["blockers"]
+    assert "managed_runs_must_stay_disabled_until_checkout_and_webhook_proof" in plan["blockers"]
+
+
+def test_runtime_secret_plan_accepts_webhook_secret_before_managed_enablement() -> None:
+    plan = build_hosted_runtime_secret_plan(
+        env=_env(FUSEKIT_STRIPE_WEBHOOK_SECRET="whsec_fixture")
+    )
+    serialized = json.dumps(plan, sort_keys=True)
+
+    assert plan["ready_to_write_secret_file"] is True
+    assert plan["ready_for_managed_payment_staging"] is True
+    assert plan["stripe_runtime_env"]["FUSEKIT_STRIPE_WEBHOOK_SECRET"] == {
+        "configured": True,
+        "valid_shape": True,
+        "required_before_enablement": True,
+    }
+    assert "whsec_fixture" not in serialized
+
+
+def test_runtime_secret_plan_blocks_malformed_webhook_secret() -> None:
+    plan = build_hosted_runtime_secret_plan(
+        env=_env(FUSEKIT_STRIPE_WEBHOOK_SECRET="whsec_bad/url")
+    )
+
+    assert plan["ready_to_write_secret_file"] is False
+    assert plan["ready_for_managed_payment_staging"] is False
+    assert "stripe_webhook_secret_invalid" in plan["blockers"]
+    assert plan["stripe_runtime_env"]["FUSEKIT_STRIPE_WEBHOOK_SECRET"] == {
+        "configured": True,
+        "valid_shape": False,
+        "required_before_enablement": True,
+    }
 
 
 def test_runtime_secret_plan_blocks_malformed_stripe_price_id() -> None:

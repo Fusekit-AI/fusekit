@@ -368,6 +368,7 @@ def _settings_with_github(opener: SequenceOpener) -> HostedSettings:
         managed_runs_enabled=True,
         stripe_secret_key="sk_live_redacted",
         stripe_price_id="price_managed_run",
+        stripe_webhook_secret="whsec_redacted",
         managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
     )
@@ -822,6 +823,7 @@ def test_hosted_readiness_reports_paid_managed_lane_when_stripe_is_configured() 
         managed_runs_enabled=True,
         stripe_secret_key="sk_live_redacted",
         stripe_price_id="price_managed_run",
+        stripe_webhook_secret="whsec_redacted",
         managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
     )
@@ -859,6 +861,63 @@ def test_hosted_readiness_reports_paid_managed_lane_when_stripe_is_configured() 
     assert "price_managed_run" not in serialized
 
 
+def test_hosted_readiness_requires_webhook_secret_before_managed_enablement() -> None:
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=_private_key_pem(),
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        managed_runs_enabled=True,
+        stripe_secret_key="rk_live_redacted",
+        stripe_price_id="price_managed_run",
+        managed_run_price_label=MANAGED_PRICE_LABEL,
+        **_vercel_provenance_kwargs(),
+    )
+
+    status, _headers, body = _call("/api/hosted/readiness", settings=settings)
+    payload = json.loads(body.decode("utf-8"))
+    managed = payload["lane_readiness"]["lanes"][MANAGED_FUSEKIT_RUN_LANE]
+
+    assert status == "200 OK"
+    assert payload["ready"] is False
+    assert "stripe_webhook_secret_required_for_managed_runs" in payload["invalid"]
+    assert "stripe_webhook_secret_required_for_managed_runs" in managed["blocking_checks"]
+    assert managed["launchable"] is False
+    assert managed["managed_worker_dispatch_allowed"] is False
+    assert "rk_live" not in json.dumps(payload)
+
+
+def test_hosted_readiness_rejects_malformed_webhook_secret() -> None:
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=_private_key_pem(),
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        managed_runs_enabled=False,
+        stripe_secret_key="rk_live_redacted",
+        stripe_price_id="price_managed_run",
+        stripe_webhook_secret="whsec_bad/url",
+        managed_run_price_label=MANAGED_PRICE_LABEL,
+        **_vercel_provenance_kwargs(),
+    )
+
+    status, _headers, body = _call("/api/hosted/readiness", settings=settings)
+    payload = json.loads(body.decode("utf-8"))
+    managed = payload["lane_readiness"]["lanes"][MANAGED_FUSEKIT_RUN_LANE]
+
+    assert status == "200 OK"
+    assert payload["ready"] is False
+    assert "stripe_webhook_secret_invalid" in payload["invalid"]
+    assert "stripe_webhook_secret_invalid" in managed["blocking_checks"]
+    assert "whsec_bad" not in json.dumps(payload)
+
+
 def test_hosted_readiness_rejects_ambiguous_managed_price_label() -> None:
     settings = HostedSettings(
         public_origin="https://fusekit.snowmanai.org",
@@ -871,6 +930,7 @@ def test_hosted_readiness_rejects_ambiguous_managed_price_label() -> None:
         managed_runs_enabled=True,
         stripe_secret_key="sk_live_redacted",
         stripe_price_id="price_managed_run",
+        stripe_webhook_secret="whsec_redacted",
         managed_run_price_label="Launch validation: .00 FuseKit managed run",
         **_vercel_provenance_kwargs(),
     )
@@ -901,6 +961,7 @@ def test_hosted_readiness_rejects_malformed_managed_price_id() -> None:
         managed_runs_enabled=True,
         stripe_secret_key="sk_live_redacted",
         stripe_price_id="price_bad/url",
+        stripe_webhook_secret="whsec_redacted",
         managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
     )
@@ -930,6 +991,7 @@ def test_hosted_readiness_rejects_malformed_managed_stripe_secret_key() -> None:
         managed_runs_enabled=True,
         stripe_secret_key="sk_live_bad/url",
         stripe_price_id="price_managed_run",
+        stripe_webhook_secret="whsec_redacted",
         managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
     )
@@ -962,6 +1024,7 @@ def test_hosted_readiness_rejects_test_mode_stripe_for_public_managed_lane() -> 
         managed_runs_enabled=True,
         stripe_secret_key="sk_test_redacted",
         stripe_price_id="price_managed_run",
+        stripe_webhook_secret="whsec_redacted",
         managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
     )
@@ -997,6 +1060,7 @@ def test_hosted_readiness_test_mode_override_rejects_unknown_stripe_key_shape() 
         managed_runs_enabled=True,
         stripe_secret_key="sk_redacted_unknown",
         stripe_price_id="price_managed_run",
+        stripe_webhook_secret="whsec_redacted",
         managed_run_price_label=MANAGED_PRICE_LABEL,
         stripe_test_mode_allowed=True,
         **_vercel_provenance_kwargs(),
@@ -2117,8 +2181,8 @@ def test_hosted_plan_disables_managed_lane_until_payment_is_configured() -> None
     assert status == "200 OK"
     assert "Managed FuseKit run" in text
     assert (
-        "Set FUSEKIT_MANAGED_RUNS_ENABLED=1 only after live Stripe Checkout proof "
-        "and worker-dispatch acceptance pass."
+        "Set FUSEKIT_MANAGED_RUNS_ENABLED=1 only after live Stripe Checkout, webhook, "
+        "and worker-dispatch acceptance proof pass."
     ) in text
     assert f"lane={MANAGED_FUSEKIT_RUN_LANE}" not in text
     assert f"lane={BYO_OCI_LANE}" in text
@@ -2178,8 +2242,8 @@ def test_hosted_control_room_rejects_unlaunchable_managed_lane_before_github_wor
     ]
     assert payload["next_actions"] == [
         (
-            "Set FUSEKIT_MANAGED_RUNS_ENABLED=1 only after live Stripe Checkout proof "
-            "and worker-dispatch acceptance pass."
+            "Set FUSEKIT_MANAGED_RUNS_ENABLED=1 only after live Stripe Checkout, webhook, "
+            "and worker-dispatch acceptance proof pass."
         ),
         (
             "Store a live FUSEKIT_STRIPE_SECRET_KEY only in the hosted runtime secret "
@@ -2276,6 +2340,7 @@ def test_hosted_control_room_defaults_to_managed_lane_when_managed_launchable() 
         managed_runs_enabled=True,
         stripe_secret_key="sk_live_redacted",
         stripe_price_id="price_managed_run",
+        stripe_webhook_secret="whsec_redacted",
         managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
     )
@@ -2429,6 +2494,7 @@ def test_hosted_managed_lane_requires_stripe_payment_before_worker_dispatch() ->
         managed_runs_enabled=True,
         stripe_secret_key="sk_live_redacted",
         stripe_price_id="price_managed_run",
+        stripe_webhook_secret="whsec_redacted",
         managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
     )
@@ -2748,6 +2814,7 @@ def test_hosted_managed_payment_dispatch_uses_job_price_binding_after_rotation()
         managed_runs_enabled=True,
         stripe_secret_key="sk_live_redacted",
         stripe_price_id="price_managed_run",
+        stripe_webhook_secret="whsec_redacted",
         managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
     )
@@ -2892,6 +2959,7 @@ def test_hosted_managed_payment_return_rejects_price_label_drift() -> None:
         managed_runs_enabled=True,
         stripe_secret_key="sk_live_redacted",
         stripe_price_id="price_managed_run",
+        stripe_webhook_secret="whsec_redacted",
         managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
     )
@@ -3001,6 +3069,7 @@ def test_hosted_managed_lane_requires_payment_before_rollback_or_detonation_disp
         managed_runs_enabled=True,
         stripe_secret_key="sk_live_redacted",
         stripe_price_id="price_managed_run",
+        stripe_webhook_secret="whsec_redacted",
         managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
     )
@@ -3093,6 +3162,7 @@ def test_hosted_payment_checkout_rejects_missing_checkout_url_before_pending_sta
         managed_runs_enabled=True,
         stripe_secret_key="sk_live_redacted",
         stripe_price_id="price_managed_run",
+        stripe_webhook_secret="whsec_redacted",
         managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
     )
@@ -3185,6 +3255,7 @@ def test_hosted_payment_checkout_rejects_unpublic_stripe_receipt_before_pending_
         managed_runs_enabled=True,
         stripe_secret_key="sk_live_redacted",
         stripe_price_id="price_managed_run",
+        stripe_webhook_secret="whsec_redacted",
         managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
     )
@@ -3254,6 +3325,7 @@ def test_hosted_payment_checkout_rejects_bad_controls_without_stripe_call() -> N
         managed_runs_enabled=True,
         stripe_secret_key="sk_live_redacted",
         stripe_price_id="price_managed_run",
+        stripe_webhook_secret="whsec_redacted",
         managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
     )
@@ -3374,6 +3446,7 @@ def test_hosted_byo_oci_lane_starts_without_managed_worker_dispatch() -> None:
         managed_runs_enabled=True,
         stripe_secret_key="sk_live_redacted",
         stripe_price_id="price_managed_run",
+        stripe_webhook_secret="whsec_redacted",
         managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
     )
@@ -4148,6 +4221,7 @@ def test_hosted_job_start_dispatches_signed_worker_envelope_when_configured() ->
         managed_runs_enabled=True,
         stripe_secret_key="sk_live_redacted",
         stripe_price_id="price_managed_run",
+        stripe_webhook_secret="whsec_redacted",
         managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
     )
@@ -4291,6 +4365,7 @@ def test_hosted_job_start_rejects_nonproduction_or_sidecar_worker_dispatch_recei
         managed_runs_enabled=True,
         stripe_secret_key="sk_live_redacted",
         stripe_price_id="price_managed_run",
+        stripe_webhook_secret="whsec_redacted",
         managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
     )
@@ -4363,6 +4438,7 @@ def test_hosted_job_actions_reject_duplicate_start_without_second_dispatch() -> 
         managed_runs_enabled=True,
         stripe_secret_key="sk_live_redacted",
         stripe_price_id="price_managed_run",
+        stripe_webhook_secret="whsec_redacted",
         managed_run_price_label=MANAGED_PRICE_LABEL,
         **_vercel_provenance_kwargs(),
     )

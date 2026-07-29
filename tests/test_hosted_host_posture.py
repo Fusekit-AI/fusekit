@@ -65,6 +65,11 @@ def _runtime_secret_verify_report() -> dict[str, object]:
                 "must_remain_disabled": True,
                 "enabled": False,
             },
+            "FUSEKIT_STRIPE_WEBHOOK_SECRET": {
+                "configured": False,
+                "valid_shape": False,
+                "required_before_enablement": True,
+            },
         },
         "key_inventory": {
             "required_count": 11,
@@ -73,7 +78,7 @@ def _runtime_secret_verify_report() -> dict[str, object]:
             "unexpected_keys": [],
         },
         "next_actions": [
-            "Keep FUSEKIT_MANAGED_RUNS_ENABLED=0 until live Checkout proof passes.",
+            "Keep FUSEKIT_MANAGED_RUNS_ENABLED=0 until live Checkout and webhook proof pass.",
         ],
         "secret_boundary": (
             "This verifier reads metadata and key inventory only. It emits no environment "
@@ -613,6 +618,47 @@ def test_oci_host_posture_blocks_non_live_runtime_secret_stripe_mode() -> None:
     secret_key = stripe_runtime_env["FUSEKIT_STRIPE_SECRET_KEY"]
     assert isinstance(secret_key, dict)
     secret_key["account_mode"] = "unknown"
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.runtime_secret_verify"]
+    verify_check = _check(report, "host.runtime_secret_verify")
+    assert verify_check["failures"] == [
+        "oci_host_runtime_secret_stripe_env_mismatch"
+    ]
+
+
+def test_oci_host_posture_blocks_runtime_webhook_secret_enablement_flag_drift() -> None:
+    evidence = _clean_evidence()
+    verify_report = evidence["runtime_secret_verify"]
+    assert isinstance(verify_report, dict)
+    stripe_runtime_env = verify_report["stripe_runtime_env"]
+    assert isinstance(stripe_runtime_env, dict)
+    webhook_secret = stripe_runtime_env["FUSEKIT_STRIPE_WEBHOOK_SECRET"]
+    assert isinstance(webhook_secret, dict)
+    webhook_secret["required_before_enablement"] = False
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.runtime_secret_verify"]
+    verify_check = _check(report, "host.runtime_secret_verify")
+    assert verify_check["failures"] == [
+        "oci_host_runtime_secret_stripe_env_mismatch"
+    ]
+
+
+def test_oci_host_posture_blocks_configured_runtime_webhook_secret_with_bad_shape() -> None:
+    evidence = _clean_evidence()
+    verify_report = evidence["runtime_secret_verify"]
+    assert isinstance(verify_report, dict)
+    stripe_runtime_env = verify_report["stripe_runtime_env"]
+    assert isinstance(stripe_runtime_env, dict)
+    webhook_secret = stripe_runtime_env["FUSEKIT_STRIPE_WEBHOOK_SECRET"]
+    assert isinstance(webhook_secret, dict)
+    webhook_secret["configured"] = True
+    webhook_secret["valid_shape"] = False
 
     report = evaluate_oci_host_posture(evidence)
 
