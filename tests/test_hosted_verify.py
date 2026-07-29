@@ -93,6 +93,7 @@ class SequenceOpener:
             | str
             | urllib.error.HTTPError
             | tuple[dict[str, object] | str, dict[str, str]]
+            | tuple[dict[str, object] | str, dict[str, str], int]
         ],
     ) -> None:
         self.payloads = payloads
@@ -106,13 +107,43 @@ class SequenceOpener:
     ) -> FakeResponse:
         self.requests.append(request)
         assert timeout == 20.0
+        if _is_stripe_webhook_fail_closed_probe(request) and (
+            not self.payloads or not _explicit_webhook_probe_payload(self.payloads[0])
+        ):
+            body, headers, status = _stripe_webhook_fail_closed_error()
+            return FakeResponse(body, headers=headers, status=status)
         payload = self.payloads.pop(0)
         if isinstance(payload, urllib.error.HTTPError):
             raise payload
         if isinstance(payload, tuple):
+            if len(payload) == 3:
+                body, headers, status = payload
+                return FakeResponse(body, headers=headers, status=status)
             body, headers = payload
             return FakeResponse(body, headers=headers)
         return FakeResponse(payload)
+
+
+def _is_stripe_webhook_fail_closed_probe(request: urllib.request.Request) -> bool:
+    return (
+        request.full_url
+        == "https://fusekit.snowmanai.org/api/hosted/payments/stripe-webhook"
+        and request.get_method() == "POST"
+    )
+
+
+def _explicit_webhook_probe_payload(
+    payload: (
+        dict[str, object]
+        | str
+        | urllib.error.HTTPError
+        | tuple[dict[str, object] | str, dict[str, str]]
+        | tuple[dict[str, object] | str, dict[str, str], int]
+    ),
+) -> bool:
+    return isinstance(payload, urllib.error.HTTPError) or (
+        isinstance(payload, tuple) and len(payload) == 3
+    )
 
 
 def _worker_dispatch_binding_contract() -> dict[str, object]:
@@ -181,6 +212,30 @@ def _worker_dispatch_readiness_contract() -> dict[str, object]:
     }
 
 
+def _stripe_webhook_fail_closed_error() -> tuple[dict[str, object], dict[str, str], int]:
+    return (
+        {
+            "schema_version": "fusekit.hosted-payment-error.v1",
+            "error": "webhook_signature_invalid",
+            "action": "payment",
+            "dispatch_blocked": True,
+            "receipt_statement": (
+                "Stripe Checkout authorization has not been accepted for this managed run; "
+                "managed worker dispatch remains blocked."
+            ),
+            "next_required_proof": ["stripe_checkout_authorization"],
+            "secret_boundary": (
+                "Payment error receipts expose only the public failure label and blocked "
+                "dispatch state. They never include card data, payment method ids, billing "
+                "details, Stripe secret keys, client secrets, raw Checkout sessions, or "
+                "provider credentials."
+            ),
+        },
+        SAFE_RESPONSE_HEADERS,
+        403,
+    )
+
+
 def test_verify_hosted_deployment_passes_launcher_and_dispatch_checks() -> None:
     opener = SequenceOpener(
         [
@@ -189,6 +244,7 @@ def test_verify_hosted_deployment_passes_launcher_and_dispatch_checks() -> None:
             _readiness_contract(),
             _deployment_contract(),
             _github_intake_contract(),
+            _stripe_webhook_fail_closed_error(),
             {"ok": True},
             _worker_dispatch_readiness_contract(),
         ]
@@ -222,6 +278,7 @@ def test_verify_hosted_deployment_passes_launcher_and_dispatch_checks() -> None:
         "hosted.readiness",
         "hosted.deployment",
         "hosted.github_intake",
+        "hosted.stripe_webhook_fail_closed",
         "worker_dispatch.dns",
         "worker_dispatch.health",
         "worker_dispatch.readiness",
@@ -235,10 +292,54 @@ def test_verify_hosted_deployment_passes_launcher_and_dispatch_checks() -> None:
     assert opener.requests[0].full_url == "https://fusekit.snowmanai.org/"
     assert opener.requests[1].full_url == "https://fusekit.snowmanai.org/healthz"
     assert opener.requests[4].full_url == "https://fusekit.snowmanai.org/api/github/intake"
-    assert opener.requests[5].full_url == "https://worker.snowmanai.org/healthz"
-    assert opener.requests[6].full_url == "https://worker.snowmanai.org/readiness"
+    assert opener.requests[5].full_url == (
+        "https://fusekit.snowmanai.org/api/hosted/payments/stripe-webhook"
+    )
+    assert opener.requests[5].get_method() == "POST"
+    assert opener.requests[5].data == b"{}"
+    assert checks["hosted.stripe_webhook_fail_closed"]["http_status"] == 403
+    assert checks["hosted.stripe_webhook_fail_closed"]["proof"] == (
+        "stripe_webhook_requires_valid_signature"
+    )
+    assert opener.requests[6].full_url == "https://worker.snowmanai.org/healthz"
+    assert opener.requests[7].full_url == "https://worker.snowmanai.org/readiness"
     assert "WORKER_SECRET" not in serialized
     assert "signed-public-job-token" not in serialized
+
+
+def test_verify_hosted_deployment_requires_stripe_webhook_fail_closed() -> None:
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            _readiness_contract(),
+            _deployment_contract(),
+            _github_intake_contract(),
+            (
+                {
+                    "schema_version": "fusekit.hosted-payment-error.v1",
+                    "error": "not_blocked",
+                    "dispatch_blocked": False,
+                },
+                SAFE_RESPONSE_HEADERS,
+                200,
+            ),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+    failures = checks["hosted.stripe_webhook_fail_closed"]["failures"]
+
+    assert "hosted.stripe_webhook_fail_closed" in report["blocking_checks"]
+    assert "fail_closed_status_mismatch" in failures
+    assert "fail_closed_error_mismatch" in failures
+    assert "fail_closed_dispatch_not_blocked" in failures
+    assert report["worker_dispatch_url"] == ""
 
 
 def test_verify_hosted_deployment_requires_security_headers() -> None:
@@ -2424,6 +2525,7 @@ def test_verify_hosted_deployment_rejects_private_worker_dispatch_dns_before_fet
         "https://fusekit.snowmanai.org/api/hosted/readiness",
         "https://fusekit.snowmanai.org/api/hosted/deployment",
         "https://fusekit.snowmanai.org/api/github/intake",
+        "https://fusekit.snowmanai.org/api/hosted/payments/stripe-webhook",
     ]
 
 

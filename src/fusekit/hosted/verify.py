@@ -315,6 +315,21 @@ def verify_hosted_deployment(
             expect_github_intake_contract=True,
         )
     )
+    if all(check["status"] == "ok" for check in checks):
+        checks.append(
+            _json_fail_closed_check(
+                "hosted.stripe_webhook_fail_closed",
+                f"{public_origin}/api/hosted/payments/stripe-webhook",
+                opener=opener,
+                method="POST",
+                body=b"{}",
+                headers={"Content-Type": "application/json", "User-Agent": "FuseKit"},
+                expect_status=403,
+                expect_schema="fusekit.hosted-payment-error.v1",
+                expect_error="webhook_signature_invalid",
+                proof_label="stripe_webhook_requires_valid_signature",
+            )
+        )
     if not dispatch_public_url and all(check["status"] == "ok" for check in checks):
         dispatch_public_url = _worker_dispatch_url_from_deployment(deployment_payload)
     if dispatch_public_url:
@@ -581,6 +596,53 @@ def _json_check_with_payload(
         },
         payload,
     )
+
+
+def _json_fail_closed_check(
+    check_id: str,
+    url: str,
+    *,
+    opener: UrlOpener | None,
+    method: str,
+    body: bytes,
+    headers: dict[str, str],
+    expect_status: int,
+    expect_schema: str,
+    expect_error: str,
+    proof_label: str,
+) -> dict[str, object]:
+    try:
+        status, payload, response_headers = _fetch_json_request(
+            url,
+            opener=opener,
+            method=method,
+            body=body,
+            headers=headers,
+            allow_http_error=True,
+        )
+    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        return _failed_check(check_id, url, exc.__class__.__name__)
+    failures: list[str] = []
+    if status != expect_status:
+        failures.append("fail_closed_status_mismatch")
+    failures.extend(_security_header_failures(response_headers))
+    failures.extend(_public_payload_secret_failures(payload))
+    schema = payload.get("schema_version")
+    if schema != expect_schema:
+        failures.append("schema_mismatch")
+    if payload.get("error") != expect_error:
+        failures.append("fail_closed_error_mismatch")
+    if payload.get("dispatch_blocked") is not True:
+        failures.append("fail_closed_dispatch_not_blocked")
+    return {
+        "id": check_id,
+        "url": _public_url(url),
+        "status": "failed" if failures else "ok",
+        "http_status": status,
+        "schema_version": schema if isinstance(schema, str) else "",
+        "failures": failures,
+        "proof": proof_label if not failures else "",
+    }
 
 
 def _expected_commit_check(
@@ -1904,16 +1966,44 @@ def _fetch_json(
     *,
     opener: UrlOpener | None,
 ) -> tuple[int, dict[str, Any], dict[str, str]]:
-    request = urllib.request.Request(url, method="GET", headers={"User-Agent": "FuseKit"})
+    return _fetch_json_request(
+        url,
+        opener=opener,
+        method="GET",
+        body=None,
+        headers={"User-Agent": "FuseKit"},
+        allow_http_error=False,
+    )
+
+
+def _fetch_json_request(
+    url: str,
+    *,
+    opener: UrlOpener | None,
+    method: str,
+    body: bytes | None,
+    headers: dict[str, str],
+    allow_http_error: bool,
+) -> tuple[int, dict[str, Any], dict[str, str]]:
+    request = urllib.request.Request(url, data=body, method=method, headers=headers)
     actual_opener = opener or urllib.request.urlopen
-    with actual_opener(request, timeout=20.0) as response:
-        status = int(getattr(response, "status", 200))
-        raw = response.read()
-        headers = _response_headers(response)
+    try:
+        with actual_opener(request, timeout=20.0) as response:
+            status = int(getattr(response, "status", 200))
+            raw = response.read()
+            response_headers = _response_headers(response)
+    except urllib.error.HTTPError as exc:
+        if not allow_http_error:
+            raise
+        status = int(exc.code)
+        raw = exc.read(65_536)
+        response_headers = _response_headers(exc)
+    if not isinstance(raw, bytes):
+        raise FuseKitError("Hosted verification endpoint returned non-bytes JSON.")
     payload = json.loads(raw.decode("utf-8") if raw else "{}")
     if not isinstance(payload, dict):
         raise FuseKitError("Hosted verification endpoint returned non-object JSON.")
-    return status, payload, headers
+    return status, payload, response_headers
 
 
 def _response_headers(response: object) -> dict[str, str]:
