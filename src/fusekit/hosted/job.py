@@ -631,6 +631,9 @@ def hosted_byo_oci_bootstrap(job: HostedLaunchJob) -> dict[str, object]:
                 "requires_regular_file_artifacts": True,
                 "requires_non_placeholder_artifact_hashes": True,
                 "requires_bounded_artifact_sizes": True,
+                "zero_byte_allowed_artifacts": sorted(
+                    HOSTED_BYO_ZERO_BYTE_ALLOWED_ARTIFACTS
+                ),
                 "max_artifact_bytes": HOSTED_BYO_MAX_ARTIFACT_BYTES,
                 "max_total_artifact_bytes": HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES,
                 "requires_completion_evidence": list(HOSTED_WORKER_PROOF_KEYS),
@@ -898,6 +901,7 @@ def _byo_oci_proof_manifest(job: HostedLaunchJob) -> dict[str, object]:
         "byo_security_contract": byo_oci_security_contract(),
         "runner_shape_guard": byo_oci_runner_shape_guard(),
         "proof_bundle_root": ".fusekit/remote-artifacts",
+        "zero_byte_allowed_artifacts": sorted(HOSTED_BYO_ZERO_BYTE_ALLOWED_ARTIFACTS),
         "max_artifact_bytes": HOSTED_BYO_MAX_ARTIFACT_BYTES,
         "max_total_artifact_bytes": HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES,
         "required_completion_evidence": list(HOSTED_WORKER_PROOF_KEYS),
@@ -1061,6 +1065,9 @@ def verify_hosted_byo_oci_proof_bundle(
             "unexpected": unexpected,
             "invalid_required": invalid_required_artifacts,
             "total_artifact_bytes": total_artifact_bytes,
+            "zero_byte_allowed_artifacts": sorted(
+                HOSTED_BYO_ZERO_BYTE_ALLOWED_ARTIFACTS
+            ),
             "max_artifact_bytes": HOSTED_BYO_MAX_ARTIFACT_BYTES,
             "max_total_artifact_bytes": HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES,
             "artifacts": artifacts,
@@ -1108,6 +1115,9 @@ def _byo_oci_lane_mismatch_proof_report(
             "unexpected": [],
             "invalid_required": [],
             "total_artifact_bytes": 0,
+            "zero_byte_allowed_artifacts": sorted(
+                HOSTED_BYO_ZERO_BYTE_ALLOWED_ARTIFACTS
+            ),
             "max_artifact_bytes": HOSTED_BYO_MAX_ARTIFACT_BYTES,
             "max_total_artifact_bytes": HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES,
             "artifacts": [],
@@ -3184,6 +3194,9 @@ def _byo_oci_worker_proof_report(
                 "unexpected": [],
                 "invalid_required": [],
                 "total_artifact_bytes": 0,
+                "zero_byte_allowed_artifacts": sorted(
+                    HOSTED_BYO_ZERO_BYTE_ALLOWED_ARTIFACTS
+                ),
                 "max_artifact_bytes": HOSTED_BYO_MAX_ARTIFACT_BYTES,
                 "max_total_artifact_bytes": HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES,
                 "artifacts": [],

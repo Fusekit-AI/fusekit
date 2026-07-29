@@ -424,6 +424,9 @@ def test_hosted_byo_bootstrap_publishes_preflight_and_reversibility_contract() -
     )
     assert bootstrap["proof_manifest"]["runner_shape_guard"] == bootstrap["runner_shape_guard"]
     assert bootstrap["proof_manifest"]["proof_bundle_root"] == ".fusekit/remote-artifacts"
+    assert bootstrap["proof_manifest"]["zero_byte_allowed_artifacts"] == [
+        ".fusekit/gate_events.jsonl"
+    ]
     assert bootstrap["proof_manifest"]["max_artifact_bytes"] == HOSTED_BYO_MAX_ARTIFACT_BYTES
     assert bootstrap["proof_manifest"]["max_total_artifact_bytes"] == (
         HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES
@@ -498,6 +501,7 @@ def test_hosted_byo_bootstrap_publishes_preflight_and_reversibility_contract() -
         "requires_regular_file_artifacts": True,
         "requires_non_placeholder_artifact_hashes": True,
         "requires_bounded_artifact_sizes": True,
+        "zero_byte_allowed_artifacts": [".fusekit/gate_events.jsonl"],
         "max_artifact_bytes": HOSTED_BYO_MAX_ARTIFACT_BYTES,
         "max_total_artifact_bytes": HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES,
         "requires_completion_evidence": [
@@ -892,6 +896,9 @@ def test_hosted_byo_proof_bundle_verifier_accepts_complete_redacted_inventory() 
     assert report["artifact_summary"]["total_artifact_bytes"] == (
         report["artifact_summary"]["required_count"] * 1024
     )
+    assert report["artifact_summary"]["zero_byte_allowed_artifacts"] == [
+        ".fusekit/gate_events.jsonl"
+    ]
     assert report["artifact_summary"]["max_artifact_bytes"] == HOSTED_BYO_MAX_ARTIFACT_BYTES
     assert report["artifact_summary"]["max_total_artifact_bytes"] == (
         HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES
@@ -934,6 +941,9 @@ def test_hosted_byo_proof_bundle_verifier_rejects_managed_lane_without_artifact_
     assert report["job_binding"] == {}
     assert report["artifact_summary"]["present_required_count"] == 0
     assert report["artifact_summary"]["total_artifact_bytes"] == 0
+    assert report["artifact_summary"]["zero_byte_allowed_artifacts"] == [
+        ".fusekit/gate_events.jsonl"
+    ]
     assert report["artifact_summary"]["max_artifact_bytes"] == HOSTED_BYO_MAX_ARTIFACT_BYTES
     assert report["artifact_summary"]["max_total_artifact_bytes"] == (
         HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES
@@ -1638,6 +1648,9 @@ def test_hosted_byo_proof_bundle_verifier_allows_empty_gate_event_stream() -> No
 
     assert report["ready"] is True
     assert "artifact_empty:.fusekit/gate_events.jsonl" not in report["blockers"]
+    assert report["artifact_summary"]["zero_byte_allowed_artifacts"] == [
+        ".fusekit/gate_events.jsonl"
+    ]
 
 
 def test_hosted_byo_proof_bundle_verifier_blocks_sidecar_fields() -> None:
