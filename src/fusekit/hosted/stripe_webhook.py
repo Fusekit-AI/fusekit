@@ -11,6 +11,7 @@ import urllib.parse
 import urllib.request
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.billing import (
@@ -24,6 +25,11 @@ from fusekit.hosted.billing import (
 )
 from fusekit.hosted.github_app import UrlOpener
 from fusekit.hosted.lanes import MANAGED_FUSEKIT_RUN_LANE
+from fusekit.hosted.runtime_secrets import (
+    HOSTED_RUNTIME_SECRET_FILE,
+    _parse_systemd_env_file,
+    install_hosted_runtime_secret_file,
+)
 from fusekit.hosted.server import HOSTED_CANONICAL_ORIGIN
 from fusekit.security import contains_durable_secret_text, contains_private_marker_text
 
@@ -104,10 +110,13 @@ def create_stripe_managed_run_webhook(
     allow_test_mode: bool = False,
     execute: bool = False,
     confirm_shared_account: bool = False,
+    runtime_secret_file: str = "",
+    confirm_runtime_secret_install: bool = False,
     opener: UrlOpener | None = None,
 ) -> dict[str, object]:
     """Create or reuse a FuseKit-scoped Stripe webhook endpoint."""
 
+    runtime_secret_path = runtime_secret_file.strip()
     plan = build_stripe_managed_run_webhook_plan(
         stripe_secret_key=stripe_secret_key,
         endpoint_url=endpoint_url,
@@ -119,10 +128,15 @@ def create_stripe_managed_run_webhook(
             executed=False,
             endpoint_id="",
             webhook_secret_received=False,
+            runtime_secret_file=runtime_secret_path,
         )
     if not confirm_shared_account:
         raise FuseKitError(
             "Refusing Stripe webhook mutation without --confirm-shared-account acknowledgement."
+        )
+    if runtime_secret_path and not confirm_runtime_secret_install:
+        raise FuseKitError(
+            "Refusing runtime secret-file mutation without --confirm-runtime-secret-install."
         )
     existing = _find_existing_stripe_managed_run_webhook(
         stripe_secret_key,
@@ -137,6 +151,7 @@ def create_stripe_managed_run_webhook(
             webhook_secret_received=False,
             reused_existing=True,
             mutated=False,
+            runtime_secret_file=runtime_secret_path,
         )
     payload = _stripe_request(
         stripe_secret_key,
@@ -151,6 +166,14 @@ def create_stripe_managed_run_webhook(
         raise FuseKitError("Stripe webhook response did not include a public endpoint id.")
     secret = payload.get("secret")
     webhook_secret_received = isinstance(secret, str) and secret.startswith("whsec_")
+    runtime_install_report: Mapping[str, object] | None = None
+    if runtime_secret_path:
+        if not webhook_secret_received or not isinstance(secret, str):
+            raise FuseKitError("Stripe webhook setup did not return a signing secret to install.")
+        runtime_install_report = _install_webhook_secret_to_runtime_file(
+            runtime_secret_file=runtime_secret_path,
+            webhook_secret=secret,
+        )
     return _webhook_setup_report(
         plan,
         executed=True,
@@ -158,6 +181,8 @@ def create_stripe_managed_run_webhook(
         webhook_secret_received=webhook_secret_received,
         reused_existing=False,
         mutated=True,
+        runtime_secret_file=runtime_secret_path,
+        runtime_secret_install_report=runtime_install_report,
     )
 
 
@@ -231,6 +256,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--webhook-endpoint-id", default="")
     parser.add_argument("--secret-key-env", default="FUSEKIT_STRIPE_SECRET_KEY")
     parser.add_argument("--webhook-endpoint-id-env", default="FUSEKIT_STRIPE_WEBHOOK_ENDPOINT_ID")
+    parser.add_argument(
+        "--runtime-secret-file",
+        default="",
+        help=(
+            "Optional hosted EnvironmentFile to read for FUSEKIT_STRIPE_SECRET_KEY and, "
+            "with --execute plus --confirm-runtime-secret-install, update with the returned "
+            "Stripe webhook signing secret"
+        ),
+    )
     parser.add_argument("--allow-test-mode", action="store_true")
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--verify", action="store_true")
@@ -242,10 +276,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             "resources may be made"
         ),
     )
+    parser.add_argument(
+        "--confirm-runtime-secret-install",
+        action="store_true",
+        help=(
+            "Acknowledge that the helper may update only FUSEKIT_STRIPE_WEBHOOK_SECRET in "
+            "the hosted runtime EnvironmentFile without printing it"
+        ),
+    )
     args = parser.parse_args(argv)
-    secret_key = os.environ.get(args.secret_key_env, "")
-    endpoint_id = args.webhook_endpoint_id or os.environ.get(args.webhook_endpoint_id_env, "")
     try:
+        runtime_secret_env = _runtime_secret_file_env(args.runtime_secret_file)
+        secret_key = os.environ.get(args.secret_key_env, "") or runtime_secret_env.get(
+            args.secret_key_env, ""
+        )
+        endpoint_id = args.webhook_endpoint_id or os.environ.get(args.webhook_endpoint_id_env, "")
         if args.verify:
             report = verify_stripe_managed_run_webhook(
                 stripe_secret_key=secret_key,
@@ -260,6 +305,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 allow_test_mode=args.allow_test_mode,
                 execute=args.execute,
                 confirm_shared_account=args.confirm_shared_account,
+                runtime_secret_file=args.runtime_secret_file,
+                confirm_runtime_secret_install=args.confirm_runtime_secret_install,
             )
     except FuseKitError as exc:
         report = {
@@ -291,6 +338,8 @@ def _webhook_setup_report(
     webhook_secret_received: bool,
     reused_existing: bool = False,
     mutated: bool = False,
+    runtime_secret_file: str = "",
+    runtime_secret_install_report: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     next_actions = [
         "Store FUSEKIT_STRIPE_WEBHOOK_SECRET only in the hosted runtime secret file.",
@@ -309,12 +358,17 @@ def _webhook_setup_report(
             "hosted_runtime_env": {
                 "FUSEKIT_STRIPE_WEBHOOK_ENDPOINT_ID": endpoint_id,
                 "FUSEKIT_STRIPE_WEBHOOK_SECRET": {
-                    "configured_by_helper": False,
+                    "configured_by_helper": bool(runtime_secret_install_report),
                     "secret_value_emitted": False,
                     "required_before_managed_runs_enabled": True,
                 },
                 "FUSEKIT_MANAGED_RUNS_ENABLED": "0",
             },
+            "runtime_secret_install": _runtime_secret_install_public_status(
+                requested=bool(runtime_secret_file),
+                report=runtime_secret_install_report,
+                reused_existing=reused_existing,
+            ),
             "next_actions": next_actions,
         }
     )
@@ -327,11 +381,18 @@ def _webhook_setup_report(
             *next_actions,
         ]
     if executed and mutated and webhook_secret_received:
-        report["next_actions"] = [
-            "Install the write-only Stripe webhook signing secret returned by Stripe into "
-            "/etc/fusekit/hosted-secrets.env without printing it.",
-            *next_actions,
-        ]
+        if runtime_secret_install_report:
+            report["next_actions"] = [
+                "Verify the hosted runtime secret file and keep managed runs disabled until "
+                "live Checkout, webhook, and worker-dispatch acceptance proof pass.",
+                *next_actions,
+            ]
+        else:
+            report["next_actions"] = [
+                "Install the write-only Stripe webhook signing secret returned by Stripe into "
+                "/etc/fusekit/hosted-secrets.env without printing it.",
+                *next_actions,
+            ]
     if executed and reused_existing:
         report["next_actions"] = [
             "Existing Stripe webhook endpoints do not return signing secrets; retrieve the "
@@ -340,6 +401,81 @@ def _webhook_setup_report(
         ]
     _assert_public_webhook_report(report)
     return report
+
+
+def _install_webhook_secret_to_runtime_file(
+    *,
+    runtime_secret_file: str,
+    webhook_secret: str,
+) -> Mapping[str, object]:
+    env, failures = _read_runtime_secret_env(runtime_secret_file)
+    if failures:
+        raise FuseKitError("Runtime secret file is not readable or parseable.")
+    env["FUSEKIT_STRIPE_WEBHOOK_SECRET"] = webhook_secret
+    return install_hosted_runtime_secret_file(
+        env=env,
+        output_path=runtime_secret_file,
+        execute=True,
+    )
+
+
+def _runtime_secret_file_env(runtime_secret_file: str) -> dict[str, str]:
+    if not runtime_secret_file.strip():
+        return {}
+    env, failures = _read_runtime_secret_env(runtime_secret_file)
+    if failures:
+        raise FuseKitError("Runtime secret file is not readable or parseable.")
+    return env
+
+
+def _read_runtime_secret_env(runtime_secret_file: str) -> tuple[dict[str, str], list[str]]:
+    path = runtime_secret_file.strip() or HOSTED_RUNTIME_SECRET_FILE
+    try:
+        return _parse_systemd_env_file(Path(path))
+    except OSError:
+        return {}, ["runtime_secret_file_unreadable"]
+
+
+def _runtime_secret_install_public_status(
+    *,
+    requested: bool,
+    report: Mapping[str, object] | None,
+    reused_existing: bool,
+) -> dict[str, object]:
+    if not requested:
+        return {
+            "requested": False,
+            "mutates_host": False,
+            "written": False,
+            "secret_value_emitted": False,
+        }
+    if report:
+        return {
+            "requested": True,
+            "mutates_host": report.get("mutates_host") is True,
+            "written": report.get("written") is True,
+            "ready_to_write_secret_file": report.get("ready_to_write_secret_file") is True,
+            "ready_for_managed_payment_staging": report.get(
+                "ready_for_managed_payment_staging"
+            )
+            is True,
+            "blockers": _string_list(report.get("blockers")),
+            "keys_written": _string_list(report.get("keys_written")),
+            "secret_value_emitted": False,
+        }
+    return {
+        "requested": True,
+        "mutates_host": False,
+        "written": False,
+        "reused_existing_without_returned_secret": reused_existing,
+        "secret_value_emitted": False,
+    }
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return []
+    return [str(item) for item in value]
 
 
 def _find_existing_stripe_managed_run_webhook(

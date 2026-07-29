@@ -37,8 +37,11 @@ The Stripe webhook operator helpers are also part of the public payment surface:
 `fusekit-hosted-stripe-webhook` is dry-run by default, mutates only with
 `--execute --confirm-shared-account`, creates or reuses only a FuseKit-scoped
 endpoint for the canonical hosted webhook URL, and reports only endpoint ids,
-events, metadata checks, and booleans. It never prints `whsec_...` signing
-secrets; those remain write-only runtime material for
+events, metadata checks, and booleans. When run on the OCI host with
+`--runtime-secret-file /etc/fusekit/hosted-secrets.env
+--confirm-runtime-secret-install`, a newly returned signing secret is written
+back into the root-owned runtime EnvironmentFile without being printed. It never
+prints `whsec_...` signing secrets; those remain write-only runtime material for
 `/etc/fusekit/hosted-secrets.env`.
 
 The route inventory uses these protection class labels:
