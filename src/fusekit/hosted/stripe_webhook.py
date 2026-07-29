@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import sys
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -327,7 +328,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 def verify_main(argv: Sequence[str] | None = None) -> int:
     """Verify a FuseKit-managed Stripe webhook from the dedicated console script."""
 
-    return main(["--verify", *(list(argv) if argv is not None else [])])
+    return main(["--verify", *(list(sys.argv[1:] if argv is None else argv))])
 
 
 def _webhook_setup_report(

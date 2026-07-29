@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping
@@ -427,3 +428,36 @@ def test_stripe_webhook_verify_main_defaults_to_verify(monkeypatch, capsys) -> N
     assert exit_code == 0
     assert payload["schema_version"] == STRIPE_MANAGED_WEBHOOK_VERIFY_SCHEMA_VERSION
     assert payload["ready"] is True
+
+
+def test_stripe_webhook_verify_main_forwards_console_args(monkeypatch, capsys) -> None:
+    runtime_file = "/tmp/fusekit-hosted-secrets.env"
+    monkeypatch.setenv("FUSEKIT_STRIPE_SECRET_KEY", LIVE_STRIPE_SECRET)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "fusekit-hosted-stripe-webhook-verify",
+            "--runtime-secret-file",
+            runtime_file,
+            "--webhook-endpoint-id",
+            "we_fusekit_managed_run",
+        ],
+    )
+    monkeypatch.setattr(
+        "fusekit.hosted.stripe_webhook._runtime_secret_file_env",
+        lambda path: {"FUSEKIT_STRIPE_SECRET_KEY": LIVE_STRIPE_SECRET}
+        if path == runtime_file
+        else {},
+    )
+    monkeypatch.setattr(
+        "fusekit.hosted.stripe_webhook.urllib.request.urlopen",
+        StripeWebhookOpener(retrieve_payload=_webhook_payload()),
+    )
+
+    exit_code = verify_main()
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["ready"] is True
+    assert payload["webhook_endpoint_id"] == "we_fusekit_managed_run"
