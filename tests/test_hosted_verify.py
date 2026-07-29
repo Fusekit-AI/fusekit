@@ -24,6 +24,14 @@ from fusekit.hosted.billing import (
     HOSTED_STRIPE_WEBHOOK_VERIFY_HELPER,
     HOSTED_STRIPE_WEBHOOK_VERIFY_MODULE,
 )
+from fusekit.hosted.job import (
+    HOSTED_BYO_MAX_ARTIFACT_BYTES,
+    HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES,
+    HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION,
+    HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION,
+    HOSTED_BYO_ZERO_BYTE_ALLOWED_ARTIFACTS,
+    HOSTED_WORKER_PROOF_KEYS,
+)
 from fusekit.hosted.lanes import (
     BYO_OCI_LANE,
     MANAGED_FUSEKIT_RUN_LANE,
@@ -756,6 +764,11 @@ def test_verify_hosted_deployment_requires_byo_readiness_contract() -> None:
     byo["requires_user_cloud_account"] = False
     byo["user_owned_cost_boundary"] = {}
     byo["security_contract"] = {}
+    proof_policy = byo["proof_policy"]
+    assert isinstance(proof_policy, dict)
+    proof_policy["zero_byte_allowed_artifacts"] = []
+    proof_policy["requires_redacted_artifacts"] = False
+    proof_policy["max_total_artifact_bytes"] = 512 * 1024 * 1024
     opener = SequenceOpener(
         [
             _home_html(),
@@ -784,6 +797,15 @@ def test_verify_hosted_deployment_requires_byo_readiness_contract() -> None:
     assert "lane_readiness_byo_security_contract_mismatch" in checks["hosted.readiness"][
         "failures"
     ]
+    assert "lane_readiness_byo_proof_policy_zero_byte_allowed_artifacts_mismatch" in checks[
+        "hosted.readiness"
+    ]["failures"]
+    assert "lane_readiness_byo_proof_policy_redacted_required_mismatch" in checks[
+        "hosted.readiness"
+    ]["failures"]
+    assert "lane_readiness_byo_proof_policy_max_total_artifact_bytes_mismatch" in checks[
+        "hosted.readiness"
+    ]["failures"]
 
 
 def test_verify_hosted_deployment_requires_lane_cost_and_secret_boundary() -> None:
@@ -833,6 +855,9 @@ def test_verify_hosted_deployment_rejects_lane_readiness_sidecars() -> None:
     assert isinstance(byo, dict)
     managed["stripe_price_id"] = "price_live_sidecar"
     byo["worker_ocid"] = "ocid1.instance.oc1..not-for-browser"
+    proof_policy = byo["proof_policy"]
+    assert isinstance(proof_policy, dict)
+    proof_policy["raw_du_output"] = "/opt/fusekit 12G"
     opener = SequenceOpener(
         [
             _home_html(),
@@ -857,6 +882,7 @@ def test_verify_hosted_deployment_rejects_lane_readiness_sidecars() -> None:
     assert "lane_readiness_unexpected_lane:internal-preview" in failures
     assert "lane_readiness_managed_unexpected_field:stripe_price_id" in failures
     assert "lane_readiness_byo_unexpected_field:worker_ocid" in failures
+    assert "lane_readiness_byo_proof_policy_unexpected_field:raw_du_output" in failures
 
 
 def test_verify_hosted_deployment_requires_managed_payment_proof_checklist() -> None:
@@ -2874,6 +2900,24 @@ def _lane_readiness_contract() -> dict[str, object]:
                 "requires_user_cloud_account": True,
                 "user_owned_cost_boundary": byo_oci_user_owned_cost_boundary(),
                 "security_contract": byo_oci_security_contract(),
+                "proof_policy": {
+                    "proof_bundle_root": ".fusekit/remote-artifacts",
+                    "input_schema": HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION,
+                    "output_schema": HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION,
+                    "max_artifact_bytes": HOSTED_BYO_MAX_ARTIFACT_BYTES,
+                    "max_total_artifact_bytes": HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES,
+                    "zero_byte_allowed_artifacts": sorted(
+                        HOSTED_BYO_ZERO_BYTE_ALLOWED_ARTIFACTS
+                    ),
+                    "requires_regular_file_artifacts": True,
+                    "requires_redacted_artifacts": True,
+                    "requires_completion_evidence": list(HOSTED_WORKER_PROOF_KEYS),
+                    "secret_boundary": (
+                        "BYO OCI readiness publishes artifact labels, schemas, and byte "
+                        "ceilings only. It never includes artifact contents, OCI identifiers, "
+                        "provider credentials, vault material, worker secrets, or raw setup logs."
+                    ),
+                },
                 "blocking_checks": [],
                 "next_actions": [],
             },

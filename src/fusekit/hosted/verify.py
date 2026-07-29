@@ -40,6 +40,14 @@ from fusekit.hosted.github_app import (
     HOSTED_GITHUB_INTAKE_PERMISSIONS,
     hosted_github_public_token_boundary,
 )
+from fusekit.hosted.job import (
+    HOSTED_BYO_MAX_ARTIFACT_BYTES,
+    HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES,
+    HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION,
+    HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION,
+    HOSTED_BYO_ZERO_BYTE_ALLOWED_ARTIFACTS,
+    HOSTED_WORKER_PROOF_KEYS,
+)
 from fusekit.hosted.lanes import (
     BYO_OCI_LANE,
     MANAGED_FUSEKIT_RUN_LANE,
@@ -205,8 +213,23 @@ BYO_LANE_READINESS_KEYS = frozenset(
         "requires_user_cloud_account",
         "user_owned_cost_boundary",
         "security_contract",
+        "proof_policy",
         "blocking_checks",
         "next_actions",
+    }
+)
+BYO_LANE_PROOF_POLICY_KEYS = frozenset(
+    {
+        "proof_bundle_root",
+        "input_schema",
+        "output_schema",
+        "max_artifact_bytes",
+        "max_total_artifact_bytes",
+        "zero_byte_allowed_artifacts",
+        "requires_regular_file_artifacts",
+        "requires_redacted_artifacts",
+        "requires_completion_evidence",
+        "secret_boundary",
     }
 )
 PAYMENT_READINESS_KEYS = frozenset(
@@ -1821,6 +1844,7 @@ def _byo_lane_readiness_failures(
         failures.append("lane_readiness_byo_cost_boundary_mismatch")
     if lane.get("security_contract") != byo_oci_security_contract():
         failures.append("lane_readiness_byo_security_contract_mismatch")
+    failures.extend(_byo_lane_proof_policy_failures(lane.get("proof_policy")))
     blockers = lane.get("blocking_checks")
     if not isinstance(blockers, list):
         failures.append("lane_readiness_byo_blockers_invalid")
@@ -1830,6 +1854,51 @@ def _byo_lane_readiness_failures(
         failures.append("lane_readiness_byo_missing_from_launchable_lanes")
     if launchable is False and BYO_OCI_LANE in launchable_lanes:
         failures.append("lane_readiness_byo_blocked_but_listed")
+    return failures
+
+
+def _byo_lane_proof_policy_failures(value: object) -> list[str]:
+    if not isinstance(value, dict):
+        return ["lane_readiness_byo_proof_policy_missing"]
+    failures: list[str] = []
+    failures.extend(
+        f"lane_readiness_byo_proof_policy_unexpected_field:{field}"
+        for field in _unexpected_keys(value, BYO_LANE_PROOF_POLICY_KEYS)
+    )
+    if value.get("proof_bundle_root") != ".fusekit/remote-artifacts":
+        failures.append("lane_readiness_byo_proof_policy_root_mismatch")
+    if value.get("input_schema") != HOSTED_BYO_OCI_PROOF_BUNDLE_SCHEMA_VERSION:
+        failures.append("lane_readiness_byo_proof_policy_input_schema_mismatch")
+    if value.get("output_schema") != HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION:
+        failures.append("lane_readiness_byo_proof_policy_output_schema_mismatch")
+    if value.get("max_artifact_bytes") != HOSTED_BYO_MAX_ARTIFACT_BYTES:
+        failures.append("lane_readiness_byo_proof_policy_max_artifact_bytes_mismatch")
+    if value.get("max_total_artifact_bytes") != HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES:
+        failures.append("lane_readiness_byo_proof_policy_max_total_artifact_bytes_mismatch")
+    if value.get("zero_byte_allowed_artifacts") != sorted(
+        HOSTED_BYO_ZERO_BYTE_ALLOWED_ARTIFACTS
+    ):
+        failures.append("lane_readiness_byo_proof_policy_zero_byte_allowed_artifacts_mismatch")
+    if value.get("requires_regular_file_artifacts") is not True:
+        failures.append("lane_readiness_byo_proof_policy_regular_file_required_mismatch")
+    if value.get("requires_redacted_artifacts") is not True:
+        failures.append("lane_readiness_byo_proof_policy_redacted_required_mismatch")
+    if value.get("requires_completion_evidence") != list(HOSTED_WORKER_PROOF_KEYS):
+        failures.append("lane_readiness_byo_proof_policy_completion_evidence_mismatch")
+    if not _contains_all_markers(
+        value.get("secret_boundary"),
+        (
+            "artifact labels",
+            "byte ceilings",
+            "artifact contents",
+            "OCI identifiers",
+            "provider credentials",
+            "vault material",
+            "worker secrets",
+            "raw setup logs",
+        ),
+    ):
+        failures.append("lane_readiness_byo_proof_policy_secret_boundary_mismatch")
     return failures
 
 
