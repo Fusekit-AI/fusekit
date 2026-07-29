@@ -89,7 +89,12 @@ from fusekit.hosted.launcher import (
     render_hosted_launcher,
 )
 from fusekit.hosted.script_json import json_script_payload
-from fusekit.hosted.session import create_hosted_state_token, verify_hosted_state_token
+from fusekit.hosted.session import (
+    HOSTED_MANAGED_PROOF_QUERY_PARAM,
+    create_hosted_state_token,
+    verify_hosted_managed_proof_token,
+    verify_hosted_state_token,
+)
 from fusekit.scanner import scan_repo
 from fusekit.security.redaction import (
     contains_durable_secret_text,
@@ -684,11 +689,11 @@ class HostedSettings:
             private_key_pem=self.github_private_key_pem,
         )
 
-    def payment_config(self) -> HostedPaymentConfig:
+    def payment_config(self, *, enable_payment_staging: bool = False) -> HostedPaymentConfig:
         """Return backend-only managed-run payment configuration."""
 
         return HostedPaymentConfig(
-            enabled=self.managed_runs_enabled,
+            enabled=self.managed_runs_enabled or enable_payment_staging,
             stripe_secret_key=self.stripe_secret_key,
             stripe_price_id=self.stripe_price_id,
             price_label=self.managed_run_price_label,
@@ -1830,7 +1835,11 @@ def _github_control_room_response(
     except FuseKitError:
         return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "invalid_state"})
     lane_readiness = _hosted_lane_readiness(settings, launch_lane)
-    if lane_readiness.get("launchable") is not True:
+    proof_launch_blockers = _managed_proof_launch_blockers(settings, query, launch_lane)
+    proof_launch_allowed = (
+        lane_readiness.get("launchable") is not True and not proof_launch_blockers
+    )
+    if lane_readiness.get("launchable") is not True and not proof_launch_allowed:
         readiness = settings.lane_readiness()
         return _response(
             start_response,
@@ -1841,6 +1850,7 @@ def _github_control_room_response(
                 "recommended_lane": readiness.get("recommended_lane", ""),
                 "launchable_lanes": readiness.get("launchable_lanes", []),
                 "blocking_checks": lane_readiness.get("blocking_checks", []),
+                "proof_launch_blocking_checks": proof_launch_blockers,
                 "next_actions": lane_readiness.get("next_actions", []),
                 "secret_boundary": (
                     "Lane launch blocking responses expose only public lane ids, blocker "
@@ -2186,7 +2196,9 @@ def _hosted_payment_checkout_response(
     )
     try:
         receipt = create_stripe_checkout_session(
-            settings.payment_config(),
+            settings.payment_config(
+                enable_payment_staging=_managed_payment_staging_allowed_for_job(settings, job)
+            ),
             job_id=job.job_id,
             payment_return_token=payment_return_token,
             payment_cancel_token=payment_cancel_token,
@@ -2244,7 +2256,9 @@ def _hosted_payment_return_response(
     session_id = _first_query_value(query, "session_id")
     try:
         receipt = retrieve_stripe_checkout_session(
-            settings.payment_config(),
+            settings.payment_config(
+                enable_payment_staging=_managed_payment_staging_allowed_for_job(settings, job)
+            ),
             session_id=session_id,
         )
     except FuseKitError:
@@ -2307,7 +2321,10 @@ def _hosted_stripe_webhook_response(
             _hosted_payment_error_payload("webhook_signature_invalid"),
         )
     if (
-        not settings.managed_runs_enabled
+        not (
+            settings.managed_runs_enabled
+            or _managed_payment_staging_configured(settings, require_webhook=True)
+        )
         or not _valid_stripe_webhook_secret(settings.stripe_webhook_secret)
     ):
         return _response(
@@ -3195,6 +3212,73 @@ def _managed_lane_blockers(settings: HostedSettings) -> list[str]:
     elif not _valid_https_url(settings.worker_dispatch_url):
         blockers.append("hosted_worker_dispatch_url_must_be_https")
     blockers.extend(_shared_lane_blockers(settings))
+    return _unique_public_failures(blockers)
+
+
+def _managed_proof_launch_blockers(
+    settings: HostedSettings,
+    query: dict[str, list[str]],
+    lane_id: str,
+) -> list[str]:
+    if lane_id != MANAGED_FUSEKIT_RUN_LANE:
+        return ["managed_proof_only_available_for_managed_lane"]
+    if settings.managed_runs_enabled:
+        return ["managed_proof_only_available_before_public_enablement"]
+    proof_token = _first_query_value(query, HOSTED_MANAGED_PROOF_QUERY_PARAM)
+    if not proof_token:
+        return ["managed_proof_token_required"]
+    try:
+        verify_hosted_managed_proof_token(settings.state_secret, proof_token)
+    except FuseKitError:
+        return ["managed_proof_token_invalid"]
+    return _managed_payment_staging_blockers(settings)
+
+
+def _managed_payment_staging_allowed_for_job(
+    settings: HostedSettings,
+    job: HostedLaunchJob,
+) -> bool:
+    return (
+        job.launch_lane == MANAGED_FUSEKIT_RUN_LANE
+        and not settings.managed_runs_enabled
+        and not _managed_payment_staging_blockers(settings)
+    )
+
+
+def _managed_payment_staging_configured(
+    settings: HostedSettings,
+    *,
+    require_webhook: bool,
+) -> bool:
+    return not _managed_payment_staging_blockers(
+        settings,
+        require_job_store=False,
+        require_webhook=require_webhook,
+    )
+
+
+def _managed_payment_staging_blockers(
+    settings: HostedSettings,
+    *,
+    require_job_store: bool = True,
+    require_webhook: bool = True,
+) -> list[str]:
+    blockers = [
+        blocker
+        for blocker in _managed_lane_blockers(settings)
+        if blocker != "managed_runs_not_enabled"
+    ]
+    if require_webhook and not _valid_stripe_webhook_secret(settings.stripe_webhook_secret):
+        blockers.append("stripe_webhook_secret_required_for_managed_runs")
+    if require_job_store:
+        store = hosted_job_store_status(settings.hosted_job_store_dir)
+        if not (
+            store.get("configured") is True
+            and store.get("writable") is True
+            and store.get("path_configured") is True
+            and store.get("stores_public_snapshots_only") is True
+        ):
+            blockers.append("hosted_job_store_not_ready")
     return _unique_public_failures(blockers)
 
 

@@ -68,7 +68,11 @@ from fusekit.hosted.server import (
     hosted_application,
     render_hosted_home,
 )
-from fusekit.hosted.session import create_hosted_state_token
+from fusekit.hosted.session import (
+    HOSTED_MANAGED_PROOF_QUERY_PARAM,
+    create_hosted_managed_proof_token,
+    create_hosted_state_token,
+)
 
 FAKE_PRIVATE_KEY = "not-a-pem-private-key"
 STATE_SECRET = "hosted-state-secret"
@@ -2254,6 +2258,7 @@ def test_hosted_control_room_rejects_unlaunchable_managed_lane_before_github_wor
         "stripe_price_id_required_for_managed_runs",
         "managed_run_price_label_required",
     ]
+    assert payload["proof_launch_blocking_checks"] == ["managed_proof_token_required"]
     assert payload["next_actions"] == [
         (
             "Set FUSEKIT_MANAGED_RUNS_ENABLED=1 only after live Stripe Checkout, webhook, "
@@ -2275,6 +2280,148 @@ def test_hosted_control_room_rejects_unlaunchable_managed_lane_before_github_wor
     assert opener.requests == []
     assert settings.hosted_jobs == {}
     assert "ghs_fake" not in serialized
+
+
+def test_hosted_control_room_allows_operator_proof_managed_checkout_while_disabled(
+    tmp_path: Path,
+) -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    proof_token = create_hosted_managed_proof_token(
+        STATE_SECRET,
+        nonce="nonce-for-managed-proof",
+    )
+    github_opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    dispatch_opener = SequenceOpener([DISPATCH_ACCEPTANCE])
+    stripe_opener = FormSequenceOpener(
+        [
+            {
+                "id": "cs_test_operator_proof",
+                "object": "checkout.session",
+                "url": "https://checkout.stripe.com/c/pay/cs_test_operator_proof",
+                "status": "open",
+                "payment_status": "unpaid",
+                "mode": "payment",
+                "client_reference_id": "",
+                "amount_total": 100,
+                "currency": "usd",
+                "metadata": {},
+            }
+        ]
+    )
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=_private_key_pem(),
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        github_opener=github_opener,
+        worker_dispatch_opener=dispatch_opener,
+        stripe_opener=stripe_opener,
+        managed_runs_enabled=False,
+        stripe_secret_key="sk_live_redacted",
+        stripe_price_id="price_managed_run",
+        stripe_webhook_secret="whsec_redacted",
+        managed_run_price_label=MANAGED_PRICE_LABEL,
+        hosted_job_store_dir=str(tmp_path / "hosted-jobs"),
+        **_vercel_provenance_kwargs(),
+    )
+
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=(
+            f"installation_id=42&repo=example/one&state={state}"
+            f"&lane={MANAGED_FUSEKIT_RUN_LANE}"
+            f"&{HOSTED_MANAGED_PROOF_QUERY_PARAM}={proof_token}"
+        ),
+        settings=settings,
+    )
+    text = body.decode("utf-8")
+    job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
+    job = settings.hosted_jobs[job_id]
+    job_token = _job_token(text)
+    checkout_control = _control_for_payment_checkout(text)
+    _bind_stripe_checkout_creation_payload(stripe_opener.payloads[0], job)
+
+    assert status == "200 OK"
+    assert job.launch_lane == MANAGED_FUSEKIT_RUN_LANE
+    assert job.payment_status == "payment_required"
+    assert settings.lane_readiness()["lanes"][MANAGED_FUSEKIT_RUN_LANE]["launchable"] is False
+    assert "ghs_fake" not in text
+    assert proof_token not in text
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/payments/checkout",
+        method="POST",
+        query_string=f"job={job_token}",
+        form_body={"control": checkout_control},
+        settings=settings,
+    )
+    checkout = json.loads(body.decode("utf-8"))
+    assert status == "200 OK"
+    assert checkout["payment"]["status"] == "checkout_pending"
+    assert len(stripe_opener.requests) == 1
+
+    event = _stripe_checkout_completed_event(
+        job=settings.hosted_jobs[job_id],
+        stripe_session_id="cs_test_operator_proof",
+    )
+    raw_body, signature = _signed_stripe_webhook("whsec_redacted", event)
+    status, _headers, body = _call(
+        "/api/hosted/payments/stripe-webhook",
+        method="POST",
+        raw_body=raw_body,
+        raw_content_type="application/json",
+        headers={"Stripe-Signature": signature},
+        settings=settings,
+    )
+    webhook = json.loads(body.decode("utf-8"))
+    assert status == "200 OK"
+    assert webhook["payment_applied"] is True
+    assert settings.hosted_jobs[job_id].payment_status == "paid"
+    assert len(dispatch_opener.requests) == 0
+
+    paid_job_token = create_hosted_job_token(STATE_SECRET, settings.hosted_jobs[job_id])
+    start_control = create_hosted_state_token(
+        STATE_SECRET,
+        return_path=f"/api/hosted/jobs/{job_id}/actions/start",
+        nonce="nonce-for-operator-proof-start",
+    )
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/start",
+        method="POST",
+        query_string=f"job={paid_job_token}",
+        form_body={"control": start_control},
+        settings=settings,
+    )
+    started = json.loads(body.decode("utf-8"))
+    serialized = json.dumps(started)
+
+    assert status == "200 OK"
+    assert started["worker_dispatch"]["accepted"] is True
+    assert len(dispatch_opener.requests) == 1
+    assert (tmp_path / "hosted-jobs" / f"{job_id}.stripe-webhook-receipt.json").exists()
+    assert (tmp_path / "hosted-jobs" / f"{job_id}.managed-start-response.json").exists()
+    assert "sk_live" not in serialized
+    assert "whsec" not in serialized
+    assert "payment_method" not in serialized
 
 
 def test_hosted_control_room_defaults_to_recommended_byo_lane_when_managed_blocked() -> None:

@@ -15,6 +15,9 @@ from fusekit.errors import FuseKitError
 
 HOSTED_STATE_SCHEMA_VERSION = "fusekit.hosted-state.v1"
 HOSTED_STATE_TTL_SECONDS = 900
+HOSTED_MANAGED_PROOF_TOKEN_SCHEMA_VERSION = "fusekit.hosted-managed-proof-token.v1"
+HOSTED_MANAGED_PROOF_TOKEN_TTL_SECONDS = 900
+HOSTED_MANAGED_PROOF_QUERY_PARAM = "managed_proof"
 
 
 @dataclass(frozen=True)
@@ -99,6 +102,66 @@ def verify_hosted_state_token(
         issued_at=issued_at,
         return_path=_safe_return_path(return_path),
     )
+
+
+def create_hosted_managed_proof_token(
+    secret: str,
+    *,
+    now: int | None = None,
+    nonce: str | None = None,
+) -> str:
+    """Create a short-lived operator token for the managed Checkout proof run."""
+
+    if not secret:
+        raise FuseKitError("Hosted launcher state secret is required.")
+    payload = _base64url_json(
+        {
+            "schema_version": HOSTED_MANAGED_PROOF_TOKEN_SCHEMA_VERSION,
+            "nonce": nonce or secrets.token_urlsafe(18),
+            "issued_at": int(time.time() if now is None else now),
+            "purpose": "managed-checkout-proof",
+        }
+    )
+    signature = _sign(secret, payload)
+    return f"{payload}.{signature}"
+
+
+def verify_hosted_managed_proof_token(
+    secret: str,
+    token: str,
+    *,
+    now: int | None = None,
+    ttl_seconds: int = HOSTED_MANAGED_PROOF_TOKEN_TTL_SECONDS,
+) -> None:
+    """Verify a short-lived operator token for the managed Checkout proof run."""
+
+    if not secret:
+        raise FuseKitError("Hosted launcher state secret is required.")
+    if ttl_seconds <= 0:
+        raise FuseKitError("Hosted managed proof token ttl must be positive.")
+    try:
+        payload, signature = token.split(".", 1)
+    except ValueError:
+        raise FuseKitError("Hosted managed proof token is malformed.") from None
+    expected = _sign(secret, payload)
+    if not hmac.compare_digest(signature, expected):
+        raise FuseKitError("Hosted managed proof token signature is invalid.")
+    raw = _decode_json(payload)
+    if raw.get("schema_version") != HOSTED_MANAGED_PROOF_TOKEN_SCHEMA_VERSION:
+        raise FuseKitError("Hosted managed proof token schema is unsupported.")
+    if raw.get("purpose") != "managed-checkout-proof":
+        raise FuseKitError("Hosted managed proof token purpose is invalid.")
+    nonce = raw.get("nonce")
+    issued_at = raw.get("issued_at")
+    if not isinstance(nonce, str) or len(nonce) < 16:
+        raise FuseKitError("Hosted managed proof token nonce is invalid.")
+    if isinstance(issued_at, bool) or not isinstance(issued_at, int):
+        raise FuseKitError("Hosted managed proof token timestamp is invalid.")
+    current = int(time.time() if now is None else now)
+    if issued_at > current + 60:
+        raise FuseKitError("Hosted managed proof token timestamp is in the future.")
+    if current - issued_at > ttl_seconds:
+        raise FuseKitError("Hosted managed proof token expired.")
 
 
 def _safe_return_path(value: str) -> str:

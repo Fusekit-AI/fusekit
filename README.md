@@ -613,6 +613,26 @@ store the live `FUSEKIT_STRIPE_SECRET_KEY`, the verified price id, and the publi
 label in its secret/runtime environment, then keep `FUSEKIT_MANAGED_RUNS_ENABLED=0`
 until live Checkout proof and worker-dispatch acceptance pass.
 
+Because public paid managed runs remain disabled until that proof exists, the
+single supervised proof collection run uses a short-lived operator capability
+instead of enabling the public lane. Generate it on the hosted VM immediately
+before the final managed-lane click:
+
+```zsh
+sudo fusekit-hosted-managed-proof-token \
+  --runtime-secret-file /etc/fusekit/hosted-secrets.env \
+  > /tmp/fusekit-managed-proof-token.json
+```
+
+Append the returned `managed_proof` query value only to the managed-lane
+`/github/control-room` URL used for the live proof run. The token expires
+quickly, is not a provider credential, and must not be stored in docs, logs, run
+records, or durable proof artifacts. Public readiness should still report the
+managed lane as blocked by `managed_runs_not_enabled`; the proof token only
+allows the operator to create the one paid Checkout job, accept Stripe's signed
+webhook for that job, and collect the durable worker-dispatch proof required by
+`fusekit-hosted-managed-enable`.
+
 After the live managed Checkout walkthrough has produced redacted proof that a
 paid Checkout session, Stripe webhook application, and worker-dispatch
 acceptance all completed, use the guarded enablement helper instead of editing

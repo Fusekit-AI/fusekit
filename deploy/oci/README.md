@@ -153,3 +153,18 @@ hash-wrapped redacted webhook and managed-start artifacts from
 `/var/lib/fusekit/hosted-jobs`. Then run `fusekit-hosted-managed-enable` as a
 dry run first, and only rerun it with `--execute --confirm-managed-enablement`
 if the report says `ready_to_enable: true`.
+
+While `FUSEKIT_MANAGED_RUNS_ENABLED=0`, the public managed lane stays
+non-launchable. To collect the one supervised live proof run without opening the
+lane to everyone, create a short-lived operator token on the VM:
+
+```zsh
+sudo fusekit-hosted-managed-proof-token \
+  --runtime-secret-file /etc/fusekit/hosted-secrets.env \
+  > /tmp/fusekit-managed-proof-token.json
+```
+
+Append the returned `managed_proof` query value only to the managed-lane
+`/github/control-room` URL for that proof run. Do not put the token in run
+records or durable receipts; it is a temporary click capability, not a provider
+credential.

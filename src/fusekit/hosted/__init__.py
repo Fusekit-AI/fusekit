@@ -41,8 +41,12 @@ from fusekit.hosted.launcher import (
     render_hosted_launcher,
 )
 from fusekit.hosted.session import (
+    HOSTED_MANAGED_PROOF_QUERY_PARAM,
+    HOSTED_MANAGED_PROOF_TOKEN_SCHEMA_VERSION,
     HostedLaunchState,
+    create_hosted_managed_proof_token,
     create_hosted_state_token,
+    verify_hosted_managed_proof_token,
     verify_hosted_state_token,
 )
 from fusekit.hosted.worker import (
@@ -90,6 +94,8 @@ __all__ = [
     "HostedWorkerDispatchSettings",
     "InstallationToken",
     "HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION",
+    "HOSTED_MANAGED_PROOF_QUERY_PARAM",
+    "HOSTED_MANAGED_PROOF_TOKEN_SCHEMA_VERSION",
     "HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION",
     "HOSTED_WORKER_EXECUTION_SCHEMA_VERSION",
     "HOSTED_WORKER_INVOCATION_SCHEMA_VERSION",
@@ -107,6 +113,7 @@ __all__ = [
     "accept_hosted_worker_dispatch",
     "claim_hosted_launch_job",
     "create_hosted_state_token",
+    "create_hosted_managed_proof_token",
     "create_hosted_job_token",
     "create_hosted_payment_return_token",
     "exchange_installation_token",
@@ -130,4 +137,5 @@ __all__ = [
     "verify_hosted_byo_oci_proof_bundle",
     "verify_hosted_worker_dispatch",
     "verify_hosted_state_token",
+    "verify_hosted_managed_proof_token",
 ]
