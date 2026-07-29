@@ -2083,17 +2083,6 @@ def _hosted_job_action_response(
             HTTPStatus.SERVICE_UNAVAILABLE,
             {"error": "hosted_job_store_unavailable"},
         )
-    if _wants_html(environ):
-        return _html_response(
-            start_response,
-            render_hosted_control_room(
-                updated,
-                control_tokens=_hosted_control_tokens(settings, updated),
-                job_token=job_token,
-                action_receipt=action_receipt,
-                dispatch_receipt=dispatch_receipt,
-            ),
-        )
     payload = updated.to_dict()
     payload["job_token"] = job_token
     payload["action_receipt"] = action_receipt
@@ -2106,6 +2095,39 @@ def _hosted_job_action_response(
             start_response,
             HTTPStatus.INTERNAL_SERVER_ERROR,
             {"error": "public_action_payload_rejected"},
+        )
+    if (
+        action == "start"
+        and updated.launch_lane == MANAGED_FUSEKIT_RUN_LANE
+        and dispatch_receipt is not None
+        and dispatch_receipt.get("dispatched") is True
+        and dispatch_receipt.get("accepted") is True
+    ):
+        store = _hosted_job_store(settings)
+        if store is not None:
+            durable_payload = dict(payload)
+            durable_payload.pop("job_token", None)
+            try:
+                store.put_managed_start_response(
+                    job_id=updated.job_id,
+                    response=durable_payload,
+                )
+            except FuseKitError:
+                return _response(
+                    start_response,
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                    {"error": "hosted_job_store_unavailable"},
+                )
+    if _wants_html(environ):
+        return _html_response(
+            start_response,
+            render_hosted_control_room(
+                updated,
+                control_tokens=_hosted_control_tokens(settings, updated),
+                job_token=job_token,
+                action_receipt=action_receipt,
+                dispatch_receipt=dispatch_receipt,
+            ),
         )
     return _response(start_response, HTTPStatus.OK, payload)
 

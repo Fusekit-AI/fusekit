@@ -22,7 +22,16 @@ HOSTED_JOB_STORE_SCHEMA_VERSION = "fusekit.hosted-job-store.v1"
 HOSTED_JOB_STORE_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION = (
     "fusekit.hosted-job-store-stripe-webhook-receipt.v1"
 )
+HOSTED_JOB_STORE_MANAGED_START_RESPONSE_SCHEMA_VERSION = (
+    "fusekit.hosted-job-store-managed-start-response.v1"
+)
 HOSTED_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-stripe-webhook.v1"
+HOSTED_JOB_SCHEMA_VERSION = "fusekit.hosted-job.v1"
+HOSTED_WORKER_DISPATCH_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch.v1"
+HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION = (
+    "fusekit.hosted-worker-dispatch-receipt.v1"
+)
+MANAGED_FUSEKIT_RUN_LANE = "managed-fusekit-run"
 HOSTED_JOB_STORE_SECRET_BOUNDARY = (
     "Hosted job snapshots contain public job state, lane contracts, public payment "
     "receipt labels, and hashes only. They must not contain Stripe keys, GitHub "
@@ -33,6 +42,12 @@ HOSTED_JOB_STORE_WEBHOOK_RECEIPT_BOUNDARY = (
     "public job id, receipt hash, and schema labels. They must not contain Stripe keys, "
     "webhook signing secrets, raw payloads, card data, payment method ids, provider "
     "credentials, worker secrets, or vault material."
+)
+HOSTED_JOB_STORE_MANAGED_START_RESPONSE_BOUNDARY = (
+    "Hosted managed start proof artifacts contain only the redacted start response, "
+    "public job id, response hash, payment labels, and worker-dispatch acceptance. "
+    "They must not contain signed job tokens, Stripe keys, webhook signing secrets, "
+    "provider credentials, worker secrets, HMAC signatures, or vault material."
 )
 
 _HOSTED_JOB_ID_RE = re.compile(r"\Ahosted-[A-Za-z0-9_-]{8,160}\Z")
@@ -121,6 +136,34 @@ class HostedJobStore:
         )
         return target
 
+    def put_managed_start_response(
+        self,
+        *,
+        job_id: str,
+        response: dict[str, object],
+    ) -> Path:
+        """Atomically write the redacted managed start response for live proof."""
+
+        _validated_job_id(job_id)
+        _validate_managed_start_response(job_id=job_id, response=response)
+        _assert_public_snapshot_text(json.dumps(response, sort_keys=True))
+        payload = {
+            "schema_version": HOSTED_JOB_STORE_MANAGED_START_RESPONSE_SCHEMA_VERSION,
+            "job_id": job_id,
+            "response_schema_version": response.get("schema_version"),
+            "response_sha256": _job_payload_hash(response),
+            "response": response,
+            "secret_boundary": HOSTED_JOB_STORE_MANAGED_START_RESPONSE_BOUNDARY,
+        }
+        target = self.managed_start_response_path(job_id)
+        _write_public_payload(
+            self.root,
+            target,
+            payload,
+            error="Hosted managed start response could not be written.",
+        )
+        return target
+
     def status(self) -> dict[str, object]:
         """Return public readiness for the configured job store."""
 
@@ -151,6 +194,9 @@ class HostedJobStore:
 
     def stripe_webhook_receipt_path(self, job_id: str) -> Path:
         return self.root / f"{_validated_job_id(job_id)}.stripe-webhook-receipt.json"
+
+    def managed_start_response_path(self, job_id: str) -> Path:
+        return self.root / f"{_validated_job_id(job_id)}.managed-start-response.json"
 
 
 def hosted_job_store_status(root: str) -> dict[str, object]:
@@ -219,6 +265,78 @@ def _validate_stripe_webhook_receipt(
         raise FuseKitError("Hosted Stripe webhook receipt did not unlock dispatch.")
     if receipt.get("worker_dispatch_sent") is not False:
         raise FuseKitError("Hosted Stripe webhook receipt must not dispatch workers.")
+
+
+def _validate_managed_start_response(
+    *,
+    job_id: str,
+    response: dict[str, object],
+) -> None:
+    if "job_token" in response:
+        raise FuseKitError("Hosted managed start response must not contain job token.")
+    if response.get("schema_version") != HOSTED_JOB_SCHEMA_VERSION:
+        raise FuseKitError("Hosted managed start response schema is unsupported.")
+    if response.get("job_id") != job_id:
+        raise FuseKitError("Hosted managed start response job id mismatch.")
+    if response.get("launch_lane") != MANAGED_FUSEKIT_RUN_LANE:
+        raise FuseKitError("Hosted managed start response lane is invalid.")
+    if response.get("status") != "waiting_for_provider_gates":
+        raise FuseKitError("Hosted managed start response status is invalid.")
+    payment = response.get("payment")
+    if not isinstance(payment, dict):
+        raise FuseKitError("Hosted managed start response payment is missing.")
+    if payment.get("required") is not True or payment.get("status") != "paid":
+        raise FuseKitError("Hosted managed start response payment is not paid.")
+    receipt = payment.get("receipt")
+    if not isinstance(receipt, dict):
+        raise FuseKitError("Hosted managed start response payment receipt is missing.")
+    if receipt.get("client_reference_id") != job_id:
+        raise FuseKitError("Hosted managed start response payment job id mismatch.")
+    metadata = receipt.get("metadata")
+    if not isinstance(metadata, dict):
+        raise FuseKitError("Hosted managed start response payment metadata is missing.")
+    if metadata.get("job_id") != job_id:
+        raise FuseKitError("Hosted managed start response payment metadata job mismatch.")
+    if metadata.get("lane") != MANAGED_FUSEKIT_RUN_LANE:
+        raise FuseKitError("Hosted managed start response payment metadata lane is invalid.")
+    action_receipt = response.get("action_receipt")
+    if not isinstance(action_receipt, dict) or action_receipt.get("action") != "start":
+        raise FuseKitError("Hosted managed start response action receipt is invalid.")
+    dispatch = response.get("worker_dispatch")
+    if not isinstance(dispatch, dict):
+        raise FuseKitError("Hosted managed start response dispatch receipt is missing.")
+    if dispatch.get("schema_version") != HOSTED_WORKER_DISPATCH_SCHEMA_VERSION:
+        raise FuseKitError("Hosted managed start response dispatch schema is invalid.")
+    if dispatch.get("action") != "start":
+        raise FuseKitError("Hosted managed start response dispatch action is invalid.")
+    if dispatch.get("dispatched") is not True or dispatch.get("accepted") is not True:
+        raise FuseKitError("Hosted managed start response dispatch was not accepted.")
+    if dispatch.get("receiver_schema_version") != HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION:
+        raise FuseKitError("Hosted managed start response dispatch receiver is invalid.")
+    binding = dispatch.get("dispatch_binding")
+    if not isinstance(binding, dict):
+        raise FuseKitError("Hosted managed start response dispatch binding is missing.")
+    if binding.get("job_id") != job_id:
+        raise FuseKitError("Hosted managed start response dispatch job id mismatch.")
+    if binding.get("lane") != MANAGED_FUSEKIT_RUN_LANE:
+        raise FuseKitError("Hosted managed start response dispatch lane is invalid.")
+    if binding.get("payment_status") != "paid":
+        raise FuseKitError("Hosted managed start response dispatch payment is invalid.")
+    for field in ("plan_fingerprint", "stripe_price_id_hash", "price_label_hash"):
+        if binding.get(field) != metadata.get(field):
+            raise FuseKitError("Hosted managed start response dispatch binding mismatch.")
+    idempotency = dispatch.get("idempotency")
+    if not isinstance(idempotency, dict):
+        raise FuseKitError("Hosted managed start response dispatch idempotency is missing.")
+    if idempotency.get("mode") != "dispatch-state-dir":
+        raise FuseKitError("Hosted managed start response dispatch idempotency is invalid.")
+    if idempotency.get("durable") is not True:
+        raise FuseKitError("Hosted managed start response dispatch idempotency is not durable.")
+    if idempotency.get("scope") != "worker deployment":
+        raise FuseKitError("Hosted managed start response dispatch idempotency scope is invalid.")
+    proof = idempotency.get("proof")
+    if not isinstance(proof, str) or "before worker spawn" not in proof:
+        raise FuseKitError("Hosted managed start response dispatch idempotency proof is missing.")
 
 
 def _write_public_payload(

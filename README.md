@@ -621,7 +621,7 @@ the runtime secret file by hand:
 ```zsh
 sudo fusekit-hosted-live-checkout-proof \
   --webhook-receipt /var/lib/fusekit/hosted-jobs/<job-id>.stripe-webhook-receipt.json \
-  --start-action-response /var/lib/fusekit/posture/managed-start-response.json \
+  --start-action-response /var/lib/fusekit/hosted-jobs/<job-id>.managed-start-response.json \
   --expected-commit-sha "$(git rev-parse HEAD)" \
   > /var/lib/fusekit/posture/live-checkout-proof.json
 
@@ -640,6 +640,11 @@ valid signed `checkout.session.completed` event is bound to the managed job. It
 is a redacted, hash-wrapped public proof artifact; it does not contain Stripe
 keys, webhook signing secrets, raw webhook payloads, card data, payment method
 ids, provider credentials, worker secrets, or vault material.
+
+The managed start response path is written after a paid managed `start` action
+gets durable worker-dispatch acceptance. It is also redacted and hash-wrapped,
+and it omits the signed job token while preserving the public payment and
+dispatch binding proof needed for managed enablement.
 
 That dry run must report `ready_to_enable: true`. Only then rerun with
 `--execute --confirm-managed-enablement`; the helper writes only

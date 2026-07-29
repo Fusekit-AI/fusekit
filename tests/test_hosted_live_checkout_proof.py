@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fusekit.hosted.job_store import HOSTED_JOB_STORE_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION
+from fusekit.hosted.job_store import (
+    HOSTED_JOB_STORE_MANAGED_START_RESPONSE_SCHEMA_VERSION,
+    HOSTED_JOB_STORE_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION,
+)
 from fusekit.hosted.live_checkout_proof import (
     HOSTED_MANAGED_LIVE_CHECKOUT_PROOF_INPUT_SCHEMA_VERSION,
     build_hosted_managed_live_checkout_proof,
@@ -141,6 +144,41 @@ def test_live_checkout_proof_cli_accepts_job_store_webhook_receipt_wrapper(
     assert payload["proof_inputs"]["webhook_receipt_schema"] == (
         "fusekit.hosted-stripe-webhook.v1"
     )
+
+
+def test_live_checkout_proof_cli_accepts_job_store_managed_start_response_wrapper(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    webhook_path = tmp_path / "webhook.json"
+    start_path = tmp_path / "start-wrapper.json"
+    webhook_path.write_text(json.dumps(_webhook_receipt()), encoding="utf-8")
+    start_path.write_text(
+        json.dumps(
+            {
+                "schema_version": HOSTED_JOB_STORE_MANAGED_START_RESPONSE_SCHEMA_VERSION,
+                "job_id": JOB_ID,
+                "response_schema_version": "fusekit.hosted-job.v1",
+                "response_sha256": "sha256:" + ("f" * 64),
+                "response": _start_action_response(),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "--webhook-receipt",
+            str(webhook_path),
+            "--start-action-response",
+            str(start_path),
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["ready"] is True
+    assert payload["proof_inputs"]["start_action_schema"] == "fusekit.hosted-job.v1"
 
 
 def _webhook_receipt() -> dict[str, object]:

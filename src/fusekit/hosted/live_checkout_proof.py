@@ -10,7 +10,10 @@ from pathlib import Path
 from typing import Any
 
 from fusekit.errors import FuseKitError
-from fusekit.hosted.job_store import HOSTED_JOB_STORE_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION
+from fusekit.hosted.job_store import (
+    HOSTED_JOB_STORE_MANAGED_START_RESPONSE_SCHEMA_VERSION,
+    HOSTED_JOB_STORE_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION,
+)
 from fusekit.hosted.lanes import MANAGED_FUSEKIT_RUN_LANE
 from fusekit.hosted.managed_enablement import (
     HOSTED_MANAGED_ENABLEMENT_SECRET_BOUNDARY,
@@ -112,7 +115,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         proof = build_hosted_managed_live_checkout_proof(
             webhook_receipt=_read_webhook_receipt_json(args.webhook_receipt),
-            start_action_response=_read_json(args.start_action_response),
+            start_action_response=_read_start_action_response_json(
+                args.start_action_response
+            ),
             expected_commit_sha=args.expected_commit_sha,
         )
     except FuseKitError as exc:
@@ -274,6 +279,19 @@ def _read_webhook_receipt_json(path: str) -> Mapping[str, Any]:
         if not isinstance(receipt, Mapping):
             raise FuseKitError("live_checkout_proof_webhook_receipt_missing")
         return receipt
+    return payload
+
+
+def _read_start_action_response_json(path: str) -> Mapping[str, Any]:
+    payload = _read_json(path)
+    if (
+        payload.get("schema_version")
+        == HOSTED_JOB_STORE_MANAGED_START_RESPONSE_SCHEMA_VERSION
+    ):
+        response = payload.get("response")
+        if not isinstance(response, Mapping):
+            raise FuseKitError("live_checkout_proof_start_response_missing")
+        return response
     return payload
 
 

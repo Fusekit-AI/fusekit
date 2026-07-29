@@ -151,6 +151,8 @@ worker-dispatch acceptance. Build that last proof with
 `fusekit-hosted-live-checkout-proof --webhook-receipt ... --start-action-response ...`
 from the hash-wrapped redacted Stripe webhook receipt under
 `/var/lib/fusekit/hosted-jobs/<job-id>.stripe-webhook-receipt.json` and the paid
-managed `start` response. Then run `fusekit-hosted-managed-enable` as a dry run
-first, and only rerun it with `--execute --confirm-managed-enablement` if the
-report says `ready_to_enable: true`.
+managed `start` response under
+`/var/lib/fusekit/hosted-jobs/<job-id>.managed-start-response.json`. Then run
+`fusekit-hosted-managed-enable` as a dry run first, and only rerun it with
+`--execute --confirm-managed-enablement` if the report says
+`ready_to_enable: true`.

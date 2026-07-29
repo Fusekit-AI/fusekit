@@ -3156,6 +3156,37 @@ def test_hosted_stripe_webhook_applies_bound_payment_after_restart(tmp_path: Pat
     assert "sk_live" not in artifact_text
     assert "payment_method" not in artifact_text
 
+    paid_job_token = create_hosted_job_token(STATE_SECRET, restarted_settings.hosted_jobs[job_id])
+    start_control = create_hosted_state_token(
+        STATE_SECRET,
+        return_path=f"/api/hosted/jobs/{job_id}/actions/start",
+        nonce="nonce-for-restart-webhook-paid-start",
+    )
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/start",
+        method="POST",
+        query_string=f"job={paid_job_token}",
+        form_body={"control": start_control},
+        settings=restarted_settings,
+    )
+    started = json.loads(body.decode("utf-8"))
+    start_artifact_path = job_store_dir / f"{job_id}.managed-start-response.json"
+    start_artifact = json.loads(start_artifact_path.read_text(encoding="utf-8"))
+    start_artifact_text = json.dumps(start_artifact)
+
+    assert status == "200 OK"
+    assert started["worker_dispatch"]["dispatched"] is True
+    assert start_artifact["schema_version"] == (
+        "fusekit.hosted-job-store-managed-start-response.v1"
+    )
+    assert start_artifact["job_id"] == job_id
+    assert start_artifact["response"]["schema_version"] == "fusekit.hosted-job.v1"
+    assert start_artifact["response"]["worker_dispatch"]["accepted"] is True
+    assert "job_token" not in start_artifact_text
+    assert "whsec" not in start_artifact_text
+    assert "sk_live" not in start_artifact_text
+    assert "payment_method" not in start_artifact_text
+
 
 def test_hosted_stripe_webhook_rejects_unsigned_probe_before_enablement() -> None:
     settings = HostedSettings(
