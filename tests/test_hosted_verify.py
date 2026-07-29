@@ -2109,7 +2109,16 @@ def test_verify_hosted_deployment_requires_one_click_contract() -> None:
     one_click["no_terminal_promise"] = "Download the CLI and paste this command."
     one_click["terminal_required"] = True
     one_click["download_required"] = True
-    one_click["lanes"] = {}
+    one_click["lanes"] = hosted_launch_lane_contract()
+    one_click_lanes = one_click["lanes"]
+    assert isinstance(one_click_lanes, dict)
+    lanes = one_click_lanes["lanes"]
+    assert isinstance(lanes, list)
+    byo_lane = next(lane for lane in lanes if lane["id"] == BYO_OCI_LANE)
+    assert isinstance(byo_lane, dict)
+    proof_policy = byo_lane["proof_policy"]
+    assert isinstance(proof_policy, dict)
+    proof_policy["requires_redacted_artifacts"] = False
     one_click["launch_path"] = ["Run a terminal command."]
     one_click["plain_language_journey"] = ["Open a terminal."]
     one_click["prohibited"] = ["Bypass provider approval screens."]
@@ -2143,6 +2152,9 @@ def test_verify_hosted_deployment_requires_one_click_contract() -> None:
         "failures"
     ]
     assert "one_click_launch_lanes_mismatch" in checks["hosted.deployment"]["failures"]
+    assert "one_click_launch_lanes_byo_proof_policy_redacted_required_mismatch" in checks[
+        "hosted.deployment"
+    ]["failures"]
     assert "one_click_launch_path_mismatch" in checks["hosted.deployment"]["failures"]
     assert "one_click_launch_plain_language_journey_mismatch" in checks[
         "hosted.deployment"
@@ -2167,6 +2179,10 @@ def test_verify_hosted_deployment_requires_launch_lane_contract() -> None:
     byo_lane = next(lane for lane in lanes if lane["id"] == BYO_OCI_LANE)
     assert isinstance(byo_lane, dict)
     byo_lane.pop("security_contract")
+    proof_policy = byo_lane["proof_policy"]
+    assert isinstance(proof_policy, dict)
+    proof_policy["max_total_artifact_bytes"] = 512 * 1024 * 1024
+    proof_policy["requires_redacted_artifacts"] = False
     opener = SequenceOpener(
         [
             _home_html(deployment=contract),
@@ -2185,10 +2201,22 @@ def test_verify_hosted_deployment_requires_launch_lane_contract() -> None:
     checks = {check["id"]: check for check in report["checks"]}
 
     assert report["ready"] is False
-    assert "launch_lanes_contract_mismatch" in checks["hosted.deployment"]["failures"]
+    deployment_failures = checks["hosted.deployment"]["failures"]
+    home_failures = checks["hosted.home"]["failures"]
+    assert "launch_lanes_contract_mismatch" in deployment_failures
+    assert "launch_lanes_byo_proof_policy_max_total_artifact_bytes_mismatch" in (
+        deployment_failures
+    )
+    assert "launch_lanes_byo_proof_policy_redacted_required_mismatch" in (
+        deployment_failures
+    )
     assert "hosted_home_embedded_deployment_launch_lanes_contract_mismatch" in checks[
         "hosted.home"
     ]["failures"]
+    assert (
+        "hosted_home_embedded_deployment_launch_lanes_byo_proof_policy_max_total_artifact_bytes_mismatch"
+        in home_failures
+    )
 
 
 def test_verify_hosted_deployment_requires_protected_controls_contract() -> None:

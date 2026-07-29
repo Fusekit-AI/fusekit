@@ -852,6 +852,7 @@
   Hosted lane readiness now publishes that same managed proof-run contract on the public managed lane without the short-lived state token or install URL, and outside-in hosted verification rejects missing, weakened, token-public, or sidecar contract fields before public readiness can pass.
   BYO OCI lane readiness now publishes the redacted proof-policy summary too: remote-artifacts root, input/output proof schemas, 64 MiB per-artifact ceiling, 256 MiB total bundle ceiling, exact zero-byte exception list, regular-file/redaction requirements, and completion-evidence keys. The outside-in hosted verifier rejects missing, weakened, or sidecar proof-policy fields, so the free lane cannot silently drift into bulky proof uploads or unredacted artifact handling while still looking launchable.
   The BYO OCI launch-lane contract now carries that same proof policy, so homepage/deployment-contract consumers, signed job lane contracts, proof receipts, readiness JSON, BYO bootstrap receipts, and outside-in verification all share one machine-checkable redacted artifact budget instead of relying on prose in one surface and exact policy in another.
+  Hosted outside-in verification now reports targeted BYO launch-lane and one-click lane proof-policy failures in addition to the broad lane-contract mismatch, including homepage embedded-contract drift, so a weakened artifact budget or redaction requirement is immediately diagnosable during live URL verification.
 
 ## North Star Audit Remediation
 

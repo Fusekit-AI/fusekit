@@ -1340,8 +1340,15 @@ def _one_click_launch_contract_failures(payload: object) -> list[str]:
         failures.append("one_click_launch_repository_scope_mismatch")
     if payload.get("github_repository_permission") != "contents:read":
         failures.append("one_click_launch_github_permission_mismatch")
-    if payload.get("lanes") != hosted_launch_lane_contract():
+    lanes = payload.get("lanes")
+    if lanes != hosted_launch_lane_contract():
         failures.append("one_click_launch_lanes_mismatch")
+    failures.extend(
+        _launch_lanes_byo_proof_policy_failures(
+            lanes,
+            prefix="one_click_launch_lanes_byo_proof_policy",
+        )
+    )
     if payload.get("launch_path") != list(HOSTED_LAUNCH_PATH):
         failures.append("one_click_launch_path_mismatch")
     if payload.get("plain_language_journey") != list(HOSTED_PLAIN_LANGUAGE_JOURNEY):
@@ -1367,9 +1374,34 @@ def _one_click_launch_contract_failures(payload: object) -> list[str]:
 
 
 def _launch_lanes_contract_failures(payload: object) -> list[str]:
+    failures: list[str] = []
     if payload != hosted_launch_lane_contract():
-        return ["launch_lanes_contract_mismatch"]
-    return []
+        failures.append("launch_lanes_contract_mismatch")
+    failures.extend(_launch_lanes_byo_proof_policy_failures(payload))
+    return failures
+
+
+def _launch_lanes_byo_proof_policy_failures(
+    payload: object,
+    *,
+    prefix: str = "launch_lanes_byo_proof_policy",
+) -> list[str]:
+    if not isinstance(payload, dict):
+        return []
+    lanes = payload.get("lanes")
+    if not isinstance(lanes, list):
+        return []
+    byo_lanes = [
+        lane
+        for lane in lanes
+        if isinstance(lane, dict) and lane.get("id") == BYO_OCI_LANE
+    ]
+    if len(byo_lanes) != 1:
+        return []
+    return _byo_lane_proof_policy_failures(
+        byo_lanes[0].get("proof_policy"),
+        prefix=prefix,
+    )
 
 
 def _protected_controls_contract_failures(payload: object) -> list[str]:
@@ -1850,35 +1882,39 @@ def _byo_lane_readiness_failures(
     return failures
 
 
-def _byo_lane_proof_policy_failures(value: object) -> list[str]:
+def _byo_lane_proof_policy_failures(
+    value: object,
+    *,
+    prefix: str = "lane_readiness_byo_proof_policy",
+) -> list[str]:
     if not isinstance(value, dict):
-        return ["lane_readiness_byo_proof_policy_missing"]
+        return [f"{prefix}_missing"]
     failures: list[str] = []
     failures.extend(
-        f"lane_readiness_byo_proof_policy_unexpected_field:{field}"
+        f"{prefix}_unexpected_field:{field}"
         for field in _unexpected_keys(value, BYO_LANE_PROOF_POLICY_KEYS)
     )
     expected = byo_oci_proof_policy()
     if value.get("proof_bundle_root") != expected["proof_bundle_root"]:
-        failures.append("lane_readiness_byo_proof_policy_root_mismatch")
+        failures.append(f"{prefix}_root_mismatch")
     if value.get("input_schema") != expected["input_schema"]:
-        failures.append("lane_readiness_byo_proof_policy_input_schema_mismatch")
+        failures.append(f"{prefix}_input_schema_mismatch")
     if value.get("output_schema") != expected["output_schema"]:
-        failures.append("lane_readiness_byo_proof_policy_output_schema_mismatch")
+        failures.append(f"{prefix}_output_schema_mismatch")
     if value.get("max_artifact_bytes") != expected["max_artifact_bytes"]:
-        failures.append("lane_readiness_byo_proof_policy_max_artifact_bytes_mismatch")
+        failures.append(f"{prefix}_max_artifact_bytes_mismatch")
     if value.get("max_total_artifact_bytes") != expected["max_total_artifact_bytes"]:
-        failures.append("lane_readiness_byo_proof_policy_max_total_artifact_bytes_mismatch")
+        failures.append(f"{prefix}_max_total_artifact_bytes_mismatch")
     if value.get("zero_byte_allowed_artifacts") != expected["zero_byte_allowed_artifacts"]:
-        failures.append("lane_readiness_byo_proof_policy_zero_byte_allowed_artifacts_mismatch")
+        failures.append(f"{prefix}_zero_byte_allowed_artifacts_mismatch")
     if value.get("requires_regular_file_artifacts") != expected[
         "requires_regular_file_artifacts"
     ]:
-        failures.append("lane_readiness_byo_proof_policy_regular_file_required_mismatch")
+        failures.append(f"{prefix}_regular_file_required_mismatch")
     if value.get("requires_redacted_artifacts") != expected["requires_redacted_artifacts"]:
-        failures.append("lane_readiness_byo_proof_policy_redacted_required_mismatch")
+        failures.append(f"{prefix}_redacted_required_mismatch")
     if value.get("requires_completion_evidence") != expected["requires_completion_evidence"]:
-        failures.append("lane_readiness_byo_proof_policy_completion_evidence_mismatch")
+        failures.append(f"{prefix}_completion_evidence_mismatch")
     if not _contains_all_markers(
         value.get("secret_boundary"),
         (
@@ -1892,7 +1928,7 @@ def _byo_lane_proof_policy_failures(value: object) -> list[str]:
             "raw setup logs",
         ),
     ):
-        failures.append("lane_readiness_byo_proof_policy_secret_boundary_mismatch")
+        failures.append(f"{prefix}_secret_boundary_mismatch")
     return failures
 
 
