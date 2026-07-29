@@ -2897,8 +2897,11 @@ def _payment_receipt_matches_job(
         "lane": job.launch_lane,
         "github_source_hash": _payment_github_source_hash(job.github_source),
         "plan_fingerprint": job.worker_contract.plan_fingerprint,
-        "stripe_price_id_hash": _payment_public_hash(settings.stripe_price_id),
-        "price_label_hash": _payment_public_hash(settings.managed_run_price_label),
+        "stripe_price_id_hash": job.payment_price_id_hash
+        or _payment_public_hash(settings.stripe_price_id),
+        "price_label_hash": _payment_public_hash(
+            job.payment_price_label or settings.managed_run_price_label
+        ),
     }
     for key, expected_value in expected.items():
         if metadata.get(key) != expected_value:
@@ -3056,7 +3059,8 @@ def _worker_dispatch_binding(
         "lane": job.launch_lane,
         "plan_fingerprint": job.worker_contract.plan_fingerprint,
         "payment_status": job.payment_status,
-        "stripe_price_id_hash": _payment_public_hash(settings.stripe_price_id),
+        "stripe_price_id_hash": job.payment_price_id_hash
+        or _payment_public_hash(settings.stripe_price_id),
         "price_label_hash": _payment_public_hash(
             job.payment_price_label or settings.managed_run_price_label
         ),
