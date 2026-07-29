@@ -2957,6 +2957,9 @@ def _payment_receipt_matches_job(
         return False
     if receipt.get("client_reference_id") != job.job_id:
         return False
+    expected_price_label = job.payment_price_label or settings.managed_run_price_label
+    if receipt.get("price_label") != expected_price_label:
+        return False
     metadata = receipt.get("metadata")
     if not isinstance(metadata, dict):
         return False
@@ -2967,9 +2970,7 @@ def _payment_receipt_matches_job(
         "plan_fingerprint": job.worker_contract.plan_fingerprint,
         "stripe_price_id_hash": job.payment_price_id_hash
         or _payment_public_hash(settings.stripe_price_id),
-        "price_label_hash": _payment_public_hash(
-            job.payment_price_label or settings.managed_run_price_label
-        ),
+        "price_label_hash": _payment_public_hash(expected_price_label),
     }
     for key, expected_value in expected.items():
         if metadata.get(key) != expected_value:

@@ -2785,6 +2785,128 @@ def test_hosted_managed_payment_dispatch_uses_job_price_binding_after_rotation()
     assert "price_rotated_managed_run" not in json.dumps(started)
 
 
+def test_hosted_managed_payment_return_rejects_price_label_drift() -> None:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce="nonce-for-hosted-state",
+    )
+    github_opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    dispatch_opener = SequenceOpener([DISPATCH_ACCEPTANCE])
+    stripe_opener = FormSequenceOpener(
+        [
+            {
+                "id": "cs_test_label_drift",
+                "object": "checkout.session",
+                "url": "https://checkout.stripe.com/c/pay/cs_test_label_drift",
+                "status": "open",
+                "payment_status": "unpaid",
+                "mode": "payment",
+            }
+        ]
+    )
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=_private_key_pem(),
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        github_opener=github_opener,
+        worker_dispatch_opener=dispatch_opener,
+        stripe_opener=stripe_opener,
+        managed_runs_enabled=True,
+        stripe_secret_key="sk_live_redacted",
+        stripe_price_id="price_managed_run",
+        managed_run_price_label=MANAGED_PRICE_LABEL,
+        **_vercel_provenance_kwargs(),
+    )
+
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=(
+            f"installation_id=42&repo=example/one&state={state}"
+            f"&lane={MANAGED_FUSEKIT_RUN_LANE}"
+        ),
+        settings=settings,
+    )
+    control_room = body.decode("utf-8")
+    job_id = _match(control_room, r"hosted-[A-Za-z0-9_-]+")
+    job_token = _job_token(control_room)
+    checkout_control = _control_for_payment_checkout(control_room)
+    _bind_stripe_checkout_creation_payload(
+        stripe_opener.payloads[0],
+        settings.hosted_jobs[job_id],
+    )
+
+    assert status == "200 OK"
+
+    status, _headers, _body = _call(
+        f"/api/hosted/jobs/{job_id}/payments/checkout",
+        method="POST",
+        query_string=f"job={job_token}",
+        form_body={"control": checkout_control},
+        settings=settings,
+    )
+    job = settings.hosted_jobs[job_id]
+    payment_return_token = _payment_token_from_stripe_url(
+        stripe_opener.bodies[0],
+        "success_url",
+    )
+    stripe_opener.payloads.append(
+        {
+            "id": "cs_test_label_drift",
+            "object": "checkout.session",
+            "status": "complete",
+            "payment_status": "paid",
+            "mode": "payment",
+            "client_reference_id": job_id,
+            "amount_total": 4900,
+            "currency": "usd",
+            "metadata": {
+                "job_id": job_id,
+                "lane": MANAGED_FUSEKIT_RUN_LANE,
+                "github_source_hash": _payment_source_hash(job.github_source),
+                "plan_fingerprint": job.worker_contract.plan_fingerprint,
+                "stripe_price_id_hash": job.payment_price_id_hash,
+                "price_label_hash": _payment_public_hash(job.payment_price_label),
+            },
+        }
+    )
+    drifted_settings = replace(
+        settings,
+        managed_run_price_label="$99 one-time managed FuseKit run",
+    )
+
+    assert status == "200 OK"
+
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/payments/stripe-return",
+        query_string=f"payment={payment_return_token}&session_id=cs_test_label_drift",
+        headers={"Accept": "text/html"},
+        settings=drifted_settings,
+    )
+
+    assert status == "403 Forbidden"
+    _assert_public_payment_error(body, "payment_binding_mismatch")
+    assert settings.hosted_jobs[job_id].payment_status == "checkout_pending"
+    assert len(dispatch_opener.requests) == 0
+    assert "sk_live" not in body.decode("utf-8")
+
+
 def test_hosted_managed_lane_requires_payment_before_rollback_or_detonation_dispatch() -> None:
     state = create_hosted_state_token(
         STATE_SECRET,
