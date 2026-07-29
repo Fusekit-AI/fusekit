@@ -33,6 +33,11 @@ from fusekit.hosted.lanes import (
     hosted_launch_lane_contract,
 )
 from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY, HOSTED_PROHIBITED_ACTIONS
+from fusekit.hosted.managed_proof_contract import (
+    HOSTED_MANAGED_PROOF_BROWSER_STEPS,
+    HOSTED_MANAGED_PROOF_DURABLE_ARTIFACTS,
+    HOSTED_MANAGED_PROOF_FORBIDDEN_ACTIONS,
+)
 from fusekit.hosted.script_json import json_script_payload
 from fusekit.hosted.server import (
     HOSTED_AWS_OPERATOR_SETUP_STEPS,
@@ -65,6 +70,25 @@ SAFE_RESPONSE_HEADERS = {
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY",
 }
+
+
+def _managed_proof_run_contract() -> dict[str, object]:
+    return {
+        "mode": "supervised_browser_only",
+        "browser_steps": list(HOSTED_MANAGED_PROOF_BROWSER_STEPS),
+        "durable_artifacts": list(HOSTED_MANAGED_PROOF_DURABLE_ARTIFACTS),
+        "forbidden_actions": list(HOSTED_MANAGED_PROOF_FORBIDDEN_ACTIONS),
+        "enablement_command": "fusekit-hosted-managed-enable",
+        "live_proof_command": "fusekit-hosted-live-checkout-proof --job-id <job-id>",
+        "short_lived_capability_public": False,
+        "secret_boundary": (
+            "Public lane readiness shows proof steps, artifact names, and command labels "
+            "only. It never includes the short-lived managed proof state token, install "
+            "URL, Stripe keys, webhook secrets, GitHub private keys, OCI credentials, "
+            "provider credentials, worker secrets, vault material, card data, or raw "
+            "provider logs."
+        ),
+    }
 
 
 class FakeResponse:
@@ -869,6 +893,59 @@ def test_verify_hosted_deployment_requires_managed_payment_proof_checklist() -> 
     assert "lane_readiness_managed_payment_proof_mismatch" in checks["hosted.readiness"][
         "failures"
     ]
+
+
+def test_verify_hosted_deployment_requires_managed_proof_run_contract() -> None:
+    readiness = _readiness_contract()
+    lane_readiness = readiness["lane_readiness"]
+    assert isinstance(lane_readiness, dict)
+    lanes = lane_readiness["lanes"]
+    assert isinstance(lanes, dict)
+    managed = lanes[MANAGED_FUSEKIT_RUN_LANE]
+    assert isinstance(managed, dict)
+    contract = managed["managed_proof_run_contract"]
+    assert isinstance(contract, dict)
+    contract["mode"] = "operator-terminal"
+    contract["browser_steps"] = ["Run a terminal command."]
+    contract["durable_artifacts"] = ["raw-stripe-session.json"]
+    contract["forbidden_actions"] = []
+    contract["enablement_command"] = "edit-env-file"
+    contract["live_proof_command"] = "cat raw-webhook.log"
+    contract["short_lived_capability_public"] = True
+    contract["secret_boundary"] = "May include raw provider logs."
+    contract["install_url"] = "https://github.com/apps/fusekit-launcher/installations/new"
+    opener = SequenceOpener(
+        [
+            _home_html(),
+            {"ok": True},
+            readiness,
+            _deployment_contract(),
+            _github_intake_contract(),
+        ]
+    )
+
+    report = verify_hosted_deployment(
+        origin="https://fusekit.snowmanai.org",
+        opener=opener,
+        dns_resolver=_public_dns_resolver,
+    )
+    checks = {check["id"]: check for check in report["checks"]}
+
+    assert report["ready"] is False
+    assert checks["hosted.readiness"]["status"] == "failed"
+    failures = checks["hosted.readiness"]["failures"]
+    assert "lane_readiness_managed_proof_contract_mode_mismatch" in failures
+    assert "lane_readiness_managed_proof_contract_browser_steps_mismatch" in failures
+    assert "lane_readiness_managed_proof_contract_artifacts_mismatch" in failures
+    assert "lane_readiness_managed_proof_contract_forbidden_actions_mismatch" in failures
+    assert "lane_readiness_managed_proof_contract_enablement_command_mismatch" in failures
+    assert "lane_readiness_managed_proof_contract_live_proof_command_mismatch" in failures
+    assert "lane_readiness_managed_proof_contract_public_capability_mismatch" in failures
+    assert "lane_readiness_managed_proof_contract_secret_boundary_mismatch" in failures
+    assert (
+        "lane_readiness_managed_proof_contract_unexpected_field:install_url"
+        in failures
+    )
 
 
 def test_verify_hosted_deployment_requires_payment_cost_control_contract() -> None:
@@ -2769,6 +2846,7 @@ def _lane_readiness_contract() -> dict[str, object]:
                 "requires_payment": True,
                 "managed_worker_dispatch_allowed": False,
                 "payment_proof_required": list(MANAGED_PAYMENT_PROOF_REQUIREMENTS),
+                "managed_proof_run_contract": _managed_proof_run_contract(),
                 "blocking_checks": [
                     "stripe_price_id_required_for_managed_runs",
                     "managed_run_price_label_required",

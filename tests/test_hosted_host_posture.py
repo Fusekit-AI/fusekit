@@ -17,7 +17,7 @@ from fusekit.hosted.host_posture import (
     evaluate_oci_host_posture,
     main,
 )
-from fusekit.hosted.managed_proof_token import (
+from fusekit.hosted.managed_proof_contract import (
     HOSTED_MANAGED_PROOF_BROWSER_STEPS,
     HOSTED_MANAGED_PROOF_DURABLE_ARTIFACTS,
     HOSTED_MANAGED_PROOF_FORBIDDEN_ACTIONS,
@@ -1036,6 +1036,25 @@ def test_oci_host_posture_blocks_unbounded_storage_footprint() -> None:
         "oci_host_storage_release_store_too_large",
         "oci_host_storage_package_cache_too_large",
     ]
+
+
+def test_oci_host_posture_blocks_oversized_root_volume() -> None:
+    evidence = _clean_evidence()
+    storage = evidence["storage_footprint"]
+    assert isinstance(storage, dict)
+    root = storage["root_filesystem"]
+    assert isinstance(root, dict)
+    root["total_bytes"] = 96 * 1024 * 1024 * 1024
+    root["available_bytes"] = 88 * 1024 * 1024 * 1024
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.storage_footprint"]
+    storage_check = _check(report, "host.storage_footprint")
+    assert storage_check["failures"] == ["oci_host_storage_root_volume_overallocated"]
+    assert storage_check["root_total_bytes"] == 96 * 1024 * 1024 * 1024
+    assert "right-sized boot volume" in storage_check["next_action"]
 
 
 def test_oci_host_posture_blocks_arm_public_ssh_and_weak_systemd() -> None:

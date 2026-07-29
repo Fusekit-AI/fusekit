@@ -57,6 +57,11 @@ from fusekit.hosted.lanes import (
     byo_oci_user_owned_cost_boundary,
 )
 from fusekit.hosted.launcher import HOSTED_PLAIN_LANGUAGE_JOURNEY, HOSTED_PROHIBITED_ACTIONS
+from fusekit.hosted.managed_proof_contract import (
+    HOSTED_MANAGED_PROOF_BROWSER_STEPS,
+    HOSTED_MANAGED_PROOF_DURABLE_ARTIFACTS,
+    HOSTED_MANAGED_PROOF_FORBIDDEN_ACTIONS,
+)
 from fusekit.hosted.server import (
     HOSTED_AWS_SOURCE_PROVENANCE_ENV,
     HOSTED_MAX_POST_BODY_BYTES,
@@ -76,6 +81,25 @@ WORKER_SECRET = "hosted-worker-secret"
 VERCEL_COMMIT_SHA = "0123456789abcdef0123456789abcdef01234567"
 MANAGED_PRICE_LABEL = "$49 one-time managed FuseKit run"
 DISPATCH_ACCEPTANCE = {"__fusekit_test_dispatch_acceptance__": True}
+
+
+def _managed_proof_run_contract() -> dict[str, object]:
+    return {
+        "mode": "supervised_browser_only",
+        "browser_steps": list(HOSTED_MANAGED_PROOF_BROWSER_STEPS),
+        "durable_artifacts": list(HOSTED_MANAGED_PROOF_DURABLE_ARTIFACTS),
+        "forbidden_actions": list(HOSTED_MANAGED_PROOF_FORBIDDEN_ACTIONS),
+        "enablement_command": "fusekit-hosted-managed-enable",
+        "live_proof_command": "fusekit-hosted-live-checkout-proof --job-id <job-id>",
+        "short_lived_capability_public": False,
+        "secret_boundary": (
+            "Public lane readiness shows proof steps, artifact names, and command labels "
+            "only. It never includes the short-lived managed proof state token, install "
+            "URL, Stripe keys, webhook secrets, GitHub private keys, OCI credentials, "
+            "provider credentials, worker secrets, vault material, card data, or raw "
+            "provider logs."
+        ),
+    }
 
 
 def _vercel_provenance_kwargs() -> dict[str, str]:
@@ -760,6 +784,11 @@ def test_hosted_readiness_endpoint_reports_ready_when_configured() -> None:
     assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["payment_proof_required"] == list(
         MANAGED_PAYMENT_PROOF_REQUIREMENTS
     )
+    assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE][
+        "managed_proof_run_contract"
+    ] == _managed_proof_run_contract()
+    assert "state_token" not in lane_readiness[MANAGED_FUSEKIT_RUN_LANE]
+    assert "install_url" not in lane_readiness[MANAGED_FUSEKIT_RUN_LANE]
     assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["blocking_checks"] == [
         "managed_runs_not_enabled",
         "stripe_secret_key_required_for_managed_runs",
@@ -863,6 +892,9 @@ def test_hosted_readiness_reports_paid_managed_lane_when_stripe_is_configured() 
     assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["payment_proof_required"] == list(
         MANAGED_PAYMENT_PROOF_REQUIREMENTS
     )
+    assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE][
+        "managed_proof_run_contract"
+    ] == _managed_proof_run_contract()
     assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["blocking_checks"] == []
     assert lane_readiness[BYO_OCI_LANE]["launchable"] is True
     assert lane_readiness[BYO_OCI_LANE]["security_contract"] == byo_oci_security_contract()
@@ -1224,6 +1256,9 @@ def test_hosted_deployment_endpoint_reports_subdomain_contract_without_secrets()
     assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["payment_proof_required"] == list(
         MANAGED_PAYMENT_PROOF_REQUIREMENTS
     )
+    assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE][
+        "managed_proof_run_contract"
+    ] == _managed_proof_run_contract()
     assert lane_readiness[MANAGED_FUSEKIT_RUN_LANE]["blocking_checks"] == [
         "managed_runs_not_enabled",
         "stripe_secret_key_required_for_managed_runs",

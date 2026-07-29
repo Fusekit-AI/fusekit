@@ -16,12 +16,12 @@ from pathlib import Path
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.billing import _valid_stripe_price_id
-from fusekit.hosted.managed_proof_token import (
+from fusekit.hosted.managed_proof_contract import (
     HOSTED_MANAGED_PROOF_BROWSER_STEPS,
     HOSTED_MANAGED_PROOF_DURABLE_ARTIFACTS,
     HOSTED_MANAGED_PROOF_FORBIDDEN_ACTIONS,
-    HOSTED_MANAGED_PROOF_TOKEN_REPORT_SCHEMA_VERSION,
 )
+from fusekit.hosted.managed_proof_token import HOSTED_MANAGED_PROOF_TOKEN_REPORT_SCHEMA_VERSION
 from fusekit.hosted.runtime_secrets import (
     HOSTED_RUNTIME_REQUIRED_FILE_ENV,
     HOSTED_RUNTIME_SECRET_VERIFY_SCHEMA_VERSION,
@@ -65,6 +65,7 @@ OCI_HOST_POSTURE_MAX_JSON_BYTES = 1_048_576
 OCI_HOST_POSTURE_OUTPUT_MODE = 0o600
 OCI_HOST_POSTURE_MAX_ROOT_USED_PERCENT = 85
 OCI_HOST_POSTURE_MIN_ROOT_AVAILABLE_BYTES = 5 * 1024 * 1024 * 1024
+OCI_HOST_POSTURE_MAX_ROOT_TOTAL_BYTES = 64 * 1024 * 1024 * 1024
 OCI_HOST_POSTURE_MAX_RELEASE_STORE_BYTES = 12 * 1024 * 1024 * 1024
 OCI_HOST_POSTURE_MAX_PACKAGE_CACHE_BYTES = 256 * 1024 * 1024
 OCI_HOST_POSTURE_ALLOWED_EVIDENCE_KEYS = frozenset(
@@ -1538,6 +1539,8 @@ def _storage_footprint_check(evidence: Mapping[str, object]) -> dict[str, object
         failures.append("oci_host_storage_root_usage_missing")
     elif root_used_percent > OCI_HOST_POSTURE_MAX_ROOT_USED_PERCENT:
         failures.append("oci_host_storage_root_usage_too_high")
+    if root_total is not None and root_total > OCI_HOST_POSTURE_MAX_ROOT_TOTAL_BYTES:
+        failures.append("oci_host_storage_root_volume_overallocated")
     if root_available is None or root_available < OCI_HOST_POSTURE_MIN_ROOT_AVAILABLE_BYTES:
         failures.append("oci_host_storage_root_available_too_low")
     if (
@@ -1562,7 +1565,9 @@ def _storage_footprint_check(evidence: Mapping[str, object]) -> dict[str, object
         return _fail(
             "host.storage_footprint",
             failures,
-            "Clean package caches or old releases, then rerun the read-only posture collector.",
+            "Clean package caches or old releases, or rebuild onto a right-sized boot "
+            "volume, then rerun the read-only posture collector.",
+            root_total_bytes=root_total,
             root_used_percent=root_used_percent,
             root_available_bytes=root_available,
             release_count=release_count,
@@ -1571,6 +1576,7 @@ def _storage_footprint_check(evidence: Mapping[str, object]) -> dict[str, object
         )
     return _ok(
         "host.storage_footprint",
+        root_total_bytes=root_total,
         root_used_percent=root_used_percent,
         release_count=release_count,
     )

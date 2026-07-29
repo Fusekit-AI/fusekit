@@ -128,8 +128,14 @@ provider rollback actions are planned or complete. The collector also emits
 bounded storage footprint proof for `/`, `/opt/fusekit/releases`, and the root
 pip cache so release virtualenvs or package caches cannot quietly consume the
 boot volume again; it records numeric counts and byte totals only, not raw
-`df`/`du` output. Posture evidence must not receive provider tokens, private
-keys, vault material, or raw setup logs.
+`df`/`du` output. Root filesystem posture fails closed when usage exceeds 85%,
+free space falls below 5 GiB, retained releases exceed the configured release
+window, release storage exceeds 12 GiB, pip cache exceeds 256 MiB, or the boot
+volume is over 64 GiB. Current Ubuntu/OCI images may create a roughly 45 GiB
+root disk; that is not FuseKit source bloat, but any larger permanent host
+should be treated as overallocated until a right-sized replacement plan is
+reviewed. Posture evidence must not receive provider tokens, private keys,
+vault material, or raw setup logs.
 
 If the current image cannot support OCI Run Command and SSH release access is
 not ready, use `fusekit-hosted-oci-replacement-plan` before requesting any host

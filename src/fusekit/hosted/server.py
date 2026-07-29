@@ -88,6 +88,11 @@ from fusekit.hosted.launcher import (
     build_hosted_launch_plan,
     render_hosted_launcher,
 )
+from fusekit.hosted.managed_proof_contract import (
+    HOSTED_MANAGED_PROOF_BROWSER_STEPS,
+    HOSTED_MANAGED_PROOF_DURABLE_ARTIFACTS,
+    HOSTED_MANAGED_PROOF_FORBIDDEN_ACTIONS,
+)
 from fusekit.hosted.script_json import json_script_payload
 from fusekit.hosted.session import (
     HostedLaunchState,
@@ -929,6 +934,7 @@ class HostedSettings:
                 "requires_payment": True,
                 "managed_worker_dispatch_allowed": not managed_blockers,
                 "payment_proof_required": list(MANAGED_PAYMENT_PROOF_REQUIREMENTS),
+                "managed_proof_run_contract": _public_managed_proof_run_contract(),
                 "blocking_checks": managed_blockers,
                 "next_actions": _hosted_readiness_next_actions((), tuple(managed_blockers)),
             },
@@ -3212,6 +3218,25 @@ def _managed_lane_blockers(settings: HostedSettings) -> list[str]:
         blockers.append("hosted_worker_dispatch_url_must_be_https")
     blockers.extend(_shared_lane_blockers(settings))
     return _unique_public_failures(blockers)
+
+
+def _public_managed_proof_run_contract() -> dict[str, object]:
+    return {
+        "mode": "supervised_browser_only",
+        "browser_steps": list(HOSTED_MANAGED_PROOF_BROWSER_STEPS),
+        "durable_artifacts": list(HOSTED_MANAGED_PROOF_DURABLE_ARTIFACTS),
+        "forbidden_actions": list(HOSTED_MANAGED_PROOF_FORBIDDEN_ACTIONS),
+        "enablement_command": "fusekit-hosted-managed-enable",
+        "live_proof_command": "fusekit-hosted-live-checkout-proof --job-id <job-id>",
+        "short_lived_capability_public": False,
+        "secret_boundary": (
+            "Public lane readiness shows proof steps, artifact names, and command labels "
+            "only. It never includes the short-lived managed proof state token, install "
+            "URL, Stripe keys, webhook secrets, GitHub private keys, OCI credentials, "
+            "provider credentials, worker secrets, vault material, card data, or raw "
+            "provider logs."
+        ),
+    }
 
 
 def _managed_proof_launch_blockers(

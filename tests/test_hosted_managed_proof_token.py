@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fusekit.hosted.managed_proof_token import (
+from fusekit.hosted.managed_proof_contract import (
     HOSTED_MANAGED_PROOF_BROWSER_STEPS,
     HOSTED_MANAGED_PROOF_DURABLE_ARTIFACTS,
     HOSTED_MANAGED_PROOF_FORBIDDEN_ACTIONS,
+)
+from fusekit.hosted.managed_proof_token import (
     HOSTED_MANAGED_PROOF_TOKEN_MAX_JSON_BYTES,
     HOSTED_MANAGED_PROOF_TOKEN_REPORT_SCHEMA_VERSION,
     build_hosted_managed_proof_token_report,

@@ -57,6 +57,11 @@ from fusekit.hosted.launcher import (
     NO_TERMINAL_PROMISE,
     TRUST_STORY,
 )
+from fusekit.hosted.managed_proof_contract import (
+    HOSTED_MANAGED_PROOF_BROWSER_STEPS,
+    HOSTED_MANAGED_PROOF_DURABLE_ARTIFACTS,
+    HOSTED_MANAGED_PROOF_FORBIDDEN_ACTIONS,
+)
 from fusekit.hosted.server import (
     HOSTED_AWS_OPERATOR_SETUP_STEPS,
     HOSTED_AWS_SOURCE_PROVENANCE_ENV,
@@ -175,8 +180,21 @@ MANAGED_LANE_READINESS_KEYS = frozenset(
         "requires_payment",
         "managed_worker_dispatch_allowed",
         "payment_proof_required",
+        "managed_proof_run_contract",
         "blocking_checks",
         "next_actions",
+    }
+)
+MANAGED_PROOF_RUN_CONTRACT_KEYS = frozenset(
+    {
+        "mode",
+        "browser_steps",
+        "durable_artifacts",
+        "forbidden_actions",
+        "enablement_command",
+        "live_proof_command",
+        "short_lived_capability_public",
+        "secret_boundary",
     }
 )
 BYO_LANE_READINESS_KEYS = frozenset(
@@ -1720,6 +1738,9 @@ def _managed_lane_readiness_failures(
         failures.append("lane_readiness_managed_dispatch_mismatch")
     if lane.get("payment_proof_required") != list(MANAGED_PAYMENT_PROOF_REQUIREMENTS):
         failures.append("lane_readiness_managed_payment_proof_mismatch")
+    failures.extend(
+        _managed_proof_run_contract_failures(lane.get("managed_proof_run_contract"))
+    )
     blockers = lane.get("blocking_checks")
     if not isinstance(blockers, list):
         failures.append("lane_readiness_managed_blockers_invalid")
@@ -1731,6 +1752,51 @@ def _managed_lane_readiness_failures(
         failures.append("lane_readiness_managed_missing_from_launchable_lanes")
     if launchable is False and MANAGED_FUSEKIT_RUN_LANE in launchable_lanes:
         failures.append("lane_readiness_managed_blocked_but_listed")
+    return failures
+
+
+def _managed_proof_run_contract_failures(value: object) -> list[str]:
+    if not isinstance(value, dict):
+        return ["lane_readiness_managed_proof_run_contract_missing"]
+    failures: list[str] = []
+    failures.extend(
+        f"lane_readiness_managed_proof_contract_unexpected_field:{field}"
+        for field in _unexpected_keys(value, MANAGED_PROOF_RUN_CONTRACT_KEYS)
+    )
+    if value.get("mode") != "supervised_browser_only":
+        failures.append("lane_readiness_managed_proof_contract_mode_mismatch")
+    if value.get("browser_steps") != list(HOSTED_MANAGED_PROOF_BROWSER_STEPS):
+        failures.append("lane_readiness_managed_proof_contract_browser_steps_mismatch")
+    if value.get("durable_artifacts") != list(HOSTED_MANAGED_PROOF_DURABLE_ARTIFACTS):
+        failures.append("lane_readiness_managed_proof_contract_artifacts_mismatch")
+    if value.get("forbidden_actions") != list(HOSTED_MANAGED_PROOF_FORBIDDEN_ACTIONS):
+        failures.append("lane_readiness_managed_proof_contract_forbidden_actions_mismatch")
+    if value.get("enablement_command") != "fusekit-hosted-managed-enable":
+        failures.append("lane_readiness_managed_proof_contract_enablement_command_mismatch")
+    if (
+        value.get("live_proof_command")
+        != "fusekit-hosted-live-checkout-proof --job-id <job-id>"
+    ):
+        failures.append("lane_readiness_managed_proof_contract_live_proof_command_mismatch")
+    if value.get("short_lived_capability_public") is not False:
+        failures.append("lane_readiness_managed_proof_contract_public_capability_mismatch")
+    if not _contains_all_markers(
+        value.get("secret_boundary"),
+        (
+            "state token",
+            "install URL",
+            "Stripe keys",
+            "webhook secrets",
+            "GitHub private keys",
+            "OCI credentials",
+            "provider credentials",
+            "worker secrets",
+            "vault material",
+            "card data",
+            "raw provider logs",
+        ),
+    ):
+        failures.append("lane_readiness_managed_proof_contract_secret_boundary_mismatch")
     return failures
 
 

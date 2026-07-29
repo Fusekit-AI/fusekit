@@ -833,7 +833,9 @@
   Hosted OCI access and replacement planning now read local OCI inventory, plugin, hosted-verify, and runtime-secret report inputs with no-follow, regular-file, non-symlink-parent, 1 MiB JSON guards, so unsafe local proof files cannot shape redeploy, repair, or DNS-cutover plans.
   OCI hosted releases now enforce bounded retention after post-deploy health checks, keeping the active commit, rollback commit, and recent release window while writing redacted retention proof into the release receipt, so Python virtualenv release directories cannot grow until the boot volume fills again.
   OCI hosted release installs now disable pip's package cache, and host posture now collects redacted storage-footprint proof for root free space, retained release count/bytes, and root pip-cache bytes with fail-closed thresholds, so the hosted launcher cannot remain posture-green while avoidable disk bloat threatens availability or cost efficiency.
+  OCI host posture now also treats a root filesystem above 64 GiB as overallocated for the permanent hosted launcher, preserving the current OCI image-sized host while forcing a replacement-plan review before a larger, costlier boot disk can remain launch-green.
   Hosted managed proof preflight now publishes and OCI posture requires an exact supervised browser-only proof-run contract covering the GitHub install, visible managed-lane plan, Stripe Checkout authorization, control-room worker start, required durable artifacts, forbidden no-bypass/no-secret actions, and repo-native proof commands before the paid managed lane can be enabled.
+  Hosted lane readiness now publishes that same managed proof-run contract on the public managed lane without the short-lived state token or install URL, and outside-in hosted verification rejects missing, weakened, token-public, or sidecar contract fields before public readiness can pass.
 
 ## North Star Audit Remediation
 
