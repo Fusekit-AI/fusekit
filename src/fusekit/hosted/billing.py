@@ -198,6 +198,14 @@ def create_stripe_checkout_session(
     )
     receipt = stripe_checkout_session_receipt(response)
     receipt["price_label"] = config.price_label
+    _require_checkout_creation_receipt_bound(
+        receipt,
+        config=config,
+        job_id=job_id,
+        lane=lane,
+        github_source=github_source,
+        plan_fingerprint=plan_fingerprint,
+    )
     _assert_public_payment_receipt(receipt)
     return receipt
 
@@ -291,6 +299,34 @@ def payment_required_receipt(*, lane: str, price_label: str = "") -> dict[str, o
     }
     _assert_public_payment_receipt(receipt)
     return receipt
+
+
+def _require_checkout_creation_receipt_bound(
+    receipt: dict[str, object],
+    *,
+    config: HostedPaymentConfig,
+    job_id: str,
+    lane: str,
+    github_source: str,
+    plan_fingerprint: str,
+) -> None:
+    metadata = receipt.get("metadata")
+    expected = {
+        "job_id": job_id,
+        "lane": lane,
+        "github_source_hash": _public_hash(github_source),
+        "plan_fingerprint": plan_fingerprint,
+        "stripe_price_id_hash": _public_hash(config.stripe_price_id),
+        "price_label_hash": _public_hash(config.price_label),
+    }
+    if (
+        receipt.get("client_reference_id") != job_id
+        or receipt.get("mode") != "payment"
+        or receipt.get("paid") is not False
+        or not isinstance(metadata, dict)
+        or any(metadata.get(key) != value for key, value in expected.items())
+    ):
+        raise FuseKitError("stripe_checkout_creation_receipt_unbound")
 
 
 def _stripe_request(

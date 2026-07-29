@@ -793,6 +793,7 @@
   GitHub Security and CI are now green for the live deployed commit after refreshing the Moonlite RSVP example lockfile from vulnerable `postcss@8.5.16` to `8.5.24`; the permanent OCI host serves that exact commit and `fusekit-hosted-verify --expected-commit-sha` passes against `https://fusekit.snowmanai.org`.
   Managed-lane readiness now publishes a fixed `payment_proof_required` checklist for Stripe Checkout authorization, paid Checkout receipt, metadata binding, and post-payment worker dispatch receipt; the outside-in hosted verifier fails if that checklist is missing or weakened, so "payment before FuseKit-managed infrastructure" remains visible and machine-checkable even before the live paid run is completed.
   Hosted worker acceptance-report ingestion now rejects unexpected top-level, check, and blocker sidecars and requires readiness fields to be booleans before proof assembly, so returned live acceptance artifacts cannot carry hidden provider diagnostics or relabel readiness through public report fields.
+  Hosted Checkout creation now refuses to store a pending managed-run payment receipt unless Stripe echoes the exact public job id, managed lane, GitHub source hash, visible-plan fingerprint, Stripe Price hash, and price-label hash that FuseKit sent, so the pre-payment job state is bound to the approved cost/control story before any later paid receipt can unlock worker dispatch.
 
 ## North Star Audit Remediation
 

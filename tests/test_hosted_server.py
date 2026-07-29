@@ -2578,6 +2578,10 @@ def test_hosted_managed_payment_dispatch_uses_job_price_binding_after_rotation()
     job_id = _match(control_room, r"hosted-[A-Za-z0-9_-]+")
     job_token = _job_token(control_room)
     checkout_control = _control_for_payment_checkout(control_room)
+    _bind_stripe_checkout_creation_payload(
+        stripe_opener.payloads[0],
+        settings.hosted_jobs[job_id],
+    )
 
     assert status == "200 OK"
     assert len(dispatch_opener.requests) == 0
@@ -2795,6 +2799,10 @@ def test_hosted_payment_checkout_rejects_missing_checkout_url_before_pending_sta
     job_id = _match(text, r"hosted-[A-Za-z0-9_-]+")
     checkout_control = _control_for_payment_checkout(text)
     job_token = _job_token(text)
+    _bind_stripe_checkout_creation_payload(
+        stripe_opener.payloads[0],
+        settings.hosted_jobs[job_id],
+    )
 
     assert status == "200 OK"
     assert settings.hosted_jobs[job_id].payment_status == "payment_required"
@@ -5256,6 +5264,26 @@ def _payment_source_hash(github_source: str) -> str:
 
 def _payment_public_hash(value: str) -> str:
     return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _bind_stripe_checkout_creation_payload(
+    payload: dict[str, object],
+    job: object,
+) -> None:
+    assert hasattr(job, "job_id")
+    assert hasattr(job, "github_source")
+    assert hasattr(job, "worker_contract")
+    assert hasattr(job, "payment_price_id_hash")
+    assert hasattr(job, "payment_price_label")
+    payload["client_reference_id"] = job.job_id
+    payload["metadata"] = {
+        "job_id": job.job_id,
+        "lane": MANAGED_FUSEKIT_RUN_LANE,
+        "github_source_hash": _payment_source_hash(job.github_source),
+        "plan_fingerprint": job.worker_contract.plan_fingerprint,
+        "stripe_price_id_hash": job.payment_price_id_hash,
+        "price_label_hash": _payment_public_hash(job.payment_price_label),
+    }
 
 
 def _paid_control_room_text(settings: HostedSettings, job_id: str) -> str:

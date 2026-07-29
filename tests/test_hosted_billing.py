@@ -45,6 +45,19 @@ class StripeCheckoutOpener:
                 "status": "open",
                 "payment_status": "unpaid",
                 "mode": "payment",
+                "client_reference_id": "hosted-job",
+                "metadata": {
+                    "job_id": "hosted-job",
+                    "lane": "managed-fusekit-run",
+                    "github_source_hash": _sha256_label(
+                        "https://github.com/Fusekit-AI/fusekit"
+                    ),
+                    "plan_fingerprint": _sha256_label("visible-plan"),
+                    "stripe_price_id_hash": _sha256_label("price_managed_run"),
+                    "price_label_hash": _sha256_label(
+                        "Launch validation: $1.00 FuseKit managed run"
+                    ),
+                },
             }
         )
 
@@ -450,6 +463,101 @@ def test_create_stripe_checkout_session_rejects_bad_return_origin_before_network
         )
 
     assert opener.requests == []
+
+
+def test_create_stripe_checkout_session_requires_bound_creation_receipt() -> None:
+    class UnboundStripeOpener:
+        def __init__(self) -> None:
+            self.requests: list[object] = []
+
+        def __call__(self, request: object, *, timeout: float) -> FakeStripeResponse:
+            self.requests.append(request)
+            assert timeout == 30.0
+            return FakeStripeResponse(
+                {
+                    "id": "cs_live_public",
+                    "url": "https://checkout.stripe.com/c/pay/cs_live_public",
+                    "status": "open",
+                    "payment_status": "unpaid",
+                    "mode": "payment",
+                    "client_reference_id": "hosted-job",
+                    "metadata": {},
+                }
+            )
+
+    unbound_opener = UnboundStripeOpener()
+
+    with pytest.raises(FuseKitError, match="stripe_checkout_creation_receipt_unbound"):
+        create_stripe_checkout_session(
+            HostedPaymentConfig(
+                enabled=True,
+                stripe_secret_key="sk_live_secret_value",
+                stripe_price_id="price_managed_run",
+                price_label="Launch validation: $1.00 FuseKit managed run",
+                public_origin="https://fusekit.snowmanai.org",
+                opener=unbound_opener,
+            ),
+            job_id="hosted-job",
+            job_token="signed.public.job",
+            lane="managed-fusekit-run",
+            github_source="https://github.com/Fusekit-AI/fusekit",
+            plan_fingerprint=_sha256_label("visible-plan"),
+        )
+
+    assert len(unbound_opener.requests) == 1
+
+
+def test_create_stripe_checkout_session_rejects_creation_price_binding_mismatch() -> None:
+    class MismatchedStripeOpener:
+        def __init__(self) -> None:
+            self.requests: list[object] = []
+
+        def __call__(self, request: object, *, timeout: float) -> FakeStripeResponse:
+            self.requests.append(request)
+            assert timeout == 30.0
+            return FakeStripeResponse(
+                {
+                    "id": "cs_live_public",
+                    "url": "https://checkout.stripe.com/c/pay/cs_live_public",
+                    "status": "open",
+                    "payment_status": "unpaid",
+                    "mode": "payment",
+                    "client_reference_id": "hosted-job",
+                    "metadata": {
+                        "job_id": "hosted-job",
+                        "lane": "managed-fusekit-run",
+                        "github_source_hash": _sha256_label(
+                            "https://github.com/Fusekit-AI/fusekit"
+                        ),
+                        "plan_fingerprint": _sha256_label("visible-plan"),
+                        "stripe_price_id_hash": _sha256_label("other-price"),
+                        "price_label_hash": _sha256_label(
+                            "Launch validation: $1.00 FuseKit managed run"
+                        ),
+                    },
+                }
+            )
+
+    opener = MismatchedStripeOpener()
+
+    with pytest.raises(FuseKitError, match="stripe_checkout_creation_receipt_unbound"):
+        create_stripe_checkout_session(
+            HostedPaymentConfig(
+                enabled=True,
+                stripe_secret_key="sk_live_secret_value",
+                stripe_price_id="price_managed_run",
+                price_label="Launch validation: $1.00 FuseKit managed run",
+                public_origin="https://fusekit.snowmanai.org",
+                opener=opener,
+            ),
+            job_id="hosted-job",
+            job_token="signed.public.job",
+            lane="managed-fusekit-run",
+            github_source="https://github.com/Fusekit-AI/fusekit",
+            plan_fingerprint=_sha256_label("visible-plan"),
+        )
+
+    assert len(opener.requests) == 1
 
 
 @pytest.mark.parametrize(
