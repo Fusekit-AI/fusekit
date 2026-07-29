@@ -61,7 +61,9 @@ def test_oci_systemd_units_match_host_posture_hardening_contract() -> None:
         assert unit["LogsDirectoryMode"] == ["0750"]
         assert unit["RuntimeDirectory"] == ["fusekit"]
         assert unit["RuntimeDirectoryMode"] == ["0750"]
-        assert unit["ReadWritePaths"] == ["/var/lib/fusekit /var/log/fusekit"]
+        assert unit["ReadWritePaths"] == [
+            "/var/lib/fusekit /var/log/fusekit /run/fusekit"
+        ]
         writable = unit["ReadWritePaths"][0].split()
         assert "/" not in writable
         assert "/etc" not in writable

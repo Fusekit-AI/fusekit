@@ -41,7 +41,7 @@ LogsDirectory=fusekit
 LogsDirectoryMode=0750
 RuntimeDirectory=fusekit
 RuntimeDirectoryMode=0750
-ReadWritePaths=/var/lib/fusekit /var/log/fusekit
+ReadWritePaths=/var/lib/fusekit /var/log/fusekit /run/fusekit
 
 [Install]
 WantedBy=multi-user.target
