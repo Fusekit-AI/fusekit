@@ -1508,7 +1508,7 @@ def _dns_propagation_check(evidence: Mapping[str, object]) -> dict[str, object]:
         "hosted.dns",
     )
     addresses_match = bool(addresses) and (
-        not verifier_addresses or addresses == verifier_addresses
+        not verifier_addresses or set(addresses).issubset(set(verifier_addresses))
     )
     if (
         not target_matches

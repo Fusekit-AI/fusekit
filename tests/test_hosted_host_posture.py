@@ -997,6 +997,22 @@ def test_oci_host_posture_blocks_dns_address_mismatch() -> None:
     ]
 
 
+def test_oci_host_posture_accepts_dns_address_subset_of_hosted_verifier() -> None:
+    evidence = _clean_evidence()
+    hosted_verify = evidence["hosted_verify"]
+    assert isinstance(hosted_verify, dict)
+    for row in hosted_verify["checks"]:
+        assert isinstance(row, dict)
+        if row.get("id") == "hosted.dns":
+            row["addresses"] = ["203.0.113.10", "2001:db8::10"]
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is True
+    dns_check = _check(report, "host.dns_propagation")
+    assert dns_check["addresses"] == ["203.0.113.10"]
+
+
 def test_oci_host_posture_blocks_dns_origin_hostname_mismatch() -> None:
     evidence = _clean_evidence()
     evidence["dns_propagation"] = {
