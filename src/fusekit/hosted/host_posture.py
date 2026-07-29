@@ -393,10 +393,14 @@ def collect_oci_host_posture_evidence(
     exists = file_exists or Path.exists
     running_services = _collect_running_services(runner)
     public_ports = _collect_public_ports(runner)
+    collected_shape = _collect_oci_instance_shape(
+        runner,
+        fallback=shape or os.getenv("FUSEKIT_OCI_SHAPE", ""),
+    )
     return {
         "schema_version": OCI_HOST_POSTURE_EVIDENCE_SCHEMA_VERSION,
         "architecture": platform.machine(),
-        "shape": redact_public_text(shape or os.getenv("FUSEKIT_OCI_SHAPE", "")),
+        "shape": collected_shape,
         "running_services": running_services,
         "public_ports": public_ports,
         "ssh_ingress": redact_public_text(ssh_ingress or os.getenv("FUSEKIT_SSH_INGRESS", "")),
@@ -498,7 +502,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--collect", action="store_true", help="Collect read-only host evidence")
     parser.add_argument("--evidence", help="Path to redacted posture JSON")
     parser.add_argument("--output", help="Write collected evidence JSON to this path")
-    parser.add_argument("--shape", default="", help="Public OCI shape label, for example E5 Flex")
+    parser.add_argument(
+        "--shape",
+        default="",
+        help=(
+            "Fallback public OCI shape label, for example VM.Standard.E5.Flex. "
+            "When OCI instance metadata is available, the collector uses the "
+            "actual metadata shape instead."
+        ),
+    )
     parser.add_argument("--ssh-ingress", default="", help="Public SSH ingress posture label")
     parser.add_argument("--hosted-verify-report", default="", help="Path to hosted verifier JSON")
     parser.add_argument("--dns-report", default="", help="Path to redacted DNS propagation JSON")
@@ -834,6 +846,30 @@ def _collect_storage_footprint(
             count_release_dirs=False,
         ),
     }
+
+
+def _collect_oci_instance_shape(
+    runner: Callable[[Sequence[str]], CommandResult],
+    *,
+    fallback: str,
+) -> str:
+    result = runner(
+        [
+            "curl",
+            "-fsS",
+            "--max-time",
+            "1",
+            "-H",
+            "Authorization: Bearer Oracle",
+            "http://169.254.169.254/opc/v2/instance/shape",
+        ]
+    )
+    if result.returncode == 0:
+        for line in result.stdout.splitlines():
+            shape = line.strip()
+            if shape:
+                return redact_public_text(shape)
+    return redact_public_text(fallback)
 
 
 def _collect_root_filesystem_usage(

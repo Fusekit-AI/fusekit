@@ -126,7 +126,10 @@ posture validator only needs to see that `fusekit.snowmanai.org` has propagated,
 that the release receipt commit matches the hosted verifier commit, and that
 provider rollback actions are planned or complete. Port 22 is allowed only when
 the attached SSH ingress label proves restricted operator access; nonstandard
-public listeners still block posture. The collector also emits
+public listeners still block posture. The `--shape` value is a fallback label;
+when OCI instance metadata is reachable, the collector records the actual
+metadata shape so cost and architecture posture cannot drift from a stale manual
+argument. The collector also emits
 bounded storage footprint proof for `/`, `/opt/fusekit/releases`, each retained
 release directory, and the root pip cache so release virtualenvs or package
 caches cannot quietly consume the boot volume again; it records numeric counts

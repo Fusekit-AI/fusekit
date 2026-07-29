@@ -2489,6 +2489,47 @@ def test_oci_host_posture_collector_counts_non_loopback_listeners(
     assert evidence["public_ports"] == [8443]
 
 
+def test_oci_host_posture_collector_prefers_metadata_shape(monkeypatch) -> None:
+    monkeypatch.setattr("fusekit.hosted.host_posture.platform.machine", lambda: "x86_64")
+
+    def runner(args: Sequence[str]) -> CommandResult:
+        command = tuple(args)
+        if command == (
+            "curl",
+            "-fsS",
+            "--max-time",
+            "1",
+            "-H",
+            "Authorization: Bearer Oracle",
+            "http://169.254.169.254/opc/v2/instance/shape",
+        ):
+            return CommandResult(command, 0, "VM.Standard.E2.1.Micro\n")
+        return CommandResult(command, 127, "", "not available")
+
+    evidence = collect_oci_host_posture_evidence(
+        shape="VM.Standard.E5.Flex",
+        command_runner=runner,
+    )
+
+    assert evidence["shape"] == "VM.Standard.E2.1.Micro"
+
+
+def test_oci_host_posture_collector_uses_shape_fallback_without_metadata(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr("fusekit.hosted.host_posture.platform.machine", lambda: "x86_64")
+
+    def runner(args: Sequence[str]) -> CommandResult:
+        return CommandResult(tuple(args), 127, "", "not available")
+
+    evidence = collect_oci_host_posture_evidence(
+        shape="VM.Standard.E5.Flex",
+        command_runner=runner,
+    )
+
+    assert evidence["shape"] == "VM.Standard.E5.Flex"
+
+
 def test_oci_host_posture_collector_sanitizes_attached_summaries(monkeypatch) -> None:
     monkeypatch.setattr("fusekit.hosted.host_posture.platform.machine", lambda: "x86_64")
     secret_key = "ghp_aaaaaaaaaaaaaaaa"
