@@ -1342,6 +1342,9 @@ def _assert_public_byo_oci_bootstrap(payload: dict[str, object]) -> None:
     serialized = json.dumps(payload, sort_keys=True)
     if _contains_byo_private_marker(serialized):
         raise FuseKitError("Hosted BYO OCI bootstrap contains private material.")
+    durable_scan_text = serialized.replace("Passphrase:", "Passphrase [local prompt]")
+    if contains_durable_secret_text(durable_scan_text):
+        raise FuseKitError("Hosted BYO OCI bootstrap contains secret-looking text.")
     _assert_byo_oci_cloud_shell_handoff(
         payload.get("cloud_shell"),
         open_core_execution=payload.get("open_core_execution"),

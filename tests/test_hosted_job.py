@@ -602,6 +602,35 @@ def test_hosted_byo_bootstrap_rejects_secret_text_in_public_handoff(
         hosted_byo_oci_bootstrap(job)
 
 
+def test_hosted_byo_bootstrap_rejects_durable_secret_text_in_public_handoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+
+    def secret_cloud_shell_plan(**kwargs: object) -> CloudShellLaunchPlan:
+        plan = build_cloud_shell_launch_plan(**kwargs)
+        return replace(
+            plan,
+            fallback_steps=(
+                *plan.fallback_steps,
+                "Do not publish api_key=custom_secret_value in this handoff.",
+            ),
+        )
+
+    monkeypatch.setattr(
+        "fusekit.hosted.job.build_cloud_shell_launch_plan",
+        secret_cloud_shell_plan,
+    )
+
+    with pytest.raises(FuseKitError, match="bootstrap contains secret-looking text"):
+        hosted_byo_oci_bootstrap(job)
+
+
 def test_hosted_byo_bootstrap_rejects_underscore_oci_marker_in_public_handoff(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
