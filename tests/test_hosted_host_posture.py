@@ -1215,6 +1215,27 @@ def test_oci_host_posture_blocks_release_receipt_commit_mismatch() -> None:
     ]
 
 
+def test_oci_host_posture_blocks_release_receipt_rollback_commit_mismatch() -> None:
+    evidence = _clean_evidence()
+    receipt = evidence["release_receipt"]
+    assert isinstance(receipt, dict)
+    previous_commit = "5f5bda2fa77cb629962a0a11eaea3d595865a27f"
+    rollback_commit = "bd78a8c27176bc54390966074cb7c4c863d69492"
+    receipt["before_commit_sha"] = previous_commit
+    rollback = receipt["rollback"]
+    assert isinstance(rollback, dict)
+    rollback["previous_commit_sha"] = rollback_commit
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.release_receipt"]
+    release_check = _check(report, "host.release_receipt")
+    assert release_check["failures"] == [
+        "oci_host_release_receipt_rollback_previous_commit_mismatch"
+    ]
+
+
 def test_oci_host_posture_preserves_hosted_expected_commit_blocker() -> None:
     evidence = _clean_evidence()
     evidence["hosted_verify"] = {

@@ -1539,6 +1539,12 @@ def _release_receipt_check(evidence: Mapping[str, object]) -> dict[str, object]:
     )
     if previous_commit is None:
         failures.append("oci_host_release_receipt_previous_commit_invalid")
+    if (
+        before_commit is not None
+        and previous_commit is not None
+        and before_commit != previous_commit
+    ):
+        failures.append("oci_host_release_receipt_rollback_previous_commit_mismatch")
     proof_command = _raw_str(receipt.get("post_deploy_proof_command"))
     if after_commit and proof_command != (
         "fusekit-hosted-verify --origin https://fusekit.snowmanai.org "
