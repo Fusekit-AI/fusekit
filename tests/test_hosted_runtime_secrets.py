@@ -6,6 +6,7 @@ import pytest
 
 from fusekit.hosted.runtime_secrets import (
     HOSTED_RUNTIME_SECRET_INSTALL_SCHEMA_VERSION,
+    HOSTED_RUNTIME_SECRET_MAX_INPUT_BYTES,
     HOSTED_RUNTIME_SECRET_PLAN_SCHEMA_VERSION,
     HOSTED_RUNTIME_SECRET_VERIFY_SCHEMA_VERSION,
     build_hosted_runtime_secret_plan,
@@ -212,6 +213,39 @@ def test_runtime_secret_plan_cli_reads_env_json(tmp_path, capfd) -> None:
     assert output["written"] is False
     assert output["ready_to_write_secret_file"] is True
     assert output["ready_for_managed_payment_staging"] is True
+
+
+def test_runtime_secret_plan_cli_rejects_symlinked_env_json_without_reading_target(
+    tmp_path,
+    capfd,
+) -> None:
+    target_path = tmp_path / "target-env.json"
+    link_path = tmp_path / "env.json"
+    target_path.write_text(
+        json.dumps({"FUSEKIT_STRIPE_SECRET_KEY": TARGET_STRIPE_SECRET_FIXTURE}),
+        encoding="utf-8",
+    )
+    link_path.symlink_to(target_path)
+
+    exit_code = main(["--env-json", str(link_path)])
+    output = json.loads(capfd.readouterr().out)
+    serialized = json.dumps(output, sort_keys=True)
+
+    assert exit_code == 2
+    assert output["error"] == "runtime_secret_env_input_symlink"
+    assert TARGET_STRIPE_SECRET_FIXTURE not in serialized
+    assert not contains_durable_secret_text(serialized)
+
+
+def test_runtime_secret_plan_cli_rejects_oversized_env_json(tmp_path, capfd) -> None:
+    env_path = tmp_path / "env.json"
+    env_path.write_text(" " * (HOSTED_RUNTIME_SECRET_MAX_INPUT_BYTES + 1), encoding="utf-8")
+
+    exit_code = main(["--env-json", str(env_path)])
+    output = json.loads(capfd.readouterr().out)
+
+    assert exit_code == 2
+    assert output["error"] == "runtime_secret_env_input_too_large"
 
 
 def test_runtime_secret_installer_writes_owner_only_env_file_without_public_values(
@@ -449,6 +483,29 @@ def test_runtime_secret_verifier_rejects_symlink_without_reading_target(
 
     assert report["ready"] is False
     assert "runtime_secret_file_must_not_be_symlink" in report["blockers"]
+    assert TARGET_STRIPE_SECRET_FIXTURE not in serialized
+    assert not contains_durable_secret_text(serialized)
+
+
+def test_runtime_secret_verifier_rejects_symlinked_parent_without_reading_target(
+    tmp_path,
+) -> None:
+    real_parent = tmp_path / "real"
+    linked_parent = tmp_path / "linked"
+    real_parent.mkdir()
+    target_path = real_parent / "hosted-secrets.env"
+    target_path.write_text(
+        "FUSEKIT_STRIPE_SECRET_KEY='" + TARGET_STRIPE_SECRET_FIXTURE + "'\n",
+        encoding="utf-8",
+    )
+    target_path.chmod(0o600)
+    linked_parent.symlink_to(real_parent, target_is_directory=True)
+
+    report = verify_hosted_runtime_secret_file(path=str(linked_parent / target_path.name))
+    serialized = json.dumps(report, sort_keys=True)
+
+    assert report["ready"] is False
+    assert "runtime_secret_directory_must_not_be_symlink" in report["blockers"]
     assert TARGET_STRIPE_SECRET_FIXTURE not in serialized
     assert not contains_durable_secret_text(serialized)
 

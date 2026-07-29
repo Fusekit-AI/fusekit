@@ -50,6 +50,7 @@ HOSTED_RUNTIME_ALLOWED_FILE_ENV = (
     *HOSTED_RUNTIME_REQUIRED_FILE_ENV,
     *HOSTED_RUNTIME_STRIPE_OPTIONAL_ENV,
 )
+HOSTED_RUNTIME_SECRET_MAX_INPUT_BYTES = 1_048_576
 
 
 def build_hosted_runtime_secret_plan(
@@ -181,8 +182,8 @@ def verify_hosted_runtime_secret_file(
     if not blockers:
         try:
             material, parse_failures = _parse_systemd_env_file(secret_path)
-        except OSError:
-            blockers.append("runtime_secret_file_unreadable")
+        except FuseKitError as exc:
+            blockers.append(str(exc))
     blockers.extend(parse_failures)
     missing = [name for name in HOSTED_RUNTIME_REQUIRED_FILE_ENV if not material.get(name, "")]
     blockers.extend(missing)
@@ -395,6 +396,8 @@ def _runtime_secret_file_metadata(path: Path) -> dict[str, object]:
     )
     if public["parent_private_enough"] is not True:
         blockers.append("runtime_secret_directory_not_private_enough")
+    if stat.S_ISLNK(parent_stat.st_mode):
+        blockers.append("runtime_secret_directory_must_not_be_symlink")
     return {"public": public, "blockers": blockers}
 
 
@@ -411,7 +414,14 @@ def _production_secret_path(path: Path) -> bool:
 def _parse_systemd_env_file(path: Path) -> tuple[dict[str, str], list[str]]:
     material: dict[str, str] = {}
     failures: list[str] = []
-    lines = path.read_text(encoding="utf-8").splitlines()
+    lines = _read_text_no_follow(
+        path,
+        symlink_error="runtime_secret_file_must_not_be_symlink",
+        parent_symlink_error="runtime_secret_directory_must_not_be_symlink",
+        regular_file_error="runtime_secret_file_must_be_regular",
+        too_large_error="runtime_secret_file_too_large",
+        unreadable_error="runtime_secret_file_unreadable",
+    ).splitlines()
     index = 0
     while index < len(lines):
         line_number = index + 1
@@ -613,16 +623,69 @@ def _next_actions(blockers: Sequence[str]) -> list[str]:
 
 
 def _read_env(path: str) -> Mapping[str, str]:
+    candidate = Path(path)
     try:
-        with open(path, encoding="utf-8") as handle:
-            value = json.load(handle)
-    except OSError as exc:
-        raise FuseKitError("runtime_secret_env_input_unreadable") from exc
+        raw = _read_text_no_follow(
+            candidate,
+            symlink_error="runtime_secret_env_input_symlink",
+            parent_symlink_error="runtime_secret_env_input_parent_symlink",
+            regular_file_error="runtime_secret_env_input_must_be_regular",
+            too_large_error="runtime_secret_env_input_too_large",
+            unreadable_error="runtime_secret_env_input_unreadable",
+        )
+        value = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise FuseKitError("runtime_secret_env_input_invalid_json") from exc
     if not isinstance(value, Mapping):
         raise FuseKitError("runtime_secret_env_input_must_be_json_object")
     return {str(key): str(item) for key, item in value.items()}
+
+
+def _read_text_no_follow(
+    path: Path,
+    *,
+    symlink_error: str,
+    parent_symlink_error: str,
+    regular_file_error: str,
+    too_large_error: str,
+    unreadable_error: str,
+) -> str:
+    try:
+        path_stat = path.lstat()
+    except OSError as exc:
+        raise FuseKitError(unreadable_error) from exc
+    if stat.S_ISLNK(path_stat.st_mode):
+        raise FuseKitError(symlink_error)
+    if not stat.S_ISREG(path_stat.st_mode):
+        raise FuseKitError(regular_file_error)
+    if path_stat.st_size > HOSTED_RUNTIME_SECRET_MAX_INPUT_BYTES:
+        raise FuseKitError(too_large_error)
+    try:
+        parent_stat = path.parent.lstat()
+    except OSError as exc:
+        raise FuseKitError(unreadable_error) from exc
+    if stat.S_ISLNK(parent_stat.st_mode):
+        raise FuseKitError(parent_symlink_error)
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        file_descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise FuseKitError(unreadable_error) from exc
+    try:
+        file_status = os.fstat(file_descriptor)
+        if not stat.S_ISREG(file_status.st_mode):
+            raise FuseKitError(regular_file_error)
+        if file_status.st_size > HOSTED_RUNTIME_SECRET_MAX_INPUT_BYTES:
+            raise FuseKitError(too_large_error)
+        raw = os.read(file_descriptor, HOSTED_RUNTIME_SECRET_MAX_INPUT_BYTES + 1)
+    finally:
+        os.close(file_descriptor)
+    if len(raw) > HOSTED_RUNTIME_SECRET_MAX_INPUT_BYTES:
+        raise FuseKitError(too_large_error)
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise FuseKitError(unreadable_error) from exc
 
 
 def _string_list(value: object) -> list[str]:
