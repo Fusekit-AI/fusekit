@@ -710,7 +710,7 @@ Use the most reliable path first:
 
 1. GitHub repo connection and repo secrets/deploy key.
 2. Resend API key capture, then Resend domain creation/reuse through the API.
-3. Vercel project connection or creation, env vars, deploy, live URL.
+3. Supported hosted deployment target connection or creation, env vars, deploy, live URL.
 4. Cloudflare DNS proposal/apply/verify using app DNS plus Resend-generated records.
 5. Optional second segment: Plaid sandbox setup to show broader provider-pack reach.
 

@@ -7,7 +7,11 @@ from pathlib import Path
 def test_readme_real_provider_path_names_resend_and_vm_capture() -> None:
     text = Path("README.md").read_text(encoding="utf-8")
 
-    assert "The V1 real path is GitHub + Resend + Vercel + Cloudflare DNS." in text
+    assert (
+        "The V1 real path is GitHub + Resend + a supported hosted deployment "
+        "provider + Cloudflare DNS." in text
+    )
+    assert "Vercel remains a supported deployment adapter" in text
     assert "Bundled GitHub, Resend, Vercel, and Cloudflare behavior" in text
     assert "RESEND_API_KEY" in text
     assert "exact env-named FuseKit control" in text

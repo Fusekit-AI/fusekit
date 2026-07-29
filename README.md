@@ -21,7 +21,7 @@ FuseKit scans generated apps, plans service setup, captures approved provider cr
 - Real-provider execution by default; incomplete local rehearsals require `--allow-incomplete`.
 - Acceptance harness: `fusekit acceptance run` writes a redacted run ledger, artifact snapshots, and launch-readiness report.
 - OCI Cloud Shell deeplink launcher for a no-local-prerequisite browser-first lane.
-- Hosted launcher contract for the planned `fusekit.snowmanai.org` no-terminal path.
+- Hosted launcher contract for the live `fusekit.snowmanai.org` no-terminal path.
 - Encrypted vault bundles using scrypt and AES-256-GCM.
 - Wrong-passphrase failure and ciphertext-only vault files.
 - Redacted JSONL audit logs and setup receipts.
@@ -611,7 +611,7 @@ until live Checkout proof and worker-dispatch acceptance pass.
 
 ## Real Provider Acceptance Run
 
-The V1 real path is GitHub + Resend + Vercel + Cloudflare DNS. FuseKit uses OpenClaw computer use to navigate provider websites and run supervised account/token/project handoff playbooks in the shared VM browser. It will not bypass login, MFA, CAPTCHA, billing, payment verification, provider fraud controls, or consent screens. Create or sign in to the provider account, pass the real human gate, copy any one-time provider token inside the VM browser, then click the exact env-named FuseKit control such as `Capture RESEND_API_KEY from VM clipboard` so the approved value lands directly in the encrypted vault.
+The V1 real path is GitHub + Resend + a supported hosted deployment provider + Cloudflare DNS. The hosted launcher currently proves the OCI permanent-host path, while Vercel remains a supported deployment adapter rather than a required product dependency. FuseKit uses OpenClaw computer use to navigate provider websites and run supervised account/token/project handoff playbooks in the shared VM browser. It will not bypass login, MFA, CAPTCHA, billing, payment verification, provider fraud controls, or consent screens. Create or sign in to the provider account, pass the real human gate, copy any one-time provider token inside the VM browser, then click the exact env-named FuseKit control such as `Capture RESEND_API_KEY from VM clipboard` so the approved value lands directly in the encrypted vault.
 
 FuseKit does not require Codex, Codex plugins, or preconfigured local skills. A real `launch` bootstraps FuseKit-owned runtime components by default. Today that means installing/checking OpenClaw through the official local-prefix installer, using a user-supplied LLM API key when one exists, then falling back to OpenClaw's OpenAI authorization step when there is no user-provided inference lane. OpenAI `gpt-5.5` is the default because it is the lowest-friction hosted LLM path, but any OpenAI-compatible provider can still be selected with `--llm-provider`, `--llm-model`, `--llm-base-url`, and `--llm-api-key-env`.
 
@@ -710,7 +710,7 @@ fusekit install /path/to/generated-app
   --secret APP_API_KEY=env:APP_API_KEY
 ```
 
-That one flow scans the app, writes/updates `fusekit.yaml`, derives the GitHub repo, Vercel project, DNS zone, and live URL where possible, opens the provider account/token/project pages through OpenClaw, pauses for human verification gates, captures approved credentials into the vault, wires services together, verifies the live URL when supplied or inferred, writes redacted audit/receipt artifacts, and detonates worker scratch state. Provider-specific flags such as `--github-repo`, `--vercel-project`, `--dns-zone`, and `--live-url` are advanced overrides for unusual repos, monorepos, or domains.
+That one flow scans the app, writes/updates `fusekit.yaml`, derives the GitHub repo, hosted deployment target, DNS zone, and live URL where possible, opens the provider account/token/project pages through OpenClaw, pauses for human verification gates, captures approved credentials into the vault, wires services together, verifies the live URL when supplied or inferred, writes redacted audit/receipt artifacts, and detonates worker scratch state. Provider-specific flags such as `--github-repo`, `--vercel-project`, `--dns-zone`, and `--live-url` are advanced overrides for unusual repos, monorepos, or domains.
 
 By default, `launch` uses `--fusekit-gates service-only`: it writes `.fusekit/setup_plan.json` and continues without extra FuseKit approval prompts. Use `--fusekit-gates explicit` when you want the older interactive FuseKit plan/DNS prompt gates for audit rehearsals.
 

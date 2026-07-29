@@ -67,8 +67,8 @@ detonated worker.
 ## Real Launch Command Shape
 
 Replace the app source, package source, and passphrase path with the resources
-used for the acceptance run. FuseKit derives the GitHub repo, Vercel project,
-DNS zone, and live URL from the repo URL and scanned manifest unless advanced
+used for the acceptance run. FuseKit derives the GitHub repo, hosted deployment
+target, DNS zone, and live URL from the repo URL and scanned manifest unless advanced
 overrides are supplied.
 
 ```zsh
