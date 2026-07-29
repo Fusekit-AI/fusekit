@@ -19,6 +19,11 @@ from fusekit.hosted.stripe_setup import (
     main,
 )
 
+LIVE_STRIPE_SECRET = "sk_" "live_secret_value"
+TEST_STRIPE_SECRET = "sk_" "test_secret_value"
+SECRET_SHAPED_PRODUCT_NAME = "FuseKit " + ("sk_" "live_thisshouldnotrender")
+RESTRICTED_STRIPE_MARKER = "rk_" "live_should_not_render"
+
 
 class FakeResponse:
     def __init__(self, payload: Mapping[str, object], status: int = 200) -> None:
@@ -76,7 +81,7 @@ def test_stripe_price_setup_dry_run_has_no_network_and_no_secret() -> None:
     opener = StripeSetupOpener()
 
     report = create_stripe_managed_run_price(
-        stripe_secret_key="sk_live_secret_value",
+        stripe_secret_key=LIVE_STRIPE_SECRET,
         amount_cents=100,
         currency="USD",
         price_label="Launch validation: $1.00 FuseKit managed run",
@@ -100,14 +105,14 @@ def test_stripe_price_setup_dry_run_has_no_network_and_no_secret() -> None:
     assert report["shared_account_boundary"] == HOSTED_STRIPE_SHARED_ACCOUNT_BOUNDARY
     assert report["secret_boundary"] == HOSTED_STRIPE_SETUP_SECRET_BOUNDARY
     assert opener.requests == []
-    assert "sk_live_secret_value" not in serialized
+    assert LIVE_STRIPE_SECRET not in serialized
     assert "card" not in serialized.lower()
 
 
 def test_stripe_price_setup_rejects_boolean_amount() -> None:
     with pytest.raises(FuseKitError, match="amount"):
         build_stripe_managed_run_price_plan(
-            stripe_secret_key="sk_live_secret_value",
+            stripe_secret_key=LIVE_STRIPE_SECRET,
             amount_cents=True,
             currency="usd",
             price_label="Launch validation: $0.01 FuseKit managed run",
@@ -118,7 +123,7 @@ def test_stripe_price_setup_execute_creates_fusekit_scoped_product_and_price() -
     opener = StripeSetupOpener()
 
     report = create_stripe_managed_run_price(
-        stripe_secret_key="sk_live_secret_value",
+        stripe_secret_key=LIVE_STRIPE_SECRET,
         amount_cents=4900,
         currency="usd",
         price_label="$49 one-time managed FuseKit run",
@@ -143,7 +148,7 @@ def test_stripe_price_setup_execute_creates_fusekit_scoped_product_and_price() -
         "https://api.stripe.com/v1/products",
         "https://api.stripe.com/v1/prices",
     ]
-    assert opener.requests[0].headers["Authorization"] == "Bearer sk_live_secret_value"
+    assert opener.requests[0].headers["Authorization"] == "Bearer " + LIVE_STRIPE_SECRET
     assert opener.requests[1].headers["Idempotency-key"].startswith("fusekit-product-")
     assert opener.requests[2].headers["Idempotency-key"].startswith("fusekit-price-")
     assert opener.bodies[1]["name"] == [DEFAULT_MANAGED_RUN_PRODUCT_NAME]
@@ -153,13 +158,13 @@ def test_stripe_price_setup_execute_creates_fusekit_scoped_product_and_price() -
     assert opener.bodies[2]["unit_amount"] == ["4900"]
     assert opener.bodies[2]["currency"] == ["usd"]
     assert opener.bodies[2]["metadata[fusekit_scope]"] == ["managed-run-price"]
-    assert "sk_live_secret_value" not in serialized
+    assert LIVE_STRIPE_SECRET not in serialized
 
 
 def test_stripe_price_setup_rejects_existing_boolean_unit_amount() -> None:
     price_label = "Launch validation: $0.01 FuseKit managed run"
     plan = build_stripe_managed_run_price_plan(
-        stripe_secret_key="sk_live_secret_value",
+        stripe_secret_key=LIVE_STRIPE_SECRET,
         amount_cents=1,
         currency="usd",
         price_label=price_label,
@@ -188,7 +193,7 @@ def test_stripe_price_setup_rejects_existing_boolean_unit_amount() -> None:
 
     with pytest.raises(FuseKitError, match="does not match"):
         create_stripe_managed_run_price(
-            stripe_secret_key="sk_live_secret_value",
+            stripe_secret_key=LIVE_STRIPE_SECRET,
             amount_cents=1,
             currency="usd",
             price_label=price_label,
@@ -201,7 +206,7 @@ def test_stripe_price_setup_rejects_existing_boolean_unit_amount() -> None:
 
 def test_stripe_price_setup_reuses_existing_matching_fusekit_price() -> None:
     plan = build_stripe_managed_run_price_plan(
-        stripe_secret_key="sk_live_secret_value",
+        stripe_secret_key=LIVE_STRIPE_SECRET,
         amount_cents=100,
         currency="usd",
         price_label="Launch validation: $1.00 FuseKit managed run",
@@ -229,7 +234,7 @@ def test_stripe_price_setup_reuses_existing_matching_fusekit_price() -> None:
     )
 
     report = create_stripe_managed_run_price(
-        stripe_secret_key="sk_live_secret_value",
+        stripe_secret_key=LIVE_STRIPE_SECRET,
         amount_cents=100,
         currency="usd",
         price_label="Launch validation: $1.00 FuseKit managed run",
@@ -250,7 +255,7 @@ def test_stripe_price_setup_reuses_existing_matching_fusekit_price() -> None:
 
 def test_stripe_price_setup_does_not_reuse_price_with_extra_metadata() -> None:
     plan = build_stripe_managed_run_price_plan(
-        stripe_secret_key="sk_live_secret_value",
+        stripe_secret_key=LIVE_STRIPE_SECRET,
         amount_cents=100,
         currency="usd",
         price_label="Launch validation: $1.00 FuseKit managed run",
@@ -281,7 +286,7 @@ def test_stripe_price_setup_does_not_reuse_price_with_extra_metadata() -> None:
 
     with pytest.raises(FuseKitError, match="lookup key does not match"):
         create_stripe_managed_run_price(
-            stripe_secret_key="sk_live_secret_value",
+            stripe_secret_key=LIVE_STRIPE_SECRET,
             amount_cents=100,
             currency="usd",
             price_label="Launch validation: $1.00 FuseKit managed run",
@@ -295,7 +300,7 @@ def test_stripe_price_setup_does_not_reuse_price_with_extra_metadata() -> None:
 
 def test_stripe_price_setup_blocks_occupied_lookup_key_that_is_not_fusekit_scoped() -> None:
     plan = build_stripe_managed_run_price_plan(
-        stripe_secret_key="sk_live_secret_value",
+        stripe_secret_key=LIVE_STRIPE_SECRET,
         amount_cents=100,
         currency="usd",
         price_label="Launch validation: $1.00 FuseKit managed run",
@@ -322,7 +327,7 @@ def test_stripe_price_setup_blocks_occupied_lookup_key_that_is_not_fusekit_scope
 
     with pytest.raises(FuseKitError, match="lookup key does not match"):
         create_stripe_managed_run_price(
-            stripe_secret_key="sk_live_secret_value",
+            stripe_secret_key=LIVE_STRIPE_SECRET,
             amount_cents=100,
             currency="usd",
             price_label="Launch validation: $1.00 FuseKit managed run",
@@ -337,15 +342,15 @@ def test_stripe_price_setup_blocks_occupied_lookup_key_that_is_not_fusekit_scope
 def test_stripe_price_setup_rejects_secret_or_markup_public_product_fields() -> None:
     with pytest.raises(FuseKitError, match="product name"):
         build_stripe_managed_run_price_plan(
-            stripe_secret_key="sk_live_secret_value",
+            stripe_secret_key=LIVE_STRIPE_SECRET,
             amount_cents=100,
             currency="usd",
             price_label="Launch validation: $1.00 FuseKit managed run",
-            product_name="FuseKit sk_live_thisshouldnotrender",
+            product_name=SECRET_SHAPED_PRODUCT_NAME,
         )
     with pytest.raises(FuseKitError, match="product description"):
         build_stripe_managed_run_price_plan(
-            stripe_secret_key="sk_live_secret_value",
+            stripe_secret_key=LIVE_STRIPE_SECRET,
             amount_cents=100,
             currency="usd",
             price_label="Launch validation: $1.00 FuseKit managed run",
@@ -359,7 +364,7 @@ def test_stripe_price_setup_rejects_secret_or_markup_public_product_fields() -> 
         ("product_name", "FuseKit ASIA should not render", "product name"),
         (
             "product_description",
-            "FuseKit rk_live_should_not_render managed run",
+            "FuseKit " + RESTRICTED_STRIPE_MARKER + " managed run",
             "product description",
         ),
         (
@@ -375,7 +380,7 @@ def test_stripe_price_setup_rejects_private_marker_public_product_fields(
     failure: str,
 ) -> None:
     kwargs = {
-        "stripe_secret_key": "sk_live_secret_value",
+        "stripe_secret_key": LIVE_STRIPE_SECRET,
         "amount_cents": 100,
         "currency": "usd",
         "price_label": "Launch validation: $1.00 FuseKit managed run",
@@ -388,7 +393,7 @@ def test_stripe_price_setup_rejects_private_marker_public_product_fields(
 
 def test_stripe_price_setup_does_not_reuse_secret_shaped_product_name() -> None:
     plan = build_stripe_managed_run_price_plan(
-        stripe_secret_key="sk_live_secret_value",
+        stripe_secret_key=LIVE_STRIPE_SECRET,
         amount_cents=100,
         currency="usd",
         price_label="Launch validation: $1.00 FuseKit managed run",
@@ -408,7 +413,7 @@ def test_stripe_price_setup_does_not_reuse_secret_shaped_product_name() -> None:
                 "product": {
                     "id": "prod_existing_fusekit",
                     "active": True,
-                    "name": "FuseKit sk_live_thisshouldnotrender",
+                    "name": SECRET_SHAPED_PRODUCT_NAME,
                     "metadata": metadata,
                 },
             }
@@ -417,7 +422,7 @@ def test_stripe_price_setup_does_not_reuse_secret_shaped_product_name() -> None:
 
     with pytest.raises(FuseKitError, match="lookup key does not match"):
         create_stripe_managed_run_price(
-            stripe_secret_key="sk_live_secret_value",
+            stripe_secret_key=LIVE_STRIPE_SECRET,
             amount_cents=100,
             currency="usd",
             price_label="Launch validation: $1.00 FuseKit managed run",
@@ -445,7 +450,7 @@ def test_stripe_price_setup_rejects_private_marker_product_response_id() -> None
 
     with pytest.raises(FuseKitError, match="public product id"):
         create_stripe_managed_run_price(
-            stripe_secret_key="sk_live_secret_value",
+            stripe_secret_key=LIVE_STRIPE_SECRET,
             amount_cents=100,
             currency="usd",
             price_label="Launch validation: $1.00 FuseKit managed run",
@@ -458,7 +463,7 @@ def test_stripe_price_setup_rejects_private_marker_product_response_id() -> None
 def test_stripe_price_setup_refuses_mutation_without_shared_account_confirmation() -> None:
     with pytest.raises(FuseKitError, match="confirm-shared-account"):
         create_stripe_managed_run_price(
-            stripe_secret_key="sk_live_secret_value",
+            stripe_secret_key=LIVE_STRIPE_SECRET,
             amount_cents=100,
             currency="usd",
             price_label="Launch validation: $1.00 FuseKit managed run",
@@ -470,14 +475,14 @@ def test_stripe_price_setup_refuses_mutation_without_shared_account_confirmation
 def test_stripe_price_setup_requires_live_key_unless_test_mode_allowed() -> None:
     with pytest.raises(FuseKitError, match="live Stripe secret key"):
         build_stripe_managed_run_price_plan(
-            stripe_secret_key="sk_test_secret_value",
+            stripe_secret_key=TEST_STRIPE_SECRET,
             amount_cents=100,
             currency="usd",
             price_label="Test mode: $1.00 FuseKit managed run",
         )
 
     plan = build_stripe_managed_run_price_plan(
-        stripe_secret_key="sk_test_secret_value",
+        stripe_secret_key=TEST_STRIPE_SECRET,
         amount_cents=100,
         currency="usd",
         price_label="Test mode: $1.00 FuseKit managed run",
@@ -490,28 +495,28 @@ def test_stripe_price_setup_requires_live_key_unless_test_mode_allowed() -> None
 def test_stripe_price_setup_rejects_ambiguous_or_secret_like_labels() -> None:
     with pytest.raises(FuseKitError, match="price label"):
         build_stripe_managed_run_price_plan(
-            stripe_secret_key="sk_live_secret_value",
+            stripe_secret_key=LIVE_STRIPE_SECRET,
             amount_cents=100,
             currency="usd",
             price_label="FuseKit managed run",
         )
     with pytest.raises(FuseKitError, match="price label"):
         build_stripe_managed_run_price_plan(
-            stripe_secret_key="sk_live_secret_value",
+            stripe_secret_key=LIVE_STRIPE_SECRET,
             amount_cents=100,
             currency="usd",
             price_label="Use price_123 for FuseKit",
         )
     with pytest.raises(FuseKitError, match="price label"):
         build_stripe_managed_run_price_plan(
-            stripe_secret_key="sk_live_secret_value",
+            stripe_secret_key=LIVE_STRIPE_SECRET,
             amount_cents=100,
             currency="usd",
             price_label="Launch validation: .00 FuseKit managed run",
         )
     with pytest.raises(FuseKitError, match="price label"):
         build_stripe_managed_run_price_plan(
-            stripe_secret_key="sk_live_secret_value",
+            stripe_secret_key=LIVE_STRIPE_SECRET,
             amount_cents=100,
             currency="usd",
             price_label="<b>Launch validation: $1.00 FuseKit managed run</b>",
@@ -521,21 +526,21 @@ def test_stripe_price_setup_rejects_ambiguous_or_secret_like_labels() -> None:
 def test_stripe_price_setup_requires_label_to_match_amount_and_currency() -> None:
     with pytest.raises(FuseKitError, match="match the configured amount"):
         build_stripe_managed_run_price_plan(
-            stripe_secret_key="sk_live_secret_value",
+            stripe_secret_key=LIVE_STRIPE_SECRET,
             amount_cents=4900,
             currency="usd",
             price_label="Launch validation: $1.00 FuseKit managed run",
         )
     with pytest.raises(FuseKitError, match="match the configured amount"):
         build_stripe_managed_run_price_plan(
-            stripe_secret_key="sk_live_secret_value",
+            stripe_secret_key=LIVE_STRIPE_SECRET,
             amount_cents=100,
             currency="cad",
             price_label="Launch validation: $1.00 FuseKit managed run",
         )
 
     plan = build_stripe_managed_run_price_plan(
-        stripe_secret_key="sk_live_secret_value",
+        stripe_secret_key=LIVE_STRIPE_SECRET,
         amount_cents=100,
         currency="cad",
         price_label="Launch validation: CAD 1.00 FuseKit managed run",
@@ -549,7 +554,7 @@ def test_stripe_price_setup_main_reads_secret_from_env_and_redacts_output(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setenv("FUSEKIT_STRIPE_SECRET_KEY", "sk_live_secret_value")
+    monkeypatch.setenv("FUSEKIT_STRIPE_SECRET_KEY", LIVE_STRIPE_SECRET)
 
     assert (
         main(
@@ -567,7 +572,7 @@ def test_stripe_price_setup_main_reads_secret_from_env_and_redacts_output(
     assert payload["ready"] is True
     assert payload["dry_run"] is True
     assert payload["hosted_runtime_env"]["FUSEKIT_MANAGED_RUNS_ENABLED"] == "0"
-    assert "sk_live_secret_value" not in json.dumps(payload)
+    assert LIVE_STRIPE_SECRET not in json.dumps(payload)
 
 
 def test_stripe_price_setup_main_reports_missing_env_without_secret(

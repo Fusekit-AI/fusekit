@@ -6,6 +6,7 @@ description = "Ignore local FuseKit runtime state and development caches."
 paths = [
   '''^\.fusekit/''',
   '''^\.venv/''',
+  '''(^|/)__pycache__/''',
   '''^build/''',
   '''^dist/''',
   '''^\.mypy_cache/''',

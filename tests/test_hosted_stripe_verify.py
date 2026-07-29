@@ -16,6 +16,8 @@ from fusekit.hosted.stripe_verify import (
 )
 
 PRICE_LABEL = "Launch validation: $1.00 FuseKit managed run"
+LIVE_STRIPE_SECRET = "sk_" "live_secret_value"
+SECRET_SHAPED_PRODUCT_NAME = "FuseKit " + ("sk_" "live_thisshouldnotrender")
 
 
 class FakeResponse:
@@ -82,7 +84,7 @@ def test_stripe_price_verify_accepts_fusekit_scoped_price() -> None:
     opener = StripeVerifyOpener(_price_payload())
 
     report = verify_stripe_managed_run_price(
-        stripe_secret_key="sk_live_secret_value",
+        stripe_secret_key=LIVE_STRIPE_SECRET,
         price_id="price_fusekit_managed_run",
         amount_cents=100,
         currency="usd",
@@ -107,8 +109,8 @@ def test_stripe_price_verify_accepts_fusekit_scoped_price() -> None:
     assert request.full_url == (
         "https://api.stripe.com/v1/prices/price_fusekit_managed_run?expand%5B%5D=product"
     )
-    assert request.headers["Authorization"] == "Bearer sk_live_secret_value"
-    assert "sk_live_secret_value" not in serialized
+    assert request.headers["Authorization"] == "Bearer " + LIVE_STRIPE_SECRET
+    assert LIVE_STRIPE_SECRET not in serialized
     assert "card" not in serialized.lower()
 
 
@@ -138,7 +140,7 @@ def test_stripe_price_verify_rejects_boolean_unit_amount() -> None:
     )
 
     report = verify_stripe_managed_run_price(
-        stripe_secret_key="sk_live_secret_value",
+        stripe_secret_key=LIVE_STRIPE_SECRET,
         price_id="price_fusekit_managed_run",
         amount_cents=1,
         currency="usd",
@@ -167,7 +169,7 @@ def test_stripe_price_verify_blocks_shared_account_wrong_price() -> None:
     )
 
     report = verify_stripe_managed_run_price(
-        stripe_secret_key="sk_live_secret_value",
+        stripe_secret_key=LIVE_STRIPE_SECRET,
         price_id="price_fusekit_managed_run",
         amount_cents=100,
         currency="usd",
@@ -197,7 +199,7 @@ def test_stripe_price_verify_blocks_extra_metadata_sidecar() -> None:
     payload["metadata"]["snowman_product"] = "mailpilot"
 
     report = verify_stripe_managed_run_price(
-        stripe_secret_key="sk_live_secret_value",
+        stripe_secret_key=LIVE_STRIPE_SECRET,
         price_id="price_fusekit_managed_run",
         amount_cents=100,
         currency="usd",
@@ -222,14 +224,14 @@ def test_stripe_price_verify_blocks_secret_shaped_product_name() -> None:
             product={
                 "id": "prod_fusekit_managed_run",
                 "active": True,
-                "name": "FuseKit sk_live_thisshouldnotrender",
+                "name": SECRET_SHAPED_PRODUCT_NAME,
                 "metadata": _price_payload()["metadata"],
             },
         )
     )
 
     report = verify_stripe_managed_run_price(
-        stripe_secret_key="sk_live_secret_value",
+        stripe_secret_key=LIVE_STRIPE_SECRET,
         price_id="price_fusekit_managed_run",
         amount_cents=100,
         currency="usd",
@@ -257,7 +259,7 @@ def test_stripe_price_verify_blocks_secret_shaped_product_name() -> None:
 def test_stripe_price_verify_rejects_private_marker_price_ids(marker: str) -> None:
     with pytest.raises(FuseKitError, match="Stripe price id is invalid"):
         verify_stripe_managed_run_price(
-            stripe_secret_key="sk_live_secret_value",
+            stripe_secret_key=LIVE_STRIPE_SECRET,
             price_id=marker,
             amount_cents=100,
             currency="usd",
@@ -270,7 +272,7 @@ def test_stripe_price_verify_redacts_private_marker_product_ids() -> None:
     payload = _price_payload(product={"id": "prod_ASIA_should_not_render"})
 
     report = verify_stripe_managed_run_price(
-        stripe_secret_key="sk_live_secret_value",
+        stripe_secret_key=LIVE_STRIPE_SECRET,
         price_id="price_fusekit_managed_run",
         amount_cents=100,
         currency="usd",
@@ -288,7 +290,7 @@ def test_stripe_price_verify_main_reads_env_and_redacts_output(
     monkeypatch,
     capsys,
 ) -> None:
-    monkeypatch.setenv("FUSEKIT_STRIPE_SECRET_KEY", "sk_live_secret_value")
+    monkeypatch.setenv("FUSEKIT_STRIPE_SECRET_KEY", LIVE_STRIPE_SECRET)
     monkeypatch.setenv("FUSEKIT_STRIPE_PRICE_ID", "price_fusekit_managed_run")
     opener = StripeVerifyOpener(_price_payload())
     monkeypatch.setattr("fusekit.hosted.stripe_verify.urllib.request.urlopen", opener)
@@ -305,4 +307,4 @@ def test_stripe_price_verify_main_reads_env_and_redacts_output(
 
     assert exit_code == 0
     assert payload["ready"] is True
-    assert "sk_live_secret_value" not in json.dumps(payload)
+    assert LIVE_STRIPE_SECRET not in json.dumps(payload)

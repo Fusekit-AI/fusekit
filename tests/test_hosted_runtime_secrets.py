@@ -15,21 +15,25 @@ from fusekit.hosted.runtime_secrets import (
 )
 from fusekit.security import contains_durable_secret_text
 
+RSA_PRIVATE_KEY_FIXTURE = (
+    "-----BEGIN " "RSA PRIVATE KEY-----\n"
+    "MIIEpAIBAAKCAQEAsecretfixture\n"
+    "-----END " "RSA PRIVATE KEY-----"
+)
+LIVE_STRIPE_SECRET_FIXTURE = "sk_" "live_secretfixture"
+TARGET_STRIPE_SECRET_FIXTURE = "sk_" "live_targetsecret"
+
 
 def _env(**overrides: str) -> dict[str, str]:
     value = {
         "FUSEKIT_HOSTED_ORIGIN": "https://fusekit.snowmanai.org",
         "FUSEKIT_GITHUB_APP_ID": "4197238",
         "FUSEKIT_GITHUB_APP_SLUG": "fusekit-launcher",
-        "FUSEKIT_GITHUB_APP_PRIVATE_KEY": (
-            "-----BEGIN RSA PRIVATE KEY-----\n"
-            "MIIEpAIBAAKCAQEAsecretfixture\n"
-            "-----END RSA PRIVATE KEY-----"
-        ),
+        "FUSEKIT_GITHUB_APP_PRIVATE_KEY": RSA_PRIVATE_KEY_FIXTURE,
         "FUSEKIT_HOSTED_STATE_SECRET": "state-secret-value-with-enough-entropy",
         "FUSEKIT_HOSTED_WORKER_SECRET": "worker-secret-value-with-enough-entropy",
         "FUSEKIT_HOSTED_WORKER_DISPATCH_URL": "https://fusekit.snowmanai.org/dispatch",
-        "FUSEKIT_STRIPE_SECRET_KEY": "sk_live_secretfixture",
+        "FUSEKIT_STRIPE_SECRET_KEY": LIVE_STRIPE_SECRET_FIXTURE,
         "FUSEKIT_STRIPE_PRICE_ID": "price_1ToydUPZlsTa6iL323anyggA",
         "FUSEKIT_MANAGED_RUN_PRICE_LABEL": "Launch validation: $1.00 FuseKit managed run",
         "FUSEKIT_MANAGED_RUNS_ENABLED": "0",
@@ -63,7 +67,7 @@ def test_runtime_secret_plan_reports_readiness_without_secret_values() -> None:
     assert plan["stripe_runtime_env"]["FUSEKIT_STRIPE_PRICE_ID"]["public_id"] == (
         "price_1ToydUPZlsTa6iL323anyggA"
     )
-    assert "sk_live_secretfixture" not in serialized
+    assert LIVE_STRIPE_SECRET_FIXTURE not in serialized
     assert "secretfixture" not in serialized
     assert "state-secret-value" not in serialized
     assert "worker-secret-value" not in serialized
@@ -155,9 +159,9 @@ def test_runtime_secret_installer_writes_owner_only_env_file_without_public_valu
     assert "FUSEKIT_MANAGED_RUNS_ENABLED='0'" in written
     assert "FUSEKIT_HOSTED_STATE_SECRET='" in written
     assert "FUSEKIT_HOSTED_WORKER_SECRET='" in written
-    assert "sk_live_secretfixture" in written
+    assert LIVE_STRIPE_SECRET_FIXTURE in written
     assert "BEGIN RSA PRIVATE KEY" in written
-    assert "sk_live_secretfixture" not in serialized
+    assert LIVE_STRIPE_SECRET_FIXTURE not in serialized
     assert "BEGIN RSA PRIVATE KEY" not in serialized
     assert "state-secret-value" not in serialized
     assert not contains_durable_secret_text(serialized)
@@ -191,7 +195,7 @@ def test_runtime_secret_verifier_proves_file_metadata_and_key_inventory_without_
         "present": True
     }
     assert report["key_inventory"]["missing"] == []
-    assert "sk_live_secretfixture" not in serialized
+    assert LIVE_STRIPE_SECRET_FIXTURE not in serialized
     assert "BEGIN RSA PRIVATE KEY" not in serialized
     assert "state-secret-value" not in serialized
     assert "worker-secret-value" not in serialized
@@ -288,7 +292,10 @@ def test_runtime_secret_verifier_rejects_symlink_without_reading_target(
 ) -> None:
     target_path = tmp_path / "target.env"
     link_path = tmp_path / "hosted-secrets.env"
-    target_path.write_text("FUSEKIT_STRIPE_SECRET_KEY='sk_live_targetsecret'\n", encoding="utf-8")
+    target_path.write_text(
+        "FUSEKIT_STRIPE_SECRET_KEY='" + TARGET_STRIPE_SECRET_FIXTURE + "'\n",
+        encoding="utf-8",
+    )
     target_path.chmod(0o600)
     link_path.symlink_to(target_path)
 
@@ -297,7 +304,7 @@ def test_runtime_secret_verifier_rejects_symlink_without_reading_target(
 
     assert report["ready"] is False
     assert "runtime_secret_file_must_not_be_symlink" in report["blockers"]
-    assert "sk_live_targetsecret" not in serialized
+    assert TARGET_STRIPE_SECRET_FIXTURE not in serialized
     assert not contains_durable_secret_text(serialized)
 
 

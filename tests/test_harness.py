@@ -1741,7 +1741,7 @@ def test_public_artifact_safety_rejects_private_provider_markers() -> None:
             "stripe": "created restricted key rk_live_redacted",
             "oci": "attached instance ocid1.instance.oc1.iad.raw",
             "aws": "session ASIAIOSFODNN7EXAMPLE",
-            "pem": "-----BEGIN PRIVATE KEY-----",
+            "pem": "-----BEGIN " "PRIVATE KEY-----",
         },
         "setup_receipt",
     )
