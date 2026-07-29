@@ -11,6 +11,8 @@ PROVENANCE_FILE="${FUSEKIT_HOSTED_PROVENANCE_FILE:-/etc/fusekit/hosted-provenanc
 HOSTED_SERVICE="${FUSEKIT_HOSTED_SERVICE:-fusekit-hosted.service}"
 DISPATCH_SERVICE="${FUSEKIT_DISPATCH_SERVICE:-fusekit-worker-dispatch.service}"
 RELEASE_RETENTION_COUNT="${FUSEKIT_RELEASE_RETENTION_COUNT:-2}"
+PROVENANCE_ROLLBACK=""
+PROVENANCE_EXISTED=0
 
 if [[ ! "${EXPECTED_COMMIT_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
   echo "expected commit must be a 40-character lowercase git sha" >&2
@@ -52,6 +54,13 @@ umask 077
 install -d -o root -g fusekit -m 0750 "${RELEASE_ROOT}"
 install -d -o fusekit -g fusekit -m 0750 "${RECEIPT_DIR}"
 install -d -o root -g root -m 0750 "$(dirname "${PROVENANCE_FILE}")"
+PROVENANCE_ROLLBACK="$(mktemp "${RECEIPT_DIR}/.provenance.rollback.XXXXXX")"
+if [[ -f "${PROVENANCE_FILE}" ]]; then
+  cp -p "${PROVENANCE_FILE}" "${PROVENANCE_ROLLBACK}"
+  PROVENANCE_EXISTED=1
+else
+  : > "${PROVENANCE_ROLLBACK}"
+fi
 
 RELEASE_DIR="${RELEASE_ROOT}/${EXPECTED_COMMIT_SHA}"
 BEFORE_TARGET="$(readlink -f "${CURRENT_LINK}" 2>/dev/null || true)"
@@ -68,9 +77,17 @@ cleanup_on_exit() {
     rm -rf "${INCOMING}"
   fi
   if [[ "${ROLLBACK_NEEDED}" == "1" && -n "${BEFORE_TARGET}" && -d "${BEFORE_TARGET}" ]]; then
+    if [[ "${PROVENANCE_EXISTED}" == "1" ]]; then
+      install -o root -g root -m 0600 "${PROVENANCE_ROLLBACK}" "${PROVENANCE_FILE}"
+    else
+      rm -f "${PROVENANCE_FILE}"
+    fi
     ln -sfn "${BEFORE_TARGET}" "${CURRENT_LINK}.rollback"
     mv -Tf "${CURRENT_LINK}.rollback" "${CURRENT_LINK}"
     systemctl restart "${HOSTED_SERVICE}" "${DISPATCH_SERVICE}" || true
+  fi
+  if [[ -n "${PROVENANCE_ROLLBACK}" && -f "${PROVENANCE_ROLLBACK}" ]]; then
+    rm -f "${PROVENANCE_ROLLBACK}"
   fi
   exit "${status}"
 }

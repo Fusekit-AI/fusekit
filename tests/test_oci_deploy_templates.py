@@ -61,6 +61,7 @@ def test_oci_systemd_units_match_host_posture_hardening_contract() -> None:
         assert unit["LogsDirectoryMode"] == ["0750"]
         assert unit["RuntimeDirectory"] == ["fusekit"]
         assert unit["RuntimeDirectoryMode"] == ["0750"]
+        assert unit["RuntimeDirectoryPreserve"] == ["restart"]
         assert unit["ReadWritePaths"] == [
             "/var/lib/fusekit /var/log/fusekit /run/fusekit"
         ]
@@ -133,6 +134,8 @@ def test_oci_release_script_is_narrow_and_reviewable() -> None:
     assert "cleanup_old_releases" in script
     assert "keep-current-rollback-and-recent" in script
     assert "removed_commit_shas" in script
+    assert "PROVENANCE_ROLLBACK" in script
+    assert 'install -o root -g root -m 0600 "${PROVENANCE_ROLLBACK}"' in script
     assert "ln -sfn" in script
     assert "mv -Tf" in script
     assert 'git -c "safe.directory=${BEFORE_TARGET}"' in script
