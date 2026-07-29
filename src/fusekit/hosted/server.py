@@ -1730,7 +1730,10 @@ def _github_control_room_response(
     state_token = _first_query_value(query, "state")
     installation_id = _first_query_value(query, "installation_id")
     repo = _first_query_value(query, "repo")
-    launch_lane = (_first_query_value(query, "lane") or MANAGED_FUSEKIT_RUN_LANE).strip().lower()
+    launch_lane = _selected_hosted_launch_lane(
+        settings,
+        _first_query_value(query, "lane"),
+    )
     if not state_token:
         return _response(start_response, HTTPStatus.BAD_REQUEST, {"error": "missing_state"})
     if not installation_id or not installation_id.isdecimal() or int(installation_id) <= 0:
@@ -2779,6 +2782,24 @@ def _hosted_lane_readiness(settings: HostedSettings, lane_id: str) -> dict[str, 
     if not isinstance(lane, dict):
         return {"launchable": False, "blocking_checks": ["lane_readiness_unavailable"]}
     return dict(lane)
+
+
+def _selected_hosted_launch_lane(settings: HostedSettings, raw_lane: str | None) -> str:
+    """Return the explicit lane, or the current recommended launchable lane."""
+
+    if raw_lane:
+        return raw_lane.strip().lower()
+    readiness = settings.lane_readiness()
+    recommended = str(readiness.get("recommended_lane") or "").strip().lower()
+    if valid_hosted_launch_lane(recommended):
+        return recommended
+    launchable_lanes = readiness.get("launchable_lanes")
+    if isinstance(launchable_lanes, list):
+        for lane in launchable_lanes:
+            normalized = str(lane or "").strip().lower()
+            if valid_hosted_launch_lane(normalized):
+                return normalized
+    return MANAGED_FUSEKIT_RUN_LANE
 
 
 def _byo_oci_lane_blockers(settings: HostedSettings) -> list[str]:
