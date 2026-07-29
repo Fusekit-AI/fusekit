@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
+import time
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -19,6 +22,7 @@ STRIPE_LIVE_SECRET_KEY_PREFIXES = ("sk_live_", "rk_live_")
 STRIPE_TEST_SECRET_KEY_PREFIXES = ("sk_test_",)
 STRIPE_SECRET_KEY_PREFIXES = (*STRIPE_LIVE_SECRET_KEY_PREFIXES, *STRIPE_TEST_SECRET_KEY_PREFIXES)
 STRIPE_WEBHOOK_SECRET_PREFIX = "whsec_"
+STRIPE_WEBHOOK_SIGNATURE_TOLERANCE_SECONDS = 300
 STRIPE_CHECKOUT_METADATA_KEYS = (
     "job_id",
     "lane",
@@ -277,6 +281,65 @@ def stripe_checkout_session_receipt(payload: dict[str, object]) -> dict[str, obj
         raise FuseKitError("stripe_checkout_paid_receipt_incomplete")
     _assert_public_payment_receipt(receipt)
     return receipt
+
+
+def verify_stripe_webhook_event(
+    *,
+    raw_body: bytes,
+    signature_header: str,
+    webhook_secret: str,
+    now: int | None = None,
+    tolerance_seconds: int = STRIPE_WEBHOOK_SIGNATURE_TOLERANCE_SECONDS,
+) -> dict[str, object]:
+    """Verify a Stripe webhook signature and return the decoded event."""
+
+    if not _valid_stripe_webhook_secret(webhook_secret):
+        raise FuseKitError("stripe_webhook_secret_invalid")
+    if not isinstance(raw_body, bytes) or not raw_body:
+        raise FuseKitError("stripe_webhook_payload_invalid")
+    if not isinstance(signature_header, str) or len(signature_header) > 8192:
+        raise FuseKitError("stripe_webhook_signature_invalid")
+    timestamp, signatures = _stripe_signature_parts(signature_header)
+    current_time = int(time.time()) if now is None else int(now)
+    if tolerance_seconds < 0:
+        raise FuseKitError("stripe_webhook_signature_invalid")
+    if abs(current_time - timestamp) > tolerance_seconds:
+        raise FuseKitError("stripe_webhook_signature_stale")
+    signed_payload = str(timestamp).encode("ascii") + b"." + raw_body
+    expected = hmac.new(
+        webhook_secret.encode("utf-8"),
+        signed_payload,
+        hashlib.sha256,
+    ).hexdigest()
+    if not any(hmac.compare_digest(expected, signature) for signature in signatures):
+        raise FuseKitError("stripe_webhook_signature_invalid")
+    try:
+        decoded = json.loads(raw_body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise FuseKitError("stripe_webhook_payload_invalid") from exc
+    if not isinstance(decoded, dict):
+        raise FuseKitError("stripe_webhook_payload_invalid")
+    return decoded
+
+
+def _stripe_signature_parts(signature_header: str) -> tuple[int, tuple[str, ...]]:
+    timestamp_text = ""
+    signatures: list[str] = []
+    for chunk in signature_header.split(","):
+        key, separator, value = chunk.strip().partition("=")
+        if separator != "=":
+            continue
+        if key == "t" and not timestamp_text:
+            timestamp_text = value
+        elif key == "v1" and _valid_stripe_signature_hex(value):
+            signatures.append(value)
+    if not timestamp_text or not timestamp_text.isdigit() or not signatures:
+        raise FuseKitError("stripe_webhook_signature_invalid")
+    return int(timestamp_text), tuple(signatures)
+
+
+def _valid_stripe_signature_hex(value: str) -> bool:
+    return len(value) == 64 and all(ch in "0123456789abcdef" for ch in value)
 
 
 def _reject_sensitive_checkout_payload_fields(payload: dict[str, object]) -> None:

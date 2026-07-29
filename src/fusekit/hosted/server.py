@@ -33,6 +33,8 @@ from fusekit.hosted.billing import (
     create_stripe_checkout_session,
     payment_required_receipt,
     retrieve_stripe_checkout_session,
+    stripe_checkout_session_receipt,
+    verify_stripe_webhook_event,
 )
 from fusekit.hosted.evidence import HOSTED_COMPLETION_EVIDENCE_KEYS
 from fusekit.hosted.github_app import (
@@ -1234,6 +1236,8 @@ def hosted_application(
     def app(environ: dict[str, object], start_response: StartResponse) -> Iterable[bytes]:
         method = str(environ.get("REQUEST_METHOD", "GET")).upper()
         path = str(environ.get("PATH_INFO", "/") or "/")
+        if path == "/api/hosted/payments/stripe-webhook" and method == "POST":
+            return _hosted_stripe_webhook_response(settings, environ, start_response)
         if path.startswith("/api/hosted/jobs/"):
             return _hosted_job_api_response(settings, environ, start_response, method=method)
         if method != "GET":
@@ -2179,6 +2183,183 @@ def _hosted_payment_return_response(
             action_receipt=_hosted_payment_return_action_receipt(),
         ),
     )
+
+
+def _hosted_stripe_webhook_response(
+    settings: HostedSettings,
+    environ: dict[str, object],
+    start_response: StartResponse,
+) -> Iterable[bytes]:
+    if (
+        not settings.managed_runs_enabled
+        or not _valid_stripe_webhook_secret(settings.stripe_webhook_secret)
+    ):
+        return _response(
+            start_response,
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            _hosted_payment_error_payload("payment_not_ready"),
+        )
+    try:
+        raw_body = _request_body(environ, allow_empty=False)
+    except FuseKitError:
+        return _response(
+            start_response,
+            HTTPStatus.BAD_REQUEST,
+            _hosted_payment_error_payload("invalid_webhook"),
+        )
+    signature_header = str(environ.get("HTTP_STRIPE_SIGNATURE", "") or "")
+    try:
+        event = verify_stripe_webhook_event(
+            raw_body=raw_body,
+            signature_header=signature_header,
+            webhook_secret=settings.stripe_webhook_secret,
+        )
+    except FuseKitError:
+        return _response(
+            start_response,
+            HTTPStatus.FORBIDDEN,
+            _hosted_payment_error_payload("webhook_signature_invalid"),
+        )
+    event_type = _public_stripe_webhook_event_type(event.get("type"))
+    if event_type != "checkout.session.completed":
+        return _response(
+            start_response,
+            HTTPStatus.ACCEPTED,
+            _hosted_stripe_webhook_ignored_receipt(event_type),
+        )
+    checkout_session = _stripe_webhook_checkout_session(event)
+    if checkout_session is None:
+        return _response(
+            start_response,
+            HTTPStatus.BAD_REQUEST,
+            _hosted_payment_error_payload("invalid_webhook"),
+        )
+    try:
+        receipt = stripe_checkout_session_receipt(checkout_session)
+    except FuseKitError:
+        return _response(
+            start_response,
+            HTTPStatus.BAD_REQUEST,
+            _hosted_payment_error_payload("invalid_webhook"),
+        )
+    job_id = _stripe_webhook_job_id(receipt)
+    job = settings.hosted_jobs.get(job_id)
+    if job is None:
+        return _response(
+            start_response,
+            HTTPStatus.FORBIDDEN,
+            _hosted_payment_error_payload("payment_binding_mismatch"),
+        )
+    receipt["price_label"] = job.payment_price_label or settings.managed_run_price_label
+    if receipt.get("paid") is not True:
+        return _response(
+            start_response,
+            HTTPStatus.PAYMENT_REQUIRED,
+            _hosted_payment_error_payload("payment_not_paid"),
+        )
+    if not _payment_receipt_matches_job(settings, receipt, job):
+        return _response(
+            start_response,
+            HTTPStatus.FORBIDDEN,
+            _hosted_payment_error_payload("payment_binding_mismatch"),
+        )
+    updated = with_hosted_job_payment_receipt(job, receipt)
+    settings.hosted_jobs[job.job_id] = updated
+    payload = _hosted_stripe_webhook_applied_receipt(
+        event_type=event_type,
+        job=updated,
+    )
+    return _response(start_response, HTTPStatus.OK, payload)
+
+
+def _stripe_webhook_checkout_session(event: dict[str, object]) -> dict[str, object] | None:
+    data = event.get("data")
+    if not isinstance(data, dict):
+        return None
+    checkout_session = data.get("object")
+    if not isinstance(checkout_session, dict):
+        return None
+    return cast(dict[str, object], checkout_session)
+
+
+def _stripe_webhook_job_id(receipt: dict[str, object]) -> str:
+    client_reference_id = receipt.get("client_reference_id")
+    metadata = receipt.get("metadata")
+    metadata_job_id = metadata.get("job_id") if isinstance(metadata, dict) else ""
+    if isinstance(client_reference_id, str) and client_reference_id:
+        return client_reference_id
+    if isinstance(metadata_job_id, str):
+        return metadata_job_id
+    return ""
+
+
+def _hosted_stripe_webhook_applied_receipt(
+    *,
+    event_type: str,
+    job: HostedLaunchJob,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "schema_version": "fusekit.hosted-stripe-webhook.v1",
+        "action": "payment_webhook",
+        "event_type": event_type,
+        "accepted": True,
+        "payment_applied": True,
+        "job_id": job.job_id,
+        "payment_status": job.payment_status,
+        "managed_worker_dispatch_unlocked": job.payment_status == "paid",
+        "worker_dispatch_sent": False,
+        "next_required_proof": ["worker_claim", "detonation_receipt", "recording"],
+        "receipt_statement": (
+            "Stripe Checkout completion webhook verified and payment proof was bound to "
+            "the managed FuseKit job. Worker dispatch still requires the protected "
+            "control-room start action."
+        ),
+        "secret_boundary": (
+            "Stripe webhook receipts expose only event type, public job id, payment "
+            "status, and next proof labels. They never include card data, billing "
+            "details, payment method ids, Stripe secret keys, webhook signing secrets, "
+            "client secrets, raw payloads, or provider credentials."
+        ),
+    }
+    _assert_public_action_response_payload(payload)
+    return payload
+
+
+def _hosted_stripe_webhook_ignored_receipt(event_type: str) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "schema_version": "fusekit.hosted-stripe-webhook.v1",
+        "action": "payment_webhook",
+        "event_type": event_type,
+        "accepted": True,
+        "payment_applied": False,
+        "managed_worker_dispatch_unlocked": False,
+        "worker_dispatch_sent": False,
+        "next_required_proof": ["stripe_checkout_authorization"],
+        "receipt_statement": (
+            "Stripe webhook signature verified, but the event is not a Checkout "
+            "completion event, so no managed-run payment proof was applied."
+        ),
+        "secret_boundary": (
+            "Ignored webhook receipts expose only event type and public proof labels. "
+            "They never include Stripe secret keys, webhook signing secrets, raw "
+            "payloads, client secrets, card data, or provider credentials."
+        ),
+    }
+    _assert_public_action_response_payload(payload)
+    return payload
+
+
+def _public_stripe_webhook_event_type(value: object) -> str:
+    if not isinstance(value, str):
+        return "unknown"
+    cleaned = value.strip().lower()
+    if not cleaned or len(cleaned) > 120:
+        return "unknown"
+    if contains_durable_secret_text(cleaned) or _contains_private_marker(cleaned):
+        return "unknown"
+    if not all(ch.isalnum() or ch in {"_", "-", ".", ":"} for ch in cleaned):
+        return "unknown"
+    return cleaned
 
 
 def _hosted_payment_error_payload(error: str) -> dict[str, object]:

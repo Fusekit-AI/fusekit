@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import importlib.util
 import io
 import json
 import re
+import time
 import urllib.parse
 import urllib.request
 import zipfile
@@ -3036,6 +3038,145 @@ def test_hosted_managed_payment_return_rejects_price_label_drift() -> None:
     assert "sk_live" not in body.decode("utf-8")
 
 
+def test_hosted_stripe_webhook_applies_bound_payment_without_dispatch() -> None:
+    settings, job_id, dispatch_opener = _managed_checkout_pending_fixture(
+        stripe_session_id="cs_test_webhook"
+    )
+    job = settings.hosted_jobs[job_id]
+    event = _stripe_checkout_completed_event(
+        job=job,
+        stripe_session_id="cs_test_webhook",
+    )
+    raw_body, signature = _signed_stripe_webhook("whsec_redacted", event)
+
+    status, _headers, body = _call(
+        "/api/hosted/payments/stripe-webhook",
+        method="POST",
+        raw_body=raw_body,
+        raw_content_type="application/json",
+        headers={"Stripe-Signature": signature},
+        settings=settings,
+    )
+    payload = json.loads(body.decode("utf-8"))
+    serialized = json.dumps(payload)
+
+    assert status == "200 OK"
+    assert payload["schema_version"] == "fusekit.hosted-stripe-webhook.v1"
+    assert payload["event_type"] == "checkout.session.completed"
+    assert payload["payment_applied"] is True
+    assert payload["job_id"] == job_id
+    assert payload["payment_status"] == "paid"
+    assert payload["managed_worker_dispatch_unlocked"] is True
+    assert payload["worker_dispatch_sent"] is False
+    assert settings.hosted_jobs[job_id].payment_status == "paid"
+    assert len(dispatch_opener.requests) == 0
+    assert "whsec" not in serialized
+    assert "sk_live" not in serialized
+    assert "client_secret" not in serialized
+    assert "payment_method" not in serialized
+
+    paid_job_token = create_hosted_job_token(STATE_SECRET, settings.hosted_jobs[job_id])
+    start_control = create_hosted_state_token(
+        STATE_SECRET,
+        return_path=f"/api/hosted/jobs/{job_id}/actions/start",
+        nonce="nonce-for-webhook-paid-start",
+    )
+    status, _headers, body = _call(
+        f"/api/hosted/jobs/{job_id}/actions/start",
+        method="POST",
+        query_string=f"job={paid_job_token}",
+        form_body={"control": start_control},
+        settings=settings,
+    )
+    started = json.loads(body.decode("utf-8"))
+
+    assert status == "200 OK"
+    assert started["payment"]["status"] == "paid"
+    assert started["worker_dispatch"]["dispatched"] is True
+    assert len(dispatch_opener.requests) == 1
+
+
+def test_hosted_stripe_webhook_rejects_bad_signature_without_unlocking_dispatch() -> None:
+    settings, job_id, dispatch_opener = _managed_checkout_pending_fixture(
+        stripe_session_id="cs_test_webhook_bad_sig"
+    )
+    event = _stripe_checkout_completed_event(
+        job=settings.hosted_jobs[job_id],
+        stripe_session_id="cs_test_webhook_bad_sig",
+    )
+    raw_body, _signature = _signed_stripe_webhook("whsec_redacted", event)
+
+    status, _headers, body = _call(
+        "/api/hosted/payments/stripe-webhook",
+        method="POST",
+        raw_body=raw_body,
+        raw_content_type="application/json",
+        headers={"Stripe-Signature": f"t={int(time.time())},v1={'0' * 64}"},
+        settings=settings,
+    )
+
+    assert status == "403 Forbidden"
+    _assert_public_payment_error(body, "webhook_signature_invalid")
+    assert settings.hosted_jobs[job_id].payment_status == "checkout_pending"
+    assert len(dispatch_opener.requests) == 0
+
+
+def test_hosted_stripe_webhook_rejects_unbound_payment_event() -> None:
+    settings, job_id, dispatch_opener = _managed_checkout_pending_fixture(
+        stripe_session_id="cs_test_webhook_unbound"
+    )
+    event = _stripe_checkout_completed_event(
+        job=settings.hosted_jobs[job_id],
+        stripe_session_id="cs_test_webhook_unbound",
+    )
+    checkout_session = event["data"]["object"]
+    assert isinstance(checkout_session, dict)
+    metadata = checkout_session["metadata"]
+    assert isinstance(metadata, dict)
+    metadata["github_source_hash"] = "sha256:" + ("f" * 64)
+    raw_body, signature = _signed_stripe_webhook("whsec_redacted", event)
+
+    status, _headers, body = _call(
+        "/api/hosted/payments/stripe-webhook",
+        method="POST",
+        raw_body=raw_body,
+        raw_content_type="application/json",
+        headers={"Stripe-Signature": signature},
+        settings=settings,
+    )
+
+    assert status == "403 Forbidden"
+    _assert_public_payment_error(body, "payment_binding_mismatch")
+    assert settings.hosted_jobs[job_id].payment_status == "checkout_pending"
+    assert len(dispatch_opener.requests) == 0
+
+
+def test_hosted_stripe_webhook_ignores_signed_non_checkout_completion_events() -> None:
+    settings, job_id, dispatch_opener = _managed_checkout_pending_fixture(
+        stripe_session_id="cs_test_webhook_ignored"
+    )
+    raw_body, signature = _signed_stripe_webhook(
+        "whsec_redacted",
+        {"id": "evt_test_ignored", "type": "charge.succeeded", "data": {"object": {}}},
+    )
+
+    status, _headers, body = _call(
+        "/api/hosted/payments/stripe-webhook",
+        method="POST",
+        raw_body=raw_body,
+        raw_content_type="application/json",
+        headers={"Stripe-Signature": signature},
+        settings=settings,
+    )
+    payload = json.loads(body.decode("utf-8"))
+
+    assert status == "202 Accepted"
+    assert payload["payment_applied"] is False
+    assert payload["event_type"] == "charge.succeeded"
+    assert settings.hosted_jobs[job_id].payment_status == "checkout_pending"
+    assert len(dispatch_opener.requests) == 0
+
+
 def test_hosted_managed_lane_requires_payment_before_rollback_or_detonation_dispatch() -> None:
     state = create_hosted_state_token(
         STATE_SECRET,
@@ -5821,6 +5962,140 @@ def _paid_control_room_text(settings: HostedSettings, job_id: str) -> str:
     )
     assert status == "200 OK"
     return body.decode("utf-8")
+
+
+def _managed_checkout_pending_fixture(
+    *,
+    stripe_session_id: str,
+) -> tuple[HostedSettings, str, SequenceOpener]:
+    state = create_hosted_state_token(
+        STATE_SECRET,
+        return_path="/",
+        nonce=f"nonce-for-{stripe_session_id}",
+    )
+    github_opener = SequenceOpener(
+        [
+            {
+                "token": "ghs_fake_installation_token_for_test",
+                "expires_at": "2026-06-21T01:00:00Z",
+                "permissions": {"contents": "read"},
+                "repository_selection": "selected",
+            },
+            {"repositories": [{"full_name": "example/one", "private": True}]},
+            {"default_branch": "main"},
+            _github_zip(),
+        ]
+    )
+    dispatch_opener = SequenceOpener([DISPATCH_ACCEPTANCE])
+    stripe_opener = FormSequenceOpener(
+        [
+            {
+                "id": stripe_session_id,
+                "object": "checkout.session",
+                "url": f"https://checkout.stripe.com/c/pay/{stripe_session_id}",
+                "status": "open",
+                "payment_status": "unpaid",
+                "mode": "payment",
+            }
+        ]
+    )
+    settings = HostedSettings(
+        public_origin="https://fusekit.snowmanai.org",
+        github_app_id="12345",
+        github_app_slug="fusekit-launcher",
+        github_private_key_pem=_private_key_pem(),
+        state_secret=STATE_SECRET,
+        worker_secret=WORKER_SECRET,
+        worker_dispatch_url="https://worker.snowmanai.org/dispatch",
+        github_opener=github_opener,
+        worker_dispatch_opener=dispatch_opener,
+        stripe_opener=stripe_opener,
+        managed_runs_enabled=True,
+        stripe_secret_key="sk_live_redacted",
+        stripe_price_id="price_managed_run",
+        stripe_webhook_secret="whsec_redacted",
+        managed_run_price_label=MANAGED_PRICE_LABEL,
+        **_vercel_provenance_kwargs(),
+    )
+    status, _headers, body = _call(
+        "/github/control-room",
+        query_string=(
+            f"installation_id=42&repo=example/one&state={state}"
+            f"&lane={MANAGED_FUSEKIT_RUN_LANE}"
+        ),
+        settings=settings,
+    )
+    control_room = body.decode("utf-8")
+    job_id = _match(control_room, r"hosted-[A-Za-z0-9_-]+")
+    job_token = _job_token(control_room)
+    checkout_control = _control_for_payment_checkout(control_room)
+    _bind_stripe_checkout_creation_payload(
+        stripe_opener.payloads[0],
+        settings.hosted_jobs[job_id],
+    )
+
+    assert status == "200 OK"
+    status, _headers, _body = _call(
+        f"/api/hosted/jobs/{job_id}/payments/checkout",
+        method="POST",
+        query_string=f"job={job_token}",
+        form_body={"control": checkout_control},
+        settings=settings,
+    )
+
+    assert status == "200 OK"
+    assert settings.hosted_jobs[job_id].payment_status == "checkout_pending"
+    return settings, job_id, dispatch_opener
+
+
+def _stripe_checkout_completed_event(
+    *,
+    job: object,
+    stripe_session_id: str,
+) -> dict[str, object]:
+    assert hasattr(job, "job_id")
+    assert hasattr(job, "github_source")
+    assert hasattr(job, "worker_contract")
+    assert hasattr(job, "payment_price_id_hash")
+    assert hasattr(job, "payment_price_label")
+    return {
+        "id": "evt_test_checkout_completed",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": stripe_session_id,
+                "object": "checkout.session",
+                "status": "complete",
+                "payment_status": "paid",
+                "mode": "payment",
+                "client_reference_id": job.job_id,
+                "amount_total": 4900,
+                "currency": "usd",
+                "metadata": {
+                    "job_id": job.job_id,
+                    "lane": MANAGED_FUSEKIT_RUN_LANE,
+                    "github_source_hash": _payment_source_hash(job.github_source),
+                    "plan_fingerprint": job.worker_contract.plan_fingerprint,
+                    "stripe_price_id_hash": job.payment_price_id_hash,
+                    "price_label_hash": _payment_public_hash(job.payment_price_label),
+                },
+            },
+        },
+    }
+
+
+def _signed_stripe_webhook(
+    secret: str,
+    event: dict[str, object],
+) -> tuple[bytes, str]:
+    timestamp = int(time.time())
+    raw_body = json.dumps(event, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    signature = hmac.new(
+        secret.encode("utf-8"),
+        str(timestamp).encode("ascii") + b"." + raw_body,
+        hashlib.sha256,
+    ).hexdigest()
+    return raw_body, f"t={timestamp},v1={signature}"
 
 
 def _job_token(text: str) -> str:

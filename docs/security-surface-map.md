@@ -24,6 +24,15 @@ routes cannot appear without an explicit state-change and protection classificat
 | Unknown routes | `GET`/`POST`/`OPTIONS` | None. | Unknown GET returns `404` with zero-length body, the same no-store/CSP/frame/security headers as known routes, and no CORS allow headers. Unknown POST first passes the same control-room header, origin/fetch-site, action-token, and optional remote-token checks as state-changing POSTs, then returns the same zero-length `404`; attacker-origin or tokenless unknown POSTs fail before route handling. |
 | Any route | `OPTIONS` | None. | Returns `405` with security headers and no CORS allow headers, so browser preflights for custom-header POSTs fail closed. |
 
+## Hosted Launcher Routes
+
+The public hosted launcher in `fusekit.hosted.server` has one externally callable
+provider callback route for paid managed runs:
+
+| Route | Method | State | Protection |
+| --- | --- | --- | --- |
+| `/api/hosted/payments/stripe-webhook` | `POST` | State-changing only for pending Managed FuseKit jobs: a signed Stripe `checkout.session.completed` event can mark the stored job payment proof as paid. | Requires managed runs to be enabled and `FUSEKIT_STRIPE_WEBHOOK_SECRET` to have a valid `whsec_...` shape; reads the bounded raw request body and verifies Stripe's timestamped HMAC signature before JSON parsing; ignores signed non-Checkout-completion events with no payment mutation; rejects malformed, unsigned, stale, or unbound events; binds paid Checkout receipts to the pending job id, lane, GitHub source hash, plan fingerprint, Stripe Price hash, and public price-label hash; emits only redacted event/job/payment labels; never returns raw payloads, card data, payment-method ids, client secrets, Stripe API keys, webhook signing secrets, or provider credentials; never dispatches a managed worker from the webhook itself. |
+
 The route inventory uses these protection class labels:
 
 - `local-or-remote-token` for read-only routes that are local-only by default and

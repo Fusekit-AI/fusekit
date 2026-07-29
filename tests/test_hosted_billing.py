@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import urllib.parse
 
@@ -15,6 +16,7 @@ from fusekit.hosted.billing import (
     payment_required_receipt,
     retrieve_stripe_checkout_session,
     stripe_checkout_session_receipt,
+    verify_stripe_webhook_event,
 )
 
 
@@ -60,6 +62,51 @@ class StripeCheckoutOpener:
                     ),
                 },
             }
+        )
+
+
+def test_verify_stripe_webhook_event_accepts_signed_payload() -> None:
+    secret = "whsec_fixture"
+    timestamp = 1_725_000_000
+    payload = b'{"id":"evt_public","type":"checkout.session.completed"}'
+    signature = _stripe_signature(secret, timestamp, payload)
+
+    event = verify_stripe_webhook_event(
+        raw_body=payload,
+        signature_header=f"t={timestamp},v1={signature}",
+        webhook_secret=secret,
+        now=timestamp,
+    )
+
+    assert event == {"id": "evt_public", "type": "checkout.session.completed"}
+
+
+def test_verify_stripe_webhook_event_rejects_bad_signature() -> None:
+    secret = "whsec_fixture"
+    timestamp = 1_725_000_000
+    payload = b'{"id":"evt_public","type":"checkout.session.completed"}'
+
+    with pytest.raises(FuseKitError, match="stripe_webhook_signature_invalid"):
+        verify_stripe_webhook_event(
+            raw_body=payload,
+            signature_header=f"t={timestamp},v1={'0' * 64}",
+            webhook_secret=secret,
+            now=timestamp,
+        )
+
+
+def test_verify_stripe_webhook_event_rejects_stale_signature() -> None:
+    secret = "whsec_fixture"
+    timestamp = 1_725_000_000
+    payload = b'{"id":"evt_public","type":"checkout.session.completed"}'
+    signature = _stripe_signature(secret, timestamp, payload)
+
+    with pytest.raises(FuseKitError, match="stripe_webhook_signature_stale"):
+        verify_stripe_webhook_event(
+            raw_body=payload,
+            signature_header=f"t={timestamp},v1={signature}",
+            webhook_secret=secret,
+            now=timestamp + 301,
         )
 
 
@@ -856,3 +903,11 @@ def test_payment_required_receipt_rejects_secret_shaped_price_label() -> None:
 
 def _sha256_label(value: str) -> str:
     return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _stripe_signature(secret: str, timestamp: int, payload: bytes) -> str:
+    return hmac.new(
+        secret.encode("utf-8"),
+        str(timestamp).encode("ascii") + b"." + payload,
+        hashlib.sha256,
+    ).hexdigest()
