@@ -137,6 +137,8 @@ def test_oci_release_script_is_narrow_and_reviewable() -> None:
     assert "mv -Tf" in script
     assert 'git -c "safe.directory=${BEFORE_TARGET}"' in script
     assert '"${PYTHON_BIN}" -m venv "${RELEASE_DIR}/.venv"' in script
+    assert "pip install --no-cache-dir --upgrade pip" in script
+    assert 'pip install --no-cache-dir "${RELEASE_DIR}"' in script
     assert '"${INCOMING}/repo/.venv"' not in script
     assert "/etc/fusekit/hosted-provenance.env" in script
     assert "/etc/fusekit/hosted-secrets.env" in script

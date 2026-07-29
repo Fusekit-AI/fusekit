@@ -114,6 +114,26 @@ def _clean_evidence() -> dict[str, object]:
             "group": "root",
             "mode": "0600",
         },
+        "storage_footprint": {
+            "root_filesystem": {
+                "mount": "/",
+                "total_bytes": 48_000_000_000,
+                "used_bytes": 6_000_000_000,
+                "available_bytes": 42_000_000_000,
+                "used_percent": 13,
+            },
+            "release_store": {
+                "path": "/opt/fusekit/releases",
+                "exists": True,
+                "used_bytes": 2_200_000_000,
+                "release_count": 3,
+            },
+            "package_cache": {
+                "path": "/root/.cache/pip",
+                "exists": False,
+                "used_bytes": 0,
+            },
+        },
         "runtime_secret_verify": _runtime_secret_verify_report(),
         "managed_proof_preflight": _managed_proof_preflight_report(),
         "patch_posture": {
@@ -509,6 +529,35 @@ def test_oci_host_posture_blocks_unknown_nested_secret_metadata_fields() -> None
     assert shape_check["unexpected_fields"] == ["runtime_secret_file.raw_stat_output"]
 
 
+def test_oci_host_posture_blocks_unknown_nested_storage_fields() -> None:
+    evidence = _clean_evidence()
+    storage = evidence["storage_footprint"]
+    assert isinstance(storage, dict)
+    root = storage["root_filesystem"]
+    release_store = storage["release_store"]
+    package_cache = storage["package_cache"]
+    assert isinstance(root, dict)
+    assert isinstance(release_store, dict)
+    assert isinstance(package_cache, dict)
+    root["raw_df_output"] = "Filesystem 45G 5.5G 39G 13% /"
+    release_store["raw_du_output"] = "2.0G /opt/fusekit/releases"
+    package_cache["pip_debug_log"] = "Using cached package"
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["evidence.shape"]
+    shape_check = _check(report, "evidence.shape")
+    assert shape_check["failures"] == [
+        "oci_host_posture_evidence_has_unknown_fields"
+    ]
+    assert shape_check["unexpected_fields"] == [
+        "storage_footprint.package_cache.pip_debug_log",
+        "storage_footprint.release_store.raw_du_output",
+        "storage_footprint.root_filesystem.raw_df_output",
+    ]
+
+
 def test_oci_host_posture_redacts_secret_shaped_unexpected_field_names() -> None:
     evidence = _clean_evidence()
     evidence["sk_live_field_name_should_not_echo"] = "public"
@@ -889,6 +938,37 @@ def test_oci_host_posture_blocks_unknown_nested_release_receipt_fields() -> None
         "release_receipt.raw_systemctl_output",
         "release_receipt.release_retention.raw_du_output",
         "release_receipt.rollback.raw_symlink_log",
+    ]
+
+
+def test_oci_host_posture_blocks_unbounded_storage_footprint() -> None:
+    evidence = _clean_evidence()
+    storage = evidence["storage_footprint"]
+    assert isinstance(storage, dict)
+    root = storage["root_filesystem"]
+    release_store = storage["release_store"]
+    package_cache = storage["package_cache"]
+    assert isinstance(root, dict)
+    assert isinstance(release_store, dict)
+    assert isinstance(package_cache, dict)
+    root["used_percent"] = 96
+    root["available_bytes"] = 512_000_000
+    release_store["release_count"] = 8
+    release_store["used_bytes"] = 14 * 1024 * 1024 * 1024
+    package_cache["exists"] = True
+    package_cache["used_bytes"] = 900 * 1024 * 1024
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.storage_footprint"]
+    storage_check = _check(report, "host.storage_footprint")
+    assert storage_check["failures"] == [
+        "oci_host_storage_root_usage_too_high",
+        "oci_host_storage_root_available_too_low",
+        "oci_host_storage_release_count_exceeds_retention",
+        "oci_host_storage_release_store_too_large",
+        "oci_host_storage_package_cache_too_large",
     ]
 
 
@@ -1997,6 +2077,41 @@ def test_oci_host_posture_collector_builds_validator_ready_redacted_evidence(
                 0,
                 "root root 600 /etc/fusekit/hosted-secrets.env\n",
             )
+        if command == ("df", "-B1", "--output=size,used,avail,pcent,target", "/"):
+            return CommandResult(
+                command,
+                0,
+                "1B-blocks Used Available Use% Mounted on\n"
+                "48000000000 6000000000 42000000000 13% /\n",
+            )
+        if command == ("du", "-sb", "/opt/fusekit/releases"):
+            return CommandResult(command, 0, "2200000000\t/opt/fusekit/releases\n")
+        if command == (
+            "find",
+            "/opt/fusekit/releases",
+            "-mindepth",
+            "1",
+            "-maxdepth",
+            "1",
+            "-type",
+            "d",
+            "-printf",
+            "%f\n",
+        ):
+            return CommandResult(
+                command,
+                0,
+                "\n".join(
+                    [
+                        "23824ca147b45cbb03a40e10f2020e6945a1c10d",
+                        "a9f480f0499b7669c34e7d968e551653bec08963",
+                        "f37a12b4a171a0c38656d1009f67f8c530b54a15",
+                        ".incoming.not-a-release",
+                    ]
+                ),
+            )
+        if command == ("du", "-sb", "/root/.cache/pip"):
+            return CommandResult(command, 1, "", "No such file or directory\n")
         if command == ("apt-get", "-s", "upgrade"):
             return CommandResult(command, 0, "0 upgraded, 0 newly installed\n")
         if command[:2] == ("systemctl", "show"):
@@ -2103,6 +2218,26 @@ def test_oci_host_posture_collector_builds_validator_ready_redacted_evidence(
         "owner": "root",
         "group": "root",
         "mode": "0600",
+    }
+    assert evidence["storage_footprint"] == {
+        "root_filesystem": {
+            "mount": "/",
+            "total_bytes": 48_000_000_000,
+            "used_bytes": 6_000_000_000,
+            "available_bytes": 42_000_000_000,
+            "used_percent": 13,
+        },
+        "release_store": {
+            "path": "/opt/fusekit/releases",
+            "exists": True,
+            "used_bytes": 2_200_000_000,
+            "release_count": 3,
+        },
+        "package_cache": {
+            "path": "/root/.cache/pip",
+            "exists": False,
+            "used_bytes": 0,
+        },
     }
     systemd_units = evidence["systemd_units"]
     assert isinstance(systemd_units, dict)

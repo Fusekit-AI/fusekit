@@ -89,8 +89,8 @@ if [[ ! -d "${RELEASE_DIR}" ]]; then
   rmdir "${INCOMING}"
   INCOMING=""
   "${PYTHON_BIN}" -m venv "${RELEASE_DIR}/.venv"
-  "${RELEASE_DIR}/.venv/bin/python" -m pip install --upgrade pip
-  "${RELEASE_DIR}/.venv/bin/python" -m pip install "${RELEASE_DIR}"
+  "${RELEASE_DIR}/.venv/bin/python" -m pip install --no-cache-dir --upgrade pip
+  "${RELEASE_DIR}/.venv/bin/python" -m pip install --no-cache-dir "${RELEASE_DIR}"
   chown -R fusekit:fusekit "${RELEASE_DIR}"
 else
   ACTUAL_COMMIT="$(git -c "safe.directory=${RELEASE_DIR}" -C "${RELEASE_DIR}" rev-parse HEAD)"

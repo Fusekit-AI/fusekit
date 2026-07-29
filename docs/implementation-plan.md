@@ -832,6 +832,7 @@
   Hosted managed proof-token minting now also verifies the EnvironmentFile before parsing it and reads optional readiness reports with no-follow, regular-file, non-symlink-parent, 1 MiB JSON object guards, so unsafe local files cannot mint a supervised paid-run state token.
   Hosted OCI access and replacement planning now read local OCI inventory, plugin, hosted-verify, and runtime-secret report inputs with no-follow, regular-file, non-symlink-parent, 1 MiB JSON guards, so unsafe local proof files cannot shape redeploy, repair, or DNS-cutover plans.
   OCI hosted releases now enforce bounded retention after post-deploy health checks, keeping the active commit, rollback commit, and recent release window while writing redacted retention proof into the release receipt, so Python virtualenv release directories cannot grow until the boot volume fills again.
+  OCI hosted release installs now disable pip's package cache, and host posture now collects redacted storage-footprint proof for root free space, retained release count/bytes, and root pip-cache bytes with fail-closed thresholds, so the hosted launcher cannot remain posture-green while avoidable disk bloat threatens availability or cost efficiency.
 
 ## North Star Audit Remediation
 

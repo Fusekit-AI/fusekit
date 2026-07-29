@@ -54,10 +54,16 @@ OCI_HOST_POSTURE_WILDCARD_IPV6_BIND = ":" * 2
 OCI_HOST_POSTURE_SECRET_DIR = "/etc/fusekit"
 OCI_HOST_POSTURE_SECRET_FILE = "/etc/fusekit/hosted-secrets.env"
 OCI_HOST_POSTURE_ORIGIN = "https://fusekit.snowmanai.org"
+OCI_HOST_POSTURE_RELEASE_ROOT = "/opt/fusekit/releases"
+OCI_HOST_POSTURE_PIP_CACHE = "/root/.cache/pip"
 OCI_HOST_POSTURE_DEFAULT_CIS_SUMMARY = "/var/lib/fusekit/posture/cis-summary.json"
 OCI_HOST_POSTURE_DEFAULT_ROOTKIT_SUMMARY = "/var/lib/fusekit/posture/rootkit-summary.json"
 OCI_HOST_POSTURE_MAX_JSON_BYTES = 1_048_576
 OCI_HOST_POSTURE_OUTPUT_MODE = 0o600
+OCI_HOST_POSTURE_MAX_ROOT_USED_PERCENT = 85
+OCI_HOST_POSTURE_MIN_ROOT_AVAILABLE_BYTES = 5 * 1024 * 1024 * 1024
+OCI_HOST_POSTURE_MAX_RELEASE_STORE_BYTES = 12 * 1024 * 1024 * 1024
+OCI_HOST_POSTURE_MAX_PACKAGE_CACHE_BYTES = 256 * 1024 * 1024
 OCI_HOST_POSTURE_ALLOWED_EVIDENCE_KEYS = frozenset(
     {
         "schema_version",
@@ -68,6 +74,7 @@ OCI_HOST_POSTURE_ALLOWED_EVIDENCE_KEYS = frozenset(
         "ssh_ingress",
         "runtime_secret_dir",
         "runtime_secret_file",
+        "storage_footprint",
         "runtime_secret_verify",
         "managed_proof_preflight",
         "patch_posture",
@@ -128,6 +135,18 @@ OCI_HOST_POSTURE_PUBLIC_GIT_SHA_KEYS = frozenset(
     }
 )
 OCI_HOST_POSTURE_SECRET_METADATA_KEYS = frozenset({"path", "owner", "group", "mode"})
+OCI_HOST_POSTURE_STORAGE_KEYS = frozenset(
+    {"root_filesystem", "release_store", "package_cache"}
+)
+OCI_HOST_POSTURE_STORAGE_ROOT_KEYS = frozenset(
+    {"mount", "total_bytes", "used_bytes", "available_bytes", "used_percent"}
+)
+OCI_HOST_POSTURE_STORAGE_RELEASE_KEYS = frozenset(
+    {"path", "exists", "used_bytes", "release_count"}
+)
+OCI_HOST_POSTURE_STORAGE_PACKAGE_CACHE_KEYS = frozenset(
+    {"path", "exists", "used_bytes"}
+)
 OCI_HOST_POSTURE_RUNTIME_SECRET_VERIFY_KEYS = frozenset(
     {
         "schema_version",
@@ -366,6 +385,7 @@ def collect_oci_host_posture_evidence(
         "ssh_ingress": redact_public_text(ssh_ingress or os.getenv("FUSEKIT_SSH_INGRESS", "")),
         "runtime_secret_dir": _collect_runtime_secret_dir(runner),
         "runtime_secret_file": _collect_runtime_secret_file(runner),
+        "storage_footprint": _collect_storage_footprint(runner),
         "runtime_secret_verify": _sanitize_summary(runtime_secret_verify_report),
         "managed_proof_preflight": _sanitize_managed_proof_preflight(
             managed_proof_preflight_report
@@ -384,8 +404,8 @@ def collect_oci_host_posture_evidence(
             "mutates_host": False,
             "secret_boundary": (
                 "Collector records service names, ports, file metadata, systemd hardening, "
-                "scanner summaries, and hosted verifier status only. It does not read secret "
-                "file contents and does not request OCI credentials."
+                "storage footprint counts, scanner summaries, and hosted verifier status only. "
+                "It does not read secret file contents and does not request OCI credentials."
             ),
         },
     }
@@ -403,6 +423,7 @@ def evaluate_oci_host_posture(evidence: Mapping[str, object]) -> dict[str, objec
         _public_ports_check(evidence),
         _runtime_secret_dir_check(evidence),
         _runtime_secret_file_check(evidence),
+        _storage_footprint_check(evidence),
         _runtime_secret_verify_check(evidence),
         _managed_proof_preflight_check(evidence),
         _patch_check(evidence),
@@ -443,9 +464,9 @@ def evaluate_oci_host_posture(evidence: Mapping[str, object]) -> dict[str, objec
             "shape": _public_str(evidence.get("shape")),
             "secret_boundary": (
                 "Posture evidence must contain only file ownership/mode, service, port, "
-                "scanner, and hosted-verifier status. It must not contain OCI credentials, "
-                "GitHub App private keys, provider credentials, HMAC secrets, vault material, "
-                "or raw logs."
+                "bounded storage-footprint counts, scanner, and hosted-verifier status. It "
+                "must not contain OCI credentials, GitHub App private keys, provider "
+                "credentials, HMAC secrets, vault material, or raw logs."
             ),
         },
     }
@@ -780,6 +801,109 @@ def _collect_runtime_secret_file(
     }
 
 
+def _collect_storage_footprint(
+    runner: Callable[[Sequence[str]], CommandResult],
+) -> dict[str, object]:
+    return {
+        "root_filesystem": _collect_root_filesystem_usage(runner),
+        "release_store": _collect_directory_footprint(
+            runner,
+            OCI_HOST_POSTURE_RELEASE_ROOT,
+            count_release_dirs=True,
+        ),
+        "package_cache": _collect_directory_footprint(
+            runner,
+            OCI_HOST_POSTURE_PIP_CACHE,
+            count_release_dirs=False,
+        ),
+    }
+
+
+def _collect_root_filesystem_usage(
+    runner: Callable[[Sequence[str]], CommandResult],
+) -> dict[str, object]:
+    result = runner(["df", "-B1", "--output=size,used,avail,pcent,target", "/"])
+    if result.returncode != 0:
+        return {
+            "mount": "/",
+            "total_bytes": None,
+            "used_bytes": None,
+            "available_bytes": None,
+            "used_percent": None,
+        }
+    for line in result.stdout.splitlines()[1:]:
+        fields = line.split()
+        if len(fields) < 5:
+            continue
+        total = _parse_decimal_int(fields[0])
+        used = _parse_decimal_int(fields[1])
+        available = _parse_decimal_int(fields[2])
+        percent = _parse_decimal_int(fields[3].rstrip("%"))
+        mount = redact_public_text(fields[4])
+        return {
+            "mount": mount,
+            "total_bytes": total,
+            "used_bytes": used,
+            "available_bytes": available,
+            "used_percent": percent,
+        }
+    return {
+        "mount": "/",
+        "total_bytes": None,
+        "used_bytes": None,
+        "available_bytes": None,
+        "used_percent": None,
+    }
+
+
+def _collect_directory_footprint(
+    runner: Callable[[Sequence[str]], CommandResult],
+    path: str,
+    *,
+    count_release_dirs: bool,
+) -> dict[str, object]:
+    size_result = runner(["du", "-sb", path])
+    exists = size_result.returncode == 0
+    used_bytes = None
+    if exists:
+        first = size_result.stdout.strip().split(maxsplit=1)[0]
+        used_bytes = _parse_decimal_int(first)
+    payload: dict[str, object] = {
+        "path": path,
+        "exists": exists,
+        "used_bytes": used_bytes if exists else 0,
+    }
+    if count_release_dirs:
+        count_result = runner(
+            [
+                "find",
+                path,
+                "-mindepth",
+                "1",
+                "-maxdepth",
+                "1",
+                "-type",
+                "d",
+                "-printf",
+                "%f\n",
+            ]
+        )
+        payload["release_count"] = (
+            sum(
+                1
+                for line in count_result.stdout.splitlines()
+                if re.fullmatch(r"[0-9a-f]{40}", line.strip())
+            )
+            if count_result.returncode == 0
+            else None
+        )
+    return payload
+
+
+def _parse_decimal_int(value: str) -> int | None:
+    return int(value) if re.fullmatch(r"\d+", value.strip()) else None
+
+
 def _parse_stat_output(output: str) -> tuple[str, str, str]:
     fields = output.strip().split(maxsplit=3)
     if len(fields) < 3:
@@ -933,6 +1057,39 @@ def _evidence_shape_check(evidence: Mapping[str, object]) -> dict[str, object]:
             OCI_HOST_POSTURE_SECRET_METADATA_KEYS,
         )
     )
+    unexpected.extend(
+        _unexpected_nested_keys(
+            evidence,
+            "storage_footprint",
+            OCI_HOST_POSTURE_STORAGE_KEYS,
+        )
+    )
+    storage = evidence.get("storage_footprint")
+    if isinstance(storage, Mapping):
+        unexpected.extend(
+            _unexpected_nested_keys(
+                storage,
+                "root_filesystem",
+                OCI_HOST_POSTURE_STORAGE_ROOT_KEYS,
+                prefix="storage_footprint.root_filesystem",
+            )
+        )
+        unexpected.extend(
+            _unexpected_nested_keys(
+                storage,
+                "release_store",
+                OCI_HOST_POSTURE_STORAGE_RELEASE_KEYS,
+                prefix="storage_footprint.release_store",
+            )
+        )
+        unexpected.extend(
+            _unexpected_nested_keys(
+                storage,
+                "package_cache",
+                OCI_HOST_POSTURE_STORAGE_PACKAGE_CACHE_KEYS,
+                prefix="storage_footprint.package_cache",
+            )
+        )
     unexpected.extend(
         _unexpected_nested_keys(
             evidence,
@@ -1325,6 +1482,73 @@ def _runtime_secret_file_check(evidence: Mapping[str, object]) -> dict[str, obje
             "Move runtime secrets to /etc/fusekit/hosted-secrets.env owned by root:root mode 0600.",
         )
     return _ok("host.runtime_secret_file")
+
+
+def _storage_footprint_check(evidence: Mapping[str, object]) -> dict[str, object]:
+    footprint = _mapping(evidence.get("storage_footprint"))
+    root = _mapping(footprint.get("root_filesystem"))
+    release_store = _mapping(footprint.get("release_store"))
+    package_cache = _mapping(footprint.get("package_cache"))
+    root_used_percent = _literal_non_negative_int(root.get("used_percent"))
+    root_available = _literal_non_negative_int(root.get("available_bytes"))
+    root_total = _literal_non_negative_int(root.get("total_bytes"))
+    root_used = _literal_non_negative_int(root.get("used_bytes"))
+    release_used = _literal_non_negative_int(release_store.get("used_bytes"))
+    release_count = _literal_non_negative_int(release_store.get("release_count"))
+    package_cache_used = _literal_non_negative_int(package_cache.get("used_bytes"))
+    retention = _mapping(_mapping(evidence.get("release_receipt")).get("release_retention"))
+    minimum_retained = _literal_non_negative_int(retention.get("minimum_retained_releases"))
+    allowed_release_count = (minimum_retained if minimum_retained is not None else 3) + 2
+    failures: list[str] = []
+    if (
+        root.get("mount") != "/"
+        or root_total is None
+        or root_used is None
+        or root_available is None
+        or root_used_percent is None
+        or root_total <= 0
+        or root_used > root_total
+        or root_available > root_total
+    ):
+        failures.append("oci_host_storage_root_usage_missing")
+    elif root_used_percent > OCI_HOST_POSTURE_MAX_ROOT_USED_PERCENT:
+        failures.append("oci_host_storage_root_usage_too_high")
+    if root_available is None or root_available < OCI_HOST_POSTURE_MIN_ROOT_AVAILABLE_BYTES:
+        failures.append("oci_host_storage_root_available_too_low")
+    if (
+        release_store.get("path") != OCI_HOST_POSTURE_RELEASE_ROOT
+        or release_store.get("exists") is not True
+    ):
+        failures.append("oci_host_storage_release_store_missing")
+    if release_count is None or release_count < 1:
+        failures.append("oci_host_storage_release_count_invalid")
+    elif release_count > allowed_release_count:
+        failures.append("oci_host_storage_release_count_exceeds_retention")
+    if release_used is None or release_used > OCI_HOST_POSTURE_MAX_RELEASE_STORE_BYTES:
+        failures.append("oci_host_storage_release_store_too_large")
+    if package_cache.get("path") != OCI_HOST_POSTURE_PIP_CACHE:
+        failures.append("oci_host_storage_package_cache_path_mismatch")
+    if package_cache.get("exists") is True and (
+        package_cache_used is None
+        or package_cache_used > OCI_HOST_POSTURE_MAX_PACKAGE_CACHE_BYTES
+    ):
+        failures.append("oci_host_storage_package_cache_too_large")
+    if failures:
+        return _fail(
+            "host.storage_footprint",
+            failures,
+            "Clean package caches or old releases, then rerun the read-only posture collector.",
+            root_used_percent=root_used_percent,
+            root_available_bytes=root_available,
+            release_count=release_count,
+            release_store_bytes=release_used,
+            package_cache_bytes=package_cache_used,
+        )
+    return _ok(
+        "host.storage_footprint",
+        root_used_percent=root_used_percent,
+        release_count=release_count,
+    )
 
 
 def _runtime_secret_verify_check(evidence: Mapping[str, object]) -> dict[str, object]:
