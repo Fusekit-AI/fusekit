@@ -933,6 +933,11 @@ def test_hosted_byo_proof_bundle_verifier_rejects_managed_lane_without_artifact_
     assert report["lane"] == MANAGED_FUSEKIT_RUN_LANE
     assert report["job_binding"] == {}
     assert report["artifact_summary"]["present_required_count"] == 0
+    assert report["artifact_summary"]["total_artifact_bytes"] == 0
+    assert report["artifact_summary"]["max_artifact_bytes"] == HOSTED_BYO_MAX_ARTIFACT_BYTES
+    assert report["artifact_summary"]["max_total_artifact_bytes"] == (
+        HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES
+    )
     assert report["artifact_summary"]["artifacts"] == []
     assert all(value is False for value in report["completion_evidence"].values())
     assert "source-byo" not in serialized
@@ -2053,6 +2058,15 @@ def test_byo_worker_proof_requires_returned_proof_bundle_before_completion() -> 
     assert ".fusekit/run_record.json" in receipt["byo_oci_proof_bundle"][
         "artifact_summary"
     ]["missing"]
+    assert receipt["byo_oci_proof_bundle"]["artifact_summary"][
+        "total_artifact_bytes"
+    ] == 0
+    assert receipt["byo_oci_proof_bundle"]["artifact_summary"][
+        "max_artifact_bytes"
+    ] == HOSTED_BYO_MAX_ARTIFACT_BYTES
+    assert receipt["byo_oci_proof_bundle"]["artifact_summary"][
+        "max_total_artifact_bytes"
+    ] == HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES
     assert "ghs_" not in serialized
     assert "PRIVATE KEY" not in serialized
 
