@@ -102,6 +102,7 @@ def _byo_proof_bundle_from_bootstrap(bootstrap: dict[str, object]) -> dict[str, 
                 "sha256": "sha256:" + ("a" * 64),
                 "size_bytes": 1024,
                 "redacted": True,
+                "artifact_type": "regular_file",
             }
             for artifact in artifacts
             if isinstance(artifact, dict)
@@ -434,27 +435,36 @@ def test_hosted_byo_bootstrap_publishes_preflight_and_reversibility_contract() -
     ]
     manifest_artifacts = bootstrap["proof_manifest"]["required_remote_artifacts"]
     assert {
-        (artifact["path"], artifact["label"], artifact["secret_boundary"])
+        (
+            artifact["path"],
+            artifact["label"],
+            artifact["artifact_type"],
+            artifact["secret_boundary"],
+        )
         for artifact in manifest_artifacts
     } >= {
         (
             ".fusekit/run_record.json",
             "central Run Record",
+            "regular_file",
             "redacted_public_artifact_only",
         ),
         (
             ".fusekit/rollback_plan.json",
             "rollback metadata",
+            "regular_file",
             "redacted_public_artifact_only",
         ),
         (
             ".fusekit/workspace_detonation.json",
             "workspace detonation receipt",
+            "regular_file",
             "redacted_public_artifact_only",
         ),
         (
             ".fusekit/acceptance_report.json",
             "live acceptance report",
+            "regular_file",
             "redacted_public_artifact_only",
         ),
     }
@@ -479,6 +489,7 @@ def test_hosted_byo_bootstrap_publishes_preflight_and_reversibility_contract() -
             "plan_fingerprint",
         ],
         "requires_redacted_artifacts": True,
+        "requires_regular_file_artifacts": True,
         "requires_completion_evidence": [
             "live_url",
             "provider_verifiers",
@@ -871,6 +882,10 @@ def test_hosted_byo_proof_bundle_verifier_accepts_complete_redacted_inventory() 
     assert report["artifact_summary"]["present_required_count"] == report[
         "artifact_summary"
     ]["required_count"]
+    assert all(
+        artifact["artifact_type"] == "regular_file"
+        for artifact in report["artifact_summary"]["artifacts"]
+    )
     assert all(report["completion_evidence"].values())
     assert "ghs_" not in serialized
     assert "sk_live" not in serialized
@@ -1395,6 +1410,50 @@ def test_hosted_byo_proof_bundle_verifier_blocks_empty_required_artifacts() -> N
     assert artifact_summary["present_required_count"] == (
         artifact_summary["required_count"] - 1
     )
+
+
+@pytest.mark.parametrize("artifact_type", (None, "directory", "symlink"))
+def test_hosted_byo_proof_bundle_verifier_requires_regular_file_artifacts(
+    artifact_type: object,
+) -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+    artifacts = bundle["artifacts"]
+    assert isinstance(artifacts, list)
+    artifact = next(
+        item
+        for item in artifacts
+        if isinstance(item, dict) and item["path"] == ".fusekit/run_record.json"
+    )
+    if artifact_type is None:
+        artifact.pop("artifact_type")
+    else:
+        artifact["artifact_type"] = artifact_type
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+    artifact_summary = report["artifact_summary"]
+    assert isinstance(artifact_summary, dict)
+    public_artifacts = artifact_summary["artifacts"]
+    assert isinstance(public_artifacts, list)
+    public_artifact = next(
+        item
+        for item in public_artifacts
+        if isinstance(item, dict) and item["path"] == ".fusekit/run_record.json"
+    )
+
+    assert report["ready"] is False
+    assert "artifact_type_invalid:.fusekit/run_record.json" in report["blockers"]
+    assert artifact_summary["invalid_required"] == [".fusekit/run_record.json"]
+    assert artifact_summary["present_required_count"] == (
+        artifact_summary["required_count"] - 1
+    )
+    assert public_artifact["artifact_type"] == ""
 
 
 def test_hosted_byo_proof_bundle_verifier_rejects_boolean_artifact_size() -> None:

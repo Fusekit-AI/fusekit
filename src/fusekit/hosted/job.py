@@ -625,6 +625,7 @@ def hosted_byo_oci_bootstrap(job: HostedLaunchJob) -> dict[str, object]:
                     "plan_fingerprint",
                 ],
                 "requires_redacted_artifacts": True,
+                "requires_regular_file_artifacts": True,
                 "requires_completion_evidence": list(HOSTED_WORKER_PROOF_KEYS),
             },
         },
@@ -899,6 +900,7 @@ def _byo_oci_proof_manifest(job: HostedLaunchJob) -> dict[str, object]:
                     "redacted FuseKit survivor artifact",
                 ),
                 "required": True,
+                "artifact_type": "regular_file",
                 "secret_boundary": "redacted_public_artifact_only",
             }
             for artifact in job.worker_contract.required_artifacts
@@ -1193,7 +1195,14 @@ def _public_byo_artifact_inventory(
         if not isinstance(row, dict):
             blockers.append(f"artifact_row_invalid:{index}")
             continue
-        allowed = {"path", "label", "sha256", "size_bytes", "redacted"}
+        allowed = {
+            "path",
+            "label",
+            "sha256",
+            "size_bytes",
+            "redacted",
+            "artifact_type",
+        }
         unexpected = sorted(
             _public_byo_sidecar_field_name(key) for key in row if key not in allowed
         )
@@ -1216,6 +1225,10 @@ def _public_byo_artifact_inventory(
         if isinstance(size_bytes, bool) or not isinstance(size_bytes, int) or size_bytes < 0:
             blockers.append(f"artifact_size_invalid:{path}")
             size_bytes = 0
+        artifact_type = row.get("artifact_type")
+        if artifact_type != "regular_file":
+            blockers.append(f"artifact_type_invalid:{path}")
+            artifact_type = ""
         if contains_durable_secret_text(label) or _contains_byo_private_marker(label):
             blockers.append(f"artifact_label_unsafe:{path}")
             label = ""
@@ -1229,6 +1242,7 @@ def _public_byo_artifact_inventory(
                 "sha256": sha256,
                 "size_bytes": size_bytes,
                 "redacted": row.get("redacted") is True,
+                "artifact_type": artifact_type,
             }
         )
     return artifacts
@@ -1315,6 +1329,7 @@ def _invalid_required_artifacts(
         "artifact_label_unsafe:",
         "artifact_sha256_unsafe:",
         "artifact_size_invalid:",
+        "artifact_type_invalid:",
         "duplicate_artifact:",
     )
     invalid_paths: set[str] = set()
