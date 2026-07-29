@@ -159,7 +159,16 @@ OCI_HOST_POSTURE_PATCH_POSTURE_KEYS = frozenset(
     {"pending_security_updates", "reboot_required"}
 )
 OCI_HOST_POSTURE_DNS_PROPAGATION_KEYS = frozenset(
-    {"public_origin", "origin", "domain", "hostname", "status", "propagated", "ready"}
+    {
+        "public_origin",
+        "origin",
+        "domain",
+        "hostname",
+        "status",
+        "propagated",
+        "ready",
+        "addresses",
+    }
 )
 OCI_HOST_POSTURE_ROLLBACK_METADATA_KEYS = frozenset({"rollback", "actions"})
 OCI_HOST_POSTURE_ROLLBACK_ACTION_KEYS = frozenset({"action", "status", "target"})
@@ -1493,14 +1502,32 @@ def _dns_propagation_check(evidence: Mapping[str, object]) -> dict[str, object]:
     status = _public_str(report.get("status")).lower()
     propagated = report.get("propagated") is True or report.get("ready") is True
     target_matches = origin == OCI_HOST_POSTURE_ORIGIN and domain == "fusekit.snowmanai.org"
-    if not target_matches or not propagated or status not in {"ok", "pass", "propagated"}:
+    addresses = _ip_address_list(report.get("addresses"))
+    verifier_addresses = _hosted_verify_dns_addresses(
+        _mapping(evidence.get("hosted_verify")),
+        "hosted.dns",
+    )
+    addresses_match = bool(addresses) and (
+        not verifier_addresses or addresses == verifier_addresses
+    )
+    if (
+        not target_matches
+        or not propagated
+        or status not in {"ok", "pass", "propagated"}
+        or not addresses_match
+    ):
         return _fail(
             "host.dns_propagation",
             "oci_host_dns_propagation_proof_missing_or_failed",
-            "Attach redacted DNS propagation proof for fusekit.snowmanai.org before "
-            "publishing OCI host posture.",
+            "Attach redacted DNS propagation proof for fusekit.snowmanai.org with "
+            "resolver addresses matching the hosted verifier before publishing OCI "
+            "host posture.",
         )
-    return _ok("host.dns_propagation", domain=domain or "fusekit.snowmanai.org")
+    return _ok(
+        "host.dns_propagation",
+        domain=domain or "fusekit.snowmanai.org",
+        addresses=addresses,
+    )
 
 
 def _release_receipt_check(evidence: Mapping[str, object]) -> dict[str, object]:
@@ -1657,6 +1684,16 @@ def _hosted_verify_check_ids(report: Mapping[str, object]) -> set[str]:
     }
 
 
+def _hosted_verify_dns_addresses(
+    report: Mapping[str, object],
+    check_id: str,
+) -> list[str]:
+    for check in _mapping_list(report.get("checks")):
+        if _public_str(check.get("id")) == check_id:
+            return _ip_address_list(check.get("addresses"))
+    return []
+
+
 def _duplicate_hosted_verify_check_ids(report: Mapping[str, object]) -> list[str]:
     seen: set[str] = set()
     duplicates: set[str] = set()
@@ -1734,6 +1771,18 @@ def _port_list(value: object) -> list[int]:
         if 0 < port <= 65535 and port not in ports:
             ports.append(port)
     return sorted(ports)
+
+
+def _ip_address_list(value: object) -> list[str]:
+    addresses: set[str] = set()
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return []
+    for item in value:
+        try:
+            addresses.add(str(ip_address(str(item).strip())))
+        except ValueError:
+            continue
+    return sorted(addresses)
 
 
 def _non_negative_int(value: object) -> int | None:

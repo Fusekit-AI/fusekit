@@ -314,6 +314,7 @@ def _clean_evidence() -> dict[str, object]:
             "domain": "fusekit.snowmanai.org",
             "status": "propagated",
             "propagated": True,
+            "addresses": ["203.0.113.10"],
         },
         "release_receipt": {
             "schema_version": "fusekit.oci-hosted-release-receipt.v1",
@@ -964,6 +965,26 @@ def test_oci_host_posture_blocks_status_only_dns_propagation_proof() -> None:
         "public_origin": "https://fusekit.snowmanai.org",
         "domain": "fusekit.snowmanai.org",
         "status": "ok",
+    }
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.dns_propagation"]
+    dns_check = _check(report, "host.dns_propagation")
+    assert dns_check["failures"] == [
+        "oci_host_dns_propagation_proof_missing_or_failed"
+    ]
+
+
+def test_oci_host_posture_blocks_dns_address_mismatch() -> None:
+    evidence = _clean_evidence()
+    evidence["dns_propagation"] = {
+        "public_origin": "https://fusekit.snowmanai.org",
+        "domain": "fusekit.snowmanai.org",
+        "status": "propagated",
+        "propagated": True,
+        "addresses": ["203.0.113.44"],
     }
 
     report = evaluate_oci_host_posture(evidence)
@@ -1793,6 +1814,7 @@ def test_oci_host_posture_collector_builds_validator_ready_redacted_evidence(
             "domain": "fusekit.snowmanai.org",
             "status": "ok",
             "propagated": True,
+            "addresses": ["203.0.113.10"],
         },
         rollback_metadata={
             "actions": [
@@ -1876,6 +1898,7 @@ def test_oci_host_posture_collector_builds_validator_ready_redacted_evidence(
         "domain": "fusekit.snowmanai.org",
         "status": "ok",
         "propagated": True,
+        "addresses": ["203.0.113.10"],
     }
     assert evidence["rollback_metadata"] == {
         "actions": [
