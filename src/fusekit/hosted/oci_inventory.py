@@ -657,12 +657,12 @@ def _model_value(value: object, attr: str) -> object:
 
 
 def _redact_ocid(value: object) -> str:
-    text = _public_str(value)
+    text = _raw_str(value)
     if not text.startswith("ocid1."):
         return ""
     parts = text.split(".")
     resource = parts[1] if len(parts) > 1 else "resource"
-    suffix = text[-8:] if len(text) >= 8 else "redacted"
+    suffix = re.sub(r"[^A-Za-z0-9_-]", "", text)[-8:] or "redacted"
     return f"ocid1.{resource}.<redacted:{suffix}>"
 
 

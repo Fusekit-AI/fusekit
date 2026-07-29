@@ -164,6 +164,8 @@ def test_hosted_oci_access_plan_blocks_stale_commit_and_missing_access() -> None
     }
     assert INSTANCE_ID not in serialized
     assert "ocid1.instance.<redacted:" in serialized
+    assert "ocid1.instance.<redacted:vhpsxojq>" in serialized
+    assert "<redacted:edacted]" not in serialized
     assert not contains_durable_secret_text(serialized)
 
 

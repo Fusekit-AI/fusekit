@@ -128,6 +128,8 @@ def test_hosted_oci_inventory_builds_redacted_access_plan() -> None:
     assert INSTANCE_ID not in serialized
     assert VNIC_ID not in serialized
     assert "ocid1.instance.<redacted:" in serialized
+    assert "ocid1.instance.<redacted:vhpsxojq>" in serialized
+    assert "<redacted:edacted]" not in serialized
     assert "should-not-emit" not in serialized
     assert "fingerprint" not in serialized.lower()
     assert not contains_durable_secret_text(serialized)

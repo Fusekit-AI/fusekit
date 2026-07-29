@@ -519,12 +519,12 @@ def _normalized_ssh_probe_status(value: str) -> str:
 
 
 def _redact_ocid(value: object) -> str:
-    text = _public_str(value)
+    text = str(value or "").strip()
     if not text.startswith("ocid1."):
         return ""
     parts = text.split(".")
     resource = parts[1] if len(parts) > 1 else "resource"
-    suffix = text[-8:] if len(text) >= 8 else "redacted"
+    suffix = re.sub(r"[^A-Za-z0-9_-]", "", text)[-8:] or "redacted"
     return f"ocid1.{resource}.<redacted:{suffix}>"
 
 
