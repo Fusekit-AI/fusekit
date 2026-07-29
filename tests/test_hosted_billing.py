@@ -521,6 +521,32 @@ def test_create_stripe_checkout_session_rejects_bad_return_origin_before_network
     assert opener.requests == []
 
 
+def test_create_stripe_checkout_session_rejects_malformed_price_id_before_network() -> None:
+    opener = StripeCheckoutOpener()
+    config = HostedPaymentConfig(
+        enabled=True,
+        stripe_secret_key="sk_live_secret_value",
+        stripe_price_id="price_bad/url",
+        price_label="Launch validation: $1.00 FuseKit managed run",
+        public_origin="https://fusekit.snowmanai.org",
+        opener=opener,
+    )
+
+    with pytest.raises(FuseKitError, match="Stripe price id is not configured"):
+        create_stripe_checkout_session(
+            config,
+            job_id="hosted-job",
+            payment_return_token="signed_public.return",
+            payment_cancel_token="signed_public.cancel",
+            lane="managed-fusekit-run",
+            github_source="https://github.com/Fusekit-AI/fusekit",
+            plan_fingerprint=_sha256_label("visible-plan"),
+        )
+
+    assert config.public_dict()["price_configured"] is False
+    assert opener.requests == []
+
+
 def test_create_stripe_checkout_session_uses_purpose_limited_payment_return_tokens() -> None:
     opener = StripeCheckoutOpener()
 

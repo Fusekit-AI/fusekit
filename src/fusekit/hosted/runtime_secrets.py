@@ -14,7 +14,11 @@ from pathlib import Path
 from typing import cast
 
 from fusekit.errors import FuseKitError
-from fusekit.hosted.billing import _stripe_account_mode, _valid_price_label
+from fusekit.hosted.billing import (
+    _stripe_account_mode,
+    _valid_price_label,
+    _valid_stripe_price_id,
+)
 from fusekit.hosted.server import HOSTED_CANONICAL_ORIGIN, REQUIRED_HOSTED_ENV
 from fusekit.security import (
     contains_durable_secret_text,
@@ -508,7 +512,7 @@ def _stripe_runtime_status(env: Mapping[str, str]) -> dict[str, object]:
     blockers: list[str] = []
     if secret_key and account_mode != "live":
         blockers.append("stripe_secret_key_must_be_live")
-    if price_id and not price_id.startswith("price_"):
+    if price_id and not _valid_stripe_price_id(price_id):
         blockers.append("stripe_price_id_invalid")
     if label and not _valid_price_label(label):
         blockers.append("managed_run_price_label_invalid")
@@ -516,7 +520,7 @@ def _stripe_runtime_status(env: Mapping[str, str]) -> dict[str, object]:
         blockers.append("managed_runs_must_stay_disabled_until_checkout_proof")
     ready_for_staging = bool(
         account_mode == "live"
-        and price_id.startswith("price_")
+        and _valid_stripe_price_id(price_id)
         and label
         and _valid_price_label(label)
         and "managed_runs_must_stay_disabled_until_checkout_proof" not in blockers
@@ -531,7 +535,9 @@ def _stripe_runtime_status(env: Mapping[str, str]) -> dict[str, object]:
             },
             "FUSEKIT_STRIPE_PRICE_ID": {
                 "configured": bool(price_id),
-                "public_id": redact_public_text(price_id) if price_id.startswith("price_") else "",
+                "public_id": redact_public_text(price_id)
+                if _valid_stripe_price_id(price_id)
+                else "",
             },
             "FUSEKIT_MANAGED_RUN_PRICE_LABEL": {
                 "configured": bool(label),

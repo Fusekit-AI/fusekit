@@ -112,6 +112,20 @@ def test_runtime_secret_plan_blocks_missing_required_values_and_managed_enabled(
     assert "managed_runs_must_stay_disabled_until_checkout_proof" in plan["blockers"]
 
 
+def test_runtime_secret_plan_blocks_malformed_stripe_price_id() -> None:
+    plan = build_hosted_runtime_secret_plan(
+        env=_env(FUSEKIT_STRIPE_PRICE_ID="price_bad/url")
+    )
+
+    assert plan["ready_to_write_secret_file"] is False
+    assert plan["ready_for_managed_payment_staging"] is False
+    assert "stripe_price_id_invalid" in plan["blockers"]
+    assert plan["stripe_runtime_env"]["FUSEKIT_STRIPE_PRICE_ID"] == {
+        "configured": True,
+        "public_id": "",
+    }
+
+
 def test_runtime_secret_plan_cli_reads_env_json(tmp_path, capfd) -> None:
     env_path = tmp_path / "env.json"
     env_path.write_text(json.dumps(_env()), encoding="utf-8")
@@ -222,6 +236,35 @@ def test_runtime_secret_verifier_blocks_unexpected_keys_without_values(
     assert report["key_inventory"]["unexpected_keys"] == ["OPENAI_API_KEY"]
     assert "sk-live-unexpected-secret" not in serialized
     assert not contains_durable_secret_text(serialized)
+
+
+def test_runtime_secret_verifier_blocks_malformed_stripe_price_id(
+    tmp_path,
+) -> None:
+    output_path = tmp_path / "hosted-secrets.env"
+    install_hosted_runtime_secret_file(
+        env=_env(),
+        output_path=str(output_path),
+        execute=True,
+    )
+    text = output_path.read_text(encoding="utf-8")
+    output_path.write_text(
+        text.replace(
+            "FUSEKIT_STRIPE_PRICE_ID='price_1ToydUPZlsTa6iL323anyggA'",
+            "FUSEKIT_STRIPE_PRICE_ID='price_bad/url'",
+        ),
+        encoding="utf-8",
+    )
+
+    report = verify_hosted_runtime_secret_file(path=str(output_path))
+
+    assert report["ready"] is False
+    assert report["ready_for_managed_payment_staging"] is False
+    assert "stripe_price_id_invalid" in report["blockers"]
+    assert report["stripe_runtime_env"]["FUSEKIT_STRIPE_PRICE_ID"] == {
+        "configured": True,
+        "public_id": "",
+    }
 
 
 def test_runtime_secret_verifier_redacts_secret_shaped_unexpected_key_names(

@@ -15,6 +15,7 @@ from ipaddress import ip_address
 from pathlib import Path
 
 from fusekit.errors import FuseKitError
+from fusekit.hosted.billing import _valid_stripe_price_id
 from fusekit.hosted.runtime_secrets import (
     HOSTED_RUNTIME_REQUIRED_FILE_ENV,
     HOSTED_RUNTIME_SECRET_VERIFY_SCHEMA_VERSION,
@@ -1818,7 +1819,7 @@ def _stripe_runtime_env_ready(value: Mapping[str, object]) -> bool:
         secret_key.get("configured") is True
         and secret_key.get("account_mode") == "live"
         and price_id.get("configured") is True
-        and _public_str(price_id.get("public_id")).startswith("price_")
+        and _valid_stripe_price_id(_public_str(price_id.get("public_id")))
         and price_label.get("configured") is True
         and bool(_public_str(price_label.get("public_label")))
         and managed_runs.get("configured") is True

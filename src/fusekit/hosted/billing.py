@@ -98,7 +98,7 @@ class HostedPaymentConfig:
         live_or_allowed_test_mode = live_mode_configured or (
             account_mode == "test" and self.test_mode_allowed
         )
-        price_configured = self.stripe_price_id.startswith("price_")
+        price_configured = _valid_stripe_price_id(self.stripe_price_id)
         price_label_configured = _valid_price_label(self.price_label)
         ready = (
             self.enabled
@@ -382,7 +382,7 @@ def _require_stripe_config(config: HostedPaymentConfig) -> None:
     test_key_allowed = config.test_mode_allowed and config.stripe_secret_key.startswith("sk_test_")
     if not config.stripe_secret_key.startswith("sk_live_") and not test_key_allowed:
         raise FuseKitError("Managed run billing requires a live Stripe secret key.")
-    if not config.stripe_price_id or not config.stripe_price_id.startswith("price_"):
+    if not _valid_stripe_price_id(config.stripe_price_id):
         raise FuseKitError("Stripe price id is not configured.")
     if not _valid_price_label(config.price_label):
         raise FuseKitError("Managed run public price label is not configured.")
@@ -450,6 +450,16 @@ def _payment_return_url(
 def _valid_stripe_checkout_session_id(value: str) -> bool:
     return (
         value.startswith("cs_")
+        and not contains_durable_secret_text(value)
+        and not _contains_private_marker(value)
+        and all(ch.isalnum() or ch == "_" for ch in value)
+    )
+
+
+def _valid_stripe_price_id(value: str) -> bool:
+    return (
+        value.startswith("price_")
+        and len(value) <= 160
         and not contains_durable_secret_text(value)
         and not _contains_private_marker(value)
         and all(ch.isalnum() or ch == "_" for ch in value)

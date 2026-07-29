@@ -584,6 +584,26 @@ def test_oci_host_posture_blocks_runtime_secret_stripe_env_drift() -> None:
     ]
 
 
+def test_oci_host_posture_blocks_malformed_runtime_secret_price_id() -> None:
+    evidence = _clean_evidence()
+    verify_report = evidence["runtime_secret_verify"]
+    assert isinstance(verify_report, dict)
+    stripe_runtime_env = verify_report["stripe_runtime_env"]
+    assert isinstance(stripe_runtime_env, dict)
+    price_id = stripe_runtime_env["FUSEKIT_STRIPE_PRICE_ID"]
+    assert isinstance(price_id, dict)
+    price_id["public_id"] = "price_bad/url"
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.runtime_secret_verify"]
+    verify_check = _check(report, "host.runtime_secret_verify")
+    assert verify_check["failures"] == [
+        "oci_host_runtime_secret_stripe_env_mismatch"
+    ]
+
+
 def test_oci_host_posture_blocks_runtime_secret_nested_sidecars() -> None:
     evidence = _clean_evidence()
     verify_report = evidence["runtime_secret_verify"]
