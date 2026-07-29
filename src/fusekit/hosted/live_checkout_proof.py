@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import stat
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -31,6 +33,7 @@ HOSTED_MANAGED_LIVE_CHECKOUT_PROOF_INPUT_SCHEMA_VERSION = (
 HOSTED_MANAGED_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-stripe-webhook.v1"
 HOSTED_JOB_ID_PATTERN = re.compile(r"\Ahosted-[A-Za-z0-9_-]{8,160}\Z")
 DEFAULT_HOSTED_JOB_STORE_DIR = "/var/lib/fusekit/hosted-jobs"
+HOSTED_LIVE_CHECKOUT_PROOF_MAX_JSON_BYTES = 1_048_576
 
 
 def build_hosted_managed_live_checkout_proof(
@@ -267,8 +270,12 @@ def _mapping(value: object) -> Mapping[str, Any]:
 
 
 def _read_json(path: str) -> Mapping[str, Any]:
+    candidate = Path(path)
+    if candidate.is_symlink():
+        raise FuseKitError("live_checkout_proof_input_symlink")
+    _reject_symlinked_parents(candidate)
     try:
-        value = json.loads(Path(path).read_text(encoding="utf-8"))
+        value = _read_json_no_follow(candidate)
     except OSError as exc:
         raise FuseKitError("live_checkout_proof_input_unreadable") from exc
     except json.JSONDecodeError as exc:
@@ -276,6 +283,31 @@ def _read_json(path: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise FuseKitError("live_checkout_proof_input_must_be_object")
     return value
+
+
+def _reject_symlinked_parents(candidate: Path) -> None:
+    for parent in candidate.parents:
+        if parent == Path("."):
+            continue
+        if parent.is_symlink():
+            raise FuseKitError("live_checkout_proof_input_parent_symlink")
+
+
+def _read_json_no_follow(candidate: Path) -> object:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    file_descriptor = os.open(candidate, flags)
+    try:
+        file_status = os.fstat(file_descriptor)
+        if not stat.S_ISREG(file_status.st_mode):
+            raise FuseKitError("live_checkout_proof_input_not_file")
+        if file_status.st_size > HOSTED_LIVE_CHECKOUT_PROOF_MAX_JSON_BYTES:
+            raise FuseKitError("live_checkout_proof_input_too_large")
+        with os.fdopen(file_descriptor, "r", encoding="utf-8") as handle:
+            file_descriptor = -1
+            return json.load(handle)
+    finally:
+        if file_descriptor >= 0:
+            os.close(file_descriptor)
 
 
 def _input_paths(

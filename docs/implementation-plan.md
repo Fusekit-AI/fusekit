@@ -824,6 +824,7 @@
   Hosted worker dispatch and worker-client labels now require bounded public identifier shape before worker spawn, API calls, receipt rendering, command labels, headers, or durable dispatch markers, so malformed public job/worker ids cannot cross the hosted trust boundary even when they are not secret-shaped.
   Hosted worker dispatch receivers now validate signed public hint fields before accepting an envelope: worker command labels, worker request URLs, and dispatch secret-boundary copy must match the job/action/origin contract and stay secret-scan clean, so proof metadata cannot drift or carry hidden token-shaped sidecars into a worker spawn.
   Hosted managed-worker dispatch now requires an exact-shape, public-safe, binding-matched acceptance receipt with valid worker id, exact boundary copy, matching worker-command, spawn, and production durable idempotency proof from the dispatch receiver before the server marks a protected action as dispatched, so a generic 2xx, non-durable receiver response, malformed worker label, weakened boundary claim, or harmless-looking sidecar cannot fake worker wakeup proof.
+  Hosted managed-lane enablement now reads live Checkout proof and verifier reports with no-follow, regular-file, non-symlink-parent, 1 MiB JSON object guards, so symlinked or oversized local proof artifacts cannot unlock paid managed runs.
 
 ## North Star Audit Remediation
 

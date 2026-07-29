@@ -8,6 +8,7 @@ from fusekit.hosted.job_store import (
     HOSTED_JOB_STORE_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION,
 )
 from fusekit.hosted.live_checkout_proof import (
+    HOSTED_LIVE_CHECKOUT_PROOF_MAX_JSON_BYTES,
     HOSTED_MANAGED_LIVE_CHECKOUT_PROOF_INPUT_SCHEMA_VERSION,
     build_hosted_managed_live_checkout_proof,
     main,
@@ -240,6 +241,59 @@ def test_live_checkout_proof_cli_rejects_partial_explicit_artifact_paths(
     assert exit_code == 2
     assert payload["ready"] is False
     assert payload["error"] == "live_checkout_proof_requires_both_artifact_paths"
+
+
+def test_live_checkout_proof_cli_rejects_symlinked_artifact(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    target = tmp_path / "target-webhook.json"
+    webhook_path = tmp_path / "webhook-link.json"
+    start_path = tmp_path / "start.json"
+    target.write_text(json.dumps(_webhook_receipt()), encoding="utf-8")
+    webhook_path.symlink_to(target)
+    start_path.write_text(json.dumps(_start_action_response()), encoding="utf-8")
+
+    exit_code = main(
+        [
+            "--webhook-receipt",
+            str(webhook_path),
+            "--start-action-response",
+            str(start_path),
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 2
+    assert payload["ready"] is False
+    assert payload["error"] == "live_checkout_proof_input_symlink"
+
+
+def test_live_checkout_proof_cli_rejects_oversized_artifact(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    webhook_path = tmp_path / "webhook.json"
+    start_path = tmp_path / "start.json"
+    webhook_path.write_text(
+        " " * (HOSTED_LIVE_CHECKOUT_PROOF_MAX_JSON_BYTES + 1),
+        encoding="utf-8",
+    )
+    start_path.write_text(json.dumps(_start_action_response()), encoding="utf-8")
+
+    exit_code = main(
+        [
+            "--webhook-receipt",
+            str(webhook_path),
+            "--start-action-response",
+            str(start_path),
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 2
+    assert payload["ready"] is False
+    assert payload["error"] == "live_checkout_proof_input_too_large"
 
 
 def _webhook_receipt() -> dict[str, object]:

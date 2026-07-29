@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import stat
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -34,6 +36,7 @@ HOSTED_MANAGED_ENABLEMENT_SECRET_BOUNDARY = (
     "GitHub private keys, worker secrets, OCI credentials, provider credentials, or "
     "vault material."
 )
+HOSTED_MANAGED_ENABLEMENT_MAX_JSON_BYTES = 1_048_576
 
 
 def build_hosted_managed_enablement_report(
@@ -371,8 +374,12 @@ def _checks_by_id(value: object) -> dict[str, Mapping[str, Any]]:
 
 
 def _read_json(path: str) -> Mapping[str, Any]:
+    candidate = Path(path)
+    if candidate.is_symlink():
+        raise FuseKitError("managed_enablement_proof_file_symlink")
+    _reject_symlinked_parents(candidate)
     try:
-        value = json.loads(Path(path).read_text(encoding="utf-8"))
+        value = _read_json_no_follow(candidate)
     except OSError as exc:
         raise FuseKitError("managed_enablement_proof_file_unreadable") from exc
     except json.JSONDecodeError as exc:
@@ -380,6 +387,31 @@ def _read_json(path: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise FuseKitError("managed_enablement_proof_file_must_be_object")
     return value
+
+
+def _reject_symlinked_parents(candidate: Path) -> None:
+    for parent in candidate.parents:
+        if parent == Path("."):
+            continue
+        if parent.is_symlink():
+            raise FuseKitError("managed_enablement_proof_file_parent_symlink")
+
+
+def _read_json_no_follow(candidate: Path) -> object:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    file_descriptor = os.open(candidate, flags)
+    try:
+        file_status = os.fstat(file_descriptor)
+        if not stat.S_ISREG(file_status.st_mode):
+            raise FuseKitError("managed_enablement_proof_file_not_file")
+        if file_status.st_size > HOSTED_MANAGED_ENABLEMENT_MAX_JSON_BYTES:
+            raise FuseKitError("managed_enablement_proof_file_too_large")
+        with os.fdopen(file_descriptor, "r", encoding="utf-8") as handle:
+            file_descriptor = -1
+            return json.load(handle)
+    finally:
+        if file_descriptor >= 0:
+            os.close(file_descriptor)
 
 
 def _mapping(value: object) -> Mapping[str, Any]:

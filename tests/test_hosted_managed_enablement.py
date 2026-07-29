@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from fusekit.hosted.managed_enablement import (
+    HOSTED_MANAGED_ENABLEMENT_MAX_JSON_BYTES,
     HOSTED_MANAGED_ENABLEMENT_SCHEMA_VERSION,
     HOSTED_MANAGED_LIVE_CHECKOUT_PROOF_SCHEMA_VERSION,
     build_hosted_managed_enablement_report,
@@ -141,6 +142,61 @@ def test_managed_enablement_main_reports_incomplete_proof(tmp_path: Path, capsys
     assert exit_code == 2
     assert payload["ready_to_enable"] is False
     assert "live_checkout_proof_not_ready" in payload["blockers"]
+
+
+def test_managed_enablement_main_rejects_symlinked_proof_file(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    paths = _proof_files(tmp_path)
+    target = paths["runtime"]
+    symlink = tmp_path / "runtime-link.json"
+    symlink.symlink_to(target)
+    paths["runtime"] = symlink
+
+    exit_code = _run_main_with_paths(paths)
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 2
+    assert payload["ready_to_enable"] is False
+    assert payload["error"] == "managed_enablement_proof_file_symlink"
+
+
+def test_managed_enablement_main_rejects_oversized_proof_file(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    paths = _proof_files(tmp_path)
+    paths["runtime"].write_text(
+        " " * (HOSTED_MANAGED_ENABLEMENT_MAX_JSON_BYTES + 1),
+        encoding="utf-8",
+    )
+
+    exit_code = _run_main_with_paths(paths)
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 2
+    assert payload["ready_to_enable"] is False
+    assert payload["error"] == "managed_enablement_proof_file_too_large"
+
+
+def _run_main_with_paths(paths: dict[str, Path]) -> int:
+    return main(
+        [
+            "--runtime-secret-verify-report",
+            str(paths["runtime"]),
+            "--hosted-verify-report",
+            str(paths["hosted"]),
+            "--stripe-price-verify-report",
+            str(paths["price"]),
+            "--stripe-webhook-verify-report",
+            str(paths["webhook"]),
+            "--hosted-readiness-report",
+            str(paths["readiness"]),
+            "--live-checkout-proof",
+            str(paths["live_checkout"]),
+        ]
+    )
 
 
 def _write_runtime_file(path: Path) -> None:
