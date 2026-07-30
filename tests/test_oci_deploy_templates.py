@@ -134,6 +134,7 @@ def test_oci_release_script_is_narrow_and_reviewable() -> None:
     assert 'RELEASE_RETENTION_COUNT="${FUSEKIT_RELEASE_RETENTION_COUNT:-2}"' in script
     assert 'MAX_ACTIVE_RELEASE_BYTES="${FUSEKIT_MAX_ACTIVE_RELEASE_BYTES:-268435456}"' in script
     assert "max active release size must be a positive integer byte count" in script
+    assert "service name must be a systemd .service unit basename" in script
     assert "ACTIVE_RELEASE_BYTES" in script
     assert 'du -sb "${RELEASE_DIR}"' in script
     assert "active release size ${ACTIVE_RELEASE_BYTES} exceeds max" in script
@@ -166,6 +167,8 @@ def test_oci_release_script_is_narrow_and_reviewable() -> None:
     assert 'pip install --no-cache-dir "${RELEASE_DIR}[dev]"' not in script
     assert '"${INCOMING}/repo/.venv"' not in script
     assert "/etc/fusekit/hosted-provenance.env" in script
+    assert '"/etc/systemd/system/${HOSTED_SERVICE}"' in script
+    assert '"/etc/systemd/system/${DISPATCH_SERVICE}"' in script
     assert "/etc/fusekit/hosted-secrets.env" in script
     assert "cat /etc/fusekit/hosted-secrets.env" not in script
     assert (

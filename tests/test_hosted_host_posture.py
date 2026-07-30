@@ -366,6 +366,8 @@ def _clean_evidence() -> dict[str, object]:
             "mutated_paths": [
                 "/opt/fusekit/current",
                 "/etc/fusekit/hosted-provenance.env",
+                "/etc/systemd/system/fusekit-hosted.service",
+                "/etc/systemd/system/fusekit-worker-dispatch.service",
                 "/var/lib/fusekit/release-receipts",
             ],
             "restarted_services": [

@@ -130,6 +130,8 @@ OCI_HOST_POSTURE_RELEASE_ACTIVE_KEYS = frozenset(
 OCI_HOST_POSTURE_RELEASE_MUTATED_PATHS = (
     "/opt/fusekit/current",
     "/etc/fusekit/hosted-provenance.env",
+    "/etc/systemd/system/fusekit-hosted.service",
+    "/etc/systemd/system/fusekit-worker-dispatch.service",
     "/var/lib/fusekit/release-receipts",
 )
 OCI_HOST_POSTURE_RELEASE_RESTARTED_SERVICES = (

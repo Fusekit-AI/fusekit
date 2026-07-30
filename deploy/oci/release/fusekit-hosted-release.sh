@@ -31,6 +31,13 @@ if [[ ! "${MAX_ACTIVE_RELEASE_BYTES}" =~ ^[0-9]+$ ]] || (( MAX_ACTIVE_RELEASE_BY
   exit 64
 fi
 
+for service_name in "${HOSTED_SERVICE}" "${DISPATCH_SERVICE}"; do
+  if [[ ! "${service_name}" =~ ^[A-Za-z0-9_.@-]+\.service$ ]]; then
+    echo "service name must be a systemd .service unit basename" >&2
+    exit 64
+  fi
+done
+
 if [[ "${FUSEKIT_REPO_URL}" != "https://github.com/Fusekit-AI/fusekit.git" ]]; then
   echo "refusing non-canonical FuseKit repository URL" >&2
   exit 64
@@ -148,6 +155,13 @@ chown root:root "${PROVENANCE_FILE}.tmp"
 chmod 0600 "${PROVENANCE_FILE}.tmp"
 mv -f "${PROVENANCE_FILE}.tmp" "${PROVENANCE_FILE}"
 
+install -o root -g root -m 0644 \
+  "${RELEASE_DIR}/deploy/oci/systemd/fusekit-hosted.service" \
+  "/etc/systemd/system/${HOSTED_SERVICE}"
+install -o root -g root -m 0644 \
+  "${RELEASE_DIR}/deploy/oci/systemd/fusekit-worker-dispatch.service" \
+  "/etc/systemd/system/${DISPATCH_SERVICE}"
+
 ln -sfn "${RELEASE_DIR}" "${CURRENT_LINK}.next"
 mv -Tf "${CURRENT_LINK}.next" "${CURRENT_LINK}"
 systemctl daemon-reload
@@ -227,6 +241,8 @@ payload = {
     "mutated_paths": [
         "/opt/fusekit/current",
         "/etc/fusekit/hosted-provenance.env",
+        "/etc/systemd/system/fusekit-hosted.service",
+        "/etc/systemd/system/fusekit-worker-dispatch.service",
         "/var/lib/fusekit/release-receipts",
     ],
     "restarted_services": [
