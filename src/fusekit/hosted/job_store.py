@@ -60,6 +60,28 @@ HOSTED_WORKER_DISPATCH_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch.v1"
 HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION = (
     "fusekit.hosted-worker-dispatch-receipt.v1"
 )
+HOSTED_MANAGED_START_DISPATCH_RECEIPT_KEYS = frozenset(
+    {
+        "schema_version",
+        "action",
+        "dispatched",
+        "dispatch_url",
+        "dispatch_binding",
+        "accepted",
+        "duplicate",
+        "receiver_schema_version",
+        "idempotency",
+        "secret_boundary",
+    }
+)
+HOSTED_MANAGED_START_DISPATCH_IDEMPOTENCY_KEYS = frozenset(
+    {"mode", "durable", "scope", "duplicate", "proof"}
+)
+HOSTED_MANAGED_START_DISPATCH_SECRET_BOUNDARY = (
+    "Dispatch receipt is accepted only after the worker-dispatch receiver returns "
+    "a public schema-valid, binding-matched acceptance receipt. It omits the job "
+    "token, worker secret, signature, provider tokens, and vault material."
+)
 MANAGED_FUSEKIT_RUN_LANE = "managed-fusekit-run"
 HOSTED_JOB_STORE_SECRET_BOUNDARY = (
     "Hosted job snapshots contain public job state, lane contracts, public payment "
@@ -388,6 +410,8 @@ def _validate_managed_start_response(
     dispatch = response.get("worker_dispatch")
     if not isinstance(dispatch, dict):
         raise FuseKitError("Hosted managed start response dispatch receipt is missing.")
+    if set(str(key) for key in dispatch) != HOSTED_MANAGED_START_DISPATCH_RECEIPT_KEYS:
+        raise FuseKitError("Hosted managed start response dispatch receipt shape is invalid.")
     if dispatch.get("schema_version") != HOSTED_WORKER_DISPATCH_SCHEMA_VERSION:
         raise FuseKitError("Hosted managed start response dispatch schema is invalid.")
     if dispatch.get("action") != "start":
@@ -411,6 +435,8 @@ def _validate_managed_start_response(
     idempotency = dispatch.get("idempotency")
     if not isinstance(idempotency, dict):
         raise FuseKitError("Hosted managed start response dispatch idempotency is missing.")
+    if set(str(key) for key in idempotency) != HOSTED_MANAGED_START_DISPATCH_IDEMPOTENCY_KEYS:
+        raise FuseKitError("Hosted managed start response dispatch idempotency shape is invalid.")
     if idempotency.get("mode") != "dispatch-state-dir":
         raise FuseKitError("Hosted managed start response dispatch idempotency is invalid.")
     if idempotency.get("durable") is not True:
@@ -420,6 +446,8 @@ def _validate_managed_start_response(
     proof = idempotency.get("proof")
     if not isinstance(proof, str) or "before worker spawn" not in proof:
         raise FuseKitError("Hosted managed start response dispatch idempotency proof is missing.")
+    if dispatch.get("secret_boundary") != HOSTED_MANAGED_START_DISPATCH_SECRET_BOUNDARY:
+        raise FuseKitError("Hosted managed start response dispatch boundary is invalid.")
 
 
 def _write_public_payload(

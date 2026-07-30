@@ -26,6 +26,9 @@ from fusekit.hosted.job_store import (
     HOSTED_JOB_STORE_MANAGED_START_RESPONSE_SCHEMA_VERSION,
     HOSTED_JOB_STORE_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION,
     HOSTED_JOB_STORE_WEBHOOK_RECEIPT_BOUNDARY,
+    HOSTED_MANAGED_START_DISPATCH_IDEMPOTENCY_KEYS,
+    HOSTED_MANAGED_START_DISPATCH_RECEIPT_KEYS,
+    HOSTED_MANAGED_START_DISPATCH_SECRET_BOUNDARY,
     HOSTED_STRIPE_WEBHOOK_NEXT_REQUIRED_PROOF,
     HOSTED_STRIPE_WEBHOOK_RECEIPT_KEYS,
     HOSTED_STRIPE_WEBHOOK_SECRET_BOUNDARY_TERMS,
@@ -364,6 +367,8 @@ def _worker_dispatch_blockers(value: object) -> list[str]:
     dispatch_binding = _mapping(dispatch.get("dispatch_binding"))
     idempotency = _mapping(dispatch.get("idempotency"))
     blockers: list[str] = []
+    if set(str(key) for key in dispatch) != HOSTED_MANAGED_START_DISPATCH_RECEIPT_KEYS:
+        blockers.append("live_checkout_worker_dispatch_shape_mismatch")
     if dispatch.get("schema_version") != HOSTED_WORKER_DISPATCH_SCHEMA_VERSION:
         blockers.append("live_checkout_worker_dispatch_schema_mismatch")
     if dispatch.get("action") != "start":
@@ -377,6 +382,8 @@ def _worker_dispatch_blockers(value: object) -> list[str]:
     for field in HOSTED_LIVE_CHECKOUT_DISPATCH_HASH_FIELDS:
         if not _valid_sha256_label(str(dispatch_binding.get(field) or "")):
             blockers.append(f"live_checkout_worker_dispatch_{field}_invalid")
+    if set(str(key) for key in idempotency) != HOSTED_MANAGED_START_DISPATCH_IDEMPOTENCY_KEYS:
+        blockers.append("live_checkout_worker_dispatch_idempotency_shape_mismatch")
     if idempotency.get("mode") != "dispatch-state-dir":
         blockers.append("live_checkout_worker_dispatch_idempotency_mode_mismatch")
     if idempotency.get("durable") is not True:
@@ -386,6 +393,8 @@ def _worker_dispatch_blockers(value: object) -> list[str]:
     proof = idempotency.get("proof")
     if not isinstance(proof, str) or "before worker spawn" not in proof:
         blockers.append("live_checkout_worker_dispatch_idempotency_proof_missing")
+    if dispatch.get("secret_boundary") != HOSTED_MANAGED_START_DISPATCH_SECRET_BOUNDARY:
+        blockers.append("live_checkout_worker_dispatch_secret_boundary_mismatch")
     return blockers
 
 

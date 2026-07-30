@@ -9,6 +9,7 @@ from fusekit.hosted.job_store import (
     HOSTED_JOB_STORE_MANAGED_START_RESPONSE_SCHEMA_VERSION,
     HOSTED_JOB_STORE_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION,
     HOSTED_JOB_STORE_WEBHOOK_RECEIPT_BOUNDARY,
+    HOSTED_MANAGED_START_DISPATCH_SECRET_BOUNDARY,
 )
 from fusekit.hosted.live_checkout_proof import (
     HOSTED_LIVE_CHECKOUT_PROOF_MAX_JSON_BYTES,
@@ -200,6 +201,53 @@ def test_live_checkout_proof_rejects_webhook_with_weak_boundary() -> None:
 
     assert proof["ready"] is False
     assert "live_checkout_webhook_secret_boundary_missing" in proof["blockers"]
+
+
+def test_live_checkout_proof_rejects_worker_dispatch_sidecars() -> None:
+    start = _start_action_response()
+    dispatch = start["worker_dispatch"]
+    assert isinstance(dispatch, dict)
+    dispatch["raw_log_excerpt"] = "worker accepted request"
+
+    proof = build_hosted_managed_live_checkout_proof(
+        webhook_receipt=_webhook_receipt(),
+        start_action_response=start,
+    )
+
+    assert proof["ready"] is False
+    assert "live_checkout_worker_dispatch_shape_mismatch" in proof["blockers"]
+
+
+def test_live_checkout_proof_rejects_worker_dispatch_idempotency_sidecars() -> None:
+    start = _start_action_response()
+    dispatch = start["worker_dispatch"]
+    assert isinstance(dispatch, dict)
+    idempotency = dispatch["idempotency"]
+    assert isinstance(idempotency, dict)
+    idempotency["marker_path"] = "/var/lib/fusekit/dispatch/hosted-job.json"
+
+    proof = build_hosted_managed_live_checkout_proof(
+        webhook_receipt=_webhook_receipt(),
+        start_action_response=start,
+    )
+
+    assert proof["ready"] is False
+    assert "live_checkout_worker_dispatch_idempotency_shape_mismatch" in proof["blockers"]
+
+
+def test_live_checkout_proof_rejects_worker_dispatch_weak_boundary() -> None:
+    start = _start_action_response()
+    dispatch = start["worker_dispatch"]
+    assert isinstance(dispatch, dict)
+    dispatch["secret_boundary"] = "Dispatch was accepted."
+
+    proof = build_hosted_managed_live_checkout_proof(
+        webhook_receipt=_webhook_receipt(),
+        start_action_response=start,
+    )
+
+    assert proof["ready"] is False
+    assert "live_checkout_worker_dispatch_secret_boundary_mismatch" in proof["blockers"]
 
 
 def test_live_checkout_proof_cli_outputs_redacted_proof(tmp_path: Path, capsys) -> None:
@@ -602,10 +650,7 @@ def _start_action_response() -> dict[str, object]:
                 "duplicate": False,
                 "proof": "non-secret worker dispatch marker recorded before worker spawn.",
             },
-            "secret_boundary": (
-                "Dispatch receipt omits job tokens, worker secrets, provider credentials, "
-                "GitHub installation tokens, and vault material."
-            ),
+            "secret_boundary": HOSTED_MANAGED_START_DISPATCH_SECRET_BOUNDARY,
         },
     }
 

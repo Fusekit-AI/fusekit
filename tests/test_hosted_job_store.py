@@ -12,6 +12,7 @@ from fusekit.hosted import build_hosted_launch_job
 from fusekit.hosted.job_store import (
     HOSTED_JOB_STORE_MANAGED_START_RESPONSE_SCHEMA_VERSION,
     HOSTED_JOB_STORE_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION,
+    HOSTED_MANAGED_START_DISPATCH_SECRET_BOUNDARY,
     HostedJobStore,
 )
 from fusekit.hosted.launcher import build_hosted_launch_plan
@@ -177,6 +178,53 @@ def test_hosted_job_store_rejects_token_bearing_managed_start_response(
     assert not list((tmp_path / "hosted-jobs").glob("*.managed-start-response.json"))
 
 
+def test_hosted_job_store_rejects_managed_start_dispatch_sidecars(
+    tmp_path: Path,
+) -> None:
+    store = HostedJobStore(tmp_path / "hosted-jobs")
+    response = _managed_start_response()
+    dispatch = response["worker_dispatch"]
+    assert isinstance(dispatch, dict)
+    dispatch["raw_log_excerpt"] = "worker accepted request"
+
+    with pytest.raises(FuseKitError, match="dispatch receipt shape is invalid"):
+        store.put_managed_start_response(job_id=JOB_ID, response=response)
+
+    assert not list((tmp_path / "hosted-jobs").glob("*.managed-start-response.json"))
+
+
+def test_hosted_job_store_rejects_managed_start_idempotency_sidecars(
+    tmp_path: Path,
+) -> None:
+    store = HostedJobStore(tmp_path / "hosted-jobs")
+    response = _managed_start_response()
+    dispatch = response["worker_dispatch"]
+    assert isinstance(dispatch, dict)
+    idempotency = dispatch["idempotency"]
+    assert isinstance(idempotency, dict)
+    idempotency["marker_path"] = "/var/lib/fusekit/dispatch/hosted-job.json"
+
+    with pytest.raises(FuseKitError, match="idempotency shape is invalid"):
+        store.put_managed_start_response(job_id=JOB_ID, response=response)
+
+    assert not list((tmp_path / "hosted-jobs").glob("*.managed-start-response.json"))
+
+
+def test_hosted_job_store_rejects_managed_start_weak_dispatch_boundary(
+    tmp_path: Path,
+) -> None:
+    store = HostedJobStore(tmp_path / "hosted-jobs")
+    response = _managed_start_response()
+    dispatch = response["worker_dispatch"]
+    assert isinstance(dispatch, dict)
+    dispatch["secret_boundary"] = "Dispatch was accepted."
+
+    with pytest.raises(FuseKitError, match="dispatch boundary is invalid"):
+        store.put_managed_start_response(job_id=JOB_ID, response=response)
+
+    assert not list((tmp_path / "hosted-jobs").glob("*.managed-start-response.json"))
+
+
 def _plan():
     manifest = SetupManifest(
         app_name="job-store-demo",
@@ -282,5 +330,6 @@ def _managed_start_response() -> dict[str, object]:
                 "duplicate": False,
                 "proof": "non-secret worker dispatch marker recorded before worker spawn.",
             },
+            "secret_boundary": HOSTED_MANAGED_START_DISPATCH_SECRET_BOUNDARY,
         },
     }
