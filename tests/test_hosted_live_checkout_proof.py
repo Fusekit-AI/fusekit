@@ -265,6 +265,43 @@ def test_live_checkout_proof_cli_derives_job_store_artifacts_from_job_id(
     assert payload["job_id"] == JOB_ID
 
 
+def test_live_checkout_proof_cli_guides_missing_job_store_artifacts(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    job_store = tmp_path / "hosted-jobs"
+    job_store.mkdir()
+
+    exit_code = main(
+        [
+            "--job-id",
+            JOB_ID,
+            "--job-store-dir",
+            str(job_store),
+            "--expected-commit-sha",
+            COMMIT_SHA,
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+    serialized = json.dumps(payload)
+
+    assert exit_code == 2
+    assert payload["ready"] is False
+    assert payload["error"] == "live_checkout_proof_input_unreadable"
+    assert payload["expected_artifacts"] == {
+        "job_store": "configured_job_store",
+        "managed_start_response": f"{JOB_ID}.managed-start-response.json",
+        "webhook_receipt": f"{JOB_ID}.stripe-webhook-receipt.json",
+    }
+    assert payload["retry_command"] == (
+        f"fusekit-hosted-live-checkout-proof --job-id {JOB_ID} "
+        f"--expected-commit-sha {COMMIT_SHA}"
+    )
+    assert len(payload["next_actions"]) == 4
+    assert "sk_live" not in serialized
+    assert "whsec" not in serialized
+
+
 def test_live_checkout_proof_cli_rejects_partial_explicit_artifact_paths(
     tmp_path: Path,
     capsys,

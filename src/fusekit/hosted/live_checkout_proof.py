@@ -185,14 +185,64 @@ def main(argv: Sequence[str] | None = None) -> int:
             expected_commit_sha=args.expected_commit_sha,
         )
     except FuseKitError as exc:
-        proof = {
-            "schema_version": HOSTED_MANAGED_LIVE_CHECKOUT_PROOF_SCHEMA_VERSION,
-            "ready": False,
-            "error": str(exc),
-            "secret_boundary": HOSTED_MANAGED_ENABLEMENT_SECRET_BOUNDARY,
-        }
+        proof = _error_proof(
+            str(exc),
+            job_id=args.job_id,
+            job_store_dir=args.job_store_dir,
+            expected_commit_sha=args.expected_commit_sha,
+        )
     print(json.dumps(proof, indent=2, sort_keys=True))
     return 0 if proof.get("ready") is True else 2
+
+
+def _error_proof(
+    error: str,
+    *,
+    job_id: str = "",
+    job_store_dir: str = DEFAULT_HOSTED_JOB_STORE_DIR,
+    expected_commit_sha: str = "",
+) -> dict[str, object]:
+    public_job_id = _public_job_id(job_id)
+    proof: dict[str, object] = {
+        "schema_version": HOSTED_MANAGED_LIVE_CHECKOUT_PROOF_SCHEMA_VERSION,
+        "ready": False,
+        "error": error,
+        "secret_boundary": HOSTED_MANAGED_ENABLEMENT_SECRET_BOUNDARY,
+    }
+    if public_job_id:
+        expected_artifacts = {
+            "webhook_receipt": f"{public_job_id}.stripe-webhook-receipt.json",
+            "managed_start_response": f"{public_job_id}.managed-start-response.json",
+            "job_store": (
+                "default_hosted_job_store"
+                if job_store_dir == DEFAULT_HOSTED_JOB_STORE_DIR
+                else "configured_job_store"
+            ),
+        }
+        proof["expected_artifacts"] = expected_artifacts
+        proof["next_actions"] = [
+            "Complete the supervised managed Checkout proof run from the short-lived "
+            "managed-proof install URL.",
+            "Wait for Stripe's signed checkout.session.completed webhook to write the "
+            "redacted webhook receipt.",
+            "Use the paid managed start action so worker dispatch acceptance writes the "
+            "redacted managed-start response.",
+            "Re-run fusekit-hosted-live-checkout-proof with this job id and the current "
+            "hosted deployment commit.",
+        ]
+        commit_label = (
+            expected_commit_sha
+            if _valid_git_sha(expected_commit_sha)
+            else "<current-commit-sha>"
+        )
+        proof["retry_command"] = (
+            "fusekit-hosted-live-checkout-proof "
+            f"--job-id {public_job_id} "
+            "--expected-commit-sha "
+            f"{commit_label}"
+        )
+    _assert_public_proof(proof)
+    return proof
 
 
 def _webhook_receipt_blockers(receipt: Mapping[str, Any]) -> list[str]:
@@ -494,6 +544,10 @@ def _unique(values: Sequence[str]) -> list[str]:
             seen.add(value)
             result.append(value)
     return result
+
+
+def _valid_git_sha(value: str) -> bool:
+    return bool(re.fullmatch(r"[0-9a-f]{40}", value))
 
 
 def _assert_public_proof(proof: Mapping[str, object]) -> None:
