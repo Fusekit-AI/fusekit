@@ -203,7 +203,7 @@ cleanup_old_releases() {
 cleanup_old_releases "${RELEASE_RETENTION_COUNT}" "${EXPECTED_COMMIT_SHA}" "${BEFORE_COMMIT}"
 
 RECEIPT_PATH="${RECEIPT_DIR}/release-${EXPECTED_COMMIT_SHA}.json"
-"${PYTHON_BIN}" - "${RECEIPT_PATH}" "${BEFORE_COMMIT}" "${AFTER_COMMIT}" "${RELEASE_DIR}" "${RELEASE_RETENTION_COUNT}" "${RETENTION_RETAINED[*]:-}" "${RETENTION_REMOVED[*]:-}" <<'PY'
+"${PYTHON_BIN}" - "${RECEIPT_PATH}" "${BEFORE_COMMIT}" "${AFTER_COMMIT}" "${RELEASE_DIR}" "${RELEASE_RETENTION_COUNT}" "${RETENTION_RETAINED[*]:-}" "${RETENTION_REMOVED[*]:-}" "${ACTIVE_RELEASE_BYTES}" "${MAX_ACTIVE_RELEASE_BYTES}" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -216,7 +216,9 @@ from pathlib import Path
     retention_count,
     retained_raw,
     removed_raw,
-) = sys.argv[1:8]
+    active_release_bytes,
+    max_active_release_bytes,
+) = sys.argv[1:10]
 retained = [value for value in retained_raw.split() if value]
 removed = [value for value in removed_raw.split() if value]
 payload = {
@@ -234,6 +236,12 @@ payload = {
     "before_commit_sha": before_commit,
     "after_commit_sha": after_commit,
     "release_dir": release_dir,
+    "active_release": {
+        "path": "/opt/fusekit/current",
+        "release_dir": release_dir,
+        "used_bytes": int(active_release_bytes),
+        "max_bytes": int(max_active_release_bytes),
+    },
     "rollback": {
         "mode": "current_symlink_restore",
         "previous_commit_sha": before_commit,

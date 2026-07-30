@@ -107,6 +107,7 @@ OCI_HOST_POSTURE_RELEASE_RECEIPT_KEYS = frozenset(
         "before_commit_sha",
         "after_commit_sha",
         "release_dir",
+        "active_release",
         "rollback",
         "release_retention",
         "post_deploy_proof_command",
@@ -122,6 +123,9 @@ OCI_HOST_POSTURE_RELEASE_RETENTION_KEYS = frozenset(
         "removed_release_count",
         "removed_commit_shas",
     }
+)
+OCI_HOST_POSTURE_RELEASE_ACTIVE_KEYS = frozenset(
+    {"path", "release_dir", "used_bytes", "max_bytes"}
 )
 OCI_HOST_POSTURE_RELEASE_MUTATED_PATHS = (
     "/opt/fusekit/current",
@@ -1352,6 +1356,14 @@ def _evidence_shape_check(evidence: Mapping[str, object]) -> dict[str, object]:
                 prefix="release_receipt.release_retention",
             )
         )
+        unexpected.extend(
+            _unexpected_nested_keys(
+                release_receipt,
+                "active_release",
+                OCI_HOST_POSTURE_RELEASE_ACTIVE_KEYS,
+                prefix="release_receipt.active_release",
+            )
+        )
     unexpected.extend(_unexpected_systemd_unit_keys(evidence))
     unexpected = sorted(unexpected)
     if unexpected:
@@ -2212,8 +2224,22 @@ def _release_receipt_check(evidence: Mapping[str, object]) -> dict[str, object]:
     if after_commit and hosted_commit and after_commit != hosted_commit:
         failures.append("oci_host_release_receipt_commit_does_not_match_hosted_verify")
     expected_release_dir = f"/opt/fusekit/releases/{after_commit}" if after_commit else ""
-    if _raw_str(receipt.get("release_dir")) != expected_release_dir:
+    release_dir = _raw_str(receipt.get("release_dir"))
+    if release_dir != expected_release_dir:
         failures.append("oci_host_release_receipt_release_dir_mismatch")
+    active_release = _mapping(receipt.get("active_release"))
+    active_release_used = _literal_non_negative_int(active_release.get("used_bytes"))
+    active_release_max = _literal_non_negative_int(active_release.get("max_bytes"))
+    if active_release.get("path") != OCI_HOST_POSTURE_CURRENT_RELEASE:
+        failures.append("oci_host_release_receipt_active_release_path_mismatch")
+    if _raw_str(active_release.get("release_dir")) != expected_release_dir:
+        failures.append("oci_host_release_receipt_active_release_dir_mismatch")
+    if active_release_max != OCI_HOST_POSTURE_MAX_ACTIVE_RELEASE_BYTES:
+        failures.append("oci_host_release_receipt_active_release_max_mismatch")
+    if active_release_used is None:
+        failures.append("oci_host_release_receipt_active_release_size_invalid")
+    elif active_release_max is not None and active_release_used > active_release_max:
+        failures.append("oci_host_release_receipt_active_release_too_large")
     rollback = _mapping(receipt.get("rollback"))
     if rollback.get("mode") != "current_symlink_restore":
         failures.append("oci_host_release_receipt_rollback_mode_mismatch")
@@ -2548,6 +2574,7 @@ def _sanitize_release_receipt(receipt: Mapping[str, object] | None) -> dict[str,
     preserved_keys = {
         "before_commit_sha",
         "after_commit_sha",
+        "active_release",
         "post_deploy_proof_command",
         "release_dir",
         "release_retention",

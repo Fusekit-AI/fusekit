@@ -371,6 +371,12 @@ def _clean_evidence() -> dict[str, object]:
             "before_commit_sha": "",
             "after_commit_sha": HOSTED_COMMIT,
             "release_dir": f"/opt/fusekit/releases/{HOSTED_COMMIT}",
+            "active_release": {
+                "path": "/opt/fusekit/current",
+                "release_dir": f"/opt/fusekit/releases/{HOSTED_COMMIT}",
+                "used_bytes": 63_000_000,
+                "max_bytes": 256 * 1024 * 1024,
+            },
             "rollback": {
                 "mode": "current_symlink_restore",
                 "previous_commit_sha": "",
@@ -487,6 +493,12 @@ def test_oci_host_posture_public_json_preserves_valid_release_proof() -> None:
     assert emitted["release_receipt"]["post_deploy_proof_command"].endswith(
         HOSTED_COMMIT
     )
+    assert emitted["release_receipt"]["active_release"] == {
+        "max_bytes": 256 * 1024 * 1024,
+        "path": "/opt/fusekit/current",
+        "release_dir": f"/opt/fusekit/releases/{HOSTED_COMMIT}",
+        "used_bytes": 63_000_000,
+    }
     assert emitted["release_receipt"]["release_retention"] == {
         "minimum_retained_releases": 3,
         "mode": "keep-current-rollback-and-recent",
@@ -1749,6 +1761,9 @@ def test_oci_host_posture_blocks_missing_release_receipt() -> None:
         "oci_host_release_receipt_mutated_paths_mismatch",
         "oci_host_release_receipt_restarted_services_mismatch",
         "oci_host_release_receipt_after_commit_invalid",
+        "oci_host_release_receipt_active_release_path_mismatch",
+        "oci_host_release_receipt_active_release_max_mismatch",
+        "oci_host_release_receipt_active_release_size_invalid",
         "oci_host_release_receipt_rollback_mode_mismatch",
         "oci_host_release_retention_mode_mismatch",
         "oci_host_release_retention_minimum_invalid",
@@ -1796,6 +1811,9 @@ def test_oci_host_posture_blocks_release_receipt_commit_mismatch() -> None:
     stale_commit = "df448c5982306823887c505d30335af7d02ffd2e"
     receipt["after_commit_sha"] = stale_commit
     receipt["release_dir"] = f"/opt/fusekit/releases/{stale_commit}"
+    active_release = receipt["active_release"]
+    assert isinstance(active_release, dict)
+    active_release["release_dir"] = f"/opt/fusekit/releases/{stale_commit}"
     receipt["post_deploy_proof_command"] = (
         "fusekit-hosted-verify --origin https://fusekit.snowmanai.org "
         f"--expected-commit-sha {stale_commit}"
@@ -1829,6 +1847,30 @@ def test_oci_host_posture_blocks_release_receipt_rollback_commit_mismatch() -> N
     release_check = _check(report, "host.release_receipt")
     assert release_check["failures"] == [
         "oci_host_release_receipt_rollback_previous_commit_mismatch"
+    ]
+
+
+def test_oci_host_posture_blocks_invalid_active_release_receipt() -> None:
+    evidence = _clean_evidence()
+    receipt = evidence["release_receipt"]
+    assert isinstance(receipt, dict)
+    active_release = receipt["active_release"]
+    assert isinstance(active_release, dict)
+    active_release["path"] = "/opt/fusekit/releases/current"
+    active_release["release_dir"] = "/opt/fusekit/releases/" + ("1" * 40)
+    active_release["max_bytes"] = 512 * 1024 * 1024
+    active_release["used_bytes"] = 900 * 1024 * 1024
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.release_receipt"]
+    release_check = _check(report, "host.release_receipt")
+    assert release_check["failures"] == [
+        "oci_host_release_receipt_active_release_path_mismatch",
+        "oci_host_release_receipt_active_release_dir_mismatch",
+        "oci_host_release_receipt_active_release_max_mismatch",
+        "oci_host_release_receipt_active_release_too_large",
     ]
 
 

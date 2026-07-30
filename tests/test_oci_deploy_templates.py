@@ -136,6 +136,12 @@ def test_oci_release_script_is_narrow_and_reviewable() -> None:
     assert 'du -sb "${RELEASE_DIR}"' in script
     assert "active release size ${ACTIVE_RELEASE_BYTES} exceeds max" in script
     assert "ACTIVE_RELEASE_BYTES > MAX_ACTIVE_RELEASE_BYTES" in script
+    assert '"${ACTIVE_RELEASE_BYTES}" "${MAX_ACTIVE_RELEASE_BYTES}"' in script
+    assert '"active_release": {' in script
+    assert '"path": "/opt/fusekit/current"' in script
+    assert '"release_dir": release_dir' in script
+    assert '"used_bytes": int(active_release_bytes)' in script
+    assert '"max_bytes": int(max_active_release_bytes)' in script
     assert "cloudflare" not in script.lower()
     assert "MAX_RELEASE_RETENTION_COUNT=4" in script
     assert (

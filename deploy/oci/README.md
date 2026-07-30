@@ -49,7 +49,9 @@ or Playwright extras; those are installed only in development or disposable
 runner environments that need live OCI provisioning or browser automation. The
 script also measures the installed release before activation and refuses to move
 `/opt/fusekit/current` if it exceeds the hosted active-release ceiling
-(`FUSEKIT_MAX_ACTIVE_RELEASE_BYTES`, default 256 MiB).
+(`FUSEKIT_MAX_ACTIVE_RELEASE_BYTES`, default 256 MiB). The release receipt
+records that measured active-release byte count and ceiling as redacted posture
+evidence.
 
 ```zsh
 sudo install -d -o root -g root -m 0755 /etc/fusekit/tls
