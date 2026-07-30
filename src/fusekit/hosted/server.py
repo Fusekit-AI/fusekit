@@ -1609,10 +1609,26 @@ def _home_launch_lanes_section() -> str:
 def _home_launch_lane_card(lane: dict[str, object]) -> str:
     label = html.escape(str(lane.get("label", "")))
     summary = html.escape(str(lane.get("summary", "")))
+    lane_id = str(lane.get("id", ""))
     cost_controls = lane.get("cost_controls")
     items: list[str] = []
     if isinstance(cost_controls, list):
         items.extend(str(item) for item in cost_controls[:2] if isinstance(item, str))
+    if lane_id == MANAGED_FUSEKIT_RUN_LANE:
+        contract = _public_managed_proof_run_contract()
+        mode = str(contract.get("mode", ""))
+        if mode == "supervised_browser_only":
+            items.append("Supervised proof: browser-only Checkout run.")
+        artifacts = contract.get("durable_artifacts")
+        if isinstance(artifacts, list):
+            items.extend(
+                "Durable proof artifact: " + str(artifact)
+                for artifact in artifacts
+                if isinstance(artifact, str)
+            )
+        live_proof_command = str(contract.get("live_proof_command", ""))
+        if live_proof_command:
+            items.append("Proof command: " + live_proof_command)
     proof_policy = lane.get("proof_policy")
     if isinstance(proof_policy, dict):
         max_artifact = _mib_label(proof_policy.get("max_artifact_bytes"))

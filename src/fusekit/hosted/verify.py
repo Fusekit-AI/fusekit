@@ -1477,6 +1477,21 @@ def _hosted_home_failures(
         "hosted_home_narrow_permissions_missing": "narrow permissions",
         "hosted_home_visible_plan_missing": "visible plan",
         "hosted_home_redacted_proof_missing": "redacted proof",
+        "hosted_home_managed_supervised_proof_missing": (
+            "Supervised proof: browser-only Checkout run."
+        ),
+        "hosted_home_managed_webhook_artifact_missing": (
+            "stripe-webhook-receipt.json"
+        ),
+        "hosted_home_managed_start_artifact_missing": (
+            "managed-start-response.json"
+        ),
+        "hosted_home_managed_live_checkout_artifact_missing": (
+            "live-checkout-proof.json"
+        ),
+        "hosted_home_managed_live_proof_command_missing": (
+            "fusekit-hosted-live-checkout-proof --job-id"
+        ),
         "hosted_home_byo_proof_budget_missing": "Proof budget",
         "hosted_home_byo_proof_budget_per_artifact_missing": "64 MiB per artifact",
         "hosted_home_byo_proof_budget_total_missing": "256 MiB total",

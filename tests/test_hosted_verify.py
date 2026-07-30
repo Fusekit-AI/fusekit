@@ -2406,6 +2406,12 @@ def test_verify_hosted_deployment_requires_trustworthy_homepage() -> None:
     assert "hosted_home_narrow_permissions_missing" in checks["hosted.home"]["failures"]
     assert "hosted_home_visible_plan_missing" in checks["hosted.home"]["failures"]
     assert "hosted_home_redacted_proof_missing" in checks["hosted.home"]["failures"]
+    assert "hosted_home_managed_supervised_proof_missing" in checks["hosted.home"][
+        "failures"
+    ]
+    assert "hosted_home_managed_live_proof_command_missing" in checks["hosted.home"][
+        "failures"
+    ]
     assert "hosted_home_deployment_provenance_missing" in checks["hosted.home"][
         "failures"
     ]
@@ -2762,6 +2768,11 @@ def _home_html(
           Proof budget: redacted regular files only, max 64 MiB per artifact
           and 256 MiB total.
         </section>
+        <section>Supervised proof: browser-only Checkout run.</section>
+        <section>&lt;job-id&gt;.stripe-webhook-receipt.json</section>
+        <section>&lt;job-id&gt;.managed-start-response.json</section>
+        <section>live-checkout-proof.json</section>
+        <section>fusekit-hosted-live-checkout-proof --job-id &lt;job-id&gt;</section>
         <section>Open core https://github.com/Fusekit-AI/fusekit</section>
         <section>Reviewable hosted files</section>
         <section>app.py vercel.json src/fusekit/hosted/server.py</section>

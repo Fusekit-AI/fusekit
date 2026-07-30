@@ -492,6 +492,11 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
     assert "reversible setup" in html
     assert "Launch lanes" in html
     assert "Managed FuseKit run" in html
+    assert "Supervised proof: browser-only Checkout run." in html
+    assert "&lt;job-id&gt;.stripe-webhook-receipt.json" in html
+    assert "&lt;job-id&gt;.managed-start-response.json" in html
+    assert "live-checkout-proof.json" in html
+    assert "Proof command: fusekit-hosted-live-checkout-proof --job-id &lt;job-id&gt;" in html
     assert "Bring your own OCI" in html
     assert "FuseKit-managed worker dispatch is disabled." in html
     assert "Proof budget: redacted regular files only" in html
