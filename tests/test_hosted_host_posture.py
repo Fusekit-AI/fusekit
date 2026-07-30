@@ -12,6 +12,8 @@ from fusekit.hosted.host_posture import (
     OCI_HOST_POSTURE_MAX_JSON_BYTES,
     OCI_HOST_POSTURE_REPORT_SCHEMA_VERSION,
     CommandResult,
+    _dns_report_from_hosted_verify,
+    _planned_rollback_metadata,
     _public_json,
     collect_oci_host_posture_evidence,
     evaluate_oci_host_posture,
@@ -1451,6 +1453,41 @@ def test_oci_host_posture_accepts_dns_address_subset_of_hosted_verifier() -> Non
     assert report["ready"] is True
     dns_check = _check(report, "host.dns_propagation")
     assert dns_check["addresses"] == ["203.0.113.10"]
+
+
+def test_oci_host_posture_builds_redacted_dns_and_planned_rollback_proof() -> None:
+    evidence = _clean_evidence()
+    hosted_verify = evidence["hosted_verify"]
+    assert isinstance(hosted_verify, dict)
+    evidence["dns_propagation"] = _dns_report_from_hosted_verify(hosted_verify)
+    evidence["rollback_metadata"] = _planned_rollback_metadata()
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is True
+    assert _check(report, "host.dns_propagation")["addresses"] == ["203.0.113.10"]
+    assert _check(report, "host.rollback_metadata")["provider_action_count"] == 2
+    assert evidence["dns_propagation"] == {
+        "public_origin": "https://fusekit.snowmanai.org",
+        "domain": "fusekit.snowmanai.org",
+        "status": "propagated",
+        "propagated": True,
+        "addresses": ["203.0.113.10"],
+    }
+    assert evidence["rollback_metadata"] == {
+        "actions": [
+            {
+                "action": "cloudflare.dns.rollback",
+                "status": "planned",
+                "target": "fusekit.snowmanai.org",
+            },
+            {
+                "action": "rollback.oci.release",
+                "status": "planned",
+                "target": "fusekit.snowmanai.org",
+            },
+        ]
+    }
 
 
 def test_oci_host_posture_blocks_dns_origin_hostname_mismatch() -> None:

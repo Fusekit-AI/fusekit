@@ -112,19 +112,24 @@ fusekit-oci-host-posture --collect \
   --shape VM.Standard.E5.Flex \
   --ssh-ingress operator-only \
   --hosted-verify-report hosted-verify.json \
-  --dns-report dns-propagation.json \
+  --derive-dns-report-from-hosted-verify \
   --release-receipt /var/lib/fusekit/release-receipts/release-"$(git rev-parse HEAD)".json \
-  --rollback-metadata rollback_plan.json \
+  --planned-rollback-metadata \
   --cis-summary cis-summary.json \
   --rootkit-summary rootkit-summary.json \
   --output posture.json
 fusekit-oci-host-posture --evidence posture.json
 ```
 
-The DNS, release receipt, and rollback files must be redacted public proof. The
-posture validator only needs to see that `fusekit.snowmanai.org` has propagated,
-that the release receipt commit matches the hosted verifier commit, and that
-provider rollback actions are planned or complete. Port 22 is allowed only when
+The DNS, release receipt, and rollback evidence must be redacted public proof.
+When `--derive-dns-report-from-hosted-verify` is used, the collector builds DNS
+proof from the attached hosted verifier's public resolver addresses. When
+`--planned-rollback-metadata` is used, the collector attaches canonical planned
+Cloudflare DNS rollback and OCI release rollback actions for
+`fusekit.snowmanai.org`. The posture validator only needs to see that
+`fusekit.snowmanai.org` has propagated, that the release receipt commit matches
+the hosted verifier commit, and that provider rollback actions are planned or
+complete. Port 22 is allowed only when
 the attached SSH ingress label proves restricted operator access; nonstandard
 public listeners still block posture. The `--shape` value is a fallback label;
 when OCI instance metadata is reachable, the collector records the actual

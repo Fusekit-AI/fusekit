@@ -514,6 +514,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ssh-ingress", default="", help="Public SSH ingress posture label")
     parser.add_argument("--hosted-verify-report", default="", help="Path to hosted verifier JSON")
     parser.add_argument("--dns-report", default="", help="Path to redacted DNS propagation JSON")
+    parser.add_argument(
+        "--derive-dns-report-from-hosted-verify",
+        action="store_true",
+        help="Build redacted DNS propagation proof from the attached hosted verifier report.",
+    )
     parser.add_argument("--release-receipt", default="", help="Path to OCI release receipt JSON")
     parser.add_argument(
         "--runtime-secret-verify-report",
@@ -531,6 +536,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Path to redacted rollback metadata JSON",
     )
     parser.add_argument(
+        "--planned-rollback-metadata",
+        action="store_true",
+        help="Attach canonical planned rollback metadata for the hosted OCI launcher.",
+    )
+    parser.add_argument(
         "--cis-summary",
         default="",
         help="Path to redacted CIS/Lynis/OpenSCAP summary JSON",
@@ -543,17 +553,31 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.collect:
         try:
+            hosted_verify_report = _read_optional_json(
+                args.hosted_verify_report,
+                required=bool(args.hosted_verify_report),
+            )
+            if args.dns_report and args.derive_dns_report_from_hosted_verify:
+                raise FuseKitError("posture_dns_report_source_ambiguous")
+            dns_report = _read_optional_json(
+                args.dns_report,
+                required=bool(args.dns_report),
+            )
+            if args.derive_dns_report_from_hosted_verify:
+                dns_report = _dns_report_from_hosted_verify(hosted_verify_report)
+            if args.rollback_metadata and args.planned_rollback_metadata:
+                raise FuseKitError("posture_rollback_metadata_source_ambiguous")
+            rollback_metadata = _read_optional_json(
+                args.rollback_metadata,
+                required=bool(args.rollback_metadata),
+            )
+            if args.planned_rollback_metadata:
+                rollback_metadata = _planned_rollback_metadata()
             evidence = collect_oci_host_posture_evidence(
                 shape=args.shape,
                 ssh_ingress=args.ssh_ingress,
-                hosted_verify_report=_read_optional_json(
-                    args.hosted_verify_report,
-                    required=bool(args.hosted_verify_report),
-                ),
-                dns_report=_read_optional_json(
-                    args.dns_report,
-                    required=bool(args.dns_report),
-                ),
+                hosted_verify_report=hosted_verify_report,
+                dns_report=dns_report,
                 release_receipt=_read_optional_json(
                     args.release_receipt,
                     required=bool(args.release_receipt),
@@ -566,10 +590,7 @@ def main(argv: list[str] | None = None) -> int:
                     args.managed_proof_preflight_report,
                     required=bool(args.managed_proof_preflight_report),
                 ),
-                rollback_metadata=_read_optional_json(
-                    args.rollback_metadata,
-                    required=bool(args.rollback_metadata),
-                ),
+                rollback_metadata=rollback_metadata,
                 cis_summary=_read_optional_json(
                     args.cis_summary or OCI_HOST_POSTURE_DEFAULT_CIS_SUMMARY,
                     required=bool(args.cis_summary),
@@ -636,6 +657,36 @@ def _read_optional_json(path: str, *, required: bool = False) -> dict[str, objec
         if required:
             raise
         return {}
+
+
+def _dns_report_from_hosted_verify(report: Mapping[str, object]) -> dict[str, object]:
+    if not report:
+        raise FuseKitError("posture_hosted_verify_report_required_for_dns_derivation")
+    addresses = _hosted_verify_dns_addresses(report, "hosted.dns")
+    return {
+        "public_origin": OCI_HOST_POSTURE_ORIGIN,
+        "domain": "fusekit.snowmanai.org",
+        "status": "propagated" if addresses else "missing",
+        "propagated": bool(addresses),
+        "addresses": addresses,
+    }
+
+
+def _planned_rollback_metadata() -> dict[str, object]:
+    return {
+        "actions": [
+            {
+                "action": "cloudflare.dns.rollback",
+                "status": "planned",
+                "target": "fusekit.snowmanai.org",
+            },
+            {
+                "action": "rollback.oci.release",
+                "status": "planned",
+                "target": "fusekit.snowmanai.org",
+            },
+        ]
+    }
 
 
 def _read_json_object_file(path: str, *, missing_ok: bool = False) -> dict[str, object]:
