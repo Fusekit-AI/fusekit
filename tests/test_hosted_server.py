@@ -2221,6 +2221,10 @@ def test_hosted_plan_renders_managed_and_byo_launch_lanes() -> None:
     assert f"lane={MANAGED_FUSEKIT_RUN_LANE}" in text
     assert f"lane={BYO_OCI_LANE}" in text
     assert "their tenancy" in text
+    assert "Proof budget: redacted regular files only" in text
+    assert "64 MiB per artifact" in text
+    assert "256 MiB total" in text
+    assert ".fusekit/gate_events.jsonl" in text
     assert "ghs_fake" not in text
 
 
@@ -2271,6 +2275,9 @@ def test_hosted_plan_disables_managed_lane_until_payment_is_configured() -> None
     assert f"lane={MANAGED_FUSEKIT_RUN_LANE}" not in text
     assert f"lane={BYO_OCI_LANE}" in text
     assert "Bring your own OCI" in text
+    assert "Proof budget: redacted regular files only" in text
+    assert "64 MiB per artifact" in text
+    assert "256 MiB total" in text
     assert "ghs_fake" not in text
 
 

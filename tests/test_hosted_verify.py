@@ -2758,6 +2758,10 @@ def _home_html(
         <section>
           open core / narrow permissions / visible plan / redacted proof / reversible setup
         </section>
+        <section>
+          Proof budget: redacted regular files only, max 64 MiB per artifact
+          and 256 MiB total.
+        </section>
         <section>Open core https://github.com/Fusekit-AI/fusekit</section>
         <section>Reviewable hosted files</section>
         <section>app.py vercel.json src/fusekit/hosted/server.py</section>

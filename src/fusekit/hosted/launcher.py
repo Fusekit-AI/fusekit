@@ -446,6 +446,12 @@ def render_hosted_launcher(
       color: var(--muted);
       line-height: 1.4;
     }}
+    .lane ul {{
+      margin: 0;
+      padding-left: 18px;
+      font-size: 13px;
+      color: #2e4256;
+    }}
     button,
     .button {{
       min-height: 44px;
@@ -664,9 +670,7 @@ def _lane_control(
         ) if href else '<span class="button disabled" aria-disabled="true">Unavailable</span>'
     else:
         button = '<span class="button disabled" aria-disabled="true">Unavailable</span>'
-    details = ""
-    if next_actions:
-        details = f"<p>{_html_public_text(next_actions[0])}</p>"
+    details = _lane_detail_markup(lane, next_actions=next_actions)
     return f"""
           <article class="lane">
             <h3>{label}</h3>
@@ -675,6 +679,43 @@ def _lane_control(
             {button}
           </article>
 """
+
+
+def _lane_detail_markup(lane: object, *, next_actions: list[str]) -> str:
+    items: list[str] = []
+    cost_controls = getattr(lane, "cost_controls", ())
+    if cost_controls:
+        items.append(str(cost_controls[0]))
+    proof_policy = getattr(lane, "proof_policy", None)
+    if isinstance(proof_policy, dict):
+        max_artifact = _bytes_to_mib_label(proof_policy.get("max_artifact_bytes"))
+        max_total = _bytes_to_mib_label(proof_policy.get("max_total_artifact_bytes"))
+        if max_artifact and max_total:
+            items.append(
+                "Proof budget: redacted regular files only, "
+                f"max {max_artifact} per artifact and {max_total} total."
+            )
+        zero_allowed = proof_policy.get("zero_byte_allowed_artifacts")
+        if isinstance(zero_allowed, list) and zero_allowed:
+            items.append(
+                "Only "
+                + ", ".join(str(item) for item in zero_allowed)
+                + " may be zero-byte proof."
+            )
+    if next_actions:
+        items.append(next_actions[0])
+    if not items:
+        return ""
+    return _list_markup(tuple(items))
+
+
+def _bytes_to_mib_label(value: object) -> str:
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        return ""
+    mib = 1024 * 1024
+    if value % mib != 0:
+        return ""
+    return f"{value // mib} MiB"
 
 
 def _lane_is_launchable(lane_readiness: dict[str, object], lane_id: str) -> bool:

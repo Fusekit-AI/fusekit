@@ -853,6 +853,7 @@
   BYO OCI lane readiness now publishes the redacted proof-policy summary too: remote-artifacts root, input/output proof schemas, 64 MiB per-artifact ceiling, 256 MiB total bundle ceiling, exact zero-byte exception list, regular-file/redaction requirements, and completion-evidence keys. The outside-in hosted verifier rejects missing, weakened, or sidecar proof-policy fields, so the free lane cannot silently drift into bulky proof uploads or unredacted artifact handling while still looking launchable.
   The BYO OCI launch-lane contract now carries that same proof policy, so homepage/deployment-contract consumers, signed job lane contracts, proof receipts, readiness JSON, BYO bootstrap receipts, and outside-in verification all share one machine-checkable redacted artifact budget instead of relying on prose in one surface and exact policy in another.
   Hosted outside-in verification now reports targeted BYO launch-lane and one-click lane proof-policy failures in addition to the broad lane-contract mismatch, including homepage embedded-contract drift, so a weakened artifact budget or redaction requirement is immediately diagnosable during live URL verification.
+  The hosted lane cards now show the BYO OCI proof budget in visible copy before launch: redacted regular files only, 64 MiB per artifact, 256 MiB total, and the exact zero-byte exception. The homepage verifier requires those markers so the nontechnical first-click experience cannot hide the free lane's proof-size and redaction boundary inside JSON only.
 
 ## North Star Audit Remediation
 
