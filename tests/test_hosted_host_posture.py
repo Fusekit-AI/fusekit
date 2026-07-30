@@ -1834,6 +1834,39 @@ def test_oci_host_posture_blocks_invalid_release_retention_receipt() -> None:
     ]
 
 
+def test_oci_host_posture_blocks_unbounded_release_retention_baseline() -> None:
+    evidence = _clean_evidence()
+    receipt = evidence["release_receipt"]
+    storage = evidence["storage_footprint"]
+    assert isinstance(receipt, dict)
+    assert isinstance(storage, dict)
+    retention = receipt["release_retention"]
+    release_store = storage["release_store"]
+    assert isinstance(retention, dict)
+    assert isinstance(release_store, dict)
+    retention["minimum_retained_releases"] = 20
+    retention["retained_release_count"] = 20
+    release_store["release_count"] = 20
+    release_store["used_bytes"] = 5 * 1024 * 1024 * 1024
+    release_store["largest_release_bytes"] = 300 * 1024 * 1024
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == [
+        "host.storage_footprint",
+        "host.release_receipt",
+    ]
+    storage_check = _check(report, "host.storage_footprint")
+    release_check = _check(report, "host.release_receipt")
+    assert storage_check["failures"] == [
+        "oci_host_storage_release_count_exceeds_retention"
+    ]
+    assert release_check["failures"] == [
+        "oci_host_release_retention_minimum_invalid"
+    ]
+
+
 def test_oci_host_posture_preserves_hosted_expected_commit_blocker() -> None:
     evidence = _clean_evidence()
     evidence["hosted_verify"] = {

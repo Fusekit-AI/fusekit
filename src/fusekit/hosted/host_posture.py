@@ -69,6 +69,7 @@ OCI_HOST_POSTURE_RECOMMENDED_ROOT_TOTAL_BYTES = 32 * 1024 * 1024 * 1024
 OCI_HOST_POSTURE_MAX_ROOT_TOTAL_BYTES = 64 * 1024 * 1024 * 1024
 OCI_HOST_POSTURE_MAX_RELEASE_STORE_BYTES = 12 * 1024 * 1024 * 1024
 OCI_HOST_POSTURE_MAX_SINGLE_RELEASE_BYTES = 4 * 1024 * 1024 * 1024
+OCI_HOST_POSTURE_MAX_RELEASE_RETENTION_COUNT = 4
 OCI_HOST_POSTURE_MAX_PACKAGE_CACHE_BYTES = 256 * 1024 * 1024
 OCI_HOST_POSTURE_ALLOWED_EVIDENCE_KEYS = frozenset(
     {
@@ -1649,7 +1650,14 @@ def _storage_footprint_check(evidence: Mapping[str, object]) -> dict[str, object
     )
     retention = _mapping(_mapping(evidence.get("release_receipt")).get("release_retention"))
     minimum_retained = _literal_non_negative_int(retention.get("minimum_retained_releases"))
-    allowed_release_count = (minimum_retained if minimum_retained is not None else 2) + 2
+    if minimum_retained is None:
+        retention_baseline = 2
+    else:
+        retention_baseline = min(
+            max(minimum_retained, 2),
+            OCI_HOST_POSTURE_MAX_RELEASE_RETENTION_COUNT,
+        )
+    allowed_release_count = retention_baseline + 2
     failures: list[str] = []
     if (
         root.get("mount") != "/"
@@ -2169,7 +2177,11 @@ def _release_receipt_check(evidence: Mapping[str, object]) -> dict[str, object]:
     retained_count = _literal_non_negative_int(retention.get("retained_release_count"))
     removed_count = _literal_non_negative_int(retention.get("removed_release_count"))
     removed_commits = _string_list(retention.get("removed_commit_shas"))
-    if minimum_retained is None or minimum_retained < 2:
+    if (
+        minimum_retained is None
+        or minimum_retained < 2
+        or minimum_retained > OCI_HOST_POSTURE_MAX_RELEASE_RETENTION_COUNT
+    ):
         failures.append("oci_host_release_retention_minimum_invalid")
     if retained_count is None or retained_count < 1:
         failures.append("oci_host_release_retention_retained_count_invalid")

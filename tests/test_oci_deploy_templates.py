@@ -130,7 +130,12 @@ def test_oci_release_script_is_narrow_and_reviewable() -> None:
     assert 'RELEASE_ROOT="${FUSEKIT_RELEASE_ROOT:-/opt/fusekit/releases}"' in script
     assert 'CURRENT_LINK="${FUSEKIT_CURRENT_LINK:-/opt/fusekit/current}"' in script
     assert 'RELEASE_RETENTION_COUNT="${FUSEKIT_RELEASE_RETENTION_COUNT:-2}"' in script
-    assert "release retention count must be an integer greater than or equal to 2" in script
+    assert "MAX_RELEASE_RETENTION_COUNT=4" in script
+    assert (
+        "release retention count must be an integer from 2 to "
+        "${MAX_RELEASE_RETENTION_COUNT}"
+    ) in script
+    assert "RELEASE_RETENTION_COUNT > MAX_RELEASE_RETENTION_COUNT" in script
     assert "cleanup_old_releases" in script
     assert "keep-current-rollback-and-recent" in script
     assert "removed_commit_shas" in script

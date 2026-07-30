@@ -11,6 +11,7 @@ PROVENANCE_FILE="${FUSEKIT_HOSTED_PROVENANCE_FILE:-/etc/fusekit/hosted-provenanc
 HOSTED_SERVICE="${FUSEKIT_HOSTED_SERVICE:-fusekit-hosted.service}"
 DISPATCH_SERVICE="${FUSEKIT_DISPATCH_SERVICE:-fusekit-worker-dispatch.service}"
 RELEASE_RETENTION_COUNT="${FUSEKIT_RELEASE_RETENTION_COUNT:-2}"
+MAX_RELEASE_RETENTION_COUNT=4
 PROVENANCE_ROLLBACK=""
 PROVENANCE_EXISTED=0
 
@@ -19,8 +20,8 @@ if [[ ! "${EXPECTED_COMMIT_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
   exit 64
 fi
 
-if [[ ! "${RELEASE_RETENTION_COUNT}" =~ ^[0-9]+$ ]] || (( RELEASE_RETENTION_COUNT < 2 )); then
-  echo "release retention count must be an integer greater than or equal to 2" >&2
+if [[ ! "${RELEASE_RETENTION_COUNT}" =~ ^[0-9]+$ ]] || (( RELEASE_RETENTION_COUNT < 2 || RELEASE_RETENTION_COUNT > MAX_RELEASE_RETENTION_COUNT )); then
+  echo "release retention count must be an integer from 2 to ${MAX_RELEASE_RETENTION_COUNT}" >&2
   exit 64
 fi
 
