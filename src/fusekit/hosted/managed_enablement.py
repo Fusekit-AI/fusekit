@@ -394,6 +394,7 @@ def _live_checkout_proof_blockers(
 
 def _live_checkout_proof_shape_blockers(report: Mapping[str, Any]) -> list[str]:
     blockers: list[str] = []
+    job_id = _public_job_id(report.get("job_id"))
     unexpected = sorted(
         str(key) for key in report if str(key) not in HOSTED_MANAGED_LIVE_CHECKOUT_PROOF_KEYS
     )
@@ -421,9 +422,10 @@ def _live_checkout_proof_shape_blockers(report: Mapping[str, Any]) -> list[str]:
         )
         if unexpected_artifacts:
             blockers.append("live_checkout_proof_artifacts_unexpected_fields")
-        for artifact_key in ("webhook_receipt", "managed_start_response", "live_checkout_proof"):
+        expected_artifacts = _live_checkout_expected_artifact_labels(job_id)
+        for artifact_key, expected_value in expected_artifacts.items():
             value = proof_artifacts.get(artifact_key)
-            if not isinstance(value, str) or not value.endswith(".json"):
+            if not isinstance(value, str) or value != expected_value:
                 blockers.append(f"live_checkout_{artifact_key}_artifact_label_invalid")
         for hash_key in ("webhook_receipt_sha256", "managed_start_response_sha256"):
             if not _valid_sha256_label(str(proof_artifacts.get(hash_key) or "")):
@@ -452,6 +454,32 @@ def _hosted_verified_commit(report: Mapping[str, Any]) -> str:
 
 def _valid_git_sha(value: str) -> str:
     return value if len(value) == 40 and all(char in "0123456789abcdef" for char in value) else ""
+
+
+def _public_job_id(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    if len(value) < len("hosted-") + 8 or len(value) > len("hosted-") + 160:
+        return ""
+    if not value.startswith("hosted-"):
+        return ""
+    suffix = value.removeprefix("hosted-")
+    allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+    return value if suffix and all(char in allowed for char in suffix) else ""
+
+
+def _live_checkout_expected_artifact_labels(job_id: str) -> dict[str, str]:
+    if not job_id:
+        return {
+            "webhook_receipt": "",
+            "managed_start_response": "",
+            "live_checkout_proof": "live-checkout-proof.json",
+        }
+    return {
+        "webhook_receipt": f"{job_id}.stripe-webhook-receipt.json",
+        "managed_start_response": f"{job_id}.managed-start-response.json",
+        "live_checkout_proof": "live-checkout-proof.json",
+    }
 
 
 def _valid_sha256_label(value: str) -> bool:
