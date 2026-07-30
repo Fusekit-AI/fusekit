@@ -94,7 +94,10 @@ class OciProvisioner:
         try:
             import oci
         except ImportError as exc:  # pragma: no cover - exercised by install checks.
-            raise FuseKitError("OCI SDK is not installed. Run `pip install -e .`.") from exc
+            raise FuseKitError(
+                "OCI SDK is not installed. Install FuseKit with the OCI runner extra: "
+                "`pip install 'fusekit[oci]'` or `pip install -e '.[oci]'`."
+            ) from exc
         self.oci = oci
         self.auth = auth
         auth_kwargs = _oci_client_kwargs(auth)
@@ -969,7 +972,10 @@ def _load_oci_config_file(config_file: Path | None) -> OciAuth:
     try:
         import oci
     except ImportError as exc:
-        raise FuseKitError("OCI SDK is not installed. Run `pip install -e .`.") from exc
+        raise FuseKitError(
+            "OCI SDK is not installed. Install FuseKit with the OCI runner extra: "
+            "`pip install 'fusekit[oci]'` or `pip install -e '.[oci]'`."
+        ) from exc
     path = str(config_file) if config_file else oci.config.DEFAULT_LOCATION
     config = oci.config.from_file(path)
     normalized = {
@@ -1015,7 +1021,10 @@ def _auth_from_api_key_snippet(config_snippet: str, private_key_pem: str) -> Oci
     try:
         import oci
     except ImportError as exc:
-        raise FuseKitError("OCI SDK is not installed. Run `pip install -e .`.") from exc
+        raise FuseKitError(
+            "OCI SDK is not installed. Install FuseKit with the OCI runner extra: "
+            "`pip install 'fusekit[oci]'` or `pip install -e '.[oci]'`."
+        ) from exc
     parser = configparser.ConfigParser()
     parser.read_string(config_snippet)
     section = parser["DEFAULT"]
@@ -1043,7 +1052,10 @@ def _auth_from_session_snippet(
     try:
         import oci
     except ImportError as exc:
-        raise FuseKitError("OCI SDK is not installed. Run `pip install -e .`.") from exc
+        raise FuseKitError(
+            "OCI SDK is not installed. Install FuseKit with the OCI runner extra: "
+            "`pip install 'fusekit[oci]'` or `pip install -e '.[oci]'`."
+        ) from exc
     parser = configparser.ConfigParser()
     parser.read_string(config_snippet)
     section = parser[parser.sections()[0] if parser.sections() else "DEFAULT"]

@@ -15,15 +15,25 @@ authors = [
 dependencies = [
   "cryptography>=48.0.1,<49",
   "dnspython>=2.6",
-  "oci>=2.160",
-  "playwright>=1.49",
   "PyNaCl>=1.5",
   "PyYAML>=6",
 ]
 
 [project.optional-dependencies]
+oci = [
+  "oci>=2.160",
+]
+browser = [
+  "playwright>=1.49",
+]
+runner = [
+  "oci>=2.160",
+  "playwright>=1.49",
+]
 dev = [
   "mypy>=1.10",
+  "oci>=2.160",
+  "playwright>=1.49",
   "pytest>=8.0",
   "ruff>=0.5",
   "types-PyYAML>=6",

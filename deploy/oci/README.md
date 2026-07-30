@@ -36,7 +36,7 @@ They are intentionally narrow:
 
 The release script is intentionally narrow and reviewable. It accepts one exact
 40-character commit SHA, clones only `https://github.com/Fusekit-AI/fusekit.git`,
-installs into `/opt/fusekit/releases/<commit>`, moves only the
+installs the base hosted package into `/opt/fusekit/releases/<commit>`, moves only the
 `/opt/fusekit/current` symlink, writes only the non-secret provenance file,
 restarts only `fusekit-hosted.service` and `fusekit-worker-dispatch.service`,
 retains the current release, rollback release, and the most recent release
@@ -44,7 +44,9 @@ window, and emits a redacted release receipt under
 `/var/lib/fusekit/release-receipts`. The release window defaults to 2 and can be
 raised with `FUSEKIT_RELEASE_RETENTION_COUNT`; values below 2 are rejected so the
 host always keeps a rollback path while avoiding unbounded virtualenv growth on
-the boot volume.
+the boot volume. Hosted releases intentionally do not install the heavy OCI SDK
+or Playwright extras; those are installed only in development or disposable
+runner environments that need live OCI provisioning or browser automation.
 
 ```zsh
 sudo install -d -o root -g root -m 0755 /etc/fusekit/tls

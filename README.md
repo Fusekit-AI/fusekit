@@ -973,6 +973,11 @@ python -m pip install -e ".[dev]"
 bash scripts/check.sh
 ```
 
+The base package is the lean hosted/CLI install. Live OCI provisioning and local
+browser automation are optional extras: use `.[oci]`, `.[browser]`, or
+`.[runner]` when a machine actually needs those capabilities. Development keeps
+both heavy runner extras in `.[dev]` so tests continue to cover those paths.
+
 ## Project Structure
 
 - `src/fusekit/`: open-source trust core and CLI.

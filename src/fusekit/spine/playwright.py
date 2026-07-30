@@ -37,7 +37,8 @@ class PlaywrightBrowserSpine:
             from playwright.sync_api import sync_playwright
         except ImportError as exc:
             raise ProviderError(
-                "Playwright is not installed. Run `pip install -e .` or reinstall FuseKit."
+                "Playwright is not installed. Install FuseKit with the browser extra: "
+                "`pip install 'fusekit[browser]'` or `pip install -e '.[browser]'`."
             ) from exc
         try:
             self._playwright = sync_playwright().start()
