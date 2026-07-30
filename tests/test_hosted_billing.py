@@ -911,6 +911,15 @@ def test_payment_required_receipt_is_public_and_scanned() -> None:
         "dispatch_requires_paid_checkout_session": True,
         "reuse_across_jobs_allowed": False,
         "receipt_amount_currency_must_match_price_label": True,
+        "session_binding": [
+            "client_reference_id",
+            "job_id",
+            "lane",
+            "github_source_hash",
+            "plan_fingerprint",
+            "stripe_price_id_hash",
+            "price_label_hash",
+        ],
     }
     assert "Payment method details stay with Stripe Checkout" in receipt["secret_boundary"]
     assert "sk_live" not in serialized

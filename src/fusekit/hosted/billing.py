@@ -151,16 +151,7 @@ class HostedPaymentConfig:
             "price_label": self.price_label if price_label_configured else "",
             "required_for_lanes": [MANAGED_FUSEKIT_RUN_LANE],
             "mode": "payment",
-            "cost_controls": {
-                "max_unverified_managed_spend_cents": 0,
-                "dispatch_requires_paid_checkout_session": True,
-                "reuse_across_jobs_allowed": False,
-                "receipt_amount_currency_must_match_price_label": True,
-                "session_binding": [
-                    "client_reference_id",
-                    *STRIPE_CHECKOUT_METADATA_KEYS,
-                ],
-            },
+            "cost_controls": managed_payment_cost_controls(),
             "operator_setup": {
                 "helper_command": HOSTED_STRIPE_PRICE_SETUP_HELPER,
                 "verification_command": HOSTED_STRIPE_PRICE_VERIFY_HELPER,
@@ -400,12 +391,7 @@ def payment_required_receipt(*, lane: str, price_label: str = "") -> dict[str, o
         "status": "payment_required",
         "paid": False,
         "price_label": price_label,
-        "cost_controls": {
-            "max_unverified_managed_spend_cents": 0,
-            "dispatch_requires_paid_checkout_session": True,
-            "reuse_across_jobs_allowed": False,
-            "receipt_amount_currency_must_match_price_label": True,
-        },
+        "cost_controls": managed_payment_cost_controls(),
         "secret_boundary": (
             "Managed worker dispatch is blocked until server-side payment authorization "
             "is recorded. Payment method details stay with Stripe Checkout."
@@ -413,6 +399,21 @@ def payment_required_receipt(*, lane: str, price_label: str = "") -> dict[str, o
     }
     _assert_public_payment_receipt(receipt)
     return receipt
+
+
+def managed_payment_cost_controls() -> dict[str, object]:
+    """Return the public managed-run payment cost-control contract."""
+
+    return {
+        "max_unverified_managed_spend_cents": 0,
+        "dispatch_requires_paid_checkout_session": True,
+        "reuse_across_jobs_allowed": False,
+        "receipt_amount_currency_must_match_price_label": True,
+        "session_binding": [
+            "client_reference_id",
+            *STRIPE_CHECKOUT_METADATA_KEYS,
+        ],
+    }
 
 
 def _require_checkout_creation_receipt_bound(
