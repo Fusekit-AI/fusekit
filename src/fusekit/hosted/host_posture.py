@@ -65,6 +65,7 @@ OCI_HOST_POSTURE_MAX_JSON_BYTES = 1_048_576
 OCI_HOST_POSTURE_OUTPUT_MODE = 0o600
 OCI_HOST_POSTURE_MAX_ROOT_USED_PERCENT = 85
 OCI_HOST_POSTURE_MIN_ROOT_AVAILABLE_BYTES = 5 * 1024 * 1024 * 1024
+OCI_HOST_POSTURE_RECOMMENDED_ROOT_TOTAL_BYTES = 32 * 1024 * 1024 * 1024
 OCI_HOST_POSTURE_MAX_ROOT_TOTAL_BYTES = 64 * 1024 * 1024 * 1024
 OCI_HOST_POSTURE_MAX_RELEASE_STORE_BYTES = 12 * 1024 * 1024 * 1024
 OCI_HOST_POSTURE_MAX_SINGLE_RELEASE_BYTES = 4 * 1024 * 1024 * 1024
@@ -1642,6 +1643,10 @@ def _storage_footprint_check(evidence: Mapping[str, object]) -> dict[str, object
     release_count = _literal_non_negative_int(release_store.get("release_count"))
     largest_release = _literal_non_negative_int(release_store.get("largest_release_bytes"))
     package_cache_used = _literal_non_negative_int(package_cache.get("used_bytes"))
+    root_right_size_review_required = (
+        root_total is not None
+        and root_total > OCI_HOST_POSTURE_RECOMMENDED_ROOT_TOTAL_BYTES
+    )
     retention = _mapping(_mapping(evidence.get("release_receipt")).get("release_retention"))
     minimum_retained = _literal_non_negative_int(retention.get("minimum_retained_releases"))
     allowed_release_count = (minimum_retained if minimum_retained is not None else 2) + 2
@@ -1693,6 +1698,8 @@ def _storage_footprint_check(evidence: Mapping[str, object]) -> dict[str, object
             "Clean package caches or old releases, or rebuild onto a right-sized boot "
             "volume, then rerun the read-only posture collector.",
             root_total_bytes=root_total,
+            root_recommended_max_bytes=OCI_HOST_POSTURE_RECOMMENDED_ROOT_TOTAL_BYTES,
+            root_right_size_review_required=root_right_size_review_required,
             root_used_percent=root_used_percent,
             root_available_bytes=root_available,
             release_count=release_count,
@@ -1703,6 +1710,8 @@ def _storage_footprint_check(evidence: Mapping[str, object]) -> dict[str, object
     return _ok(
         "host.storage_footprint",
         root_total_bytes=root_total,
+        root_recommended_max_bytes=OCI_HOST_POSTURE_RECOMMENDED_ROOT_TOTAL_BYTES,
+        root_right_size_review_required=root_right_size_review_required,
         root_used_percent=root_used_percent,
         root_available_bytes=root_available,
         release_count=release_count,

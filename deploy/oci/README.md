@@ -146,11 +146,12 @@ and byte totals only, not raw `df`/`du` output. Root filesystem posture fails
 closed when usage exceeds 85%, free space falls below 5 GiB, retained releases
 exceed the configured release window, total release storage exceeds 12 GiB, a
 single retained release exceeds 4 GiB, pip cache exceeds 256 MiB, or the boot
-volume is over 64 GiB. Current Ubuntu/OCI images may create a roughly 45 GiB
-root disk; that is not FuseKit source bloat, but any larger permanent host
-should be treated as overallocated until a right-sized replacement plan is
-reviewed. Posture evidence must not receive provider tokens, private keys,
-vault material, or raw setup logs.
+volume is over 64 GiB. It also emits a non-blocking right-size review flag when
+the root volume is over the 32 GiB recommendation. Current Ubuntu/OCI images may
+create a roughly 45 GiB root disk; that is not FuseKit source bloat, but it
+should stay visible as a future replacement-sizing review item. Posture evidence
+must not receive provider tokens, private keys, vault material, or raw setup
+logs.
 
 If the current image cannot support OCI Run Command and SSH release access is
 not ready, use `fusekit-hosted-oci-replacement-plan` before requesting any host

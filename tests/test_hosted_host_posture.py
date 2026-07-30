@@ -1052,6 +1052,8 @@ def test_oci_host_posture_ok_exposes_bounded_storage_cost_counters() -> None:
         "id": "host.storage_footprint",
         "status": "ok",
         "root_total_bytes": 48_000_000_000,
+        "root_recommended_max_bytes": 32 * 1024 * 1024 * 1024,
+        "root_right_size_review_required": True,
         "root_used_percent": 13,
         "root_available_bytes": 42_000_000_000,
         "release_count": 3,
@@ -1077,7 +1079,28 @@ def test_oci_host_posture_blocks_oversized_root_volume() -> None:
     storage_check = _check(report, "host.storage_footprint")
     assert storage_check["failures"] == ["oci_host_storage_root_volume_overallocated"]
     assert storage_check["root_total_bytes"] == 96 * 1024 * 1024 * 1024
+    assert storage_check["root_recommended_max_bytes"] == 32 * 1024 * 1024 * 1024
+    assert storage_check["root_right_size_review_required"] is True
     assert "right-sized boot volume" in storage_check["next_action"]
+
+
+def test_oci_host_posture_does_not_request_right_size_review_for_small_root() -> None:
+    evidence = _clean_evidence()
+    storage = evidence["storage_footprint"]
+    assert isinstance(storage, dict)
+    root = storage["root_filesystem"]
+    assert isinstance(root, dict)
+    root["total_bytes"] = 24 * 1024 * 1024 * 1024
+    root["used_bytes"] = 5 * 1024 * 1024 * 1024
+    root["available_bytes"] = 19 * 1024 * 1024 * 1024
+    root["used_percent"] = 21
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is True
+    storage_check = _check(report, "host.storage_footprint")
+    assert storage_check["root_recommended_max_bytes"] == 32 * 1024 * 1024 * 1024
+    assert storage_check["root_right_size_review_required"] is False
 
 
 def test_oci_host_posture_blocks_oversized_single_release() -> None:
