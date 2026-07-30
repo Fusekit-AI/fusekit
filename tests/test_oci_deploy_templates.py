@@ -54,6 +54,8 @@ def test_oci_systemd_units_match_host_posture_hardening_contract() -> None:
         assert unit["MemoryDenyWriteExecute"] == ["true"]
         assert unit["CapabilityBoundingSet"] == [""]
         assert unit["AmbientCapabilities"] == [""]
+        assert unit["KillMode"] == ["control-group"]
+        assert unit["TasksMax"] == ["256"]
         assert unit["RestrictAddressFamilies"] == ["AF_UNIX AF_INET AF_INET6"]
         assert unit["StateDirectory"] == ["fusekit"]
         assert unit["StateDirectoryMode"] == ["0750"]

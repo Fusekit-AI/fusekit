@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import io
 import json
 import urllib.error
@@ -63,7 +64,10 @@ from fusekit.hosted.verify import (
     HOSTED_DEPLOYMENT_VERIFICATION_SCHEMA_VERSION,
     verify_hosted_deployment,
 )
-from fusekit.hosted.worker_dispatch import HOSTED_WORKER_DISPATCH_BINDING_FIELDS
+from fusekit.hosted.worker_dispatch import (
+    HOSTED_WORKER_DISPATCH_BINDING_FIELDS,
+    HOSTED_WORKER_DISPATCH_COST_GUARD,
+)
 from fusekit.security import contains_durable_secret_text
 
 PUBLIC_DNS_ADDRESSES = ["2606:4700::6810:84e5", "76.76.21.21"]
@@ -227,6 +231,7 @@ def _worker_dispatch_readiness_contract() -> dict[str, object]:
                 "non-secret state directory before worker spawn."
             ),
         },
+        "cost_guard": copy.deepcopy(HOSTED_WORKER_DISPATCH_COST_GUARD),
         "configured": {
             "FUSEKIT_HOSTED_WORKER_SECRET": True,
             "FUSEKIT_HOSTED_WORKER_ID": True,
@@ -427,6 +432,7 @@ def test_verify_hosted_deployment_requires_durable_worker_dispatch_idempotency()
                 "ready": True,
                 "production_ready": False,
                 "dispatch_binding": _worker_dispatch_binding_contract(),
+                "cost_guard": copy.deepcopy(HOSTED_WORKER_DISPATCH_COST_GUARD),
                 "idempotency": {
                     "mode": "process",
                     "durable": False,
@@ -473,6 +479,7 @@ def test_verify_hosted_deployment_requires_worker_dispatch_idempotency_proof() -
                 "ready": True,
                 "production_ready": True,
                 "dispatch_binding": _worker_dispatch_binding_contract(),
+                "cost_guard": copy.deepcopy(HOSTED_WORKER_DISPATCH_COST_GUARD),
                 "idempotency": {
                     "mode": "dispatch-state-dir",
                     "durable": True,
@@ -547,11 +554,19 @@ def test_verify_hosted_deployment_rejects_worker_dispatch_readiness_sidecars() -
     readiness["sk_live_readiness_field_should_not_echo"] = "public"
     binding = readiness["dispatch_binding"]
     idempotency = readiness["idempotency"]
+    cost_guard = readiness["cost_guard"]
     assert isinstance(binding, dict)
     assert isinstance(idempotency, dict)
+    assert isinstance(cost_guard, dict)
     binding["stripe_price_id"] = "price_should_not_be_public_readiness"
     binding["ghp_binding_field_should_not_echo"] = "public"
     idempotency["state_dir"] = "/var/lib/fusekit/dispatch-state"
+    cost_guard["max_unpaid_managed_worker_spawns"] = 1
+    cost_guard["raw_billing_note"] = "unexpected public spend note"
+    controls = cost_guard["service_resource_controls_expected"]
+    assert isinstance(controls, dict)
+    controls["tasks_max"] = 1024
+    controls["systemd_show"] = "TasksMax=1024"
     storage = {
         "exists": True,
         "directory": True,
@@ -592,6 +607,13 @@ def test_verify_hosted_deployment_rejects_worker_dispatch_readiness_sidecars() -
     assert "worker_dispatch_binding_unexpected_field:stripe_price_id" in failures
     assert "worker_dispatch_idempotency_unexpected_field:state_dir" in failures
     assert "worker_dispatch_idempotency_storage_unexpected_field:path" in failures
+    assert "worker_dispatch_cost_guard_max_unpaid_managed_worker_spawns_mismatch" in failures
+    assert "worker_dispatch_cost_guard_unexpected_field:raw_billing_note" in failures
+    assert "worker_dispatch_cost_guard_service_controls_mismatch" in failures
+    assert (
+        "worker_dispatch_cost_guard_service_controls_unexpected_field:systemd_show"
+        in failures
+    )
     assert any(
         failure.startswith("worker_dispatch_readiness_unexpected_field:")
         and "redacted" in failure.lower()
@@ -602,7 +624,7 @@ def test_verify_hosted_deployment_rejects_worker_dispatch_readiness_sidecars() -
         and "redacted" in failure.lower()
         for failure in failures
     )
-    assert len(failures) == 7
+    assert len(failures) == 11
 
 
 def test_verify_hosted_deployment_reports_cloudflare_error_without_claiming_ready() -> None:

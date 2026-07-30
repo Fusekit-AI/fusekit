@@ -42,6 +42,7 @@ from fusekit.hosted.server import (
     HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION,
     HOSTED_WORKER_DISPATCH_SCHEMA_VERSION,
 )
+from fusekit.hosted.worker_dispatch import HOSTED_WORKER_DISPATCH_COST_GUARD
 from fusekit.security import contains_durable_secret_text, contains_private_marker_text
 
 HOSTED_MANAGED_LIVE_CHECKOUT_PROOF_INPUT_SCHEMA_VERSION = (
@@ -393,6 +394,8 @@ def _worker_dispatch_blockers(value: object) -> list[str]:
     proof = idempotency.get("proof")
     if not isinstance(proof, str) or "before worker spawn" not in proof:
         blockers.append("live_checkout_worker_dispatch_idempotency_proof_missing")
+    if dispatch.get("cost_guard") != HOSTED_WORKER_DISPATCH_COST_GUARD:
+        blockers.append("live_checkout_worker_dispatch_cost_guard_mismatch")
     if dispatch.get("secret_boundary") != HOSTED_MANAGED_START_DISPATCH_SECRET_BOUNDARY:
         blockers.append("live_checkout_worker_dispatch_secret_boundary_mismatch")
     return blockers
@@ -413,6 +416,7 @@ def _worker_dispatch_ready(dispatch: Mapping[str, Any]) -> bool:
         dispatch.get("dispatched") is True
         and dispatch.get("accepted") is True
         and dispatch.get("action") == "start"
+        and dispatch.get("cost_guard") == HOSTED_WORKER_DISPATCH_COST_GUARD
         and idempotency.get("durable") is True
         and idempotency.get("mode") == "dispatch-state-dir"
     )

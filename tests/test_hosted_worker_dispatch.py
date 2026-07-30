@@ -10,6 +10,7 @@ import pytest
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.worker_dispatch import (
+    HOSTED_WORKER_DISPATCH_COST_GUARD,
     HOSTED_WORKER_DISPATCH_MAX_BODY_BYTES,
     HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION,
     HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION,
@@ -254,6 +255,14 @@ def test_hosted_worker_dispatch_readiness_reports_presence_without_secrets() -> 
             "for production."
         ),
     }
+    assert readiness["cost_guard"] == HOSTED_WORKER_DISPATCH_COST_GUARD
+    assert readiness["cost_guard"] is not HOSTED_WORKER_DISPATCH_COST_GUARD
+    assert (
+        readiness["cost_guard"]["service_resource_controls_expected"]
+        is not HOSTED_WORKER_DISPATCH_COST_GUARD["service_resource_controls_expected"]
+    )
+    assert readiness["cost_guard"]["max_unpaid_managed_worker_spawns"] == 0
+    assert readiness["cost_guard"]["max_worker_spawns_per_job_action"] == 1
     assert readiness["required_runtime_env"] == [
         "FUSEKIT_HOSTED_WORKER_SECRET",
         "FUSEKIT_HOSTED_WORKER_ID",
@@ -441,6 +450,7 @@ def test_accept_hosted_worker_dispatch_spawns_env_backed_worker_and_redacts_rece
         "duplicate": False,
         "proof": "in-process dispatch guard accepted this job/action once.",
     }
+    assert receipt["cost_guard"] == HOSTED_WORKER_DISPATCH_COST_GUARD
     assert receipt["worker_command"] == [
         "<fusekit-hosted-worker>",
         "--origin",
@@ -569,6 +579,7 @@ def test_accept_hosted_worker_dispatch_is_idempotent_per_job_action(tmp_path: Pa
             "before worker spawn."
         ),
     }
+    assert second["cost_guard"] == HOSTED_WORKER_DISPATCH_COST_GUARD
     assert len(markers) == 1
     assert markers[0].stat().st_mode & 0o777 == 0o640
     assert marker_payload["origin"] == "https://fusekit.snowmanai.org"

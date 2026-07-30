@@ -101,6 +101,7 @@ from fusekit.hosted.session import (
     create_hosted_state_token,
     verify_hosted_state_token,
 )
+from fusekit.hosted.worker_dispatch import HOSTED_WORKER_DISPATCH_COST_GUARD
 from fusekit.scanner import scan_repo
 from fusekit.security.redaction import (
     contains_durable_secret_text,
@@ -509,6 +510,7 @@ HOSTED_WORKER_DISPATCH_RECEIPT_FIELDS = frozenset(
         "worker_command",
         "spawned",
         "idempotency",
+        "cost_guard",
         "secret_boundary",
     }
 )
@@ -3675,6 +3677,7 @@ def _dispatch_hosted_worker(
         "duplicate": receipt["duplicate"],
         "receiver_schema_version": receipt["schema_version"],
         "idempotency": receipt["idempotency"],
+        "cost_guard": receipt["cost_guard"],
         "secret_boundary": (
             "Dispatch receipt is accepted only after the worker-dispatch receiver returns "
             "a public schema-valid, binding-matched acceptance receipt. It omits the job "
@@ -3788,6 +3791,8 @@ def _verified_worker_dispatch_receipt(
         raise FuseKitError("Hosted worker dispatch receipt idempotency proof is invalid.")
     if "before worker spawn" not in proof:
         raise FuseKitError("Hosted worker dispatch receipt idempotency proof is not production.")
+    if receipt.get("cost_guard") != HOSTED_WORKER_DISPATCH_COST_GUARD:
+        raise FuseKitError("Hosted worker dispatch receipt cost guard mismatch.")
     if receipt.get("secret_boundary") != HOSTED_WORKER_DISPATCH_RECEIPT_SECRET_BOUNDARY:
         raise FuseKitError("Hosted worker dispatch receipt secret boundary mismatch.")
     _assert_public_server_payload(receipt, "Hosted worker dispatch receipt")

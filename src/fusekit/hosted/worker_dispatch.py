@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import hmac
 import json
@@ -36,6 +37,25 @@ HOSTED_WORKER_DISPATCH_BINDING_FIELDS = (
     "stripe_price_id_hash",
     "price_label_hash",
 )
+HOSTED_WORKER_DISPATCH_COST_GUARD = {
+    "max_unpaid_managed_worker_spawns": 0,
+    "max_worker_spawns_per_job_action": 1,
+    "reservation_before_spawn_required": True,
+    "durable_state_required_for_production": True,
+    "dispatch_binding_requires_payment_status": "paid",
+    "duplicate_dispatch_behavior": "return_receipt_without_spawn",
+    "service_resource_controls_expected": {
+        "kill_mode": "control-group",
+        "tasks_max": 256,
+        "restart_limit_window_seconds": 300,
+        "restart_limit_burst": 5,
+    },
+    "secret_boundary": (
+        "Cost guard publishes only public ceilings and service-control labels. It never "
+        "includes worker secrets, signed job tokens, provider credentials, vault material, "
+        "billing details, or cloud account identifiers."
+    ),
+}
 HOSTED_WORKER_DISPATCH_ENVELOPE_FIELDS = frozenset(
     {
         "schema_version",
@@ -135,6 +155,7 @@ class HostedWorkerDispatchSettings:
                 ),
             },
             "idempotency": idempotency,
+            "cost_guard": _worker_dispatch_cost_guard(),
             "optional_runtime_env": [
                 "FUSEKIT_HOSTED_WORKER_WORKSPACE",
                 "FUSEKIT_HOSTED_WORKER_DISPATCH_STATE_DIR",
@@ -314,6 +335,7 @@ def accept_hosted_worker_dispatch(
             "worker_command": dispatch.public_command(settings),
             "spawned": {"pid": None},
             "idempotency": reservation,
+            "cost_guard": _worker_dispatch_cost_guard(),
             "secret_boundary": (
                 "Dispatch receipts omit job tokens, worker secrets, HMAC signatures, "
                 "provider credentials, GitHub installation tokens, and vault material."
@@ -338,6 +360,7 @@ def accept_hosted_worker_dispatch(
         "worker_command": dispatch.public_command(settings),
         "spawned": _public_spawn_label(spawned),
         "idempotency": reservation,
+        "cost_guard": _worker_dispatch_cost_guard(),
         "secret_boundary": (
             "Dispatch receipts omit job tokens, worker secrets, HMAC signatures, "
             "provider credentials, GitHub installation tokens, and vault material."
@@ -517,6 +540,10 @@ def _dispatch_marker_matches(
         and marker.get("dispatch_binding") == dispatch.dispatch_binding
         and marker.get("worker_id") == settings.worker_id
     )
+
+
+def _worker_dispatch_cost_guard() -> dict[str, object]:
+    return copy.deepcopy(HOSTED_WORKER_DISPATCH_COST_GUARD)
 
 
 def _prepare_dispatch_state_dir(path: Path) -> None:

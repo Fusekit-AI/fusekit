@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -20,6 +21,7 @@ from fusekit.hosted.live_checkout_proof import (
 from fusekit.hosted.managed_enablement import (
     HOSTED_MANAGED_LIVE_CHECKOUT_PROOF_SCHEMA_VERSION,
 )
+from fusekit.hosted.worker_dispatch import HOSTED_WORKER_DISPATCH_COST_GUARD
 
 JOB_ID = "hosted-live-checkout-proof"
 PLAN_HASH = "sha256:" + ("a" * 64)
@@ -248,6 +250,23 @@ def test_live_checkout_proof_rejects_worker_dispatch_weak_boundary() -> None:
 
     assert proof["ready"] is False
     assert "live_checkout_worker_dispatch_secret_boundary_mismatch" in proof["blockers"]
+
+
+def test_live_checkout_proof_rejects_worker_dispatch_cost_guard_drift() -> None:
+    start = _start_action_response()
+    dispatch = start["worker_dispatch"]
+    assert isinstance(dispatch, dict)
+    cost_guard = dispatch["cost_guard"]
+    assert isinstance(cost_guard, dict)
+    cost_guard["max_unpaid_managed_worker_spawns"] = 1
+
+    proof = build_hosted_managed_live_checkout_proof(
+        webhook_receipt=_webhook_receipt(),
+        start_action_response=start,
+    )
+
+    assert proof["ready"] is False
+    assert "live_checkout_worker_dispatch_cost_guard_mismatch" in proof["blockers"]
 
 
 def test_live_checkout_proof_cli_outputs_redacted_proof(tmp_path: Path, capsys) -> None:
@@ -650,6 +669,7 @@ def _start_action_response() -> dict[str, object]:
                 "duplicate": False,
                 "proof": "non-secret worker dispatch marker recorded before worker spawn.",
             },
+            "cost_guard": copy.deepcopy(HOSTED_WORKER_DISPATCH_COST_GUARD),
             "secret_boundary": HOSTED_MANAGED_START_DISPATCH_SECRET_BOUNDARY,
         },
     }

@@ -323,7 +323,12 @@ state directory, and separates basic `ready` status from production readiness:
 production readiness requires durable dispatch idempotency through the workspace
 or dispatch state directory, plus public mode/scope/proof and private-storage
 metadata showing the non-secret reservation is recorded before worker spawn in a
-non-symlink directory that is not writable by other users. The
+non-symlink directory that is not writable by other users. The same readiness,
+dispatch receipt, durable managed-start artifact, and live Checkout proof now
+carry a public cost guard: zero unpaid managed-worker spawns, one worker spawn
+per paid job/action reservation, duplicate clicks return receipts without
+spawning, and OCI systemd services must use control-group kill semantics,
+`TasksMax=256`, and bounded restart bursts. The
 backend-only
 `/api/hosted/jobs/<job>/worker-proof` endpoint accepts redacted worker proof
 snapshots, rejects credential-looking public notes or unsupported artifact
@@ -525,7 +530,9 @@ service running `fusekit-hosted-worker-dispatch` with
 production, the dispatch state directory must already exist as a private
 non-symlink directory, such as `/var/lib/fusekit/dispatch-state` from the OCI
 tmpfiles config. Verify that service with `/healthz` and `/readiness` before setting
-`FUSEKIT_HOSTED_WORKER_DISPATCH_URL`. As of the latest local check,
+`FUSEKIT_HOSTED_WORKER_DISPATCH_URL`; OCI posture also requires the hosted and
+worker-dispatch units to publish `KillMode=control-group` and `TasksMax=256`
+before the host can be considered cost/resource guarded. As of the latest local check,
 `https://fusekit.snowmanai.org` resolves through Cloudflare to the OCI-hosted
 launcher and the basic outside-in hosted verifier passes. Exact release proof
 with `--expected-commit-sha` must also pass before claiming the live URL serves

@@ -3,6 +3,8 @@ Description=FuseKit hosted worker dispatch receiver
 Documentation=https://github.com/Fusekit-AI/fusekit
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -17,6 +19,8 @@ Environment=FUSEKIT_HOSTED_WORKER_DISPATCH_STATE_DIR=/var/lib/fusekit/dispatch-s
 ExecStart=/opt/fusekit/current/.venv/bin/fusekit-hosted-worker-dispatch --host 127.0.0.1 --port 8766
 Restart=on-failure
 RestartSec=5s
+KillMode=control-group
+TasksMax=256
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true

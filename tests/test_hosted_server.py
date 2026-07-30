@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import hmac
 import importlib.util
@@ -81,6 +82,7 @@ from fusekit.hosted.server import (
     render_hosted_home,
 )
 from fusekit.hosted.session import create_hosted_state_token
+from fusekit.hosted.worker_dispatch import HOSTED_WORKER_DISPATCH_COST_GUARD
 
 FAKE_PRIVATE_KEY = "not-a-pem-private-key"
 STATE_SECRET = "hosted-state-secret"
@@ -286,6 +288,7 @@ def _dispatch_acceptance_response(request_body: dict[str, Any]) -> dict[str, obj
                 "directory before worker spawn."
             ),
         },
+        "cost_guard": copy.deepcopy(HOSTED_WORKER_DISPATCH_COST_GUARD),
         "secret_boundary": (
             "Dispatch receipts omit job tokens, worker secrets, HMAC signatures, provider "
             "credentials, GitHub installation tokens, and vault material."
@@ -4863,6 +4866,7 @@ def test_hosted_job_start_dispatches_signed_worker_envelope_when_configured() ->
                 "directory before worker spawn."
             ),
         },
+        "cost_guard": copy.deepcopy(HOSTED_WORKER_DISPATCH_COST_GUARD),
         "secret_boundary": (
             "Dispatch receipt is accepted only after the worker-dispatch receiver returns "
             "a public schema-valid, binding-matched acceptance receipt. It omits the job "

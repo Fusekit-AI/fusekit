@@ -358,6 +358,8 @@ OCI_HOST_POSTURE_SYSTEMD_UNIT_KEYS = frozenset(
         "memory_deny_write_execute",
         "capability_bounding_set",
         "ambient_capabilities",
+        "kill_mode",
+        "tasks_max",
         "restrict_address_families",
         "state_directory",
         "state_directory_mode",
@@ -1111,6 +1113,7 @@ def _collect_systemd_units(
                 "ProtectKernelTunables,ProtectKernelModules,ProtectKernelLogs,"
                 "ProtectControlGroups,RestrictNamespaces,RestrictRealtime,"
                 "MemoryDenyWriteExecute,CapabilityBoundingSet,AmbientCapabilities,"
+                "KillMode,TasksMax,"
                 "RestrictAddressFamilies,"
                 "StateDirectory,StateDirectoryMode,LogsDirectory,LogsDirectoryMode,"
                 "RuntimeDirectory,RuntimeDirectoryMode,"
@@ -1154,6 +1157,8 @@ def _parse_systemd_show(output: str) -> dict[str, object]:
             raw.get("CapabilityBoundingSet", "")
         ),
         "ambient_capabilities": redact_public_text(raw.get("AmbientCapabilities", "")),
+        "kill_mode": redact_public_text(raw.get("KillMode", "")),
+        "tasks_max": _systemd_tasks_max(raw.get("TasksMax", "")),
         "restrict_address_families": [
             redact_public_text(family)
             for family in raw.get("RestrictAddressFamilies", "").split()
@@ -1187,6 +1192,17 @@ def _systemd_bool(value: str) -> bool | None:
 
 def _systemd_list(value: str) -> list[str]:
     return [redact_public_text(item) for item in value.split() if item.strip()]
+
+
+def _systemd_tasks_max(value: str) -> int | None:
+    normalized = value.strip()
+    if not normalized or normalized.lower() == "infinity":
+        return None
+    try:
+        parsed = int(normalized)
+    except ValueError:
+        return None
+    return parsed if parsed > 0 else None
 
 
 def _sanitize_summary(summary: Mapping[str, object] | None) -> dict[str, object]:
@@ -2051,6 +2067,11 @@ def _systemd_check(evidence: Mapping[str, object]) -> dict[str, object]:
             failures.append(f"{unit}:capability_bounding_set_must_be_empty")
         if str(unit_config.get("ambient_capabilities") or "").strip():
             failures.append(f"{unit}:ambient_capabilities_must_be_empty")
+        if str(unit_config.get("kill_mode") or "") != "control-group":
+            failures.append(f"{unit}:kill_mode_must_be_control_group")
+        tasks_max = _non_negative_int(unit_config.get("tasks_max"))
+        if tasks_max is None or tasks_max > 256:
+            failures.append(f"{unit}:tasks_max_must_be_256_or_less")
         address_families = set(_string_list(unit_config.get("restrict_address_families")))
         if address_families != {"AF_UNIX", "AF_INET", "AF_INET6"}:
             failures.append(f"{unit}:restricted_address_families_required")
@@ -2103,7 +2124,7 @@ def _systemd_check(evidence: Mapping[str, object]) -> dict[str, object]:
             "host.systemd_units",
             failures,
             "Harden hosted systemd units with fusekit user, NoNewPrivileges, PrivateTmp, "
-            "ProtectSystem, and constrained writable paths.",
+            "ProtectSystem, constrained writable paths, and bounded service resources.",
         )
     return _ok("host.systemd_units")
 

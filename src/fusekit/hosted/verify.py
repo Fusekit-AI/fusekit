@@ -91,6 +91,7 @@ from fusekit.hosted.server import (
 )
 from fusekit.hosted.worker_dispatch import (
     HOSTED_WORKER_DISPATCH_BINDING_FIELDS,
+    HOSTED_WORKER_DISPATCH_COST_GUARD,
     HOSTED_WORKER_DISPATCH_READINESS_SCHEMA_VERSION,
 )
 from fusekit.security import (
@@ -120,6 +121,7 @@ WORKER_DISPATCH_READINESS_KEYS = frozenset(
         "invalid",
         "dispatch_binding",
         "idempotency",
+        "cost_guard",
         "optional_runtime_env",
         "required_runtime_env",
         "secret_boundary",
@@ -141,6 +143,10 @@ WORKER_DISPATCH_IDEMPOTENCY_KEYS = frozenset(
 )
 WORKER_DISPATCH_IDEMPOTENCY_STORAGE_KEYS = frozenset(
     {"exists", "directory", "symlink", "mode", "private_enough", "writable"}
+)
+WORKER_DISPATCH_COST_GUARD_KEYS = frozenset(HOSTED_WORKER_DISPATCH_COST_GUARD)
+WORKER_DISPATCH_SERVICE_RESOURCE_CONTROL_KEYS = frozenset(
+    {"kill_mode", "tasks_max", "restart_limit_window_seconds", "restart_limit_burst"}
 )
 CLOUDFLARE_DNS_CONTRACT_KEYS = frozenset(
     {
@@ -763,6 +769,7 @@ def _worker_dispatch_readiness_failures(payload: dict[str, Any]) -> list[str]:
         for field in _unexpected_keys(payload, WORKER_DISPATCH_READINESS_KEYS)
     )
     failures.extend(_worker_dispatch_binding_failures(payload.get("dispatch_binding")))
+    failures.extend(_worker_dispatch_cost_guard_failures(payload.get("cost_guard")))
     idempotency = payload.get("idempotency")
     if not isinstance(idempotency, dict):
         return ["worker_dispatch_idempotency_missing"]
@@ -796,6 +803,52 @@ def _worker_dispatch_readiness_failures(payload: dict[str, Any]) -> list[str]:
     production_ready = payload.get("production_ready")
     if production_ready is not True:
         failures.append("worker_dispatch_production_ready_not_true")
+    return failures
+
+
+def _worker_dispatch_cost_guard_failures(payload: object) -> list[str]:
+    failures: list[str] = []
+    if not isinstance(payload, dict):
+        return ["worker_dispatch_cost_guard_missing"]
+    failures.extend(
+        f"worker_dispatch_cost_guard_unexpected_field:{field}"
+        for field in _unexpected_keys(payload, WORKER_DISPATCH_COST_GUARD_KEYS)
+    )
+    expected = HOSTED_WORKER_DISPATCH_COST_GUARD
+    for key in (
+        "max_unpaid_managed_worker_spawns",
+        "max_worker_spawns_per_job_action",
+        "reservation_before_spawn_required",
+        "durable_state_required_for_production",
+        "dispatch_binding_requires_payment_status",
+        "duplicate_dispatch_behavior",
+    ):
+        if payload.get(key) != expected[key]:
+            failures.append(f"worker_dispatch_cost_guard_{key}_mismatch")
+    controls = payload.get("service_resource_controls_expected")
+    expected_controls = expected["service_resource_controls_expected"]
+    if not isinstance(controls, dict):
+        failures.append("worker_dispatch_cost_guard_service_controls_missing")
+    else:
+        failures.extend(
+            f"worker_dispatch_cost_guard_service_controls_unexpected_field:{field}"
+            for field in _unexpected_keys(
+                controls,
+                WORKER_DISPATCH_SERVICE_RESOURCE_CONTROL_KEYS,
+            )
+        )
+        if controls != expected_controls:
+            failures.append("worker_dispatch_cost_guard_service_controls_mismatch")
+    boundary = payload.get("secret_boundary")
+    if (
+        not isinstance(boundary, str)
+        or "worker secrets" not in boundary
+        or "signed job tokens" not in boundary
+        or "provider credentials" not in boundary
+        or "vault material" not in boundary
+        or "billing details" not in boundary
+    ):
+        failures.append("worker_dispatch_cost_guard_secret_boundary_missing")
     return failures
 
 

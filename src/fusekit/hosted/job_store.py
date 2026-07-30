@@ -13,6 +13,7 @@ from typing import Any
 
 from fusekit.errors import FuseKitError
 from fusekit.hosted.job import HostedLaunchJob, hosted_launch_job_from_dict
+from fusekit.hosted.worker_dispatch import HOSTED_WORKER_DISPATCH_COST_GUARD
 from fusekit.security.redaction import (
     contains_durable_secret_text,
     contains_private_marker_text,
@@ -71,6 +72,7 @@ HOSTED_MANAGED_START_DISPATCH_RECEIPT_KEYS = frozenset(
         "duplicate",
         "receiver_schema_version",
         "idempotency",
+        "cost_guard",
         "secret_boundary",
     }
 )
@@ -446,6 +448,8 @@ def _validate_managed_start_response(
     proof = idempotency.get("proof")
     if not isinstance(proof, str) or "before worker spawn" not in proof:
         raise FuseKitError("Hosted managed start response dispatch idempotency proof is missing.")
+    if dispatch.get("cost_guard") != HOSTED_WORKER_DISPATCH_COST_GUARD:
+        raise FuseKitError("Hosted managed start response dispatch cost guard is invalid.")
     if dispatch.get("secret_boundary") != HOSTED_MANAGED_START_DISPATCH_SECRET_BOUNDARY:
         raise FuseKitError("Hosted managed start response dispatch boundary is invalid.")
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import os
 import stat
@@ -16,6 +17,7 @@ from fusekit.hosted.job_store import (
     HostedJobStore,
 )
 from fusekit.hosted.launcher import build_hosted_launch_plan
+from fusekit.hosted.worker_dispatch import HOSTED_WORKER_DISPATCH_COST_GUARD
 from fusekit.manifest import ServiceRequirement, SetupManifest
 
 JOB_ID = "hosted-job-store-proof"
@@ -225,6 +227,23 @@ def test_hosted_job_store_rejects_managed_start_weak_dispatch_boundary(
     assert not list((tmp_path / "hosted-jobs").glob("*.managed-start-response.json"))
 
 
+def test_hosted_job_store_rejects_managed_start_cost_guard_drift(
+    tmp_path: Path,
+) -> None:
+    store = HostedJobStore(tmp_path / "hosted-jobs")
+    response = _managed_start_response()
+    dispatch = response["worker_dispatch"]
+    assert isinstance(dispatch, dict)
+    cost_guard = dispatch["cost_guard"]
+    assert isinstance(cost_guard, dict)
+    cost_guard["max_unpaid_managed_worker_spawns"] = 1
+
+    with pytest.raises(FuseKitError, match="dispatch cost guard is invalid"):
+        store.put_managed_start_response(job_id=JOB_ID, response=response)
+
+    assert not list((tmp_path / "hosted-jobs").glob("*.managed-start-response.json"))
+
+
 def _plan():
     manifest = SetupManifest(
         app_name="job-store-demo",
@@ -330,6 +349,7 @@ def _managed_start_response() -> dict[str, object]:
                 "duplicate": False,
                 "proof": "non-secret worker dispatch marker recorded before worker spawn.",
             },
+            "cost_guard": copy.deepcopy(HOSTED_WORKER_DISPATCH_COST_GUARD),
             "secret_boundary": HOSTED_MANAGED_START_DISPATCH_SECRET_BOUNDARY,
         },
     }
