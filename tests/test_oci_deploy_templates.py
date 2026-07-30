@@ -130,6 +130,13 @@ def test_oci_release_script_is_narrow_and_reviewable() -> None:
     assert 'RELEASE_ROOT="${FUSEKIT_RELEASE_ROOT:-/opt/fusekit/releases}"' in script
     assert 'CURRENT_LINK="${FUSEKIT_CURRENT_LINK:-/opt/fusekit/current}"' in script
     assert 'RELEASE_RETENTION_COUNT="${FUSEKIT_RELEASE_RETENTION_COUNT:-2}"' in script
+    assert 'MAX_ACTIVE_RELEASE_BYTES="${FUSEKIT_MAX_ACTIVE_RELEASE_BYTES:-268435456}"' in script
+    assert "max active release size must be a positive integer byte count" in script
+    assert "ACTIVE_RELEASE_BYTES" in script
+    assert 'du -sb "${RELEASE_DIR}"' in script
+    assert "active release size ${ACTIVE_RELEASE_BYTES} exceeds max" in script
+    assert "ACTIVE_RELEASE_BYTES > MAX_ACTIVE_RELEASE_BYTES" in script
+    assert "cloudflare" not in script.lower()
     assert "MAX_RELEASE_RETENTION_COUNT=4" in script
     assert (
         "release retention count must be an integer from 2 to "
@@ -147,6 +154,8 @@ def test_oci_release_script_is_narrow_and_reviewable() -> None:
     assert '"${PYTHON_BIN}" -m venv "${RELEASE_DIR}/.venv"' in script
     assert "pip install --no-cache-dir --upgrade pip" in script
     assert 'pip install --no-cache-dir "${RELEASE_DIR}"' in script
+    assert 'pip install --no-cache-dir "${RELEASE_DIR}[runner]"' not in script
+    assert 'pip install --no-cache-dir "${RELEASE_DIR}[dev]"' not in script
     assert '"${INCOMING}/repo/.venv"' not in script
     assert "/etc/fusekit/hosted-provenance.env" in script
     assert "/etc/fusekit/hosted-secrets.env" in script
@@ -160,7 +169,6 @@ def test_oci_release_script_is_narrow_and_reviewable() -> None:
     assert "fusekit-worker-dispatch.service" in script
     assert "fusekit.oci-hosted-release-receipt.v1" in script
     assert "fusekit-hosted-verify --origin https://fusekit.snowmanai.org" in script
-    assert "cloudflare" not in script.lower()
     assert "mailpilot" not in script.lower()
 
 

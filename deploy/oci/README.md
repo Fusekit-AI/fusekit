@@ -46,7 +46,10 @@ raised with `FUSEKIT_RELEASE_RETENTION_COUNT`; values below 2 are rejected so th
 host always keeps a rollback path while avoiding unbounded virtualenv growth on
 the boot volume. Hosted releases intentionally do not install the heavy OCI SDK
 or Playwright extras; those are installed only in development or disposable
-runner environments that need live OCI provisioning or browser automation.
+runner environments that need live OCI provisioning or browser automation. The
+script also measures the installed release before activation and refuses to move
+`/opt/fusekit/current` if it exceeds the hosted active-release ceiling
+(`FUSEKIT_MAX_ACTIVE_RELEASE_BYTES`, default 256 MiB).
 
 ```zsh
 sudo install -d -o root -g root -m 0755 /etc/fusekit/tls

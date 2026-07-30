@@ -11,6 +11,7 @@ PROVENANCE_FILE="${FUSEKIT_HOSTED_PROVENANCE_FILE:-/etc/fusekit/hosted-provenanc
 HOSTED_SERVICE="${FUSEKIT_HOSTED_SERVICE:-fusekit-hosted.service}"
 DISPATCH_SERVICE="${FUSEKIT_DISPATCH_SERVICE:-fusekit-worker-dispatch.service}"
 RELEASE_RETENTION_COUNT="${FUSEKIT_RELEASE_RETENTION_COUNT:-2}"
+MAX_ACTIVE_RELEASE_BYTES="${FUSEKIT_MAX_ACTIVE_RELEASE_BYTES:-268435456}"
 MAX_RELEASE_RETENTION_COUNT=4
 PROVENANCE_ROLLBACK=""
 PROVENANCE_EXISTED=0
@@ -25,6 +26,11 @@ if [[ ! "${RELEASE_RETENTION_COUNT}" =~ ^[0-9]+$ ]] || (( RELEASE_RETENTION_COUN
   exit 64
 fi
 
+if [[ ! "${MAX_ACTIVE_RELEASE_BYTES}" =~ ^[0-9]+$ ]] || (( MAX_ACTIVE_RELEASE_BYTES < 1 )); then
+  echo "max active release size must be a positive integer byte count" >&2
+  exit 64
+fi
+
 if [[ "${FUSEKIT_REPO_URL}" != "https://github.com/Fusekit-AI/fusekit.git" ]]; then
   echo "refusing non-canonical FuseKit repository URL" >&2
   exit 64
@@ -35,7 +41,7 @@ if [[ "$(id -u)" != "0" ]]; then
   exit 77
 fi
 
-for command in awk chmod chown find git install ln mktemp mv readlink rm rmdir sort systemctl; do
+for command in awk chmod chown du find git install ln mktemp mv readlink rm rmdir sort systemctl; do
   if ! command -v "${command}" >/dev/null 2>&1; then
     echo "missing required command: ${command}" >&2
     exit 69
@@ -116,6 +122,16 @@ else
     echo "existing release commit mismatch" >&2
     exit 70
   fi
+fi
+
+ACTIVE_RELEASE_BYTES="$(du -sb "${RELEASE_DIR}" | awk '{print $1}')"
+if [[ ! "${ACTIVE_RELEASE_BYTES}" =~ ^[0-9]+$ ]]; then
+  echo "could not measure active release size" >&2
+  exit 70
+fi
+if (( ACTIVE_RELEASE_BYTES > MAX_ACTIVE_RELEASE_BYTES )); then
+  echo "active release size ${ACTIVE_RELEASE_BYTES} exceeds max ${MAX_ACTIVE_RELEASE_BYTES}" >&2
+  exit 70
 fi
 
 cat > "${PROVENANCE_FILE}.tmp" <<EOF
