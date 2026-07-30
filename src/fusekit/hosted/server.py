@@ -1349,6 +1349,7 @@ def render_hosted_home(settings: HostedSettings) -> str:
     )
     issues = _list_config_issues(readiness)
     readiness_summary = _readiness_summary_section(readiness)
+    launch_lanes_section = _home_launch_lanes_section()
     source_provenance_section = _source_provenance_section(
         cast(dict[str, object], deployment_contract["source_provenance"])
     )
@@ -1445,12 +1446,27 @@ def render_hosted_home(settings: HostedSettings) -> str:
     ul {{ margin: 0; padding-left: 20px; color: #2e4256; }}
     ol {{ margin: 0; padding-left: 20px; color: #2e4256; }}
     li + li {{ margin-top: 6px; }}
+    .lane-grid {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }}
+    .lane-card {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }}
     .origin {{
       color: var(--muted);
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       overflow-wrap: anywhere;
     }}
     script[type="application/json"] {{ display: none; }}
+    @media (max-width: 760px) {{
+      .lane-grid {{ grid-template-columns: 1fr; }}
+    }}
   </style>
 </head>
 <body>
@@ -1469,6 +1485,7 @@ def render_hosted_home(settings: HostedSettings) -> str:
       {issues}
     </header>
     {readiness_summary}
+    {launch_lanes_section}
     <section aria-label="Trust contract">
       <h2>Before FuseKit runs</h2>
       <ul>
@@ -1576,6 +1593,59 @@ def render_hosted_home(settings: HostedSettings) -> str:
 </body>
 </html>
 """
+
+
+def _home_launch_lanes_section() -> str:
+    lanes = cast(list[dict[str, object]], hosted_launch_lane_contract().get("lanes", []))
+    cards = "\n".join(_home_launch_lane_card(lane) for lane in lanes)
+    return f"""
+    <section aria-label="Launch lanes">
+      <h2>Launch lanes</h2>
+      <div class="lane-grid">{cards}</div>
+    </section>
+"""
+
+
+def _home_launch_lane_card(lane: dict[str, object]) -> str:
+    label = html.escape(str(lane.get("label", "")))
+    summary = html.escape(str(lane.get("summary", "")))
+    cost_controls = lane.get("cost_controls")
+    items: list[str] = []
+    if isinstance(cost_controls, list):
+        items.extend(str(item) for item in cost_controls[:2] if isinstance(item, str))
+    proof_policy = lane.get("proof_policy")
+    if isinstance(proof_policy, dict):
+        max_artifact = _mib_label(proof_policy.get("max_artifact_bytes"))
+        max_total = _mib_label(proof_policy.get("max_total_artifact_bytes"))
+        if max_artifact and max_total:
+            items.append(
+                "Proof budget: redacted regular files only, "
+                f"max {max_artifact} per artifact and {max_total} total."
+            )
+        zero_allowed = proof_policy.get("zero_byte_allowed_artifacts")
+        if isinstance(zero_allowed, list) and zero_allowed:
+            items.append(
+                "Only "
+                + ", ".join(str(item) for item in zero_allowed)
+                + " may be zero-byte proof."
+            )
+    detail_rows = "".join(f"<li>{html.escape(item)}</li>" for item in items)
+    return f"""
+        <article class="lane-card">
+          <h3>{label}</h3>
+          <p>{summary}</p>
+          <ul>{detail_rows}</ul>
+        </article>
+"""
+
+
+def _mib_label(value: object) -> str:
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        return ""
+    mib = 1024 * 1024
+    if value % mib != 0:
+        return ""
+    return f"{value // mib} MiB"
 
 
 def _looks_like_git_commit_sha(value: object) -> bool:

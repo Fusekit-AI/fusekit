@@ -490,6 +490,14 @@ def test_hosted_home_is_no_terminal_and_subdomain_canonical() -> None:
     assert "visible" in html
     assert "redacted proof" in html
     assert "reversible setup" in html
+    assert "Launch lanes" in html
+    assert "Managed FuseKit run" in html
+    assert "Bring your own OCI" in html
+    assert "FuseKit-managed worker dispatch is disabled." in html
+    assert "Proof budget: redacted regular files only" in html
+    assert "64 MiB per artifact" in html
+    assert "256 MiB total" in html
+    assert ".fusekit/gate_events.jsonl" in html
     assert "Capability vault boundary" in html
     assert "Raw secrets must never leave" in html
     assert "Generated apps may request capabilities" in html
