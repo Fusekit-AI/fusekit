@@ -1005,6 +1005,7 @@ def verify_hosted_byo_oci_proof_bundle(
     blockers.extend(f"missing_artifact:{path}" for path in missing)
     blockers.extend(f"unexpected_artifact:{path}" for path in unexpected)
     total_artifact_bytes = 0
+    required_hash_paths: dict[str, list[str]] = {}
     for artifact in artifacts:
         path = str(artifact["path"])
         size_bytes = artifact.get("size_bytes")
@@ -1021,6 +1022,8 @@ def verify_hosted_byo_oci_proof_bundle(
         if not _valid_byo_artifact_sha256_label(str(artifact.get("sha256", ""))):
             blockers.append(f"artifact_sha256_invalid:{path}")
             artifact["sha256"] = ""
+        elif path in required_artifacts:
+            required_hash_paths.setdefault(str(artifact["sha256"]), []).append(path)
         if (
             path in required_artifacts
             and isinstance(size_bytes, int)
@@ -1031,6 +1034,9 @@ def verify_hosted_byo_oci_proof_bundle(
         if path in required_artifacts and artifact.get("size_bytes") == 0:
             if path not in HOSTED_BYO_ZERO_BYTE_ALLOWED_ARTIFACTS:
                 blockers.append(f"artifact_empty:{path}")
+    for paths in required_hash_paths.values():
+        if len(paths) > 1:
+            blockers.extend(f"artifact_sha256_duplicate:{path}" for path in paths)
     if total_artifact_bytes > HOSTED_BYO_MAX_TOTAL_ARTIFACT_BYTES:
         blockers.append("artifact_total_size_too_large")
     evidence = _public_completion_evidence(bundle.get("completion_evidence"), blockers=blockers)
@@ -1373,6 +1379,7 @@ def _invalid_required_artifacts(
         "artifact_empty:",
         "artifact_label_unsafe:",
         "artifact_sha256_unsafe:",
+        "artifact_sha256_duplicate:",
         "artifact_size_invalid:",
         "artifact_type_invalid:",
         "duplicate_artifact:",

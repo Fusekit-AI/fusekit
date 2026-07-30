@@ -1472,6 +1472,46 @@ def test_hosted_byo_proof_bundle_verifier_blocks_placeholder_artifact_hash() -> 
     assert "a" * 64 not in serialized
 
 
+def test_hosted_byo_proof_bundle_verifier_blocks_reused_artifact_hash() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bundle = _byo_proof_bundle_from_bootstrap(bootstrap)
+    artifacts = bundle["artifacts"]
+    assert isinstance(artifacts, list)
+    run_record = next(
+        item
+        for item in artifacts
+        if isinstance(item, dict) and item["path"] == ".fusekit/run_record.json"
+    )
+    detonation = next(
+        item
+        for item in artifacts
+        if isinstance(item, dict)
+        and item["path"] == ".fusekit/workspace_detonation.json"
+    )
+    detonation["sha256"] = run_record["sha256"]
+
+    report = verify_hosted_byo_oci_proof_bundle(job, bundle)
+    artifact_summary = report["artifact_summary"]
+    assert isinstance(artifact_summary, dict)
+
+    assert report["ready"] is False
+    assert "artifact_sha256_duplicate:.fusekit/run_record.json" in report["blockers"]
+    assert (
+        "artifact_sha256_duplicate:.fusekit/workspace_detonation.json"
+        in report["blockers"]
+    )
+    assert artifact_summary["invalid_required"] == [
+        ".fusekit/run_record.json",
+        ".fusekit/workspace_detonation.json",
+    ]
+
+
 def test_hosted_byo_proof_bundle_verifier_blocks_empty_required_artifacts() -> None:
     job = build_hosted_launch_job(
         _plan(),
