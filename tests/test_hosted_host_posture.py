@@ -1041,6 +1041,24 @@ def test_oci_host_posture_blocks_unbounded_storage_footprint() -> None:
     ]
 
 
+def test_oci_host_posture_ok_exposes_bounded_storage_cost_counters() -> None:
+    report = evaluate_oci_host_posture(_clean_evidence())
+
+    assert report["ready"] is True
+    storage_check = _check(report, "host.storage_footprint")
+    assert storage_check == {
+        "id": "host.storage_footprint",
+        "status": "ok",
+        "root_total_bytes": 48_000_000_000,
+        "root_used_percent": 13,
+        "root_available_bytes": 42_000_000_000,
+        "release_count": 3,
+        "release_store_bytes": 2_200_000_000,
+        "largest_release_bytes": 820_000_000,
+        "package_cache_bytes": 0,
+    }
+
+
 def test_oci_host_posture_blocks_oversized_root_volume() -> None:
     evidence = _clean_evidence()
     storage = evidence["storage_footprint"]

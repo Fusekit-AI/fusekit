@@ -1653,8 +1653,11 @@ def _storage_footprint_check(evidence: Mapping[str, object]) -> dict[str, object
         "host.storage_footprint",
         root_total_bytes=root_total,
         root_used_percent=root_used_percent,
+        root_available_bytes=root_available,
         release_count=release_count,
+        release_store_bytes=release_used,
         largest_release_bytes=largest_release,
+        package_cache_bytes=package_cache_used,
     )
 
 
