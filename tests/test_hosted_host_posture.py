@@ -136,6 +136,11 @@ def _clean_evidence() -> dict[str, object]:
                 "release_count": 3,
                 "largest_release_bytes": 820_000_000,
             },
+            "active_release": {
+                "path": "/opt/fusekit/current",
+                "exists": True,
+                "used_bytes": 63_000_000,
+            },
             "package_cache": {
                 "path": "/root/.cache/pip",
                 "exists": False,
@@ -556,9 +561,11 @@ def test_oci_host_posture_blocks_unknown_nested_storage_fields() -> None:
     assert isinstance(storage, dict)
     root = storage["root_filesystem"]
     release_store = storage["release_store"]
+    active_release = storage["active_release"]
     package_cache = storage["package_cache"]
     assert isinstance(root, dict)
     assert isinstance(release_store, dict)
+    assert isinstance(active_release, dict)
     assert isinstance(package_cache, dict)
     root["raw_df_output"] = "Filesystem 45G 5.5G 39G 13% /"
     release_store["raw_du_output"] = "2.0G /opt/fusekit/releases"
@@ -1016,15 +1023,18 @@ def test_oci_host_posture_blocks_unbounded_storage_footprint() -> None:
     assert isinstance(storage, dict)
     root = storage["root_filesystem"]
     release_store = storage["release_store"]
+    active_release = storage["active_release"]
     package_cache = storage["package_cache"]
     assert isinstance(root, dict)
     assert isinstance(release_store, dict)
+    assert isinstance(active_release, dict)
     assert isinstance(package_cache, dict)
     root["used_percent"] = 96
     root["available_bytes"] = 512_000_000
     release_store["release_count"] = 8
     release_store["used_bytes"] = 14 * 1024 * 1024 * 1024
     release_store["largest_release_bytes"] = 5 * 1024 * 1024 * 1024
+    active_release["used_bytes"] = 900 * 1024 * 1024
     package_cache["exists"] = True
     package_cache["used_bytes"] = 900 * 1024 * 1024
 
@@ -1039,6 +1049,7 @@ def test_oci_host_posture_blocks_unbounded_storage_footprint() -> None:
         "oci_host_storage_release_count_exceeds_retention",
         "oci_host_storage_release_store_too_large",
         "oci_host_storage_single_release_too_large",
+        "oci_host_storage_active_release_too_large",
         "oci_host_storage_package_cache_too_large",
     ]
 
@@ -1059,6 +1070,8 @@ def test_oci_host_posture_ok_exposes_bounded_storage_cost_counters() -> None:
         "release_count": 3,
         "release_store_bytes": 2_200_000_000,
         "largest_release_bytes": 820_000_000,
+        "active_release_bytes": 63_000_000,
+        "active_release_max_bytes": 256 * 1024 * 1024,
         "package_cache_bytes": 0,
     }
 
@@ -1119,6 +1132,24 @@ def test_oci_host_posture_blocks_oversized_single_release() -> None:
     storage_check = _check(report, "host.storage_footprint")
     assert storage_check["failures"] == ["oci_host_storage_single_release_too_large"]
     assert storage_check["largest_release_bytes"] == 5 * 1024 * 1024 * 1024
+
+
+def test_oci_host_posture_blocks_oversized_active_release() -> None:
+    evidence = _clean_evidence()
+    storage = evidence["storage_footprint"]
+    assert isinstance(storage, dict)
+    active_release = storage["active_release"]
+    assert isinstance(active_release, dict)
+    active_release["used_bytes"] = 512 * 1024 * 1024
+
+    report = evaluate_oci_host_posture(evidence)
+
+    assert report["ready"] is False
+    assert report["blocking_checks"] == ["host.storage_footprint"]
+    storage_check = _check(report, "host.storage_footprint")
+    assert storage_check["failures"] == ["oci_host_storage_active_release_too_large"]
+    assert storage_check["active_release_bytes"] == 512 * 1024 * 1024
+    assert storage_check["active_release_max_bytes"] == 256 * 1024 * 1024
 
 
 def test_oci_host_posture_blocks_arm_public_ssh_and_weak_systemd() -> None:
@@ -2345,7 +2376,7 @@ def test_oci_host_posture_collector_builds_validator_ready_redacted_evidence(
         release_sizes = {
             "23824ca147b45cbb03a40e10f2020e6945a1c10d": 700_000_000,
             "a9f480f0499b7669c34e7d968e551653bec08963": 820_000_000,
-            "f37a12b4a171a0c38656d1009f67f8c530b54a15": 680_000_000,
+            "f37a12b4a171a0c38656d1009f67f8c530b54a15": 63_000_000,
         }
         release_prefix = "/opt/fusekit/releases/"
         if command[:2] == ("du", "-sb") and command[2].startswith(release_prefix):
@@ -2357,6 +2388,12 @@ def test_oci_host_posture_collector_builds_validator_ready_redacted_evidence(
                     f"{release_sizes[release_name]}\t{command[2]}\n",
                 )
             return CommandResult(command, 1, "", "No such file or directory\n")
+        if command == ("readlink", "-f", "/opt/fusekit/current"):
+            return CommandResult(
+                command,
+                0,
+                "/opt/fusekit/releases/f37a12b4a171a0c38656d1009f67f8c530b54a15\n",
+            )
         if command == (
             "find",
             "/opt/fusekit/releases",
@@ -2504,6 +2541,11 @@ def test_oci_host_posture_collector_builds_validator_ready_redacted_evidence(
             "used_bytes": 2_200_000_000,
             "release_count": 3,
             "largest_release_bytes": 820_000_000,
+        },
+        "active_release": {
+            "path": "/opt/fusekit/current",
+            "exists": True,
+            "used_bytes": 63_000_000,
         },
         "package_cache": {
             "path": "/root/.cache/pip",
