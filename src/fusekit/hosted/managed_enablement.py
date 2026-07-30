@@ -430,6 +430,14 @@ def _live_checkout_proof_shape_blockers(report: Mapping[str, Any]) -> list[str]:
         for hash_key in ("webhook_receipt_sha256", "managed_start_response_sha256"):
             if not _valid_sha256_label(str(proof_artifacts.get(hash_key) or "")):
                 blockers.append(f"live_checkout_{hash_key}_invalid")
+        webhook_hash = str(proof_artifacts.get("webhook_receipt_sha256") or "")
+        start_hash = str(proof_artifacts.get("managed_start_response_sha256") or "")
+        if (
+            _valid_sha256_label(webhook_hash)
+            and _valid_sha256_label(start_hash)
+            and webhook_hash == start_hash
+        ):
+            blockers.append("live_checkout_proof_artifact_sha256_duplicate")
     return blockers
 
 

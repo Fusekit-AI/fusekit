@@ -163,6 +163,27 @@ def test_managed_enablement_report_rejects_live_checkout_artifact_hash_drift() -
     assert "live_checkout_webhook_receipt_sha256_invalid" in report["blockers"]
 
 
+def test_managed_enablement_report_rejects_reused_live_checkout_artifact_hash() -> None:
+    live_checkout = _live_checkout_proof()
+    proof_artifacts = live_checkout["proof_artifacts"]
+    assert isinstance(proof_artifacts, dict)
+    proof_artifacts["managed_start_response_sha256"] = proof_artifacts[
+        "webhook_receipt_sha256"
+    ]
+
+    report = build_hosted_managed_enablement_report(
+        runtime_secret_verify=_runtime_secret_verify_report(),
+        hosted_verify=_hosted_verify_report(),
+        stripe_price_verify=_stripe_price_verify_report(),
+        stripe_webhook_verify=_stripe_webhook_verify_report(),
+        hosted_readiness=_hosted_readiness_report(),
+        live_checkout_proof=live_checkout,
+    )
+
+    assert report["ready_to_enable"] is False
+    assert "live_checkout_proof_artifact_sha256_duplicate" in report["blockers"]
+
+
 def test_managed_enablement_report_binds_artifacts_to_live_checkout_job_id() -> None:
     live_checkout = _live_checkout_proof()
     proof_artifacts = live_checkout["proof_artifacts"]
