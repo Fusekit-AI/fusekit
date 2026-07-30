@@ -176,6 +176,32 @@ def test_live_checkout_proof_rejects_raw_webhook_receipt_sidecars() -> None:
     assert "live_checkout_webhook_shape_mismatch" in proof["blockers"]
 
 
+def test_live_checkout_proof_rejects_webhook_that_understates_remaining_proof() -> None:
+    webhook = _webhook_receipt()
+    webhook["next_required_proof"] = ["worker_claim"]
+
+    proof = build_hosted_managed_live_checkout_proof(
+        webhook_receipt=webhook,
+        start_action_response=_start_action_response(),
+    )
+
+    assert proof["ready"] is False
+    assert "live_checkout_webhook_next_required_proof_mismatch" in proof["blockers"]
+
+
+def test_live_checkout_proof_rejects_webhook_with_weak_boundary() -> None:
+    webhook = _webhook_receipt()
+    webhook["secret_boundary"] = "Stripe webhook proof is public."
+
+    proof = build_hosted_managed_live_checkout_proof(
+        webhook_receipt=webhook,
+        start_action_response=_start_action_response(),
+    )
+
+    assert proof["ready"] is False
+    assert "live_checkout_webhook_secret_boundary_missing" in proof["blockers"]
+
+
 def test_live_checkout_proof_cli_outputs_redacted_proof(tmp_path: Path, capsys) -> None:
     webhook_path = tmp_path / "webhook.json"
     start_path = tmp_path / "start.json"
@@ -513,7 +539,8 @@ def _webhook_receipt() -> dict[str, object]:
         "receipt_statement": "Stripe Checkout completion webhook verified.",
         "secret_boundary": (
             "Stripe webhook receipts never include card data, payment method ids, "
-            "Stripe keys, webhook signing secrets, or provider credentials."
+            "Stripe secret keys, webhook signing secrets, raw payloads, or "
+            "provider credentials."
         ),
     }
 

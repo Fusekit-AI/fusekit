@@ -76,6 +76,32 @@ def test_hosted_job_store_rejects_webhook_receipt_sidecars(tmp_path: Path) -> No
     assert not list((tmp_path / "hosted-jobs").glob("*.stripe-webhook-receipt.json"))
 
 
+def test_hosted_job_store_rejects_webhook_receipt_that_understates_remaining_proof(
+    tmp_path: Path,
+) -> None:
+    store = HostedJobStore(tmp_path / "hosted-jobs")
+    receipt = _stripe_webhook_receipt()
+    receipt["next_required_proof"] = ["worker_claim"]
+
+    with pytest.raises(FuseKitError, match="proof requirements are invalid"):
+        store.put_stripe_webhook_receipt(job_id=JOB_ID, receipt=receipt)
+
+    assert not list((tmp_path / "hosted-jobs").glob("*.stripe-webhook-receipt.json"))
+
+
+def test_hosted_job_store_rejects_webhook_receipt_with_weak_boundary(
+    tmp_path: Path,
+) -> None:
+    store = HostedJobStore(tmp_path / "hosted-jobs")
+    receipt = _stripe_webhook_receipt()
+    receipt["secret_boundary"] = "Stripe webhook proof is public."
+
+    with pytest.raises(FuseKitError, match="receipt boundary is invalid"):
+        store.put_stripe_webhook_receipt(job_id=JOB_ID, receipt=receipt)
+
+    assert not list((tmp_path / "hosted-jobs").glob("*.stripe-webhook-receipt.json"))
+
+
 def test_hosted_job_store_reads_only_bounded_regular_snapshots(tmp_path: Path) -> None:
     store = HostedJobStore(tmp_path / "hosted-jobs")
     job = build_hosted_launch_job(_plan(), job_id=JOB_ID, now=1_800_000_000)
@@ -186,7 +212,8 @@ def _stripe_webhook_receipt() -> dict[str, object]:
         "receipt_statement": "Stripe Checkout completion webhook verified.",
         "secret_boundary": (
             "Stripe webhook receipts never include card data, payment method ids, "
-            "Stripe keys, webhook signing secrets, or provider credentials."
+            "Stripe secret keys, webhook signing secrets, raw payloads, or "
+            "provider credentials."
         ),
     }
 

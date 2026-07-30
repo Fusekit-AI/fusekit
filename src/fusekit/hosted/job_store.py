@@ -42,6 +42,19 @@ HOSTED_STRIPE_WEBHOOK_RECEIPT_KEYS = frozenset(
         "secret_boundary",
     }
 )
+HOSTED_STRIPE_WEBHOOK_NEXT_REQUIRED_PROOF = (
+    "worker_claim",
+    "detonation_receipt",
+    "recording",
+)
+HOSTED_STRIPE_WEBHOOK_SECRET_BOUNDARY_TERMS = (
+    "card data",
+    "payment method ids",
+    "Stripe secret keys",
+    "webhook signing secrets",
+    "raw payloads",
+    "provider credentials",
+)
 HOSTED_JOB_SCHEMA_VERSION = "fusekit.hosted-job.v1"
 HOSTED_WORKER_DISPATCH_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch.v1"
 HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION = (
@@ -328,6 +341,13 @@ def _validate_stripe_webhook_receipt(
         raise FuseKitError("Hosted Stripe webhook receipt did not unlock dispatch.")
     if receipt.get("worker_dispatch_sent") is not False:
         raise FuseKitError("Hosted Stripe webhook receipt must not dispatch workers.")
+    if receipt.get("next_required_proof") != list(HOSTED_STRIPE_WEBHOOK_NEXT_REQUIRED_PROOF):
+        raise FuseKitError("Hosted Stripe webhook receipt proof requirements are invalid.")
+    boundary = receipt.get("secret_boundary")
+    if not isinstance(boundary, str) or not all(
+        term in boundary for term in HOSTED_STRIPE_WEBHOOK_SECRET_BOUNDARY_TERMS
+    ):
+        raise FuseKitError("Hosted Stripe webhook receipt boundary is invalid.")
 
 
 def _validate_managed_start_response(

@@ -26,7 +26,9 @@ from fusekit.hosted.job_store import (
     HOSTED_JOB_STORE_MANAGED_START_RESPONSE_SCHEMA_VERSION,
     HOSTED_JOB_STORE_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION,
     HOSTED_JOB_STORE_WEBHOOK_RECEIPT_BOUNDARY,
+    HOSTED_STRIPE_WEBHOOK_NEXT_REQUIRED_PROOF,
     HOSTED_STRIPE_WEBHOOK_RECEIPT_KEYS,
+    HOSTED_STRIPE_WEBHOOK_SECRET_BOUNDARY_TERMS,
 )
 from fusekit.hosted.lanes import MANAGED_FUSEKIT_RUN_LANE
 from fusekit.hosted.managed_enablement import (
@@ -275,6 +277,13 @@ def _webhook_receipt_blockers(receipt: Mapping[str, Any]) -> list[str]:
         blockers.append("live_checkout_webhook_dispatch_not_unlocked")
     if receipt.get("worker_dispatch_sent") is not False:
         blockers.append("live_checkout_webhook_must_not_dispatch_worker")
+    if receipt.get("next_required_proof") != list(HOSTED_STRIPE_WEBHOOK_NEXT_REQUIRED_PROOF):
+        blockers.append("live_checkout_webhook_next_required_proof_mismatch")
+    boundary = receipt.get("secret_boundary")
+    if not isinstance(boundary, str) or not all(
+        term in boundary for term in HOSTED_STRIPE_WEBHOOK_SECRET_BOUNDARY_TERMS
+    ):
+        blockers.append("live_checkout_webhook_secret_boundary_missing")
     if not _public_job_id(receipt.get("job_id")):
         blockers.append("live_checkout_webhook_job_id_invalid")
     return blockers
