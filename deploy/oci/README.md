@@ -134,7 +134,11 @@ the attached SSH ingress label proves restricted operator access; nonstandard
 public listeners still block posture. The `--shape` value is a fallback label;
 when OCI instance metadata is reachable, the collector records the actual
 metadata shape so cost and architecture posture cannot drift from a stale manual
-argument. The collector also emits
+argument. The read-only OCI inventory report separately records running-instance
+counts and the target host's cost classification; the permanent launcher is
+cost-ready only when no non-target running instances need human review and the
+target is the approved AMD/x86_64 `VM.Standard.E2.1.Micro` host shape. The
+collector also emits
 bounded storage footprint proof for `/`, `/opt/fusekit/releases`, each retained
 release directory, and the root pip cache so release virtualenvs or package
 caches cannot quietly consume the boot volume again; it records numeric counts

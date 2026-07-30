@@ -442,7 +442,11 @@ release without mutating OCI, Cloudflare, MailPilot/AWS, generated-app
 credentials, or provider resources. Include available-plugin evidence when it
 is available; the planner distinguishes a missing Run Command plugin from an
 image that cannot support Run Command and then recommends only the approved SSH
-key repair or a replacement FuseKit-tagged AMD host. Its release proof includes a redacted
+key repair or a replacement FuseKit-tagged AMD host. The matching read-only OCI
+inventory report now makes cost control explicit: it counts running instances
+without stopping or deleting anything, flags non-target running instances for
+human review, and blocks target readiness when the permanent launcher drifts
+away from the approved AMD `VM.Standard.E2.1.Micro` host shape. Its release proof includes a redacted
 `release_action` block with the live commit, expected commit, commit state,
 allowed deploy paths, safe next action, and exact post-deploy verifier command,
 so stale-host repair has a concrete receipt before any host mutation happens.

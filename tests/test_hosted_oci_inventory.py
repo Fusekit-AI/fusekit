@@ -101,14 +101,21 @@ def test_hosted_oci_inventory_builds_redacted_access_plan() -> None:
         ),
     }
     assert report["cost_review"] == {
-        "scope": "read_only_running_instance_count",
+        "scope": "read_only_running_instance_count_and_target_shape",
         "non_target_running_instances_seen": 0,
         "requires_human_review": False,
         "can_claim_no_orphaned_running_instances": True,
+        "target_shape": "VM.Standard.E2.1.Micro",
+        "target_shape_classification": "approved_low_cost_amd",
+        "approved_low_cost_amd_shapes": ["VM.Standard.E2.1.Micro"],
+        "target_shape_cost_controlled": True,
+        "target_shape_blockers": [],
+        "cost_ready": True,
         "mutates_oci": False,
         "does_not_stop_or_delete_non_target_resources": True,
         "review_gate": (
-            "No non-target running OCI instances were seen by this read-only inventory."
+            "No non-target running OCI instances were seen and the FuseKit host uses "
+            "the approved low-cost AMD micro shape."
         ),
     }
     assert report["compartments_scanned"] == 3
@@ -157,10 +164,16 @@ def test_hosted_oci_inventory_reports_non_target_running_instance_counts() -> No
     assert report["inventory_scope"]["running_instances_seen"] == 3
     assert report["inventory_scope"]["non_target_running_instances_seen"] == 2
     assert report["cost_review"] == {
-        "scope": "read_only_running_instance_count",
+        "scope": "read_only_running_instance_count_and_target_shape",
         "non_target_running_instances_seen": 2,
         "requires_human_review": True,
         "can_claim_no_orphaned_running_instances": False,
+        "target_shape": "VM.Standard.E2.1.Micro",
+        "target_shape_classification": "approved_low_cost_amd",
+        "approved_low_cost_amd_shapes": ["VM.Standard.E2.1.Micro"],
+        "target_shape_cost_controlled": True,
+        "target_shape_blockers": [],
+        "cost_ready": False,
         "mutates_oci": False,
         "does_not_stop_or_delete_non_target_resources": True,
         "review_gate": (
@@ -170,6 +183,68 @@ def test_hosted_oci_inventory_reports_non_target_running_instance_counts() -> No
     }
     assert "not stopped, deleted, or remediated" in report["inventory_scope"][
         "cost_visibility"
+    ]
+
+
+def test_hosted_oci_inventory_blocks_unapproved_target_shape_cost_drift() -> None:
+    report = build_hosted_oci_inventory_report(
+        target_match_count=1,
+        running_instance_count=1,
+        instance=_instance(shape="VM.Standard.E4.Flex"),
+        vnic={"public-ip": "129.153.118.11"},
+        image={
+            "display-name": "Canonical-Ubuntu-24.04-Minimal",
+            "operating-system": "Canonical Ubuntu",
+            "operating-system-version": "24.04",
+        },
+        plugins=[{"name": "Compute Instance Run Command", "status": "RUNNING"}],
+        available_plugins=[{"name": "Compute Instance Run Command"}],
+        hosted_verify_report=_hosted_verify(),
+        ssh_probe_status="permission_denied",
+        expected_commit_sha=EXPECTED_COMMIT,
+    )
+
+    assert report["ready"] is False
+    assert report["inventory_ready"] is False
+    assert report["blockers"] == [
+        "oci_cost_target_shape_must_be_approved_low_cost_amd"
+    ]
+    assert report["access_plan"] == {}
+    assert report["cost_review"]["target_shape"] == "VM.Standard.E4.Flex"
+    assert report["cost_review"]["target_shape_cost_controlled"] is False
+    assert report["cost_review"]["cost_ready"] is False
+    assert report["cost_review"]["target_shape_blockers"] == [
+        "oci_cost_target_shape_must_be_approved_low_cost_amd"
+    ]
+    assert "approved low-cost AMD micro shape" in report["cost_review"]["review_gate"]
+
+
+def test_hosted_oci_inventory_blocks_arm_target_shape() -> None:
+    report = build_hosted_oci_inventory_report(
+        target_match_count=1,
+        running_instance_count=1,
+        instance=_instance(shape="VM.Standard.A1.Flex"),
+        vnic={"public-ip": "129.153.118.11"},
+        image={
+            "display-name": "Canonical-Ubuntu-24.04-Minimal",
+            "operating-system": "Canonical Ubuntu",
+            "operating-system-version": "24.04",
+        },
+        plugins=[{"name": "Compute Instance Run Command", "status": "RUNNING"}],
+        available_plugins=[{"name": "Compute Instance Run Command"}],
+        hosted_verify_report=_hosted_verify(),
+        ssh_probe_status="permission_denied",
+        expected_commit_sha=EXPECTED_COMMIT,
+    )
+
+    assert report["ready"] is False
+    assert report["inventory_ready"] is False
+    assert report["blockers"] == ["oci_cost_target_shape_must_not_be_arm"]
+    assert report["access_plan"] == {}
+    assert report["cost_review"]["target_shape"] == "VM.Standard.A1.Flex"
+    assert report["cost_review"]["target_shape_cost_controlled"] is False
+    assert report["cost_review"]["target_shape_blockers"] == [
+        "oci_cost_target_shape_must_not_be_arm"
     ]
 
 

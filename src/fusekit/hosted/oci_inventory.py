@@ -30,6 +30,8 @@ HOSTED_OCI_INVENTORY_ALLOWED_READS = (
     "compute_instance_agent.list_instance_agent_plugins",
     "compute_instance_agent.list_instanceagent_available_plugins",
 )
+HOSTED_OCI_LOW_COST_AMD_SHAPES = ("VM.Standard.E2.1.Micro",)
+HOSTED_OCI_ARM_SHAPE_PREFIXES = ("VM.Standard.A1.", "BM.Standard.A1.")
 
 
 def build_hosted_oci_inventory_report(
@@ -74,9 +76,20 @@ def build_hosted_oci_inventory_report(
         running_instances_seen - safe_target_match_count,
         0,
     )
-    inventory_blockers = inventory_count_blockers + _inventory_blockers(
+    target_identity_blockers = _inventory_blockers(
         target_match_count=safe_target_match_count,
         instance=public_instance,
+    )
+    target_cost = (
+        _target_cost_classification(public_instance)
+        if not inventory_count_blockers and not target_identity_blockers
+        else _target_cost_not_assessed()
+    )
+    target_cost_blockers = _target_cost_blocker_list(target_cost)
+    inventory_blockers = (
+        inventory_count_blockers
+        + target_identity_blockers
+        + target_cost_blockers
     )
     access_plan: dict[str, object] = {}
     if not inventory_blockers:
@@ -113,7 +126,10 @@ def build_hosted_oci_inventory_report(
                 "collector and should be reviewed separately before broad cost claims."
             ),
         },
-        "cost_review": _oci_cost_review(non_target_running_instances_seen),
+        "cost_review": _oci_cost_review(
+            non_target_running_instances_seen,
+            target_cost=target_cost,
+        ),
         "compartments_scanned": max(compartments_scanned, 0),
         "collection_failures": [_public_collection_failure(item) for item in collection_failures],
         "target": {
@@ -532,24 +548,92 @@ def _inventory_blockers(
     return []
 
 
-def _oci_cost_review(non_target_running_instances_seen: int) -> dict[str, object]:
+def _target_cost_classification(instance: Mapping[str, object]) -> dict[str, object]:
+    """Classify the target host shape without reading billing data."""
+
+    shape = _public_str(instance.get("shape"))
+    blockers: list[str] = []
+    if not shape:
+        blockers.append("oci_cost_target_shape_missing")
+    elif _is_arm_shape(shape):
+        blockers.append("oci_cost_target_shape_must_not_be_arm")
+    elif shape not in HOSTED_OCI_LOW_COST_AMD_SHAPES:
+        blockers.append("oci_cost_target_shape_must_be_approved_low_cost_amd")
+    return {
+        "shape": shape,
+        "approved_low_cost_amd_shapes": list(HOSTED_OCI_LOW_COST_AMD_SHAPES),
+        "classification": (
+            "approved_low_cost_amd"
+            if shape in HOSTED_OCI_LOW_COST_AMD_SHAPES
+            else "needs_review"
+        ),
+        "cost_controlled": not blockers,
+        "blockers": blockers,
+    }
+
+
+def _target_cost_not_assessed() -> dict[str, object]:
+    return {
+        "shape": "",
+        "approved_low_cost_amd_shapes": list(HOSTED_OCI_LOW_COST_AMD_SHAPES),
+        "classification": "not_assessed",
+        "cost_controlled": False,
+        "blockers": [],
+    }
+
+
+def _target_cost_blocker_list(target_cost: Mapping[str, object]) -> list[str]:
+    blockers = target_cost.get("blockers")
+    if not isinstance(blockers, Sequence) or isinstance(blockers, str):
+        return []
+    return [value for value in blockers if isinstance(value, str)]
+
+
+def _is_arm_shape(shape: str) -> bool:
+    return any(shape.startswith(prefix) for prefix in HOSTED_OCI_ARM_SHAPE_PREFIXES)
+
+
+def _oci_cost_review(
+    non_target_running_instances_seen: int,
+    *,
+    target_cost: Mapping[str, object],
+) -> dict[str, object]:
     """Return read-only cost review proof without claiming ownership of other workloads."""
 
     requires_review = non_target_running_instances_seen > 0
+    target_shape_blockers = _target_cost_blocker_list(target_cost)
     return {
-        "scope": "read_only_running_instance_count",
+        "scope": "read_only_running_instance_count_and_target_shape",
         "non_target_running_instances_seen": non_target_running_instances_seen,
         "requires_human_review": requires_review,
         "can_claim_no_orphaned_running_instances": not requires_review,
+        "target_shape": _public_str(target_cost.get("shape")),
+        "target_shape_classification": _public_str(target_cost.get("classification")),
+        "approved_low_cost_amd_shapes": list(HOSTED_OCI_LOW_COST_AMD_SHAPES),
+        "target_shape_cost_controlled": target_cost.get("cost_controlled") is True,
+        "target_shape_blockers": target_shape_blockers,
+        "cost_ready": not requires_review and not target_shape_blockers,
         "mutates_oci": False,
         "does_not_stop_or_delete_non_target_resources": True,
         "review_gate": (
             "Review non-target running OCI instances in the OCI console before claiming "
             "the tenancy has no unrelated, orphaned, or unnecessary running resources."
             if requires_review
-            else "No non-target running OCI instances were seen by this read-only inventory."
+            else _target_shape_cost_review_gate(target_shape_blockers)
         ),
     }
+
+
+def _target_shape_cost_review_gate(target_shape_blockers: Sequence[str]) -> str:
+    if not target_shape_blockers:
+        return (
+            "No non-target running OCI instances were seen and the FuseKit host uses "
+            "the approved low-cost AMD micro shape."
+        )
+    return (
+        "Move the FuseKit hosted launcher to the approved low-cost AMD micro shape "
+        "before claiming the permanent host is cost-controlled."
+    )
 
 
 def _public_nonnegative_count(value: object) -> int | None:
