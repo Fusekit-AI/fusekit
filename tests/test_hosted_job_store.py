@@ -65,6 +65,17 @@ def test_hosted_job_store_rejects_unbound_webhook_receipt(tmp_path: Path) -> Non
         store.put_stripe_webhook_receipt(job_id=JOB_ID, receipt=receipt)
 
 
+def test_hosted_job_store_rejects_webhook_receipt_sidecars(tmp_path: Path) -> None:
+    store = HostedJobStore(tmp_path / "hosted-jobs")
+    receipt = _stripe_webhook_receipt()
+    receipt["raw_payload_path"] = "/var/log/fusekit/stripe-webhook.jsonl"
+
+    with pytest.raises(FuseKitError, match="receipt shape is invalid"):
+        store.put_stripe_webhook_receipt(job_id=JOB_ID, receipt=receipt)
+
+    assert not list((tmp_path / "hosted-jobs").glob("*.stripe-webhook-receipt.json"))
+
+
 def test_hosted_job_store_reads_only_bounded_regular_snapshots(tmp_path: Path) -> None:
     store = HostedJobStore(tmp_path / "hosted-jobs")
     job = build_hosted_launch_job(_plan(), job_id=JOB_ID, now=1_800_000_000)

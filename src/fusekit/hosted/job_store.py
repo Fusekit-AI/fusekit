@@ -26,6 +26,22 @@ HOSTED_JOB_STORE_MANAGED_START_RESPONSE_SCHEMA_VERSION = (
     "fusekit.hosted-job-store-managed-start-response.v1"
 )
 HOSTED_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION = "fusekit.hosted-stripe-webhook.v1"
+HOSTED_STRIPE_WEBHOOK_RECEIPT_KEYS = frozenset(
+    {
+        "schema_version",
+        "action",
+        "event_type",
+        "accepted",
+        "payment_applied",
+        "job_id",
+        "payment_status",
+        "managed_worker_dispatch_unlocked",
+        "worker_dispatch_sent",
+        "next_required_proof",
+        "receipt_statement",
+        "secret_boundary",
+    }
+)
 HOSTED_JOB_SCHEMA_VERSION = "fusekit.hosted-job.v1"
 HOSTED_WORKER_DISPATCH_SCHEMA_VERSION = "fusekit.hosted-worker-dispatch.v1"
 HOSTED_WORKER_DISPATCH_RECEIPT_SCHEMA_VERSION = (
@@ -292,6 +308,8 @@ def _validate_stripe_webhook_receipt(
     job_id: str,
     receipt: dict[str, object],
 ) -> None:
+    if set(str(key) for key in receipt) != HOSTED_STRIPE_WEBHOOK_RECEIPT_KEYS:
+        raise FuseKitError("Hosted Stripe webhook receipt shape is invalid.")
     if receipt.get("schema_version") != HOSTED_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION:
         raise FuseKitError("Hosted Stripe webhook receipt schema is unsupported.")
     if receipt.get("action") != "payment_webhook":

@@ -26,6 +26,7 @@ from fusekit.hosted.job_store import (
     HOSTED_JOB_STORE_MANAGED_START_RESPONSE_SCHEMA_VERSION,
     HOSTED_JOB_STORE_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION,
     HOSTED_JOB_STORE_WEBHOOK_RECEIPT_BOUNDARY,
+    HOSTED_STRIPE_WEBHOOK_RECEIPT_KEYS,
 )
 from fusekit.hosted.lanes import MANAGED_FUSEKIT_RUN_LANE
 from fusekit.hosted.managed_enablement import (
@@ -256,6 +257,8 @@ def _error_proof(
 
 def _webhook_receipt_blockers(receipt: Mapping[str, Any]) -> list[str]:
     blockers: list[str] = []
+    if set(str(key) for key in receipt) != HOSTED_STRIPE_WEBHOOK_RECEIPT_KEYS:
+        blockers.append("live_checkout_webhook_shape_mismatch")
     if receipt.get("schema_version") != HOSTED_MANAGED_STRIPE_WEBHOOK_RECEIPT_SCHEMA_VERSION:
         blockers.append("live_checkout_webhook_schema_mismatch")
     if receipt.get("action") != "payment_webhook":

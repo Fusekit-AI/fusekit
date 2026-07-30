@@ -163,6 +163,19 @@ def test_live_checkout_proof_rejects_unpaid_or_undispatched_start() -> None:
     assert "live_checkout_worker_dispatch_not_sent" in proof["blockers"]
 
 
+def test_live_checkout_proof_rejects_raw_webhook_receipt_sidecars() -> None:
+    webhook = _webhook_receipt()
+    webhook["raw_payload_path"] = "/var/log/fusekit/stripe-webhook.jsonl"
+
+    proof = build_hosted_managed_live_checkout_proof(
+        webhook_receipt=webhook,
+        start_action_response=_start_action_response(),
+    )
+
+    assert proof["ready"] is False
+    assert "live_checkout_webhook_shape_mismatch" in proof["blockers"]
+
+
 def test_live_checkout_proof_cli_outputs_redacted_proof(tmp_path: Path, capsys) -> None:
     webhook_path = tmp_path / "webhook.json"
     start_path = tmp_path / "start.json"
