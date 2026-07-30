@@ -152,6 +152,15 @@ def build_hosted_managed_live_checkout_proof(
                 "receiver_schema_version", ""
             ),
         },
+        "proof_artifacts": {
+            "webhook_receipt": f"{job_id}.stripe-webhook-receipt.json" if job_id else "",
+            "webhook_receipt_sha256": _payload_hash(webhook_receipt),
+            "managed_start_response": (
+                f"{job_id}.managed-start-response.json" if job_id else ""
+            ),
+            "managed_start_response_sha256": _payload_hash(start_action_response),
+            "live_checkout_proof": "live-checkout-proof.json",
+        },
         "secret_boundary": HOSTED_MANAGED_ENABLEMENT_SECRET_BOUNDARY,
     }
     if blockers:

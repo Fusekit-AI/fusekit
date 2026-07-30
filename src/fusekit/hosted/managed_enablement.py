@@ -52,6 +52,7 @@ HOSTED_MANAGED_LIVE_CHECKOUT_PROOF_KEYS = frozenset(
         "dispatch_requires_paid_checkout_session",
         "expected_commit_sha",
         "proof_inputs",
+        "proof_artifacts",
         "secret_boundary",
     }
 )
@@ -61,6 +62,15 @@ HOSTED_MANAGED_LIVE_CHECKOUT_PROOF_INPUTS_KEYS = frozenset(
         "start_action_schema",
         "worker_dispatch_schema",
         "worker_dispatch_receiver_schema",
+    }
+)
+HOSTED_MANAGED_LIVE_CHECKOUT_PROOF_ARTIFACT_KEYS = frozenset(
+    {
+        "webhook_receipt",
+        "webhook_receipt_sha256",
+        "managed_start_response",
+        "managed_start_response_sha256",
+        "live_checkout_proof",
     }
 )
 
@@ -392,14 +402,32 @@ def _live_checkout_proof_shape_blockers(report: Mapping[str, Any]) -> list[str]:
     proof_inputs = report.get("proof_inputs")
     if not isinstance(proof_inputs, Mapping):
         blockers.append("live_checkout_proof_inputs_missing")
-        return blockers
-    unexpected_inputs = sorted(
-        str(key)
-        for key in proof_inputs
-        if str(key) not in HOSTED_MANAGED_LIVE_CHECKOUT_PROOF_INPUTS_KEYS
-    )
-    if unexpected_inputs:
-        blockers.append("live_checkout_proof_inputs_unexpected_fields")
+    else:
+        unexpected_inputs = sorted(
+            str(key)
+            for key in proof_inputs
+            if str(key) not in HOSTED_MANAGED_LIVE_CHECKOUT_PROOF_INPUTS_KEYS
+        )
+        if unexpected_inputs:
+            blockers.append("live_checkout_proof_inputs_unexpected_fields")
+    proof_artifacts = report.get("proof_artifacts")
+    if not isinstance(proof_artifacts, Mapping):
+        blockers.append("live_checkout_proof_artifacts_missing")
+    else:
+        unexpected_artifacts = sorted(
+            str(key)
+            for key in proof_artifacts
+            if str(key) not in HOSTED_MANAGED_LIVE_CHECKOUT_PROOF_ARTIFACT_KEYS
+        )
+        if unexpected_artifacts:
+            blockers.append("live_checkout_proof_artifacts_unexpected_fields")
+        for artifact_key in ("webhook_receipt", "managed_start_response", "live_checkout_proof"):
+            value = proof_artifacts.get(artifact_key)
+            if not isinstance(value, str) or not value.endswith(".json"):
+                blockers.append(f"live_checkout_{artifact_key}_artifact_label_invalid")
+        for hash_key in ("webhook_receipt_sha256", "managed_start_response_sha256"):
+            if not _valid_sha256_label(str(proof_artifacts.get(hash_key) or "")):
+                blockers.append(f"live_checkout_{hash_key}_invalid")
     return blockers
 
 
@@ -424,6 +452,14 @@ def _hosted_verified_commit(report: Mapping[str, Any]) -> str:
 
 def _valid_git_sha(value: str) -> str:
     return value if len(value) == 40 and all(char in "0123456789abcdef" for char in value) else ""
+
+
+def _valid_sha256_label(value: str) -> bool:
+    return (
+        value.startswith("sha256:")
+        and len(value) == 71
+        and all(char in "0123456789abcdef" for char in value.removeprefix("sha256:"))
+    )
 
 
 def _job_store_ready(report: Mapping[str, Any]) -> bool:

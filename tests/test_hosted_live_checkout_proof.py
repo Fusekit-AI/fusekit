@@ -47,6 +47,13 @@ def test_live_checkout_proof_accepts_bound_webhook_and_start_receipts() -> None:
     assert proof["worker_dispatch_acceptance"] is True
     assert proof["dispatch_requires_paid_checkout_session"] is True
     assert proof["expected_commit_sha"] == COMMIT_SHA
+    assert proof["proof_artifacts"] == {
+        "webhook_receipt": f"{JOB_ID}.stripe-webhook-receipt.json",
+        "webhook_receipt_sha256": _payload_hash(_webhook_receipt()),
+        "managed_start_response": f"{JOB_ID}.managed-start-response.json",
+        "managed_start_response_sha256": _payload_hash(_start_action_response()),
+        "live_checkout_proof": "live-checkout-proof.json",
+    }
     assert "sk_live" not in serialized
     assert "whsec" not in serialized
     assert "payment_method" not in serialized
