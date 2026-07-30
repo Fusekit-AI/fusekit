@@ -139,6 +139,127 @@ HOSTED_BYO_OCI_PROOF_ARTIFACT_LABELS = {
     ".fusekit/workspace_detonation.json": "workspace detonation receipt",
     ".fusekit/acceptance_report.json": "live acceptance report",
 }
+HOSTED_BYO_OCI_BOOTSTRAP_KEYS = frozenset(
+    {
+        "schema_version",
+        "job_id",
+        "lane",
+        "worker_dispatch",
+        "runner_shape_policy",
+        "runner_shape_guard",
+        "runner_profile",
+        "open_core_execution",
+        "user_owned_cost_boundary",
+        "byo_security_contract",
+        "handoff_preflight",
+        "cloud_shell",
+        "proof_return",
+        "proof_manifest",
+        "reversibility",
+        "worker_request",
+        "secret_boundary",
+    }
+)
+HOSTED_BYO_OCI_OPEN_CORE_EXECUTION_KEYS = frozenset(
+    {
+        "mode",
+        "fusekit_package",
+        "app_source",
+        "github_source_policy",
+        "worker_secret_required",
+        "hosted_github_private_key_required",
+    }
+)
+HOSTED_BYO_OCI_HANDOFF_PREFLIGHT_KEYS = frozenset(
+    {
+        "schema_version",
+        "must_be_visible_before_cloud_shell",
+        "checks",
+        "cost_acknowledgement",
+        "secret_boundary",
+    }
+)
+HOSTED_BYO_OCI_COST_ACKNOWLEDGEMENT_KEYS = frozenset(
+    {
+        "required",
+        "spend_owner",
+        "fusekit_fee",
+        "oracle_billing_gate_owner",
+        "statement",
+    }
+)
+HOSTED_BYO_OCI_CLOUD_SHELL_KEYS = frozenset(
+    {
+        "provider",
+        "requires_user_oci_account",
+        "deeplink_url",
+        "bootstrap_command",
+        "fallback_steps",
+        "human_gates",
+        "bootstrap_intent",
+    }
+)
+HOSTED_BYO_OCI_PROOF_RETURN_KEYS = frozenset(
+    {
+        "mode",
+        "required_artifacts",
+        "acceptance_command",
+        "not_hosted_complete_until",
+        "verifier_contract",
+    }
+)
+HOSTED_BYO_OCI_VERIFIER_CONTRACT_KEYS = frozenset(
+    {
+        "input_schema",
+        "output_schema",
+        "requires_job_binding",
+        "job_binding_fields",
+        "requires_redacted_artifacts",
+        "requires_regular_file_artifacts",
+        "requires_non_placeholder_artifact_hashes",
+        "requires_bounded_artifact_sizes",
+        "zero_byte_allowed_artifacts",
+        "max_artifact_bytes",
+        "max_total_artifact_bytes",
+        "requires_completion_evidence",
+    }
+)
+HOSTED_BYO_OCI_PROOF_MANIFEST_KEYS = frozenset(
+    {
+        "schema_version",
+        "job_binding",
+        "user_owned_cost_boundary",
+        "byo_security_contract",
+        "runner_shape_guard",
+        "proof_bundle_root",
+        "zero_byte_allowed_artifacts",
+        "max_artifact_bytes",
+        "max_total_artifact_bytes",
+        "required_completion_evidence",
+        "required_remote_artifacts",
+        "acceptance_gate",
+        "completion_claim_policy",
+        "secret_boundary",
+    }
+)
+HOSTED_BYO_OCI_PROOF_MANIFEST_ARTIFACT_KEYS = frozenset(
+    {"path", "label", "required", "artifact_type", "secret_boundary"}
+)
+HOSTED_BYO_OCI_ACCEPTANCE_GATE_KEYS = frozenset(
+    {"mode", "remote_artifacts", "require_recording", "command"}
+)
+HOSTED_BYO_OCI_REVERSIBILITY_KEYS = frozenset(
+    {
+        "schema_version",
+        "detonation_required",
+        "rollback_metadata_required",
+        "delete_targets",
+        "survivors",
+        "completion_receipt",
+        "post_run_acceptance_required",
+        "statement",
+    }
+)
 HOSTED_PLAN_INTEGRITY_COVERAGE = (
     "app_name",
     "github_source",
@@ -1411,6 +1532,7 @@ def _assert_public_byo_proof_report(report: dict[str, object]) -> None:
 
 
 def _assert_public_byo_oci_bootstrap(payload: dict[str, object]) -> None:
+    _assert_byo_oci_bootstrap_shape(payload)
     serialized = json.dumps(payload, sort_keys=True)
     if _contains_byo_private_marker(serialized):
         raise FuseKitError("Hosted BYO OCI bootstrap contains private material.")
@@ -1421,6 +1543,114 @@ def _assert_public_byo_oci_bootstrap(payload: dict[str, object]) -> None:
         payload.get("cloud_shell"),
         open_core_execution=payload.get("open_core_execution"),
     )
+
+
+def _assert_byo_oci_bootstrap_shape(payload: dict[str, object]) -> None:
+    _reject_unexpected_payload_keys(
+        payload,
+        HOSTED_BYO_OCI_BOOTSTRAP_KEYS,
+        "Hosted BYO OCI bootstrap payload",
+    )
+    open_core = _require_bootstrap_object(
+        payload.get("open_core_execution"),
+        "Hosted BYO OCI open-core execution",
+    )
+    handoff = _require_bootstrap_object(
+        payload.get("handoff_preflight"),
+        "Hosted BYO OCI handoff preflight",
+    )
+    cost_acknowledgement = _require_bootstrap_object(
+        handoff.get("cost_acknowledgement"),
+        "Hosted BYO OCI cost acknowledgement",
+    )
+    cloud_shell = _require_bootstrap_object(
+        payload.get("cloud_shell"),
+        "Hosted BYO OCI Cloud Shell handoff",
+    )
+    proof_return = _require_bootstrap_object(
+        payload.get("proof_return"),
+        "Hosted BYO OCI proof return",
+    )
+    verifier_contract = _require_bootstrap_object(
+        proof_return.get("verifier_contract"),
+        "Hosted BYO OCI verifier contract",
+    )
+    proof_manifest = _require_bootstrap_object(
+        payload.get("proof_manifest"),
+        "Hosted BYO OCI proof manifest",
+    )
+    acceptance_gate = _require_bootstrap_object(
+        proof_manifest.get("acceptance_gate"),
+        "Hosted BYO OCI acceptance gate",
+    )
+    reversibility = _require_bootstrap_object(
+        payload.get("reversibility"),
+        "Hosted BYO OCI reversibility",
+    )
+    _reject_unexpected_payload_keys(
+        open_core,
+        HOSTED_BYO_OCI_OPEN_CORE_EXECUTION_KEYS,
+        "Hosted BYO OCI open-core execution",
+    )
+    _reject_unexpected_payload_keys(
+        handoff,
+        HOSTED_BYO_OCI_HANDOFF_PREFLIGHT_KEYS,
+        "Hosted BYO OCI handoff preflight",
+    )
+    _reject_unexpected_payload_keys(
+        cost_acknowledgement,
+        HOSTED_BYO_OCI_COST_ACKNOWLEDGEMENT_KEYS,
+        "Hosted BYO OCI cost acknowledgement",
+    )
+    _reject_unexpected_payload_keys(
+        cloud_shell,
+        HOSTED_BYO_OCI_CLOUD_SHELL_KEYS,
+        "Hosted BYO OCI Cloud Shell handoff",
+    )
+    _reject_unexpected_payload_keys(
+        proof_return,
+        HOSTED_BYO_OCI_PROOF_RETURN_KEYS,
+        "Hosted BYO OCI proof return",
+    )
+    _reject_unexpected_payload_keys(
+        verifier_contract,
+        HOSTED_BYO_OCI_VERIFIER_CONTRACT_KEYS,
+        "Hosted BYO OCI verifier contract",
+    )
+    _reject_unexpected_payload_keys(
+        proof_manifest,
+        HOSTED_BYO_OCI_PROOF_MANIFEST_KEYS,
+        "Hosted BYO OCI proof manifest",
+    )
+    _reject_unexpected_payload_keys(
+        acceptance_gate,
+        HOSTED_BYO_OCI_ACCEPTANCE_GATE_KEYS,
+        "Hosted BYO OCI acceptance gate",
+    )
+    _reject_unexpected_payload_keys(
+        reversibility,
+        HOSTED_BYO_OCI_REVERSIBILITY_KEYS,
+        "Hosted BYO OCI reversibility",
+    )
+    artifacts = proof_manifest.get("required_remote_artifacts")
+    if not isinstance(artifacts, list):
+        raise FuseKitError("Hosted BYO OCI proof manifest artifacts must be a list.")
+    for index, artifact in enumerate(artifacts):
+        artifact_object = _require_bootstrap_object(
+            artifact,
+            f"Hosted BYO OCI proof manifest artifact {index}",
+        )
+        _reject_unexpected_payload_keys(
+            artifact_object,
+            HOSTED_BYO_OCI_PROOF_MANIFEST_ARTIFACT_KEYS,
+            f"Hosted BYO OCI proof manifest artifact {index}",
+        )
+
+
+def _require_bootstrap_object(value: object, label: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise FuseKitError(f"{label} must be an object.")
+    return value
 
 
 def _assert_byo_oci_cloud_shell_handoff(

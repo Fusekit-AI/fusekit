@@ -39,6 +39,7 @@ from fusekit.hosted.job import (
     HOSTED_BYO_OCI_PROOF_VERIFY_SCHEMA_VERSION,
     HOSTED_BYO_OCI_REVERSIBILITY_SCHEMA_VERSION,
     HostedLaunchJobStep,
+    _assert_public_byo_oci_bootstrap,
     _proof_link,
     _public_job_path_id,
     _step_card,
@@ -527,6 +528,73 @@ def test_hosted_byo_bootstrap_publishes_preflight_and_reversibility_contract() -
     assert "ghs_" not in serialized
     assert "PRIVATE KEY" not in serialized
     assert "sk_live" not in serialized
+
+
+def test_hosted_byo_bootstrap_rejects_public_sidecar_fields() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    bootstrap["oci_region_hint"] = "us-ashburn-1"
+
+    with pytest.raises(
+        FuseKitError,
+        match="Hosted BYO OCI bootstrap payload has unexpected fields: oci_region_hint",
+    ):
+        _assert_public_byo_oci_bootstrap(bootstrap)
+
+
+def test_hosted_byo_bootstrap_rejects_nested_public_sidecar_fields() -> None:
+    job = build_hosted_launch_job(
+        _plan(),
+        launch_lane=BYO_OCI_LANE,
+        job_id="hosted-byo",
+        now=1_700_000_000,
+    )
+    bootstrap = hosted_byo_oci_bootstrap(job)
+    handoff = bootstrap["handoff_preflight"]
+    proof_return = bootstrap["proof_return"]
+    proof_manifest = bootstrap["proof_manifest"]
+    assert isinstance(handoff, dict)
+    assert isinstance(proof_return, dict)
+    assert isinstance(proof_manifest, dict)
+    cost_acknowledgement = handoff["cost_acknowledgement"]
+    verifier_contract = proof_return["verifier_contract"]
+    artifacts = proof_manifest["required_remote_artifacts"]
+    assert isinstance(cost_acknowledgement, dict)
+    assert isinstance(verifier_contract, dict)
+    assert isinstance(artifacts, list)
+    artifact = artifacts[0]
+    assert isinstance(artifact, dict)
+    cost_acknowledgement["estimated_monthly_cost"] = "$0.00"
+    verifier_contract["oracle_console_session"] = "operator-reviewed"
+    artifact["local_path"] = "/home/opc/app/.fusekit/run_record.json"
+
+    with pytest.raises(
+        FuseKitError,
+        match=(
+            "Hosted BYO OCI cost acknowledgement has unexpected fields: "
+            "estimated_monthly_cost"
+        ),
+    ):
+        _assert_public_byo_oci_bootstrap(bootstrap)
+
+    cost_acknowledgement.pop("estimated_monthly_cost")
+    with pytest.raises(
+        FuseKitError,
+        match="Hosted BYO OCI verifier contract has unexpected fields: oracle_console_session",
+    ):
+        _assert_public_byo_oci_bootstrap(bootstrap)
+
+    verifier_contract.pop("oracle_console_session")
+    with pytest.raises(
+        FuseKitError,
+        match="Hosted BYO OCI proof manifest artifact 0 has unexpected fields: local_path",
+    ):
+        _assert_public_byo_oci_bootstrap(bootstrap)
 
 
 def test_byo_oci_runner_shape_guard_rejects_arm_profile(
